@@ -1,0 +1,13 @@
+---
+import academy from '../data/academy.json';
+const { stats } = academy;
+const cards = [
+  { value: `${stats.coreReviewed}/${stats.coreTotal}`, label: 'درس Core متراجع' },
+  { value: stats.questions, label: 'سؤال بإجابة كاملة' },
+  { value: stats.scenarios, label: 'سيناريو Production' },
+  { value: stats.labs, label: 'تحدي Kotlin باختبارات' },
+];
+---
+<div class="stat-grid" aria-label="إحصائيات المحتوى الفعلي">
+  {cards.map((card) => <div class="stat-card"><strong><bdi>{card.value}</bdi></strong><span>{card.label}</span></div>)}
+</div>

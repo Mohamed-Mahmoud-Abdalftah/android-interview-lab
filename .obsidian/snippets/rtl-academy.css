@@ -1,0 +1,43 @@
+/* Enable in Appearance > CSS snippets. Semantic HTML works without this snippet. */
+:where(p, h1, h2, h3, h4, h5, h6, ul, ol, table, blockquote)[dir="rtl"][lang="ar"] {
+  direction: rtl;
+  text-align: right;
+  font-family: "SF Arabic", "Geeza Pro", "Noto Naskh Arabic", "Noto Sans Arabic", Tahoma, Arial, sans-serif;
+  line-height: 1.85;
+}
+
+:where(p, blockquote)[dir="rtl"][lang="ar"] {
+  margin-block: 0.8em 1.05em;
+}
+
+:where(ul, ol)[dir="rtl"][lang="ar"] {
+  padding-inline-start: 1.8em;
+  padding-inline-end: 0;
+  margin-block: 0.7em 1.1em;
+}
+
+:where(ul, ol)[dir="rtl"][lang="ar"] li {
+  margin-block: 0.35em;
+}
+
+table[dir="rtl"][lang="ar"] {
+  border-collapse: collapse;
+  margin-block: 1em;
+}
+
+table[dir="rtl"][lang="ar"] :where(th, td) {
+  text-align: start;
+  vertical-align: top;
+  line-height: 1.7;
+}
+
+:where(code, a, span)[dir="ltr"] {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+:where(pre, pre code) {
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: isolate;
+}

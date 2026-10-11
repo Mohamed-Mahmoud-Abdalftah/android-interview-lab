@@ -1,0 +1,30 @@
+---
+import academy from '../data/academy.json';
+const modules = [
+  ['KOT', 'Kotlin & JVM / ART', 'اللغة، الـruntime، الـcompiler والـJava boundaries'],
+  ['COR', 'Coroutines & Flow', 'structured concurrency، cancellation والـstreams'],
+  ['AND', 'Android Internals', 'lifecycle، process death، Binder والخلفية'],
+  ['ARC', 'Architecture & DI', 'state، repositories، offline-first والتقسيم'],
+  ['UI', 'XML Views & Compose', 'rendering، ownership، accessibility وRTL'],
+  ['PRO', 'Production Engineering', 'storage، network، security، build وperformance'],
+  ['DSA', 'DSA & Live Coding', 'invariants، complexity وحل المسائل بصوت عالي'],
+  ['SYS', 'Mobile System Design', 'requirements، data flow، failures والبدائل'],
+  ['INT', 'Leadership, HR & English', 'ownership، STAR والتفسير التقني'],
+  ['POS', 'POS / NFC / Hardware', 'payment states، NFC، recovery وحدود الاعتماد'],
+];
+const firstRoute = (prefix: string) => academy.lessons.find((lesson) => lesson.id.startsWith(prefix) && lesson.route)?.route
+  ?? (prefix === 'DSA' ? '/lessons/ext-dsa-01/' : prefix === 'POS' ? '/lessons/ext-pos-01/' : null);
+const reviewedCount = (prefix: string) => academy.lessons.filter((lesson) => lesson.id.startsWith(prefix) && lesson.route).length
+  + (prefix === 'DSA' || prefix === 'POS' ? 1 : 0);
+---
+<div class="module-grid">
+  {modules.map(([prefix, title, description], index) => {
+    const route = firstRoute(prefix);
+    return <article class="module-card">
+      <bdi>{String(index + 1).padStart(2, '0')} / {prefix}</bdi>
+      <h3>{route ? <a href={route}>{title}</a> : title}</h3>
+      <p>{description}</p>
+      <span class:list={['status-chip', route ? '' : 'planned']}>{reviewedCount(prefix)} جاهز</span>
+    </article>;
+  })}
+</div>

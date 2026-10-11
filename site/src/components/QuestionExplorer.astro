@@ -1,0 +1,173 @@
+---
+import academy from '../data/academy.json';
+const categoryOrder = ['AND', 'COR', 'ARC', 'UI', 'EUI', 'PRO', 'KOT', 'SYS', 'CON', 'ART', 'DSA', 'POS', 'STF', 'INT'];
+const difficultyOrder: Record<string, number> = { senior: 0, intermediate: 1, foundational: 2 };
+const mustKnowIds = [
+  'AND-Q003', 'AND-Q013', 'AND-Q016', 'AND-Q017', 'AND-Q018', 'AND-Q021',
+  'COR-Q003', 'COR-Q006', 'COR-Q009', 'COR-Q010', 'COR-Q016', 'COR-Q017', 'COR-Q019', 'COR-Q020', 'COR-Q023', 'COR-Q026',
+  'ARC-Q001', 'ARC-Q006', 'ARC-Q008', 'ARC-Q010', 'ARC-Q011', 'ARC-Q012', 'ARC-Q013', 'ARC-Q016', 'ARC-Q018', 'ARC-Q021',
+  'UI-Q003', 'UI-Q009', 'UI-Q011', 'UI-Q013', 'UI-Q014', 'UI-Q018', 'UI-Q019', 'UI-Q023', 'UI-Q025',
+  'PRO-Q007', 'PRO-Q013', 'PRO-Q014', 'PRO-Q018', 'PRO-Q023', 'PRO-Q025',
+  'KOT-Q002', 'KOT-Q009', 'KOT-Q014', 'KOT-Q024', 'KOT-Q026',
+  'SYS-Q014', 'SYS-Q023', 'SYS-Q028',
+  'DSA-Q006', 'DSA-Q007', 'DSA-Q009',
+  'INT-Q002', 'INT-Q004',
+];
+const mustKnow = new Map(mustKnowIds.map((id, index) => [id, index + 1]));
+const interviewFocus: Record<string, string> = {
+  'AND-Q003': 'هل فاهم إن onDestroy مش persistence hook، وإزاي تفصل UI state الصغيرة عن draft لازم تعيش بعد process death.',
+  'AND-Q013': 'الفرق بين PendingIntent identity وmutability، وإمتى external input تتحول لثغرة أو تفتح action غلط.',
+  'AND-Q016': 'إزاي الـmain Looper والـMessageQueue بيشتغلوا، وليه Runnable طويلة توقف input والframes حتى لو مفيش crash.',
+  'AND-Q017': 'إن Binder call الـsynchronous ممكن توقف main thread بسبب queueing أوremote work أوlock، حتى لو الخدمة في process تانية.',
+  'AND-Q018': 'هل بتقرأ ANR كـtimeline وبتدور على lock/Binder owner، ولا بتتهم أول frame في stack وخلاص.',
+  'AND-Q021': 'اختيار viewModelScope أوWorkManager أوForeground Service من lifetime وdurability ووضوح الشغل للمستخدم.',
+  'COR-Q003': 'مين يملك الـCoroutineScope، وإزاي cancellation تمنع نتيجة متأخرة من تحديث شاشة انتهى عمرها.',
+  'COR-Q006': 'تتبع فشل child داخل coroutineScope: إلغاء siblings، انتظار cleanup، ووصول exception للparent.',
+  'COR-Q009': 'ليه catch واسع أوrunCatching ممكن يبلع CancellationException ويحوّل الإلغاء لفشل عادي.',
+  'COR-Q010': 'الفرق بين all-or-nothing وindependent cards، وإمتى تستخدم supervision وإزاي تمثل partial failure.',
+  'COR-Q016': 'إن cold Flow تشغّل upstream جديدة لكل collector، وإمتى تستخدم stateIn/shareIn أوsource of truth.',
+  'COR-Q017': 'StateFlow تعمل equality conflation؛ لازم تشرح ليه نفس القيمة أوmutable object ممكن ما يطلعش emission مفيدة.',
+  'COR-Q019': 'تمييز durable state عن one-off effect، ومشكلة ضياع events وقت lifecycle أوprocess death.',
+  'COR-Q020': 'ربط collection بالـLifecycle بدل collector شغالة وهي مش ظاهرة أوبتكتب في View ميتة.',
+  'COR-Q023': 'بناء type-ahead search مع debounce وdistinctUntilChanged وflatMapLatest، وحدود cancellation مع network حقيقية.',
+  'COR-Q026': 'استخدام runTest والـvirtual time وTestCoroutineScheduler بدل sleep واختبار متعلق بسرعة الجهاز.',
+  'ARC-Q001': 'تقسيم responsibility من غير Activity ضخمة ومن غير Layers شكلية؛ كل validation وside effect لها owner واضح.',
+  'ARC-Q006': 'تتبع user intent لحد state جديدة، وتحديد دور UI وViewModel وdomain/data boundaries.',
+  'ARC-Q008': 'هل navigation/snackbar state ولاeffect؟ الإجابة لازم تربط القرار بـdelivery وreplay وacknowledgement.',
+  'ARC-Q010': 'منع request قديمة من كتابة success فوق input أحدث باستخدام generation أوoperation identity عند commit.',
+  'ARC-Q011': 'Repository تملك data contract وsource coordination، مش مجرد wrapper فوق DAO وAPI.',
+  'ARC-Q012': 'إزاي Room تبقى observable source of truth والserver تفضل authority للsync/conflicts من غير UI state مزدوجة.',
+  'ARC-Q013': 'كتابة local change والoutbox operation في transaction واحدة علشان process death ما تسيبش نص حالة.',
+  'ARC-Q016': 'مطابقة Hilt scope مع data owner؛ SingletonComponent عمرها process ومش بتتصفر لوحدها عند logout.',
+  'ARC-Q018': 'تسريب account A بعد دخول account B بسبب cache Singleton، وتصميم session owner قابلة للإبطال.',
+  'ARC-Q021': 'اختيار Gradle module من ownership وchange axis وAPI surface وbuild cost، مش module لكل screen.',
+  'UI-Q003': 'ليه mutating نفس List بعد submitList تكسر snapshot بتاعة DiffUtil، وإزاي تنشر immutable copy.',
+  'UI-Q009': 'معنى stability contract في Compose وخطورة @Stable الكاذبة على skipping وصحة الـUI.',
+  'UI-Q011': 'اختيار LaunchedEffect keys من identity الحقيقية للشغل، وإلغاء effect القديمة لما user أوquery تتغير.',
+  'UI-Q013': 'استخدام rememberUpdatedState للحصول على callback جديدة داخل effect طويلة من غير restart للeffect.',
+  'UI-Q014': 'جمع Flow بشكل lifecycle-aware، والفرق بين إيقاف collector وبين lifetime الـshared upstream.',
+  'UI-Q018': 'launchSingleTop يمنع duplicate عند قمة الـstack فقط؛ لازم تحدد السلوك المطلوب لو destination تحت القمة.',
+  'UI-Q019': 'deep link مش authorization: parse وvalidate ثمlogin ثمserver authorization وبناء back stack منطقية.',
+  'UI-Q023': 'الـsemantics اللي TalkBack والtests شايفاها: role وlabel وstate وaction وfocus order.',
+  'UI-Q025': 'قياس jank على release-like build وتحديد composition أوlayout أوdraw أوGC قبل أي optimization.',
+  'PRO-Q007': 'اختبار كل Room migration path من نسخ المستخدمين القديمة، مش مجرد clean install أوآخر version.',
+  'PRO-Q013': 'single-flight token refresh لعشر 401s، منع loops، وإعادة كل request مرة واحدة بالtoken الجديدة.',
+  'PRO-Q014': 'timeout بعد إرسال write لا يساوي failure؛ لازم Unknown state وstatus lookup/idempotency قبل retry.',
+  'PRO-Q018': 'تشخيص release-only failure من mapping والDEX والreflection boundary، وكتابة narrow keep rule.',
+  'PRO-Q023': 'قراءة Perfetto كـtimeline لتمييز CPU وlock وBinder وI/O وGC وGPU بدل التخمين.',
+  'PRO-Q025': 'قرار pause/rollback/continue من cohort evidence وblocking metrics وthreshold متفق عليها قبل rollout.',
+  'KOT-Q002': 'Java platform types تكسر ضمان nullability؛ containment والvalidation يحصلوا عند boundary واحدة.',
+  'KOT-Q009': 'data class equality/hashCode مع mutable key داخل HashMap، وليه تغيير field مهمة يضيّع lookup contract.',
+  'KOT-Q014': 'خطر استدعاء open function من base constructor قبل اكتمال derived initialization.',
+  'KOT-Q024': 'JVM type erasure: cast ممكن يعدي على List نفسها وبعدها يفشل عند قراءة element.',
+  'KOT-Q026': 'المسار الحقيقي من Kotlin source إلى class files ثم D8/R8 وDEX وبعدها ART.',
+  'SYS-Q014': 'تقسيم database/cache/work/notifications حسب account ومنع نتيجة generation قديمة من تلويث حساب جديد.',
+  'SYS-Q023': 'connection owner واحدة، reconnect generation، backoff، catch-up بالsequence ثمdedupe قبل استئناف realtime.',
+  'SYS-Q028': 'تحديد serialized boundary لما send وreconnect وaccount switch يحصلوا مع بعض.',
+  'DSA-Q006': 'الـinvariant بعد sorting والفرق بين closed وhalf-open intervals، مع O(n log n) وedge cases.',
+  'DSA-Q007': 'HashMap + doubly linked access order لازم يفضلوا consistent علشان get وput متوقع O(1).',
+  'DSA-Q009': 'اكتشاف cycle في directed graph بالـwhite/gray/black، خصوصًا disconnected graph وself-loop.',
+  'INT-Q002': 'قصة disagreement حقيقية: constraint وevidence وقرار ومساهمة شخصية من غير ادعاء إنك كسبت النقاش.',
+  'INT-Q004': 'تحمل المسؤولية في incident من غير لوم: قرارك، الإشارة اللي فاتتك، mitigation، والsystem change بعدها.',
+};
+const interviewRound: Record<string, string> = {
+  AND: 'Android Core', COR: 'Kotlin & Coroutines', ARC: 'Architecture & Data', UI: 'Compose & UI',
+  EUI: 'Compose & UI', PRO: 'Production', KOT: 'Kotlin & Coroutines', SYS: 'System Design',
+  CON: 'Concurrency', ART: 'Runtime', DSA: 'Live Coding', POS: 'POS Specialist', STF: 'Staff', INT: 'Behavioral',
+};
+const priorityFor = (question: { id: string; difficulty: string }) => mustKnow.has(question.id)
+  ? 'must'
+  : question.difficulty === 'senior' ? 'common' : 'depth';
+const questions = [...academy.questions].sort((a, b) =>
+  (mustKnow.get(a.id) ?? 999) - (mustKnow.get(b.id) ?? 999)
+  || (difficultyOrder[a.difficulty] ?? 9) - (difficultyOrder[b.difficulty] ?? 9)
+  || categoryOrder.indexOf(a.category) - categoryOrder.indexOf(b.category)
+  || a.id.localeCompare(b.id),
+);
+const topicLabels: Record<string, string> = {
+  AND: 'Android Internals', ARC: 'Architecture & DI', ART: 'ART / Runtime',
+  CON: 'Concurrency', COR: 'Coroutines & Flow', DSA: 'DSA / Live Coding',
+  EUI: 'Advanced UI', INT: 'Leadership & Interviewing', KOT: 'Kotlin',
+  POS: 'POS / Hardware', PRO: 'Production Engineering', STF: 'Staff Engineering',
+  SYS: 'System Design', UI: 'Views & Compose',
+};
+const topics = [...new Set(questions.map((q) => q.category))].sort();
+---
+<div data-question-explorer>
+  <div class="question-toolbar" role="search">
+    <input type="search" placeholder="دوّر في السؤال أو الموضوع…" aria-label="ابحث في بنك الأسئلة" data-query />
+    <select aria-label="فلتر الأولوية" data-priority><option value="must" selected>Must Know أولًا</option><option value="common">أسئلة Senior إضافية</option><option value="depth">Foundational / Intermediate</option><option value="">كل الـ300 سؤال</option></select>
+    <select aria-label="فلتر المجال" data-topic><option value="">كل المجالات</option>{topics.map((topic) => <option value={topic}>{topic} — {topicLabels[topic] ?? topic}</option>)}</select>
+    <select aria-label="فلتر الصعوبة" data-difficulty><option value="" selected>كل المستويات</option><option value="senior">Senior</option><option value="intermediate">Intermediate</option><option value="foundational">Foundational</option></select>
+  </div>
+  <p class="mode-label" data-question-mode aria-live="polite"></p>
+  <div class="interview-start">
+    <strong><bdi>{questions.length}</bdi> سؤال Interview فعلي</strong>
+    <span>اختار المجال والمستوى، جاوب بصوت عالي، وبعدها افتح Model Answer وقارن reasoning والـtrade-offs.</span>
+  </div>
+  <p data-result-count aria-live="polite"></p>
+  <div class="question-list">
+    {questions.map((item) => <article class="question-card" data-card data-search={`${item.id} ${item.lessonId} ${item.topic} ${item.question} ${interviewFocus[item.id] ?? ''}`.toLowerCase()} data-priority-value={priorityFor(item)} data-topic-value={item.category} data-difficulty-value={item.difficulty}>
+      <header>
+        <strong><a href={item.route}>{mustKnow.has(item.id) && <span class="question-rank">#{mustKnow.get(item.id)}</span>} <bdi>{item.id}</bdi> — {item.topic}</a></strong>
+        <span class="question-meta"><span class:list={['priority-chip', priorityFor(item)]}>{priorityFor(item) === 'must' ? 'Must Know' : priorityFor(item) === 'common' ? 'Senior' : 'Foundation'}</span><span class="status-chip">{interviewRound[item.category]}</span><span><bdi>{item.expectedMinutes}</bdi> min</span></span>
+      </header>
+      <p class="interview-prompt" dir="ltr"><span class="interviewer-label">Interviewer</span>{item.question}</p>
+      {interviewFocus[item.id] && <aside class="question-focus"><strong>المحاور بيمتحنك في إيه؟</strong><span>{interviewFocus[item.id]}</span></aside>}
+      <div class="tool-row"><a class="answer-link" href={item.answerRoute}>افتح الـModel Answer</a><a href={item.route}>السؤال والـFollow-ups</a><button type="button" data-reveal>اظهر الإجابة</button></div>
+    </article>)}
+  </div>
+  <p data-empty hidden>مفيش نتيجة مطابقة للفلاتر دي.</p>
+</div>
+
+<script>
+  const roots = document.querySelectorAll<HTMLElement>('[data-question-explorer]');
+  roots.forEach((root) => {
+    const query = root.querySelector<HTMLInputElement>('[data-query]');
+    const priority = root.querySelector<HTMLSelectElement>('[data-priority]');
+    const topic = root.querySelector<HTMLSelectElement>('[data-topic]');
+    const difficulty = root.querySelector<HTMLSelectElement>('[data-difficulty]');
+    const cards = [...root.querySelectorAll<HTMLElement>('[data-card]')];
+    const resultCount = root.querySelector<HTMLElement>('[data-result-count]');
+    const modeLabel = root.querySelector<HTMLElement>('[data-question-mode]');
+    const empty = root.querySelector<HTMLElement>('[data-empty]');
+    if (!query || !priority || !topic || !difficulty || !resultCount || !modeLabel || !empty) return;
+    const updateMode = () => {
+      const practice = document.documentElement.dataset.studyMode === 'practice';
+      modeLabel.textContent = practice
+        ? 'Practice Mode شغال: اختار «اظهر الإجابة» بعد ما تجاوب.'
+        : 'Learning Mode شغال: الإجابات متاحة مباشرة.';
+      cards.forEach((card) => {
+        const answer = card.querySelector<HTMLAnchorElement>('.answer-link');
+        const reveal = card.querySelector<HTMLButtonElement>('[data-reveal]');
+        if (!answer || !reveal) return;
+        answer.dataset.hidden = practice && answer.dataset.revealed !== 'true' ? 'true' : 'false';
+        reveal.hidden = !practice || answer.dataset.revealed === 'true';
+      });
+    };
+    const filter = () => {
+      let visible = 0;
+      cards.forEach((card) => {
+        const show = (card.dataset.search || '').includes(query.value.trim().toLowerCase())
+          && (!priority.value || card.dataset.priorityValue === priority.value)
+          && (!topic.value || card.dataset.topicValue === topic.value)
+          && (!difficulty.value || card.dataset.difficultyValue === difficulty.value);
+        card.hidden = !show;
+        if (show) visible += 1;
+      });
+      empty.hidden = visible !== 0;
+      resultCount.textContent = `ظاهر دلوقتي ${visible} سؤال من ${cards.length}.`;
+    };
+    root.addEventListener('click', (event) => {
+      if (!(event.target instanceof Element) || !event.target.matches('[data-reveal]')) return;
+      const card = event.target.closest<HTMLElement>('[data-card]');
+      const answer = card?.querySelector<HTMLAnchorElement>('.answer-link');
+      if (!answer) return;
+      answer.dataset.revealed = 'true';
+      updateMode();
+    });
+    [query, priority, topic, difficulty].forEach((control) => control.addEventListener('input', filter));
+    new MutationObserver(updateMode).observe(document.documentElement, { attributes: true, attributeFilter: ['data-study-mode'] });
+    updateMode(); filter();
+  });
+</script>

@@ -1,0 +1,18 @@
+{
+  "sourceIdsFound": 485,
+  "uniqueIds": 485,
+  "topics": 21,
+  "records": 485,
+  "reviewed": 5,
+  "sourceOnly": 480,
+  "missing": 0,
+  "placeholderCount": 0,
+  "errors": [],
+  "reviewedIds": [
+    "COR-01",
+    "COR-02",
+    "FLO-06",
+    "SEC-12",
+    "PAY-02"
+  ]
+}

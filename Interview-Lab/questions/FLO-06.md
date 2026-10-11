@@ -1,0 +1,93 @@
+---
+id: "FLO-06"
+question: "What is conflation, and how does StateFlow use equality to suppress repeated states?"
+topic: "Flow, StateFlow, SharedFlow & Channels"
+code: "FLO"
+group: "A"
+phase: 1
+priority: "P1"
+order: 119
+editorial_status: "reviewed"
+---
+
+# FLO-06
+
+## Original interview question
+
+What is conflation, and how does StateFlow use equality to suppress repeated states?
+
+## What the interviewer evaluates
+
+- Definition of conflation and the distinction between state snapshots and an event stream.
+- Knowledge that `StateFlow` is hot, holds a current value, and uses `equals` for update suppression.
+- Awareness that slow collectors can skip intermediate updates and mutable objects can undermine state observation.
+
+## Explanation in Arabic
+
+الـconflation معناها إن المتابع البطيء مش لازم يشوف كل قيمة وسيطة؛ المهم توصله أحدث state. `StateFlow` ساخنة، عندها قيمة حالية لازم تكون موجودة من البداية، وبتستخدم `equals` علشان ما تبعتش state جديدة لو مساوية للقديمة. ده مناسب لـUI state زي `Loading` أو `Profile(name)`. لكن لو بتعدّ clicks أو transaction events، إسقاط القيم الوسيطة ممكن يضيّع معنى مهم؛ اختار event contract مختلف. ولو عدّلت نفس mutable object في مكانه، ممكن الـUI ما تشوفش emission مفيدة.
+
+## Why it matters and how it works
+
+`MutableStateFlow.value` keeps one current value. A new collector receives that value. Updates are conflated by equality, and a slow collector may skip rapid intermediate states while seeing the latest one. The equality contract of the state type matters; an object whose `equals` is unstable gives unspecified behavior. StateFlow is thread-safe for its own operations, but a read-modify-write sequence can still race; use `update` for atomic transformations.
+
+## Worked example
+
+This JVM example requires `kotlinx-coroutines-core`. Immutable state gives `equals` a meaningful snapshot. The second assignment is equal and does not represent a new state; `update` is used for a concurrent-safe transformation.
+
+```kotlin
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+
+data class CounterUiState(val count: Int)
+
+class CounterModel {
+    private val mutable = MutableStateFlow(CounterUiState(0))
+    val state: StateFlow<CounterUiState> = mutable.asStateFlow()
+
+    fun increment() = mutable.update { old -> old.copy(count = old.count + 1) }
+    fun publishSameValue() { mutable.value = CounterUiState(mutable.value.count) }
+}
+```
+
+## Trade-offs and decision criteria
+
+Choose `StateFlow` when consumers need a latest-value state and a well-defined initial value. Choose a separately designed event mechanism when every occurrence or acknowledgement matters. `SharedFlow` can configure replay and buffering, but those settings do not by themselves guarantee delivery across process death. Durable business events belong in persistent storage with explicit acknowledgement.
+
+## Failure modes
+
+**Wrong:** mutate `state.value.items.add(item)` and expect a new UI state; the same reference/equality may prevent a meaningful emission. **Right:** publish a new immutable list and state object. Another error is using `StateFlow<Boolean>` for a one-time navigation command: a recreated collector can observe the current `true` and navigate again, while equality may suppress a second identical command.
+
+## Production perspective
+
+An offline-first inbox exposes an immutable `InboxUiState` from a ViewModel. Rapid Room updates may coalesce in the UI, which is acceptable because the view renders the latest inbox snapshot. A payment approval notification is different: persist transaction status and let the UI derive it from the source of truth rather than relying on an ephemeral emission for a business effect.
+
+## Interview answer — short
+
+“Conflation keeps the latest state rather than delivering every intermediate update. `StateFlow` is hot, holds a current value, and suppresses equal updates using `equals`. A slow collector can skip intermediate values. I use immutable UI state and an atomic `update` transformation, and I do not use StateFlow as a reliable event queue.”
+
+## Interview answer — structured
+
+“`StateFlow` models observable current state. It always has an initial value, gives a new collector the latest value, and conflates updates based on equality. That makes it useful for a ViewModel UI state where the latest snapshot matters more than every transition. For example, I publish a new immutable `CounterUiState` after an action and use `update` if multiple coroutines may modify it. Mutating an object in place or giving it a broken equality contract can hide changes. For commands or financial events that must be handled exactly once as a business effect, I use an explicit delivery and persistence design instead of assuming StateFlow guarantees it.”
+
+## Deep-dive talking points
+
+Compare `stateIn` and `shareIn`; explain lifecycle-aware collection, replay semantics, equality versus reference identity, and why a slow collector is not an audit log.
+
+## Follow-up questions
+
+- [FLO-03](../flo-03/): Why are StateFlow and SharedFlow hot? **Hint:** their instance exists independently of a collector.
+- [FLO-05](../flo-05/): Why does StateFlow need an initial value? **Hint:** it promises a readable current state.
+- [FLO-20](../flo-20/): How should UI events be delivered? **Hint:** define replay, acknowledgement, and process-death requirements.
+
+## Self-check rubric
+
+Score 0–5, one point each: define conflation; state that StateFlow is hot and has a current value; explain equality suppression; diagnose mutable-state failure; choose a different design when every occurrence matters.
+
+## References and reviewed-on date
+
+- [Kotlin StateFlow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-state-flow/) — hot state, current value, and equality-based conflation.
+- [Android StateFlow and SharedFlow guide](https://developer.android.com/kotlin/flow/stateflow-and-sharedflow) — Android collection and UI use.
+
+Technically reviewed against the linked primary documentation on 2026-10-11. The snippet is a JVM illustration.

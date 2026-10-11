@@ -1,0 +1,15 @@
+{
+  "404.text": "الصفحة دي مش موجودة في نسخة الأكاديمية الحالية.",
+  "expressiveCode.copyButtonTooltip": "انسخ الكود",
+  "expressiveCode.copyButtonCopied": "اتنسخ",
+  "pagefind.clear_search": "امسح البحث",
+  "pagefind.load_more": "نتايج أكتر",
+  "pagefind.search_label": "دوّر في الأكاديمية",
+  "pagefind.filters_label": "الفلاتر",
+  "pagefind.zero_results": "مفيش نتايج لـ [SEARCH_TERM]",
+  "pagefind.many_results": "[COUNT] نتيجة لـ [SEARCH_TERM]",
+  "pagefind.one_result": "نتيجة واحدة لـ [SEARCH_TERM]",
+  "pagefind.alt_search": "مفيش نتايج لـ [SEARCH_TERM]. دي نتايج قريبة لـ [DIFFERENT_TERM]",
+  "pagefind.search_suggestion": "مفيش نتايج لـ [SEARCH_TERM]. جرّب بحث من دول:",
+  "pagefind.searching": "بندوّر على [SEARCH_TERM]…"
+}

@@ -1,0 +1,1942 @@
+{
+  "KOT-01": {
+    "record": "Interview-Lab/questions/KOT-01.md",
+    "route": "/lab/questions/kot-01/"
+  },
+  "KOT-02": {
+    "record": "Interview-Lab/questions/KOT-02.md",
+    "route": "/lab/questions/kot-02/"
+  },
+  "KOT-03": {
+    "record": "Interview-Lab/questions/KOT-03.md",
+    "route": "/lab/questions/kot-03/"
+  },
+  "KOT-04": {
+    "record": "Interview-Lab/questions/KOT-04.md",
+    "route": "/lab/questions/kot-04/"
+  },
+  "KOT-05": {
+    "record": "Interview-Lab/questions/KOT-05.md",
+    "route": "/lab/questions/kot-05/"
+  },
+  "KOT-06": {
+    "record": "Interview-Lab/questions/KOT-06.md",
+    "route": "/lab/questions/kot-06/"
+  },
+  "KOT-07": {
+    "record": "Interview-Lab/questions/KOT-07.md",
+    "route": "/lab/questions/kot-07/"
+  },
+  "KOT-08": {
+    "record": "Interview-Lab/questions/KOT-08.md",
+    "route": "/lab/questions/kot-08/"
+  },
+  "KOT-09": {
+    "record": "Interview-Lab/questions/KOT-09.md",
+    "route": "/lab/questions/kot-09/"
+  },
+  "KOT-10": {
+    "record": "Interview-Lab/questions/KOT-10.md",
+    "route": "/lab/questions/kot-10/"
+  },
+  "KOT-11": {
+    "record": "Interview-Lab/questions/KOT-11.md",
+    "route": "/lab/questions/kot-11/"
+  },
+  "KOT-12": {
+    "record": "Interview-Lab/questions/KOT-12.md",
+    "route": "/lab/questions/kot-12/"
+  },
+  "KOT-13": {
+    "record": "Interview-Lab/questions/KOT-13.md",
+    "route": "/lab/questions/kot-13/"
+  },
+  "KOT-14": {
+    "record": "Interview-Lab/questions/KOT-14.md",
+    "route": "/lab/questions/kot-14/"
+  },
+  "KOT-15": {
+    "record": "Interview-Lab/questions/KOT-15.md",
+    "route": "/lab/questions/kot-15/"
+  },
+  "KOT-16": {
+    "record": "Interview-Lab/questions/KOT-16.md",
+    "route": "/lab/questions/kot-16/"
+  },
+  "KOT-17": {
+    "record": "Interview-Lab/questions/KOT-17.md",
+    "route": "/lab/questions/kot-17/"
+  },
+  "KOT-18": {
+    "record": "Interview-Lab/questions/KOT-18.md",
+    "route": "/lab/questions/kot-18/"
+  },
+  "KOT-19": {
+    "record": "Interview-Lab/questions/KOT-19.md",
+    "route": "/lab/questions/kot-19/"
+  },
+  "KOT-20": {
+    "record": "Interview-Lab/questions/KOT-20.md",
+    "route": "/lab/questions/kot-20/"
+  },
+  "KOT-21": {
+    "record": "Interview-Lab/questions/KOT-21.md",
+    "route": "/lab/questions/kot-21/"
+  },
+  "KOT-22": {
+    "record": "Interview-Lab/questions/KOT-22.md",
+    "route": "/lab/questions/kot-22/"
+  },
+  "KOT-23": {
+    "record": "Interview-Lab/questions/KOT-23.md",
+    "route": "/lab/questions/kot-23/"
+  },
+  "KOT-24": {
+    "record": "Interview-Lab/questions/KOT-24.md",
+    "route": "/lab/questions/kot-24/"
+  },
+  "KOT-25": {
+    "record": "Interview-Lab/questions/KOT-25.md",
+    "route": "/lab/questions/kot-25/"
+  },
+  "KOT-26": {
+    "record": "Interview-Lab/questions/KOT-26.md",
+    "route": "/lab/questions/kot-26/"
+  },
+  "KOT-27": {
+    "record": "Interview-Lab/questions/KOT-27.md",
+    "route": "/lab/questions/kot-27/"
+  },
+  "KOT-28": {
+    "record": "Interview-Lab/questions/KOT-28.md",
+    "route": "/lab/questions/kot-28/"
+  },
+  "KOT-29": {
+    "record": "Interview-Lab/questions/KOT-29.md",
+    "route": "/lab/questions/kot-29/"
+  },
+  "KOT-30": {
+    "record": "Interview-Lab/questions/KOT-30.md",
+    "route": "/lab/questions/kot-30/"
+  },
+  "AND-01": {
+    "record": "Interview-Lab/questions/AND-01.md",
+    "route": "/lab/questions/and-01/"
+  },
+  "AND-02": {
+    "record": "Interview-Lab/questions/AND-02.md",
+    "route": "/lab/questions/and-02/"
+  },
+  "AND-03": {
+    "record": "Interview-Lab/questions/AND-03.md",
+    "route": "/lab/questions/and-03/"
+  },
+  "AND-04": {
+    "record": "Interview-Lab/questions/AND-04.md",
+    "route": "/lab/questions/and-04/"
+  },
+  "AND-05": {
+    "record": "Interview-Lab/questions/AND-05.md",
+    "route": "/lab/questions/and-05/"
+  },
+  "AND-06": {
+    "record": "Interview-Lab/questions/AND-06.md",
+    "route": "/lab/questions/and-06/"
+  },
+  "AND-07": {
+    "record": "Interview-Lab/questions/AND-07.md",
+    "route": "/lab/questions/and-07/"
+  },
+  "AND-08": {
+    "record": "Interview-Lab/questions/AND-08.md",
+    "route": "/lab/questions/and-08/"
+  },
+  "AND-09": {
+    "record": "Interview-Lab/questions/AND-09.md",
+    "route": "/lab/questions/and-09/"
+  },
+  "AND-10": {
+    "record": "Interview-Lab/questions/AND-10.md",
+    "route": "/lab/questions/and-10/"
+  },
+  "AND-11": {
+    "record": "Interview-Lab/questions/AND-11.md",
+    "route": "/lab/questions/and-11/"
+  },
+  "AND-12": {
+    "record": "Interview-Lab/questions/AND-12.md",
+    "route": "/lab/questions/and-12/"
+  },
+  "AND-13": {
+    "record": "Interview-Lab/questions/AND-13.md",
+    "route": "/lab/questions/and-13/"
+  },
+  "AND-14": {
+    "record": "Interview-Lab/questions/AND-14.md",
+    "route": "/lab/questions/and-14/"
+  },
+  "AND-15": {
+    "record": "Interview-Lab/questions/AND-15.md",
+    "route": "/lab/questions/and-15/"
+  },
+  "AND-16": {
+    "record": "Interview-Lab/questions/AND-16.md",
+    "route": "/lab/questions/and-16/"
+  },
+  "AND-17": {
+    "record": "Interview-Lab/questions/AND-17.md",
+    "route": "/lab/questions/and-17/"
+  },
+  "AND-18": {
+    "record": "Interview-Lab/questions/AND-18.md",
+    "route": "/lab/questions/and-18/"
+  },
+  "AND-19": {
+    "record": "Interview-Lab/questions/AND-19.md",
+    "route": "/lab/questions/and-19/"
+  },
+  "AND-20": {
+    "record": "Interview-Lab/questions/AND-20.md",
+    "route": "/lab/questions/and-20/"
+  },
+  "AND-21": {
+    "record": "Interview-Lab/questions/AND-21.md",
+    "route": "/lab/questions/and-21/"
+  },
+  "AND-22": {
+    "record": "Interview-Lab/questions/AND-22.md",
+    "route": "/lab/questions/and-22/"
+  },
+  "AND-23": {
+    "record": "Interview-Lab/questions/AND-23.md",
+    "route": "/lab/questions/and-23/"
+  },
+  "AND-24": {
+    "record": "Interview-Lab/questions/AND-24.md",
+    "route": "/lab/questions/and-24/"
+  },
+  "AND-25": {
+    "record": "Interview-Lab/questions/AND-25.md",
+    "route": "/lab/questions/and-25/"
+  },
+  "MEM-01": {
+    "record": "Interview-Lab/questions/MEM-01.md",
+    "route": "/lab/questions/mem-01/"
+  },
+  "MEM-02": {
+    "record": "Interview-Lab/questions/MEM-02.md",
+    "route": "/lab/questions/mem-02/"
+  },
+  "MEM-03": {
+    "record": "Interview-Lab/questions/MEM-03.md",
+    "route": "/lab/questions/mem-03/"
+  },
+  "MEM-04": {
+    "record": "Interview-Lab/questions/MEM-04.md",
+    "route": "/lab/questions/mem-04/"
+  },
+  "MEM-05": {
+    "record": "Interview-Lab/questions/MEM-05.md",
+    "route": "/lab/questions/mem-05/"
+  },
+  "MEM-06": {
+    "record": "Interview-Lab/questions/MEM-06.md",
+    "route": "/lab/questions/mem-06/"
+  },
+  "MEM-07": {
+    "record": "Interview-Lab/questions/MEM-07.md",
+    "route": "/lab/questions/mem-07/"
+  },
+  "MEM-08": {
+    "record": "Interview-Lab/questions/MEM-08.md",
+    "route": "/lab/questions/mem-08/"
+  },
+  "MEM-09": {
+    "record": "Interview-Lab/questions/MEM-09.md",
+    "route": "/lab/questions/mem-09/"
+  },
+  "MEM-10": {
+    "record": "Interview-Lab/questions/MEM-10.md",
+    "route": "/lab/questions/mem-10/"
+  },
+  "MEM-11": {
+    "record": "Interview-Lab/questions/MEM-11.md",
+    "route": "/lab/questions/mem-11/"
+  },
+  "MEM-12": {
+    "record": "Interview-Lab/questions/MEM-12.md",
+    "route": "/lab/questions/mem-12/"
+  },
+  "MEM-13": {
+    "record": "Interview-Lab/questions/MEM-13.md",
+    "route": "/lab/questions/mem-13/"
+  },
+  "MEM-14": {
+    "record": "Interview-Lab/questions/MEM-14.md",
+    "route": "/lab/questions/mem-14/"
+  },
+  "MEM-15": {
+    "record": "Interview-Lab/questions/MEM-15.md",
+    "route": "/lab/questions/mem-15/"
+  },
+  "MEM-16": {
+    "record": "Interview-Lab/questions/MEM-16.md",
+    "route": "/lab/questions/mem-16/"
+  },
+  "MEM-17": {
+    "record": "Interview-Lab/questions/MEM-17.md",
+    "route": "/lab/questions/mem-17/"
+  },
+  "MEM-18": {
+    "record": "Interview-Lab/questions/MEM-18.md",
+    "route": "/lab/questions/mem-18/"
+  },
+  "MEM-19": {
+    "record": "Interview-Lab/questions/MEM-19.md",
+    "route": "/lab/questions/mem-19/"
+  },
+  "MEM-20": {
+    "record": "Interview-Lab/questions/MEM-20.md",
+    "route": "/lab/questions/mem-20/"
+  },
+  "MEM-21": {
+    "record": "Interview-Lab/questions/MEM-21.md",
+    "route": "/lab/questions/mem-21/"
+  },
+  "MEM-22": {
+    "record": "Interview-Lab/questions/MEM-22.md",
+    "route": "/lab/questions/mem-22/"
+  },
+  "MEM-23": {
+    "record": "Interview-Lab/questions/MEM-23.md",
+    "route": "/lab/questions/mem-23/"
+  },
+  "MEM-24": {
+    "record": "Interview-Lab/questions/MEM-24.md",
+    "route": "/lab/questions/mem-24/"
+  },
+  "MEM-25": {
+    "record": "Interview-Lab/questions/MEM-25.md",
+    "route": "/lab/questions/mem-25/"
+  },
+  "MEM-26": {
+    "record": "Interview-Lab/questions/MEM-26.md",
+    "route": "/lab/questions/mem-26/"
+  },
+  "COR-01": {
+    "record": "Interview-Lab/questions/COR-01.md",
+    "route": "/lab/questions/cor-01/"
+  },
+  "COR-02": {
+    "record": "Interview-Lab/questions/COR-02.md",
+    "route": "/lab/questions/cor-02/"
+  },
+  "COR-03": {
+    "record": "Interview-Lab/questions/COR-03.md",
+    "route": "/lab/questions/cor-03/"
+  },
+  "COR-04": {
+    "record": "Interview-Lab/questions/COR-04.md",
+    "route": "/lab/questions/cor-04/"
+  },
+  "COR-05": {
+    "record": "Interview-Lab/questions/COR-05.md",
+    "route": "/lab/questions/cor-05/"
+  },
+  "COR-06": {
+    "record": "Interview-Lab/questions/COR-06.md",
+    "route": "/lab/questions/cor-06/"
+  },
+  "COR-07": {
+    "record": "Interview-Lab/questions/COR-07.md",
+    "route": "/lab/questions/cor-07/"
+  },
+  "COR-08": {
+    "record": "Interview-Lab/questions/COR-08.md",
+    "route": "/lab/questions/cor-08/"
+  },
+  "COR-09": {
+    "record": "Interview-Lab/questions/COR-09.md",
+    "route": "/lab/questions/cor-09/"
+  },
+  "COR-10": {
+    "record": "Interview-Lab/questions/COR-10.md",
+    "route": "/lab/questions/cor-10/"
+  },
+  "COR-11": {
+    "record": "Interview-Lab/questions/COR-11.md",
+    "route": "/lab/questions/cor-11/"
+  },
+  "COR-12": {
+    "record": "Interview-Lab/questions/COR-12.md",
+    "route": "/lab/questions/cor-12/"
+  },
+  "COR-13": {
+    "record": "Interview-Lab/questions/COR-13.md",
+    "route": "/lab/questions/cor-13/"
+  },
+  "COR-14": {
+    "record": "Interview-Lab/questions/COR-14.md",
+    "route": "/lab/questions/cor-14/"
+  },
+  "COR-15": {
+    "record": "Interview-Lab/questions/COR-15.md",
+    "route": "/lab/questions/cor-15/"
+  },
+  "COR-16": {
+    "record": "Interview-Lab/questions/COR-16.md",
+    "route": "/lab/questions/cor-16/"
+  },
+  "COR-17": {
+    "record": "Interview-Lab/questions/COR-17.md",
+    "route": "/lab/questions/cor-17/"
+  },
+  "COR-18": {
+    "record": "Interview-Lab/questions/COR-18.md",
+    "route": "/lab/questions/cor-18/"
+  },
+  "COR-19": {
+    "record": "Interview-Lab/questions/COR-19.md",
+    "route": "/lab/questions/cor-19/"
+  },
+  "COR-20": {
+    "record": "Interview-Lab/questions/COR-20.md",
+    "route": "/lab/questions/cor-20/"
+  },
+  "COR-21": {
+    "record": "Interview-Lab/questions/COR-21.md",
+    "route": "/lab/questions/cor-21/"
+  },
+  "COR-22": {
+    "record": "Interview-Lab/questions/COR-22.md",
+    "route": "/lab/questions/cor-22/"
+  },
+  "COR-23": {
+    "record": "Interview-Lab/questions/COR-23.md",
+    "route": "/lab/questions/cor-23/"
+  },
+  "COR-24": {
+    "record": "Interview-Lab/questions/COR-24.md",
+    "route": "/lab/questions/cor-24/"
+  },
+  "COR-25": {
+    "record": "Interview-Lab/questions/COR-25.md",
+    "route": "/lab/questions/cor-25/"
+  },
+  "COR-26": {
+    "record": "Interview-Lab/questions/COR-26.md",
+    "route": "/lab/questions/cor-26/"
+  },
+  "COR-27": {
+    "record": "Interview-Lab/questions/COR-27.md",
+    "route": "/lab/questions/cor-27/"
+  },
+  "COR-28": {
+    "record": "Interview-Lab/questions/COR-28.md",
+    "route": "/lab/questions/cor-28/"
+  },
+  "COR-29": {
+    "record": "Interview-Lab/questions/COR-29.md",
+    "route": "/lab/questions/cor-29/"
+  },
+  "COR-30": {
+    "record": "Interview-Lab/questions/COR-30.md",
+    "route": "/lab/questions/cor-30/"
+  },
+  "COR-31": {
+    "record": "Interview-Lab/questions/COR-31.md",
+    "route": "/lab/questions/cor-31/"
+  },
+  "COR-32": {
+    "record": "Interview-Lab/questions/COR-32.md",
+    "route": "/lab/questions/cor-32/"
+  },
+  "FLO-01": {
+    "record": "Interview-Lab/questions/FLO-01.md",
+    "route": "/lab/questions/flo-01/"
+  },
+  "FLO-02": {
+    "record": "Interview-Lab/questions/FLO-02.md",
+    "route": "/lab/questions/flo-02/"
+  },
+  "FLO-03": {
+    "record": "Interview-Lab/questions/FLO-03.md",
+    "route": "/lab/questions/flo-03/"
+  },
+  "FLO-04": {
+    "record": "Interview-Lab/questions/FLO-04.md",
+    "route": "/lab/questions/flo-04/"
+  },
+  "FLO-05": {
+    "record": "Interview-Lab/questions/FLO-05.md",
+    "route": "/lab/questions/flo-05/"
+  },
+  "FLO-06": {
+    "record": "Interview-Lab/questions/FLO-06.md",
+    "route": "/lab/questions/flo-06/"
+  },
+  "FLO-07": {
+    "record": "Interview-Lab/questions/FLO-07.md",
+    "route": "/lab/questions/flo-07/"
+  },
+  "FLO-08": {
+    "record": "Interview-Lab/questions/FLO-08.md",
+    "route": "/lab/questions/flo-08/"
+  },
+  "FLO-09": {
+    "record": "Interview-Lab/questions/FLO-09.md",
+    "route": "/lab/questions/flo-09/"
+  },
+  "FLO-10": {
+    "record": "Interview-Lab/questions/FLO-10.md",
+    "route": "/lab/questions/flo-10/"
+  },
+  "FLO-11": {
+    "record": "Interview-Lab/questions/FLO-11.md",
+    "route": "/lab/questions/flo-11/"
+  },
+  "FLO-12": {
+    "record": "Interview-Lab/questions/FLO-12.md",
+    "route": "/lab/questions/flo-12/"
+  },
+  "FLO-13": {
+    "record": "Interview-Lab/questions/FLO-13.md",
+    "route": "/lab/questions/flo-13/"
+  },
+  "FLO-14": {
+    "record": "Interview-Lab/questions/FLO-14.md",
+    "route": "/lab/questions/flo-14/"
+  },
+  "FLO-15": {
+    "record": "Interview-Lab/questions/FLO-15.md",
+    "route": "/lab/questions/flo-15/"
+  },
+  "FLO-16": {
+    "record": "Interview-Lab/questions/FLO-16.md",
+    "route": "/lab/questions/flo-16/"
+  },
+  "FLO-17": {
+    "record": "Interview-Lab/questions/FLO-17.md",
+    "route": "/lab/questions/flo-17/"
+  },
+  "FLO-18": {
+    "record": "Interview-Lab/questions/FLO-18.md",
+    "route": "/lab/questions/flo-18/"
+  },
+  "FLO-19": {
+    "record": "Interview-Lab/questions/FLO-19.md",
+    "route": "/lab/questions/flo-19/"
+  },
+  "FLO-20": {
+    "record": "Interview-Lab/questions/FLO-20.md",
+    "route": "/lab/questions/flo-20/"
+  },
+  "FLO-21": {
+    "record": "Interview-Lab/questions/FLO-21.md",
+    "route": "/lab/questions/flo-21/"
+  },
+  "FLO-22": {
+    "record": "Interview-Lab/questions/FLO-22.md",
+    "route": "/lab/questions/flo-22/"
+  },
+  "FLO-23": {
+    "record": "Interview-Lab/questions/FLO-23.md",
+    "route": "/lab/questions/flo-23/"
+  },
+  "FLO-24": {
+    "record": "Interview-Lab/questions/FLO-24.md",
+    "route": "/lab/questions/flo-24/"
+  },
+  "FLO-25": {
+    "record": "Interview-Lab/questions/FLO-25.md",
+    "route": "/lab/questions/flo-25/"
+  },
+  "FLO-26": {
+    "record": "Interview-Lab/questions/FLO-26.md",
+    "route": "/lab/questions/flo-26/"
+  },
+  "FLO-27": {
+    "record": "Interview-Lab/questions/FLO-27.md",
+    "route": "/lab/questions/flo-27/"
+  },
+  "FLO-28": {
+    "record": "Interview-Lab/questions/FLO-28.md",
+    "route": "/lab/questions/flo-28/"
+  },
+  "FLO-29": {
+    "record": "Interview-Lab/questions/FLO-29.md",
+    "route": "/lab/questions/flo-29/"
+  },
+  "FLO-30": {
+    "record": "Interview-Lab/questions/FLO-30.md",
+    "route": "/lab/questions/flo-30/"
+  },
+  "FLO-31": {
+    "record": "Interview-Lab/questions/FLO-31.md",
+    "route": "/lab/questions/flo-31/"
+  },
+  "FLO-32": {
+    "record": "Interview-Lab/questions/FLO-32.md",
+    "route": "/lab/questions/flo-32/"
+  },
+  "ARC-01": {
+    "record": "Interview-Lab/questions/ARC-01.md",
+    "route": "/lab/questions/arc-01/"
+  },
+  "ARC-02": {
+    "record": "Interview-Lab/questions/ARC-02.md",
+    "route": "/lab/questions/arc-02/"
+  },
+  "ARC-03": {
+    "record": "Interview-Lab/questions/ARC-03.md",
+    "route": "/lab/questions/arc-03/"
+  },
+  "ARC-04": {
+    "record": "Interview-Lab/questions/ARC-04.md",
+    "route": "/lab/questions/arc-04/"
+  },
+  "ARC-05": {
+    "record": "Interview-Lab/questions/ARC-05.md",
+    "route": "/lab/questions/arc-05/"
+  },
+  "ARC-06": {
+    "record": "Interview-Lab/questions/ARC-06.md",
+    "route": "/lab/questions/arc-06/"
+  },
+  "ARC-07": {
+    "record": "Interview-Lab/questions/ARC-07.md",
+    "route": "/lab/questions/arc-07/"
+  },
+  "ARC-08": {
+    "record": "Interview-Lab/questions/ARC-08.md",
+    "route": "/lab/questions/arc-08/"
+  },
+  "ARC-09": {
+    "record": "Interview-Lab/questions/ARC-09.md",
+    "route": "/lab/questions/arc-09/"
+  },
+  "ARC-10": {
+    "record": "Interview-Lab/questions/ARC-10.md",
+    "route": "/lab/questions/arc-10/"
+  },
+  "ARC-11": {
+    "record": "Interview-Lab/questions/ARC-11.md",
+    "route": "/lab/questions/arc-11/"
+  },
+  "ARC-12": {
+    "record": "Interview-Lab/questions/ARC-12.md",
+    "route": "/lab/questions/arc-12/"
+  },
+  "ARC-13": {
+    "record": "Interview-Lab/questions/ARC-13.md",
+    "route": "/lab/questions/arc-13/"
+  },
+  "ARC-14": {
+    "record": "Interview-Lab/questions/ARC-14.md",
+    "route": "/lab/questions/arc-14/"
+  },
+  "ARC-15": {
+    "record": "Interview-Lab/questions/ARC-15.md",
+    "route": "/lab/questions/arc-15/"
+  },
+  "ARC-16": {
+    "record": "Interview-Lab/questions/ARC-16.md",
+    "route": "/lab/questions/arc-16/"
+  },
+  "ARC-17": {
+    "record": "Interview-Lab/questions/ARC-17.md",
+    "route": "/lab/questions/arc-17/"
+  },
+  "ARC-18": {
+    "record": "Interview-Lab/questions/ARC-18.md",
+    "route": "/lab/questions/arc-18/"
+  },
+  "ARC-19": {
+    "record": "Interview-Lab/questions/ARC-19.md",
+    "route": "/lab/questions/arc-19/"
+  },
+  "ARC-20": {
+    "record": "Interview-Lab/questions/ARC-20.md",
+    "route": "/lab/questions/arc-20/"
+  },
+  "ARC-21": {
+    "record": "Interview-Lab/questions/ARC-21.md",
+    "route": "/lab/questions/arc-21/"
+  },
+  "ARC-22": {
+    "record": "Interview-Lab/questions/ARC-22.md",
+    "route": "/lab/questions/arc-22/"
+  },
+  "ARC-23": {
+    "record": "Interview-Lab/questions/ARC-23.md",
+    "route": "/lab/questions/arc-23/"
+  },
+  "ARC-24": {
+    "record": "Interview-Lab/questions/ARC-24.md",
+    "route": "/lab/questions/arc-24/"
+  },
+  "ARC-25": {
+    "record": "Interview-Lab/questions/ARC-25.md",
+    "route": "/lab/questions/arc-25/"
+  },
+  "ARC-26": {
+    "record": "Interview-Lab/questions/ARC-26.md",
+    "route": "/lab/questions/arc-26/"
+  },
+  "SOL-01": {
+    "record": "Interview-Lab/questions/SOL-01.md",
+    "route": "/lab/questions/sol-01/"
+  },
+  "SOL-02": {
+    "record": "Interview-Lab/questions/SOL-02.md",
+    "route": "/lab/questions/sol-02/"
+  },
+  "SOL-03": {
+    "record": "Interview-Lab/questions/SOL-03.md",
+    "route": "/lab/questions/sol-03/"
+  },
+  "SOL-04": {
+    "record": "Interview-Lab/questions/SOL-04.md",
+    "route": "/lab/questions/sol-04/"
+  },
+  "SOL-05": {
+    "record": "Interview-Lab/questions/SOL-05.md",
+    "route": "/lab/questions/sol-05/"
+  },
+  "SOL-06": {
+    "record": "Interview-Lab/questions/SOL-06.md",
+    "route": "/lab/questions/sol-06/"
+  },
+  "SOL-07": {
+    "record": "Interview-Lab/questions/SOL-07.md",
+    "route": "/lab/questions/sol-07/"
+  },
+  "SOL-08": {
+    "record": "Interview-Lab/questions/SOL-08.md",
+    "route": "/lab/questions/sol-08/"
+  },
+  "SOL-09": {
+    "record": "Interview-Lab/questions/SOL-09.md",
+    "route": "/lab/questions/sol-09/"
+  },
+  "SOL-10": {
+    "record": "Interview-Lab/questions/SOL-10.md",
+    "route": "/lab/questions/sol-10/"
+  },
+  "SOL-11": {
+    "record": "Interview-Lab/questions/SOL-11.md",
+    "route": "/lab/questions/sol-11/"
+  },
+  "SOL-12": {
+    "record": "Interview-Lab/questions/SOL-12.md",
+    "route": "/lab/questions/sol-12/"
+  },
+  "SOL-13": {
+    "record": "Interview-Lab/questions/SOL-13.md",
+    "route": "/lab/questions/sol-13/"
+  },
+  "SOL-14": {
+    "record": "Interview-Lab/questions/SOL-14.md",
+    "route": "/lab/questions/sol-14/"
+  },
+  "SOL-15": {
+    "record": "Interview-Lab/questions/SOL-15.md",
+    "route": "/lab/questions/sol-15/"
+  },
+  "SOL-16": {
+    "record": "Interview-Lab/questions/SOL-16.md",
+    "route": "/lab/questions/sol-16/"
+  },
+  "SOL-17": {
+    "record": "Interview-Lab/questions/SOL-17.md",
+    "route": "/lab/questions/sol-17/"
+  },
+  "SOL-18": {
+    "record": "Interview-Lab/questions/SOL-18.md",
+    "route": "/lab/questions/sol-18/"
+  },
+  "SOL-19": {
+    "record": "Interview-Lab/questions/SOL-19.md",
+    "route": "/lab/questions/sol-19/"
+  },
+  "SOL-20": {
+    "record": "Interview-Lab/questions/SOL-20.md",
+    "route": "/lab/questions/sol-20/"
+  },
+  "PAT-01": {
+    "record": "Interview-Lab/questions/PAT-01.md",
+    "route": "/lab/questions/pat-01/"
+  },
+  "PAT-02": {
+    "record": "Interview-Lab/questions/PAT-02.md",
+    "route": "/lab/questions/pat-02/"
+  },
+  "PAT-03": {
+    "record": "Interview-Lab/questions/PAT-03.md",
+    "route": "/lab/questions/pat-03/"
+  },
+  "PAT-04": {
+    "record": "Interview-Lab/questions/PAT-04.md",
+    "route": "/lab/questions/pat-04/"
+  },
+  "PAT-05": {
+    "record": "Interview-Lab/questions/PAT-05.md",
+    "route": "/lab/questions/pat-05/"
+  },
+  "PAT-06": {
+    "record": "Interview-Lab/questions/PAT-06.md",
+    "route": "/lab/questions/pat-06/"
+  },
+  "PAT-07": {
+    "record": "Interview-Lab/questions/PAT-07.md",
+    "route": "/lab/questions/pat-07/"
+  },
+  "PAT-08": {
+    "record": "Interview-Lab/questions/PAT-08.md",
+    "route": "/lab/questions/pat-08/"
+  },
+  "PAT-09": {
+    "record": "Interview-Lab/questions/PAT-09.md",
+    "route": "/lab/questions/pat-09/"
+  },
+  "PAT-10": {
+    "record": "Interview-Lab/questions/PAT-10.md",
+    "route": "/lab/questions/pat-10/"
+  },
+  "PAT-11": {
+    "record": "Interview-Lab/questions/PAT-11.md",
+    "route": "/lab/questions/pat-11/"
+  },
+  "PAT-12": {
+    "record": "Interview-Lab/questions/PAT-12.md",
+    "route": "/lab/questions/pat-12/"
+  },
+  "PAT-13": {
+    "record": "Interview-Lab/questions/PAT-13.md",
+    "route": "/lab/questions/pat-13/"
+  },
+  "PAT-14": {
+    "record": "Interview-Lab/questions/PAT-14.md",
+    "route": "/lab/questions/pat-14/"
+  },
+  "PAT-15": {
+    "record": "Interview-Lab/questions/PAT-15.md",
+    "route": "/lab/questions/pat-15/"
+  },
+  "PAT-16": {
+    "record": "Interview-Lab/questions/PAT-16.md",
+    "route": "/lab/questions/pat-16/"
+  },
+  "PAT-17": {
+    "record": "Interview-Lab/questions/PAT-17.md",
+    "route": "/lab/questions/pat-17/"
+  },
+  "PAT-18": {
+    "record": "Interview-Lab/questions/PAT-18.md",
+    "route": "/lab/questions/pat-18/"
+  },
+  "DI-01": {
+    "record": "Interview-Lab/questions/DI-01.md",
+    "route": "/lab/questions/di-01/"
+  },
+  "DI-02": {
+    "record": "Interview-Lab/questions/DI-02.md",
+    "route": "/lab/questions/di-02/"
+  },
+  "DI-03": {
+    "record": "Interview-Lab/questions/DI-03.md",
+    "route": "/lab/questions/di-03/"
+  },
+  "DI-04": {
+    "record": "Interview-Lab/questions/DI-04.md",
+    "route": "/lab/questions/di-04/"
+  },
+  "DI-05": {
+    "record": "Interview-Lab/questions/DI-05.md",
+    "route": "/lab/questions/di-05/"
+  },
+  "DI-06": {
+    "record": "Interview-Lab/questions/DI-06.md",
+    "route": "/lab/questions/di-06/"
+  },
+  "DI-07": {
+    "record": "Interview-Lab/questions/DI-07.md",
+    "route": "/lab/questions/di-07/"
+  },
+  "DI-08": {
+    "record": "Interview-Lab/questions/DI-08.md",
+    "route": "/lab/questions/di-08/"
+  },
+  "DI-09": {
+    "record": "Interview-Lab/questions/DI-09.md",
+    "route": "/lab/questions/di-09/"
+  },
+  "DI-10": {
+    "record": "Interview-Lab/questions/DI-10.md",
+    "route": "/lab/questions/di-10/"
+  },
+  "DI-11": {
+    "record": "Interview-Lab/questions/DI-11.md",
+    "route": "/lab/questions/di-11/"
+  },
+  "DI-12": {
+    "record": "Interview-Lab/questions/DI-12.md",
+    "route": "/lab/questions/di-12/"
+  },
+  "DI-13": {
+    "record": "Interview-Lab/questions/DI-13.md",
+    "route": "/lab/questions/di-13/"
+  },
+  "DI-14": {
+    "record": "Interview-Lab/questions/DI-14.md",
+    "route": "/lab/questions/di-14/"
+  },
+  "DI-15": {
+    "record": "Interview-Lab/questions/DI-15.md",
+    "route": "/lab/questions/di-15/"
+  },
+  "DI-16": {
+    "record": "Interview-Lab/questions/DI-16.md",
+    "route": "/lab/questions/di-16/"
+  },
+  "DI-17": {
+    "record": "Interview-Lab/questions/DI-17.md",
+    "route": "/lab/questions/di-17/"
+  },
+  "DI-18": {
+    "record": "Interview-Lab/questions/DI-18.md",
+    "route": "/lab/questions/di-18/"
+  },
+  "DI-19": {
+    "record": "Interview-Lab/questions/DI-19.md",
+    "route": "/lab/questions/di-19/"
+  },
+  "DI-20": {
+    "record": "Interview-Lab/questions/DI-20.md",
+    "route": "/lab/questions/di-20/"
+  },
+  "COM-01": {
+    "record": "Interview-Lab/questions/COM-01.md",
+    "route": "/lab/questions/com-01/"
+  },
+  "COM-02": {
+    "record": "Interview-Lab/questions/COM-02.md",
+    "route": "/lab/questions/com-02/"
+  },
+  "COM-03": {
+    "record": "Interview-Lab/questions/COM-03.md",
+    "route": "/lab/questions/com-03/"
+  },
+  "COM-04": {
+    "record": "Interview-Lab/questions/COM-04.md",
+    "route": "/lab/questions/com-04/"
+  },
+  "COM-05": {
+    "record": "Interview-Lab/questions/COM-05.md",
+    "route": "/lab/questions/com-05/"
+  },
+  "COM-06": {
+    "record": "Interview-Lab/questions/COM-06.md",
+    "route": "/lab/questions/com-06/"
+  },
+  "COM-07": {
+    "record": "Interview-Lab/questions/COM-07.md",
+    "route": "/lab/questions/com-07/"
+  },
+  "COM-08": {
+    "record": "Interview-Lab/questions/COM-08.md",
+    "route": "/lab/questions/com-08/"
+  },
+  "COM-09": {
+    "record": "Interview-Lab/questions/COM-09.md",
+    "route": "/lab/questions/com-09/"
+  },
+  "COM-10": {
+    "record": "Interview-Lab/questions/COM-10.md",
+    "route": "/lab/questions/com-10/"
+  },
+  "COM-11": {
+    "record": "Interview-Lab/questions/COM-11.md",
+    "route": "/lab/questions/com-11/"
+  },
+  "COM-12": {
+    "record": "Interview-Lab/questions/COM-12.md",
+    "route": "/lab/questions/com-12/"
+  },
+  "COM-13": {
+    "record": "Interview-Lab/questions/COM-13.md",
+    "route": "/lab/questions/com-13/"
+  },
+  "COM-14": {
+    "record": "Interview-Lab/questions/COM-14.md",
+    "route": "/lab/questions/com-14/"
+  },
+  "COM-15": {
+    "record": "Interview-Lab/questions/COM-15.md",
+    "route": "/lab/questions/com-15/"
+  },
+  "COM-16": {
+    "record": "Interview-Lab/questions/COM-16.md",
+    "route": "/lab/questions/com-16/"
+  },
+  "COM-17": {
+    "record": "Interview-Lab/questions/COM-17.md",
+    "route": "/lab/questions/com-17/"
+  },
+  "COM-18": {
+    "record": "Interview-Lab/questions/COM-18.md",
+    "route": "/lab/questions/com-18/"
+  },
+  "COM-19": {
+    "record": "Interview-Lab/questions/COM-19.md",
+    "route": "/lab/questions/com-19/"
+  },
+  "COM-20": {
+    "record": "Interview-Lab/questions/COM-20.md",
+    "route": "/lab/questions/com-20/"
+  },
+  "COM-21": {
+    "record": "Interview-Lab/questions/COM-21.md",
+    "route": "/lab/questions/com-21/"
+  },
+  "COM-22": {
+    "record": "Interview-Lab/questions/COM-22.md",
+    "route": "/lab/questions/com-22/"
+  },
+  "COM-23": {
+    "record": "Interview-Lab/questions/COM-23.md",
+    "route": "/lab/questions/com-23/"
+  },
+  "COM-24": {
+    "record": "Interview-Lab/questions/COM-24.md",
+    "route": "/lab/questions/com-24/"
+  },
+  "COM-25": {
+    "record": "Interview-Lab/questions/COM-25.md",
+    "route": "/lab/questions/com-25/"
+  },
+  "COM-26": {
+    "record": "Interview-Lab/questions/COM-26.md",
+    "route": "/lab/questions/com-26/"
+  },
+  "COM-27": {
+    "record": "Interview-Lab/questions/COM-27.md",
+    "route": "/lab/questions/com-27/"
+  },
+  "COM-28": {
+    "record": "Interview-Lab/questions/COM-28.md",
+    "route": "/lab/questions/com-28/"
+  },
+  "DAT-01": {
+    "record": "Interview-Lab/questions/DAT-01.md",
+    "route": "/lab/questions/dat-01/"
+  },
+  "DAT-02": {
+    "record": "Interview-Lab/questions/DAT-02.md",
+    "route": "/lab/questions/dat-02/"
+  },
+  "DAT-03": {
+    "record": "Interview-Lab/questions/DAT-03.md",
+    "route": "/lab/questions/dat-03/"
+  },
+  "DAT-04": {
+    "record": "Interview-Lab/questions/DAT-04.md",
+    "route": "/lab/questions/dat-04/"
+  },
+  "DAT-05": {
+    "record": "Interview-Lab/questions/DAT-05.md",
+    "route": "/lab/questions/dat-05/"
+  },
+  "DAT-06": {
+    "record": "Interview-Lab/questions/DAT-06.md",
+    "route": "/lab/questions/dat-06/"
+  },
+  "DAT-07": {
+    "record": "Interview-Lab/questions/DAT-07.md",
+    "route": "/lab/questions/dat-07/"
+  },
+  "DAT-08": {
+    "record": "Interview-Lab/questions/DAT-08.md",
+    "route": "/lab/questions/dat-08/"
+  },
+  "DAT-09": {
+    "record": "Interview-Lab/questions/DAT-09.md",
+    "route": "/lab/questions/dat-09/"
+  },
+  "DAT-10": {
+    "record": "Interview-Lab/questions/DAT-10.md",
+    "route": "/lab/questions/dat-10/"
+  },
+  "DAT-11": {
+    "record": "Interview-Lab/questions/DAT-11.md",
+    "route": "/lab/questions/dat-11/"
+  },
+  "DAT-12": {
+    "record": "Interview-Lab/questions/DAT-12.md",
+    "route": "/lab/questions/dat-12/"
+  },
+  "DAT-13": {
+    "record": "Interview-Lab/questions/DAT-13.md",
+    "route": "/lab/questions/dat-13/"
+  },
+  "DAT-14": {
+    "record": "Interview-Lab/questions/DAT-14.md",
+    "route": "/lab/questions/dat-14/"
+  },
+  "DAT-15": {
+    "record": "Interview-Lab/questions/DAT-15.md",
+    "route": "/lab/questions/dat-15/"
+  },
+  "DAT-16": {
+    "record": "Interview-Lab/questions/DAT-16.md",
+    "route": "/lab/questions/dat-16/"
+  },
+  "DAT-17": {
+    "record": "Interview-Lab/questions/DAT-17.md",
+    "route": "/lab/questions/dat-17/"
+  },
+  "DAT-18": {
+    "record": "Interview-Lab/questions/DAT-18.md",
+    "route": "/lab/questions/dat-18/"
+  },
+  "DAT-19": {
+    "record": "Interview-Lab/questions/DAT-19.md",
+    "route": "/lab/questions/dat-19/"
+  },
+  "DAT-20": {
+    "record": "Interview-Lab/questions/DAT-20.md",
+    "route": "/lab/questions/dat-20/"
+  },
+  "DAT-21": {
+    "record": "Interview-Lab/questions/DAT-21.md",
+    "route": "/lab/questions/dat-21/"
+  },
+  "DAT-22": {
+    "record": "Interview-Lab/questions/DAT-22.md",
+    "route": "/lab/questions/dat-22/"
+  },
+  "BG-01": {
+    "record": "Interview-Lab/questions/BG-01.md",
+    "route": "/lab/questions/bg-01/"
+  },
+  "BG-02": {
+    "record": "Interview-Lab/questions/BG-02.md",
+    "route": "/lab/questions/bg-02/"
+  },
+  "BG-03": {
+    "record": "Interview-Lab/questions/BG-03.md",
+    "route": "/lab/questions/bg-03/"
+  },
+  "BG-04": {
+    "record": "Interview-Lab/questions/BG-04.md",
+    "route": "/lab/questions/bg-04/"
+  },
+  "BG-05": {
+    "record": "Interview-Lab/questions/BG-05.md",
+    "route": "/lab/questions/bg-05/"
+  },
+  "BG-06": {
+    "record": "Interview-Lab/questions/BG-06.md",
+    "route": "/lab/questions/bg-06/"
+  },
+  "BG-07": {
+    "record": "Interview-Lab/questions/BG-07.md",
+    "route": "/lab/questions/bg-07/"
+  },
+  "BG-08": {
+    "record": "Interview-Lab/questions/BG-08.md",
+    "route": "/lab/questions/bg-08/"
+  },
+  "BG-09": {
+    "record": "Interview-Lab/questions/BG-09.md",
+    "route": "/lab/questions/bg-09/"
+  },
+  "BG-10": {
+    "record": "Interview-Lab/questions/BG-10.md",
+    "route": "/lab/questions/bg-10/"
+  },
+  "BG-11": {
+    "record": "Interview-Lab/questions/BG-11.md",
+    "route": "/lab/questions/bg-11/"
+  },
+  "BG-12": {
+    "record": "Interview-Lab/questions/BG-12.md",
+    "route": "/lab/questions/bg-12/"
+  },
+  "BG-13": {
+    "record": "Interview-Lab/questions/BG-13.md",
+    "route": "/lab/questions/bg-13/"
+  },
+  "BG-14": {
+    "record": "Interview-Lab/questions/BG-14.md",
+    "route": "/lab/questions/bg-14/"
+  },
+  "BG-15": {
+    "record": "Interview-Lab/questions/BG-15.md",
+    "route": "/lab/questions/bg-15/"
+  },
+  "BG-16": {
+    "record": "Interview-Lab/questions/BG-16.md",
+    "route": "/lab/questions/bg-16/"
+  },
+  "BG-17": {
+    "record": "Interview-Lab/questions/BG-17.md",
+    "route": "/lab/questions/bg-17/"
+  },
+  "BG-18": {
+    "record": "Interview-Lab/questions/BG-18.md",
+    "route": "/lab/questions/bg-18/"
+  },
+  "SEC-01": {
+    "record": "Interview-Lab/questions/SEC-01.md",
+    "route": "/lab/questions/sec-01/"
+  },
+  "SEC-02": {
+    "record": "Interview-Lab/questions/SEC-02.md",
+    "route": "/lab/questions/sec-02/"
+  },
+  "SEC-03": {
+    "record": "Interview-Lab/questions/SEC-03.md",
+    "route": "/lab/questions/sec-03/"
+  },
+  "SEC-04": {
+    "record": "Interview-Lab/questions/SEC-04.md",
+    "route": "/lab/questions/sec-04/"
+  },
+  "SEC-05": {
+    "record": "Interview-Lab/questions/SEC-05.md",
+    "route": "/lab/questions/sec-05/"
+  },
+  "SEC-06": {
+    "record": "Interview-Lab/questions/SEC-06.md",
+    "route": "/lab/questions/sec-06/"
+  },
+  "SEC-07": {
+    "record": "Interview-Lab/questions/SEC-07.md",
+    "route": "/lab/questions/sec-07/"
+  },
+  "SEC-08": {
+    "record": "Interview-Lab/questions/SEC-08.md",
+    "route": "/lab/questions/sec-08/"
+  },
+  "SEC-09": {
+    "record": "Interview-Lab/questions/SEC-09.md",
+    "route": "/lab/questions/sec-09/"
+  },
+  "SEC-10": {
+    "record": "Interview-Lab/questions/SEC-10.md",
+    "route": "/lab/questions/sec-10/"
+  },
+  "SEC-11": {
+    "record": "Interview-Lab/questions/SEC-11.md",
+    "route": "/lab/questions/sec-11/"
+  },
+  "SEC-12": {
+    "record": "Interview-Lab/questions/SEC-12.md",
+    "route": "/lab/questions/sec-12/"
+  },
+  "SEC-13": {
+    "record": "Interview-Lab/questions/SEC-13.md",
+    "route": "/lab/questions/sec-13/"
+  },
+  "SEC-14": {
+    "record": "Interview-Lab/questions/SEC-14.md",
+    "route": "/lab/questions/sec-14/"
+  },
+  "SEC-15": {
+    "record": "Interview-Lab/questions/SEC-15.md",
+    "route": "/lab/questions/sec-15/"
+  },
+  "SEC-16": {
+    "record": "Interview-Lab/questions/SEC-16.md",
+    "route": "/lab/questions/sec-16/"
+  },
+  "SEC-17": {
+    "record": "Interview-Lab/questions/SEC-17.md",
+    "route": "/lab/questions/sec-17/"
+  },
+  "SEC-18": {
+    "record": "Interview-Lab/questions/SEC-18.md",
+    "route": "/lab/questions/sec-18/"
+  },
+  "SEC-19": {
+    "record": "Interview-Lab/questions/SEC-19.md",
+    "route": "/lab/questions/sec-19/"
+  },
+  "SEC-20": {
+    "record": "Interview-Lab/questions/SEC-20.md",
+    "route": "/lab/questions/sec-20/"
+  },
+  "SEC-21": {
+    "record": "Interview-Lab/questions/SEC-21.md",
+    "route": "/lab/questions/sec-21/"
+  },
+  "SEC-22": {
+    "record": "Interview-Lab/questions/SEC-22.md",
+    "route": "/lab/questions/sec-22/"
+  },
+  "SEC-23": {
+    "record": "Interview-Lab/questions/SEC-23.md",
+    "route": "/lab/questions/sec-23/"
+  },
+  "SEC-24": {
+    "record": "Interview-Lab/questions/SEC-24.md",
+    "route": "/lab/questions/sec-24/"
+  },
+  "SEC-25": {
+    "record": "Interview-Lab/questions/SEC-25.md",
+    "route": "/lab/questions/sec-25/"
+  },
+  "SEC-26": {
+    "record": "Interview-Lab/questions/SEC-26.md",
+    "route": "/lab/questions/sec-26/"
+  },
+  "SEC-27": {
+    "record": "Interview-Lab/questions/SEC-27.md",
+    "route": "/lab/questions/sec-27/"
+  },
+  "SEC-28": {
+    "record": "Interview-Lab/questions/SEC-28.md",
+    "route": "/lab/questions/sec-28/"
+  },
+  "SEC-29": {
+    "record": "Interview-Lab/questions/SEC-29.md",
+    "route": "/lab/questions/sec-29/"
+  },
+  "SEC-30": {
+    "record": "Interview-Lab/questions/SEC-30.md",
+    "route": "/lab/questions/sec-30/"
+  },
+  "SEC-31": {
+    "record": "Interview-Lab/questions/SEC-31.md",
+    "route": "/lab/questions/sec-31/"
+  },
+  "SEC-32": {
+    "record": "Interview-Lab/questions/SEC-32.md",
+    "route": "/lab/questions/sec-32/"
+  },
+  "SYS-01": {
+    "record": "Interview-Lab/questions/SYS-01.md",
+    "route": "/lab/questions/sys-01/"
+  },
+  "SYS-02": {
+    "record": "Interview-Lab/questions/SYS-02.md",
+    "route": "/lab/questions/sys-02/"
+  },
+  "SYS-03": {
+    "record": "Interview-Lab/questions/SYS-03.md",
+    "route": "/lab/questions/sys-03/"
+  },
+  "SYS-04": {
+    "record": "Interview-Lab/questions/SYS-04.md",
+    "route": "/lab/questions/sys-04/"
+  },
+  "SYS-05": {
+    "record": "Interview-Lab/questions/SYS-05.md",
+    "route": "/lab/questions/sys-05/"
+  },
+  "SYS-06": {
+    "record": "Interview-Lab/questions/SYS-06.md",
+    "route": "/lab/questions/sys-06/"
+  },
+  "SYS-07": {
+    "record": "Interview-Lab/questions/SYS-07.md",
+    "route": "/lab/questions/sys-07/"
+  },
+  "SYS-08": {
+    "record": "Interview-Lab/questions/SYS-08.md",
+    "route": "/lab/questions/sys-08/"
+  },
+  "SYS-09": {
+    "record": "Interview-Lab/questions/SYS-09.md",
+    "route": "/lab/questions/sys-09/"
+  },
+  "SYS-10": {
+    "record": "Interview-Lab/questions/SYS-10.md",
+    "route": "/lab/questions/sys-10/"
+  },
+  "SYS-11": {
+    "record": "Interview-Lab/questions/SYS-11.md",
+    "route": "/lab/questions/sys-11/"
+  },
+  "SYS-12": {
+    "record": "Interview-Lab/questions/SYS-12.md",
+    "route": "/lab/questions/sys-12/"
+  },
+  "SYS-13": {
+    "record": "Interview-Lab/questions/SYS-13.md",
+    "route": "/lab/questions/sys-13/"
+  },
+  "SYS-14": {
+    "record": "Interview-Lab/questions/SYS-14.md",
+    "route": "/lab/questions/sys-14/"
+  },
+  "SYS-15": {
+    "record": "Interview-Lab/questions/SYS-15.md",
+    "route": "/lab/questions/sys-15/"
+  },
+  "SYS-16": {
+    "record": "Interview-Lab/questions/SYS-16.md",
+    "route": "/lab/questions/sys-16/"
+  },
+  "SYS-17": {
+    "record": "Interview-Lab/questions/SYS-17.md",
+    "route": "/lab/questions/sys-17/"
+  },
+  "SYS-18": {
+    "record": "Interview-Lab/questions/SYS-18.md",
+    "route": "/lab/questions/sys-18/"
+  },
+  "SYS-19": {
+    "record": "Interview-Lab/questions/SYS-19.md",
+    "route": "/lab/questions/sys-19/"
+  },
+  "SYS-20": {
+    "record": "Interview-Lab/questions/SYS-20.md",
+    "route": "/lab/questions/sys-20/"
+  },
+  "SYS-21": {
+    "record": "Interview-Lab/questions/SYS-21.md",
+    "route": "/lab/questions/sys-21/"
+  },
+  "SYS-22": {
+    "record": "Interview-Lab/questions/SYS-22.md",
+    "route": "/lab/questions/sys-22/"
+  },
+  "SYS-23": {
+    "record": "Interview-Lab/questions/SYS-23.md",
+    "route": "/lab/questions/sys-23/"
+  },
+  "SYS-24": {
+    "record": "Interview-Lab/questions/SYS-24.md",
+    "route": "/lab/questions/sys-24/"
+  },
+  "MOD-01": {
+    "record": "Interview-Lab/questions/MOD-01.md",
+    "route": "/lab/questions/mod-01/"
+  },
+  "MOD-02": {
+    "record": "Interview-Lab/questions/MOD-02.md",
+    "route": "/lab/questions/mod-02/"
+  },
+  "MOD-03": {
+    "record": "Interview-Lab/questions/MOD-03.md",
+    "route": "/lab/questions/mod-03/"
+  },
+  "MOD-04": {
+    "record": "Interview-Lab/questions/MOD-04.md",
+    "route": "/lab/questions/mod-04/"
+  },
+  "MOD-05": {
+    "record": "Interview-Lab/questions/MOD-05.md",
+    "route": "/lab/questions/mod-05/"
+  },
+  "MOD-06": {
+    "record": "Interview-Lab/questions/MOD-06.md",
+    "route": "/lab/questions/mod-06/"
+  },
+  "MOD-07": {
+    "record": "Interview-Lab/questions/MOD-07.md",
+    "route": "/lab/questions/mod-07/"
+  },
+  "MOD-08": {
+    "record": "Interview-Lab/questions/MOD-08.md",
+    "route": "/lab/questions/mod-08/"
+  },
+  "MOD-09": {
+    "record": "Interview-Lab/questions/MOD-09.md",
+    "route": "/lab/questions/mod-09/"
+  },
+  "MOD-10": {
+    "record": "Interview-Lab/questions/MOD-10.md",
+    "route": "/lab/questions/mod-10/"
+  },
+  "MOD-11": {
+    "record": "Interview-Lab/questions/MOD-11.md",
+    "route": "/lab/questions/mod-11/"
+  },
+  "MOD-12": {
+    "record": "Interview-Lab/questions/MOD-12.md",
+    "route": "/lab/questions/mod-12/"
+  },
+  "MOD-13": {
+    "record": "Interview-Lab/questions/MOD-13.md",
+    "route": "/lab/questions/mod-13/"
+  },
+  "MOD-14": {
+    "record": "Interview-Lab/questions/MOD-14.md",
+    "route": "/lab/questions/mod-14/"
+  },
+  "MOD-15": {
+    "record": "Interview-Lab/questions/MOD-15.md",
+    "route": "/lab/questions/mod-15/"
+  },
+  "MOD-16": {
+    "record": "Interview-Lab/questions/MOD-16.md",
+    "route": "/lab/questions/mod-16/"
+  },
+  "MOD-17": {
+    "record": "Interview-Lab/questions/MOD-17.md",
+    "route": "/lab/questions/mod-17/"
+  },
+  "MOD-18": {
+    "record": "Interview-Lab/questions/MOD-18.md",
+    "route": "/lab/questions/mod-18/"
+  },
+  "MOD-19": {
+    "record": "Interview-Lab/questions/MOD-19.md",
+    "route": "/lab/questions/mod-19/"
+  },
+  "MOD-20": {
+    "record": "Interview-Lab/questions/MOD-20.md",
+    "route": "/lab/questions/mod-20/"
+  },
+  "MOD-21": {
+    "record": "Interview-Lab/questions/MOD-21.md",
+    "route": "/lab/questions/mod-21/"
+  },
+  "BLD-01": {
+    "record": "Interview-Lab/questions/BLD-01.md",
+    "route": "/lab/questions/bld-01/"
+  },
+  "BLD-02": {
+    "record": "Interview-Lab/questions/BLD-02.md",
+    "route": "/lab/questions/bld-02/"
+  },
+  "BLD-03": {
+    "record": "Interview-Lab/questions/BLD-03.md",
+    "route": "/lab/questions/bld-03/"
+  },
+  "BLD-04": {
+    "record": "Interview-Lab/questions/BLD-04.md",
+    "route": "/lab/questions/bld-04/"
+  },
+  "BLD-05": {
+    "record": "Interview-Lab/questions/BLD-05.md",
+    "route": "/lab/questions/bld-05/"
+  },
+  "BLD-06": {
+    "record": "Interview-Lab/questions/BLD-06.md",
+    "route": "/lab/questions/bld-06/"
+  },
+  "BLD-07": {
+    "record": "Interview-Lab/questions/BLD-07.md",
+    "route": "/lab/questions/bld-07/"
+  },
+  "BLD-08": {
+    "record": "Interview-Lab/questions/BLD-08.md",
+    "route": "/lab/questions/bld-08/"
+  },
+  "BLD-09": {
+    "record": "Interview-Lab/questions/BLD-09.md",
+    "route": "/lab/questions/bld-09/"
+  },
+  "BLD-10": {
+    "record": "Interview-Lab/questions/BLD-10.md",
+    "route": "/lab/questions/bld-10/"
+  },
+  "BLD-11": {
+    "record": "Interview-Lab/questions/BLD-11.md",
+    "route": "/lab/questions/bld-11/"
+  },
+  "BLD-12": {
+    "record": "Interview-Lab/questions/BLD-12.md",
+    "route": "/lab/questions/bld-12/"
+  },
+  "BLD-13": {
+    "record": "Interview-Lab/questions/BLD-13.md",
+    "route": "/lab/questions/bld-13/"
+  },
+  "BLD-14": {
+    "record": "Interview-Lab/questions/BLD-14.md",
+    "route": "/lab/questions/bld-14/"
+  },
+  "BLD-15": {
+    "record": "Interview-Lab/questions/BLD-15.md",
+    "route": "/lab/questions/bld-15/"
+  },
+  "BLD-16": {
+    "record": "Interview-Lab/questions/BLD-16.md",
+    "route": "/lab/questions/bld-16/"
+  },
+  "BLD-17": {
+    "record": "Interview-Lab/questions/BLD-17.md",
+    "route": "/lab/questions/bld-17/"
+  },
+  "BLD-18": {
+    "record": "Interview-Lab/questions/BLD-18.md",
+    "route": "/lab/questions/bld-18/"
+  },
+  "BLD-19": {
+    "record": "Interview-Lab/questions/BLD-19.md",
+    "route": "/lab/questions/bld-19/"
+  },
+  "BLD-20": {
+    "record": "Interview-Lab/questions/BLD-20.md",
+    "route": "/lab/questions/bld-20/"
+  },
+  "BLD-21": {
+    "record": "Interview-Lab/questions/BLD-21.md",
+    "route": "/lab/questions/bld-21/"
+  },
+  "TST-01": {
+    "record": "Interview-Lab/questions/TST-01.md",
+    "route": "/lab/questions/tst-01/"
+  },
+  "TST-02": {
+    "record": "Interview-Lab/questions/TST-02.md",
+    "route": "/lab/questions/tst-02/"
+  },
+  "TST-03": {
+    "record": "Interview-Lab/questions/TST-03.md",
+    "route": "/lab/questions/tst-03/"
+  },
+  "TST-04": {
+    "record": "Interview-Lab/questions/TST-04.md",
+    "route": "/lab/questions/tst-04/"
+  },
+  "TST-05": {
+    "record": "Interview-Lab/questions/TST-05.md",
+    "route": "/lab/questions/tst-05/"
+  },
+  "TST-06": {
+    "record": "Interview-Lab/questions/TST-06.md",
+    "route": "/lab/questions/tst-06/"
+  },
+  "TST-07": {
+    "record": "Interview-Lab/questions/TST-07.md",
+    "route": "/lab/questions/tst-07/"
+  },
+  "TST-08": {
+    "record": "Interview-Lab/questions/TST-08.md",
+    "route": "/lab/questions/tst-08/"
+  },
+  "TST-09": {
+    "record": "Interview-Lab/questions/TST-09.md",
+    "route": "/lab/questions/tst-09/"
+  },
+  "TST-10": {
+    "record": "Interview-Lab/questions/TST-10.md",
+    "route": "/lab/questions/tst-10/"
+  },
+  "TST-11": {
+    "record": "Interview-Lab/questions/TST-11.md",
+    "route": "/lab/questions/tst-11/"
+  },
+  "TST-12": {
+    "record": "Interview-Lab/questions/TST-12.md",
+    "route": "/lab/questions/tst-12/"
+  },
+  "TST-13": {
+    "record": "Interview-Lab/questions/TST-13.md",
+    "route": "/lab/questions/tst-13/"
+  },
+  "TST-14": {
+    "record": "Interview-Lab/questions/TST-14.md",
+    "route": "/lab/questions/tst-14/"
+  },
+  "TST-15": {
+    "record": "Interview-Lab/questions/TST-15.md",
+    "route": "/lab/questions/tst-15/"
+  },
+  "TST-16": {
+    "record": "Interview-Lab/questions/TST-16.md",
+    "route": "/lab/questions/tst-16/"
+  },
+  "TST-17": {
+    "record": "Interview-Lab/questions/TST-17.md",
+    "route": "/lab/questions/tst-17/"
+  },
+  "TST-18": {
+    "record": "Interview-Lab/questions/TST-18.md",
+    "route": "/lab/questions/tst-18/"
+  },
+  "TST-19": {
+    "record": "Interview-Lab/questions/TST-19.md",
+    "route": "/lab/questions/tst-19/"
+  },
+  "TST-20": {
+    "record": "Interview-Lab/questions/TST-20.md",
+    "route": "/lab/questions/tst-20/"
+  },
+  "TST-21": {
+    "record": "Interview-Lab/questions/TST-21.md",
+    "route": "/lab/questions/tst-21/"
+  },
+  "TST-22": {
+    "record": "Interview-Lab/questions/TST-22.md",
+    "route": "/lab/questions/tst-22/"
+  },
+  "TST-23": {
+    "record": "Interview-Lab/questions/TST-23.md",
+    "route": "/lab/questions/tst-23/"
+  },
+  "TST-24": {
+    "record": "Interview-Lab/questions/TST-24.md",
+    "route": "/lab/questions/tst-24/"
+  },
+  "CIC-01": {
+    "record": "Interview-Lab/questions/CIC-01.md",
+    "route": "/lab/questions/cic-01/"
+  },
+  "CIC-02": {
+    "record": "Interview-Lab/questions/CIC-02.md",
+    "route": "/lab/questions/cic-02/"
+  },
+  "CIC-03": {
+    "record": "Interview-Lab/questions/CIC-03.md",
+    "route": "/lab/questions/cic-03/"
+  },
+  "CIC-04": {
+    "record": "Interview-Lab/questions/CIC-04.md",
+    "route": "/lab/questions/cic-04/"
+  },
+  "CIC-05": {
+    "record": "Interview-Lab/questions/CIC-05.md",
+    "route": "/lab/questions/cic-05/"
+  },
+  "CIC-06": {
+    "record": "Interview-Lab/questions/CIC-06.md",
+    "route": "/lab/questions/cic-06/"
+  },
+  "CIC-07": {
+    "record": "Interview-Lab/questions/CIC-07.md",
+    "route": "/lab/questions/cic-07/"
+  },
+  "CIC-08": {
+    "record": "Interview-Lab/questions/CIC-08.md",
+    "route": "/lab/questions/cic-08/"
+  },
+  "CIC-09": {
+    "record": "Interview-Lab/questions/CIC-09.md",
+    "route": "/lab/questions/cic-09/"
+  },
+  "CIC-10": {
+    "record": "Interview-Lab/questions/CIC-10.md",
+    "route": "/lab/questions/cic-10/"
+  },
+  "CIC-11": {
+    "record": "Interview-Lab/questions/CIC-11.md",
+    "route": "/lab/questions/cic-11/"
+  },
+  "CIC-12": {
+    "record": "Interview-Lab/questions/CIC-12.md",
+    "route": "/lab/questions/cic-12/"
+  },
+  "CIC-13": {
+    "record": "Interview-Lab/questions/CIC-13.md",
+    "route": "/lab/questions/cic-13/"
+  },
+  "CIC-14": {
+    "record": "Interview-Lab/questions/CIC-14.md",
+    "route": "/lab/questions/cic-14/"
+  },
+  "CIC-15": {
+    "record": "Interview-Lab/questions/CIC-15.md",
+    "route": "/lab/questions/cic-15/"
+  },
+  "CIC-16": {
+    "record": "Interview-Lab/questions/CIC-16.md",
+    "route": "/lab/questions/cic-16/"
+  },
+  "CIC-17": {
+    "record": "Interview-Lab/questions/CIC-17.md",
+    "route": "/lab/questions/cic-17/"
+  },
+  "CIC-18": {
+    "record": "Interview-Lab/questions/CIC-18.md",
+    "route": "/lab/questions/cic-18/"
+  },
+  "CIC-19": {
+    "record": "Interview-Lab/questions/CIC-19.md",
+    "route": "/lab/questions/cic-19/"
+  },
+  "CIC-20": {
+    "record": "Interview-Lab/questions/CIC-20.md",
+    "route": "/lab/questions/cic-20/"
+  },
+  "DSA-01": {
+    "record": "Interview-Lab/questions/DSA-01.md",
+    "route": "/lab/questions/dsa-01/"
+  },
+  "DSA-02": {
+    "record": "Interview-Lab/questions/DSA-02.md",
+    "route": "/lab/questions/dsa-02/"
+  },
+  "DSA-03": {
+    "record": "Interview-Lab/questions/DSA-03.md",
+    "route": "/lab/questions/dsa-03/"
+  },
+  "DSA-04": {
+    "record": "Interview-Lab/questions/DSA-04.md",
+    "route": "/lab/questions/dsa-04/"
+  },
+  "DSA-05": {
+    "record": "Interview-Lab/questions/DSA-05.md",
+    "route": "/lab/questions/dsa-05/"
+  },
+  "DSA-06": {
+    "record": "Interview-Lab/questions/DSA-06.md",
+    "route": "/lab/questions/dsa-06/"
+  },
+  "DSA-07": {
+    "record": "Interview-Lab/questions/DSA-07.md",
+    "route": "/lab/questions/dsa-07/"
+  },
+  "DSA-08": {
+    "record": "Interview-Lab/questions/DSA-08.md",
+    "route": "/lab/questions/dsa-08/"
+  },
+  "DSA-09": {
+    "record": "Interview-Lab/questions/DSA-09.md",
+    "route": "/lab/questions/dsa-09/"
+  },
+  "DSA-10": {
+    "record": "Interview-Lab/questions/DSA-10.md",
+    "route": "/lab/questions/dsa-10/"
+  },
+  "DSA-11": {
+    "record": "Interview-Lab/questions/DSA-11.md",
+    "route": "/lab/questions/dsa-11/"
+  },
+  "DSA-12": {
+    "record": "Interview-Lab/questions/DSA-12.md",
+    "route": "/lab/questions/dsa-12/"
+  },
+  "DSA-13": {
+    "record": "Interview-Lab/questions/DSA-13.md",
+    "route": "/lab/questions/dsa-13/"
+  },
+  "DSA-14": {
+    "record": "Interview-Lab/questions/DSA-14.md",
+    "route": "/lab/questions/dsa-14/"
+  },
+  "DSA-15": {
+    "record": "Interview-Lab/questions/DSA-15.md",
+    "route": "/lab/questions/dsa-15/"
+  },
+  "DSA-16": {
+    "record": "Interview-Lab/questions/DSA-16.md",
+    "route": "/lab/questions/dsa-16/"
+  },
+  "LEAD-01": {
+    "record": "Interview-Lab/questions/LEAD-01.md",
+    "route": "/lab/questions/lead-01/"
+  },
+  "LEAD-02": {
+    "record": "Interview-Lab/questions/LEAD-02.md",
+    "route": "/lab/questions/lead-02/"
+  },
+  "LEAD-03": {
+    "record": "Interview-Lab/questions/LEAD-03.md",
+    "route": "/lab/questions/lead-03/"
+  },
+  "LEAD-04": {
+    "record": "Interview-Lab/questions/LEAD-04.md",
+    "route": "/lab/questions/lead-04/"
+  },
+  "LEAD-05": {
+    "record": "Interview-Lab/questions/LEAD-05.md",
+    "route": "/lab/questions/lead-05/"
+  },
+  "LEAD-06": {
+    "record": "Interview-Lab/questions/LEAD-06.md",
+    "route": "/lab/questions/lead-06/"
+  },
+  "LEAD-07": {
+    "record": "Interview-Lab/questions/LEAD-07.md",
+    "route": "/lab/questions/lead-07/"
+  },
+  "LEAD-08": {
+    "record": "Interview-Lab/questions/LEAD-08.md",
+    "route": "/lab/questions/lead-08/"
+  },
+  "LEAD-09": {
+    "record": "Interview-Lab/questions/LEAD-09.md",
+    "route": "/lab/questions/lead-09/"
+  },
+  "LEAD-10": {
+    "record": "Interview-Lab/questions/LEAD-10.md",
+    "route": "/lab/questions/lead-10/"
+  },
+  "LEAD-11": {
+    "record": "Interview-Lab/questions/LEAD-11.md",
+    "route": "/lab/questions/lead-11/"
+  },
+  "LEAD-12": {
+    "record": "Interview-Lab/questions/LEAD-12.md",
+    "route": "/lab/questions/lead-12/"
+  },
+  "LEAD-13": {
+    "record": "Interview-Lab/questions/LEAD-13.md",
+    "route": "/lab/questions/lead-13/"
+  },
+  "LEAD-14": {
+    "record": "Interview-Lab/questions/LEAD-14.md",
+    "route": "/lab/questions/lead-14/"
+  },
+  "LEAD-15": {
+    "record": "Interview-Lab/questions/LEAD-15.md",
+    "route": "/lab/questions/lead-15/"
+  },
+  "PAY-01": {
+    "record": "Interview-Lab/questions/PAY-01.md",
+    "route": "/lab/questions/pay-01/"
+  },
+  "PAY-02": {
+    "record": "Interview-Lab/questions/PAY-02.md",
+    "route": "/lab/questions/pay-02/"
+  },
+  "PAY-03": {
+    "record": "Interview-Lab/questions/PAY-03.md",
+    "route": "/lab/questions/pay-03/"
+  },
+  "PAY-04": {
+    "record": "Interview-Lab/questions/PAY-04.md",
+    "route": "/lab/questions/pay-04/"
+  },
+  "PAY-05": {
+    "record": "Interview-Lab/questions/PAY-05.md",
+    "route": "/lab/questions/pay-05/"
+  },
+  "PAY-06": {
+    "record": "Interview-Lab/questions/PAY-06.md",
+    "route": "/lab/questions/pay-06/"
+  },
+  "PAY-07": {
+    "record": "Interview-Lab/questions/PAY-07.md",
+    "route": "/lab/questions/pay-07/"
+  },
+  "PAY-08": {
+    "record": "Interview-Lab/questions/PAY-08.md",
+    "route": "/lab/questions/pay-08/"
+  },
+  "PAY-09": {
+    "record": "Interview-Lab/questions/PAY-09.md",
+    "route": "/lab/questions/pay-09/"
+  },
+  "PAY-10": {
+    "record": "Interview-Lab/questions/PAY-10.md",
+    "route": "/lab/questions/pay-10/"
+  },
+  "PAY-11": {
+    "record": "Interview-Lab/questions/PAY-11.md",
+    "route": "/lab/questions/pay-11/"
+  },
+  "PAY-12": {
+    "record": "Interview-Lab/questions/PAY-12.md",
+    "route": "/lab/questions/pay-12/"
+  },
+  "PAY-13": {
+    "record": "Interview-Lab/questions/PAY-13.md",
+    "route": "/lab/questions/pay-13/"
+  },
+  "PAY-14": {
+    "record": "Interview-Lab/questions/PAY-14.md",
+    "route": "/lab/questions/pay-14/"
+  },
+  "PAY-15": {
+    "record": "Interview-Lab/questions/PAY-15.md",
+    "route": "/lab/questions/pay-15/"
+  }
+}

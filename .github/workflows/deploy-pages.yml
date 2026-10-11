@@ -1,0 +1,63 @@
+name: Deploy GitHub Pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PUBLIC_SITE_URL: https://${{ github.repository_owner }}.github.io
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Check editorial release gate
+        run: python3 scripts/validate_interview_lab.py --require-complete
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: site/pnpm-lock.yaml
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - run: python3 scripts/validate.py
+      - run: pnpm install --frozen-lockfile
+        working-directory: site
+      - run: pnpm lint
+        working-directory: site
+      - run: pnpm typecheck
+        working-directory: site
+      - run: pnpm build
+        working-directory: site
+      - run: pnpm check:dist
+        working-directory: site
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: ./gradlew clean test check run --no-daemon
+        working-directory: projects/kotlin-jvm-labs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site/dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

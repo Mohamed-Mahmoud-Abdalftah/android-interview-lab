@@ -1,0 +1,42 @@
+name: Checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: site/pnpm-lock.yaml
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - run: python3 scripts/validate.py
+      - run: python3 scripts/validate_interview_lab.py
+      - run: pnpm install --frozen-lockfile
+        working-directory: site
+      - run: pnpm lint
+        working-directory: site
+      - run: pnpm typecheck
+        working-directory: site
+      - run: pnpm build
+        working-directory: site
+      - run: pnpm check:dist
+        working-directory: site
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: ./gradlew clean test check run --no-daemon
+        working-directory: projects/kotlin-jvm-labs
