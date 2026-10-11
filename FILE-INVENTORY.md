@@ -1,6 +1,6 @@
 # Actual academy source inventory — 2026-10-11
 
-These 980 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
+These 981 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
 
 ```text
 .github/workflows/ci.yml
@@ -940,6 +940,7 @@ scripts/author_android_batch.py
 scripts/author_coroutines_batch.py
 scripts/complete_core_path.py
 scripts/complete_specialists_and_mocks.py
+scripts/dedupe_spoken_answers.py
 scripts/harden_interview_bank.py
 scripts/import_interview_lab.py
 scripts/package_source.py

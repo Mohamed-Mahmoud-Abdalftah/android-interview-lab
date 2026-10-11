@@ -24,7 +24,7 @@ def copied_long_sentences(source: str, answer: str) -> list[str]:
     def sentences(value: str) -> list[str]:
         value = re.sub(r"```[\s\S]*?```", "", value)
         return [part.strip().strip('“”"') for part in re.split(r"(?<=[.!?])\s+", value)
-                if len(part.split()) >= 10]
+                if len(part.split()) >= 7]
 
     originals = {re.sub(r"\s+", " ", part).casefold() for part in sentences(source)}
     return [part for part in sentences(answer)
