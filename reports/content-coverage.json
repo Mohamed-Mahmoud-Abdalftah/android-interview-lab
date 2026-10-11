@@ -3,16 +3,4000 @@
   "uniqueIds": 485,
   "topics": 21,
   "records": 485,
-  "reviewed": 5,
-  "sourceOnly": 480,
+  "reviewed": 395,
+  "sourceOnly": 90,
   "missing": 0,
   "placeholderCount": 0,
-  "errors": [],
+  "errors": [
+    "copied 4 long sentences into structured: COR-03",
+    "copied 5 long sentences into deep senior: COR-03",
+    "copied 3 long sentences into structured: COR-04",
+    "copied 5 long sentences into deep senior: COR-04",
+    "copied 3 long sentences into structured: COR-05",
+    "copied 7 long sentences into deep senior: COR-05",
+    "copied 3 long sentences into structured: COR-06",
+    "copied 7 long sentences into deep senior: COR-06",
+    "copied 3 long sentences into structured: COR-07",
+    "copied 6 long sentences into deep senior: COR-07",
+    "copied 3 long sentences into structured: COR-08",
+    "copied 4 long sentences into deep senior: COR-08",
+    "copied 3 long sentences into structured: COR-09",
+    "copied 6 long sentences into deep senior: COR-09",
+    "copied 3 long sentences into structured: COR-10",
+    "copied 6 long sentences into deep senior: COR-10",
+    "copied 3 long sentences into structured: COR-11",
+    "copied 5 long sentences into deep senior: COR-11",
+    "copied 2 long sentences into structured: COR-12",
+    "copied 5 long sentences into deep senior: COR-12",
+    "copied 2 long sentences into structured: COR-13",
+    "copied 7 long sentences into deep senior: COR-13",
+    "copied 3 long sentences into structured: COR-14",
+    "copied 7 long sentences into deep senior: COR-14",
+    "copied 2 long sentences into structured: COR-15",
+    "copied 6 long sentences into deep senior: COR-15",
+    "copied 3 long sentences into structured: COR-16",
+    "copied 5 long sentences into deep senior: COR-16",
+    "copied 3 long sentences into structured: COR-17",
+    "copied 6 long sentences into deep senior: COR-17",
+    "copied 3 long sentences into structured: COR-18",
+    "copied 6 long sentences into deep senior: COR-18",
+    "copied 4 long sentences into structured: COR-19",
+    "copied 7 long sentences into deep senior: COR-19",
+    "copied 3 long sentences into structured: COR-20",
+    "copied 4 long sentences into deep senior: COR-20",
+    "copied 2 long sentences into structured: COR-21",
+    "copied 7 long sentences into deep senior: COR-21",
+    "copied 3 long sentences into structured: COR-22",
+    "copied 4 long sentences into deep senior: COR-22",
+    "copied 2 long sentences into structured: COR-23",
+    "copied 7 long sentences into deep senior: COR-23",
+    "copied 3 long sentences into structured: COR-24",
+    "copied 6 long sentences into deep senior: COR-24",
+    "copied 2 long sentences into structured: COR-25",
+    "copied 7 long sentences into deep senior: COR-25",
+    "copied 3 long sentences into structured: COR-26",
+    "copied 7 long sentences into deep senior: COR-26",
+    "copied 4 long sentences into structured: COR-27",
+    "copied 6 long sentences into deep senior: COR-27",
+    "copied 2 long sentences into structured: COR-28",
+    "copied 7 long sentences into deep senior: COR-28",
+    "copied 2 long sentences into structured: COR-29",
+    "copied 5 long sentences into deep senior: COR-29",
+    "copied 2 long sentences into structured: COR-30",
+    "copied 6 long sentences into deep senior: COR-30",
+    "copied 3 long sentences into structured: COR-31",
+    "copied 7 long sentences into deep senior: COR-31",
+    "copied 2 long sentences into structured: COR-32",
+    "copied 6 long sentences into deep senior: COR-32",
+    "copied 3 long sentences into structured: FLO-01",
+    "copied 7 long sentences into deep senior: FLO-01",
+    "copied 3 long sentences into structured: FLO-02",
+    "copied 6 long sentences into deep senior: FLO-02",
+    "copied 2 long sentences into structured: FLO-03",
+    "copied 8 long sentences into deep senior: FLO-03",
+    "copied 2 long sentences into structured: FLO-04",
+    "copied 5 long sentences into deep senior: FLO-04",
+    "copied 2 long sentences into structured: FLO-05",
+    "copied 6 long sentences into deep senior: FLO-05",
+    "copied 5 long sentences into structured: FLO-07",
+    "copied 7 long sentences into deep senior: FLO-07",
+    "copied 4 long sentences into structured: FLO-08",
+    "copied 8 long sentences into deep senior: FLO-08",
+    "copied 2 long sentences into structured: FLO-09",
+    "copied 6 long sentences into deep senior: FLO-09",
+    "copied 2 long sentences into structured: FLO-10",
+    "copied 6 long sentences into deep senior: FLO-10",
+    "copied 4 long sentences into structured: FLO-11",
+    "copied 6 long sentences into deep senior: FLO-11",
+    "copied 3 long sentences into structured: FLO-12",
+    "copied 6 long sentences into deep senior: FLO-12",
+    "copied 2 long sentences into structured: FLO-13",
+    "copied 5 long sentences into deep senior: FLO-13",
+    "copied 5 long sentences into structured: FLO-14",
+    "copied 8 long sentences into deep senior: FLO-14",
+    "copied 3 long sentences into structured: FLO-15",
+    "copied 6 long sentences into deep senior: FLO-15",
+    "copied 3 long sentences into structured: FLO-16",
+    "copied 6 long sentences into deep senior: FLO-16",
+    "copied 4 long sentences into structured: FLO-17",
+    "copied 6 long sentences into deep senior: FLO-17",
+    "copied 4 long sentences into structured: FLO-18",
+    "copied 7 long sentences into deep senior: FLO-18",
+    "copied 4 long sentences into structured: FLO-19",
+    "copied 5 long sentences into deep senior: FLO-19",
+    "copied 3 long sentences into structured: FLO-20",
+    "copied 6 long sentences into deep senior: FLO-20",
+    "copied 3 long sentences into structured: FLO-21",
+    "copied 5 long sentences into deep senior: FLO-21",
+    "copied 3 long sentences into structured: FLO-22",
+    "copied 8 long sentences into deep senior: FLO-22",
+    "copied 4 long sentences into structured: FLO-23",
+    "copied 8 long sentences into deep senior: FLO-23",
+    "copied 3 long sentences into structured: FLO-24",
+    "copied 4 long sentences into deep senior: FLO-24",
+    "copied 4 long sentences into structured: FLO-25",
+    "copied 6 long sentences into deep senior: FLO-25",
+    "copied 2 long sentences into structured: FLO-26",
+    "copied 6 long sentences into deep senior: FLO-26",
+    "copied 3 long sentences into structured: FLO-27",
+    "copied 6 long sentences into deep senior: FLO-27",
+    "copied 4 long sentences into structured: FLO-28",
+    "copied 8 long sentences into deep senior: FLO-28",
+    "copied 3 long sentences into structured: FLO-29",
+    "copied 6 long sentences into deep senior: FLO-29",
+    "copied 3 long sentences into structured: FLO-30",
+    "copied 6 long sentences into deep senior: FLO-30",
+    "copied 2 long sentences into structured: FLO-31",
+    "copied 6 long sentences into deep senior: FLO-31",
+    "copied 3 long sentences into structured: FLO-32",
+    "copied 5 long sentences into deep senior: FLO-32",
+    "copied 4 long sentences into structured: DAT-01",
+    "copied 5 long sentences into deep senior: DAT-01",
+    "copied 2 long sentences into structured: DAT-02",
+    "copied 8 long sentences into deep senior: DAT-02",
+    "copied 3 long sentences into structured: DAT-03",
+    "copied 5 long sentences into deep senior: DAT-03",
+    "copied 4 long sentences into structured: DAT-04",
+    "copied 8 long sentences into deep senior: DAT-04",
+    "copied 3 long sentences into structured: DAT-05",
+    "copied 5 long sentences into deep senior: DAT-05",
+    "copied 3 long sentences into structured: DAT-06",
+    "copied 6 long sentences into deep senior: DAT-06",
+    "copied 3 long sentences into structured: DAT-07",
+    "copied 8 long sentences into deep senior: DAT-07",
+    "copied 4 long sentences into structured: DAT-08",
+    "copied 7 long sentences into deep senior: DAT-08",
+    "copied 2 long sentences into structured: DAT-09",
+    "copied 6 long sentences into deep senior: DAT-09",
+    "copied 2 long sentences into structured: DAT-10",
+    "copied 5 long sentences into deep senior: DAT-10",
+    "copied 3 long sentences into structured: DAT-11",
+    "copied 5 long sentences into deep senior: DAT-11",
+    "copied 4 long sentences into structured: DAT-12",
+    "copied 4 long sentences into deep senior: DAT-12",
+    "copied 3 long sentences into structured: DAT-13",
+    "copied 6 long sentences into deep senior: DAT-13",
+    "copied 3 long sentences into structured: DAT-14",
+    "copied 5 long sentences into deep senior: DAT-14",
+    "copied 2 long sentences into structured: DAT-15",
+    "copied 7 long sentences into deep senior: DAT-15",
+    "copied 3 long sentences into structured: DAT-16",
+    "copied 6 long sentences into deep senior: DAT-16",
+    "copied 3 long sentences into structured: DAT-17",
+    "copied 7 long sentences into deep senior: DAT-17",
+    "copied 3 long sentences into structured: DAT-18",
+    "copied 5 long sentences into deep senior: DAT-18",
+    "copied 3 long sentences into structured: DAT-19",
+    "copied 6 long sentences into deep senior: DAT-19",
+    "copied 2 long sentences into structured: DAT-20",
+    "copied 5 long sentences into deep senior: DAT-20",
+    "copied 3 long sentences into structured: DAT-21",
+    "copied 7 long sentences into deep senior: DAT-21",
+    "copied 3 long sentences into structured: DAT-22",
+    "copied 6 long sentences into deep senior: DAT-22",
+    "copied 1 long sentences into structured: BG-01",
+    "copied 8 long sentences into deep senior: BG-01",
+    "copied 2 long sentences into structured: BG-02",
+    "copied 4 long sentences into deep senior: BG-02",
+    "copied 1 long sentences into structured: BG-03",
+    "copied 7 long sentences into deep senior: BG-03",
+    "copied 3 long sentences into structured: BG-04",
+    "copied 6 long sentences into deep senior: BG-04",
+    "copied 3 long sentences into structured: BG-05",
+    "copied 5 long sentences into deep senior: BG-05",
+    "copied 3 long sentences into structured: BG-06",
+    "copied 6 long sentences into deep senior: BG-06",
+    "copied 3 long sentences into structured: BG-07",
+    "copied 4 long sentences into deep senior: BG-07",
+    "copied 3 long sentences into structured: BG-08",
+    "copied 5 long sentences into deep senior: BG-08",
+    "copied 3 long sentences into structured: BG-09",
+    "copied 6 long sentences into deep senior: BG-09",
+    "copied 1 long sentences into structured: BG-10",
+    "copied 8 long sentences into deep senior: BG-10",
+    "copied 3 long sentences into structured: BG-11",
+    "copied 7 long sentences into deep senior: BG-11",
+    "copied 2 long sentences into structured: BG-12",
+    "copied 7 long sentences into deep senior: BG-12",
+    "copied 4 long sentences into structured: BG-13",
+    "copied 6 long sentences into deep senior: BG-13",
+    "copied 3 long sentences into structured: BG-14",
+    "copied 6 long sentences into deep senior: BG-14",
+    "copied 2 long sentences into structured: BG-15",
+    "copied 6 long sentences into deep senior: BG-15",
+    "copied 3 long sentences into structured: BG-16",
+    "copied 6 long sentences into deep senior: BG-16",
+    "copied 3 long sentences into structured: BG-17",
+    "copied 4 long sentences into deep senior: BG-17",
+    "copied 3 long sentences into structured: BG-18",
+    "copied 7 long sentences into deep senior: BG-18",
+    "copied 3 long sentences into structured: SEC-17",
+    "copied 6 long sentences into deep senior: SEC-17",
+    "copied 2 long sentences into structured: SEC-18",
+    "copied 6 long sentences into deep senior: SEC-18",
+    "copied 5 long sentences into structured: SEC-19",
+    "copied 6 long sentences into deep senior: SEC-19",
+    "copied 5 long sentences into structured: SEC-20",
+    "copied 5 long sentences into deep senior: SEC-20",
+    "copied 2 long sentences into structured: SEC-21",
+    "copied 7 long sentences into deep senior: SEC-21",
+    "copied 2 long sentences into structured: SEC-22",
+    "copied 6 long sentences into deep senior: SEC-22",
+    "copied 2 long sentences into structured: SEC-23",
+    "copied 5 long sentences into deep senior: SEC-23",
+    "copied 5 long sentences into structured: SEC-24",
+    "copied 7 long sentences into deep senior: SEC-24",
+    "copied 5 long sentences into structured: SEC-25",
+    "copied 4 long sentences into deep senior: SEC-25",
+    "copied 3 long sentences into structured: SEC-26",
+    "copied 6 long sentences into deep senior: SEC-26",
+    "copied 5 long sentences into structured: SEC-27",
+    "copied 5 long sentences into deep senior: SEC-27",
+    "copied 5 long sentences into structured: SEC-28",
+    "copied 5 long sentences into deep senior: SEC-28",
+    "copied 4 long sentences into structured: SEC-29",
+    "copied 6 long sentences into deep senior: SEC-29",
+    "copied 3 long sentences into structured: SEC-30",
+    "copied 7 long sentences into deep senior: SEC-30",
+    "copied 4 long sentences into structured: SEC-31",
+    "copied 6 long sentences into deep senior: SEC-31",
+    "copied 5 long sentences into structured: SEC-32",
+    "copied 6 long sentences into deep senior: SEC-32",
+    "copied 4 long sentences into structured: SYS-01",
+    "copied 6 long sentences into deep senior: SYS-01",
+    "copied 2 long sentences into structured: SYS-02",
+    "copied 6 long sentences into deep senior: SYS-02",
+    "copied 2 long sentences into structured: SYS-03",
+    "copied 4 long sentences into deep senior: SYS-03",
+    "copied 2 long sentences into structured: SYS-04",
+    "copied 5 long sentences into deep senior: SYS-04",
+    "copied 3 long sentences into structured: SYS-05",
+    "copied 7 long sentences into deep senior: SYS-05",
+    "copied 2 long sentences into structured: SYS-06",
+    "copied 6 long sentences into deep senior: SYS-06",
+    "copied 1 long sentences into structured: SYS-07",
+    "copied 6 long sentences into deep senior: SYS-07",
+    "copied 3 long sentences into structured: SYS-08",
+    "copied 6 long sentences into deep senior: SYS-08",
+    "copied 3 long sentences into structured: SYS-09",
+    "copied 5 long sentences into deep senior: SYS-09",
+    "copied 3 long sentences into structured: SYS-10",
+    "copied 5 long sentences into deep senior: SYS-10",
+    "copied 3 long sentences into structured: SYS-11",
+    "copied 4 long sentences into deep senior: SYS-11",
+    "copied 2 long sentences into structured: SYS-12",
+    "copied 7 long sentences into deep senior: SYS-12",
+    "copied 4 long sentences into structured: SYS-13",
+    "copied 6 long sentences into deep senior: SYS-13",
+    "copied 3 long sentences into structured: SYS-14",
+    "copied 7 long sentences into deep senior: SYS-14",
+    "copied 4 long sentences into structured: SYS-15",
+    "copied 4 long sentences into deep senior: SYS-15",
+    "copied 2 long sentences into structured: SYS-16",
+    "copied 6 long sentences into deep senior: SYS-16",
+    "copied 3 long sentences into structured: SYS-17",
+    "copied 7 long sentences into deep senior: SYS-17",
+    "copied 3 long sentences into structured: SYS-18",
+    "copied 6 long sentences into deep senior: SYS-18",
+    "copied 4 long sentences into structured: SYS-19",
+    "copied 7 long sentences into deep senior: SYS-19",
+    "copied 3 long sentences into structured: SYS-20",
+    "copied 7 long sentences into deep senior: SYS-20",
+    "copied 3 long sentences into structured: SYS-21",
+    "copied 7 long sentences into deep senior: SYS-21",
+    "copied 2 long sentences into structured: SYS-22",
+    "copied 4 long sentences into deep senior: SYS-22",
+    "copied 3 long sentences into structured: SYS-23",
+    "copied 6 long sentences into deep senior: SYS-23",
+    "copied 3 long sentences into structured: SYS-24",
+    "copied 6 long sentences into deep senior: SYS-24",
+    "copied 4 long sentences into structured: TST-01",
+    "copied 6 long sentences into deep senior: TST-01",
+    "copied 4 long sentences into structured: TST-02",
+    "copied 7 long sentences into deep senior: TST-02",
+    "copied 3 long sentences into structured: TST-03",
+    "copied 5 long sentences into deep senior: TST-03",
+    "copied 3 long sentences into structured: TST-04",
+    "copied 6 long sentences into deep senior: TST-04",
+    "copied 3 long sentences into structured: TST-05",
+    "copied 6 long sentences into deep senior: TST-05",
+    "copied 3 long sentences into structured: TST-06",
+    "copied 6 long sentences into deep senior: TST-06",
+    "copied 4 long sentences into structured: TST-07",
+    "copied 7 long sentences into deep senior: TST-07",
+    "copied 4 long sentences into structured: TST-08",
+    "copied 7 long sentences into deep senior: TST-08",
+    "copied 4 long sentences into structured: TST-09",
+    "copied 7 long sentences into deep senior: TST-09",
+    "copied 5 long sentences into structured: TST-10",
+    "copied 6 long sentences into deep senior: TST-10",
+    "copied 4 long sentences into structured: TST-11",
+    "copied 6 long sentences into deep senior: TST-11",
+    "copied 4 long sentences into structured: TST-12",
+    "copied 6 long sentences into deep senior: TST-12",
+    "copied 4 long sentences into structured: TST-13",
+    "copied 10 long sentences into deep senior: TST-13",
+    "copied 5 long sentences into structured: TST-14",
+    "copied 6 long sentences into deep senior: TST-14",
+    "copied 2 long sentences into structured: TST-15",
+    "copied 6 long sentences into deep senior: TST-15",
+    "copied 3 long sentences into structured: TST-16",
+    "copied 6 long sentences into deep senior: TST-16",
+    "copied 5 long sentences into structured: TST-17",
+    "copied 6 long sentences into deep senior: TST-17",
+    "copied 5 long sentences into structured: TST-18",
+    "copied 5 long sentences into deep senior: TST-18",
+    "copied 2 long sentences into structured: TST-19",
+    "copied 6 long sentences into deep senior: TST-19",
+    "copied 4 long sentences into structured: TST-20",
+    "copied 6 long sentences into deep senior: TST-20",
+    "copied 5 long sentences into structured: TST-21",
+    "copied 6 long sentences into deep senior: TST-21",
+    "copied 4 long sentences into structured: TST-22",
+    "copied 5 long sentences into deep senior: TST-22",
+    "copied 4 long sentences into structured: TST-23",
+    "copied 5 long sentences into deep senior: TST-23",
+    "copied 6 long sentences into structured: TST-24",
+    "copied 9 long sentences into deep senior: TST-24",
+    "copied 4 long sentences into structured: CIC-01",
+    "copied 4 long sentences into deep senior: CIC-01",
+    "copied 4 long sentences into structured: CIC-02",
+    "copied 7 long sentences into deep senior: CIC-02",
+    "copied 3 long sentences into structured: CIC-03",
+    "copied 6 long sentences into deep senior: CIC-03",
+    "copied 3 long sentences into structured: CIC-04",
+    "copied 7 long sentences into deep senior: CIC-04",
+    "copied 2 long sentences into structured: CIC-05",
+    "copied 5 long sentences into deep senior: CIC-05",
+    "copied 4 long sentences into structured: CIC-06",
+    "copied 7 long sentences into deep senior: CIC-06",
+    "copied 5 long sentences into structured: CIC-07",
+    "copied 6 long sentences into deep senior: CIC-07",
+    "copied 5 long sentences into structured: CIC-08",
+    "copied 6 long sentences into deep senior: CIC-08",
+    "copied 5 long sentences into structured: CIC-09",
+    "copied 8 long sentences into deep senior: CIC-09",
+    "copied 3 long sentences into structured: CIC-10",
+    "copied 7 long sentences into deep senior: CIC-10",
+    "copied 4 long sentences into structured: CIC-11",
+    "copied 5 long sentences into deep senior: CIC-11",
+    "copied 4 long sentences into structured: CIC-12",
+    "copied 8 long sentences into deep senior: CIC-12",
+    "copied 5 long sentences into structured: CIC-13",
+    "copied 8 long sentences into deep senior: CIC-13",
+    "copied 3 long sentences into structured: CIC-14",
+    "copied 4 long sentences into deep senior: CIC-14",
+    "copied 4 long sentences into structured: CIC-15",
+    "copied 7 long sentences into deep senior: CIC-15",
+    "copied 4 long sentences into structured: CIC-16",
+    "copied 7 long sentences into deep senior: CIC-16",
+    "copied 5 long sentences into structured: CIC-17",
+    "copied 8 long sentences into deep senior: CIC-17",
+    "copied 3 long sentences into structured: CIC-18",
+    "copied 8 long sentences into deep senior: CIC-18",
+    "copied 5 long sentences into structured: CIC-19",
+    "copied 5 long sentences into deep senior: CIC-19",
+    "copied 5 long sentences into structured: CIC-20",
+    "copied 5 long sentences into deep senior: CIC-20",
+    "copied 4 long sentences into structured: DSA-01",
+    "copied 5 long sentences into deep senior: DSA-01",
+    "copied 2 long sentences into structured: DSA-02",
+    "copied 6 long sentences into deep senior: DSA-02",
+    "copied 4 long sentences into structured: DSA-03",
+    "copied 7 long sentences into deep senior: DSA-03",
+    "copied 3 long sentences into structured: DSA-04",
+    "copied 5 long sentences into deep senior: DSA-04",
+    "copied 4 long sentences into structured: DSA-05",
+    "copied 6 long sentences into deep senior: DSA-05",
+    "copied 4 long sentences into structured: DSA-06",
+    "copied 7 long sentences into deep senior: DSA-06",
+    "copied 4 long sentences into structured: DSA-07",
+    "copied 8 long sentences into deep senior: DSA-07",
+    "copied 3 long sentences into structured: DSA-08",
+    "copied 6 long sentences into deep senior: DSA-08",
+    "copied 2 long sentences into structured: DSA-09",
+    "copied 5 long sentences into deep senior: DSA-09",
+    "copied 3 long sentences into structured: DSA-10",
+    "copied 6 long sentences into deep senior: DSA-10",
+    "copied 3 long sentences into structured: DSA-11",
+    "copied 6 long sentences into deep senior: DSA-11",
+    "copied 5 long sentences into structured: DSA-12",
+    "copied 6 long sentences into deep senior: DSA-12",
+    "copied 4 long sentences into structured: DSA-13",
+    "copied 8 long sentences into deep senior: DSA-13",
+    "copied 5 long sentences into structured: DSA-14",
+    "copied 8 long sentences into deep senior: DSA-14",
+    "copied 5 long sentences into structured: DSA-15",
+    "copied 4 long sentences into deep senior: DSA-15",
+    "copied 2 long sentences into structured: DSA-16",
+    "copied 4 long sentences into deep senior: DSA-16",
+    "copied 3 long sentences into structured: LEAD-01",
+    "copied 5 long sentences into deep senior: LEAD-01",
+    "copied 2 long sentences into structured: LEAD-02",
+    "copied 4 long sentences into deep senior: LEAD-02",
+    "copied 3 long sentences into structured: LEAD-03",
+    "copied 5 long sentences into deep senior: LEAD-03",
+    "copied 4 long sentences into structured: LEAD-04",
+    "copied 7 long sentences into deep senior: LEAD-04",
+    "copied 3 long sentences into structured: LEAD-05",
+    "copied 4 long sentences into deep senior: LEAD-05",
+    "copied 3 long sentences into structured: LEAD-06",
+    "copied 5 long sentences into deep senior: LEAD-06",
+    "copied 5 long sentences into structured: LEAD-07",
+    "copied 5 long sentences into deep senior: LEAD-07",
+    "copied 3 long sentences into structured: LEAD-08",
+    "copied 5 long sentences into deep senior: LEAD-08",
+    "copied 4 long sentences into structured: LEAD-09",
+    "copied 4 long sentences into deep senior: LEAD-09",
+    "copied 3 long sentences into structured: LEAD-10",
+    "copied 6 long sentences into deep senior: LEAD-10",
+    "copied 4 long sentences into structured: LEAD-11",
+    "copied 4 long sentences into deep senior: LEAD-11",
+    "copied 1 long sentences into structured: LEAD-12",
+    "copied 5 long sentences into deep senior: LEAD-12",
+    "copied 5 long sentences into structured: LEAD-13",
+    "copied 3 long sentences into deep senior: LEAD-13",
+    "copied 1 long sentences into structured: LEAD-14",
+    "copied 4 long sentences into deep senior: LEAD-14",
+    "copied 2 long sentences into structured: LEAD-15",
+    "copied 4 long sentences into deep senior: LEAD-15",
+    "copied 6 long sentences into structured: PAY-01",
+    "copied 6 long sentences into deep senior: PAY-01",
+    "copied 2 long sentences into structured: PAY-03",
+    "copied 6 long sentences into deep senior: PAY-03",
+    "copied 4 long sentences into structured: PAY-04",
+    "copied 6 long sentences into deep senior: PAY-04",
+    "copied 4 long sentences into structured: PAY-05",
+    "copied 8 long sentences into deep senior: PAY-05",
+    "copied 3 long sentences into structured: PAY-06",
+    "copied 5 long sentences into deep senior: PAY-06",
+    "copied 3 long sentences into structured: PAY-07",
+    "copied 6 long sentences into deep senior: PAY-07",
+    "copied 4 long sentences into structured: PAY-08",
+    "copied 3 long sentences into deep senior: PAY-08",
+    "copied 5 long sentences into structured: PAY-09",
+    "copied 7 long sentences into deep senior: PAY-09",
+    "copied 4 long sentences into structured: PAY-10",
+    "copied 6 long sentences into deep senior: PAY-10",
+    "copied 4 long sentences into structured: PAY-11",
+    "copied 6 long sentences into deep senior: PAY-11",
+    "copied 2 long sentences into structured: PAY-12",
+    "copied 8 long sentences into deep senior: PAY-12",
+    "copied 4 long sentences into structured: PAY-13",
+    "copied 5 long sentences into deep senior: PAY-13",
+    "copied 4 long sentences into structured: PAY-14",
+    "copied 6 long sentences into deep senior: PAY-14",
+    "copied 2 long sentences into structured: PAY-15",
+    "copied 5 long sentences into deep senior: PAY-15"
+  ],
   "reviewedIds": [
+    "KOT-01",
+    "KOT-02",
+    "KOT-03",
+    "KOT-04",
+    "KOT-05",
+    "KOT-06",
+    "KOT-07",
+    "KOT-08",
+    "KOT-09",
+    "KOT-10",
+    "KOT-11",
+    "KOT-12",
+    "KOT-13",
+    "KOT-14",
+    "KOT-15",
+    "KOT-16",
+    "KOT-17",
+    "KOT-18",
+    "KOT-19",
+    "KOT-20",
+    "KOT-21",
+    "KOT-22",
+    "KOT-23",
+    "KOT-24",
+    "KOT-25",
+    "KOT-26",
+    "KOT-27",
+    "KOT-28",
+    "KOT-29",
+    "KOT-30",
+    "AND-01",
+    "AND-02",
+    "AND-03",
+    "AND-04",
+    "AND-05",
+    "AND-06",
+    "AND-07",
+    "AND-08",
+    "AND-09",
+    "AND-10",
+    "AND-11",
+    "AND-12",
+    "AND-13",
+    "AND-14",
+    "AND-15",
+    "AND-16",
+    "AND-17",
+    "AND-18",
+    "AND-19",
+    "AND-20",
+    "AND-21",
+    "AND-22",
+    "AND-23",
+    "AND-24",
+    "AND-25",
+    "MEM-01",
+    "MEM-02",
+    "MEM-03",
+    "MEM-04",
+    "MEM-05",
+    "MEM-06",
+    "MEM-07",
+    "MEM-08",
+    "MEM-09",
+    "MEM-10",
+    "MEM-11",
+    "MEM-12",
+    "MEM-13",
+    "MEM-14",
+    "MEM-15",
+    "MEM-16",
+    "MEM-17",
+    "MEM-18",
+    "MEM-19",
+    "MEM-20",
+    "MEM-21",
+    "MEM-22",
+    "MEM-23",
+    "MEM-24",
+    "MEM-25",
+    "MEM-26",
     "COR-01",
     "COR-02",
+    "COR-03",
+    "COR-04",
+    "COR-05",
+    "COR-06",
+    "COR-07",
+    "COR-08",
+    "COR-09",
+    "COR-10",
+    "COR-11",
+    "COR-12",
+    "COR-13",
+    "COR-14",
+    "COR-15",
+    "COR-16",
+    "COR-17",
+    "COR-18",
+    "COR-19",
+    "COR-20",
+    "COR-21",
+    "COR-22",
+    "COR-23",
+    "COR-24",
+    "COR-25",
+    "COR-26",
+    "COR-27",
+    "COR-28",
+    "COR-29",
+    "COR-30",
+    "COR-31",
+    "COR-32",
+    "FLO-01",
+    "FLO-02",
+    "FLO-03",
+    "FLO-04",
+    "FLO-05",
     "FLO-06",
+    "FLO-07",
+    "FLO-08",
+    "FLO-09",
+    "FLO-10",
+    "FLO-11",
+    "FLO-12",
+    "FLO-13",
+    "FLO-14",
+    "FLO-15",
+    "FLO-16",
+    "FLO-17",
+    "FLO-18",
+    "FLO-19",
+    "FLO-20",
+    "FLO-21",
+    "FLO-22",
+    "FLO-23",
+    "FLO-24",
+    "FLO-25",
+    "FLO-26",
+    "FLO-27",
+    "FLO-28",
+    "FLO-29",
+    "FLO-30",
+    "FLO-31",
+    "FLO-32",
+    "ARC-01",
+    "ARC-02",
+    "ARC-03",
+    "ARC-04",
+    "ARC-05",
+    "ARC-06",
+    "ARC-07",
+    "ARC-08",
+    "ARC-09",
+    "ARC-10",
+    "ARC-11",
+    "ARC-12",
+    "ARC-13",
+    "ARC-14",
+    "ARC-15",
+    "ARC-16",
+    "ARC-17",
+    "ARC-18",
+    "ARC-19",
+    "ARC-20",
+    "ARC-21",
+    "ARC-22",
+    "ARC-23",
+    "ARC-24",
+    "ARC-25",
+    "ARC-26",
+    "SOL-01",
+    "SOL-02",
+    "SOL-03",
+    "SOL-04",
+    "SOL-05",
+    "SOL-06",
+    "SOL-07",
+    "SOL-08",
+    "SOL-09",
+    "SOL-10",
+    "SOL-11",
+    "SOL-12",
+    "SOL-13",
+    "SOL-14",
+    "SOL-15",
+    "SOL-16",
+    "SOL-17",
+    "SOL-18",
+    "SOL-19",
+    "SOL-20",
+    "PAT-01",
+    "PAT-02",
+    "PAT-03",
+    "PAT-04",
+    "PAT-05",
+    "PAT-06",
+    "PAT-07",
+    "PAT-08",
+    "PAT-09",
+    "PAT-10",
+    "PAT-11",
+    "PAT-12",
+    "PAT-13",
+    "PAT-14",
+    "PAT-15",
+    "PAT-16",
+    "PAT-17",
+    "PAT-18",
+    "DAT-01",
+    "DAT-02",
+    "DAT-03",
+    "DAT-04",
+    "DAT-05",
+    "DAT-06",
+    "DAT-07",
+    "DAT-08",
+    "DAT-09",
+    "DAT-10",
+    "DAT-11",
+    "DAT-12",
+    "DAT-13",
+    "DAT-14",
+    "DAT-15",
+    "DAT-16",
+    "DAT-17",
+    "DAT-18",
+    "DAT-19",
+    "DAT-20",
+    "DAT-21",
+    "DAT-22",
+    "BG-01",
+    "BG-02",
+    "BG-03",
+    "BG-04",
+    "BG-05",
+    "BG-06",
+    "BG-07",
+    "BG-08",
+    "BG-09",
+    "BG-10",
+    "BG-11",
+    "BG-12",
+    "BG-13",
+    "BG-14",
+    "BG-15",
+    "BG-16",
+    "BG-17",
+    "BG-18",
+    "SEC-01",
+    "SEC-02",
+    "SEC-03",
+    "SEC-04",
+    "SEC-05",
+    "SEC-06",
+    "SEC-07",
+    "SEC-08",
+    "SEC-09",
+    "SEC-10",
+    "SEC-11",
     "SEC-12",
-    "PAY-02"
-  ]
+    "SEC-13",
+    "SEC-14",
+    "SEC-15",
+    "SEC-16",
+    "SEC-17",
+    "SEC-18",
+    "SEC-19",
+    "SEC-20",
+    "SEC-21",
+    "SEC-22",
+    "SEC-23",
+    "SEC-24",
+    "SEC-25",
+    "SEC-26",
+    "SEC-27",
+    "SEC-28",
+    "SEC-29",
+    "SEC-30",
+    "SEC-31",
+    "SEC-32",
+    "SYS-01",
+    "SYS-02",
+    "SYS-03",
+    "SYS-04",
+    "SYS-05",
+    "SYS-06",
+    "SYS-07",
+    "SYS-08",
+    "SYS-09",
+    "SYS-10",
+    "SYS-11",
+    "SYS-12",
+    "SYS-13",
+    "SYS-14",
+    "SYS-15",
+    "SYS-16",
+    "SYS-17",
+    "SYS-18",
+    "SYS-19",
+    "SYS-20",
+    "SYS-21",
+    "SYS-22",
+    "SYS-23",
+    "SYS-24",
+    "TST-01",
+    "TST-02",
+    "TST-03",
+    "TST-04",
+    "TST-05",
+    "TST-06",
+    "TST-07",
+    "TST-08",
+    "TST-09",
+    "TST-10",
+    "TST-11",
+    "TST-12",
+    "TST-13",
+    "TST-14",
+    "TST-15",
+    "TST-16",
+    "TST-17",
+    "TST-18",
+    "TST-19",
+    "TST-20",
+    "TST-21",
+    "TST-22",
+    "TST-23",
+    "TST-24",
+    "CIC-01",
+    "CIC-02",
+    "CIC-03",
+    "CIC-04",
+    "CIC-05",
+    "CIC-06",
+    "CIC-07",
+    "CIC-08",
+    "CIC-09",
+    "CIC-10",
+    "CIC-11",
+    "CIC-12",
+    "CIC-13",
+    "CIC-14",
+    "CIC-15",
+    "CIC-16",
+    "CIC-17",
+    "CIC-18",
+    "CIC-19",
+    "CIC-20",
+    "DSA-01",
+    "DSA-02",
+    "DSA-03",
+    "DSA-04",
+    "DSA-05",
+    "DSA-06",
+    "DSA-07",
+    "DSA-08",
+    "DSA-09",
+    "DSA-10",
+    "DSA-11",
+    "DSA-12",
+    "DSA-13",
+    "DSA-14",
+    "DSA-15",
+    "DSA-16",
+    "LEAD-01",
+    "LEAD-02",
+    "LEAD-03",
+    "LEAD-04",
+    "LEAD-05",
+    "LEAD-06",
+    "LEAD-07",
+    "LEAD-08",
+    "LEAD-09",
+    "LEAD-10",
+    "LEAD-11",
+    "LEAD-12",
+    "LEAD-13",
+    "LEAD-14",
+    "LEAD-15",
+    "PAY-01",
+    "PAY-02",
+    "PAY-03",
+    "PAY-04",
+    "PAY-05",
+    "PAY-06",
+    "PAY-07",
+    "PAY-08",
+    "PAY-09",
+    "PAY-10",
+    "PAY-11",
+    "PAY-12",
+    "PAY-13",
+    "PAY-14",
+    "PAY-15"
+  ],
+  "sourceOnlyIds": [
+    "DI-01",
+    "DI-02",
+    "DI-03",
+    "DI-04",
+    "DI-05",
+    "DI-06",
+    "DI-07",
+    "DI-08",
+    "DI-09",
+    "DI-10",
+    "DI-11",
+    "DI-12",
+    "DI-13",
+    "DI-14",
+    "DI-15",
+    "DI-16",
+    "DI-17",
+    "DI-18",
+    "DI-19",
+    "DI-20",
+    "COM-01",
+    "COM-02",
+    "COM-03",
+    "COM-04",
+    "COM-05",
+    "COM-06",
+    "COM-07",
+    "COM-08",
+    "COM-09",
+    "COM-10",
+    "COM-11",
+    "COM-12",
+    "COM-13",
+    "COM-14",
+    "COM-15",
+    "COM-16",
+    "COM-17",
+    "COM-18",
+    "COM-19",
+    "COM-20",
+    "COM-21",
+    "COM-22",
+    "COM-23",
+    "COM-24",
+    "COM-25",
+    "COM-26",
+    "COM-27",
+    "COM-28",
+    "MOD-01",
+    "MOD-02",
+    "MOD-03",
+    "MOD-04",
+    "MOD-05",
+    "MOD-06",
+    "MOD-07",
+    "MOD-08",
+    "MOD-09",
+    "MOD-10",
+    "MOD-11",
+    "MOD-12",
+    "MOD-13",
+    "MOD-14",
+    "MOD-15",
+    "MOD-16",
+    "MOD-17",
+    "MOD-18",
+    "MOD-19",
+    "MOD-20",
+    "MOD-21",
+    "BLD-01",
+    "BLD-02",
+    "BLD-03",
+    "BLD-04",
+    "BLD-05",
+    "BLD-06",
+    "BLD-07",
+    "BLD-08",
+    "BLD-09",
+    "BLD-10",
+    "BLD-11",
+    "BLD-12",
+    "BLD-13",
+    "BLD-14",
+    "BLD-15",
+    "BLD-16",
+    "BLD-17",
+    "BLD-18",
+    "BLD-19",
+    "BLD-20",
+    "BLD-21"
+  ],
+  "qualityPassing": 165,
+  "questionStatus": {
+    "KOT-01": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-02": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-03": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-04": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-05": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-06": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-07": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-08": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-09": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-10": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-11": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-12": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-13": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-14": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-15": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-16": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-17": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-18": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-19": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-20": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-21": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-22": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-23": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-24": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-25": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-26": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-27": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-28": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "KOT-29": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "KOT-30": {
+      "topic": "KOT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "AND-01": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-02": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-03": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "AND-04": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-05": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-06": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "AND-07": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-08": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-09": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-10": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-11": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-12": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-13": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-14": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-15": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-16": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-17": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-18": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-19": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-20": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-21": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-22": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-23": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "AND-24": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "AND-25": {
+      "topic": "AND",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-01": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-02": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-03": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-04": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-05": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-06": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-07": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-08": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-09": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-10": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-11": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-12": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-13": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-14": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-15": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-16": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-17": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-18": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-19": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-20": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-21": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-22": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "MEM-23": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-24": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-25": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "MEM-26": {
+      "topic": "MEM",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "COR-01": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "COR-02": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "COR-03": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-04": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-05": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-06": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-07": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-08": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-09": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-10": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-11": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-12": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-13": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-14": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-15": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-16": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-17": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-18": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-19": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-20": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-21": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-22": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-23": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-24": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-25": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-26": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-27": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-28": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-29": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-30": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-31": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "COR-32": {
+      "topic": "COR",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-01": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-02": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-03": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-04": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-05": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-06": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "FLO-07": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-08": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-09": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-10": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-11": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-12": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-13": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-14": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-15": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-16": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-17": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-18": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-19": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-20": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-21": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-22": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-23": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-24": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-25": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-26": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-27": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-28": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-29": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-30": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-31": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "FLO-32": {
+      "topic": "FLO",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "ARC-01": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-02": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-03": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-04": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-05": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-06": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-07": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "ARC-08": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-09": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-10": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-11": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "ARC-12": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-13": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-14": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-15": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-16": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-17": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-18": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "ARC-19": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-20": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-21": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-22": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-23": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-24": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-25": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "ARC-26": {
+      "topic": "ARC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SOL-01": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SOL-02": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SOL-03": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "SOL-04": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SOL-05": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "SOL-06": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "SOL-07": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SOL-08": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SOL-09": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SOL-10": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "SOL-11": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SOL-12": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "SOL-13": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SOL-14": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SOL-15": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "SOL-16": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SOL-17": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SOL-18": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SOL-19": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SOL-20": {
+      "topic": "SOL",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "PAT-01": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "PAT-02": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "PAT-03": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "PAT-04": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "PAT-05": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "PAT-06": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "PAT-07": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "PAT-08": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "PAT-09": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "PAT-10": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "PAT-11": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "PAT-12": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "PAT-13": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "PAT-14": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "PAT-15": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "PAT-16": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "PAT-17": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "PAT-18": {
+      "topic": "PAT",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "DI-01": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-02": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-03": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-04": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-05": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-06": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-07": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-08": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-09": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-10": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-11": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-12": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-13": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-14": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-15": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-16": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-17": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-18": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-19": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DI-20": {
+      "topic": "DI",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-01": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-02": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-03": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-04": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-05": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-06": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-07": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-08": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-09": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-10": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-11": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-12": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-13": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-14": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-15": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-16": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-17": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-18": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-19": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-20": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-21": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-22": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-23": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-24": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-25": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-26": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-27": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "COM-28": {
+      "topic": "COM",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "DAT-01": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-02": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-03": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-04": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-05": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-06": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-07": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-08": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-09": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-10": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-11": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-12": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-13": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-14": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-15": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-16": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-17": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-18": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-19": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-20": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-21": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "DAT-22": {
+      "topic": "DAT",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-01": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-02": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-03": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-04": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-05": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-06": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-07": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-08": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-09": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-10": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-11": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-12": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-13": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-14": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-15": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-16": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-17": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "BG-18": {
+      "topic": "BG",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SEC-01": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SEC-02": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SEC-03": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SEC-04": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SEC-05": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SEC-06": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SEC-07": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SEC-08": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SEC-09": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SEC-10": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SEC-11": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SEC-12": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "SEC-13": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SEC-14": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SEC-15": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SEC-16": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": false
+    },
+    "SEC-17": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "SEC-18": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "SEC-19": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "SEC-20": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "SEC-21": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "SEC-22": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "SEC-23": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "SEC-24": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "SEC-25": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "SEC-26": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "SEC-27": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "SEC-28": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "SEC-29": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "SEC-30": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "SEC-31": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "SEC-32": {
+      "topic": "SEC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "SYS-01": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-02": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-03": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-04": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-05": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-06": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-07": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-08": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-09": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-10": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-11": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-12": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-13": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-14": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-15": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-16": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-17": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-18": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-19": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-20": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-21": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-22": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-23": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "SYS-24": {
+      "topic": "SYS",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": true
+    },
+    "MOD-01": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-02": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-03": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-04": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-05": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-06": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-07": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-08": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-09": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-10": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-11": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-12": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-13": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-14": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-15": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-16": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-17": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-18": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-19": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-20": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "MOD-21": {
+      "topic": "MOD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-01": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-02": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-03": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-04": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-05": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-06": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-07": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-08": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-09": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-10": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-11": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-12": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-13": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-14": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-15": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-16": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-17": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-18": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-19": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-20": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "BLD-21": {
+      "topic": "BLD",
+      "status": "source-only",
+      "automatedQuality": "not-authored",
+      "hasKotlinCode": false
+    },
+    "TST-01": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-02": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-03": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-04": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-05": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-06": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-07": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-08": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-09": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-10": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-11": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-12": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-13": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-14": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-15": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-16": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-17": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-18": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-19": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-20": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-21": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-22": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-23": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "TST-24": {
+      "topic": "TST",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-01": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-02": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-03": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-04": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-05": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-06": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-07": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-08": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-09": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-10": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-11": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-12": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-13": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-14": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-15": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-16": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-17": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-18": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-19": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "CIC-20": {
+      "topic": "CIC",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "DSA-01": {
+      "topic": "DSA",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "DSA-02": {
+      "topic": "DSA",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "DSA-03": {
+      "topic": "DSA",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "DSA-04": {
+      "topic": "DSA",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "DSA-05": {
+      "topic": "DSA",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "DSA-06": {
+      "topic": "DSA",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "DSA-07": {
+      "topic": "DSA",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "DSA-08": {
+      "topic": "DSA",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "DSA-09": {
+      "topic": "DSA",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "DSA-10": {
+      "topic": "DSA",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "DSA-11": {
+      "topic": "DSA",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "DSA-12": {
+      "topic": "DSA",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "DSA-13": {
+      "topic": "DSA",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "DSA-14": {
+      "topic": "DSA",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "DSA-15": {
+      "topic": "DSA",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "DSA-16": {
+      "topic": "DSA",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "LEAD-01": {
+      "topic": "LEAD",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "LEAD-02": {
+      "topic": "LEAD",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "LEAD-03": {
+      "topic": "LEAD",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "LEAD-04": {
+      "topic": "LEAD",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "LEAD-05": {
+      "topic": "LEAD",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "LEAD-06": {
+      "topic": "LEAD",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "LEAD-07": {
+      "topic": "LEAD",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "LEAD-08": {
+      "topic": "LEAD",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "LEAD-09": {
+      "topic": "LEAD",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "LEAD-10": {
+      "topic": "LEAD",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "LEAD-11": {
+      "topic": "LEAD",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "LEAD-12": {
+      "topic": "LEAD",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "LEAD-13": {
+      "topic": "LEAD",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "LEAD-14": {
+      "topic": "LEAD",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "LEAD-15": {
+      "topic": "LEAD",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "PAY-01": {
+      "topic": "PAY",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "PAY-02": {
+      "topic": "PAY",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
+      "hasKotlinCode": true
+    },
+    "PAY-03": {
+      "topic": "PAY",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "PAY-04": {
+      "topic": "PAY",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "PAY-05": {
+      "topic": "PAY",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "PAY-06": {
+      "topic": "PAY",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "PAY-07": {
+      "topic": "PAY",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "PAY-08": {
+      "topic": "PAY",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "PAY-09": {
+      "topic": "PAY",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "PAY-10": {
+      "topic": "PAY",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "PAY-11": {
+      "topic": "PAY",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "PAY-12": {
+      "topic": "PAY",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "PAY-13": {
+      "topic": "PAY",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "PAY-14": {
+      "topic": "PAY",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    },
+    "PAY-15": {
+      "topic": "PAY",
+      "status": "reviewed",
+      "automatedQuality": "needs-fix",
+      "hasKotlinCode": false
+    }
+  },
+  "topicCoverage": {
+    "AND": {
+      "total": 25,
+      "reviewed": 25,
+      "sourceOnly": 0,
+      "qualityIssues": 0
+    },
+    "ARC": {
+      "total": 26,
+      "reviewed": 26,
+      "sourceOnly": 0,
+      "qualityIssues": 0
+    },
+    "BG": {
+      "total": 18,
+      "reviewed": 18,
+      "sourceOnly": 0,
+      "qualityIssues": 18
+    },
+    "BLD": {
+      "total": 21,
+      "reviewed": 0,
+      "sourceOnly": 21,
+      "qualityIssues": 0
+    },
+    "CIC": {
+      "total": 20,
+      "reviewed": 20,
+      "sourceOnly": 0,
+      "qualityIssues": 20
+    },
+    "COM": {
+      "total": 28,
+      "reviewed": 0,
+      "sourceOnly": 28,
+      "qualityIssues": 0
+    },
+    "COR": {
+      "total": 32,
+      "reviewed": 32,
+      "sourceOnly": 0,
+      "qualityIssues": 30
+    },
+    "DAT": {
+      "total": 22,
+      "reviewed": 22,
+      "sourceOnly": 0,
+      "qualityIssues": 22
+    },
+    "DI": {
+      "total": 20,
+      "reviewed": 0,
+      "sourceOnly": 20,
+      "qualityIssues": 0
+    },
+    "DSA": {
+      "total": 16,
+      "reviewed": 16,
+      "sourceOnly": 0,
+      "qualityIssues": 16
+    },
+    "FLO": {
+      "total": 32,
+      "reviewed": 32,
+      "sourceOnly": 0,
+      "qualityIssues": 31
+    },
+    "KOT": {
+      "total": 30,
+      "reviewed": 30,
+      "sourceOnly": 0,
+      "qualityIssues": 0
+    },
+    "LEAD": {
+      "total": 15,
+      "reviewed": 15,
+      "sourceOnly": 0,
+      "qualityIssues": 15
+    },
+    "MEM": {
+      "total": 26,
+      "reviewed": 26,
+      "sourceOnly": 0,
+      "qualityIssues": 0
+    },
+    "MOD": {
+      "total": 21,
+      "reviewed": 0,
+      "sourceOnly": 21,
+      "qualityIssues": 0
+    },
+    "PAT": {
+      "total": 18,
+      "reviewed": 18,
+      "sourceOnly": 0,
+      "qualityIssues": 0
+    },
+    "PAY": {
+      "total": 15,
+      "reviewed": 15,
+      "sourceOnly": 0,
+      "qualityIssues": 14
+    },
+    "SEC": {
+      "total": 32,
+      "reviewed": 32,
+      "sourceOnly": 0,
+      "qualityIssues": 16
+    },
+    "SOL": {
+      "total": 20,
+      "reviewed": 20,
+      "sourceOnly": 0,
+      "qualityIssues": 0
+    },
+    "SYS": {
+      "total": 24,
+      "reviewed": 24,
+      "sourceOnly": 0,
+      "qualityIssues": 24
+    },
+    "TST": {
+      "total": 24,
+      "reviewed": 24,
+      "sourceOnly": 0,
+      "qualityIssues": 24
+    }
+  }
 }

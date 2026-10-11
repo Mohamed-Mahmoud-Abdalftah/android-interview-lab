@@ -71,15 +71,19 @@ An offline-first inbox exposes an immutable `InboxUiState` from a ViewModel. Rap
 
 “`StateFlow` models observable current state. It always has an initial value, gives a new collector the latest value, and conflates updates based on equality. That makes it useful for a ViewModel UI state where the latest snapshot matters more than every transition. For example, I publish a new immutable `CounterUiState` after an action and use `update` if multiple coroutines may modify it. Mutating an object in place or giving it a broken equality contract can hide changes. For commands or financial events that must be handled exactly once as a business effect, I use an explicit delivery and persistence design instead of assuming StateFlow guarantees it.”
 
+## Interview answer — deep senior
+
+“StateFlow is a hot holder of one current value. It immediately gives a collector that value, and an update equal under `equals` does not produce a distinct state transition. A slow collector may observe only the latest state, which is exactly what a UI snapshot often needs and exactly why StateFlow is unsuitable as an audit or command queue. I publish immutable state and use `update` for concurrent transformations rather than mutate an object behind the flow. I collect with the screen lifecycle and decide separately how one-time effects are acknowledged and recovered after process death. When converting a cold upstream with `stateIn`, I choose the sharing policy and initial value deliberately.”
+
 ## Deep-dive talking points
 
 Compare `stateIn` and `shareIn`; explain lifecycle-aware collection, replay semantics, equality versus reference identity, and why a slow collector is not an audit log.
 
 ## Follow-up questions
 
-- [FLO-03](../flo-03/): Why are StateFlow and SharedFlow hot? **Hint:** their instance exists independently of a collector.
-- [FLO-05](../flo-05/): Why does StateFlow need an initial value? **Hint:** it promises a readable current state.
-- [FLO-20](../flo-20/): How should UI events be delivered? **Hint:** define replay, acknowledgement, and process-death requirements.
+- [FLO-03](../flo-03/): Why are StateFlow and SharedFlow hot? **Answer:** emission and their holder exist independently of a particular collector, unlike a cold flow whose upstream starts per collection.
+- [FLO-05](../flo-05/): Why does StateFlow need an initial value? **Answer:** its contract includes a synchronously readable current `value` before any collector subscribes.
+- [FLO-20](../flo-20/): How should UI events be delivered? **Answer:** choose replay, acknowledgement, and persistence from the event's consequences; do not assume StateFlow records every intermediate event.
 
 ## Self-check rubric
 

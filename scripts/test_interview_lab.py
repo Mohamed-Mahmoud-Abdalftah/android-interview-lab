@@ -1,6 +1,7 @@
 import unittest
 
 from import_interview_lab import SOURCE, parse_source
+import validate_interview_lab
 from validate_interview_lab import validate
 
 
@@ -17,6 +18,29 @@ class InterviewLabSourceTests(unittest.TestCase):
         report = validate()
         self.assertEqual(report["missing"], 0)
         self.assertEqual(report["errors"], [])
+
+    def test_speaking_answer_rejects_copied_explanation_sentences(self):
+        source = "A database transaction holds the write lock while network I/O waits for a server. This blocks a competing query from completing."
+        answer = "First I locate the lock holder. A database transaction holds the write lock while network I/O waits for a server. I then shorten that transaction."
+        self.assertEqual(
+            validate_interview_lab.copied_long_sentences(source, answer),
+            ["A database transaction holds the write lock while network I/O waits for a server."],
+        )
+
+    def test_speaking_answer_accepts_distinct_reasoning(self):
+        source = "A database transaction holds the write lock while network I/O waits for a server."
+        answer = "I would find which thread owns the transaction, move the remote call outside it, and persist a pending state for recovery."
+        self.assertEqual(validate_interview_lab.copied_long_sentences(source, answer), [])
+
+    def test_coverage_report_tracks_each_question_and_topic(self):
+        report = validate()
+        self.assertEqual(len(report["questionStatus"]), 485)
+        self.assertEqual(report["questionStatus"]["AND-01"]["topic"], "AND")
+        self.assertIn(report["questionStatus"]["AND-01"]["status"], {"reviewed", "source-only"})
+        self.assertEqual(sum(topic["total"] for topic in report["topicCoverage"].values()), 485)
+        self.assertEqual(len(report["sourceOnlyIds"]), report["sourceOnly"])
+        self.assertEqual(report["qualityPassing"], sum(
+            item["automatedQuality"] == "passes-checks" for item in report["questionStatus"].values()))
 
 
 if __name__ == "__main__":
