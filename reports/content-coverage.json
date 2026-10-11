@@ -3,8 +3,8 @@
   "uniqueIds": 485,
   "topics": 21,
   "records": 485,
-  "reviewed": 419,
-  "sourceOnly": 66,
+  "reviewed": 443,
+  "sourceOnly": 42,
   "missing": 0,
   "placeholderCount": 0,
   "errors": [],
@@ -242,6 +242,30 @@
     "COM-02",
     "COM-03",
     "COM-04",
+    "COM-05",
+    "COM-06",
+    "COM-07",
+    "COM-08",
+    "COM-09",
+    "COM-10",
+    "COM-11",
+    "COM-12",
+    "COM-13",
+    "COM-14",
+    "COM-15",
+    "COM-16",
+    "COM-17",
+    "COM-18",
+    "COM-19",
+    "COM-20",
+    "COM-21",
+    "COM-22",
+    "COM-23",
+    "COM-24",
+    "COM-25",
+    "COM-26",
+    "COM-27",
+    "COM-28",
     "DAT-01",
     "DAT-02",
     "DAT-03",
@@ -430,30 +454,6 @@
     "PAY-15"
   ],
   "sourceOnlyIds": [
-    "COM-05",
-    "COM-06",
-    "COM-07",
-    "COM-08",
-    "COM-09",
-    "COM-10",
-    "COM-11",
-    "COM-12",
-    "COM-13",
-    "COM-14",
-    "COM-15",
-    "COM-16",
-    "COM-17",
-    "COM-18",
-    "COM-19",
-    "COM-20",
-    "COM-21",
-    "COM-22",
-    "COM-23",
-    "COM-24",
-    "COM-25",
-    "COM-26",
-    "COM-27",
-    "COM-28",
     "MOD-01",
     "MOD-02",
     "MOD-03",
@@ -497,7 +497,7 @@
     "BLD-20",
     "BLD-21"
   ],
-  "qualityPassing": 419,
+  "qualityPassing": 443,
   "questionStatus": {
     "KOT-01": {
       "topic": "KOT",
@@ -1899,146 +1899,146 @@
     },
     "COM-05": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-06": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-07": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-08": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-09": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-10": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-11": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-12": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-13": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-14": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-15": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-16": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-17": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-18": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-19": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-20": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-21": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-22": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-23": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-24": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-25": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-26": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-27": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "COM-28": {
       "topic": "COM",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "DAT-01": {
@@ -3443,8 +3443,8 @@
     },
     "COM": {
       "total": 28,
-      "reviewed": 4,
-      "sourceOnly": 24,
+      "reviewed": 28,
+      "sourceOnly": 0,
       "qualityIssues": 0
     },
     "COR": {
