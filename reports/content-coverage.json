@@ -3,8 +3,8 @@
   "uniqueIds": 485,
   "topics": 21,
   "records": 485,
-  "reviewed": 443,
-  "sourceOnly": 42,
+  "reviewed": 464,
+  "sourceOnly": 21,
   "missing": 0,
   "placeholderCount": 0,
   "errors": [],
@@ -362,6 +362,27 @@
     "SYS-22",
     "SYS-23",
     "SYS-24",
+    "MOD-01",
+    "MOD-02",
+    "MOD-03",
+    "MOD-04",
+    "MOD-05",
+    "MOD-06",
+    "MOD-07",
+    "MOD-08",
+    "MOD-09",
+    "MOD-10",
+    "MOD-11",
+    "MOD-12",
+    "MOD-13",
+    "MOD-14",
+    "MOD-15",
+    "MOD-16",
+    "MOD-17",
+    "MOD-18",
+    "MOD-19",
+    "MOD-20",
+    "MOD-21",
     "TST-01",
     "TST-02",
     "TST-03",
@@ -454,27 +475,6 @@
     "PAY-15"
   ],
   "sourceOnlyIds": [
-    "MOD-01",
-    "MOD-02",
-    "MOD-03",
-    "MOD-04",
-    "MOD-05",
-    "MOD-06",
-    "MOD-07",
-    "MOD-08",
-    "MOD-09",
-    "MOD-10",
-    "MOD-11",
-    "MOD-12",
-    "MOD-13",
-    "MOD-14",
-    "MOD-15",
-    "MOD-16",
-    "MOD-17",
-    "MOD-18",
-    "MOD-19",
-    "MOD-20",
-    "MOD-21",
     "BLD-01",
     "BLD-02",
     "BLD-03",
@@ -497,7 +497,7 @@
     "BLD-20",
     "BLD-21"
   ],
-  "qualityPassing": 443,
+  "qualityPassing": 464,
   "questionStatus": {
     "KOT-01": {
       "topic": "KOT",
@@ -2619,128 +2619,128 @@
     },
     "MOD-01": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-02": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-03": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-04": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-05": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-06": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-07": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-08": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-09": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-10": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-11": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-12": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-13": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-14": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-15": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-16": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-17": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-18": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-19": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-20": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "MOD-21": {
       "topic": "MOD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-01": {
@@ -3497,8 +3497,8 @@
     },
     "MOD": {
       "total": 21,
-      "reviewed": 0,
-      "sourceOnly": 21,
+      "reviewed": 21,
+      "sourceOnly": 0,
       "qualityIssues": 0
     },
     "PAT": {
