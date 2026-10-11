@@ -7,7 +7,7 @@ group: "B"
 phase: 5
 priority: "P2"
 order: 479
-editorial_status: "source-only"
+editorial_status: "reviewed"
 ---
 
 # PAY-09
@@ -15,3 +15,64 @@ editorial_status: "source-only"
 ## Original interview question
 
 How do you isolate a hardware/EMV SDK behind a clean interface?
+
+## What the interviewer evaluates
+
+- SDK adapter boundary and domain-owned state.
+- Callback races, device disconnect and test fakes.
+
+## Explanation in Arabic
+
+Hardware/EMV SDK يتغير حسب vendor والجهاز، فلا نخلي UI أو ViewModel يفهم raw callbacks وerror codes. نعمل interface صغير لعمليات `start/cancel/status` ونتائج domain واضحة، وadapter يترجم SDK events ويربطها بـoperation ID. لكن interface ما يلغي شروط certification ولا يخلي callback دليل نهائي على issuer outcome.
+
+## Why it matters and how it works
+
+A domain port owns stable operation identity and an explicit outcome type including Unknown. The vendor adapter handles threading, lifecycle, callback ordering and error mapping. The repository persists attempt state before invoking the SDK and reconciles against backend/provider authority after ambiguous events.
+
+## Worked example
+
+Conceptual Kotlin contract: `interface TerminalGateway { suspend fun authorize(id: String, amountMinor: Long): TerminalOutcome; suspend fun status(id: String): TerminalOutcome }` where `TerminalOutcome` includes Approved, Declined and Unknown. The adapter wraps vendor callbacks with cancellation and timeout rules; this signature alone is not a complete EMV implementation.
+
+## Trade-offs and decision criteria
+
+Abstraction improves testing and vendor replacement but can hide provider-specific capabilities if too generic. Keep a capability model or provider-specific extension for certified functions rather than forcing all SDKs into false equivalence.
+
+## Failure modes
+
+A callback arrives twice or after the UI screen closes. If UI owns it, it may duplicate a charge or lose an approval. Adapter correlates callback ID, repository commits guarded transitions, and backend reconciles unknown results.
+
+## Production perspective
+
+Run contract tests against fake adapter plus hardware test matrix by model, ABI and SDK version. Preserve raw vendor references only in restricted audit storage, never card data in logs. Certification constraints are documented.
+
+## Interview answer — short
+
+“I put an EMV SDK behind a narrow domain interface that normalizes outcomes and IDs. The adapter owns callbacks and device quirks; durable payment state and final financial authority stay outside the UI.”
+
+## Interview answer — structured
+
+“The UI should request a payment intent, not call vendor callbacks directly. A TerminalGateway adapter translates SDK methods, threading and error codes into approved, declined or unknown domain outcomes tied to a stable operation ID. A repository persists state and handles process death; backend/provider reconciliation settles ambiguous results. I test the interface with a fake and still run real hardware/certification tests for SDK-specific behavior.”
+
+## Interview answer — deep senior
+
+“I draw the boundary around what the application controls: intent identity, state persistence, cancellation semantics and observability. The adapter may wrap callbacks into a suspend API, but cancellation of a coroutine does not imply an in-flight EMV authorization was canceled. I map each SDK event to a state transition with original references, handle duplicate/late callbacks and device disconnection, and expose Unknown when evidence is insufficient. The abstraction stays honest about provider-specific void/reversal capabilities. Contract tests validate mapping; hardware matrices cover firmware, ABI and release builds.”
+
+## Deep-dive talking points
+
+Prompt for narrow port, cancellation versus payment cancellation, duplicate callbacks, capability differences and hardware tests.
+
+## Follow-up questions
+
+- [PAY-11](../pay-11/): How test timeout/disconnect? **Answer:** fake callback schedules plus real device drills.
+- [PAY-12](../pay-12/): What survives power loss? **Answer:** durable operation identity and backend record.
+
+## Self-check rubric
+
+Can I design an SDK port without erasing provider-specific constraints or conflating coroutine cancellation with payment cancellation?
+
+## References and reviewed-on date
+
+- [Android app architecture data layer](https://developer.android.com/topic/architecture/data-layer) — repository/data-source boundaries.
+- [Kotlin cancellation](https://kotlinlang.org/docs/cancellation-and-timeouts.html) — cooperative cancellation.
+
+Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.

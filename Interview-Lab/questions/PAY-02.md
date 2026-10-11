@@ -74,15 +74,19 @@ A POS terminal loses connectivity after an authorization request. It durably ret
 
 “A financial operation must tolerate at-least-once delivery without creating duplicate business effects. Suppose a charge is approved but the response is lost; the client sees a timeout, not proof of failure. Before sending, I persist a stable operation ID and immutable parameters. The server or provider atomically recognizes retries with that ID, rejects mismatched payloads, and exposes a status lookup. The client displays pending or unknown until authority resolves it. This design needs an idempotency retention window, concurrency rules, and reconciliation after crashes. It does not guarantee exactly-once HTTP execution, and provider behavior must be checked rather than assumed.”
 
+## Interview answer — deep senior
+
+“Idempotency is a business-effect contract across repeated delivery, not a claim that only one packet or handler invocation occurs. A client can lose the response after a provider commits a charge. I persist the intended operation ID and immutable amount/order details before send; the backend atomically binds that ID to one logical effect and exposes a status query. A retry uses the same key and identical parameters only within the provider's documented retention rules; after key expiry or ambiguous failure, reconciliation is safer than inventing a new attempt. Concurrent duplicate requests, partial failures, reversal, and webhook ordering are part of the server design. The UI represents pending or unknown until authoritative status arrives.”
+
 ## Deep-dive talking points
 
 Discuss duplicate concurrent requests, key-retention expiry, atomic server commits, response replay, reversal queues, reconciliation reports, and how to test a lost response after server success.
 
 ## Follow-up questions
 
-- [PAY-08](../pay-08/): What should the UI do after timeout? **Hint:** preserve identity and query status.
-- [PAY-12](../pay-12/): How do you recover after terminal power loss? **Hint:** durable intent and reconciliation.
-- [PAY-15](../pay-15/): How do reversals survive offline periods? **Hint:** durable queue plus server deduplication.
+- [PAY-08](../pay-08/): What should the UI do after timeout? **Answer:** show an unknown or pending outcome, keep attempt identity, and query authoritative status rather than start a new charge.
+- [PAY-12](../pay-12/): How do you recover after terminal power loss? **Answer:** reload a durably recorded attempt and reconcile it against provider/backend status before another financial action.
+- [PAY-15](../pay-15/): How do reversals survive offline periods? **Answer:** persist reversal intent and identity, retry under a deduplication contract, and reconcile confirmed outcome with the backend.
 
 ## Self-check rubric
 

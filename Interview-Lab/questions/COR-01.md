@@ -71,15 +71,19 @@ A search ViewModel launches request handling in `viewModelScope`; new input canc
 
 “In Kotlin, a coroutine is a computation that can pause and resume at suspension points. On Android it still executes on a thread, but it is not permanently bound to one. That lets many waiting operations use relatively few threads. For example, `delay` suspends; calling a blocking SDK method inside a coroutine still blocks whichever thread runs it. I choose a lifecycle-owned scope for UI requests, make blocking repository boundaries main-safe, and use durable scheduling for work that must outlive the screen. Coroutines simplify concurrency, but do not by themselves provide thread safety or persistence.”
 
+## Interview answer — deep senior
+
+“A coroutine is a logical computation represented by a continuation and a Job, while a thread is an execution resource. The coroutine runs instructions on a thread until it suspends or completes; a truly suspending operation can release that thread, and later continuation may resume on a dispatcher-selected thread. This makes waiting work scalable, but a blocking call or CPU loop still occupies its worker and may freeze Main. I choose a scope based on ownership, such as a ViewModel for screen work, and ensure cancellation reaches downstream APIs. Shared state still needs synchronization, and operations that must survive process death need durable records and scheduling rather than merely a longer-lived coroutine.”
+
 ## Deep-dive talking points
 
 Explain continuations and dispatcher inheritance; compare cooperative cancellation with interrupting a blocking API; discuss structured concurrency and why `GlobalScope` is a poor default for screen work. Distinguish concurrency from parallel execution.
 
 ## Follow-up questions
 
-- [COR-02](../cor-02/): Does `suspend` imply background execution? **Hint:** no dispatcher change is implied.
-- [COR-04](../cor-04/): Who waits for child jobs? **Hint:** discuss structured scope lifetime and failure propagation.
-- [COR-07](../cor-07/): Which dispatcher fits CPU work versus a blocking driver? **Hint:** inspect the API contract and resource limits.
+- [COR-02](../cor-02/): Does `suspend` imply background execution? **Answer:** no; the caller's context applies until a dispatcher is changed explicitly.
+- [COR-04](../cor-04/): Who waits for child jobs? **Answer:** a structured parent scope waits for its children before completing and propagates failure according to its Job hierarchy.
+- [COR-07](../cor-07/): Which dispatcher fits CPU work versus a blocking driver? **Answer:** CPU work normally fits `Default`; a blocking driver needs an appropriately bounded IO context, while a main-safe suspending API may need no switch.
 
 ## Self-check rubric
 

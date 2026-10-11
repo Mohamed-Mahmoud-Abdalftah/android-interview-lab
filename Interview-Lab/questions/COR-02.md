@@ -73,15 +73,19 @@ A screen ViewModel calls a repository with a documented main-safe suspend contra
 
 “A suspend function is compiled so a coroutine can pause and resume at suspension points. The modifier itself says nothing about the executing thread. If a ViewModel coroutine on Main calls a suspend function that invokes a synchronous driver, Main can still block. I put that driver call inside `withContext` with an injected IO dispatcher in the repository, while a genuinely non-blocking suspending API may need no switch. I also test cancellation and timeouts against the real driver, because a blocking operation may not stop just because its coroutine was cancelled.”
 
+## Interview answer — deep senior
+
+“The `suspend` modifier changes the call contract so a coroutine can pause at suspension points; it neither creates a new coroutine nor selects a thread. The executing dispatcher is inherited from the caller unless a block explicitly changes context. On Main, a suspending Retrofit API can await network I/O without blocking, but a synchronous database driver called inside a suspend function still blocks Main. I make each repository API main-safe at its implementation boundary, injecting a dispatcher for genuinely blocking work, and test cancellation with the real driver because cancellation of a coroutine cannot forcibly make a blocking API cooperative. That distinction matters when diagnosing an ANR despite apparently asynchronous code.”
+
 ## Deep-dive talking points
 
 Discuss continuation passing, dispatcher inheritance, main-safe API contracts, testing with an injected dispatcher, and how uncooperative blocking work interacts with cancellation.
 
 ## Follow-up questions
 
-- [COR-01](../cor-01/): How is a coroutine different from a thread? **Hint:** distinguish the unit of work from its execution resource.
-- [COR-09](../cor-09/): What does `withContext` change? **Hint:** context of a block, not the semantic contract of an arbitrary driver.
-- [COR-16](../cor-16/): How should cancellation propagate? **Hint:** avoid swallowing `CancellationException`.
+- [COR-01](../cor-01/): How is a coroutine different from a thread? **Answer:** the coroutine is suspendable work; the thread executes its instructions until suspension or completion.
+- [COR-09](../cor-09/): What does `withContext` change? **Answer:** it executes a block in another coroutine context and returns its result; it cannot by itself make an uncooperative driver cancellable.
+- [COR-16](../cor-16/): How should cancellation propagate? **Answer:** let `CancellationException` escape ordinary error handling so the parent hierarchy can stop obsolete work.
 
 ## Self-check rubric
 

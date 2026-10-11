@@ -76,15 +76,19 @@ A banking app upgrades local token storage. It does not silently discard live se
 
 “The AndroidX encrypted preferences API is now deprecated. Existing apps may still have ciphertext written with it, so the decision is not simply to swap a dependency. I inventory stored data, decide which values need local encryption at all, and define a versioned migration that reads old values only while the old key is available, verifies the new write, and safely handles key loss. For secrets such as refresh tokens, I can often clear and require re-authentication on unrecoverable key failure. Keystore protects key material subject to device capabilities; the application must still design IVs, backup rules, rotation, and incident handling. I never treat local encryption as server-side trust or a way to hide a bundled API secret.”
 
+## Interview answer — deep senior
+
+“I would first classify the data and threat model instead of choosing an encrypted preferences helper by habit. AndroidX Security Crypto's EncryptedSharedPreferences API is deprecated, so an existing app needs an explicit migration rather than a blanket recommendation for new work. Keystore can protect key material subject to device capabilities, while the app still owns authenticated encryption format, IV uniqueness, backup exclusions, versioning, and key-loss recovery. A refresh token can often be revoked and reissued after unrecoverable key invalidation; irreplaceable local data needs a different recovery plan. I would migrate with a read-old/write-new/verify sequence, test restore to a different device and biometric changes, and keep server authorization independent of any device-side ciphertext.”
+
 ## Deep-dive talking points
 
 Discuss authenticated encryption, IV uniqueness, Android backup/restore behavior, hardware-backed key properties, invalidation after authentication changes, token revocation, and migration rollback.
 
 ## Follow-up questions
 
-- [SEC-11](../sec-11/): How would you design small-secret storage? **Hint:** distinguish key management from ciphertext format.
-- [SEC-13](../sec-13/): What if the key is invalidated? **Hint:** make recovery explicit for each data class.
-- [SEC-14](../sec-14/): How do you revoke a refresh token? **Hint:** server authority and session lifecycle.
+- [SEC-11](../sec-11/): How would you design small-secret storage? **Answer:** define the data threat model, protect key material with Keystore where appropriate, and version an authenticated ciphertext format with backup rules.
+- [SEC-13](../sec-13/): What if the key is invalidated? **Answer:** treat ciphertext as unreadable; reauthenticate and rotate revocable tokens, while separately planning recovery for irreplaceable data.
+- [SEC-14](../sec-14/): How do you revoke a refresh token? **Answer:** invalidate the server-side session or token family and clear local copies; local deletion alone is not revocation.
 
 ## Self-check rubric
 
