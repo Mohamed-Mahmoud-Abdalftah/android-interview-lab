@@ -109,10 +109,13 @@ test('invalid import does not change progress and missing routes return 404', as
   await page.locator('lab-question').getByRole('button', { name: 'Bookmark', exact: true }).click();
   await page.goto(`${base}lab/`);
   const dashboard = page.locator('lab-dashboard');
-  page.once('dialog', dialog => dialog.accept());
+  const dialogPromise = page.waitForEvent('dialog');
   await dashboard.locator('input[type="file"]').setInputFiles({
     name: 'broken.json', mimeType: 'application/json', buffer: Buffer.from('{ broken json'),
   });
+  const dialog = await dialogPromise;
+  expect(dialog.message()).toContain('Invalid or unsupported progress JSON');
+  await dialog.accept();
   await page.goto(`${base}lab/questions/kot-01/`);
   await expect(page.locator('lab-question').getByRole('button', { name: 'Remove bookmark' })).toBeVisible();
   const response = await page.goto(`${base}lab/questions/not-a-real-id/`);
