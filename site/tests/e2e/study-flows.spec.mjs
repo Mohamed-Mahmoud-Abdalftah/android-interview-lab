@@ -2,6 +2,18 @@ import { expect, test } from '@playwright/test';
 
 const base = '/android-interview-lab/';
 
+async function acceptDialogDuring(page, action, expectedMessage) {
+  let message;
+  await Promise.all([
+    page.waitForEvent('dialog').then(async (dialog) => {
+      message = dialog.message();
+      await dialog.accept();
+    }),
+    action(),
+  ]);
+  expect(message).toContain(expectedMessage);
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto(base);
   await page.evaluate(() => localStorage.clear());
@@ -70,13 +82,11 @@ test('export, reset, and import restore local progress', async ({ page }) => {
   ]);
   expect(download.suggestedFilename()).toBe('android-interview-lab-progress.json');
   const filePath = await download.path();
-  page.once('dialog', dialog => dialog.accept());
-  await dashboard.getByRole('button', { name: 'Reset Interview Lab progress' }).click();
+  await acceptDialogDuring(page, () => dashboard.getByRole('button', { name: 'Reset Interview Lab progress' }).click(), 'Delete all Interview Lab notes');
   await page.goto(`${base}lab/questions/kot-01/`);
   await expect(page.locator('lab-question').getByRole('button', { name: 'Bookmark', exact: true })).toBeVisible();
   await page.goto(`${base}lab/`);
-  page.once('dialog', dialog => dialog.accept());
-  await dashboard.locator('input[type="file"]').setInputFiles(filePath);
+  await acceptDialogDuring(page, () => dashboard.locator('input[type="file"]').setInputFiles(filePath), 'Replace this browser');
   await page.goto(`${base}lab/questions/kot-01/`);
   await expect(page.locator('lab-question').getByRole('button', { name: 'Remove bookmark' })).toBeVisible();
 });
@@ -109,13 +119,9 @@ test('invalid import does not change progress and missing routes return 404', as
   await page.locator('lab-question').getByRole('button', { name: 'Bookmark', exact: true }).click();
   await page.goto(`${base}lab/`);
   const dashboard = page.locator('lab-dashboard');
-  const dialogPromise = page.waitForEvent('dialog');
-  await dashboard.locator('input[type="file"]').setInputFiles({
+  await acceptDialogDuring(page, () => dashboard.locator('input[type="file"]').setInputFiles({
     name: 'broken.json', mimeType: 'application/json', buffer: Buffer.from('{ broken json'),
-  });
-  const dialog = await dialogPromise;
-  expect(dialog.message()).toContain('Invalid or unsupported progress JSON');
-  await dialog.accept();
+  }), 'Invalid or unsupported progress JSON');
   await page.goto(`${base}lab/questions/kot-01/`);
   await expect(page.locator('lab-question').getByRole('button', { name: 'Remove bookmark' })).toBeVisible();
   const response = await page.goto(`${base}lab/questions/not-a-real-id/`);
