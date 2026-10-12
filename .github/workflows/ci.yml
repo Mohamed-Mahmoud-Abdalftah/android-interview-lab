@@ -23,8 +23,10 @@ jobs:
           cache-dependency-path: site/pnpm-lock.yaml
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: python3 scripts/validate.py
-      - run: python3 scripts/validate_interview_lab.py
+      - run: python3 scripts/validate_interview_lab.py --require-complete
       - run: pnpm install --frozen-lockfile
+        working-directory: site
+      - run: pnpm sync
         working-directory: site
       - run: pnpm lint
         working-directory: site
@@ -33,6 +35,8 @@ jobs:
       - run: pnpm build
         working-directory: site
       - run: pnpm check:dist
+        working-directory: site
+      - run: pnpm test:e2e
         working-directory: site
       - uses: actions/setup-java@v4
         with:

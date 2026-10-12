@@ -34,6 +34,8 @@ jobs:
       - run: python3 scripts/validate.py
       - run: pnpm install --frozen-lockfile
         working-directory: site
+      - run: pnpm sync
+        working-directory: site
       - run: pnpm lint
         working-directory: site
       - run: pnpm typecheck
