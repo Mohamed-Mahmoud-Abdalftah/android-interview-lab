@@ -78,4 +78,3 @@ Trace one ABI failure from device log to split contents, correct it and validate
 - [Build and test an App Bundle](https://developer.android.com/guide/app-bundle/test) — targeted split testing.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Vendor binaries require direct inspection.
-A feature works on arm64 but fails on another ABI. How do you debug packaging?

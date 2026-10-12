@@ -78,4 +78,3 @@ Place four concrete classes in modules, explain one shared exception, and identi
 - [Data layer guidance](https://developer.android.com/topic/architecture/data-layer) — repository ownership.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Physical schema split depends on project architecture.
-What belongs in :core:network, :core:database, :core:ui, and feature modules?

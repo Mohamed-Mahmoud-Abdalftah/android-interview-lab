@@ -78,4 +78,3 @@ Give baseline evidence, identify the hot path, make one safe change, and test pe
 - [Compose phases](https://developer.android.com/develop/ui/compose/phases) — phase costs.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The 20 ms measurement is illustrative, not a reported benchmark.
-A Compose screen re-renders excessively after each keystroke. How do you profile and fix it?

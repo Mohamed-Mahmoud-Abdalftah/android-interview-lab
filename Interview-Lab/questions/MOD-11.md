@@ -78,4 +78,3 @@ Draw binding visibility, choose scope and qualifier, and test one normal and one
 - [Hilt on Android](https://developer.android.com/training/dependency-injection/hilt-android) — scopes and modules.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Variant graph must be verified in the actual build.
-How do you manage dependency injection across modules?

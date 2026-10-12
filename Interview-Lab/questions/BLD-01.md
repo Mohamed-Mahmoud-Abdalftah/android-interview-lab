@@ -79,4 +79,3 @@ Map three failures to tools, trace a release build stage, and name pinned versio
 - [Kotlin compiler](https://kotlinlang.org/docs/compiler-reference.html) — language compilation.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Exact task names vary by AGP version.
-Explain Gradle, Android Gradle Plugin (AGP), and Kotlin compiler roles.

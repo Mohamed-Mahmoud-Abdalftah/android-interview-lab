@@ -77,4 +77,3 @@ Compare two examples, identify tracking cost, and choose a measured alternative.
 - [Side-effects in Compose](https://developer.android.com/develop/ui/compose/side-effects) — `derivedStateOf` cost and examples.
 
 Technically reviewed against this primary source on 2026-10-11 by automated editorial review. Performance depends on the concrete workload.
-When should you avoid derivedStateOf because its overhead exceeds the benefit?

@@ -78,4 +78,3 @@ Define both terms, diagnose one boundary violation, and weigh sharing versus dup
 - [Common modularization patterns](https://developer.android.com/topic/modularization/patterns) — practical boundaries.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Design criteria are reasoned guidance.
-What is high cohesion and low coupling?

@@ -78,4 +78,3 @@ Classify two dependencies, inspect a public signature, and explain consumer reco
 - [Android modularization patterns](https://developer.android.com/topic/modularization/patterns) — module dependencies.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Android variant behavior should be checked in the project toolchain.
-Compare Gradle api and implementation dependencies.

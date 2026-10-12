@@ -32,6 +32,11 @@ class InterviewLabSourceTests(unittest.TestCase):
         answer = "I would find which thread owns the transaction, move the remote call outside it, and persist a pending state for recovery."
         self.assertEqual(validate_interview_lab.copied_long_sentences(source, answer), [])
 
+    def test_review_footer_rejects_trailing_question(self):
+        section = "- [Source](https://example.com)\n\nTechnically reviewed on 2026-10-11.\nOriginal question?"
+        self.assertEqual(validate_interview_lab.review_footer_extra(section), "Original question?")
+        self.assertEqual(validate_interview_lab.review_footer_extra(section.split("\nOriginal")[0]), "")
+
     def test_coverage_report_tracks_each_question_and_topic(self):
         report = validate()
         self.assertEqual(len(report["questionStatus"]), 485)

@@ -79,4 +79,3 @@ Name artifact contracts, test layers, a release-only failure, and publishing ver
 - [R8 and library keep rules](https://developer.android.com/topic/performance/app-optimization/library-optimization) — consumer configuration.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. SDK compatibility policy is project-specific.
-How do you test and publish a reusable Android library/SDK module?

@@ -79,4 +79,3 @@ Identify the bottleneck, propose a targeted change, cover stale keys, and specif
 - [Paging in Compose](https://developer.android.com/topic/libraries/architecture/paging/v3-overview) — incremental data.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Workload and performance numbers are illustrative.
-How do you optimize a long list and expensive calculations?

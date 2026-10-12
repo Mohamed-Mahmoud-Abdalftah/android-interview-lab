@@ -78,4 +78,3 @@ Name artifact roles, describe split generation, and specify a release delivery t
 - [Build and test an App Bundle](https://developer.android.com/guide/app-bundle/test) — bundletool validation.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Size benefit depends on app contents.
-Compare APK and Android App Bundle (AAB).

@@ -78,4 +78,3 @@ Distinguish three causes, propose one measurement, and define refresh versus new
 - [Save UI state in Compose](https://developer.android.com/develop/ui/compose/state-saving) — saveable state.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Exact scroll policy is a product decision.
-A LazyColumn scroll position resets after data refresh. What should you inspect?

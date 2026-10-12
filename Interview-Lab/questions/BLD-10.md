@@ -78,4 +78,3 @@ Match a stack to a map, describe retracing limits, and design map retention in C
 - [Enable R8 optimization](https://developer.android.com/topic/performance/app-optimization/enable-app-optimization) — release mapping context.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Crash example is illustrative.
-How do you use retrace with mapping files?

@@ -78,4 +78,3 @@ Compare update models, explain a state change, name an interoperability path, an
 - [Compose and Views interoperability](https://developer.android.com/develop/ui/compose/migrate/interoperability-apis) — gradual migration.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The login form is illustrative.
-What is Compose? Compare declarative Compose and XML Views.

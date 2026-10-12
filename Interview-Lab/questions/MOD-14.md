@@ -78,4 +78,3 @@ Resolve a feature cycle, explain a common-module smell, and name a preventive gr
 - [Common modularization patterns](https://developer.android.com/topic/modularization/patterns) — API boundaries.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Boundary selection remains context-specific.
-How do you avoid circular dependencies and giant core/common modules?

@@ -78,4 +78,3 @@ Trace one route through process recreation, assign owners, and handle stale data
 - [Save UI state in Compose](https://developer.android.com/develop/ui/compose/state-saving) — process recreation limits.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Exact restoration depends on platform and Navigation version.
-What is NavHost, and how is state restored after process death?

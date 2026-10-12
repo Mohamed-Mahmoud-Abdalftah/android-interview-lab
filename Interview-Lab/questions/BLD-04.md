@@ -78,4 +78,3 @@ Differentiate three key roles, describe a protected signing flow, and handle wro
 - [Upload an App Bundle](https://developer.android.com/studio/publish/upload-bundle) — release submission.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Key recovery follows current Play policy.
-What is the difference between debug and release signing?

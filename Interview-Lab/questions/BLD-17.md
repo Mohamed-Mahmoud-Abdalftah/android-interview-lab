@@ -78,4 +78,3 @@ State hypothesis, collect exact-artifact evidence, change one rule and verify mi
 - [Recover stack traces](https://developer.android.com/tools/retrace) — mapping evidence.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Plugin scenario is illustrative.
-An app installs in debug but crashes on launch in release due to renamed classes. How do you prove the cause?

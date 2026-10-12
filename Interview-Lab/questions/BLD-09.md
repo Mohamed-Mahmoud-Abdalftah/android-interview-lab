@@ -79,4 +79,3 @@ Trace one dynamic lookup, specify what must survive, and verify a narrow rule in
 - [Optimization for libraries](https://developer.android.com/topic/performance/app-optimization/library-optimization) — consumer rules.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Exact rule syntax depends on the runtime lookup.
-How do you decide R8 keep rules for reflection, serialization, JNI, and SDKs?

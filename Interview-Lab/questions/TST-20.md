@@ -31,7 +31,63 @@ Idempotency protects one intended business effect across repeated deliveries; it
 
 ## Worked example
 
-Test sequence: create intent P1, fake server records approval then drops response, restart client repository, trigger retry, assert request uses P1 and original amount, and status becomes Approved via lookup. Run two concurrent P1 calls against backend test environment and assert one charge record.
+The dangerous sequence is approval followed by a lost response. This JUnit 5 model uses an in-memory durable-store stand-in and a fake server that commits before dropping its first reply. The fake's deduplication is a test fixture, **not proof that the production backend or provider deduplicates**.
+
+```kotlin
+import java.io.IOException
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+
+class PaymentRetryTest {
+    data class Request(val key: String, val amountMinor: Long)
+    class Store(var pending: Request? = null) // Replace with durable storage in the app.
+
+    class FakeServer {
+        val received = mutableListOf<Request>()
+        val charges = mutableMapOf<String, Long>()
+        var dropFirstReply = true
+
+        fun charge(request: Request): Boolean {
+            received += request
+            val previous = charges[request.key]
+            require(previous == null || previous == request.amountMinor)
+            charges.putIfAbsent(request.key, request.amountMinor)
+            if (dropFirstReply) {
+                dropFirstReply = false
+                throw IOException("reply lost after commit")
+            }
+            return true
+        }
+    }
+
+    class Client(private val store: Store, private val server: FakeServer) {
+        fun start(request: Request): Boolean {
+            store.pending = request // Persist before the first network send.
+            return server.charge(request)
+        }
+        fun retry(): Boolean = server.charge(requireNotNull(store.pending))
+    }
+
+    @Test fun retryAfterLostReplyKeepsOneIdentity() {
+        val store = Store()
+        val server = FakeServer()
+        val intent = Request("P1", 2_500)
+        assertThrows(IOException::class.java) { Client(store, server).start(intent) }
+
+        val restartedClient = Client(store, server)
+        assertTrue(restartedClient.retry())
+        assertEquals(listOf(intent, intent), server.received)
+        assertEquals(mapOf("P1" to 2_500L), server.charges)
+        assertThrows(IllegalArgumentException::class.java) {
+            server.charge(Request("P1", 3_000))
+        }
+    }
+}
+```
+
+In the real client, persist the request atomically before sending, surface an Unknown state on the first timeout, and reconcile by status lookup or same-key retry under the provider's documented contract. Run two concurrent P1 requests against a backend integration environment and assert one charge record; the local fake cannot establish that cross-process guarantee.
 
 ## Trade-offs and decision criteria
 
@@ -75,4 +131,4 @@ Can you explain the mechanism, reproduce the example, justify the trade-off, ide
 - [Stripe idempotent requests](https://docs.stripe.com/api/idempotent_requests) — provider-specific contract.
 - [Android offline-first data layer](https://developer.android.com/topic/architecture/data-layer/offline-first) — durable client state.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

@@ -79,4 +79,3 @@ Map three optimizations to stages, identify a stale-output risk, and define a bu
 - [Gradle incremental builds](https://docs.gradle.org/current/userguide/incremental_build.html) — changed inputs.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Kotlin compiler incremental details vary by version.
-What are build cache, configuration cache, and incremental compilation?

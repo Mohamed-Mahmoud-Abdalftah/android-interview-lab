@@ -78,4 +78,3 @@ Define both fields, handle track allocation and show a bad-release response with
 - [Release with confidence](https://developer.android.com/studio/publish) — publication context.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Play track policy should be checked for the account.
-How do you manage versionCode/versionName and release notes?

@@ -78,4 +78,3 @@ Choose an owner for two consumers, trace an edit event, distinguish observabilit
 - [Where to hoist state](https://developer.android.com/develop/ui/compose/state-hoisting) — ownership guidance.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The search example is illustrative.
-What are state, snapshot state, and state hoisting?

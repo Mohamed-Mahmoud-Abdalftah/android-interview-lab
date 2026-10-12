@@ -31,7 +31,44 @@ Turbine collects a Flow in a test scope. StateFlow may suppress equal updates an
 
 ## Worked example
 
-Illustrative test: `runTest { viewModel.state.test { assertEquals(Idle, awaitItem()); viewModel.load(); runCurrent(); assertEquals(Loading, awaitItem()); ... } }`. Requires Turbine, `kotlinx-coroutines-test`, JUnit assertions, and a fake repository whose completion is controlled; the ellipsis marks a sketch, not compilable code.
+This small JVM test makes subscription and equality behavior explicit. It assumes JUnit 5, Turbine, and `kotlinx-coroutines-test` are test dependencies. The `test` block starts collecting before its assertions run; this matters for the replay-zero event.
+
+```kotlin
+import app.cash.turbine.test
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Test
+
+class FlowContractTest {
+    @Test fun coldAndHotFlows() = runTest {
+        flowOf("one", "two").test {
+            assertEquals("one", awaitItem())
+            assertEquals("two", awaitItem())
+            awaitComplete()
+        }
+
+        val state = MutableStateFlow("Idle")
+        state.test {
+            assertEquals("Idle", awaitItem())
+            state.value = "Loading"
+            assertEquals("Loading", awaitItem())
+            state.value = "Loading" // Equal value: no new StateFlow emission.
+            expectNoEvents()
+        }
+
+        val events = MutableSharedFlow<String>(replay = 0)
+        events.test {
+            events.emit("Saved")
+            assertEquals("Saved", awaitItem())
+        }
+    }
+}
+```
+
+For a ViewModel Loading → Success test, keep the fake repository suspended until Loading is observed. A rapid pair of StateFlow writes may conflate, so do not assume this example proves every intermediate ViewModel state will always be delivered.
 
 ## Trade-offs and decision criteria
 
@@ -55,7 +92,7 @@ Test collector start, configuration recreation, lifecycle stop/start, equal-valu
 
 ## Interview answer — deep senior
 
-“I write tests around the semantic contract, not just an expected list. For StateFlow I decide whether intermediate Loading is observable under my scheduler; conflation can erase rapid transitions, so I control the fake repository’s timing. For SharedFlow I test subscriber timing, replay, extra-buffer capacity and overflow, especially after configuration changes. Turbine’s timeout and cancellation behavior help detect hanging collectors, but the app’s actual lifecycle collection is still a device/UI concern. I avoid changing replay to satisfy a flaky test without deciding whether duplicate event delivery is acceptable. } }`. ”
+“I write tests around the semantic contract, not just an expected list. For StateFlow I decide whether intermediate Loading is observable under my scheduler; conflation can erase rapid transitions, so I control the fake repository’s timing. For SharedFlow I test subscriber timing, replay, extra-buffer capacity and overflow, especially after configuration changes. Turbine’s timeout and cancellation behavior help detect hanging collectors, but the app’s actual lifecycle collection is still a device/UI concern. I avoid changing replay to satisfy a flaky test without deciding whether duplicate event delivery is acceptable.”
 
 ## Deep-dive talking points
 
@@ -75,4 +112,4 @@ Can you explain the mechanism, reproduce the example, justify the trade-off, ide
 - [Kotlin StateFlow/SharedFlow](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-state-flow/) — StateFlow semantics.
 - [Turbine README](https://github.com/cashapp/turbine) — testing API.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

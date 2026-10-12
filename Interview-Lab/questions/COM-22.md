@@ -78,4 +78,3 @@ Design one accessible row, choose an adaptive breakpoint response, and describe 
 - [Window size classes](https://developer.android.com/develop/adaptive-apps/guides/use-window-size-classes) — adaptive layout decisions.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Device validation remains necessary.
-How do you support accessibility, screen readers, and adaptive layouts?

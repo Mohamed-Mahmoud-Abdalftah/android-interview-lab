@@ -78,4 +78,3 @@ Define the contract, explain one stale-UI bug, account for strong skipping, and 
 - [Strong skipping mode](https://developer.android.com/develop/ui/compose/performance/stability/strongskipping) — version-sensitive skip rules.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Compiler behavior should be checked against the actual project toolchain.
-What does stability mean for Compose types and parameters?

@@ -78,4 +78,3 @@ Trace a selected version, justify a fix, and profile one build regression with c
 - [Gradle build performance](https://docs.gradle.org/current/userguide/performance.html) — profiling and optimization.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Example conflict is illustrative.
-How do you investigate dependency version conflicts and build-speed regressions?

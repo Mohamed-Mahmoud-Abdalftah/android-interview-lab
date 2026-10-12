@@ -78,4 +78,3 @@ Define a coherent model, show writer/reader boundary, explain conflation and lif
 - [Lifecycle-aware Flow collection in Compose](https://developer.android.com/develop/ui/compose/state) — UI observation.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The state model is illustrative.
-How do you model UI state with StateFlow?

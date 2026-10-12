@@ -78,4 +78,3 @@ Trace one loader error to ABI packaging, distinguish absent file from symbol fai
 - [Build and test an App Bundle](https://developer.android.com/guide/app-bundle/test) — split delivery tests.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Vendor ABI availability must be verified separately.
-How do you diagnose missing native libraries or ABI incompatibility?

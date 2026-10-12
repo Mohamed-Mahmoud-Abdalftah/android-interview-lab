@@ -78,4 +78,3 @@ Choose keys and types for a mixed feed, predict insert behavior, and test state 
 - [Save UI state in Compose](https://developer.android.com/develop/ui/compose/state-saving) — restoration context.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Performance benefit must be measured for the concrete list.
-What are stable keys and content types in LazyColumn?

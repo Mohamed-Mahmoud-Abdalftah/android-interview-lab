@@ -78,4 +78,3 @@ Classify exposure, preserve evidence, correct protected signing and add a preven
 - [Upload an App Bundle](https://developer.android.com/studio/publish/upload-bundle) — submission workflow.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Play acceptance state must be confirmed in the real incident.
-A release bundle was signed with the wrong key. How do you contain it and correct the pipeline?

@@ -78,4 +78,3 @@ Derive a four-variant matrix, trace one override, and name a release-only failur
 - [Android build structure](https://developer.android.com/build/android-build-structure) — project layout.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Example variant names are illustrative.
-What are build types, product flavors, variants, and source sets?

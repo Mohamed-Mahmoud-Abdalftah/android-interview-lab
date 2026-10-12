@@ -78,4 +78,3 @@ Give an incremental sequence, identify dual-wiring risk, define gate evidence an
 - [Guide to app architecture](https://developer.android.com/topic/architecture) — ownership layers.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Migration sequence is an engineering recommendation.
-How do you migrate a monolith to modules without blocking feature delivery?

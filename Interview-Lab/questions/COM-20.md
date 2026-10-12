@@ -78,4 +78,3 @@ Show a preview contract, permission event flow, denial path, and process-safe na
 - [Navigation with Compose](https://developer.android.com/develop/ui/compose/navigation) — arguments and navigation.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Exact permission contract depends on the capability and API level.
-How do you handle previews, permissions, and navigation?

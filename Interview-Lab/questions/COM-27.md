@@ -78,4 +78,3 @@ Map four states to assertions and one action, then identify unit and device inte
 - [Request permissions](https://developer.android.com/training/permissions/requesting) — platform permission behavior.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. No device run is claimed for this example.
-How do you test a screen with loading, error, success, and permission states?

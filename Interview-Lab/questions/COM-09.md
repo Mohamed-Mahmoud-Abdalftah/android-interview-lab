@@ -78,4 +78,3 @@ Trace START/STOP, identify collector versus producer, and explain a cold restart
 - [State and Compose](https://developer.android.com/develop/ui/compose/state) — Flow observation.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Upstream continuation depends on scope and sharing policy.
-What does collectAsStateWithLifecycle() solve?

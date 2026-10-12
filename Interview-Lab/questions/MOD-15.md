@@ -78,4 +78,3 @@ Trace a public type leak, propose an API boundary, and compare task graphs empir
 - [Gradle performance guide](https://docs.gradle.org/current/userguide/performance.html) — measured build behavior.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Kotlin/Android task behavior is toolchain-specific.
-How do api/implementation influence compilation boundaries and rebuilds?

@@ -78,4 +78,3 @@ Name final variant, assert provider attributes, attach merge report, and verify 
 - [Configure build variants](https://developer.android.com/build/build-variants) — source-set priority.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Authority values are illustrative.
-A release manifest merge drops a required ContentProvider authority. What CI check would catch it?

@@ -45,6 +45,12 @@ def read_record(path: Path) -> tuple[dict, str]:
     return metadata, match.group(2)
 
 
+def review_footer_extra(section: str) -> str:
+    """Return stray text following the final technical-review statement."""
+    match = re.search(r"(?m)^Technically reviewed[^\n]*\n([\s\S]+)$", section)
+    return match.group(1).strip() if match else ""
+
+
 def validate() -> dict:
     source = parse_source(SOURCE.read_text(encoding="utf-8"))
     errors = []
@@ -100,6 +106,8 @@ def validate() -> dict:
                 errors.append(f"no primary reference: {q['id']}")
             if not re.search(r"Technically reviewed.*\b\d{4}-\d{2}-\d{2}\b", sections.get("References and reviewed-on date", "")):
                 errors.append(f"review date absent: {q['id']}")
+            if review_footer_extra(sections.get("References and reviewed-on date", "")):
+                errors.append(f"stray text after review footer: {q['id']}")
             for related in re.findall(r"\[([A-Z]+-\d{2})\]", sections.get("Follow-up questions", "")):
                 if related not in source_ids:
                     errors.append(f"invalid related ID {related}: {q['id']}")

@@ -78,4 +78,3 @@ Describe a baseline, identify the costly phase, propose one narrow fix, and reme
 - [Compose phases](https://developer.android.com/develop/ui/compose/phases) — distinct render work.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The performance case is illustrative.
-How do you identify avoidable recomposition?

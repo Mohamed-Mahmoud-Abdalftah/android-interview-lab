@@ -78,4 +78,3 @@ Choose a candidate feature, justify delivery, model install failure, and name in
 - [Hilt in multi-module apps](https://developer.android.com/training/dependency-injection/hilt-multi-module) — dynamic feature caveat.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Play delivery behavior must be tested in the chosen channel.
-What are Dynamic Feature Modules / Play Feature Delivery?

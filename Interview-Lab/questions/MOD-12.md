@@ -78,4 +78,3 @@ Show one catalog alias and one convention, name a direct module dependency, and 
 - [Gradle convention plugins](https://docs.gradle.org/current/userguide/sharing_build_logic_between_subprojects.html) — reusable build logic.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Plugin API compatibility depends on the project's Gradle and AGP versions.
-How do version catalogs and convention plugins reduce config duplication?

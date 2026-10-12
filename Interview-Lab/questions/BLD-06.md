@@ -78,4 +78,3 @@ Define three transformations, diagnose a reflection failure, and describe releas
 - [Keep rule examples](https://developer.android.com/topic/performance/app-optimization/keep-rule-examples) — dynamic entry points.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Exact optimization behavior is version-sensitive.
-What are R8, shrinking, optimization, and obfuscation?

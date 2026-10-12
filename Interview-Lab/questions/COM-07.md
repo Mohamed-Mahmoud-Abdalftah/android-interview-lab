@@ -78,4 +78,3 @@ Predict two modifier orders, identify click bounds, and state one accessibility 
 - [Accessibility in Compose](https://developer.android.com/develop/ui/compose/accessibility) — semantics and interaction.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Exact touch bounds should be checked on the implemented component.
-What does Modifier do, and why does ordering matter?

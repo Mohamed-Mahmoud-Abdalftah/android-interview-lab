@@ -77,4 +77,3 @@ Justify one extraction, reject one needless split, and define metrics and rollba
 - [Android modularization guide](https://developer.android.com/topic/modularization) — reasons and trade-offs.
 
 Technically reviewed against this primary source on 2026-10-11 by automated editorial review. Extraction decision is context-specific.
-When is a new feature module justified, and when is it unnecessary complexity?

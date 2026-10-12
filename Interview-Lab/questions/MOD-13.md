@@ -78,4 +78,3 @@ Choose one interface and one concrete dependency, justify ownership, and identif
 - [Dependency injection on Android](https://developer.android.com/training/dependency-injection) — substitution and graph design.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Interface selection is a design judgment.
-When should a module depend on an interface versus a concrete type?

@@ -78,4 +78,3 @@ Draw a three-module cycle, explain why it fails, and resolve it with an owned co
 - [Gradle multi-project builds](https://docs.gradle.org/current/userguide/multi_project_builds.html) — project graph.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The Auth/Orders graph is illustrative.
-What is a dependency graph? Why must it be acyclic?

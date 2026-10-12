@@ -78,4 +78,3 @@ Choose the owner, show register/unregister, handle key changes, and verify late 
 - [Lifecycle in Compose](https://developer.android.com/topic/libraries/architecture/lifecycle) — visibility-bound effects.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Sensor scenario is illustrative.
-A listener keeps working after a composable leaves composition. Which effect is wrong?

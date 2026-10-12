@@ -78,4 +78,3 @@ Assign six module roles, draw an acyclic orders path, and identify one over-shar
 - [Common modularization patterns](https://developer.android.com/topic/modularization/patterns) — feature/data structures.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Module names are conventions, not platform requirements.
-Compare app, feature, core, data, domain, and design-system modules.

@@ -79,4 +79,3 @@ Map key roles, outline a protected pipeline, verify identity and describe incide
 - [Gradle configuration cache](https://docs.gradle.org/current/userguide/configuration_cache.html) — secret handling caveat.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Follow current Play account recovery policy.
-How do you configure signing keys and Play App Signing safely?

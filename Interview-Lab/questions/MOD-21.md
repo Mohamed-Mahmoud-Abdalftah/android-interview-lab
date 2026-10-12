@@ -78,4 +78,3 @@ Classify one critical and one optional feature, model install failure, and defin
 - [Android modularization guide](https://developer.android.com/topic/modularization) — module trade-offs.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Availability policy depends on the product journey.
-When are dynamic feature modules inappropriate because of offline/runtime constraints?

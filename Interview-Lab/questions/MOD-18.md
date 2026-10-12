@@ -78,4 +78,3 @@ Trace one rebuild chain, redesign a shared model boundary, and verify build and 
 - [Android modularization guide](https://developer.android.com/topic/modularization) — API and graph design.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Build effect must be measured in the actual repo.
-A shared model change forces recompilation of many modules. How would you shrink the impact?

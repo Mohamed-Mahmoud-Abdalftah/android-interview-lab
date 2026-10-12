@@ -77,4 +77,3 @@ Match three examples to APIs, name one overhead trap, and explain lifecycle clea
 - [Side-effects in Compose](https://developer.android.com/develop/ui/compose/side-effects) — all three APIs and examples.
 
 Technically reviewed against this primary source on 2026-10-11 by automated editorial review. Analytics usage is illustrative.
-What are rememberUpdatedState, derivedStateOf, and snapshotFlow?

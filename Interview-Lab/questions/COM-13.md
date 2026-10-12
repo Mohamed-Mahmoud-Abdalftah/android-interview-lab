@@ -79,4 +79,3 @@ Trace Save through callback, state, Snackbar or navigation; cover rotation and d
 - [Side-effects in Compose](https://developer.android.com/develop/ui/compose/side-effects) — callbacks and effects.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Event-delivery choice is application-specific.
-How do you correctly implement Snackbar, navigation, and callbacks?

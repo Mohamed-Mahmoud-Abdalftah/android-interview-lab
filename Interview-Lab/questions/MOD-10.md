@@ -78,4 +78,3 @@ Define a destination contract, show graph mapping, and cover deep link, restorat
 - [Android modularization patterns](https://developer.android.com/topic/modularization/patterns) — graph composition.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The navigation facade is a design option.
-How do navigation contracts work across modules?

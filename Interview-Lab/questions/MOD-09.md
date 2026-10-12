@@ -78,4 +78,3 @@ Specify a data contract, navigation contract, result semantics and integration t
 - [Navigation with Compose](https://developer.android.com/develop/ui/compose/navigation) — navigation arguments.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Result strategy depends on the navigation library and product flow.
-How should feature modules communicate without direct coupling?

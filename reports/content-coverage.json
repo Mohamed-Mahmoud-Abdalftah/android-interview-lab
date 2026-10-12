@@ -2920,7 +2920,7 @@
       "topic": "TST",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "TST-10": {
       "topic": "TST",
@@ -2980,13 +2980,13 @@
       "topic": "TST",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "TST-20": {
       "topic": "TST",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "TST-21": {
       "topic": "TST",

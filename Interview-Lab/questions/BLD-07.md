@@ -78,4 +78,3 @@ Explain artifact flow, write a targeted rule rationale, and specify a minified c
 - [Android library creation](https://developer.android.com/studio/projects/android-library) — AAR packaging.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Exact rule syntax must match the SDK contract.
-What is consumerProguardFiles for Android libraries?

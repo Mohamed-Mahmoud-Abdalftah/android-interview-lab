@@ -78,4 +78,3 @@ Define composable context, trace state change to recomposition, distinguish rend
 - [Compose mental model](https://developer.android.com/develop/ui/compose/mental-model) — composable invocation and recomposition.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The counter is illustrative.
-What is a @Composable function? What is recomposition?

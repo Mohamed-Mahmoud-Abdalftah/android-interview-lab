@@ -78,4 +78,3 @@ Identify the invariant, owner and authority, then test rule boundaries and featu
 - [Domain layer guidance](https://developer.android.com/topic/architecture/domain-layer) — shared business logic.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Discount authority is product-specific.
-Two feature teams need the same business logic. Where should it live?

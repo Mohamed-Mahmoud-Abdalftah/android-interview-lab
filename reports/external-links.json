@@ -2426,16 +2426,6 @@
       "resolved": "https://github.com/lysine-dev/okhttp/blob/main/okhttp/src/commonJvmAndroid/kotlin/okhttp3/OkHttpClient.kt"
     },
     {
-      "url": "https://github.com/square/okhttp",
-      "questionIds": [
-        "DAT-01",
-        "DAT-04"
-      ],
-      "status": 200,
-      "category": "ok",
-      "resolved": "https://github.com/lysine-dev/okhttp"
-    },
-    {
       "url": "https://github.com/square/okhttp/blob/master/README.md",
       "questionIds": [
         "TST-12"
@@ -3099,6 +3089,16 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://kotlinlang.org/docs/type-aliases.html"
+    },
+    {
+      "url": "https://lysine.dev/okhttp/",
+      "questionIds": [
+        "DAT-01",
+        "DAT-04"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://lysine.dev/okhttp/"
     },
     {
       "url": "https://lysine.dev/okhttp/features/calls/",

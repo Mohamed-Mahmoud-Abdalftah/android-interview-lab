@@ -78,4 +78,3 @@ Map four use cases to APIs and name keys, cleanup, and duplicate-work risks.
 - [Compose mental model](https://developer.android.com/develop/ui/compose/mental-model) — repeatable rendering.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Example ownership must match the product lifecycle.
-What are LaunchedEffect, DisposableEffect, SideEffect, and rememberCoroutineScope?

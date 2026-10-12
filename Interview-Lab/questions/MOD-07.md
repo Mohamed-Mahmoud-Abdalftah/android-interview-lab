@@ -78,4 +78,3 @@ Sketch an acyclic commerce graph, assign owners, and show integration and perfor
 - [Common modularization patterns](https://developer.android.com/topic/modularization/patterns) — feature and core examples.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The commerce structure is an illustrative design.
-Design a multi-module structure for a large app.

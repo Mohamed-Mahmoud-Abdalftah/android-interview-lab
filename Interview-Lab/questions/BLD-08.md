@@ -78,4 +78,3 @@ Identify artifact, retrace, test release differences and close with a regression
 - [Build and test an App Bundle](https://developer.android.com/guide/app-bundle/test) — release split testing.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The checkout failure is illustrative.
-How do you debug crashes that occur only in release builds?

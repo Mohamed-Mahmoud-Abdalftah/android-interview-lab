@@ -78,4 +78,3 @@ Assign three example values to owners, explain rotation and process death, and a
 - [Where to hoist state](https://developer.android.com/develop/ui/compose/state-hoisting) — owner choice.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Restoration depends on Android saved-state conditions.
-Compare remember, rememberSaveable, and ViewModel state.

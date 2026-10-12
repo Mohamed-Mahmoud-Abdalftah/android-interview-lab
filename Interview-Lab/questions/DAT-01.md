@@ -86,7 +86,7 @@ Can I name each layer, classify failures, reuse transport and avoid credential l
 ## References and reviewed-on date
 
 - [Retrofit project](https://github.com/square/retrofit) — typed HTTP client.
-- [OkHttp project](https://github.com/square/okhttp) — transport features.
+- [OkHttp documentation](https://lysine.dev/okhttp/) — transport features.
 - [Android network security](https://developer.android.com/privacy-and-security/security-config) — platform TLS configuration.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-12; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

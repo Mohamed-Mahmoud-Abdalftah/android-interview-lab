@@ -10,7 +10,7 @@ From `site/`, run `pnpm install --frozen-lockfile`, `pnpm dev`, or `pnpm build &
 
 A study-first, local Senior Android engineering curriculum for an experienced Kotlin/Android engineer, including optional Staff and payment-device depth. The **core learner workload is 48 days × about 2 hours = 96 hours**; authoring all later material is a larger, separate effort. [START-HERE](START-HERE.md) opens a real Day 1 lesson and runnable JVM lab.
 
-**Current state (2026-10-11):** The 48-day curriculum is authored and reviewed: 48 core lessons, six specialist topics, 300 complete question/answer pairs, 50 scenarios, 30 coding challenges and eight mock-interview packs. The executable Kotlin/JVM models have 125 passing JUnit tests. The [manifest](CONTENT-MANIFEST.json), [coverage](COVERAGE-MATRIX.md) and [verification record](BUILD-VERIFICATION.md) contain the exact evidence and environment limits.
+**Current state (2026-10-12):** The 48-day curriculum is authored and reviewed: 48 core lessons, six specialist topics, 300 complete question/answer pairs, 50 scenarios, 30 coding challenges and eight mock-interview packs. The Kotlin/JVM suite has 128 passing JUnit tests, including three executable Interview Lab examples. The [manifest](CONTENT-MANIFEST.json), [coverage](COVERAGE-MATRIX.md), [academy verification record](BUILD-VERIFICATION.md) and [current Interview Lab verification](docs/VERIFICATION_REPORT.md) contain the evidence and environment limits.
 
 The local RTL study website lives in [site](site/README.md). From that directory run `pnpm install --frozen-lockfile`, then `pnpm dev`; `pnpm verify` regenerates canonical content, builds the static site and checks every internal link.
 

@@ -79,4 +79,3 @@ Name pinned inputs, separate lock and verification, and define a byte-comparison
 - [Gradle security practices](https://docs.gradle.org/current/userguide/best_practices_security.html) — reproducibility and supply chain.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. No byte-for-byte Android artifact reproduction is claimed for this repo.
-How do you set up reproducible builds and dependency verification?

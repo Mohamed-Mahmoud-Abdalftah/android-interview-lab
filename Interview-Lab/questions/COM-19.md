@@ -78,4 +78,3 @@ Name tokens and a component contract, cover accessibility and theme variants, an
 - [Accessibility in Compose](https://developer.android.com/develop/ui/compose/accessibility) — semantics and inclusive UI.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Governance choices are engineering recommendations.
-How do you implement a reusable design system and themes?

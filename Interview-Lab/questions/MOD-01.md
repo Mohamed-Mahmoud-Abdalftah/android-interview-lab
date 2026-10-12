@@ -78,4 +78,3 @@ State a concrete boundary, benefit, cost, cycle rule and build metric.
 - [Common modularization patterns](https://developer.android.com/topic/modularization/patterns) — module structures.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Build impact must be measured in the target repo.
-What is modularization, and what trade-offs does it introduce?

@@ -81,7 +81,7 @@ Can I compare all three, name one failure mode each and design missed-event reco
 ## References and reviewed-on date
 
 - [HTTP Semantics RFC 9110](https://httpwg.org/specs/rfc9110.html) — HTTP resource semantics.
-- [OkHttp project](https://github.com/square/okhttp) — WebSocket transport support.
+- [OkHttp documentation](https://lysine.dev/okhttp/) — WebSocket transport support.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — local truth and sync.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-12; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

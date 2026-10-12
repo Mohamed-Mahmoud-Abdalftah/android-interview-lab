@@ -78,4 +78,3 @@ Trace one event to a state transition, name the owner, and explain one-shot deli
 - [UI layer guidance](https://developer.android.com/topic/architecture/ui-layer) — state holders and UI events.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Payment flow is illustrative.
-What is Unidirectional Data Flow in Compose?

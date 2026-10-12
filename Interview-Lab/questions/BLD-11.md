@@ -78,4 +78,3 @@ Define metric, attribute bytes, inspect two ABIs and verify delivery compatibili
 - [Build and test an App Bundle](https://developer.android.com/guide/app-bundle/test) — device-targeted outputs.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Size numbers are illustrative.
-How do you analyze APK/AAB size and bundled native ABIs?

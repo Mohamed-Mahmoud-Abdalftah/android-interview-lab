@@ -78,4 +78,3 @@ Assign wiring and rendering tasks, name the owner, and propose one Screen test a
 - [Navigation with Compose](https://developer.android.com/develop/ui/compose/navigation) — destination boundaries.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Route/Screen naming is a design convention.
-What are Route Composable and Screen Composable?

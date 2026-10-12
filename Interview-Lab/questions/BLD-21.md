@@ -79,4 +79,3 @@ Set rollout gates, respond to a failed cohort, distinguish halt from installed-u
 - [Version your app](https://developer.android.com/studio/publish/versioning) — update ordering.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Play controls and rollout policy should be checked against the actual account.
-How would you safely roll out and then roll back a bad Android release?

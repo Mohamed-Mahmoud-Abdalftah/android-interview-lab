@@ -79,4 +79,3 @@ Name UI, in-process and server guards; explain timeout reconciliation and tests.
 - [Stripe idempotent requests](https://docs.stripe.com/api/idempotent_requests) — provider-specific idempotency example.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Server key policy must match the actual API contract.
-A user taps Save twice while a request is in flight. How do you make UI and domain behavior safe?

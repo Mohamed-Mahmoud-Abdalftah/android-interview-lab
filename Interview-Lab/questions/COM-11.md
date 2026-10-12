@@ -77,4 +77,3 @@ Choose keys for two examples, explain cancellation, and identify one task that b
 - [Side-effects in Compose](https://developer.android.com/develop/ui/compose/side-effects) — key and cancellation behavior.
 
 Technically reviewed against this primary source on 2026-10-11 by automated editorial review. Durable payment ownership is an engineering recommendation.
-Compare LaunchedEffect(Unit) and LaunchedEffect(key).

@@ -78,4 +78,3 @@ Trace one state read and write, explain a skip caveat, identify a correctness tr
 - [Stability in Compose](https://developer.android.com/develop/ui/compose/performance/stability) — skipping and contracts.
 
 Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Compiler behavior is version-sensitive.
-What triggers recomposition, and what can be skipped?
