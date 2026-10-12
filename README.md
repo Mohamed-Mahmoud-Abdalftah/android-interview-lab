@@ -2,6 +2,8 @@
 
 ## Android Interview Lab status
 
+**Live site:** [Android Interview Lab](https://mohamed-mahmoud-abdalftah.github.io/android-interview-lab/).
+
 This checkout contains the supplied **485-question, 21-topic Android Interview Lab**. All original IDs and English wording are preserved in individual records and 485 static routes. All 485 records now have authored explanations, examples, three English answer depths, follow-ups, rubrics, and references; no source-only pages remain. The `reviewed` field records automated editorial checks and agent technical review, not external human approval. The earlier academy's 300 Q&A pairs use different IDs and remain available separately.
 
 From `site/`, run `pnpm install --frozen-lockfile`, `pnpm dev`, or `pnpm build && pnpm check:dist && pnpm test:e2e`. Run `python3 scripts/validate_interview_lab.py --require-complete` at the repository root for actual editorial coverage. See [verification](docs/VERIFICATION_REPORT.md), [content rules](docs/CONTENT_GUIDELINES.md), and [deployment](docs/DEPLOYMENT.md).

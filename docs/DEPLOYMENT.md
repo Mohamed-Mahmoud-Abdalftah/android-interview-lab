@@ -1,5 +1,7 @@
 # GitHub Pages deployment
 
+**Repository:** [Mohamed-Mahmoud-Abdalftah/android-interview-lab](https://github.com/Mohamed-Mahmoud-Abdalftah/android-interview-lab). **Published site:** [Android Interview Lab](https://mohamed-mahmoud-abdalftah.github.io/android-interview-lab/). The GitHub Actions Pages source was configured through the GitHub API. The first successful deployment completed on 2026-10-12, and both the home page and `/lab/questions/kot-01/` returned HTTP 200. Each subsequent push runs the same release gate before replacing the site.
+
 `.github/workflows/deploy-pages.yml` runs the complete content gate, Python/JavaScript/Kotlin checks, Astro typecheck and build, internal-link checker, and Playwright browser tests before it uploads `site/dist` to GitHub Pages. It uses the official GitHub Pages configure/upload/deploy actions with `contents: read`, `pages: write`, and `id-token: write`. Publication happens only after the build job passes.
 
 For a project repository named `android-interview-lab`, the expected base is `/android-interview-lab/`. The workflow derives this from `GITHUB_REPOSITORY` and sets the site origin to `https://<owner>.github.io`. For a user or organization repository named `<owner>.github.io`, the base is `/`. In **Settings → Pages**, set the source to **GitHub Actions**. Push `main` or dispatch the workflow, then confirm the `deploy` job succeeded and visit the actual Pages URL and a question subpath. Do not infer a live site from a green local build.
