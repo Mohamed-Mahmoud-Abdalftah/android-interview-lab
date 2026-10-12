@@ -15,7 +15,7 @@ self.addEventListener('fetch', (event) => {
     const cache = await caches.open(CACHE);
     try {
       const response = await fetch(request);
-      if (response.ok && response.type === 'basic') cache.put(request, response.clone()).catch(() => {});
+      if (response.ok && response.type === 'basic') await cache.put(request, response.clone()).catch(() => {});
       return response;
     } catch {
       const cached = await cache.match(request);

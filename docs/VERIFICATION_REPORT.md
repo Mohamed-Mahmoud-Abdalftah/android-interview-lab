@@ -18,11 +18,11 @@ Automated duplicate checks reject exact repeated Arabic explanations and Kotlin 
 | Lint and Astro typecheck | Both pass; Astro reports zero errors, warnings or hints |
 | Project-subpath production build | 1,390 static HTML pages, Pagefind search index and sitemap generated |
 | Built route/link check | `GITHUB_REPOSITORY=test/android-interview-lab pnpm check:dist` passes with no broken internal links |
-| Browser E2E and accessibility | 11 Playwright tests pass in installed Chrome under `/android-interview-lab/`; four WCAG A/AA axe scans report no violations on tested pages |
+| Browser E2E and accessibility | 12 Playwright tests pass in installed Chrome under `/android-interview-lab/`; four WCAG A/AA axe scans report no violations on tested pages |
 | External references | 979 citations, 291 distinct URLs: 291 reachable, zero confirmed broken or unverified in the final crawl; `reports/external-links.json` |
 | Dependency audit | `pnpm audit --audit-level moderate` reports no known vulnerabilities after locking `postcss-selector-parser` 7.1.6 through `postcss-nested` 7.0.2; the full build and browser suite pass with this override |
 
-The Playwright suite covers topic and exact/Arabic search, deep links, answer sections, persistence, flashcards, mock answer hiding/resume/recap, export/import, invalid import, 404, 320px RTL/LTR, and accessibility on representative pages. It does not visit every route interactively. The static link checker covers all built internal links. Android device instrumentation, payment terminal certification, and production traffic testing were not performed; conclusions about those environments are explicitly limited in the content.
+The Playwright suite covers topic and exact/Arabic search, deep links, answer sections, persistence, flashcards, mock answer hiding/resume/recap, export/import, invalid import, 404, 320px RTL/LTR, first-visit offline reading and interaction, and accessibility on representative pages. The offline test caught a first-visit caching gap: the initial document and assets loaded before service-worker control. The current client primes those resources after service-worker activation; unopened pages still require a connection. The suite does not visit every route interactively. The static link checker covers all built internal links. Android device instrumentation, payment terminal certification, and production traffic testing were not performed; conclusions about those environments are explicitly limited in the content.
 
 ## Reproduce
 

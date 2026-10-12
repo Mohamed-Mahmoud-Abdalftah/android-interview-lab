@@ -127,3 +127,24 @@ test('invalid import does not change progress and missing routes return 404', as
   const response = await page.goto(`${base}lab/questions/not-a-real-id/`);
   expect(response.status()).toBe(404);
 });
+
+test('a question opened once remains readable and interactive offline', async ({ browser }) => {
+  const context = await browser.newContext({ serviceWorkers: 'allow' });
+  const page = await context.newPage();
+  try {
+    await page.goto(`http://127.0.0.1:4539${base}lab/questions/kot-01/`);
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.waitForLoadState('networkidle');
+    await context.setOffline(true);
+    const response = await page.reload();
+    expect(response?.status()).toBe(200);
+    await expect(page.getByRole('heading', { name: 'Interview answer — deep senior' })).toBeVisible();
+    const question = page.locator('lab-question');
+    expect(parseFloat(await question.locator('.lab-tool').evaluate((node) => getComputedStyle(node).borderRadius))).toBeGreaterThan(0);
+    await question.getByRole('button', { name: 'Bookmark', exact: true }).click();
+    await page.reload();
+    await expect(question.getByRole('button', { name: 'Remove bookmark' })).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});

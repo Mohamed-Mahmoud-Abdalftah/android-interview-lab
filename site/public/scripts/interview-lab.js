@@ -1,13 +1,29 @@
 import { emptyState, isDue, KEY, loadState, localDay, saveState, scheduleReview, STATUSES, validateState } from './lab-state.mjs';
 
 const BASE = new URL('../', import.meta.url).pathname;
-if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
-  navigator.serviceWorker.register(`${BASE}sw.js`, { scope: BASE }).catch(() => {});
-}
 const dataPromise = fetch(`${BASE}data/interview-lab.json`).then((response) => {
   if (!response.ok) throw new Error('Question index unavailable');
   return response.json();
 });
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
+  navigator.serviceWorker.register(`${BASE}sw.js`, { scope: BASE }).then(async () => {
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller) {
+      await new Promise((resolve) => navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true }));
+    }
+    if (document.readyState !== 'complete') await new Promise((resolve) => window.addEventListener('load', resolve, { once: true }));
+    await dataPromise.catch(() => {});
+    const cache = await caches.open('android-interview-lab-pages-v1');
+    const urls = new Set([location.href, ...performance.getEntriesByType('resource').map((entry) => entry.name)]);
+    await Promise.all([...urls].filter((url) => {
+      const parsed = new URL(url);
+      return parsed.origin === location.origin && parsed.pathname.startsWith(BASE);
+    }).map(async (url) => {
+      if (await cache.match(url)) return;
+      try { await fetch(url); } catch { /* The current page remains usable online. */ }
+    }));
+  }).catch(() => {});
+}
 const link = (route) => `${BASE}${route.replace(/^\//, '')}`;
 const el = (tag, text = '', className = '') => {
   const node = document.createElement(tag);

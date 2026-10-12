@@ -24,9 +24,9 @@ The production build is written to `site/dist/`. Opening HTML through `file://` 
 
 ```sh
 pnpm test
-pnpm build
+GITHUB_REPOSITORY=Mohamed-Mahmoud-Abdalftah/android-interview-lab pnpm build
 pnpm check:dist
 pnpm test:e2e
 ```
 
-The browser tests use installed Google Chrome and serve the built snapshot under `/android-interview-lab/`; run `pnpm build` first. The interview lab stores progress under `android-interview-lab-v1` in browser `localStorage`; its dashboard exports/imports a validated versioned JSON file. The academy has a separate `android-academy-progress-v1` store. Nothing is uploaded by these study features.
+The browser tests use installed Google Chrome and serve the built snapshot under `/android-interview-lab/`; build with the repository variable shown above first. A visited Interview Lab page and its resources are cached after service-worker activation so they can be reopened offline; unvisited pages need a connection. The interview lab stores progress under `android-interview-lab-v1` in browser `localStorage`; its dashboard exports/imports a validated versioned JSON file. The academy has a separate `android-academy-progress-v1` store. Nothing is uploaded by these study features.
