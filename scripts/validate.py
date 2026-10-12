@@ -31,7 +31,7 @@ HTML_HREF = re.compile(r'<a\b[^>]*\bhref\s*=\s*(["\'])(.*?)\1', re.IGNORECASE)
 HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$", re.MULTILINE)
 FRONT_KEY = re.compile(r"^([a-z_]+):(?:\s*(.*))?$")
 ID_PATTERN = re.compile(r"^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+$")
-SKIP_PARTS = {".git", ".gradle", ".kotlin", ".idea", ".astro", ".pytest_cache", "build", "dist", "__pycache__", "__MACOSX", "node_modules"}
+SKIP_PARTS = {".git", ".gradle", ".kotlin", ".idea", ".astro", ".pytest_cache", "build", "dist", "__pycache__", "__MACOSX", "node_modules", "test-results", "playwright-report"}
 SKIP_NAMES = {".DS_Store"}
 GENERATED_SITE_PREFIXES = (
     "site/src/content/docs/lessons/", "site/src/content/docs/questions/", "site/src/content/docs/answers/",

@@ -78,7 +78,7 @@ Can I contain at server, preserve evidence and handle in-flight operations hones
 
 ## References and reviewed-on date
 
-- [Android security guidance](https://developer.android.com/privacy-and-security) — client-side security considerations.
+- [Android security guidance](https://developer.android.com/privacy-and-security/security-tips) — client-side security considerations.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — authority boundaries.
 
 Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

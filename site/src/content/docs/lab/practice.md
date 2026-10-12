@@ -3,7 +3,7 @@ title: Mock interview
 description: Timed, self-rated Android interview practice
 ---
 
-Choose 10, 20, 30, or 45 minutes and a topic or mixed session. Write your answer before revealing the question page. Source-only IDs have no reviewed model answer yet; the session shows this plainly. Ratings are self-assessed and local.
+Choose 10, 20, 30, or 45 minutes and a topic or mixed session. Write your answer before revealing the question page. Every canonical ID now has an authored answer. Ratings are self-assessed and local.
 
 <lab-practice></lab-practice>
 

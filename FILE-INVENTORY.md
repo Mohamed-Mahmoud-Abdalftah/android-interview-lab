@@ -1,6 +1,6 @@
-# Actual academy source inventory — 2026-10-11
+# Actual academy source inventory — 2026-10-12
 
-These 981 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
+These 987 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
 
 ```text
 .github/workflows/ci.yml
@@ -934,10 +934,12 @@ projects/kotlin-jvm-labs/src/test/kotlin/academy/ViewSessionTest.kt
 projects/optional-payment-simulator/README.md
 reports/content-coverage.json
 reports/content-inventory.md
+reports/external-links.json
 reports/source-crosswalk.json
 reports/source-manifest.json
 scripts/author_android_batch.py
 scripts/author_coroutines_batch.py
+scripts/check_interview_links.py
 scripts/complete_core_path.py
 scripts/complete_specialists_and_mocks.py
 scripts/dedupe_spoken_answers.py
@@ -953,6 +955,7 @@ scripts/validate_interview_lab.py
 site/README.md
 site/astro.config.mjs
 site/package.json
+site/playwright.config.mjs
 site/pnpm-lock.yaml
 site/pnpm-workspace.yaml
 site/public/favicon.svg
@@ -963,6 +966,7 @@ site/public/sw.js
 site/scripts/check-dist.mjs
 site/scripts/content-core.mjs
 site/scripts/prefix-base.mjs
+site/scripts/serve-subpath.py
 site/scripts/site-base.mjs
 site/scripts/sync-content.mjs
 site/scripts/sync-interview-lab.mjs
@@ -979,6 +983,8 @@ site/src/content/docs/question-bank.mdx
 site/src/content/docs/study-path.mdx
 site/src/content/i18n/ar-EG.json
 site/src/styles/academy.css
+site/tests/e2e/accessibility.spec.mjs
+site/tests/e2e/study-flows.spec.mjs
 site/tests/lab-state.test.mjs
 site/tests/site-base.test.mjs
 site/tests/sync-content.test.mjs

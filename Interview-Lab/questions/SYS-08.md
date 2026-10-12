@@ -85,6 +85,6 @@ Can I define safe default, guardrails, kill path and backend authorization?
 ## References and reviewed-on date
 
 - [Android architecture guide](https://developer.android.com/topic/architecture) — source of truth and state ownership.
-- [Android app security](https://developer.android.com/privacy-and-security) — client trust limits.
+- [Android app security](https://developer.android.com/privacy-and-security/security-tips) — client trust limits.
 
 Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

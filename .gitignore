@@ -6,6 +6,8 @@ __pycache__/
 *.pyc
 dist/
 node_modules/
+site/test-results/
+site/playwright-report/
 .astro/
 site/src/content/docs/lessons/
 site/src/content/docs/questions/

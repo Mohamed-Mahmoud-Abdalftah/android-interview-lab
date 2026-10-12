@@ -1,27 +1,43 @@
-# Verification report — 2026-10-11
+# Verification report — 2026-10-12
 
-This report distinguishes a verified partial build from the master prompt's full acceptance criteria.
+## Coverage and review
 
-## Coverage from actual scripts
+`scripts/import_interview_lab.py` found 485 source questions, 485 unique IDs, and 21 topics. `python3 scripts/validate_interview_lab.py --require-complete` found 485 records, 485 marked reviewed, zero source-only, zero missing and zero automated quality errors. Every record preserves its verbatim canonical English question and includes the 14 required educational sections. There are 175 Kotlin fenced examples; 33 selected exact JVM-compatible fences are compiled by the Gradle suite. Android-dependent and conceptual snippets are labeled; they are not claimed to compile in this JVM harness.
 
-`scripts/import_interview_lab.py` found 485 source questions, 485 unique IDs, and 21 topics with exact expected counts. The latest `scripts/validate_interview_lab.py` run found 485 records, 464 marked reviewed, 21 source-only, zero missing, and zero automated content errors. All 464 authored records pass the current automated checks; this is not independent proof of technical accuracy or sufficient depth. The 21 source-only records block release. Per-question status and exact remaining IDs are in `reports/content-coverage.json`.
+Automated duplicate checks reject exact repeated Arabic explanations and Kotlin examples, and copied long explanatory sentences in spoken answers. A separate three-word-shingle comparison found no English deep-answer or Arabic explanation pair above 0.10 Jaccard overlap. One mid-topic question from each of the 21 topics was spot reviewed for relevance, examples, failure reasoning and citations. This is agent review and automated editorial evidence, not independent human review of all 485 answers.
 
 ## Executed checks
 
-| Check | Result | Evidence |
-|---|---|---|
-| Canonical source/content validation | Incomplete coverage | 485 records; 464 reviewed; 21 source-only; 0 automated errors; `--require-complete` still fails |
-| Python unit tests | Pass | `PYTHONPATH=scripts python3 -m unittest discover -s scripts -p 'test_*.py'`: 50 tests |
-| Site JavaScript unit tests | Pass | 13 tests |
-| Kotlin/JVM Gradle suite and canonical snippet compilation | Pass | `BUILD SUCCESSFUL` from `./gradlew clean test check run --no-daemon`; 125 tests, 0 failures/errors; exact Kotlin fences from COR-01, COR-02, FLO-06 and PAY-02 compiled |
-| Astro project-subpath build | Pass at current 464-marked-reviewed snapshot | 1,388 HTML pages, Pagefind and sitemap generated; rebuild required after all content changes |
-| Built internal-link check | Pass at current 464-marked-reviewed snapshot | `GITHUB_REPOSITORY=test/android-interview-lab pnpm check:dist`; 0 broken internal links; rerun at release |
-| Browser smoke, project subpath | Pass for exercised paths | Reviewed question, bookmark/note reload, Arabic search, SRS date, timed mock resume/recap; RTL Arabic text and no horizontal overflow at 320px/390px; no console errors on checked page |
-| Full editorial release gate | Fail | 21 canonical answers need authoring; manual technical review remains |
-| GitHub Pages deployment | Not run | No GitHub remote or Pages settings; release gate blocks incomplete publication |
+| Check | Observed result |
+|---|---|
+| Canonical source and complete editorial gate | 485/485, zero source-only and zero errors |
+| Python validators | 50 unit tests pass; `scripts/validate.py` passes after inventory regeneration |
+| Website JavaScript unit tests | 13 pass |
+| Kotlin/JVM | `./gradlew clean test check run --no-daemon` succeeds; 125 JUnit tests pass, 33 exact canonical Kotlin fences compile |
+| Fresh site dependencies | `pnpm install --frozen-lockfile` succeeds |
+| Lint and Astro typecheck | Both pass; Astro reports zero errors, warnings or hints |
+| Project-subpath production build | 1,390 static HTML pages, Pagefind search index and sitemap generated |
+| Built route/link check | `GITHUB_REPOSITORY=test/android-interview-lab pnpm check:dist` passes with no broken internal links |
+| Browser E2E and accessibility | 11 Playwright tests pass in installed Chrome under `/android-interview-lab/`; four WCAG A/AA axe scans report no violations on tested pages |
+| External references | 979 citations, 291 distinct URLs: 291 reachable, zero confirmed broken or unverified in the final crawl; `reports/external-links.json` |
 
-No automated Playwright E2E, full external-link crawl, or Android device/instrumentation pass is claimed. SEC-12 uses Android APIs and was not compiled in the JVM suite. The earlier browser smoke checked selected paths, not all 1,388 rendered pages interactively. The latest Kotlin/JVM suite passed 125 tests, and the academy validator passed; these do not override the incomplete Interview Lab editorial gate. `FILE-INVENTORY.md` was regenerated for 981 academy source files; `dist/Android-Interview-Mastery-source.zip` was rebuilt with 1,471 source files.
+The Playwright suite covers topic and exact/Arabic search, deep links, answer sections, persistence, flashcards, mock answer hiding/resume/recap, export/import, invalid import, 404, 320px RTL/LTR, and accessibility on representative pages. It does not visit every route interactively. The static link checker covers all built internal links. Android device instrumentation, payment terminal certification, and production traffic testing were not performed; conclusions about those environments are explicitly limited in the content.
 
-## Next deterministic checkpoint
+## Reproduce
 
-Run `python3 scripts/validate_interview_lab.py` from the repository root. Its reviewed/source-only counts determine what editorial work remains. The site can be rebuilt with `cd site && pnpm build && pnpm check:dist`. Release requires `python3 scripts/validate_interview_lab.py --require-complete` to pass and a verified Pages deployment.
+```sh
+python3 scripts/validate_interview_lab.py --require-complete
+PYTHONPATH=scripts python3 -m unittest discover -s scripts -p 'test_*.py'
+python3 scripts/validate.py
+python3 scripts/check_interview_links.py
+cd site
+pnpm install --frozen-lockfile
+pnpm lint && pnpm typecheck
+GITHUB_REPOSITORY=test/android-interview-lab PUBLIC_SITE_URL=https://test.github.io pnpm build
+GITHUB_REPOSITORY=test/android-interview-lab pnpm check:dist
+pnpm test:e2e
+cd ../projects/kotlin-jvm-labs
+./gradlew clean test check run --no-daemon
+```
+
+The external-link crawl is network dependent. The GitHub Pages workflow repeats the offline deterministic release gates on each push to `main`; a live deployment must be confirmed by the Actions run and a browser visit before it is reported as published.

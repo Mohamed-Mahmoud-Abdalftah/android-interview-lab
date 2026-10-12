@@ -82,6 +82,6 @@ Can I define metrics, kill path, offline fallback and in-flight reconciliation?
 ## References and reviewed-on date
 
 - [Android vitals](https://developer.android.com/google/play/vitals) — crash/ANR monitoring.
-- [Android security guidance](https://developer.android.com/privacy-and-security) — client trust boundary.
+- [Android security guidance](https://developer.android.com/privacy-and-security/security-tips) — client trust boundary.
 
 Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

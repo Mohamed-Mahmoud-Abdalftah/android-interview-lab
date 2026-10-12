@@ -25,6 +25,8 @@ The production build is written to `site/dist/`. Opening HTML through `file://` 
 ```sh
 pnpm test
 pnpm build
+pnpm check:dist
+pnpm test:e2e
 ```
 
-Progress stays in browser `localStorage` under `android-academy-progress-v1`. The dashboard exports/imports a validated versioned JSON file; nothing is uploaded.
+The browser tests use installed Google Chrome and serve the built snapshot under `/android-interview-lab/`; run `pnpm build` first. The interview lab stores progress under `android-interview-lab-v1` in browser `localStorage`; its dashboard exports/imports a validated versioned JSON file. The academy has a separate `android-academy-progress-v1` store. Nothing is uploaded by these study features.

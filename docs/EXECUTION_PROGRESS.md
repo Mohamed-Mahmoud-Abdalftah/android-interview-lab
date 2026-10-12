@@ -1,17 +1,13 @@
-# Interview Lab execution progress
-
-This is a tracked checkpoint, not a completion claim.
+# Android Interview Lab release progress — 2026-10-12
 
 | Stage | State | Evidence |
 |---|---|---|
-| Source/academy audit | Complete | `docs/IMPLEMENTATION_AUDIT.md` |
-| Canonical source import | Complete | `python3 scripts/import_interview_lab.py`; 485/485 IDs |
-| 485 individual source records | Complete | `Interview-Lab/questions/` |
-| Full educational answers and technical review | Incomplete: 464/485 marked reviewed; all 464 pass current automated checks | `reports/content-coverage.json`; 21 source-only; individual technical review and full link audit remain |
-| Canonical site routes and topic pages | Implemented | 485 question routes, 21 topic pages, subpath build/link check |
-| Study, revision and practice interactions | Implemented with limits | Local notes/bookmarks, SRS, explorer, timed self-rated mocks; browser smoke and unit checks |
-| CI and Pages deployment | Prepared, not deployed | Pages workflow has a 485-review gate; no Git remote detected |
+| Existing academy audit and preservation | Complete | `docs/IMPLEMENTATION_AUDIT.md`; 48 core lessons, six specialist units, 300 academy Q&A pairs, 50 scenarios, 30 labs, eight mocks remain registered |
+| Canonical bank import | Complete | 485 unique exact IDs across 21 topics, 485 individual canonical records |
+| Educational content | Complete by authored coverage | 485 records marked reviewed, zero source-only, all 14 required sections and answered follow-ups; `reports/content-coverage.json` |
+| Technical/editorial checks | Automated checks and 21-topic agent spot audit complete | No validator errors, duplicate three-gram findings, or confirmed broken external references; this is not external human review of every claim |
+| Website and practice features | Implemented | 485 question routes, 21 topic pages, local notes/bookmarks/SRS, search, mocks, import/export, academy preserved |
+| Verification | Passing locally | `docs/VERIFICATION_REPORT.md`; 11 browser tests including WCAG A/AA scans, 50 Python, 13 JavaScript, 125 Kotlin/JVM tests, 33 compiled source snippets |
+| GitHub Pages | Deployment preparation complete; live state tracked separately | `.github/workflows/deploy-pages.yml`, `docs/DEPLOYMENT.md` |
 
-Resume source ingestion with `python3 scripts/import_interview_lab.py`. It does not overwrite existing individual records, so authored content is preserved.
-
-Resume editorial work by completing source-only BLD-01..21. DI-01..20, COM-01..28 and MOD-01..21 are authored. The English speaking answers across 230 earlier records had exact explanatory sentence copies; `scripts/dedupe_spoken_answers.py` removed those copies and generic filler while preserving the original explanation sections. A cross-topic human/agent technical review is still required because automated checks alone cannot establish every answer's correctness or depth. Run `python3 scripts/validate_interview_lab.py` after each coherent unit; only proceed to release when `python3 scripts/validate_interview_lab.py --require-complete` passes with zero errors. No Git remote is configured.
+The canonical question files remain in `Interview-Lab/questions/`. Derived website pages are generated with `pnpm sync`; do not edit them by hand. Content review uses primary references and explicit limits for device-specific claims. Browser and JVM tests do not constitute an Android device or payment-terminal certification.

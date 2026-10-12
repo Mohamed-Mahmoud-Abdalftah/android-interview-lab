@@ -58,6 +58,8 @@ for (const file of [
   '09-Leadership-English/STAR-EVIDENCE-WORKSHEET.md',
   'projects/kotlin-jvm-labs/README.md',
   'docs/IMPLEMENTATION_AUDIT.md',
+  'docs/EXECUTION_PROGRESS.md',
+  'docs/VERIFICATION_REPORT.md',
   'docs/CONTENT_GUIDELINES.md',
   'docs/ARCHITECTURE.md',
   'docs/DEPLOYMENT.md',

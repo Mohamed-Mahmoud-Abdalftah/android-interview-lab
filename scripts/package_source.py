@@ -4,7 +4,7 @@
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
-EXCLUDED_PARTS = {".git", ".gradle", ".kotlin", ".idea", ".astro", ".pytest_cache", "build", "__pycache__", "__MACOSX", "dist", "node_modules"}
+EXCLUDED_PARTS = {".git", ".gradle", ".kotlin", ".idea", ".astro", ".pytest_cache", "build", "__pycache__", "__MACOSX", "dist", "node_modules", "test-results", "playwright-report"}
 EXCLUDED_NAMES = {".DS_Store"}
 GENERATED_SITE_PREFIXES = (
     "site/src/content/docs/lessons/", "site/src/content/docs/questions/", "site/src/content/docs/answers/",

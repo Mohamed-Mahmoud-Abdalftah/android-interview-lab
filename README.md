@@ -2,9 +2,9 @@
 
 ## Android Interview Lab status
 
-This checkout also contains the supplied **485-question, 21-topic Android Interview Lab**. All original IDs and English wording are preserved in individual records and 485 static routes. **Five answers are fully authored and technically reviewed; 480 canonical pages are source-only practice questions.** The Lab is therefore not a complete publishable answer library, and the Pages release workflow blocks until the remaining content is reviewed. The earlier academy's 300 Q&A pairs use different IDs and remain available separately.
+This checkout contains the supplied **485-question, 21-topic Android Interview Lab**. All original IDs and English wording are preserved in individual records and 485 static routes. All 485 records now have authored explanations, examples, three English answer depths, follow-ups, rubrics, and references; no source-only pages remain. The `reviewed` field records automated editorial checks and agent technical review, not external human approval. The earlier academy's 300 Q&A pairs use different IDs and remain available separately.
 
-From `site/`, run `pnpm install --frozen-lockfile`, `pnpm dev`, or `pnpm build && pnpm check:dist`. Run `python3 scripts/validate_interview_lab.py` at the repository root for actual editorial coverage. See [implementation audit](docs/IMPLEMENTATION_AUDIT.md), [content rules](docs/CONTENT_GUIDELINES.md), and [deployment](docs/DEPLOYMENT.md).
+From `site/`, run `pnpm install --frozen-lockfile`, `pnpm dev`, or `pnpm build && pnpm check:dist && pnpm test:e2e`. Run `python3 scripts/validate_interview_lab.py --require-complete` at the repository root for actual editorial coverage. See [verification](docs/VERIFICATION_REPORT.md), [content rules](docs/CONTENT_GUIDELINES.md), and [deployment](docs/DEPLOYMENT.md).
 
 A study-first, local Senior Android engineering curriculum for an experienced Kotlin/Android engineer, including optional Staff and payment-device depth. The **core learner workload is 48 days × about 2 hours = 96 hours**; authoring all later material is a larger, separate effort. [START-HERE](START-HERE.md) opens a real Day 1 lesson and runnable JVM lab.
 

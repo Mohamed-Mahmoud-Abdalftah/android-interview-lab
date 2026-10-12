@@ -42,6 +42,8 @@ jobs:
         working-directory: site
       - run: pnpm check:dist
         working-directory: site
+      - run: pnpm test:e2e
+        working-directory: site
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

@@ -3,8 +3,8 @@
   "uniqueIds": 485,
   "topics": 21,
   "records": 485,
-  "reviewed": 464,
-  "sourceOnly": 21,
+  "reviewed": 485,
+  "sourceOnly": 0,
   "missing": 0,
   "placeholderCount": 0,
   "errors": [],
@@ -383,6 +383,27 @@
     "MOD-19",
     "MOD-20",
     "MOD-21",
+    "BLD-01",
+    "BLD-02",
+    "BLD-03",
+    "BLD-04",
+    "BLD-05",
+    "BLD-06",
+    "BLD-07",
+    "BLD-08",
+    "BLD-09",
+    "BLD-10",
+    "BLD-11",
+    "BLD-12",
+    "BLD-13",
+    "BLD-14",
+    "BLD-15",
+    "BLD-16",
+    "BLD-17",
+    "BLD-18",
+    "BLD-19",
+    "BLD-20",
+    "BLD-21",
     "TST-01",
     "TST-02",
     "TST-03",
@@ -474,30 +495,8 @@
     "PAY-14",
     "PAY-15"
   ],
-  "sourceOnlyIds": [
-    "BLD-01",
-    "BLD-02",
-    "BLD-03",
-    "BLD-04",
-    "BLD-05",
-    "BLD-06",
-    "BLD-07",
-    "BLD-08",
-    "BLD-09",
-    "BLD-10",
-    "BLD-11",
-    "BLD-12",
-    "BLD-13",
-    "BLD-14",
-    "BLD-15",
-    "BLD-16",
-    "BLD-17",
-    "BLD-18",
-    "BLD-19",
-    "BLD-20",
-    "BLD-21"
-  ],
-  "qualityPassing": 464,
+  "sourceOnlyIds": [],
+  "qualityPassing": 485,
   "questionStatus": {
     "KOT-01": {
       "topic": "KOT",
@@ -2243,7 +2242,7 @@
       "topic": "BG",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": true
+      "hasKotlinCode": false
     },
     "BG-13": {
       "topic": "BG",
@@ -2745,128 +2744,128 @@
     },
     "BLD-01": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-02": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-03": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-04": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-05": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-06": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-07": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-08": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-09": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-10": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-11": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-12": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-13": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-14": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-15": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-16": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-17": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-18": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-19": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-20": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "BLD-21": {
       "topic": "BLD",
-      "status": "source-only",
-      "automatedQuality": "not-authored",
+      "status": "reviewed",
+      "automatedQuality": "passes-checks",
       "hasKotlinCode": false
     },
     "TST-01": {
@@ -3431,8 +3430,8 @@
     },
     "BLD": {
       "total": 21,
-      "reviewed": 0,
-      "sourceOnly": 21,
+      "reviewed": 21,
+      "sourceOnly": 0,
       "qualityIssues": 0
     },
     "CIC": {
