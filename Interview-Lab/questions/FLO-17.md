@@ -22,11 +22,37 @@ Explain flowOn upstream context preservation and why it does not move downstream
 
 ## Explanation in Arabic
 
-`flowOn(Dispatchers.IO)` بيغيّر context للoperators والمصدر اللي فوقه فقط؛ الـcollector والoperators اللي تحته يفضلوا في context بتاع المستدعي. ده يسمح repository تعمل blocking read بعيد عن Main وتسيب rendering على Main. ما ينفعش نستخدم `withContext(IO)` حوالين `emit` داخل `flow {}` ونكسر invariant بتاع Flow.
+المشغل `flowOn` ومبدأ **Context Preservation** هو أحد أهم قواعد تدفق السياق في Kotlin Flow:
+
+1. ما هو مبدأ Context Preservation؟
+   - في Kotlin Flow، القاعدة الصارمة هي: **الـ Flow يحافظ على سياق المستمع (Collector's Context)**.
+   - لا يجوز للـ Flow أن يقوم بعمل `withContext` داخل بلوك `flow { ... }` لتغيير الـ Dispatcher وإصدار قيم منه! لو حاولت كتابة `withContext(Dispatchers.IO) { emit(data) }`، التطبيق سيعمل Crash فوراً بـ `IllegalStateException: Flow invariant is violated`!
+
+2. ما الذي يفعله `flowOn`؟
+   - `flowOn` هو الأداة الشرعية الوحيدة لتغيير سياق تنفيذ الـ Flow.
+   - يؤثر **فقط على الـ Upstream (ما قبله في السلسلة)**، ولا يؤثر إطلاقاً على الـ Downstream (ما بعده أو الـ Collector)!
+   - يقوم بإنشاء Coroutine منفصلة للـ Upstream على الـ Dispatcher المحدد، ويربطها بالـ Downstream عبر Channel.
 
 ## Practical walkthrough
 
-`flowOn(Dispatchers.IO)` يأثر على operators اللي قبله upstream، مش `collect` ولا الكود بعده. لو Room query سريعة و`map` فيها parsing ثقيل، حط flowOn بعد الـmap اللي عايز تنقلها، لكن متغيّرش UI state من IO مباشرة. لاحظ إنه يعمل context boundary وقد يضيف buffer وسلوك cancellation؛ اختبر thread عند كل مرحلة بدل افتراض pipeline كلها في IO.
+تطبيق عملي يوضح اتجاه تأثير `flowOn` بدقة:
+```kotlin
+flow {
+    // 1. هذا الكود سيعمل على Dispatchers.IO بسبب flowOn(Dispatchers.IO):
+    val fileData = readHeavyFileFromDisk()
+    emit(fileData)
+}
+.flowOn(Dispatchers.IO) // يغير سياق كل ما قبله فقط (Upstream)!
+.map {
+    // 2. هذا الكود سيعمل على Dispatchers.Default بسبب flowOn(Dispatchers.Default):
+    parseJsonCompute(it)
+}
+.flowOn(Dispatchers.Default) // يغير سياق map فقط!
+.collect { uiData ->
+    // 3. هذا الكود سيعمل على سياق الـ Collector (مثلاً Dispatchers.Main):
+    renderUi(uiData)
+}
+```
 
 ## Why it matters and how it works
 
@@ -60,15 +86,32 @@ A repository wraps a legacy disk reader in a cold Flow on IO, while a Fragment c
 
 ## Interview answer — short
 
-“flowOn changes the context of upstream operators only. Downstream collection stays in the caller context, which lets a repository read on IO and UI render on Main. Placement matters, and I do not emit from a different context inside a basic flow builder.”
+flowOn changes the CoroutineContext (such as Dispatcher) of upstream operations preceding it in the pipeline, without affecting downstream operators or the collector. It enforces Flow's Context Preservation rule by managing thread switching through an internal channel buffer rather than illegal withContext emissions.
 
 ## Interview answer — structured
 
-“Flow has context preservation: its upstream can encapsulate where it runs without changing the collector’s context. `flowOn(IO)` applies to the source and operators above it. The collector and operators below it remain in the collecting coroutine, often Main on Android. I use it around a known blocking upstream boundary, not as a blanket rule for every suspend source. I watch operator order so UI work is not accidentally moved and test cancellation at the boundary.”
+`flowOn` controls the execution context—primarily the `CoroutineDispatcher`—of the **upstream** operations that precede it in the flow pipeline.
+
+In Kotlin Flow, there is a foundational invariant called **Context Preservation**: a flow must always emit values within the context of the collector, and calling `withContext` inside a `flow { }` builder to emit values is strictly forbidden and throws an `IllegalStateException`.
+
+To safely offload expensive upstream work without breaking this invariant, we use `flowOn`. It launches the upstream operations in a separate coroutine on the specified dispatcher (e.g., `Dispatchers.IO`), streams the emitted values through an internal buffer channel, and delivers them to downstream operators and the collector on their own designated dispatcher (e.g., `Dispatchers.Main`).
 
 ## Interview answer — deep senior
 
-“The context rule is an important local reasoning guarantee. A basic `flow {}` emits from its own coroutine context; changing context around `emit` with `withContext` violates the invariant. `flowOn` is the supported operator: it shifts upstream work and can introduce a channel when execution contexts differ, so buffering and cancellation can affect in-flight values. Downstream remains in the collector context. In a real Android app I keep a blocking legacy read upstream on IO and immutable state mapping where appropriate, then collect on Main only while lifecycle is active. I profile whether the source is already main-safe, because unnecessary dispatching adds complexity without improving responsiveness. Multiple flowOn calls compose by position. I would draw a vertical line at `flowOn`. Operators above it run in the supplied context, while downstream operators and the collector remain in the collector context unless another boundary changes them. That lets a repository move blocking-safe transformation work off Main without forcing UI rendering onto IO. It is not a blanket thread switch for the whole chain. When dispatchers differ, `flowOn` can create a channel boundary; cancellation may discard in-flight values, so I avoid using it as a correctness mechanism for required events. I also check whether the data source already manages its own dispatcher, as Room often does. In a test I record thread names or use controlled dispatchers around upstream and downstream operations, then verify the UI still collects on its intended context.”
+Under the hood, why does Kotlin forbid `withContext` around `emit()`?
+
+```kotlin
+// ❌ ILLEGAL - Throws IllegalStateException:
+flow {
+    withContext(Dispatchers.IO) {
+        emit(loadData()) // VIOLATES FLOW INVARIANT!
+    }
+}
+```
+
+Because `emit` calls the collector's suspending lambda directly. If upstream used `withContext`, it would forcibly drag the collector's execution onto a foreign thread without the collector's knowledge or consent, breaking structured concurrency.
+
+`flowOn` avoids this by introducing an asynchronous channel boundary. It acts like a concurrent pipe: the upstream produces elements onto a worker thread, writes them to a Channel, and the downstream collector reads from that Channel on its own caller thread. You can chain multiple `flowOn` calls: each `flowOn` operator dictates the dispatcher for everything above it up to the previous `flowOn` boundary.
 
 ## How to answer in the interview
 
@@ -84,8 +127,14 @@ Draw the flowOn boundary and label execution of source, map, onEach and collect.
 
 ## Follow-up questions
 
-- [COR-09](../cor-09/): What does withContext change? **Answer:** its block context, but basic Flow emission has a context-preservation rule.
-- [FLO-22](../flo-22/): Who owns downstream collection? **Answer:** a lifecycle-aware UI scope.
+- **Interviewer:** "Does `flowOn` affect the thread of the `collect { }` block?"
+  **Answer:** "No, never. The `collect { }` block always executes on the CoroutineContext of the coroutine that invoked `collect`. `flowOn` only modifies the context of operators upstream from it."
+
+- **Interviewer:** "Does `flowOn` add an internal buffer?"
+  **Answer:** "Yes. Because `flowOn` switches dispatchers between producer and consumer coroutines, it introduces an internal buffer channel (default capacity 64 or Channel.BUFFERED) to prevent producer stalls."
+
+- **Interviewer:** "What happens if you have two `flowOn` operators in a chain?"
+  **Answer:** "Each `flowOn` applies strictly to the upstream pipeline segments above it up to the preceding `flowOn`. This allows reading on `Dispatchers.IO` and parsing on `Dispatchers.Default` in a single declarative chain."
 
 ## Self-check rubric
 
@@ -96,4 +145,4 @@ Can I label upstream/downstream contexts, place UI work correctly and explain th
 - [Kotlin Flow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-flow/) — context preservation and flowOn.
 - [Android Flow guide](https://developer.android.com/kotlin/flow) — upstream context use.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

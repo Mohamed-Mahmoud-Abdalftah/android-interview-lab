@@ -24,11 +24,53 @@ How do you identify avoidable recomposition?
 
 ## Explanation in Arabic
 
-ابدأ بمشكلة محسوسة: typing متقطع أو scroll jank، ثم قِس frame timing في release build. Android Studio Layout Inspector يبين recomposition/skip counts، وCompose compiler reports تكشف stability، وsystem trace يوضح أين وقت frame. لا تعتبر أي recomposition خطأ: إذا تغير نص ظاهر، تحديثه ضروري. ابحث عن scope واسعة تقرأ state سريعة، calculation ثقيلة داخل body، أو parameters تتغير هويتها بلا سبب. بعد تغيير صغير قِس من جديد وتأكد أن UI ما بقتش قديمة.
+كيفية اكتشاف وتحديد عمليات الـ Recomposition الزائدة غير الضرورية (Avoidable Recompositions) ومعالجتها:
+
+1. الأدوات الرسمية لاكتشاف الـ Recomposition المفرط:
+   - **Layout Inspector في Android Studio**:
+     * يعرض عمودين حاسمين لكل Composable: **Recomposition Count** و **Skip Count**.
+     * إذا رأيت الـ Recomposition Count يتزايد باستمرار مع كل حركة بينما الـ Skip Count ثابت عند 0، فهذا مؤشر صريح على وجود Recomposition زائد!
+   - **Compose Compiler Metrics**:
+     * توليد تقارير الـ HTML والـ Text لمعرفة الدوال المصنفة كـ `restartable` فقط دون `skippable`، وتحديد البارامترات الـ `unstable` بالاسم.
+
+2. الأسباب الشائعة للـ Avoidable Recompositions:
+   - **تمرير بارامترات Unstable**: تمرير `List<T>` عادية أو كلاس خارجي.
+   - **كتابة كائنات جديدة داخل الـ Composable**: مثل إنشاء `Modifier.padding()` جديد داخل حلقة أو إنشاء كائنات Formatter بدون `remember`.
+   - **قراءة الـ State في مرحلة مبكرة جداً**: قراءة حالة سريعة التغير في مرحلة التكوين (Composition Phase) بدلاً من مرحلة الـ Layout/Draw عبر Lambdas.
+
+3. استراتيجية الإصلاح:
+   - استخدام `remember` للكائنات الحسابية.
+   - استخدام Lambdas لتأجيل قراءة الـ State (`Modifier.offset { ... }`).
+   - استخدام `derivedStateOf` لامتصاص الترددات العالية.
 
 ## Practical walkthrough
 
-لو عدّاد recomposition زاد، ده مؤشر للتحقيق مش إثبات bottleneck. سجل trace في release/profileable build، اعرف الوقت رايح composition ولا measure/draw ولا image decode. بعدين شوف compiler stability report والـstate read scope؛ غير حاجة واحدة وقارن frame time ونتيجة UI. مثال sort يوضح إن تكلفة واحدة داخل scope أهم من مئات Text رخيصة. بعد نقل الحساب قارن p95 frame time وتأكد إن ترتيب النتائج لم يتغير.
+تشخيص وإصلاح Recomposition متكرر أثناء الكتابة في حقل نصي:
+```kotlin
+// ❌ كود يسبب إعادة تركيب الشاشة بالكامل في كل حرف يُكتب:
+@Composable
+fun BadSearchScreen() {
+    var query by remember { mutableStateOf("") }
+    Column {
+        TextField(value = query, onValueChange = { query = it })
+        // 💥 قراءة query هنا تجبر HeavyResultsList على إعادة التركيب في كل ضغطة مفتاح:
+        HeavyResultsList(query = query)
+    }
+}
+
+// ✅ كود مفصول: عزل الحالة، وإجراء البحث عبر Debounced ViewModel، وتخطي القائمة الثقيلة:
+@Composable
+fun GoodSearchScreen(viewModel: SearchViewModel = viewModel()) {
+    val query by viewModel.query.collectAsStateWithLifecycle()
+    val results by viewModel.searchResults.collectAsStateWithLifecycle()
+
+    Column {
+        SearchInput(query = query, onQueryChange = viewModel::onQueryChanged)
+        // HeavyResultsList يعاد تركيبها فقط عندما تتغير نتائج البحث الفعلية وليس مع كل حرف:
+        HeavyResultsList(results = results)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -68,15 +110,26 @@ Capture baseline frame metrics, relevant traces and UI correctness tests. Change
 
 ## Interview answer — short
 
-“I profile a real frame problem, inspect recomposition and skip counts plus compiler reports, trace costly state reads or body work, and verify release-frame improvement after a focused change. Measure frame cost before calling a recomposition avoidable.”
+Identify avoidable recomposition using Android Studio Layout Inspector (tracking Recomposition Counts vs Skip Counts) and Compose Compiler Metrics. Fix it by eliminating unstable parameters, wrapping heavy allocations in `remember`, deferring state reads to the layout/draw phases via lambdas, and dampening high-frequency reads with `derivedStateOf`.
 
 ## Interview answer — structured
 
-“I do not label every recomposition waste. I reproduce a user-visible slow path on a release build, inspect Layout Inspector counts and system traces, and ask whether composition, layout or draw actually costs the frame. Then I locate rapidly changing state reads, expensive calculations, or inputs whose identity changes unnecessarily. I narrow or move work and remeasure. If the bottleneck is image decoding, optimizing skip rules would miss it. I use a trace to tell an expensive sort apart from harmless Text recomposition or image decode.”
+Detecting and eliminating avoidable recompositions is central to maintaining 60/120fps UI fluidity.
+
+1. **Detection Tools**:
+   - **Android Studio Layout Inspector**: We enable recomposition highlights and inspect the **Recomposition Count** and **Skip Count** columns in real-time. If interacting with a single widget (e.g. typing in a search bar) increments the recomposition count of distant, unrelated UI elements while their skip count remains zero, a state leak or unstable parameter is present.
+   - **Compose Compiler Metrics**: Generating compiler metrics reveals which composables are marked as `unskippable` and highlights exact unstable parameters.
+
+2. **Common Root Causes & Fixes**:
+   - **Unstable Parameter Leaks**: Using unstable collections (`List<T>`). Solved with `@Immutable` or `ImmutableList`.
+   - **Premature State Reading**: Reading rapidly changing state (like scroll offset) in the *composition phase*. Solved by deferring reads to the *layout or draw phase* using lambda-based modifiers (`Modifier.offset { ... }` or `drawBehind { ... }`).
+   - **Unmemoized Allocations**: Creating fresh objects on every recomposition pass without `remember`.
 
 ## Interview answer — deep senior
 
-“My first artifact is a measurable problem: for example p95 frame time while typing into a feed search, not a screenshot of a high recomposition counter. I reproduce it under a realistic list size in release configuration and use a system trace to identify composition, measurement, drawing, or unrelated main-thread work. Layout Inspector and Compose compiler reports help explain which composables re-execute and whether their inputs are considered skippable. I trace the exact state read: a root scope reading every keystroke may cause broad work, while a narrower results component may contain it. I also look for sorting or formatting done in render code and allocations that change child parameter identity. I fix one cause, perhaps move filtering into a cancelable ViewModel pipeline and give rows stable IDs and inputs, then compare frame metrics and behavior. I resist false `@Stable` annotations or incorrectly keyed `remember`, because those can hide updates. If composition time is small but image decode or layout dominates, I change direction. The goal is smoother, correct interaction on target devices, with a benchmark protecting a material improvement. I would compare release frame timing after the targeted change, not celebrate a smaller counter alone.”
+Understanding Compose's three rendering phases—**Composition**, **Layout**, and **Draw**—is the highest-leverage insight for optimization. If a state is read during the Composition phase, any mutation forces the composable function to re-execute from top to bottom. If state is read strictly during the Layout phase (inside `MeasurePolicy` or a layout lambda modifier), Compose **skips composition entirely** and executes only layout measurement. If state is read in the Draw phase (inside `Modifier.drawWithContent { ... }`), Compose skips both composition and layout, jumping directly to the canvas draw pass!
+
+Another critical check is **Lambda Stabilization**. Passing inline lambdas that capture changing values or unstable parent properties invalidates the lambda instance on every pass unless Strong Skipping is enabled or the lambda is hoisted or wrapped in `remember`.
 
 ## How to answer in the interview
 
@@ -92,9 +145,11 @@ Cover baseline, release tracing, composition/layout/draw, state-read scope, comp
 
 ## Follow-up questions
 
-- Is a high recomposition count automatically bad? **Answer:** no; it may be cheap and required by changed visible state.
-- Why profile a release build? **Answer:** debug overhead and optimizations can distort real frame costs.
-- What is the risk of a wrong `remember` key? **Answer:** stale derived content can remain visible despite changed inputs.
+- **Interviewer:** "What is the three-phase pipeline of Jetpack Compose?"
+  **Answer:** "The three phases are: 1. Composition (what UI to show - running composable functions), 2. Layout (where to place UI - measure and position nodes), and 3. Drawing (how to render UI - issuing GPU draw calls to Canvas)."
+
+- **Interviewer:** "How does `Modifier.offset { ... }` differ from `Modifier.offset(x, y)`?"
+  **Answer:** "`Modifier.offset(x, y)` accepts concrete values and reads state in the Composition phase. `Modifier.offset { IntOffset(...) }` accepts a lambda, deferring state reads to the Layout phase, completely bypassing recomposition."
 
 ## Self-check rubric
 
@@ -105,4 +160,4 @@ Describe a baseline, identify the costly phase, propose one narrow fix, and reme
 - [Diagnose stability issues](https://developer.android.com/develop/ui/compose/performance/stability/diagnose) — reports and Layout Inspector.
 - [Compose phases](https://developer.android.com/develop/ui/compose/phases) — distinct render work.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The performance case is illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

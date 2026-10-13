@@ -24,11 +24,41 @@ What are GC roots, and how does the GC determine reachability?
 
 ## Explanation in Arabic
 
-`GC roots` هي نقاط يبدأ منها الـcollector تتبع الـobject graph، زي references من thread stacks وstatic fields وبعض VM/JNI roots. أي object له strong-reference path من root يظل reachable، حتى لو الشاشة المقابلة اتقفلت. لو `singleton` ماسك listener والـlistener ماسك Activity، الـActivity وكل شجرتها ممكن تفضل في الذاكرة. بالمقابل دائرتين ماسكين بعض لكن مفيش طريق من root ليهم يمكن جمعهم؛ مجرد circular reference مش leak وحده. في heap dump ندور على retaining path للـActivity أو bitmap ونصلح المالك اللي طول عمره أكبر من اللازم.
+ما هي الـ GC Roots وكيف يحدد مجمع النفايات إمكانية الوصول للكائنات (Reachability Analysis)؟
+
+1. ما هو جذر تتبع القمامة (GC Root)؟
+   - الـ GC Root هو كائن في الذاكرة يُعتبر **حياً بطبيعته ونقطة بداية موثوقة (Anchor of Liveness)** لا يمكن للـ GC حذفها.
+   - أمثلة على الـ GC Roots:
+     * **خيوط المعالجة النشطة (Active Threads):** أي كائن `Thread` يعمل حالياً في النظام، بما في ذلك الـ Main Thread وخيوط Coroutines.
+     * **المتغيرات المحلية على الـ Stack (Stack Frames):** المتغيرات والمعاملات الموجودة داخل الدوال الجاري تنفيذها حالياً في أي Thread.
+     * **المتغيرات الثابتة للكلاسات (Static Fields):** أي متغير `static` أو كائن `companion object` في كلاس محمل في الذاكرة.
+     * **مراجع الـ JNI العامة (JNI Global References):** كائنات Java الممسوكة من كود C++ عبر `NewGlobalRef`.
+
+2. كيف يحدد الـ GC إمكانية الوصول (Reachability)؟
+   - يقوم الـ GC بعمل خوارزمية **Mark-and-Sweep**:
+     * يبدأ من جميع الـ GC Roots ويتتبع كل المراجع (References) الخارجة منها كشجرة علاقات (Directed Graph).
+     * أي كائن متصل بـ GC Root عبر سلسلة مراجع قوية (Strong Reference Chain) يُعتبر **Reachable (حي)** ويُترك في الذاكرة.
+     * أي كائن غير متصل بأي GC Root يُعتبر **Unreachable (ميت)** ويتم مسحه وتحرير مساحته، حتى لو كانت هناك كائنات ميتة أخرى تشير إليه (Cyclic References)!
 
 ## Practical walkthrough
 
-لو heap dump بيقول خمس نسخ من `ProfileActivity` بعد خمس rotations، امشِ من كل نسخة لحد root: static manager، callback، وبعدين Activity. المشكلة مش إن GC تأخر ثانية؛ المشكلة إن manager لسه محتفظ بالـcallback. شيل التسجيل من نفس lifecycle boundary ورجّع السيناريو. لو الدائرة الداخلية منفصلة عن كل roots فدي مش leak في tracing GC حتى لو objects ماسكة بعض.
+توضيح عملي للـ Reference Chains وكيف يحدث الـ Leak:
+```text
+[GC Root: Active Main Thread]
+       |
+       v
+[Looper Message Queue]
+       |
+       v
+[Pending Message: 10-second delay]
+       |
+       v (target)
+[Anonymous Handler Runnable]
+       |
+       v (implicit outer reference)
+[Old Destroyed MainActivity]  <--- LEAKED! لانها متصلة بـ GC Root!
+```
+طالما أن الـ Message معلقة في الـ MessageQueue، فالـ MainActivity تعتبر Reachable بالنسبة للـ GC ولن يستطيع مسحها من الذاكرة حتى ينتهي الـ 10 ثوانٍ.
 
 ## Why it matters and how it works
 
@@ -52,15 +82,32 @@ For a suspected screen leak, record a deterministic navigation loop, force a dia
 
 ## Interview answer — short
 
-“GC roots are starting references such as thread stacks and static fields. The collector traces strong-reference paths from them; an object with no reachable path can be reclaimed, even if it participates in a cycle.”
+GC Roots are objects always deemed alive (active threads, local stack variables, static fields, JNI global handles). The GC traverses outgoing strong references forming a directed graph; objects reachable from any GC Root are retained, while unreachable objects are reclaimed.
 
 ## Interview answer — structured
 
-“I model memory as an object graph. The collector starts at runtime roots and follows references. A destroyed Activity can still be reachable through a singleton callback, so GC cannot reclaim it. Two objects referring only to each other are collectable if the pair has no root path. In a heap dump I look for a retained object's path to a root, identify which owner lived too long, and fix registration, cancellation, or reference ownership rather than adding a random weak reference.”
+Garbage collection in Android determines an object's liveness through **Reachability Analysis** originating from **GC Roots**:
+
+A **GC Root** is an anchor object that is fundamentally alive and cannot be collected:
+
+1. **Active Threads**: The Main UI thread and any running worker thread or coroutine thread pool.
+2. **Thread Stack Frames**: Local variables and parameters currently residing on active function call stacks.
+3. **Static Fields**: Variables owned by loaded classes or Kotlin companion objects/singletons.
+4. **JNI References**: Global C/C++ native pointers created via `NewGlobalRef`.
+
+During a collection cycle, the GC traces outward from all GC Roots across object reference pointers in a directed graph. If an object has a valid path of strong references connecting it to at least one GC Root, it is **Reachable** and preserved. If no path exists, it is **Unreachable** and its memory is reclaimed.
 
 ## Interview answer — deep senior
 
-“Reachability gives a concrete way to investigate leaks. Roots include live thread stack references, static state, and runtime or JNI-held references. The collector walks the strong-reference graph; lifecycle callbacks do not change this graph unless my code releases references. If a Fragment view is retained by an observer in a longer-lived scope, the view tree remains reachable even after `onDestroyView`. I capture a heap dump after a repeatable screen-close cycle and inspect the shortest retaining path to a root. Then I decide which edge violates intended ownership—perhaps a singleton listener, an unbounded coroutine, or a native global—and remove it at the right boundary. I verify retained instance counts after the fix. Weak references can be useful in specific cache designs, but they do not replace explicit lifecycle cleanup. For five rotations, I expect at most the current screen to remain once old work settles. A static registry-to-listener-to-Activity path names the edge to remove; a large object without such a path is not enough. I also check JNI globals when managed code cannot explain the root.”
+A vital senior distinction is understanding how tracing garbage collection handles **Cyclic References** compared to naive reference counting:
+
+If Object A references Object B, and Object B references Object A, but neither A nor B is reachable from any GC Root, ART's reachability graph correctly identifies both as unreachable garbage and collects both simultaneously. Cycles of unreachable objects do not cause memory leaks in Android.
+
+The type of reference pointer also modifies reachability:
+
+- **Strong Reference**: Default reference. Prevents collection completely as long as reachable from a GC Root.
+- **Soft Reference (`SoftReference`)**: Retained until memory pressure becomes critical before throwing an OOM. (Discouraged for caches in modern Android in favor of explicit `LruCache`).
+- **Weak Reference (`WeakReference`)**: Does not protect the target from collection. Reclaimed immediately in the next GC cycle if no strong references exist.
 
 ## How to answer in the interview
 
@@ -76,9 +123,14 @@ Discuss thread/static/JNI roots, strong paths, cycles, shortest retaining path, 
 
 ## Follow-up questions
 
-- Does a reference cycle always leak? **Answer:** no; a tracing collector can reclaim the whole cycle if nothing from a root reaches it.
-- Can a destroyed Activity remain alive? **Answer:** yes, if a reachable listener, coroutine, or static field retains it.
-- What does a heap retaining path tell you? **Answer:** the chain of references to a root that explains why the object has not been collected.
+- **Interviewer:** "Why are `SoftReference`s discouraged for image caching in Android?"
+  **Answer:** "Because the runtime GC doesn't have sufficient heuristics on bitmap memory size vs overall system pressure, often evicting soft references either too aggressively or too late. An explicit `LruCache` with a fixed byte-budget in RAM is far more predictable."
+
+- **Interviewer:** "What is a `PhantomReference`?"
+  **Answer:** "A `PhantomReference` is enqueued after an object has been finalized and its memory is scheduled for reclamation, used primarily for low-level resource cleanup tracking."
+
+- **Interviewer:** "Can an active coroutine be a GC Root?"
+  **Answer:** "Yes. An active coroutine running on a dispatcher thread keeps its Continuation state machine reachable. If the coroutine captures an Activity reference in its closure and runs an infinite loop, that Activity is reachable from a GC Root and leaks indefinitely."
 
 ## Self-check rubric
 
@@ -89,4 +141,4 @@ Name roots, trace a listener-to-Activity path, explain cycle collection, and ide
 - [Overview of memory management](https://developer.android.com/topic/performance/memory-overview) — managed heap reachability.
 - [JVMTI reachable objects](https://docs.oracle.com/en/java/javase/18/docs/specs/jvmti.html#iterate-over-reachable-objects) — root categories and graph traversal model.
 
-Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The heap path is illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

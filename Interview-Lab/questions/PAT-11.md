@@ -22,7 +22,47 @@ Use Builder for complex validated configuration and discuss immutable result and
 
 ## Explanation in Arabic
 
-Builder مفيدة لما SDK client عنده optional settings كتير: base URL، timeouts، interceptors، certificate/pinning policy حسب threat model. `build()` تتأكد إن required config موجودة وتطلع immutable object. Kotlin named/default parameters أحيانًا تخلي constructor كفاية، فلا تعمل Builder لموديل فيه fieldين. Builder لازم تمنع invalid combinations، وماتسمحش duplicate interceptors أو mutable config بعد البناء من غير قصد. وفي Android ما تحطش Activity context في client طويل العمر.
+أين ومتى يكون نمط الباني (Builder Pattern) مفيداً وضرورياً في تصميم الـ APIs والمكتبات (SDK Design) في Android؟
+
+1. متى يكون الـ Builder مفيداً في تصميم الـ SDKs؟
+   - **الكائنات ذات الإعدادات المتعددة والمعقدة (Complex Configuration Objects)**: عندما يحتوي الكائن على 10 إلى 20 إعداداً مختلفاً، ومعظمها اختياري (مثل إعدادات شبكة OkHttp، أو إعدادات مشغل الفيديو، أو مكتبة تحليلات).
+   - **التوافق التام مع لغة Java (Java Interoperability)**: في Kotlin لدينا Default Arguments، ولكن مطور Java الذي يستخدم مكتبتك لا يمكنه الاستفادة منها وسيعاني من استدعاء Constructor يحتوي على 15 بارامتر! الـ Builder يوفر تجربة سلسة (Fluent API) لمطوري Java و Kotlin معاً.
+   - **التحقق من صحة البيانات المتشابكة قبل البناء (Cross-field Validation)**: فحص شروط تتطلب وجود حقلين معاً (مثل: إذا تم تحديد `timeout` يجب تحديد `retryPolicy`)؛ دالة `build()` تفحص كل هذه الشروط وتطلق استثناءً واضحاً قبل إنشاء الكائن غير القابل للتعديل (Immutable Object).
+
+2. أمثلة حية من نظام Android:
+   - `NotificationCompat.Builder`
+   - `WorkRequest.Builder` (OneTimeWorkRequestBuilder)
+   - `OkHttpClient.Builder`
+   - `Room.databaseBuilder()`.
+
+## Practical walkthrough
+
+تصميم Builder احترافي لمكتبة Analytics SDK تضمن التحقق من الشروط وسلامة الكائن:
+```kotlin
+class AnalyticsConfig private constructor(
+    val apiKey: String,
+    val serverUrl: String,
+    val batchSize: Int,
+    val isDebugLoggingEnabled: Boolean
+) {
+    class Builder(private val apiKey: String) { // الحقل الإجباري في constructor الـ Builder
+        private var serverUrl: String = "https://analytics.default.com"
+        private var batchSize: Int = 50
+        private var isDebugLogging: Boolean = false
+
+        fun setServerUrl(url: String) = apply { this.serverUrl = url }
+        fun setBatchSize(size: Int) = apply { this.batchSize = size }
+        fun enableDebugLogging(enabled: Boolean) = apply { this.isDebugLogging = enabled }
+
+        fun build(): AnalyticsConfig {
+            // التحقق من صحة الشروط المتشابكة قبل إنشاء الكائن النهائي غير القابل للتعديل:
+            require(apiKey.isNotBlank()) { "API key must not be blank" }
+            require(batchSize in 1..500) { "Batch size must be between 1 and 500" }
+            return AnalyticsConfig(apiKey, serverUrl, batchSize, isDebugLogging)
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -46,10 +86,6 @@ class ClientConfig private constructor(val endpoint: String, val timeoutMs: Long
 ```
 A real SDK also validates URL scheme and uses immutable interceptor copies.
 
-## Practical walkthrough
-
-SDK client فيها endpoint، timeout، TLS config، optional retry policy: Builder مفيدة لو options كتير وترتيبها مش مهم و`build()` ترفض invalid combinations. في Kotlin named/default parameters ممكن تغنيك عن Builder لو مدخلات قليلة؛ `ClientConfig(endpoint, timeout)` أوضح. Builder mutable لو اتشاركت بين threads مش آمنة تلقائيًا، وreuse بعد `build()` لازم contract واضح. لا تسمح `build()` تعمل network side effect خفي؛ خليها validation وإنشاء object immutable قدر الإمكان. في Android اختبر defaults، invalid HTTPS endpoint، timeout غير موجب، وانعكاس config على OkHttp client المعاد استخدامه.
-
 ## Trade-offs and decision criteria
 
 Builder provides readable staged configuration and Java ergonomics but adds class/API surface. Kotlin `data class` or named parameters may suffice for simple immutable config. Prefer a factory if only choosing among implementations.
@@ -64,17 +100,23 @@ A telemetry SDK builds a client from application context and validated endpoint/
 
 ## Interview answer — short
 
-Builder assembles an object through configuration steps and validates it before creation. It is useful for complex SDK clients and Java callers; a simple Kotlin constructor with named parameters may be clearer for small models.
+Builder is essential in SDK and public API design for constructing complex configuration objects with many optional parameters, maintaining seamless Java interoperability, enforcing atomic cross-field validation rules during `build()`, and guaranteeing final object immutability.
 
 ## Interview answer — structured
 
-I reach for Builder when construction has many optional settings or dependent validation. An SDK client might require an endpoint, positive timeout and compatible interceptors; `build()` can reject invalid combinations and return an immutable client. Kotlin named arguments reduce the need for a builder when configuration is small. I also review lifetime: a long-lived client should use application-scoped dependencies, not retain an Activity. Tests cover defaults, invalid input and post-build mutation.
+While Kotlin data classes with default arguments eliminate builders for internal domain models, the Builder pattern remains indispensable in **public SDK design and framework architecture**.
+
+1. **Java Interoperability**: If an Android library or SDK is consumed by Java codebases, Kotlin's named parameters are inaccessible. Without a Builder, Java developers are forced to invoke telescoping constructors with dozens of null parameters. A Builder provides a clean, fluent Java API.
+
+2. **Cross-Field Validation & Invariant Enforcement**: In complex SDK configurations (e.g. `WorkRequest.Builder`, `OkHttpClient.Builder`), parameters have interdependencies (e.g. 'if backoff policy is exponential, delay cannot be under 10 seconds'). A constructor cannot execute multi-step validation cleanly; the builder stages mutable state and executes comprehensive invariant checks atomically inside `.build()` before constructing the object.
+
+3. **Enforcing Immutability**: The builder can be mutable while building, but the resulting object is strictly immutable and thread-safe post-build, preventing clients from mutating network configurations or security keys at runtime.
 
 ## Interview answer — deep senior
 
-A good Builder improves correctness, not just call-site style. It can collect options in stages, make required fields explicit, and validate cross-field constraints before an expensive client exists. I would design an immutable product and ensure the builder does not leak mutable collections into it. For Android SDKs, I review context scope, timeout defaults, callback executors and security options; a builder must not silently accept an HTTP endpoint where TLS is required. If the object has only two required fields, a constructor or factory is simpler and easier to maintain. For Java-facing APIs, builders can be more ergonomic than Kotlin default arguments, which Java does not see directly. I test the invalid configurations that production incidents would expose.
+In modern Kotlin SDK design, senior architects provide the best of both worlds using **Type-Safe Builders with Kotlin DSLs**: By pairing a standard Builder with a trailing lambda function utilizing an extension receiver (`fun analyticsConfig(apiKey: String, block: Builder.() -> Unit): AnalyticsConfig`), Kotlin developers enjoy idiomatic DSL syntax: `analyticsConfig("key") { setBatchSize(100) }`, while Java developers enjoy standard fluent method chaining: `new Builder("key").setBatchSize(100).build()`.
 
-A Builder is useful when configuration has many optional values, defaults, and cross-field validation. An SDK client might require a trusted endpoint and positive timeout while allowing optional telemetry and retry policy. The builder accumulates choices and `build()` validates them before creating a stable client. For two mandatory values, Kotlin named arguments or a constructor communicate the contract with less code. I would not share a mutable builder across threads or let `build()` hide a remote call. In production, I test invalid combinations and verify the final client uses the configured transport, then reuse that client so connection pooling is effective. The pattern is justified by construction complexity, not aesthetic preference.
+This dual API design guarantees maximum adoption across heterogeneous enterprise teams.
 
 ## How to answer in the interview
 
@@ -90,8 +132,11 @@ Compare builder with Kotlin named constructor, validate dependent options and po
 
 ## Follow-up questions
 
-- [PAT-03](../pat-03/): How differs from Factory? **Answer:** Builder configures one complex product over steps; Factory selects/creates a product.
-- [KOT-23](../kot-23/): Why might Java SDK prefer Builder? **Answer:** Java callers lack Kotlin named/default arguments directly.
+- **Interviewer:** "What is the 'Telescoping Constructor' anti-pattern?"
+  **Answer:** "An anti-pattern where a class provides multiple overloaded constructors with increasing parameter counts (1 param, 2 params, 3 params), leading to unreadable instantiation code and accidental argument swapping."
+
+- **Interviewer:** "How does Kotlin DSL combine with the Builder pattern?"
+  **Answer:** "By creating a high-level function accepting a lambda with receiver `Builder.() -> Unit`, allowing developers to write declarative, type-safe configuration blocks that call builder methods under the hood."
 
 ## Self-check rubric
 
@@ -102,4 +147,4 @@ Define two required settings, one cross-field rule, and a test proving immutable
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — Builder pattern.
 - [Kotlin functions](https://kotlinlang.org/docs/functions.html) — default/named arguments alternative.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

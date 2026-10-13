@@ -22,11 +22,47 @@ Balance architecture benefit against complexity for a small app, preserving clea
 
 ## Explanation in Arabic
 
-تطبيق صغير بشاشة أو اتنين وAPI واحدة ممكن يشتغل كويس بـViewModel + Repository واضحة من غير domain module، DTO/domain/UI copies متطابقة، أو interface لكل class. Clean Architecture تصبح overengineering لما وقت التنقل بين طبقات واختبارات forwarding أكبر من خطر التغيير الفعلي. لكن “صغير” مش مبرر تحط Retrofit في Compose أو تخبّي secret في APK؛ احتفظ بحدود data وUI وبـmain safety، واستخرج domain لما rules تتكرر أو workflow يعقد.
+لديك تطبيق صغير وبسيط جداً: متى تصبح معمارية Clean Architecture زيادة هندسية غير مبررة (Overengineering)؟
+
+1. متى تكون Clean Architecture عبئاً وضاراً (Overengineering)؟
+   - **تطبيقات الـ CRUD البسيطة (Single-purpose CRUD / Utilities)**: تطبيق مصباح (Flashlight)، تطبيق آلة حاسبة، أو تطبيق يعرض قائمة مقالات من API واحد بدون قاعدة بيانات محلية وبدون قواعد بيزنس.
+   - **التطبيق الصغير ذو المطور الواحد (Solo MVP)**: حيث تكون الأولوية القصوى هي سرعة الإطلاق واختبار السوق (Time-to-Market).
+   - **أعراض الـ Overengineering في التطبيقات الصغيرة**:
+     * إنشاء 4 موديلات مختلفة لكل كائن (DTO, Entity, Domain, UI Model).
+     * إنشاء عشرات الـ UseCases التي لا تفعل شيئاً سوى تمرير الاستدعاء (`repo.call()`).
+     * تقسيم المشروع إلى 8 موديولات Gradle مختلفة لتطبيق يحتوي على شاشتين فقط!
+
+2. ما هي المعمارية البديلة الأنسب للتطبيقات الصغيرة؟
+   - **Pragmatic MVVM (Simple Architecture)**:
+     * طبقتان فقط: **Presentation Layer** (Composables + ViewModel) و **Data Layer** (Repository + Retrofit/Room).
+     * لا داعي لطبقة Domain ولا UseCases؛ الـ ViewModel يتصل بالـ Repository مباشرة.
+     * نموذج بيانات موحد أو مابينج بسيط جداً.
+
+3. متى ننتقل إلى Clean Architecture الكاملة؟
+   - فقط عندما يبدأ التطبيق في النمو: عند إضافة قواعد بيزنس معقدة، تعدد الشاشات التي تشارك نفس العمليات، أو انضمام فريق من المطورين.
 
 ## Practical walkthrough
 
-App صغيرة: لو screen واحدة وrepository بسيطة، 5 modules وinterface لكل class قد تضيف navigation cost أكبر من فائدتها. استخدم State owner واضح، repository إذا فيه data policy، واختبارات للrisks الفعلية. لما rules تتكرر أو SDK تتبدل، extract domain boundary تدريجيًا. Clean Architecture مبدأ dependency/ownership، مش عدد مجلدات ثابت.
+المقارنة بين المعمارية البراغماتية المناسبة لتطبيق صغير والمعمارية المفرطة:
+```kotlin
+// ❌ OVERENGINEERING لتطبيق بسيط: 5 طبقات وبويلربليت ضخم لمجرد عرض قائمة مدن:
+// CityDto -> CityEntity -> CityDomain -> CityUiModel
+// CityApi -> CityDao -> CityRepositoryInterface -> CityRepositoryImpl -> GetCitiesUseCase -> CityViewModel
+
+// ✅ PRAGMATIC MVVM (معمارية بسيطة وسريعة وممتازة للتطبيقات الصغيرة):
+// 1. Data Layer: Repository مباشر بدون Interfaces معقدة:
+class WeatherRepository(private val api: WeatherApi) {
+    suspend fun getWeather(city: String): WeatherInfo = api.fetchWeather(city).toWeatherInfo()
+}
+
+// 2. Presentation Layer: ViewModel يتصل بالـ Repository مباشرة:
+class WeatherViewModel(private val repository: WeatherRepository) : ViewModel() {
+    val uiState = MutableStateFlow<WeatherInfo?>(null)
+    fun load(city: String) = viewModelScope.launch {
+        uiState.value = repository.getWeather(city)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -50,15 +86,26 @@ A small internal tool starts with UI/data and tests. As features grow, team extr
 
 ## Interview answer — short
 
-Clean Architecture is overengineering when layers and interfaces add more maintenance than isolation for a small app. I keep a clear UI/data boundary and add domain abstractions only when business complexity or reuse appears.
+Clean Architecture is overengineering for small apps or simple CRUD utilities with no complex business rules. Forcing separate Domain layers, passthrough Use Cases, multiple mappers, and multi-module splits slows delivery and adds cognitive overhead. Pragmatic MVVM (UI directly consuming Repositories) is the recommended pragmatic architecture.
 
 ## Interview answer — structured
 
-For a tiny app, I would begin with a ViewModel and a repository with clear data and error contracts. Android itself treats the domain layer as optional. A use case that only forwards one repository call and duplicate models with identical semantics may not earn their cost. I still keep networking out of Compose, preserve main safety, and test real behavior. If multiple screens start duplicating eligibility or sync rules, I can extract focused domain policy then. I would still keep one repository contract so the UI does not parse HTTP in every screen, and use a ViewModel for screen state. That is a minimal design, not a violation of architecture. As the app grows, I extract rules only when multiple callers or complex transitions justify them.
+Architecture is an economic trade-off: abstractions buy decoupling and maintainability at the expense of complexity, file count, and development velocity.
+
+In small applications (e.g. proof-of-concept MVPs, single-developer tools, simple display apps with no offline sync or complex calculations), full Clean Architecture is textbook **overengineering**.
+
+The warning signs of overengineering in small projects include:
+1. **Passthrough Use Cases**: Every Use Case consists of a single line: `invoke() = repo.getData()`.
+2. **Mapping Exhaustion**: Converting `NewsDto` -> `NewsEntity` -> `NewsDomain` -> `NewsUiModel` when all four classes contain identical properties.
+3. **Micro-Modularization Overhead**: Splitting a 5-screen app into 12 Gradle modules, multiplying build setup times for zero architectural gain.
+
+In such scenarios, senior engineers adopt **Pragmatic MVVM**: ViewModels consume concrete Repositories directly, sharing concise data models while retaining reactive state flows.
 
 ## Interview answer — deep senior
 
-I look for actual forces: independently changing data sources, shared rules, multiple teams, complex state transitions, or offline consistency. Without them, full Clean Architecture machinery can be more expensive than the problem. A small app can maintain a strong UI/data split and one repository, with domain logic inside a focused place until it deserves extraction. I avoid premature interfaces and one-to-one mappers that only rename fields. At the same time, simplicity is not permission to leak DTOs into every UI or ignore lifecycle and cancellation. I make decisions reversible, write a few behavior tests, and review the architecture when change starts scattering edits across unrelated screens. The measure is local, safe change, not adherence to a diagram. I would revisit the design using evidence: how many files change for one feature, how much business logic is duplicated, and whether tests require booting Android just to check policy. When those costs appear, a focused domain layer or module boundary can pay off. Before then, dozens of empty interfaces and one-line use cases can make the app harder to understand. Simplicity remains bounded by correctness: blocking work, secrets, lifecycle, and source-of-truth decisions still need proper owners even in a two-screen app.
+Architecture should be **evolutionary, not speculative** (YAGNI - You Aren't Gonna Need It). Starting with a pragmatic two-tier architecture (Presentation and Data) does not prevent adopting Clean Architecture later. Because code is properly decoupled at the ViewModel-Repository boundary, extracting a Domain layer and Use Cases takes mere hours once true business complexity or multi-screen logic emerges.
+
+Google's modern architecture documentation reinforces this pragmatism: the Domain layer is officially documented as optional. A senior engineer's value lies not in applying the maximum possible abstractions, but in applying the minimum abstractions necessary to satisfy current requirements and near-term maintainability.
 
 ## How to answer in the interview
 
@@ -74,8 +121,11 @@ Compare a tiny read-only app with a growing offline workflow; identify measurabl
 
 ## Follow-up questions
 
-- [ARC-13](../arc-13/): When add domain? **Answer:** reused or complex business behavior justifies it.
-- [ARC-15](../arc-15/): Must every class have an interface? **Answer:** no; create one at a meaningful variation or boundary.
+- **Interviewer:** "What is the YAGNI principle in software architecture?"
+  **Answer:** "'You Aren't Gonna Need It'—the principle that software engineers should not add functionality or architectural abstractions until they are deemed genuinely necessary."
+
+- **Interviewer:** "How do you transition from Pragmatic MVVM to Clean Architecture when the app grows?"
+  **Answer:** "Extract business logic from ViewModels into newly created Use Cases, introduce Domain entities where external DTOs must be decoupled, and insert Repository interfaces at the boundary."
 
 ## Self-check rubric
 
@@ -86,4 +136,4 @@ Describe a minimal two-layer design, two premature abstractions, and a signal th
 - [Android domain layer](https://developer.android.com/topic/architecture/domain-layer) — optionality.
 - [Android architecture recommendations](https://developer.android.com/topic/architecture/recommendations) — flexible guidance.
 
-Technically reviewed against the linked official Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

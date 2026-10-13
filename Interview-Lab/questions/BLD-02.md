@@ -24,11 +24,65 @@ What are build types, product flavors, variants, and source sets?
 
 ## Explanation in Arabic
 
-Build type مثل `debug`/`release` يحدد خصائص البناء كـdebuggable وminification/signing. Product flavor يمثل إصدار منتج/بيئة مثل `demo`/`full` أو `staging`/`prod` ضمن flavor dimensions. Variant هي تركيب build type مع flavor من كل dimension: `demoRelease`. Source sets مثل `src/main`, `src/demo`, `src/release`, `src/demoRelease` توفر code/resources/manifest للتركيب، مع merge priority موثقة. لا تضع secrets حقيقية في flavor source؛ APK قابل للفحص. اختبر release variant التي ستُنشر، وليس debug فقط.
+ما هي الـ Build Types، والـ Product Flavors، والـ Build Variants، والـ Source Sets في أندرويد وكيف تتكامل معاً؟
+
+1. أنواع البناء (Build Types):
+   - تحدد **كيفية بناء التطبيق وتجهيزه تقنياً** (Build & Packaging Characteristics).
+   - أشهر نوعين هما: `debug` (مفتوح للـ Debugging، غير مشوش، موقع بمفتاح تجريبي) و `release` (مغلق، مشوش عبر R8، مصغر الحجم، موقع بمفتاح إنتاج رسمي).
+
+2. نكهات المنتج (Product Flavors):
+   - تحدد **الميزات والخصائص التجارية الموجهة للمستخدم أو البيئة** (Product Features & Branding).
+   - أمثلة: `free` مقابل `paid`، أو البيئات: `dev`, `staging`, `prod` (مع تغيير الـ Base URL والـ Application ID).
+   - تُجمع النكهات تحت أبعاد صريحة (`flavorDimensions = listOf("environment", "tier")`).
+
+3. متغيرات البناء (Build Variants):
+   - هي **حاصل الضرب الديكارتي (Cartesian Product)** لكل Flavor مع كل Build Type.
+   - مثال: نكهتان (`free`, `paid`) × نوعان (`debug`, `release`) = 4 Variants:
+     `freeDebug`, `freeRelease`, `paidDebug`, `paidRelease`.
+
+4. مجموعات المصادر (Source Sets):
+   - مجلدات الكود والموارد المخصصة لكل Variant.
+   - الأولوية في دمج الموارد والكود: `src/freeDebug/` تتفوق على `src/free/` التي تتفوق على `src/debug/` التي تتفوق على الكود المشترك في `src/main/`.
 
 ## Practical walkthrough
 
-Build type مثل debug/release يحدد debuggable/minify/signing، flavor مثل demo/prod يحدد منتج أو بيئة، والvariant حاصل تركيبهما. Source sets لها precedence؛ `src/debug` قد يحوي provider غير موجود في release. في CI اختبر productionRelease نفسه وافحص merged manifest وendpoint. لا تضع secret backend داخل `BuildConfig` وتعتبره آمنًا.
+تكوين Flavors و Build Types وأبعاد النكهات وتخصيص الـ Source Sets في build.gradle.kts:
+```kotlin
+android {
+    flavorDimensions += listOf("environment", "monetization")
+
+    productFlavors {
+        create("dev") {
+            dimension = "environment"
+            applicationIdSuffix = ".dev"
+            buildConfigField("String", "BASE_URL", "\"https://dev.api.example.com\"")
+        }
+        create("prod") {
+            dimension = "environment"
+            buildConfigField("String", "BASE_URL", "\"https://api.example.com\"")
+        }
+        create("free") {
+            dimension = "monetization"
+        }
+        create("pro") {
+            dimension = "monetization"
+            applicationIdSuffix = ".pro"
+        }
+    }
+
+    buildTypes {
+        debug {
+            isDebuggable = true
+            applicationIdSuffix = ".debug"
+        }
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +106,33 @@ List supported variants and source-set priorities, test the published combinatio
 
 ## Interview answer — short
 
-“Build type controls how an app is built; flavor selects product variation; a variant combines them; source sets supply variant-specific code and resources.”
+Build types configure packaging and debugging attributes (debug vs release), product flavors configure feature sets and branding (free vs paid), build variants are the Cartesian product of both (e.g. freeRelease), and source sets provide variant-specific code and resource overlays resolved hierarchically over src/main.
 
 ## Interview answer — structured
 
-“With demo/full flavors and debug/release build types, AGP creates four variants. `src/main` contributes common code, while flavor, build-type and variant source sets override or add specific resources and manifests by priority. I test the exact release variant shipped to users because signing, shrinker and merged manifest can differ from debug. I keep flavor dimensions limited and never treat a prod source set as a secret store.”
+The Android build variant matrix organizes compilation targets into distinct operational axes:
+
+1. **Build Types (How it is built)**:
+   - Dictate technical packaging configurations: debuggability (`isDebuggable`), code optimization and obfuscation (`isMinifyEnabled`), resource shrinking, signing configurations, and symbols stripping.
+
+2. **Product Flavors (What is built)**:
+   - Dictate business and environment differentiation. Grouped by `flavorDimensions` (e.g., `environment` for dev/staging/prod; `distribution` for gms/hms). They configure `applicationIdSuffix`, specific `buildConfigField` parameters, and feature toggles.
+
+3. **Build Variants (The Output Permutations)**:
+   - The Cartesian product of every dimension flavor multiplied by build types. For example, 2 environments (`dev`, `prod`) × 2 types (`debug`, `release`) yields 4 runnable variants: `devDebug`, `devRelease`, `prodDebug`, `prodRelease`.
+
+4. **Source Sets (Resource & Code Overlays)**:
+   - Dedicated directory structures (e.g., `src/devDebug/`, `src/dev/`, `src/main/`). The Gradle resource merger merges files hierarchically: variant-specific assets override flavor-specific assets, which in turn override `src/main/` defaults.
 
 ## Interview answer — deep senior
 
-“I distinguish two axes. A build type describes build behavior—debuggability, minification, signing and similar settings—while a product flavor describes a product or environment choice within a dimension. AGP combines one choice from each flavor dimension with a build type to produce a variant. Its source sets contribute code, resources and manifests, with more specific variant/build-type/flavor sources overriding common `main` according to documented merge priority. That mechanism is powerful but creates a test matrix: two flavors by two types already makes four artifacts, and another dimension multiplies them. I keep differences as narrow as possible and identify the one actually distributed. A demoDebug test cannot establish that fullRelease has the right provider authority, endpoint, signing or R8 behavior. CI builds and inspects that final variant's merged manifest and launches a minified artifact. I also avoid putting credentials in a prod flavor, because compiled apps can be inspected. The trade-off is product flexibility versus combinatorial build and QA cost.”
+From an enterprise release and build-velocity viewpoint, managing the variant matrix requires defensive configuration:
+
+1. **Variant Filter Optimization**: Creating 3 flavor dimensions with 3 flavors each generates $3 \times 3 \times 2 = 18$ variants. Gradle evaluates tasks for every variant, blowing up configuration time. Filter out useless permutations using `variantFilter { if (name == "demoStagingRelease") setIgnore(true) }` to drastically reduce sync and build times.
+
+2. **Code Discrepancies Across Source Sets**: While resources merge automatically, Kotlin/Java source files in source sets do not merge; they conflict. If a class `Logger.kt` is placed in `src/debug/`, it cannot exist in `src/main/` or a duplicate class compilation error occurs. Keep `src/main/` clean and use interfaces with dependency injection rather than duplicating classes across variant source sets.
+
+3. **Dynamic Manifest Placeholders**: Inject variant-specific deep link schemes, authorities, and API keys using `manifestPlaceholders = mapOf("authDomain" to "dev.auth.com")` rather than maintaining separate `AndroidManifest.xml` files per flavor.
 
 ## How to answer in the interview
 
@@ -76,9 +148,11 @@ Discuss cross-product, source-set priority, manifest override, variant explosion
 
 ## Follow-up questions
 
-- Is `demoRelease` a build type? **Answer:** no; it is a variant combining demo flavor with release build type.
-- Can `src/prod` hide a secret? **Answer:** no; data packaged in a client app can be extracted.
-- Which variant should CI smoke-test? **Answer:** the exact one being published, including its merge/shrink settings.
+- **Interviewer:** "Can two different flavors define different applicationId values?"
+  **Answer:** "Yes, either by setting distinct applicationId values or using applicationIdSuffix (e.g., .dev) to allow installing both side-by-side on one device."
+
+- **Interviewer:** "What happens if a string resource with the same key exists in both src/main and src/flavor/res?"
+  **Answer:** "The flavor-specific resource overrides the main resource during the AAPT2 resource merging phase."
 
 ## Self-check rubric
 
@@ -89,4 +163,4 @@ Derive a four-variant matrix, trace one override, and name a release-only failur
 - [Configure build variants](https://developer.android.com/build/build-variants) — dimensions and source-set priority.
 - [Android build structure](https://developer.android.com/build/android-build-structure) — project layout.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Example variant names are illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

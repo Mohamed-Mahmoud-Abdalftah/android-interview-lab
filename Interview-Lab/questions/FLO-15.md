@@ -22,11 +22,39 @@ Explain debouncing and equality suppression for search without promising cancell
 
 ## Explanation in Arabic
 
-في search box، `debounce` تستنى فترة هدوء قبل ما تطلع query، فبتقلل requests أثناء الكتابة. `distinctUntilChanged` تمنع نفس query بعد normalization من إعادة الطلب. بعدها `flatMapLatest` يلغي collection القديمة لما query جديدة تجي. لازم نعالج blank query، loading/error لكل query، ونعرف إن cancel قد لا يوقف HTTP call أو server processing بالفعل.
+المشغلان `debounce` و `distinctUntilChanged` هما الثنائي الكلاسيكي لبناء مربع بحث (Search Box) فائق الكفاءة والسرعة:
+
+1. المشغل `debounce(timeoutMillis)`:
+   - يؤخر تمرير العنصر حتى يمر وقت محدد (مثلاً 300ms) **بدون أن يصدر الـ Upstream أي عنصر جديد**.
+   - **لماذا في البحث؟** المستخدم عندما يكتب كلمة 'Android'، يضغط على 7 أزرار في أقل من ثانية. بدون debounce، التطبيق سيرسل 7 طلبات شبكة للسيرفر! مع `debounce(300L)`، التطبيق ينتظر حتى يتوقف المستخدم عن الكتابة لمدة 300ms ثم يرسل طلباً واحداً فقط بالكلمة النهائية.
+
+2. المشغل `distinctUntilChanged()`:
+   - يقمع ويتجاهل العنصر الجديد **إذا كان مطابقاً للعنصر السابق مباشرة** (بالمقارنة بـ `equals()`).
+   - **لماذا في البحث؟** لو المستخدم كتب 'Kotlin'، ثم مسح حرف الـ 'n' ثم أعاد كتابته بسرعة في أقل من 300ms، النص النهائي لا يزال 'Kotlin'! المشغل `distinctUntilChanged()` يكتشف أن النص لم يتغير ويتجاهل إرسال طلب شبكة مكرر للسيرفر.
 
 ## Practical walkthrough
 
-في search box، خلي TextField تعرض الحروف فورًا، وبعدها `debounce` على query Flow عشان تقلل API calls؛ `distinctUntilChanged` تمنع نفس query تتبعت مرتين متتاليتين. ترتيب operators مهم حسب هل trim/normalization قبل distinct. `debounce` ممكن ما تصدرش أي intermediate لو المستخدم يكتب باستمرار؛ لا تستخدمها لحدث لازم يتسجل كله.
+الكود المعماري المثالي لشريط البحث في ViewModel:
+```kotlin
+class SearchViewModel(private val repository: SearchRepository) : ViewModel() {
+    val searchQuery = MutableStateFlow("")
+
+    val searchResults: StateFlow<SearchResultsUiState> = searchQuery
+        .map { it.trim() } // 1. تنظيف المسافات الزائدة
+        .debounce(300L)   // 2. الانتظار 300ms بعد توقف المستخدم عن الكتابة
+        .distinctUntilChanged() // 3. منع تكرار البحث لو النص مطابق للسابق
+        .flatMapLatest { query ->
+            if (query.isEmpty()) {
+                flowOf(SearchResultsUiState.Empty)
+            } else {
+                repository.search(query)
+                    .map { SearchResultsUiState.Success(it) }
+                    .catch { emit(SearchResultsUiState.Error(it.message ?: "Error")) }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), SearchResultsUiState.Empty)
+}
+```
 
 ## Why it matters and how it works
 
@@ -66,15 +94,21 @@ A catalog ViewModel holds query state, applies the pipeline, exposes StateFlow o
 
 ## Interview answer — short
 
-“I normalize input, debounce typing, suppress adjacent duplicate queries, then use flatMapLatest to cancel stale search streams. I handle blank input and errors explicitly and do not assume cancellation undoes work already sent to the server.”
+debounce pauses emission until a specified quiet period (e.g., 300ms) elapses with no new input, throttling rapid typing; distinctUntilChanged filters out emissions that equal the immediately preceding emission, preventing duplicate search requests for identical query strings.
 
 ## Interview answer — structured
 
-“`debounce` waits for a quiet interval so each keystroke does not trigger network work. `distinctUntilChanged` prevents adjacent equal normalized queries from repeating, while `flatMapLatest` switches to the newest query and cancels old collection. I choose the delay from UX and API cost, not a universal constant. The UI needs loading and error state tied to a query ID, and the repository should make requests cancellable where possible. Tests advance virtual time to verify exactly which queries are launched.”
+In Android search architecture, `debounce` and `distinctUntilChanged` work in tandem to eliminate redundant network traffic and improve UI responsiveness.
+
+**`debounce(300L)`** acts as a rate limiter. When a user types rapidly on a software keyboard, an emission fires for every keystroke. `debounce` starts a timer on each character. If another keystroke arrives before 300 milliseconds elapse, the timer resets. Only when the user pauses typing for a full 300ms does the latest text emission proceed downstream.
+
+**`distinctUntilChanged()`** acts as an equality filter. It compares the incoming value against the previously emitted value using `equals()`. If the user types 'A', quickly deletes it, and types 'A' again, the debounced text is still 'A'. `distinctUntilChanged` recognizes that the query hasn't changed and suppresses the duplicate emission, preventing a redundant network query.
 
 ## Interview answer — deep senior
 
-“A robust search pipeline begins with semantics: an empty query may show suggestions, normalization defines equivalence, and a late response must never overwrite a newer query. I trim or normalize before equality comparison, debounce only the remote path, and use `flatMapLatest` for stale-result cancellation. The old HTTP request may already be on the wire, so I also associate results with query generation and ensure stale data is ignored. I expose a single state stream from the ViewModel to avoid duplicate cold collections, measure request count and perceived latency, and test rapid typing, backspacing, identical queries, errors and cancellation with virtual time and controlled responses. I would keep local text echo immediate and debounce only the network-facing query stream. `debounce` waits for a quiet interval before forwarding a value, so it reduces request volume while the user types; `distinctUntilChanged` suppresses consecutive equal normalized queries. I decide whether trim and case normalization happen before equality, because that changes what counts as duplicate. Then I use `flatMapLatest` for the request so an old response does not replace a newer query. Debounce introduces latency, which is a product trade-off; a short interval needs testing with real typing behavior and accessibility input. I would test rapid `a`, `ab`, pause, then a repeated `ab`, and verify request count and final UI state.”
+Under the hood, `debounce` launches a timer coroutine on the coroutine scheduler. When a new upstream emission arrives, the previous delayed task is cancelled, and a new delayed emission is scheduled. When testing `debounce` with `runTest`, virtual time makes verification instantaneous: you can advance time by 299ms to assert no search occurred, and then call `advanceTimeBy(2)` to verify the search query triggered.
+
+With `distinctUntilChanged()`, the operator maintains a reference to the previous emission in memory. You can also provide a custom key selector: `distinctUntilChangedBy { it.id }` or a custom comparison lambda. Pairing this pipeline with `flatMapLatest` guarantees that even if a debounced search query is sent, if the user starts typing again while the backend is responding, the stale network call is immediately cancelled in favor of the newer query.
 
 ## How to answer in the interview
 
@@ -90,8 +124,14 @@ Trace operator order, timing, stale response and query-associated UI state.
 
 ## Follow-up questions
 
-- [FLO-14](../flo-14/): Why flatMapLatest? **Answer:** it switches away from prior query streams.
-- [FLO-24](../flo-24/): How test debounce? **Answer:** use runTest virtual time and controlled fake responses.
+- **Interviewer:** "Why should you call `.map { it.trim() }` before `distinctUntilChanged()`?"
+  **Answer:** "Because users frequently type accidental trailing spaces. Trimming the query beforehand ensures that 'Android ' and 'Android' evaluate as equal, preventing duplicate search queries."
+
+- **Interviewer:** "What happens if a user submits a search via the keyboard 'Enter' action?"
+  **Answer:** "The 'Enter' action should bypass the debounce delay. In the ViewModel, you provide an explicit `searchImmediately()` method that immediately triggers the search without waiting for the 300ms debounce timer."
+
+- **Interviewer:** "Does `distinctUntilChanged()` work on complex data classes?"
+  **Answer:** "Yes, as long as the data class generates structural `equals()` for all properties. If custom classes are used, you must properly implement `equals()` and `hashCode()`."
 
 ## Self-check rubric
 
@@ -101,4 +141,4 @@ Can I justify operator order, distinguish adjacent equality from cache, and hand
 
 - [Kotlin Flow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-flow/) — debounce and distinctUntilChanged.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

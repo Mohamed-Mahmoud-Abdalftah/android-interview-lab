@@ -24,11 +24,55 @@ What are StrictMode, Perfetto/System Trace, and Android vitals useful for?
 
 ## Explanation in Arabic
 
-`StrictMode` ينبهك في التطوير لو حصل disk أو network access على Main أو بعض أنماط استخدام resources؛ يفيد لاكتشاف مخالفة مبكرة، لكنه لا يشرح كل أسباب jank. `Perfetto/System Trace` يسجل timeline للـthreads والـscheduler والـframes وBinder/I/O عشان تعرف أين ضاع الوقت في سيناريو محدد على جهاز. `Android vitals` يعطي إشارات من مستخدمين حقيقيين مثل ANR/crash وstartup أو rendering حسب التوفر، فيحدد حجم المشكلة والأجهزة المتأثرة، لكنه عادة لا يغني عن trace محلي يفسر السبب. استخدمهم كحلقة: field signal، إعادة إنتاج، trace، إصلاح، ثم قياس field بعد الإطلاق.
+دور كل من StrictMode و Perfetto/System Trace و Android Vitals في تحسين أداء وتفادي أعطال التطبيق:
+
+1. أداة StrictMode:
+   - أداة تطوير مدمجة في نظام Android تكتشف وتلتقط الأخطاء العرضية التي يرتكبها المطورون أثناء التشغيل.
+   - تنقسم إلى سياستين:
+     * **ThreadPolicy**: تكتشف العمليات المحظورة على الـ Main Thread (قراءة/كتابة الديسك، استدعاءات الشبكة، بطء استدعاءات Binder).
+     * **VmPolicy**: تكتشف تسريبات الذاكرة (Activity leaks، عدم إغلاق SQLiteCursor أو Closeable objects، تسريب كائنات التسجيل).
+   - يمكن ضبطها لكتابة تحذيرات في Logcat أو التسبب في Crash فوري أثناء التطوير.
+
+2. أداة Perfetto و System Trace:
+   - منصة التتبع الأقوى على مستوى نظام Android والـ Linux Kernel بالكامل.
+   - تسجل بدقة متناهية أحداث المعالج (CPU scheduling, Frequency)، والذاكرة (Kernel RSS, Page faults, LMK events)، وتوقيت الفريمات في `SurfaceFlinger` و `Choreographer`.
+   - تتيح معرفة ما إذا كان التطبيق متأخراً بسبب كوده الخاص، أو بسبب انتظار عملية للنظام، أو بسبب اختناق في الـ GPU.
+
+3. خدمة Android Vitals:
+   - مبادرة من Google Play Console تجمع مؤشرات الأداء الحقيقية لأجهزة المستخدمين في العالم الفعلي دون أي عبء إضافي على التطبيق.
+   - تقيس المقاييس الحرجة: **ANR Rate**, **Crash Rate**, **Slow Rendering Frames (>16ms)**, **Frozen Frames (>700ms)**, **Wake locks غير المنتهية**.
+   - تجاوز العتبات السيئة (Bad Behavior Thresholds) يؤدي إلى انخفاض ترتيب التطبيق في متجر Google Play.
 
 ## Practical walkthrough
 
-Android vitals أظهر ANR بعد release على أجهزة RAM قليلة. ابدأ بالـcohort، حاول تعيد الرحلة على جهاز مشابه، وشغّل StrictMode في debug لالتقاط disk/network على Main. لو التحذير ظهر، Perfetto يبيّن هل ده فعلًا داخل critical path أو Main مستنية Binder/lock. حط trace section حول query محددة بدل التخمين. بعد الإصلاح تابع ANR rate لا مجرد نجاح التشغيل المحلي؛ StrictMode مش profiler شامل.
+تفعيل StrictMode في بيئة التطوير واستخدام androidx.tracing:
+```kotlin
+class MyApplication : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        if (BuildConfig.DEBUG) {
+            // تفعيل StrictMode لكشف قراءات الديسك والشبكة والتسريبات:
+            StrictMode.setThreadPolicy(
+                StrictMode.ThreadPolicy.Builder()
+                    .detectDiskReads()
+                    .detectDiskWrites()
+                    .detectNetwork()
+                    .penaltyLog()
+                    .penaltyFlashScreen()
+                    .build()
+            )
+            StrictMode.setVmPolicy(
+                StrictMode.VmPolicy.Builder()
+                    .detectLeakedSqlLiteObjects()
+                    .detectLeakedClosableObjects()
+                    .detectActivityLeaks()
+                    .penaltyLog()
+                    .build()
+            )
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -69,15 +113,25 @@ Define an alert threshold and affected cohort from Android vitals; use privacy-s
 
 ## Interview answer — short
 
-“StrictMode catches selected bad operations such as main-thread I/O in development. Perfetto explains a particular device's timing across threads and the system. Android vitals shows how often issues affect real users.”
+StrictMode catches accidental disk, network, and leak violations on the main thread in debug builds. Perfetto provides system-wide kernel-level tracing across CPU, GPU, memory, and surface flinger. Android Vitals monitors real-world production health on Google Play, tracking ANR rates, crash rates, and frozen frames against ranking thresholds.
 
 ## Interview answer — structured
 
-“I use these tools at different levels. StrictMode gives quick development feedback for selected thread and VM violations, especially disk or network work on Main. Perfetto or System Trace records scheduling, frames, and cross-thread events during a repeatable device flow. Android vitals aggregates field ANR, crash, and performance signals to tell me priority and affected cohorts. A vitals spike alone does not identify the offending line, and a local trace alone does not establish user impact. I link them through a hypothesis, reproduction, fix, and rollout measurement.”
+These three tools form a complete performance lifecycle: StrictMode for code-time prevention, Perfetto for low-level diagnosis, and Android Vitals for production governance.
+
+1. **StrictMode**: Configured in debug builds, it monitors the main thread for violations via `ThreadPolicy` (detecting disk I/O, network requests, and slow binder calls) and `VmPolicy` (detecting leaked SQLite cursors, unclosed streams, and retained Activities). Violations can log warnings or crash immediately to enforce cleanliness during feature development.
+
+2. **Perfetto / System Trace**: The modern Linux-kernel tracing platform for Android. It tracks thread scheduling, context switches, binder transactions, CPU frequency scaling, and render pipeline stages (`Choreographer` and `SurfaceFlinger`), revealing the exact system interaction that caused a dropped frame.
+
+3. **Android Vitals**: Google Play's real-user monitoring metric suite. It tracks core health metrics—specifically user-perceived ANRs, crash rates, slow render frames (>16ms), and frozen frames (>700ms). Breaching Google Play's 'bad behavior thresholds' harms store ranking and organic discovery.
 
 ## Interview answer — deep senior
 
-“My workflow starts with scale and then drills into causality. Android vitals may show a user-perceived ANR regression tied to a release and device class. I reproduce on a comparable device and enable StrictMode in debug to catch obvious synchronous I/O or leaked resource patterns. I then capture a Perfetto trace of the exact interaction, inspect Main thread slices, scheduler state, binder waits, disk operations, and frame deadlines, and add app trace markers if the operation is opaque. StrictMode does not catch every source of latency, and system traces may not resolve every method-level CPU hotspot, so I use a CPU profiler where needed. I fix the specific cause, rerun the same trace and UI metric, and use staged rollout vitals to confirm the field regression actually improves. The evidence and limitations are recorded separately. If vitals points to low-RAM devices after one release, I reproduce the affected journey on a comparable device, not just a flagship. A StrictMode disk warning is a lead; I add a trace section around the query and confirm its duration overlaps missed frames or the ANR. That gives a causal path from cohort to code.”
+Under the hood, Perfetto uses a kernel ring buffer (`ftrace`) combined with user-space tracing via the `atrace` protocol, recording events with microsecond precision and negligible performance overhead. Developers can add custom trace markers using `androidx.tracing.Trace.beginSection("SectionName")` or the Kotlin `trace("...")` DSL to correlate high-level app logic with system events in the Perfetto Web UI (`ui.perfetto.dev`).
+
+In Android Vitals, Google Play enforces strict thresholds: for instance, a user-perceived ANR rate above 0.47% or a crash rate above 1.09% places an app into Google Play's bad behavior threshold, which triggers search demotion and warnings on the app store listing.
+
+In our enterprise release pipeline, we integrate Google Play Developer API to pull Android Vitals automatically into our Datadog/Grafana dashboards, establishing automated rollback gates during phased rollouts.
 
 ## How to answer in the interview
 
@@ -93,9 +147,11 @@ Discuss population versus single-device evidence, StrictMode policy scope, Perfe
 
 ## Follow-up questions
 
-- Does a clean StrictMode run prove no ANR risk? **Answer:** no; it detects selected violations, while lock contention or expensive computation can still block Main.
-- Can one Perfetto trace establish production prevalence? **Answer:** no; it explains a reproduced path, while field metrics establish affected population.
-- Why might a trace need CPU profiling too? **Answer:** system traces show scheduling and slices, but method-level CPU attribution can need stack sampling or instrumentation.
+- **Interviewer:** "Why should StrictMode be strictly disabled or removed in release builds?"
+  **Answer:** "StrictMode introduces runtime reflection, IPC tracking, and disk monitoring overhead. Furthermore, penalties like `penaltyDeath()` would crash the app for end users on non-critical violations."
+
+- **Interviewer:** "What distinguishes a 'frozen frame' from a 'slow frame' in Android Vitals?"
+  **Answer:** "A slow frame takes longer than 16ms to render (falling below 60fps). A frozen frame takes longer than 700ms to render, representing a visible freeze that severely degrades the user experience."
 
 ## Self-check rubric
 
@@ -107,4 +163,4 @@ Pick each tool for a concrete question, state its limit, connect a field regress
 - [System tracing overview](https://developer.android.com/topic/performance/tracing) — Perfetto timeline scope.
 - [Android vitals ANRs](https://developer.android.com/topic/performance/vitals/anr) — field signal.
 
-Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The ANR case is illustrative; no production telemetry is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

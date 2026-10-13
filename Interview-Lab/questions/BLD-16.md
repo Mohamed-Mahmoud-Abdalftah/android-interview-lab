@@ -24,11 +24,41 @@ How do you set up reproducible builds and dependency verification?
 
 ## Explanation in Arabic
 
-ثبّت Gradle wrapper، AGP/Kotlin/JDK/NDK وAndroid SDK inputs قدر الإمكان، وتجنب dynamic/changing versions غير مضبوطة. Gradle dependency locking تثبت النسخ المحلولة بما فيها transitive؛ dependency verification تتحقق من checksums/signatures للملفات القادمة من repositories، وهما وظيفتان مختلفتان. احفظ lock/verification metadata في Git وراجع تغييراتها. اجعل tasks تعلن inputs/outputs ولا تستخدم timestamps عشوائية في artifact؛ سجل commit/variant/toolchain/hash. “نفس inputs تنتج نفس bytes” ادعاء يحتاج تجربتين نظيفتين ومقارنة hashes، ولا يكفي أن build نجحت مرتين.
+كيف تقوم بإعداد البناء القابل للتكرار حتمياً (Reproducible Builds) والتحقق من التبعيات (Dependency Verification) لحماية سلسلة التوريد (Supply Chain)؟
+
+1. مخاطر هجمات سلسلة التوريد البرمجية (Software Supply Chain Attacks):
+   - يعتمد تطبيق أندرويد على مئات المكتبات الخارجية من خوادم Maven (Google Maven, Maven Central).
+   - إذا تم اختراق حساب أحد المطورين أو استبدال ملف JAR خبيث بنفس الاسم ورقم الإصدار على خادم وسيط (Dependency Confusion / Compromised Mirror)، سيقوم Gradle بتنزيله وتضمينه في تطبيقك دون أن تدري!
+
+2. التحقق من التبعيات في Gradle (Dependency Verification):
+   - ميزة رسمية مدمجة في Gradle تقوم بالتحقق من **البصمة التشفيرية (SHA-256 Checksum)** أو **التوقيع الرقمي (PGP Signature)** لكل ملف JAR و AAR و Gradle Plugin يتم تنزيله.
+   - يُحفظ سجل البصمات في ملف `gradle/verification-metadata.xml` داخل الـ Git. إذا قام أي شخص بتعديل بايت واحد في مكتبة منشورة، يفشل البناء فوراً برمي خطأ أمني!
+
+3. البناء القابل للتكرار حتمياً (Reproducible Builds):
+   - يعني أن تجميع الكود من نفس الـ Commit على أي جهاز كمبيوتر أو خادم CI في أي وقت يخرج **نفس ملف الـ APK بنفس البصمة التشفيرية بايت-بايت** (Byte-for-Byte Bitwise Identical).
+   - يتطلب: تثبيت إصدار JDK عبر `jvmToolchain`، توحيد ترتيب الملفات داخل الـ ZIP (`reproducibleFileOrder = true`)، وتجريد التواريخ الزمنية المتغيرة (`preserveFileTimestamps = false`).
 
 ## Practical walkthrough
 
-Reproducible build تعني نفس source/dependencies/toolchain/config تنتج artifact يمكن تفسيره ومقارنته، مع مراعاة timestamps/signing وغيرها. استخدم Gradle wrapper، pinned plugin/dependency versions، dependency verification، ثابت JDK، وsource-controlled configs. قارن clean build داخل بيئة مماثلة واحفظ digest/provenance؛ cache لا تعني reproducibility. PR خبيث يغير dependency مصدرها يحتاج review وverification.
+توليد ملف التحقق من التبعيات وإعداد البناء الحتمي في Gradle:
+```bash
+# 1. توليد ملف verification-metadata.xml آلياً لجميع التبعيات الحالية عبر Gradle CLI:
+./gradlew --write-verification-metadata sha256 help
+
+# يتم إنشاء ملف gradle/verification-metadata.xml ويتم إضافته إلى مستودع الـ Git
+```
+
+```kotlin
+// 2. إعداد مهام الحزم لتكون حتمية وقابلة للتكرار في build.gradle.kts:
+tasks.withType<Zip>().configureEach {
+    isReproducibleFileOrder = true       // ضمان ترتيب الملفات بشكل أبجدي موحد
+    isPreserveFileTimestamps = false     // تجريد التواريخ الزمنية لتجنب اختلاف الـ Hashes
+}
+
+kotlin {
+    jvmToolchain(17) // ضمان استخدام نفس إصدار الـ JDK بالضبط على جميع الأجهزة والـ CI
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +82,30 @@ Review dependency updates as changes, store build provenance/SBOM where appropri
 
 ## Interview answer — short
 
-“I pin the toolchain, lock resolved versions, verify dependency artifacts, control task inputs, and compare independent clean output hashes before claiming reproducibility.”
+Set up reproducible builds and supply-chain security by enabling Gradle's dependency verification via gradle/verification-metadata.xml to enforce SHA-256 and PGP checksums on all external artifacts, standardizing JDK toolchains via jvmToolchain, and enforcing reproducible ZIP file ordering without volatile timestamps.
 
 ## Interview answer — structured
 
-“Dependency locking answers which versions were resolved; dependency verification answers whether fetched artifacts match trusted metadata. I commit both, pin wrapper/AGP/Kotlin/JDK/SDK inputs, and avoid timestamped or undeclared task output. CI records source revision, variant and artifact hash. To claim byte-for-byte reproducibility, I build independently in controlled clean environments and compare outputs; a cache hit alone is not proof.”
+Software supply chain integrity and reproducible builds guarantee artifact immutability and provenance:
+
+1. **Gradle Dependency Verification**:
+   - Protects against compromised Maven repositories, man-in-the-middle attacks, and malicious dependency substitutions. Gradle validates the cryptographic SHA-256 checksum or PGP signature of every downloaded JAR, AAR, and Gradle plugin.
+   - Generate the initial lockfile via `./gradlew --write-verification-metadata sha256 help`. Commit `gradle/verification-metadata.xml` to Git. If an upstream artifact is altered or replaced on Maven Central, Gradle aborts the build with a verification failure.
+
+2. **Reproducible Builds (Byte-for-Byte Parity)**:
+   - Guarantees that compiling identical source code on different machines produces bitwise-identical binary artifacts.
+   - Eliminate non-deterministic inputs: enforce identical compiler toolchains using Gradle's `jvmToolchain(17)`.
+   - Configure ZIP archive tasks with `isReproducibleFileOrder = true` and `isPreserveFileTimestamps = false` to eliminate file-system order variances and timestamps from APK ZIP headers.
 
 ## Interview answer — deep senior
 
-“I define the claim before configuring the pipeline. A repeatable dependency graph requires pinned toolchain versions and resolved libraries; Gradle dependency locking prevents an accidental new transitive version from being chosen. Dependency verification adds integrity checks for the actual JAR, AAR and metadata files, so coordinates alone are not trusted. I commit and review the lock and verification changes instead of regenerating them automatically in every release. Reproducibility also depends on the JDK, Android SDK/NDK, AGP, environment variables, locale, generated timestamps and task input declarations. I isolate signing as a protected step and record hashes of the input and final artifact. Two clean runners with the same controlled inputs must produce the same bytes before I use the phrase ‘byte-for-byte reproducible’; if they do not, I trace archive ordering, timestamps or nondeterministic codegen. A remote build-cache hit is a performance result, not an independent reproduction test. I retain source commit, variant, toolchain, dependency state, mapping and artifact hash to make later security and crash investigations possible.”
+From an enterprise security and compliance perspective, reproducible builds enable external independent auditing:
+
+1. **Third-Party Verifiable Provenance**: Open-source and high-assurance financial applications (e.g., Signal, Tor, Bitcoin wallets) use reproducible builds so independent security researchers can compile the public Git commit and verify that the resulting SHA-256 matches the binary distributed on Google Play, proving the release contains zero backdoors.
+
+2. **Dynamic Dependency Ban**: Enforce strict repository boundaries. Ban dynamic version ranges (e.g. `implementation("com.lib:sdk:1.+")`) and SNAPSHOT dependencies in release configurations, as they pull untracked binary changes without code modifications.
+
+3. **Repository Priority Hardening**: Explicitly order repositories in `settings.gradle.kts`: Google Maven first, followed by Maven Central. Use `content { includeGroup(...) }` filtering to restrict specific libraries to designated repositories, thwarting **Dependency Confusion** attacks.
 
 ## How to answer in the interview
 
@@ -76,9 +121,11 @@ Discuss locking versus verification, toolchain pinning, nondeterminism, independ
 
 ## Follow-up questions
 
-- Does a lockfile verify artifact integrity? **Answer:** no; dependency verification handles checksums/signatures separately.
-- Does a cache hit prove reproducibility? **Answer:** no; independent clean builds are needed for that claim.
-- What can cause different bytes with same source? **Answer:** toolchain/environment differences or nondeterministic timestamps/order/codegen.
+- **Interviewer:** "What is a Dependency Confusion attack?"
+  **Answer:** "An attack where an adversary publishes a public package on Maven Central with the same name as an internal private library, tricking the build into pulling the malicious public artifact."
+
+- **Interviewer:** "Why do timestamps in ZIP archives prevent reproducible builds?"
+  **Answer:** "Because ZIP headers store the creation timestamp for every file; compiling at different times changes binary headers, resulting in completely different SHA-256 hashes."
 
 ## Self-check rubric
 
@@ -90,4 +137,4 @@ Name pinned inputs, separate lock and verification, and define a byte-comparison
 - [Gradle dependency verification](https://docs.gradle.org/current/userguide/dependency_verification.html) — artifact integrity.
 - [Gradle security practices](https://docs.gradle.org/current/userguide/best_practices_security.html) — reproducibility and supply chain.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. No byte-for-byte Android artifact reproduction is claimed for this repo.
+Technically reviewed against primary documentation on 2026-10-13.

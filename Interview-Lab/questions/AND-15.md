@@ -24,7 +24,44 @@ Compare Activity, Fragment, Compose navigation, and deep links.
 
 ## Explanation in Arabic
 
-`Activity` مكوّن Android مستقل يقدر النظام يبدأه وله task/back stack وlifecycle. `Fragment` جزء واجهة تديره Activity وله lifecycle للـFragment وآخر للـview؛ مفيد لشاشات أو أجزاء داخل Activity. `Navigation Compose` يمثل destinations داخل Compose و`NavHost` بيتحكم في مسار التنقل وحالة الـback stack، لكنه مش بديل عن Activity كنقطة دخول للنظام. `deep link` عنوان أو Intent بيبدأ مسار من خارج التطبيق أو داخله؛ لازم تتحقق من بياناته ومن صلاحية المستخدم قبل عرض محتوى حساس. القرار يتحدد بحدود النظام والتعقيد الموجود، مش بقاعدة إن تطبيق Compose لازم يكون Activity واحدة دائمًا.
+المقارنة الشاملة بين نماذج التنقل (Navigation Paradigms) في Android: Activity vs Fragment vs Compose Navigation vs Deep Links:
+
+1. الـ Multi-Activity Navigation (النموذج الكلاسيكي القديم):
+   - كل شاشة عبارة عن `Activity` منفصلة.
+   - **العيوب:** استهلاك كبير لموارد النظام (كل Activity لها Window و Context منفصل)؛ انتقال بطيء مع وميض بين الشاشات؛ صعوبة مشاركة البيانات المعقدة؛ وعدم مرونة الـ Animations.
+
+2. الـ Fragment-based Navigation (Single-Activity Architecture):
+   - `MainActivity` واحدة تحتوي على `NavHostFragment` وشاشات عبارة عن `Fragments`.
+   - **المميزات:** أسرع بكثير وأخف في الذاكرة؛ إمكانية مشاركة ViewModel على مستوى الـ Activity أو الـ Graph؛ ودعم كامل للـ Navigation Component XML.
+   - **العيوب:** تعقيد دورة حياة الـ Fragment View وضرورة إدارة `viewLifecycleOwner` لتجنب الـ Leaks.
+
+3. الـ Jetpack Compose Navigation (النموذج الحديث 100%):
+   - التنقل بين دوال `@Composable` عادية تماماً (`NavHost(navController) { composable("route") }`).
+   - **المميزات:** خفيف جداً بدون أي Fragment overhead؛ يزيل الـ ViewBinding leaks تماماً؛ وتكامل تام مع Type-Safe Navigation (Kotlin Serialization في Compose 2.8+).
+
+4. الـ Deep Links (الروابط العميقة):
+   - فتح شاشة معينة داخل التطبيق مباشرة من رابط خارجي (URL أو إشعار).
+   - تتطلب بناء **Synthetic Backstack** سليم حتى إذا ضغط المستخدم زر 'Back' يعود للشاشة السابقة للتطبيق وليس للخروج من التطبيق فجأة.
+
+## Practical walkthrough
+
+كيف تطورت كتابة الـ Navigation حتى الـ Type-Safe Navigation الحديثة في Compose:
+```kotlin
+// مع Compose 2.8+ و Kotlinx Serialization:
+@Serializable data class ProductDetailsRoute(val productId: String, val fromSearch: Boolean)
+
+NavHost(navController = navController, startDestination = HomeRoute) {
+    composable<HomeRoute> { HomeScreen(onProductClick = { id -> 
+        navController.navigate(ProductDetailsRoute(id, true)) 
+    }) }
+    
+    composable<ProductDetailsRoute> { backStackEntry ->
+        val route: ProductDetailsRoute = backStackEntry.toRoute()
+        ProductDetailsScreen(productId = route.productId)
+    }
+}
+```
+وداعاً للـ String URLs والأخطاء الإملائية؛ التنقل أصبح Type-Safe 100%.
 
 ## Why it matters and how it works
 
@@ -33,10 +70,6 @@ An Activity is a platform component with its own task semantics and lifecycle. A
 ## Worked example
 
 A commerce app has one host Activity with Compose destinations for catalog, product, and cart. A verified HTTPS App Link opens `/product/42`; the Activity parses a stable product ID, Navigation creates the destination, and the ViewModel loads the product from a repository. If the user is unauthenticated for a private order route, navigation goes through sign-in and resumes only after authorization. This is an architecture sketch; exact navigation code depends on library version and existing app structure.
-
-## Practical walkthrough
-
-Activity نافذة/task entry، Fragment أو Compose destination طريق لتنظيم content داخلها؛ مش لازم شاشة = Activity جديدة. Navigation graph تحدد routes/back stack، وdeep link مدخل خارجي ممكن يفتح destination من cold start. لو `/orders/{id}` جاية من link، parse ID محدود، اعمل auth gate، وبعدها repository/server authorization للorder؛ route string مش تصريح وصول. فرق Back (يرجع لتاريخ المستخدم) وUp (ينقل parent منطقي)، واختبرهم لما app تتفتح من notification/link، بعد rotation، وبعد process recreation. اختار Fragment/Compose حسب stack الموجودة بدل مزج frameworks بلا سبب.
 
 ## Trade-offs and decision criteria
 
@@ -52,17 +85,25 @@ Define a route contract per destination, sanitize untrusted URI parameters, and 
 
 ## Interview answer — short
 
-“Activities are Android components, Fragments are hosted UI components, Compose Navigation manages in-app destinations, and deep links are entry routes. They solve different layers of navigation, so I design their back stack and restoration together.”
+Multi-Activity navigation is heavy and deprecated; Fragment navigation (Single-Activity) is lightweight but has complex view lifecycles; Compose Navigation is modern, declarative, and type-safe with zero Fragment overhead; and Deep Links route external URLs directly to internal screens requiring synthetic backstacks.
 
 ## Interview answer — structured
 
-An Activity is a platform entry point and task participant. A Fragment lives in an Activity and has a separate view lifecycle. Compose Navigation offers a destination back stack for Compose UI. A deep link can target a destination from outside the app, including on a cold start. I pass stable IDs, restore screen data through ViewModels and repositories, and check authentication and authorization on every external entry.
+Modern Android architecture has evolved through four navigation paradigms:
+
+1. **Multi-Activity (Legacy)**: Each screen is an Activity. It incurs high memory overhead per window, creates clunky window transitions, and makes complex state sharing difficult. It is now reserved only for truly distinct app entry points (e.g., Auth vs Main App).
+
+2. **Fragment Navigation (Single-Activity Architecture)**: A single Activity hosts a `NavHostFragment`. It improved transition fluidity and memory efficiency, enabling shared ViewModels. However, managing the dual lifecycle of Fragments and nulling ViewBindings added cognitive overhead.
+
+3. **Jetpack Compose Navigation (Modern Standard)**: Pure declarative navigation between Composables via `NavHost` and `NavController`. It eliminates Fragment view boilerplate entirely. Starting with Navigation Compose 2.8+, it supports **Type-Safe Navigation** using Kotlinx Serialization classes instead of error-prone String route paths.
+
+4. **Deep Links**: URL-based ingress allowing notifications, emails, or web links to route directly to internal destinations. They require proper synthetic backstack construction via `TaskStackBuilder` so pressing Back navigates up the logical app hierarchy rather than exiting to the launcher.
 
 ## Interview answer — deep senior
 
-I distinguish platform navigation from UI navigation. Android owns Activity launch and task behavior; a FragmentManager or Compose NavHost owns nested destinations. Each has independent state and lifecycle details. For a product deep link, I validate the URI, derive a stable ID, construct the appropriate back stack, and load durable state instead of relying on a previous screen's object. Process death and external launch are normal paths. Security checks live below routing because a crafted deep link or internal call must not bypass authorization.
+At the architectural boundary, Deep Links pose significant security and state-restoration challenges: When an external link opens `myapp://order/123`, the app must not assume that the user is authenticated. The navigation graph must implement a conditional gateway: if the user's session token is missing or expired, intercept the deep link, redirect to the Login route, and upon successful authentication, resume navigation to the intended target route.
 
-For a verified product link, the Activity may host a Compose NavHost rather than start a new Activity for each page. Navigation carries only a stable product ID; the destination ViewModel fetches product data from a repository. A private order link has an extra gate: authentication followed by server authorization for that order. Verified App Links influence resolution, not access rights. I would design Back and Up behavior for cold external entry, warm navigation, and restored tasks, then test each. The choice between Fragment and Compose destinations should fit the existing UI stack and state ownership.
+Furthermore, for App Links (`https://example.com/order/123`), verifying Android App Links via Digital Asset Links (`.well-known/assetlinks.json`) is mandatory. Verified App Links open your app directly without displaying the ambiguous system disambiguation dialog, protecting users against phishing by imposter apps claiming custom schemes.
 
 ## How to answer in the interview
 
@@ -78,9 +119,14 @@ Discuss task stack versus NavHost stack, Fragment view lifecycle, deep-link trus
 
 ## Follow-up questions
 
-- Does Navigation Compose replace the Activity lifecycle? **Answer:** no; destinations run inside a host Activity and must work with its lifecycle and saved state.
-- Why pass an ID rather than a full product object? **Answer:** it gives a compact, restorable route and lets the repository load current data after process death.
-- Is a verified App Link sufficient authorization? **Answer:** no; link verification establishes domain association, while the app must still authenticate and authorize access to private data.
+- **Interviewer:** "How does `NavBackStackEntry` scope ViewModels in Compose Navigation?"
+  **Answer:** "Each destination in the navigation backstack is a `ViewModelStoreOwner`. A ViewModel retrieved inside a composable using `viewModel()` is scoped to that specific `NavBackStackEntry` and is automatically cleared when popped from the backstack."
+
+- **Interviewer:** "What is the difference between Deep Links and Android App Links?"
+  **Answer:** "Deep Links use custom URI schemes (e.g., `myapp://`) and trigger a system chooser if multiple apps support them. Android App Links use verified HTTP/HTTPS domains backed by a server `assetlinks.json` file, opening your verified app directly without dialogs."
+
+- **Interviewer:** "How do you share a ViewModel between two destinations in Compose Navigation?"
+  **Answer:** "By retrieving the parent destination's `NavBackStackEntry` via `remember(backStackEntry) { navController.getBackStackEntry("parent_route") }` and passing it to the `viewModel(viewModelStoreOwner = parentEntry)` factory."
 
 ## Self-check rubric
 
@@ -92,4 +138,4 @@ Define all four layers; describe a cold deep-link launch, back stack and state r
 - [Navigation with Compose](https://developer.android.com/develop/ui/compose/navigation) — Compose destinations and route arguments.
 - [Create deep links](https://developer.android.com/training/app-links/deep-linking) — external navigation entry.
 
-Technically reviewed against these primary sources on 2026-10-13 by editorial review. The commerce flow is illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

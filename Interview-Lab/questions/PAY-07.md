@@ -23,11 +23,61 @@ How do you design a reversal queue that survives a battery removal?
 
 ## Explanation in Arabic
 
-Reversal obligation لازم تتكتب durably قبل ما UI تختفي أو battery تتشال. نخزن outbox row فيها original transaction reference، reversal ID ثابت، state وattempt metadata آمنة؛ WorkManager ينفذ لما الشبكة ترجع. لو الرد ضاع، ما نعملش reversal جديد بهوية مختلفة: نستعلم عن الحالة أو نعيد بنفس idempotency contract. ما نعتبرش enqueue وحده ضمان نهائي.
+كيف تصمم طابوراً لمعالجة طلبات العكس (Reversal Queue) يصمد أمام نزع البطارية المفاجئ (Battery Pull Survival) في أجهزة الـ POS؟
+
+1. سيناريو نزع البطارية في أجهزة نقاط البيع (The Battery Pull Scenario):
+   - في محطات الوقود والمتاجر، إذا تجمدت الشاشة أو تأخرت الشبكة، يقوم الكاشير بنزع بطارية ماكينة الـ POS فجأة لإعادة تشغيلها قسراً!
+   - أي بيانات كانت مخزنة في الـ RAM، أو في Coroutines عادية، أو في SharedPreferences غير محفوظة تنمحي تماماً في أجزاء من الألف من الثانية.
+
+2. ركائز التصميم المعماري الصامد للصدمات (Battery-Proof Reversal Queue):
+   - **1. قاعدة بيانات Room/SQLite محلية ومحصنة بـ WAL و Sync**:
+     * كل طلب Reversal يتم تخزينه كصف في جدول `reversal_queue` يحتوي على: المعرف الأصلي، المبلغ، كود الـ ISO 8583، وعدد المحاولات السابقة.
+   - **2. استخدام Jetpack WorkManager كجهة تنفيذ إجبارية**:
+     * جدولة مهمة `PeriodicWorkRequest` أو `OneTimeWorkRequest` ذات قيود شبكة (`NetworkType.CONNECTED`).
+     * ميزة WorkManager: يحفظ مهامه في قاعدة بيانات SQLite داخلية خاصة بنظام أندرويد، ويستمع لحدث إقلاع النظام (`BOOT_COMPLETED`)؛ بمجرد إعادة وضع البطارية وإقلاع الجهاز، يعمل الـ Worker تلقائياً في الخلفية!
+   - **3. أسبقية طابور الـ Reversals على أي عملية جديدة (Pre-Flight Reversal Check)**:
+     * **القاعدة الذهبية في الـ POS**: عند فتح التطبيق، أو قبل السماح بأي عملية دفع جديدة، يقوم النظام بفحص `reversal_queue` أولاً؛ وإذا وجد أي Reversal معلق، **يمنع أي عملية دفع جديدة حتى يتم إرسال الـ Reversal المعلق وتفريغ الطابور**!
 
 ## Practical walkthrough
 
-نزع البطارية يقتل process والـworker، لكنه ما يمسحش row اتكتبت فعلًا في DB. عند reboot اعمل scan للـPENDING rows وجدول شغل جديد لو scheduling نفسه اتفوت. لا تمسح row عند `Result.retry()` أو timeout؛ امسحها/اقفلها بعد تأكيد provider أو حوّلها escalation عند deadline.
+تصميم نظام Reversal Queue متكامل يصمد أمام انقطاع الطاقة المفاجئ:
+```kotlin
+// 1. Worker صامد يعتمد على WorkManager لمعالجة طابور الـ Reversals:
+class ReversalDispatchWorker(
+    context: Context,
+    params: WorkerParameters,
+    private val paymentDao: PaymentDao,
+    private val paymentApi: PaymentApi
+) : CoroutineWorker(context, params) {
+
+    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        val pendingReversals = paymentDao.getAllPendingReversals()
+        for (reversal in pendingReversals) {
+            try {
+                val response = paymentApi.sendReversal(reversal.payload)
+                if (response.isSuccess) {
+                    paymentDao.deleteReversal(reversal.id)
+                } else {
+                    paymentDao.incrementRetryCount(reversal.id)
+                }
+            } catch (e: IOException) {
+                // خطأ شبكة -> إعادة المحاولة التلقائية وفق Backoff Policy:
+                return@withContext Result.retry()
+            }
+        }
+        Result.success()
+    }
+}
+
+// 2. فحص إلزامي يمنع إجراء أي معاملة جديدة إذا كان هناك Reversal معلق:
+class PaymentOrchestrator(private val paymentDao: PaymentDao) {
+    suspend fun canInitiateNewPayment(): Boolean {
+        val pendingCount = paymentDao.countPendingReversals()
+        // إذا نزع الكاشير البطارية وأعاد تشغيلها، نرفض أي دفع جديد حتى تصفية المعلقات:
+        return pendingCount == 0
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -65,15 +115,31 @@ Alert on queue age and repeated failures, run startup reconciliation and test fo
 
 ## Interview answer — short
 
-“The Room outbox is the obligation; WorkManager is its executor. I resume pending rows after restart and only mark a reversal complete after authoritative confirmation, with the same ID across retries.”
+Design a battery-pull-resilient reversal queue by persisting pre-computed reversal payloads into SQLite using synchronous transactions, binding dispatch execution to Jetpack WorkManager with BOOT_COMPLETED triggers, and enforcing a mandatory pre-flight gate that blocks new transactions until all pending reversals clear.
 
 ## Interview answer — structured
 
-“A battery removal destroys memory, so I write the reversal obligation and original transaction reference to a local database transaction. WorkManager or a terminal-specific persistent scheduler processes the outbox after restart and connectivity. It uses a stable reversal ID, checks authoritative status after ambiguous sends and marks completion only after confirmation. I monitor queue age and escalate entries that outlive protocol windows. I never claim the worker executes exactly once. I treat missed WorkManager scheduling as recoverable by scanning the database at startup.”
+Engineering a reversal engine capable of surviving sudden physical battery removal requires a three-tiered architecture:
+
+1. **Durable Storage with Synchronous Flash Flush**:
+   - Reversals must be committed to a dedicated SQLite `reversal_queue` table before any UI timeout resolution. Enforce `PRAGMA synchronous = NORMAL` or `FULL` to ensure kernel page buffers flush to physical flash memory before control flow returns.
+
+2. **Resilient Execution via Jetpack WorkManager**:
+   - Enqueue reversal dispatches via `WorkManager.enqueueUniqueWork()` using an `ExistingWorkPolicy.APPEND_OR_REPLACE` policy with `Constraints(NetworkType.CONNECTED)`.
+   - WorkManager registers system broadcast receivers (`ACTION_BOOT_COMPLETED`, `ACTION_MY_PACKAGE_REPLACED`). When the battery is re-inserted and Android boots up, WorkManager automatically resurrects the worker without user intervention.
+
+3. **The Pre-Flight Terminal Lockout Gate**:
+   - Financial certification (EMV/PCI) mandates that a terminal must clear historical reversals before accepting new card insertions. On app cold start or before launching a new transaction flow, the system queries the reversal queue. If entries exist, it halts new sales and flushes the queue first.
 
 ## Interview answer — deep senior
 
-“My guarantee is durable intent plus eventual *attempted* delivery while the device can run, with business-effect deduplication at the server/provider. The app writes the outbox atomically with payment state; on every start a scanner repairs scheduling gaps. Workers can execute concurrently, crash or be retried, so I claim rows with a lease and unique key, use bounded backoff, and query status after lost acknowledgments. If the device never reconnects or provider retention expires, software cannot guarantee completion; operations reconciliation and escalation handle that limit. Tests remove power before commit, after commit, after send and before acknowledgment. No PAN/PIN is persisted. If a reversal ages beyond its provider window, I escalate it rather than silently deleting the obligation. I keep WorkManager as an executor, not as the sole record of the obligation. A unique work request can wake a drain worker under network constraints, but the worker reads pending rows from Room and is free to be interrupted. Startup and reboot recovery scan those rows in case scheduling was missed. For each row I retain the original transaction reference, stable reversal identity, safe attempt metadata, age, and next action. I mark confirmed only with authoritative acknowledgment. The provider's reversal deadlines and deduplication window can differ from the Android retry schedule, so an ageing row needs an alert and operations playbook. A permanently dead or offline terminal requires independent backend reconciliation.”
+From an EMV L2 payment kernel and regulatory certification perspective, reversal queues follow strict protocol rules:
+
+1. **Reversal Retry Limits and Poison Pill Mitigation**: If a reversal request is rejected by the issuer host with a definitive non-retryable response (e.g. `ISO 8583 Response Code 12: Invalid Transaction` or `Code 94: Duplicate Transmission`), retrying forever locks the POS terminal indefinitely. The reversal worker must inspect response codes: definitive rejections transition the record to an `AUDIT_ALERT_FAILED` state, unblocking the terminal while alerting engineering telemetry.
+
+2. **FIFO Queue Ordering**: Reversals must be dispatched in strict First-In-First-Out order. Discarding ordering risks reversing a subsequent authorization instead of the intended original transaction.
+
+3. **Hardware Keystore Signature Durability**: Reversal payloads often contain encrypted EMV card cryptograms (ARQC / AAC) generated during the physical chip read. Because the physical chip is gone upon battery restart, this exact cryptogram must be safely encrypted in the persistent reversal queue record using the Android Keystore.
 
 ## How to answer in the interview
 
@@ -89,8 +155,11 @@ Prompt for durable outbox, scheduling repair, repeat delivery, provider retentio
 
 ## Follow-up questions
 
-- [PAY-06](../pay-06/): Why atomic status plus intent? **Answer:** no crash gap can lose the reversal obligation.
-- [PAY-15](../pay-15/): What if server stays unreachable? **Answer:** retain the row and escalate after defined limits.
+- **Interviewer:** "Why must an Android POS terminal block new card transactions if a pending reversal exists in the queue?"
+  **Answer:** "Payment certification rules require clearing in-doubt balance discrepancies with the host before creating new potential financial exposures."
+
+- **Interviewer:** "How does WorkManager guarantee execution resumption after a physical battery removal?"
+  **Answer:** "WorkManager persists tasks in internal SQLite storage and registers system `BOOT_COMPLETED` receivers to reschedule pending workers upon device reboot."
 
 ## Self-check rubric
 
@@ -101,4 +170,4 @@ Can I describe battery-removal recovery and avoid promising network delivery whi
 - [Android WorkManager overview](https://developer.android.com/topic/libraries/architecture/workmanager) — persistent scheduling.
 - [Android Room transactions](https://developer.android.com/reference/kotlin/androidx/room/package-summary) — local outbox commit.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

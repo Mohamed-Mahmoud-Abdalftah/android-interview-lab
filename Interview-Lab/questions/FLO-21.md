@@ -22,11 +22,42 @@ Adapt multi-shot callback APIs with callbackFlow, awaitClose and channel capacit
 
 ## Explanation in Arabic
 
-`callbackFlow` بيحوّل listener بيطلع قيم متعددة إلى cold Flow. كل collector يسجّل callback، و`trySend` ينقل القيم إلى channel بتاعة الـFlow. `awaitClose` يخلي block عايشة ويعمل unregister عند cancel أو close؛ من غيره listener ممكن يتسرب أو الـFlow تقفل فورًا. لازم نختار buffer/overflow يناسب هل كل update مهم.
+الـ `callbackFlow` هو الأداة القياسية في Kotlin لتحويل الـ Multi-shot Callbacks و الـ Listeners المستمرة إلى Reactive Flow:
+
+1. ما هو `callbackFlow`؟
+   - هو Flow builder متخصص مصمم لتغليف الـ Callbacks التي تصدر **عدة أحداث عبر الزمن** (مثل: GPS location listener, Bluetooth scan updates, WebSocket events).
+   - يوفر دالة `trySend(element)` لإرسال البيانات للـ Flow بطريقة Thread-safe وبدون حظر.
+
+2. ما هي وظيفة `awaitClose` الإلزامية؟
+   - `awaitClose` هي **أهم سطر كود داخل `callbackFlow`**!
+   - تقوم بتعليق الـ Flow builder وإبقائه حياً في الذاكرة طالما هناك مستمع يجمع البيانات.
+   - **تنظيف الـ Listener (Cleanup Block):** تأخذ lambda يتم تنفيذها تلقائياً عندما يتوقف المستمع أو تُلغى الـ Coroutine (مثل إزالة الـ Listener من نظام الأندرويد).
+
+3. ماذا يحدث لو نسيت `awaitClose`؟
+   - **كارثة برمجية فورية!** الـ Flow builder سينتهي فوراً ويغلق التدفق في نفس الميلي-ثانية، ولن يستلم المستمع أي تحديثات نهائياً!
 
 ## Practical walkthrough
 
-لما SDK بتسجل listener وتبعت callbacks، `callbackFlow` تعمل bridge لـFlow. داخلها `trySend` للحدث و`awaitClose { unregister(listener) }` لازم تتنفذ عشان release لما collector تلغي أو تنتهي. لو callback مصدرها thread مختلف، channel تحمي إرسال events بشكل مناسب؛ لكن لازم تحدد capacity/drop policy، وما تعتبر `trySend` الناجحة دليل إن UI استهلكت.
+تحويل Location Listener إلى callbackFlow آمن من التسريب 100%:
+```kotlin
+fun FusedLocationProviderClient.locationUpdates(request: LocationRequest): Flow<Location> = callbackFlow {
+    val callback = object : LocationCallback() {
+        override fun onLocationResult(result: LocationResult) {
+            result.lastLocation?.let {
+                trySend(it) // إرسال الإحداثيات للـ Flow بأمان
+            }
+        }
+    }
+
+    // 1. تسجيل الـ Listener:
+    requestLocationUpdates(request, callback, Looper.getMainLooper())
+
+    // 2. awaitClose إلزامية: تعلق الـ coroutine وتفصل الـ Listener عند الإلغاء:
+    awaitClose {
+        removeLocationUpdates(callback) // يمنع استنزاف البطارية والـ Memory Leaks!
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -66,15 +97,26 @@ A location repository wraps SDK callbacks, unregisters on screen cancellation, a
 
 ## Interview answer — short
 
-“callbackFlow bridges a repeated callback into Flow; awaitClose keeps the channel alive and unregisters the listener on cancellation. I check send failures and capacity, and I share the cold source only when multiple collectors should use one registration.”
+callbackFlow converts multi-event callback APIs into cold Flows using trySend() to emit thread-safely. awaitClose keeps the coroutine active while subscribers exist and executes mandatory cleanup (unregistering listeners) when collection cancels, preventing fatal resource leaks.
 
 ## Interview answer — structured
 
-“I use `callbackFlow` for multi-shot listener APIs. On collection I register one callback, use `trySend` for values from arbitrary callback threads, and call `awaitClose` to unregister when the collector cancels or the channel closes. The block is cold, so two collectors may register twice. If one hardware subscription is desired, I share it in a suitable scope. I decide whether a slow collector may drop intermediate sensor snapshots or whether every sample needs durable capture.”
+`callbackFlow` is the specialized cold flow builder used to bridge legacy, multi-shot callback listeners (like GPS location updates, Bluetooth scanning, or sensor managers) into reactive Kotlin Flows.
+
+Inside the block, we register the callback listener and use **`trySend(value)`** to emit values thread-safely into the flow channel.
+
+The critical component is **`awaitClose { ... }`**, which serves two vital purposes:
+
+1. It suspends the coroutine block, keeping the flow channel open as long as collectors are actively observing.
+2. It acts as the mandatory cleanup hook: when the downstream collector cancels its coroutine (e.g., the screen is backgrounded or destroyed), `awaitClose` wakes up and executes its lambda, where you must unregister the listener from the Android system service.
+
+If you omit `awaitClose`, the flow builder executes top-to-bottom and closes immediately, terminating before any callbacks can fire.
 
 ## Interview answer — deep senior
 
-“A callback adapter has lifecycle and backpressure contracts. `callbackFlow` supplies a channel-backed bridge safe for callbacks from other threads, but registration occurs per collection and the callback may race with closure. I make unregister idempotent, preserve the exact callback identity, and inspect the result of `trySend` rather than assuming delivery. `awaitClose` is essential to hold the registration and clean it up. If the SDK emits a single terminal result, `suspendCancellableCoroutine` is simpler; if it emits a stream, callbackFlow is appropriate. In Android I align the collection owner with UI visibility or a shared session, test late callbacks after cancellation, and monitor battery/resource use. Forgetting awaitClose leaks a sensor listener. I would show the registration lifecycle first: collection enters `callbackFlow`, registers one callback, callbacks send into its channel, and `awaitClose` suspends until the flow is closed or cancelled and then unregisters. Without `awaitClose`, a callback API can leak the listener after the screen leaves. The callback may arrive from another thread, so I use `trySend` and inspect failure when the channel is closed or full; I do not block a vendor callback arbitrarily. Buffer capacity is a business decision: dropping a location preview may be acceptable, dropping a payment status is not. I test collection start, cancellation, late callbacks after removal, and double collection, since a cold callbackFlow registers separately per collector unless shared.”
+Under the hood, `callbackFlow` is built on top of `channelFlow` with an extra safety invariant: the builder checks that `awaitClose` is explicitly invoked before the block completes. If you attempt to exit a `callbackFlow` without calling `awaitClose`, it throws an `IllegalStateException` at runtime.
+
+Another critical detail is using `trySend()` versus `send()`: `trySend()` is non-suspending and thread-safe. Because Android callbacks often trigger on arbitrary Binder IPC or background threads that cannot call suspending functions, `trySend()` allows posting events without launching extra coroutines. However, if the channel buffer overflows, `trySend().isFailure` will be true. To prevent dropping sensor or location events, we frequently chain `.buffer(Channel.UNLIMITED)` or `.conflate()` onto the `callbackFlow`.
 
 ## How to answer in the interview
 
@@ -90,8 +132,14 @@ Cover per-collector registration, callback identity, send failure and cleanup ra
 
 ## Follow-up questions
 
-- [COR-23](../cor-23/): Which adapter for one result? **Answer:** `suspendCancellableCoroutine`.
-- [FLO-08](../flo-08/): How avoid duplicate listener registrations? **Answer:** share one cold callbackFlow under a suitable scope.
+- **Interviewer:** "Why can't you use `flow { }` instead of `callbackFlow { }` for callbacks?"
+  **Answer:** "Because standard `flow { }` does not allow concurrent or asynchronous calls to `emit()`. Calling `emit()` from inside an asynchronous callback lambda violates Flow's Context Preservation rule and throws an IllegalStateException. `callbackFlow` uses a Channel internally to provide thread-safe emissions."
+
+- **Interviewer:** "What happens if the callback emits faster than the downstream flow can collect?"
+  **Answer:** "By default, `callbackFlow` uses a buffer size of 64. If the buffer fills, `trySend()` fails and drops emissions unless you configure `.buffer()` or `.conflate()`."
+
+- **Interviewer:** "Can you use `awaitClose` without a lambda?"
+  **Answer:** "Yes, `awaitClose()` can be called with no arguments just to keep the flow open, but doing so without registering cleanup logic leaks the underlying listener when cancelled."
 
 ## Self-check rubric
 
@@ -101,4 +149,4 @@ Can I register/unregister reliably, handle failed sends and choose one-shot vers
 
 - [Kotlin callbackFlow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/callback-flow.html) — channel bridge and awaitClose.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

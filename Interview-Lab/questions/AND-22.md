@@ -24,7 +24,51 @@ A crash occurs only after backgrounding the app for several hours. How would you
 
 ## Explanation in Arabic
 
-أبدأ من crash stack trace ووقت الحدث: هل العملية اتقتلت واتفتحت من جديد؟ ولا Activity كانت موجودة وعملت resume؟ في الخلفية النظام ممكن يستعيد memory فيقتل process، وعند رجوع المستخدم ينشئ Activity وViewModel جديدين. لو الشاشة بتفترض إن singleton أو `lateinit` اتملأ في خطوة onboarding قبل كده هتنهار. أفحص الـsaved state والـIntent والـrepository، وأعيد بناء الشاشة من IDs صغيرة ومصدر بيانات دائم. كمان أراجع token expiry، permission revocation، والـnetwork timeouts، لأن ساعات الانتظار تغيّر هذه الحالات حتى لو process لم يُقتل.
+عطل (Crash) يحدث فقط بعد ترك التطبيق في الخلفية لعدة ساعات: كيف تحقق في هذا العطل وتكتشف علاقته بدورة الحياة والـ Process Restoration؟
+
+1. تشخيص العطل (The Diagnosis):
+   - العطل الذي يظهر فقط بعد ساعات في الخلفية هو بنسبة 99% **عطل ناتج عن Process Death غير المعالج (Unmanaged Process Death Crash)**!
+   - عندما يترك التطبيق لساعات، يقوم نظام أندرويد بقتل الـ Process لتوفير الرام.
+   - عند عودة المستخدم، يقوم النظام بإعادة فتح **نفس الشاشة الداخلية التي كان يقف عليها** (Restored Activity) من الـ Backstack، ولكن كل الـ In-memory Singletons والـ Static variables والـ Cache أصبحت `null`!
+   - الكود يحاول قراءة `UserSession.currentUser.id` فيحدث `NullPointerException` فوراً!
+
+2. كيف تعيد تمثيل العطل في ثوانٍ في بيئة التطوير (Reproduction in 5 seconds)؟
+   - لا تنتظر ساعات! افتح الشاشة في المحاكي، اضغط زر Home، ثم نفذ أمر:
+     `adb shell am kill <package_name>`
+   - ثم افتح التطبيق من Recents؛ سيعاد إنتاج الـ Crash فوراً!
+
+3. الحل المعماري الجذري:
+   - عدم الاعتماد على Singletons عائمة في الذاكرة لتمرير البيانات بين الشاشات.
+   - استخدام `SavedStateHandle` لتمرير المعرفات (IDs)، وإعادة تحميل البيانات من قاعدة بيانات Room أو DataStore عند بدء الشاشة.
+
+## Practical walkthrough
+
+التحقيق والحل في الكود:
+```kotlin
+// ❌ الكود المسبب للكراش بعد ساعات:
+class OrderDetailsActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // كارثة: يفترض أن الـ Singleton يحتوي على بيانات المستخدم!
+        // بعد ساعات في الخلفية، AppSession تصبح null ويحدث Crash فوراً:
+        val user = AppSession.currentUser!! // NullPointerException!
+        loadOrder(user.token)
+    }
+}
+
+// ✅ الحل المعماري المستقر:
+class OrderDetailsViewModel(
+    savedStateHandle: SavedStateHandle,
+    authRepository: AuthRepository,
+    orderRepository: OrderRepository
+) : ViewModel() {
+    // نقرأ المعرفات المحفوظة من SavedStateHandle ونقرأ التوكن من DataStore دائم التخزين:
+    val orderId: String = checkNotNull(savedStateHandle["order_id"])
+    val uiState = authRepository.observeSessionToken().flatMapLatest {
+        orderRepository.observeOrder(orderId)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Loading)
+}
+```
 
 ## Why it matters and how it works
 
@@ -33,10 +77,6 @@ Background process lifetime is controlled by Android. Saved instance state can r
 ## Worked example
 
 A parcel-tracking screen crashes on return because `CurrentShipment.id` was held only in an application singleton. A notification resumes the route after the process was killed, leaving that field null. Store the shipment ID in route/saved state, load shipment data from repository, and render loading/error states. If the account was signed out or the shipment no longer exists, navigate to a safe destination rather than force-unwrapping. This is a diagnostic case study, not a claim about a specific crash report.
-
-## Practical walkthrough
-
-ابدأ بتوقيت crash: “بعد ساعات” يشير لمسار process recreation أو stale auth/URI grants أكتر من rotation عادية، لكن اجمع stack trace وbreadcrumbs قبل الفرضية. جرّب `adb shell am kill` أو Android Studio process recreation بعد ما Activity تبقى stopped، وافتحها من Recents ومن notification. افحص singleton IDs، `lateinit`، saved-state keys، auth refresh، وURI permission lifetime. ما تعتمدش على `onDestroy` log لأنه ممكن ما يحصلش. أصلح من route ID/repository مع loading/missing/unauthorized states، وحط regression test/telemetry للعودة بعد process loss.
 
 ## Trade-offs and decision criteria
 
@@ -52,17 +92,27 @@ Collect stack trace, breadcrumbs for lifecycle and process start, app/OS version
 
 ## Interview answer — short
 
-“I inspect the crash evidence and reproduce both long background return and process death. I check whether state lived only in memory, then restore a small ID and reload durable data while handling expired session and permissions.”
+This is a classic Process Death crash. After hours in the background, Android killed the app process. Upon return, Android recreates the top Activity while in-memory singletons and static caches are completely null, triggering NullPointerExceptions. Reproduce it instantly via 'adb shell am kill <package>' and fix it using SavedStateHandle and persistent Room/DataStore storage.
 
 ## Interview answer — structured
 
-I first group crashes by stack, OS version, and entry source, then establish whether the process restarted. A ViewModel and singleton disappear after process death, while saved state can restore small UI keys; important business data belongs in storage or the backend. I reproduce warm return, Activity recreation, process kill, and notification launch separately. In the fix, the destination accepts a stable ID, loads current data, and handles missing data, expired auth, and revoked grants explicitly. I then monitor the production crash cluster and restoration metrics.
+A crash that manifests only after the app has been backgrounded for several hours is the quintessential signature of **Unmanaged Process Death**.
+
+**Why it occurs:**
+
+While in the background, Android's Low Memory Killer terminated the process. When the user taps the app in Recents hours later, Android attempts to restore user continuity by restoring the exact top Activity the user was on. However, because the process was killed, all in-memory static variables, singletons, Dagger graphs, and cache objects were wiped. When the restored Activity attempts to dereference `AppCache.selectedUser` or `SessionManager.currentUser`, it crashes immediately with a `NullPointerException`.
+
+**How I investigate and fix it:**
+
+1. **Instant Reproduction**: Background the app on an emulator, run `adb shell am kill <package_name>`, and click the app in Recents. This reproduces the multi-hour crash in 5 seconds.
+2. **Inspect Navigation & Bundles**: Verify that the restored Activity/Fragment extracts its required IDs from `SavedStateHandle` or `Intent.extras` rather than relying on global memory caches.
+3. **Persistent Auth Fallback**: If user authentication is required, retrieve the auth token asynchronously from encrypted DataStore; if expired, gracefully redirect the backstack to the Login screen rather than crashing.
 
 ## Interview answer — deep senior
 
-Hours in the background suggest several failure mechanisms, so I do not jump straight to an OOM or lifecycle bug. I inspect the stack trace and process-start breadcrumbs, ask how the user re-entered, and compare warm resume with true process recreation. I trace every assumption the crashing code makes about a ViewModel, singleton, Intent extra, URI permission, token, or cached response. Android may kill the process; a restored Activity must rebuild from saved small identifiers and durable repository state. I design loading and invalid-session outcomes instead of force-unwrapping. For operations with side effects, especially payment, I persist an operation ID and reconcile with the server rather than retrying blindly.
+From a root-cause analysis perspective, inspect the stack trace in Crashlytics: A process death crash almost always shows the Activity's `onCreate(savedInstanceState)` receiving a non-null `Bundle`, while an in-memory utility class threw NPE.
 
-The first step is evidence, not an immediate lifecycle diagnosis: collect the stack trace, device/API, route, process start marker, and recent navigation or permission events. Then reproduce by backgrounding the app, killing its process, and returning through Recents and the original notification. A singleton field that was initialized on the first launch may be null in the new process; a URI grant or auth token may also have expired. I replace implicit memory assumptions with a saved route ID, repository reload, and loading or unauthorized states. A regression test plus production cohort metrics checks whether the fix removes the crash without triggering duplicate work.
+In enterprise codebases, we enforce architectural defenses against process death bugs: 1. **Never use static variables or Singletons as cross-screen data transport.** 2. **Enable 'Don't keep activities' during developer QA.** 3. **Session Interceptor Pattern**: In the base Activity or root Navigation Host, evaluate whether a mandatory user session is valid. If the session was purged by process death, immediately navigate to the Splash/Auth screen with a return intent flag, restoring the session before any deep Activity code runs.
 
 ## How to answer in the interview
 
@@ -78,9 +128,14 @@ Discuss stack evidence, process-start markers, saved-state boundaries, notificat
 
 ## Follow-up questions
 
-- Does “Don't keep activities” simulate process death exactly? **Answer:** no; it destroys activities aggressively but does not reproduce every process-kill path or loss of all process state.
-- What survives process death? **Answer:** durable repository data and eligible saved small UI state; in-memory ViewModels and singletons do not.
-- Why might a notification reveal the bug? **Answer:** it can cold-start a destination without the earlier navigation flow that populated in-memory state.
+- **Interviewer:** "What is the Developer Option 'Don't keep activities' and does it simulate process death?"
+  **Answer:** "'Don't keep activities' only simulates Activity lifecycle destruction and recreation across configuration changes; it does NOT kill the underlying Linux process or wipe in-memory singletons. Full process death must be simulated using `adb shell am kill`."
+
+- **Interviewer:** "Why does Android restore internal screens instead of always restarting from the launcher?"
+  **Answer:** "To provide a seamless multitasking user experience. If a user was composing an email or editing a profile, Android attempts to bring them back to their exact work in progress rather than kicking them back to the home screen."
+
+- **Interviewer:** "How do you test this scenario in automated CI/CD UI tests?"
+  **Answer:** "In Espresso or UI Automator tests, invoke `UiDevice.getInstance().pressHome()`, execute the shell command `am kill`, and then reopen the app from the recent task switcher."
 
 ## Self-check rubric
 
@@ -92,4 +147,4 @@ Describe two competing hypotheses, collect evidence, reproduce true process deat
 - [Processes and app lifecycle](https://developer.android.com/guide/components/activities/process-lifecycle) — process importance and termination.
 - [Start an Activity from a Notification](https://developer.android.com/develop/ui/views/notifications/navigation) — notification entry and back stack.
 
-Technically reviewed against these primary sources on 2026-10-13 by editorial review. The parcel case is illustrative; no device reproduction is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

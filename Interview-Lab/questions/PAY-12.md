@@ -23,11 +23,61 @@ A POS transaction is approved by issuer but the terminal loses power before savi
 
 ## Explanation in Arabic
 
-ده أسوأ crash window: issuer وافق، terminal اتطفت قبل ما تحفظ approval. لو حفظنا intent والـoperation ID قبل الإرسال نقدر بعد reboot نسأل backend/provider. لو حتى intent ما اتحفظتش، terminal وحدها ما تقدرش تثبت النتيجة؛ لازم backend/acquirer ledger وbatch reconciliation يطابقوا العملية. ما نعيدش charge بهوية جديدة.
+وافق البنك المصدر (Issuer) على معاملة نقطة البيع (POS)، ولكن الماكينة فقدت الطاقة تماماً وانطفأت قبل حفظ الموافقة. اشرح بالتفصيل بروتوكول التعافي والمطابقة (Recovery & Reconciliation)؟
+
+1. توصيف الكارثة المالية (The Nightmare Scenario):
+   - التاجر يدخل عملية بيع بـ 1,000 دولار.
+   - يتصل البنك ويوافق ويحجز الـ 1,000 دولار من حساب العميل (Approved).
+   - قبل أن يكتب التطبيق كود الموافقة في قاعدة البيانات، انطفأت الماكينة (فصل الكهرباء أو نزع البطارية)!
+   - العميل تصله رسالة SMS على هاتفه: "تم خصم 1,000 دولار".
+   - الماكينة عند إقلاعها: لا تعرف هل تمت العملية أم لا، ولم تطبع إيصالاً، والتاجر يرفض تسليم البضاعة!
+
+2. بروتوكول التعافي التلقائي عند الإقلاع (Post-Boot Recovery Protocol):
+   - **الخطوة 1: فحص الإقلاع (Startup Ledger Audit)**:
+     * عند إقلاع تطبيق الـ POS، يبحث فوراً في قاعدة البيانات عن أي معاملة في حالة `PROCESSING` أو `INITIATED`.
+     * يجد المعاملة رقم `tx_987` معلقة بدون قرار نهائي.
+   - **الخطوة 2: الاستعلام عن الحالة (Status Inquiry / Query Host)**:
+     * ترسل الماكينة استعلاماً فورياً لخادم الدفع باستخدام الـ `Correlation ID` والـ `Idempotency Key` المحفوظين قبل انقطاع الكهرباء: "ما هي النتيجة النهائية للمعاملة `tx_987`؟"
+   - **الخطوة 3: معالجة سيناريوهات الرد**:
+     * **السيناريو أ (الموافقة كانت مؤكدة)**: يرد الخادم ببيانات الموافقة (`AuthCode: 458921`). يقوم التطبيق بتحديث السجل إلى `APPROVED` فوراً، ويطبع إيصالاً بعنوان بارز: **"إيصال مسترجع - تم الخصم بنجاح (RECOVERED DUPLICATE RECEIPT)"** لتسليم البضاعة للعميل.
+     * **السيناريو ب (المعاملة لم تكتمل أو معلقة في البنك)**: ترسل الماكينة طلب عكس فوري (**Auto-Reversal 0400**) لإلغاء الحجز فوراً واسترجاع المبلغ لحساب العميل، وتطبع إيصال إلغاء وتطلب من الكاشير إعادة المحاولة.
 
 ## Practical walkthrough
 
-دي فجوة بين commit عند issuer وcommit محلي. لو write-ahead intent موجودة، بعد reboot اسأل بالـoperation ID وسجل النتيجة؛ لو مفيش intent، terminal وحدها لا تعرف تثبت مين اتوافق عليه. backend/acquirer ledger وتقارير batch لازم يحددوا العملية، وبعدها قرار completion أو reversal حسب protocol. متطلعش receipt Approved قبل دليل محفوظ.
+مخطط منطق التعافي الآلي عند إقلاع تطبيق أندرويد POS بعد انقطاع الطاقة:
+```kotlin
+class StartupRecoveryManager(
+    private val paymentDao: PaymentDao,
+    private val gatewayApi: PaymentGatewayApi,
+    private val receiptPrinter: ReceiptPrinter
+) {
+    suspend fun recoverInDoubtTransactionsOnBoot() = withContext(Dispatchers.IO) {
+        // 1. استخراج أي معاملات كانت قيد المعالجة ولم تكتمل:
+        val strandedTransactions = paymentDao.getTransactionsByState("PROCESSING")
+
+        for (tx in strandedTransactions) {
+            try {
+                // 2. الاستعلام عن حالة العملية لدى خادم الدفع باستخدام نفس الـ ID:
+                val statusResponse = gatewayApi.queryTransactionStatus(tx.idempotencyKey)
+
+                if (statusResponse.isApproved) {
+                    // تم الخصم بنجاح: تأكيد محلي وطباعة إيصال التعافي:
+                    paymentDao.markApproved(tx.id, statusResponse.authCode)
+                    receiptPrinter.printDuplicateReceipt(tx, statusResponse.authCode)
+                } else {
+                    // لم تكتمل في البنك: إطلاق Reversal لتنظيف أي حجز معلق:
+                    gatewayApi.sendReversal(tx.toReversalPayload())
+                    paymentDao.markReversed(tx.id)
+                    receiptPrinter.printReversalNotice(tx)
+                }
+            } catch (e: Exception) {
+                // تعذر الاتصال بالخادم: إدراجها في Reversal Queue للمطابقة لاحقاً:
+                paymentDao.markAwaitingReconciliation(tx.id)
+            }
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +101,33 @@ Use an operations dashboard for orphaned authorizations, settlement mismatches a
 
 ## Interview answer — short
 
-“I would not infer failure from the dead terminal. I recover the original intent if it was committed, query backend/acquirer status, and reconcile the missing approval before deciding whether the sale completes or needs a protocol-specific reversal.”
+Recover an in-doubt transaction after sudden power loss by auditing the database on boot, querying the payment gateway using the persistent idempotency key via a Status Inquiry, and either marking the transaction Approved and printing a recovered receipt if captured, or dispatching an automated Reversal if unconfirmed.
 
 ## Interview answer — structured
 
-“A local database cannot commit atomically with an issuer. Before authorization I persist an operation ID and safe request metadata. After power loss I scan pending attempts and query the backend/acquirer using that ID. If approval occurred, I record it and follow the provider’s completion or reversal rule. If the local record itself is missing, server/provider reconciliation must detect the orphaned authorization. The UI remains unknown until authority resolves it. A write-ahead record gives me the lookup key; without it I need independent backend and acquirer evidence.”
+Handling power loss during the authorization commit window is a core requirement of POS terminal certification:
+
+1. **The In-Doubt Dilemma**:
+   - The acquiring host approved the transaction and sent the SMS to the cardholder, but terminal volatile RAM was destroyed before the approval code hit SQLite or the thermal printer engaged.
+
+2. **The Systematic Recovery Protocol**:
+   - **Boot-Time Ledger Scan**: Upon application startup, a `StartupRecoveryService` scans the persistent Room ledger for records lingering in `PROCESSING` or `INITIATED` status.
+   - **Host Status Inquiry**: The terminal dispatches a Status Inquiry request (`GET /v1/payments/status`) presenting the durable `idempotency_key` and original `correlation_id`.
+   - **Branch A (Gateway Captured)**: If the host confirms approval, the terminal transitions the local state to `APPROVED`, persists the authorization code, and automatically prints a marked duplicate receipt (`RECOVERED TRANSACTION RECEIPT`) so the merchant can release goods.
+   - **Branch B (Host Incomplete / Pending)**: If the host reports the transaction as pending or unconfirmed, the terminal generates an automated reversal (0400 Reversal message) to release the authorization hold, marks local state as `REVERSED`, and prints a void notification.
+
+3. **End-of-Day Batch Reconciliation Safety Net**:
+   - If connectivity fails completely during boot inquiry, the record is flagged for end-of-day batch reconciliation. During clearing, host and terminal ledgers are reconciled before merchant settlement payout.
 
 ## Interview answer — deep senior
 
-“I analyze two crash windows separately: after write-ahead intent but before response save, and before any durable local intent. The first is recoverable by same-ID lookup; the second requires a central operation ledger, terminal sequence/batch references and acquirer reconciliation. Neither a Room transaction nor WorkManager provides atomicity with the issuer. I test battery removal immediately after approval, late callbacks and delayed provider status. Unknown cases have SLA and human escalation, and reversals use the original references under the payment network’s actual rules rather than a guessed local status.  I would separate “issuer approved” from “sale completed and durably recorded” before offering a receipt. I separate three facts that are easy to conflate: issuer authorization, backend knowledge, and the terminal's durable sale record. If the terminal wrote a pre-send intent, I recover that original ID and ask the backend or acquirer for status. If the intent was never committed despite a remote send, local recovery alone cannot identify the charge reliably; the independent backend/provider ledger and batch references must find it. Depending on the rail and settlement stage, the correct repair may be completing the sale, issuing a protocol-specific reversal, or escalating a mismatch. I would never print an approved receipt or retry with a fresh ID based solely on the rebooted UI's empty database. Crash-window drills are essential.”
+From an EMV Level 2 transaction state machine perspective, hardware terminal certification enforces specific rules:
+
+1. **EMV Second Generate AC (Application Cryptogram) Failure**: In chip transactions, after receiving host authorization, the terminal must feed the issuer script back to the physical chip to generate the final Application Cryptogram (TC - Transaction Certificate). If power is lost before the chip generates TC, the transaction is **legally incomplete under EMV rules**, even if the issuer approved it! In this scenario, EMV compliance mandates issuing an automatic reversal because the chip never confirmed the sale.
+
+2. **Preventing Cashier Panic Retries**: During boot recovery, the UI must display a non-dismissible modal: 'Reconciling pending transactions, please wait...' This prevents a hurried cashier from attempting a second card swipe before the system has determined the fate of the first charge.
+
+3. **Merchant Protection Receipts**: The thermal printer must produce physical receipts with clear cryptographic audit markers (STAN, RRN, Auth Code, masked PAN) so the merchant is protected against chargeback disputes.
 
 ## How to answer in the interview
 
@@ -75,8 +143,11 @@ Prompt for pre-send intent, missing-local-record case, central ledger, delayed s
 
 ## Follow-up questions
 
-- [PAY-04](../pay-04/): Why persist before send? **Answer:** to retain a lookup identity after power loss.
-- [PAY-03](../pay-03/): What may resolve an orphan? **Answer:** reconciliation and protocol-specific reversal.
+- **Interviewer:** "What is an EMV Transaction Certificate (TC) and why does power loss break it?"
+  **Answer:** "A cryptographic proof generated by the card chip confirming completion; if power is cut before the chip generates TC, EMV rules mandate reversing the transaction."
+
+- **Interviewer:** "Why should the POS UI display a blocking dialog during startup recovery?"
+  **Answer:** "To prevent the cashier from initiating a new charge while the terminal is reconciling whether the previous customer was already billed."
 
 ## Self-check rubric
 
@@ -87,4 +158,4 @@ Can I recover with and without a local intent and explain the unavoidable distri
 - [Android Room transactions](https://developer.android.com/reference/kotlin/androidx/room/package-summary) — local transaction boundary.
 - [Stripe PaymentIntent lifecycle](https://docs.stripe.com/payments/paymentintents/lifecycle) — example provider status lifecycle.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

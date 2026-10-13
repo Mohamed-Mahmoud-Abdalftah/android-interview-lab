@@ -24,11 +24,48 @@ How do you decide R8 keep rules for reflection, serialization, JNI, and SDKs?
 
 ## Explanation in Arabic
 
-لا تبدأ بــ`-keep class ** { *; }`. افحص كيف runtime يصل للكود: `Class.forName` يحتاج اسم class وربما constructor، JSON serializer قد يحتاج field names أو generic Signature، JNI قد يربط أسماء methods/classes، وSDK قد تشحن consumer rules جاهزة. حدّد هل المطلوب منع shrinking أو renaming أو الاحتفاظ بعضو/attribute فقط، واكتب أضيق rule. لو المكتبة تملك reflection داخلي، هي مسؤولة عن `consumerProguardFiles`؛ app تضيف قواعد لسلوك خاص بها. اختبر minified release ومسار التحميل الفعلي، وافحص أثر rule على الحجم.
+كيف تحدد وتكتب قواعد R8 Keep Rules الدقيقة لنماذج الـ Reflection، والـ Serialization، والـ JNI، ومكتبات الـ SDKs دون إفساد تقليص حجم التطبيق؟
+
+1. أنواع أوامر الـ Keep في ProGuard/R8:
+   - **`-keep`**: يحافظ على الكلاس وجميع أعضائه بالاسم الأصلي ويمنع حذفه وتشويشه كلياً (يستخدم بحذر شديد).
+   - **`-keepclassmembers`**: يحافظ على أعضاء الكلاس (Fields/Methods) فقط إذا كان الكلاس نفسه مستخدماً في الكود، مما يسمح بحذف الكلاس إذا كان غير مستخدم.
+   - **`-keepnames`**: يسمح بتقليص وحذف الكلاس إذا لم يكن مستخدماً، لكن إذا تم استخدامه يُمنع تغيير اسمه الأصلي.
+
+2. القواعد الدقيقة لكل مجال:
+   - **الـ Serialization (DTOs)**: نحتاج فقط للحفاظ على أسماء الحقول (Fields) وليس كل الكلاس: `-keepclassmembers class com.example.dto.** { <fields>; }`.
+   - **الـ JNI (Native Methods)**: نحافظ على الدوال الموسومة بـ `native` والكلاسات التي تحتويها: `-keepclasseswithmembernames class * { native <methods>; }`.
+   - **الـ Reflection**: استخدام `@Keep` من مكتبة `androidx.annotation.Keep` مباشرة على الكلاس أو الدالة بدلاً من كتابة قواعد عريضة في ملف ProGuard.
+
+3. الخطيئة الكبرى (Wildcard Poisoning):
+   - كتابة `-keep class com.example.** { *; }` تلغي فائدة R8 بالكامل وتعطل الـ Shrinking والـ Optimization للمشروع.
 
 ## Practical walkthrough
 
-Keep rules للreflection/JNI/serializer تبنى على contract: أي class/member يُبحث عنه بالاسم runtime؟ راجع vendor rules وR8 usage output، واكتب أصغر rule تسمح بالسلوك. لكل rule test يعمل في minified consumer app، خصوصًا native callbacks وserialized names. rule واسعة تقلل shrinking وتخفي unsupported SDK behavior؛ لا تعتمد على `@Keep` بلا فهم propagation.
+أمثلة عملية لقواعد ProGuard الاحترافية والدقيقة للمجالات الحساسة:
+```text
+# 1. حماية كلاسات ودوال الـ Native المربوطة بـ C/C++ عبر JNI:
+-keepclasseswithmembernames,includedescriptorclasses class * {
+    native <methods>;
+}
+
+# 2. حماية حقول نماذج السيريالايزيشن الخاصة بالـ Network DTOs فقط لمنع تشويش الأسماء:
+-keepclassmembers,allowobfuscation class * implements java.io.Serializable {
+    static final long serialVersionUID;
+    private static final java.io.ObjectStreamField[] serialPersistentFields;
+}
+
+# 3. حماية الـ Enums من حذف دالتي values() و valueOf() المستخدمتين بالـ Reflection:
+-keepclassmembers enum * {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
+
+# 4. استخدام @Keep البرمجي كبديل أنظف وأسهل في صيانة الكود:
+-keep @androidx.annotation.Keep class * { *; }
+-keepclasseswithmembers class * {
+    @androidx.annotation.Keep <methods>;
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +89,36 @@ Inventory dynamic entry points, rule owner and supporting tests. Build the actua
 
 ## Interview answer — short
 
-“I derive each keep rule from a concrete dynamic lookup, preserve only required classes/names/members/attributes, and prove it with a minified runtime test.”
+Formulate R8 keep rules precisely: use -keepclassmembers for serialization DTO fields to retain names without locking the whole class, -keepclasseswithmembernames for JNI native methods, and targeted @Keep annotations for reflection targets, strictly avoiding broad wildcards that defeat shrinking.
 
 ## Interview answer — structured
 
-“I ask exactly what R8 cannot see. A string-based class load may need a name and constructor; reflective JSON may need fields and signatures; JNI needs its lookup contract. Then I add the narrowest rule that protects those requirements. SDK-internal reflection belongs in its consumer rules, while app-owned dynamic behavior belongs in the app. I run the minified release path and inspect retained code; a broad blanket keep is not a quality fix.”
+Crafting surgical R8 keep rules preserves runtime functionality while maximizing dead-code elimination and obfuscation:
+
+1. **Serialization Models (DTOs)**:
+   - Avoid broad `-keep class com.my.model.** { *; }`. Instead, preserve only the field names required by reflection serializers:
+     `-keepclassmembers class com.example.dto.** { <fields>; }`.
+   - Better yet, adopt Kotlinx Serialization or Moshi Codegen with KSP, which generate explicit adapters at compile time and require zero reflection keep rules.
+
+2. **JNI Native Invocations**:
+   - Native C/C++ libraries resolve Java methods using explicit class and descriptor signatures. Preserve all native methods and their parameter types:
+     `-keepclasseswithmembernames,includedescriptorclasses class * { native <methods>; }`.
+
+3. **Reflection Targets**:
+   - Rather than maintaining fragile string patterns in `proguard-rules.pro`, decorate reflection-instantiated classes with `@Keep` (from AndroidX annotations). AGP bundles default rules preserving any class or member annotated with `@Keep`.
+
+4. **Third-Party SDKs**:
+   - Rely on the SDK's bundled `consumerProguardFiles`. Only author manual keep rules for legacy libraries that fail to publish their own consumer rules.
 
 ## Interview answer — deep senior
 
-“A keep rule should document a runtime dependency invisible to static analysis. I reproduce the minified failure and identify the lookup mechanism: `Class.forName` by string, serializer field name or generic metadata, native method registration, or an SDK callback factory. Each needs a different retention property. Keeping a class object does not necessarily preserve the name or every constructor; keeping names indiscriminately can block useful optimization. I consult the installed library version's consumer rules first, because SDK authors should ship rules for their own internals. If the app owns the reflection, I write a targeted app rule and add a release variant test that exercises that exact lookup with R8 enabled. For a serializer I prefer generated adapters when practical and inspect whether attributes or field names are required. I use R8 usage/configuration reports and APK size to check the rule is not needlessly broad. The rule is reviewed when SDK versions change, because dynamic contracts and R8 behavior can evolve.”
+From an architectural code-shrinkage perspective, broad keep rules constitute silent technical debt:
+
+1. **The allowshrinking and allowobfuscation Modifiers**: ProGuard rules support granular modifier flags. For example, `-keepnames` is equivalent to `-keep,allowshrinking`. It permits R8 to delete the class if unused, but prevents renaming if the class survives. This is ideal for analytics DTOs.
+
+2. **Auditing Rule Impact with -whyareyoukeeping**: When investigating why an unused class was unexpectedly retained in the final DEX, inject `-whyareyoukeeping class com.example.UnusedClass` into `proguard-rules.pro`. During build execution, R8 prints the exact chain of reachability references and keep rules that forced its preservation.
+
+3. **Automated CI Size Regression Testing**: Enforce a maximum binary size ceiling in CI. Overly broad keep rules introduced in PRs immediately trigger size alert regressions, enforcing strict scrutiny during code reviews.
 
 ## How to answer in the interview
 
@@ -76,9 +134,11 @@ Discuss name/member/attribute retention, library ownership, generated alternativ
 
 ## Follow-up questions
 
-- Is keeping a class equivalent to preserving every member name? **Answer:** no; rule options and member specifications determine the exact guarantee.
-- Who owns SDK-internal rules? **Answer:** preferably the SDK author through consumer configuration.
-- Why test with minification? **Answer:** debug may not run the reachability and renaming transformations causing the failure.
+- **Interviewer:** "What does -whyareyoukeeping do in R8?"
+  **Answer:** "It instructs R8 to print the exact dependency path and root keep rule explaining why a specific class was not stripped during shrinking."
+
+- **Interviewer:** "What is the difference between -keep and -keepnames?"
+  **Answer:** "-keep prevents both shrinking and obfuscation; -keepnames allows shrinking if unused, but prevents obfuscation if kept."
 
 ## Self-check rubric
 
@@ -90,4 +150,4 @@ Trace one dynamic lookup, specify what must survive, and verify a narrow rule in
 - [Keep rule examples](https://developer.android.com/topic/performance/app-optimization/keep-rule-examples) — reflection cases.
 - [Optimization for libraries](https://developer.android.com/topic/performance/app-optimization/library-optimization) — consumer rules.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Exact rule syntax depends on the runtime lookup.
+Technically reviewed against primary documentation on 2026-10-13.

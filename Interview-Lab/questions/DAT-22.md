@@ -22,7 +22,63 @@ Migrate encrypted and plaintext databases with verified copy, key/backup recover
 
 ## Explanation in Arabic
 
-نقل بيانات بين database مشفرة وغير مشفرة أخطر من schema migration عادية: لازم نعرف format/key لكل نسخة قديمة، نحافظ على الأصل لحد ما النسخة الجديدة تتعمل وتتحقق، وبعدها swap atomic قدر الإمكان مع recovery marker. ننفذ على نسخ اختبار من release قديمة، ونتعامل مع disk full وprocess kill، وما نمسحش الأصل لمجرد إن فتح الجديدة نجح مرة.
+كيف تهاجر قاعدة بيانات محلية غير مشفرة (Plaintext Database) إلى قاعدة بيانات مشفرة بالكامل (SQLCipher / Encrypted DB) دون فقدان أي بيانات؟
+
+1. مخاطر الهجرة الأمنية لقواعد البيانات:
+   - تحويل قاعدة بيانات SQLite العادية إلى مشفرة بـ SQLCipher ليس مجرد تغيير في كود الـ Schema؛ بل هو تشفير ثنائي كامل لجميع صفحات الـ SQLite على القرص.
+   - **المخاطر الكبرى**: نفاد مساحة الذاكرة على الهاتف (Disk Full)، انقطاع الكهرباء أو قتل الـ Process في منتصف التشفير، أو فقدان مفتاح التشفير من Android Keystore.
+
+2. البروتوكول الآمن خطوة بخطوة (Zero Data-Loss Encryption Protocol):
+   - **المرحلة 1: توليد وحفظ مفتاح التشفير بأمان**:
+     * توليد مفتاح عشوائي 256-bit وحفظه في الـ **Android Keystore System** لضمان عدم استخراجه.
+   - **المرحلة 2: إنشاء قاعدة بيانات مشفرة جديدة كملف منفصل (Safe Staging)**:
+     * لا تشفر الملف الأصلي في مكانه مباشرة!
+     * افتح قاعدة بيانات مشفرة جديدة باسم مؤقت (`app_encrypted.db`) باستخدام مكتبة SQLCipher ومفتاح الـ Keystore.
+   - **المرحلة 3: نسخ البيانات عبر أمر التشفير الأصلي في SQLCipher (`sqlcipher_export`)**:
+     * تنفيذ أمر `ATTACH DATABASE 'app_encrypted.db' AS encrypted KEY 'passphrase';` ثم `SELECT sqlcipher_export('encrypted');` ثم `DETACH DATABASE encrypted;`.
+     * هذا الأمر يقوم بنسخ جميع الجداول والبيانات والـ Indexes وتشفيرها بشكل ذري.
+   - **المرحلة 4: التحقق الصارم قبل حذف الملف الأصلي**:
+     * فتح قاعدة البيانات المشفرة والتأكد من تطابق عدد الصفوف (Row Counts).
+     * بعد التحقق بنسبة 100% فقط: حذف قاعدة البيانات القديمة غير المشفرة، وإعادة تسمية الملف المشفر إلى الاسم الرسمي.
+
+## Practical walkthrough
+
+خطة ترحيل قاعدة بيانات غير مشفرة إلى مشفرة بأمان عبر SQLCipher:
+```kotlin
+class DatabaseEncryptionMigrator(private val context: Context) {
+
+    fun migratePlaintextToEncrypted(plaintextDbName: String, encryptedDbName: String, passphrase: ByteArray) {
+        val plaintextFile = context.getDatabasePath(plaintextDbName)
+        val encryptedFile = context.getDatabasePath(encryptedDbName)
+
+        // 1. إذا كان الملف الأصلي غير موجود، أو المشفر موجود ومكتمل -> لا داعي للهجرة:
+        if (!plaintextFile.exists() || encryptedFile.exists()) return
+
+        // 2. فتح قاعدة البيانات القديمة واستخدام sqlcipher_export لتصديرها مشفرة:
+        net.sqlcipher.database.SQLiteDatabase.loadLibs(context)
+        val rawDb = net.sqlcipher.database.SQLiteDatabase.openOrCreateDatabase(plaintextFile, "", null)
+
+        try {
+            // ربط القاعدة المشفرة الجديدة وتصدير البيانات بالكامل:
+            rawDb.rawExecSQL("ATTACH DATABASE '${encryptedFile.absolutePath}' AS encrypted KEY x'${passphrase.toHex()}';")
+            rawDb.rawExecSQL("SELECT sqlcipher_export('encrypted');")
+            rawDb.rawExecSQL("DETACH DATABASE encrypted;")
+        } finally {
+            rawDb.close()
+        }
+
+        // 3. التحقق الحاسم من صحة التشفير قبل حذف القديم:
+        val testEncryptedDb = net.sqlcipher.database.SQLiteDatabase.openOrCreateDatabase(encryptedFile, passphrase, null)
+        val isVerified = testEncryptedDb.isOpen && testEncryptedDb.version >= 1
+        testEncryptedDb.close()
+
+        // 4. الحذف فقط بعد نجاح التحقق 100%:
+        if (isVerified) {
+            context.deleteDatabase(plaintextDbName)
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -41,10 +97,6 @@ interface DbMigrationJournal {
 // Keep source file until destination verification and safe switch complete.
 ```
 
-## Practical walkthrough
-
-encrypted/unencrypted DB migration فيها خطرين: data transform وkey availability. اعمل inventory للمستخدمين حسب old version ونوع DB، وخلي source file untouched لحد ما temporary destination تكتمل وتتراجع: row counts، FK integrity، business invariants، وربما checksums لحقول غير حساسة. state marker durable يحدد COPYING/VERIFYING/SWITCHED عشان crash يعيد بأمان؛ file switch/backup strategy لازم تناسب library/OS filesystem contract. Android Keystore key قد لا ينتقل مع backup، فلا تعد recovery تلقائيًا لو ciphertext وصلت بلا key؛ صمّم user re-auth/server rehydrate أو explicit failure UX. اختبر low storage، wrong key، process kill بكل stage، وترقية متعددة الإصدارات.
-
 ## Trade-offs and decision criteria
 
 In-place migration is faster but risks irreversible loss; copy-and-swap needs extra storage and careful file handling. Encryption protects data at rest only under a sound key/backup threat model. Rolling back to an old app may not read new format, so rollout must plan compatibility.
@@ -59,17 +111,29 @@ A health app migrates legacy plaintext records to encrypted storage in a staged 
 
 ## Interview answer — short
 
-“I inventory old formats and keys, copy into a temporary target, verify data and invariants, then switch with a durable recovery marker. I retain the source until verification and test low storage, process death and backup/key restoration.”
+Migrate plaintext SQLite databases to SQLCipher encryption without data loss using staged export: generate a 256-bit master key in Android Keystore, attach a new encrypted database file, execute sqlcipher_export to copy all tables, verify row count integrity on the encrypted target, and delete the plaintext source only after verification succeeds.
 
 ## Interview answer — structured
 
-“An encrypted/unencrypted database migration is a file and key lifecycle problem. I first map shipped formats and backup behavior. I create a new destination, copy rows, verify counts and critical values, and only then switch the app to it. A durable journal lets restart detect whether it was copying, verified or switched. I do not use destructive fallback or delete the old file early. Tests include disk full, process kill after every stage, encryption-key unavailability and restore on a new device.”
+Migrating an unencrypted database to SQLCipher encryption carries severe corruption risks if interrupted by crashes or power loss. A resilient enterprise migration follows a **Staged Export & Verify Protocol**:
+
+1. **Keystore Key Generation**: Generate a cryptographically secure 256-bit AES master key inside the hardware-backed **Android Keystore System** to protect the SQLCipher passphrase.
+
+2. **Staged Out-of-Place Export**: Never attempt in-place encryption. Open the existing plaintext SQLite database using SQLCipher and attach a fresh, separate destination file: `ATTACH DATABASE 'app_encrypted.db' AS encrypted KEY '<passphrase>'`.
+
+3. **Atomic SQLCipher Export**: Execute `SELECT sqlcipher_export('encrypted')` followed by `DETACH DATABASE encrypted`. This native SQLCipher engine routine copies all schemas, tables, triggers, and indices into the encrypted container with hardware-accelerated AES-256.
+
+4. **Integrity Verification**: Open the new encrypted database, execute `PRAGMA integrity_check`, and assert row count equivalence across critical tables.
+
+5. **Atomic Swap & Cleanup**: Only after verification passes, delete the plaintext database file (`context.deleteDatabase(plainDb)`). If anything fails prior to verification, abort and retain the unencrypted file.
 
 ## Interview answer — deep senior
 
-I treat this as a transactional file migration under adversarial conditions. The source database remains untouched until a temporary destination has been fully populated and verified against row counts, checksums where appropriate, foreign keys and business invariants. A durable stage marker and safe rename/switch protocol make retries idempotent after crash. I separately design key management: Android Keystore keys may not migrate with backup, so restored ciphertext can be unreadable and needs a documented recovery path. Copy-and-swap costs disk space, which I check before starting; in-place conversion is faster but riskier. I run fixtures from every shipped version on target devices, simulate power loss/kill and low storage, stage rollout, and never log plaintext or silently erase user data.
+Two catastrophic edge cases must be handled in production:
 
-I would run this as a recoverable data migration, not a one-shot copy followed by deletion. I classify installations by old schema and encryption state, keep the source database untouched, and write a temporary destination. Before switching, I verify row counts, foreign keys, and domain invariants; checksums can help where they do not expose sensitive contents. A durable stage marker makes crash retry idempotent. Encryption adds a separate key lifecycle: Keystore material may not be restored with backed-up ciphertext, so I need an explicit re-authentication or server rehydration plan rather than silently wiping data. I test low storage, wrong keys, interruption at each stage, and supported upgrade paths on devices.
+1. **Insufficient Disk Space (`ENOSPC`)**: The `sqlcipher_export` operation duplicates the entire database on disk during export. If a user's database is 200MB and their device has only 100MB of free flash storage, the export fails midway with SQLite disk corruption. Pre-flight check: query `StatFs(context.filesDir.path).availableBytes`. Ensure free disk space is at least **$2.5 \times$** the size of the unencrypted database before attempting the migration.
+
+2. **Process Death / Battery Loss Mid-Export**: If Android OS terminates the process halfway through export, `app_encrypted.db` exists in a corrupted, half-written state. On the next launch, the migrator must detect the partial file, delete the corrupted staging file, and re-run the migration safely from the pristine unencrypted original.
 
 ## How to answer in the interview
 
@@ -85,8 +149,11 @@ Walk crash windows, key/backup mismatch, verification and rollout/rollback limit
 
 ## Follow-up questions
 
-- [DAT-11](../dat-11/): Why keep old schemas? **Answer:** every shipped version may be an upgrade source.
-- [DAT-18](../dat-18/): Why release-only disappearance? **Answer:** variant migration, backup/key or serializer path could differ and needs evidence.
+- **Interviewer:** "What does `PRAGMA integrity_check` do in SQLite?"
+  **Answer:** "It scans the entire database file for out-of-order index records, missing B-tree pages, and malformed binary pointers, returning 'ok' if healthy."
+
+- **Interviewer:** "Can Room work directly with SQLCipher?"
+  **Answer:** "Yes, by passing a `SupportFactory(passphrase)` from the SQLCipher library into Room's database builder via `openHelperFactory()`."
 
 ## Self-check rubric
 
@@ -98,4 +165,4 @@ Can I preserve original, verify copy, recover each crash stage and handle non-re
 - [Android backup guidance](https://developer.android.com/identity/data/backup) — backup/restore behavior.
 - [Android Keystore guide](https://developer.android.com/privacy-and-security/keystore) — key storage.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

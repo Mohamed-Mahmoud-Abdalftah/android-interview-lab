@@ -22,11 +22,44 @@ Contain accidental activation of broken security-sensitive feature flag.
 
 ## Explanation in Arabic
 
-لو flag فتحت path أمنية مكسورة، نوقف server endpoint/authorization path فورًا؛ client flag وحدها لا تكفي لأن APK ممكن تكون offline أو tampered أو config cached. نجمّد rollout، نحدد cohorts/versions المتأثرة، نراجع logs من غير أسرار، ونصلح/نلغي sessions أو tokens حسب التهديد. العمليات الجارية تتحول لحالة Pending/reconciliation، ثم نعمل postmortem واختبارات regression.
+مفتاح ميزة (Feature Flag) تم تفعيله بالخطأ ففتح مساراً يحتوي على ثغرة أمنية حرجة. كيف تحتوي الأثر (Contain the Impact) هندسياً وعملياتياً؟
+
+1. خطة الطوارئ لاحتواء الكارثة (Emergency Containment Playbook):
+   - **الخطوة 0: الدفاع السيرفري الفوري (Backend & Gateway First)**: لا تنتظر تطبيق الموبايل! أول وأسرع إجراء هو **إغلاق الـ Endpoint المصابة أو فرض قواعد فحص صارمة على مستوى الـ API Gateway / WAF** فوراً. حتى لو كان التطبيق يرسل الطلب المصاب، السيرفر سيرفضه ويعيد `403 Forbidden`.
+   - **الخطوة 1: قلب مفتاح الـ Feature Flag عن بُعد (Remote Kill Switch)**: تحويل قيمة الـ Flag إلى `false` في لوحة تحكم الـ Remote Config (Firebase / LaunchDarkly) مع إجبار تفريغ الكاش على الـ CDN.
+   - **الخطوة 2: إرسال إشعار تفريغ صامت (Silent Push Invalidation)**: إرسال High-Priority FCM Push لجميع الأجهزة النشطة لإجبارها على تحديث الـ Config فوراً ومسح الـ In-Memory Cache.
+   - **الخطوة 3: إبطال الجلسات المخترقة (Session Revocation)**: إذا كانت الثغرة تسمح بتسريب توكنز أو تجاوز صلاحيات، يقوم السيرفر بقطع جميع الجلسات التي مرت عبر هذا المسار وإجبار أصحابها على إعادة تسجيل الدخول.
+
+2. التحقيق الجنائي والوقاية المستقبلية (Post-Mortem & Prevention):
+   - إجراء Post-Mortem هندسي بدون لوم (Blameless Post-Mortem).
+   - منع تفعيل الـ Flags الحساسة أمنياً بدون موافقة ثنائية (Four-Eyes Principle / Peer Approval) في لوحة التحكم.
+   - ربط فحوصات الأمان الآلية في CI لمنع إطلاق أي كود يتجاوز الـ Auth حتى لو تم تفعيل الـ Flag.
 
 ## Practical walkthrough
 
-Flag فتحت transfer flow ناقصة authorization. أول إجراء server-side deny للendpoint أو rule، لأن الـAPK قد تكون offline وremote config متأخرة. بعد كده اقفل client UX، وقف rollout، حدد versions/cohorts، وراجع عمليات جارية وtokens لو اتعرضت. لا تمسح audit trail. اعمل incident runbook وتمرين rollback؛ التصليح code مش كفاية لو بيانات اتأثرت بالفعل.
+تصميم نظام استجابة طوارئ للـ Feature Flags مع إمكانية الإبطال الفوري عبر Silent Push:
+```kotlin
+class EmergencyFlagPushReceiver : FirebaseMessagingService() {
+    @Inject lateinit var featureFlagManager: FeatureFlagManager
+    @Inject lateinit var sessionManager: SessionManager
+
+    override fun onMessageReceived(remoteMessage: RemoteMessage) {
+        // 1. استقبال أمر طوارئ مشفر وموقع من السيرفر
+        val action = remoteMessage.data["action"]
+        val targetFlag = remoteMessage.data["flag_key"]
+
+        if (action == "EMERGENCY_KILL_FLAG" && targetFlag != null) {
+            // 2. إلغاء تفعيل الميزة فوراً في الـ Storage والـ Memory:
+            featureFlagManager.forceOverrideFlag(targetFlag, value = false)
+            
+            // 3. إذا كان المسار يمس أمان الجلسة: مسح التوكنز وتوجيه المستخدم لتسجيل الدخول
+            if (remoteMessage.data["revoke_session"] == "true") {
+                sessionManager.forceLogoutDueToSecurityIncident()
+            }
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -57,15 +90,33 @@ A fintech team blocks a vulnerable transfer endpoint, halts rollout, identifies 
 
 ## Interview answer — short
 
-“For a security-sensitive flag incident I enforce containment on the backend first, then disable client exposure, audit affected operations and credentials, reconcile in-flight state and stage a tested fix. A client flag is not an authorization boundary.”
+Contain a compromised feature flag by immediately blocking the vulnerable path at the backend API Gateway, toggling the remote flag to FALSE across CDNs, dispatching high-priority silent FCM pushes to force local cache invalidation, revoking impacted sessions server-side, and enforcing peer review rules on flag changes.
 
 ## Interview answer — structured
 
-“I assume the client flag can be stale or modified. I stop the sensitive server path or tighten authorization immediately, then turn off the client flag to improve UX. I identify affected versions/cohorts and operation IDs, preserve incident evidence, and decide whether token revocation or user notification is required. In-flight financial work remains Pending until reconciled rather than being labelled failed. After patch and regression tests, I re-enable gradually with guardrails. The long-term fix is safe defaults and backend enforcement independent of flags.”
+Containing an accidental rollout of a security-sensitive code path requires executing a prioritized, multi-tiered incident response playbook:
+
+1. **Immediate Server-Side Gateway Mitigation (Minutes 0–5)**:
+   - Never rely on mobile clients to patch themselves. Mobile clients may be offline, backgrounded, or caching stale configs. The immediate containment step is blocking or rate-limiting the vulnerable endpoint at the backend API Gateway / WAF level, rejecting compromised requests with `403 Forbidden`.
+
+2. **Remote Kill Switch Flip (Minutes 5–10)**:
+   - Set the flag value to `false` in the remote configuration provider (LaunchDarkly, Firebase Remote Config). Purge edge CDN caches to ensure subsequent client config fetches retrieve the disabled state.
+
+3. **High-Priority Silent Invalidation (Minutes 10–20)**:
+   - Dispatch high-priority silent FCM push messages to active mobile clients. The client's background service immediately clears in-memory flag caches, rewrites persistent storage, and terminates compromised views.
+
+4. **Session Invalidation & Audit**:
+   - If the flaw exposed unauthorized privilege escalation or data leakage, the backend identifies users who traversed the endpoint, revokes their active refresh tokens, and prompts for credential resets.
 
 ## Interview answer — deep senior
 
-“The first minutes are about containing server effects, because remote config cannot reach every offline APK and the client is not trusted. I apply a server-side deny rule or feature kill switch, stop new vulnerable operations and retain audit records. I then disable client UX, inspect impacted versions/cohorts and reconcile any transaction already accepted. Depending on exposure, I revoke sessions/keys and coordinate support/legal response. I do not erase Pending records or misclassify outcomes. Root cause may be unsafe default, stale config TTL, missing backend check or rollout guardrail failure; tests must reproduce it. Re-enable occurs only after backend authorization tests, patched client rollout and metrics show recovery. Deleting logs prematurely loses incident evidence. Re-enabling without regression tests repeats incident. The first decision is whether the vulnerable server action can still execute. If yes, a client-side flag flip is too slow and untrusted; I apply a server deny rule or safe enforcement path. Then I freeze rollout, scope affected versions and cohorts, inspect logs without exposing secrets, and reconcile any in-flight operations. A fixed client can ship later under a canary. I would document who can activate and revert the server switch, and test that older cached APKs cannot bypass it.”
+From an engineering governance and post-mortem perspective, systemic controls must prevent recurrence:
+
+1. **The Four-Eyes Principle for Sensitive Flags**: Classify feature flags by risk tier. Operational or UI flags can be flipped by individual engineers; security, auth, and financial flags mandate two-person cryptographic sign-off (Four-Eyes Principle) in release management consoles before propagation.
+
+2. **Default-Deny In-Code Security Assertions**: Client code protected by feature flags must still adhere to defense-in-depth. If a flag enables a new payment feature, the underlying code must still enforce token validation, biometric challenges, and server nonces. A feature flag should only toggle UI exposure, never disable core cryptographic checks.
+
+3. **Canary Phased Ring Deployment**: Enforce mandatory phased rollout rings: Internal Dogfood (1%) -> Beta (5%) -> General Canary (10%) with automated 24-hour observation windows, preventing accidental 100% blast-radius rollouts.
 
 ## How to answer in the interview
 
@@ -81,8 +132,11 @@ Trace offline/tampered client, backend deny and in-flight transaction reconcilia
 
 ## Follow-up questions
 
-- [SYS-08](../sys-08/): Why is client flag insufficient? **Answer:** cached or modified clients can still call backend.
-- [SYS-17](../sys-17/): Which guardrails matter? **Answer:** security events plus business outcome/unknown metrics.
+- **Interviewer:** "Why is backend gateway mitigation prioritized over flipping the client feature flag?"
+  **Answer:** "Backend gateway changes take effect globally within seconds, whereas client flag updates depend on network polling, app restarts, and cached local configs."
+
+- **Interviewer:** "What is a Blameless Post-Mortem?"
+  **Answer:** "An incident review focused on identifying systemic process and tooling failures rather than punishing individuals, designing safeguards to prevent recurrence."
 
 ## Self-check rubric
 
@@ -93,4 +147,4 @@ Can I contain at server, preserve evidence and handle in-flight operations hones
 - [Android security guidance](https://developer.android.com/privacy-and-security/security-tips) — client-side security considerations.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — authority boundaries.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

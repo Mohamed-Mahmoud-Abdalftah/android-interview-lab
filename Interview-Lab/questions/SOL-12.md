@@ -22,7 +22,53 @@ Use provider strategy to isolate variation while stating what remains in shared 
 
 ## Explanation in Arabic
 
-Strategy-based routing مفيدة لما providers عندهم SDKs مختلفة لكن checkout عنده policy مشتركة: validate amount، request ID، server confirmation. `PaymentStrategy` ضيقة تعرف `submit` ونتيجة typed، وكل provider adapter يترجم callbacks والأخطاء. router يختار implementation من registry/DI حسب server-approved method. provider جديد يضيف adapter وbinding واختبارات من غير تعديل logic في عشر شاشات؛ ده OCP بشكل عملي. بس لو provider عنده semantics مختلفة جدًا، ما تجبرهوش على contract كاذب؛ راجع LSP أو افصل capabilities.
+كيف يدعم توجيه المدفوعات القائم على الاستراتيجية (Strategy-Based Payment Routing) مبدأ Open/Closed Principle (OCP)؟
+
+1. المشكلة في معالجة المدفوعات التقليدية:
+   - كلما أضاف البنك طريقة دفع جديدة (Credit Card, PayPal, Apple Pay, Klarna, Fawry, Vodafone Cash):
+   - في الكود التقليدي، تضطر لتعديل كلاس الـ `PaymentManager` وإضافة شروط جديدة في `when (paymentType)`.
+   - هذا ينتهك OCP بشكل صريح ويعرض المدفوعات القائمة لمخاطر الانهيار (Regression Risks)!
+
+2. تطبيق نمط الاستراتيجية (The Strategy Pattern):
+   - نقوم بتعريف واجهة عامة موحدة: `interface PaymentStrategy`.
+   - كل مزود دفع يصبح كلاس مستقل ينفذ هذه الواجهة (`StripePaymentStrategy`, `ApplePayStrategy`).
+   - كلاس `PaymentRouter` يصبح **مغلقاً للتعديل (Closed for Modification)**: لا يمتلك أي كتل `if/else`، بل يستقبل خريطة أو قائمة من الاستراتيجيات (`Map<PaymentType, PaymentStrategy>`) ويختار الاستراتيجية المناسبة في وقت التشغيل.
+
+3. النتيجة:
+   - لإضافة طريقة دفع سادسة، نقوم ببساطة بإنشاء ملف كلاس جديد وربطه عبر Dagger/Hilt، دون لمس أو تعديل سطر واحد في كلاسات الدفع القديمة!
+
+## Practical walkthrough
+
+هندسة توجيه المدفوعات باستخدام نمط Strategy و Hilt Multibindings:
+```kotlin
+// 1. العقد الموحد للاستراتيجيات (Strategy Interface):
+interface PaymentStrategy {
+    val method: PaymentMethod
+    suspend fun authorize(amountCents: Long, details: PaymentDetails): PaymentResult
+}
+
+// 2. تطبيقات مستقلة ومعزولة لكل مزود خدمة:
+class StripePaymentStrategy @Inject constructor(...) : PaymentStrategy {
+    override val method = PaymentMethod.CREDIT_CARD
+    override suspend fun authorize(amountCents: Long, details: PaymentDetails) = ...
+}
+
+class PayPalPaymentStrategy @Inject constructor(...) : PaymentStrategy {
+    override val method = PaymentMethod.PAYPAL
+    override suspend fun authorize(amountCents: Long, details: PaymentDetails) = ...
+}
+
+// 3. الموجه (PaymentRouter) مغلق تماماً للتعديل ومفتوح للتوسيع (OCP):
+class PaymentRouter @Inject constructor(
+    private val strategies: Set<@JvmSuppressWildcards PaymentStrategy>
+) {
+    suspend fun routeAndPay(method: PaymentMethod, amountCents: Long, details: PaymentDetails): PaymentResult {
+        val strategy = strategies.firstOrNull { it.method == method }
+            ?: return PaymentResult.Error("Payment method not supported")
+        return strategy.authorize(amountCents, details)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -41,10 +87,6 @@ sealed interface PaymentOutcome { data class Pending(val id: String): PaymentOut
 ```
 Server status must later confirm completion; this snippet is a contract, not a transaction implementation.
 
-## Practical walkthrough
-
-في payment routing، `when(provider)` داخل checkout policy مع كل SDK جديد هيخلط قرار البيع مع تفاصيل providers. خلي `PaymentStrategy` تقدم `submit` ونتيجة واضحة، والrouter يختار الاستراتيجية المسجلة بناءً على method معروف. الإضافة غالبًا adapter وbinding واختبارات؛ policy يفضل ثابت. لكن متقولش إن OCP يمنع تعديل registration أو إنه يضمن صحة الدفع. كل strategy لازم تلتزم بمعنى `Pending` و`Rejected`، والbackend هو اللي يؤكد final status. اختبر duplicate tap وtimeout وunknown status عشان تكتشف اختلاف implementations مبكرًا.
-
 ## Trade-offs and decision criteria
 
 For two fixed methods, an explicit `when` can be clearer. A strategy registry earns its cost when variation is frequent or provider code is large. Keep selection policy explicit; dynamic reflection discovery is not necessary for OCP.
@@ -59,15 +101,28 @@ A wallet app routes card and bank methods through adapters, persists request IDs
 
 ## Interview answer — short
 
-Strategy supports OCP by moving provider-specific behavior behind a stable contract, so a new provider adds an adapter and wiring instead of edits throughout checkout. I still test shared result semantics and server authority.
+Strategy-based payment routing implements OCP by abstracting providers behind a common `PaymentStrategy` interface. A `PaymentRouter` delegates payments to the matching strategy at runtime. New payment methods are introduced by adding new strategy classes without modifying, recompiling, or risking regressions in existing payment code.
 
 ## Interview answer — structured
 
-I define what is truly common: request ID, supported operation, typed outcome and cancellation behavior. The checkout policy depends on that contract, while card or wallet adapters translate SDK calls. A provider can be added through an implementation plus DI/registry wiring and tests, rather than scattered `when` branches. That is strategic extension, not a promise of zero edits. If providers differ too much to honor one contract, I split capabilities rather than force a misleading interface. The router should not make authorization decisions from a client-side `method` string alone. The backend must approve the method and the request.
+Strategy-based payment routing is the premier textbook demonstration of the Open/Closed Principle (OCP) in production architecture.
+
+1. **The Anti-Pattern (Closed to Extension, Open to Modification)**:
+   - A centralized `PaymentManager` uses a massive `when(type)` statement branching into credit card, PayPal, and crypto logic.
+   - Every time a product manager requests Apple Pay or a regional provider, engineers must edit `PaymentManager.kt`. This introduces regression risks to existing revenue streams, causes Git merge conflicts, and invalidates existing payment test suites.
+
+2. **The OCP Architecture (Open to Extension, Closed to Modification)**:
+   - **Abstractions**: Define a `PaymentStrategy` interface with `authorize(amount, details)`.
+   - **Concrete Strategies**: Each provider is encapsulated in an isolated class: `StripeStrategy`, `PayPalStrategy`, `GooglePayStrategy`.
+   - **The Open Router**: The `PaymentRouter` depends strictly on a collection of injected strategies (`Set<PaymentStrategy>`), selecting the appropriate handler by querying `strategy.method == requestedMethod`.
+
+Adding a new provider requires creating a new class and registering it with Dagger/Hilt; the core `PaymentRouter` and existing providers remain 100% untouched and closed to modification.
 
 ## Interview answer — deep senior
 
-OCP helps when provider variation is a recurring change axis. I keep validation, duplicate-submit policy and server reconciliation outside the strategies, so adapters cannot quietly redefine business rules. Each strategy maps its SDK’s callbacks into the same semantic outcomes: confirmed rejection, pending uncertainty, and confirmed status after server verification. I run contract tests against every implementation, including timeout, cancellation and duplicate callback behavior. Registration still changes when adding a provider, and product/security review still applies. If one provider cannot satisfy the shared contract, LSP warns that the abstraction is too broad. A small app with two stable providers may use an explicit switch instead. A strategy boundary keeps provider-specific SDK mapping out of checkout policy. The router selects an implementation using a validated payment method, and each strategy returns the same outcome vocabulary. A new provider adds an adapter and composition binding; it should not require rewriting eligibility rules. The trade-off is indirection and the danger that a common interface hides different provider semantics. I would use contract tests for rejection, pending, cancellation, and timeout, then provider-specific integration tests. I also keep an idempotency key and server-confirmed final state in the transaction flow. Strategy design supports local extension, but it cannot itself guarantee payment correctness.
+Under the hood, Dagger/Hilt's **Multibindings (`@IntoSet`)** perfectly operationalizes this pattern. A feature module can define `class KlarnaStrategy : PaymentStrategy` and bind it into the multibinding set inside its own internal Hilt module. The core `:feature:payment` module doesn't even have a compile-time dependency on Klarna's SDK! Dagger collects all strategies at application assembly time, realizing true runtime extensibility without coupling.
+
+In testing, verifying `PaymentRouter` requires a simple unit test with mock/fake strategies to ensure it returns the correct error when a method is unsupported, while each strategy's network integration is tested in complete isolation.
 
 ## How to answer in the interview
 
@@ -83,8 +138,11 @@ Define strategy contract, shared policy, provider mapping, selection, contract t
 
 ## Follow-up questions
 
-- [SOL-03](../sol-03/): What does OCP protect? **Answer:** stable policy against repeated provider-specific edits.
-- [SOL-04](../sol-04/): What if an adapter cannot honor outcome semantics? **Answer:** the strategy contract violates substitutability and should be refined.
+- **Interviewer:** "How do you handle provider-specific input fields (e.g. CVV vs PayPal token)?"
+  **Answer:** "By modeling payment credentials as a sealed class hierarchy `PaymentCredentials` (`CreditCard(number, cvv)`, `PayPal(token)`). Each strategy inspects its expected credential type safely."
+
+- **Interviewer:** "How does Dagger `@IntoSet` multibinding support OCP?"
+  **Answer:** "It allows independent modules to contribute their strategy implementations to a shared `Set<PaymentStrategy>` without central code having to explicitly instantiate or list them."
 
 ## Self-check rubric
 
@@ -95,4 +153,4 @@ Add a third provider on paper and count which files change; include timeout and 
 - [Robert C. Martin, Open Closed Principle](https://blog.cleancoder.com/uncle-bob/2014/05/12/TheOpenClosedPrinciple.html) — strategic extension.
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — adapter/repository boundary.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

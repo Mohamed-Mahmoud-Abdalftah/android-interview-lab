@@ -23,11 +23,60 @@ What are typical stages in an Android CI pipeline?
 
 ## Explanation in Arabic
 
-Android CI المعتاد: checkout مضبوط، dependency resolution، format/lint/static checks، compile، JVM tests، instrumentation/device tests حسب risk، build AAB/APK، security/artifact checks، signing محمي، internal track، ثم staged production ومراقبة. لازم نختبر release-like variant لأن R8/flavor/ABI ممكن يغير السلوك.
+ما هي المراحل النموذجية (Stages) في خط أنابيب أندرويد (Android CI Pipeline) المتكامل؟
+
+1. المراحل الأساسية لـ Android CI Pipeline:
+   - **1. Checkout & Cache Hydration**: تنزيل الكود واستعادة الكاش السحابي للـ Gradle wrapper والـ dependencies والـ build-cache لتقليل وقت التجميع.
+   - **2. Static Analysis & Linting**: فحص الكود الساكن عبر أسرع أدوات: ktlint/Spotless لفحص التنسيق، Detekt لقواعد الكود، وAndroid Lint لاكتشاف أخطاء الـ SDK ومشاكل الأداء والموارد المفقودة.
+   - **3. Unit Tests (JVM)**: تشغيل `testDebugUnitTest` لاختبارات الـ ViewModels والـ UseCases والـ Repositories. هذه المرحلة يجب أن تنتهي في أقل من دقيقتين.
+   - **4. Compilation & Assemble**: بناء الـ APK أو الـ AAB التجريبي للتأكد من خلو المشروع من أخطاء التجميع.
+   - **5. Instrumented & UI Tests**: تشغيل الاختبارات على أجهزة أو محاكيات حقيقية (غالباً عبر Matrix أو خدمات سحابية مثل Firebase Test Lab) لتغطية الـ critical user journeys.
+   - **6. Security & Size Checks**: فحص الثغرات الأمنية في الـ Dependencies (Dependency-Check)، وفحص حجم الـ APK بواسطة أدوات مثل Diffuse أو bundletool لمنع تسرب ملفات ضخمة.
+   - **7. Artifact Archival & Notification**: رفع ملفات الـ Test Reports و mapping.txt، وإرسال تنبيه على Slack/Teams بحالة البناء.
 
 ## Practical walkthrough
 
-مثال pipeline واقعي: checkout لcommit ثابت، Gradle wrapper وJDK معروفين، dependency verification، compile لكل variant مهم، lint وstatic analysis، JVM tests، وبعدها Android tests للعقود اللي تحتاج emulator. لا تخلط secret signing في job بتشغّل code من PR غير موثوق. release job يبني AAB مرة من tag/commit محدد، يحتفظ بـmapping والـtest report والـhash، ثم يرفع internal track. لو فشل instrumentation بسبب جهاز CI، عالج بيئة الاختبار ولا تعتبر إعادة المحاولة دليل نجاح.
+مخطط تفصيلي لمراحل الـ CI Pipeline في ملف عمل GitHub Actions متوازي وعالي الأداء:
+```yaml
+# .github/workflows/pr_validation.yml
+name: PR Quality Gate
+on: [pull_request]
+
+jobs:
+  # المرحلة السريعة (Fail Fast): التنسيق والتحليل الساكن
+  static_analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v3
+      - name: Run Linters & Detekt
+        run: ./gradlew spotlessCheck detekt
+
+  # مرحلة اختبارات الوحدة السريعة
+  unit_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v3
+      - name: Run JVM Unit Tests
+        run: ./gradlew testDebugUnitTest
+
+  # مرحلة الفحص الأمني وحجم الحزمة (تعتمد على نجاح الفحوصات السابقة)
+  bundle_and_size:
+    needs: [static_analysis, unit_tests]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v3
+      - name: Build Debug APK & Analyze Size
+        run: ./gradlew assembleDebug
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +100,36 @@ CI dashboard tracks stage duration, flake rate, artifact provenance and rollout 
 
 ## Interview answer — short
 
-“An Android CI pipeline checks source, builds and tests fast, validates release variants and devices, packages/signs a traceable artifact, then promotes through testing and staged rollout.”
+A production Android CI pipeline consists of: Checkout and cache restoration, static analysis (formatting, Detekt, Android Lint), JVM unit testing (testDebugUnitTest), build assembly, instrumentation/UI testing on device clouds, APK/AAB size analysis, and artifact publishing or reporting.
 
 ## Interview answer — structured
 
-“I place cheap high-signal checks early and parallelize independent jobs. JVM tests and static checks run on PRs; instrumented, migration and hardware flows run by risk before release. I build the actual minified flavor, protect signing secrets from PR code, and promote the same AAB through Play tracks. Reports, mapping files and hashes tie the release to the source commit.”
+A well-architected Android CI pipeline is structured into tiered, parallel stages designed to fail fast:
+
+1. **Environment Setup & Cache Hydration**:
+   - Checks out repository code, sets up the target JDK, and restores the remote Gradle build cache and dependency cache to avoid redundant network and compilation overhead.
+
+2. **Static Analysis & Linting**:
+   - Runs Spotless/ktlint for formatting, Detekt for code smell detection, and Android Lint with `--baseline` for framework deprecation and resource issues.
+
+3. **Local Unit Tests**:
+   - Executes `testDebugUnitTest` across all modules in parallel on the host JVM. This validates domain rules, ViewModels, and state machines within minutes.
+
+4. **Compilation & Assembly Verification**:
+   - Compiles debug and release variants (`assembleDebug`, `bundleRelease`) to detect missing dependencies or R8 configuration failures early.
+
+5. **Instrumentation & Performance Gates**:
+   - Executes end-to-end UI tests on emulators or cloud farms (Firebase Test Lab), accompanied by size regression diffing using tools like Diffuse to prevent bundle bloating.
 
 ## Interview answer — deep senior
 
-“I organize Android CI around trust and feedback speed. A PR job checks out the exact commit, resolves verified dependencies, compiles relevant variants, runs lint and static checks, then JVM tests and targeted device tests in parallel where possible. I keep a small high-risk release-like check for R8, manifest merge and signing-related behavior because debug success does not imply release success. The release job starts only from an approved protected ref, builds the AAB with controlled signing credentials, stores mapping and provenance, and promotes that same artifact to an internal track. I avoid rebuilding different bits at each promotion. Untrusted PR code must not run with publishing secrets. I inspect failures by stage: a Kotlin compile error, emulator infrastructure failure and release shrinker regression call for different fixes. I track duration and flake rate so the pipeline remains useful; expensive journeys can run before release while payment, security and data-migration gates remain proportional to their risk.”
+Optimizing CI stages for team velocity requires strict pipeline choreography and tiering:
+
+1. **Fail-Fast Parallelization**: Do not run stages sequentially. Run static code checks and local unit tests in parallel. If ktlint or a unit test fails at minute 1, terminate remaining jobs immediately to conserve cloud runner credits and provide instant developer feedback.
+
+2. **Decoupling PR CI from Merge CI**: Running instrumented UI tests on every single commit inside an open PR creates bottlenecks and wastes resources. Mature teams run static analysis and unit tests on PR commits, while delegating heavy instrumented test suites and release bundle generation to nightly builds or the post-merge staging pipeline.
+
+3. **Artifact Retention & Reproducibility**: The pipeline must produce and store build outputs: test result XMLs for CI dashboards, R8 mapping files for crash de-obfuscation in production monitoring, and Baseline Profile outputs. Without automated mapping artifact archiving, tracing field crashes becomes impossible.
 
 ## How to answer in the interview
 
@@ -75,8 +145,11 @@ Prompt for pipeline graph, release variant, secret boundary, immutable artifact 
 
 ## Follow-up questions
 
-- [CIC-09](../cic-09/): Where do signing keys run? **Answer:** protected release jobs, not untrusted PRs.
-- [CIC-20](../cic-20/): What to optimize? **Answer:** measured critical path and high-cost stages.
+- **Interviewer:** "Why should static analysis and unit tests run before assemble tasks?"
+  **Answer:** "To fail fast within seconds if formatting or tests break, avoiding the expensive 5-minute overhead of full APK compilation."
+
+- **Interviewer:** "How do you handle long-running instrumentation tests in PR pipelines?"
+  **Answer:** "Run a smoke test subset on PRs, and schedule the exhaustive instrumentation test suite on nightly pipelines or merge trains."
 
 ## Self-check rubric
 
@@ -87,4 +160,4 @@ Order checkout, dependency verification, compile, static checks, JVM/device test
 - [Android build command line](https://developer.android.com/studio/build/building-cmdline) — build tasks.
 - [Play release tracks](https://developer.android.com/studio/publish) — publishing workflow.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

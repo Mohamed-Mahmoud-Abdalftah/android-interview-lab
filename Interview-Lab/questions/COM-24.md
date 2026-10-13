@@ -24,11 +24,52 @@ A listener keeps working after a composable leaves composition. Which effect is 
 
 ## Explanation in Arabic
 
-أول احتمال: listener اتسجل في body أو `LaunchedEffect` بدون unregister، أو اتسجل عبر scope عمرها أطول من composable. لو listener يجب يعيش فقط مع composable، `DisposableEffect(ownerOrSource)` تسجله و`onDispose` تلغيه عند خروج composable أو تغير key. لو callback يتغير لكن المصدر لا، `rememberUpdatedState` يضمن أحدث callback دون إعادة التسجيل. إذا السلوك مطلوب حتى بعد اختفاء UI، فالمالك ربما ViewModel أو service ويحتاج سياسة lifetime واضحة؛ وجود listener مستمر ليس خطأ تلقائيًا قبل تحديد owner.
+عندما يستمر مستمع (Listener) في العمل واستهلاك الموارد بعد مغادرة الـ Composable للشاشة: ما هو الـ Effect الخاطئ وكيف يُعالج؟
+
+1. ما هو الـ Effect الخاطئ الشائع؟
+   - الخطأ الكلاسيكي هو استخدام **`LaunchedEffect(Unit)`** أو `SideEffect` لتسجيل Listener خارجي متزامن (مثل `SensorManager`, `LocationListener`, `BroadcastReceiver`, أو SDK Listener).
+   - `LaunchedEffect` مخصص للـ Suspending functions؛ عندما يغادر الـ Composable، يقوم بإلغاء الكوروتين الخاص به، ولكنه **لا يعرف كيف ينفذ دالة `unregisterListener()` العادية غير المعلقة!**
+   - النتيجة: يظل الـ Listener مسجلاً داخل نظام التشغيل، ويستمر في إرسال الأحداث، مما يسبب تسريب ذاكرة كارثي واستنزاف بطارية الجهاز.
+
+2. ما هو الـ Effect الصحيح الإلزامي؟
+   - الـ Effect الصحيح هو **`DisposableEffect(key)`**.
+   - يفرض `DisposableEffect` توفير كتلة تنظيف صريحة: **`onDispose { ... }`**.
+   - عند مغادرة الـ Composable للشاشة أو عند تغير الـ key، يستدعي Compose دالة `onDispose` فوراً، مما يضمن إلغاء تسجيل الـ Listener بنسبة 100% وتحرير الموارد.
 
 ## Practical walkthrough
 
-لو listener اتسجل في body، كل recomposition ممكن تضيف listener جديد؛ لو اتسجل في owner طويل، هيفضل بعد خروج UI. اربط register/unregister بنفس `DisposableEffect(source)`؛ ولو المفروض يشتغل بس في `STARTED`، راقب lifecycle كمان. اختبر عدد التسجيلات والإزالة، مش بس إن الشاشة اختفت. لو `onReading` اتبدلت لكن listener القديمة ماسكة callback قديمة، البيانات تروح لمالك غلط. استخدم أحدث callback، وتأكد unregister حصل عند تبديل source والخروج من composition.
+تصحيح تسريب مستمع المستشعر باستخدام DisposableEffect و onDispose:
+```kotlin
+// ❌ كود خاطئ: استخدام LaunchedEffect لتسجيل مستمع لا يتم تنظيفه عند المغادرة:
+@Composable
+fun BadSensorMonitor(sensorManager: SensorManager, sensor: Sensor) {
+    LaunchedEffect(Unit) {
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) { /* معالجة */ }
+            override fun onAccuracyChanged(s: Sensor?, a: Int) {}
+        }
+        // 💥 المستمع يستمر في العمل في خلفية الهاتف حتى بعد مغادرة الشاشة!
+        sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_UI)
+    }
+}
+
+// ✅ كود سليم: استخدام DisposableEffect مع onDispose الإلزامي للتنظيف:
+@Composable
+fun GoodSensorMonitor(sensorManager: SensorManager, sensor: Sensor) {
+    DisposableEffect(sensorManager, sensor) {
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) { /* معالجة */ }
+            override fun onAccuracyChanged(s: Sensor?, a: Int) {}
+        }
+        sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_UI)
+
+        // يُستدعى تلقائياً فور مغادرة الـ Composable أو تغير الـ sensor:
+        onDispose {
+            sensorManager.unregisterListener(listener)
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -68,15 +109,26 @@ Document source, owner, register/unregister pair and visibility requirement. Tes
 
 ## Interview answer — short
 
-“If a composition-owned listener survives exit, registration and cleanup are mismatched. I use `DisposableEffect` with the real source key and unregister in `onDispose`. A UI-owned listener needs registration and cleanup in DisposableEffect.”
+The wrong effect is `LaunchedEffect(Unit)` or `SideEffect`. They lack cleanup callbacks for non-suspending listeners. When the composable leaves composition, the listener remains registered. The correct solution is `DisposableEffect`, which enforces an `onDispose { ... }` block to unregister listeners synchronously.
 
 ## Interview answer — structured
 
-“I first identify the intended owner. If the listener exists only for the composable, registering in its body or a long-lived scope is wrong; `DisposableEffect(source)` pairs registration with `onDispose`. Its key must change when the source changes. I use `rememberUpdatedState` if only the callback implementation changes and should stay current without re-registering. If foreground lifecycle rather than composition presence is the contract, I use the corresponding lifecycle mechanism. I verify removal and late callbacks in a test. I would key the listener to its actual source and use rememberUpdatedState for a changing callback.”
+If a callback or listener continues operating after a composable leaves the composition, the developer mistakenly implemented the registration inside **`LaunchedEffect`** or raw composable code.
+
+`LaunchedEffect` is tailored exclusively for cooperative Kotlin coroutines. When a composable leaves the Slot Table, Compose cancels the coroutine job. However, if a non-suspending, platform-level listener (such as `LocationListener`, `SensorEventListener`, or `BroadcastReceiver`) was registered inside the coroutine body, canceling the coroutine does not invoke `unregisterListener()`. The system service retains a strong reference, causing a persistent memory leak and background battery drain.
+
+The mandatory solution is **`DisposableEffect`**:
+1. It executes registration upon entering the composition.
+2. It mandates a trailing **`onDispose { ... }`** clause.
+3. The instant the composable leaves the composition tree (or if any key argument changes), Compose synchronously executes `onDispose`, unregistering the listener cleanly.
 
 ## Interview answer — deep senior
 
-“I would not diagnose this from the word ‘listener’ alone; I ask whether it should be active while the composable is present, while its Activity is STARTED, or for an app-level background task. If it is a UI listener, the common error is registering during rendering or launching a coroutine that registers with an SDK without pairing removal. Compose may recompose, and cancellation of a coroutine does not automatically tell a callback-based SDK to unregister. `DisposableEffect` around the actual source or owner creates the registration once for that identity and runs `onDispose` on key change or exit. If the callback lambda changes while the source stays the same, `rememberUpdatedState` avoids stale capture without churning registration. If the requirement is visible lifecycle, I also coordinate START/STOP; leaving composition and stopping Activity are different events. I test navigation away, source replacement, rotation and a callback delivered after cleanup. The acceptance evidence is no registration retained, no old screen referenced in a heap path, and no unexpected background resource use. If the product truly needs ongoing monitoring, I move ownership to an explicit longer-lived component and document permission and battery cost. I test both composition exit and owner lifecycle stop because they are different boundaries.”
+Under the hood, `DisposableEffectImpl` implements `RememberObserver`. When the Compose runtime determines during a layout pass that an existing node was pruned from the UI hierarchy, it invokes `onForgotten()` on registered `RememberObserver` instances, directly triggering the `onDispose` lambda.
+
+Another frequent leak pattern is capturing changing parameters inside `onDispose`. If the keys passed to `DisposableEffect(key1)` mutate, Compose first executes `onDispose` for the old keys before executing the effect block for the new keys. If keys are omitted or set to `Unit` while external dependencies mutate, the unregistration might hold stale objects or unregister the wrong instance.
+
+In modern Android architectures, we often hoist these listeners entirely out of the UI into cold Flows in repository/data layers using `callbackFlow { ... awaitClose { unregisterListener() } }`, consuming them in Compose via `collectAsStateWithLifecycle()`.
 
 ## How to answer in the interview
 
@@ -92,9 +144,11 @@ Discuss composition versus Lifecycle, callback SDK cancellation, correct keys, s
 
 ## Follow-up questions
 
-- Does canceling a coroutine always unregister an SDK listener? **Answer:** no; callback registration needs an explicit cleanup bridge.
-- When should `DisposableEffect` restart? **Answer:** when a key representing the listener source or owner changes.
-- Is every continued listener a bug? **Answer:** only if its intended owner ended; app-owned monitoring may be deliberate.
+- **Interviewer:** "What is `callbackFlow` and why is it preferred over `DisposableEffect` for listeners?"
+  **Answer:** "`callbackFlow` encapsulates callback-based APIs into reactive Kotlin Flows with an `awaitClose { ... }` cleanup block, shifting lifecycle management away from UI components into domain/data layers."
+
+- **Interviewer:** "What happens if you omit `onDispose` inside a `DisposableEffect`?"
+  **Answer:** "The code will not compile. The Compose compiler enforces `onDispose` as the mandatory return type of a `DisposableEffect` block."
 
 ## Self-check rubric
 
@@ -105,4 +159,4 @@ Choose the owner, show register/unregister, handle key changes, and verify late 
 - [Side-effects in Compose](https://developer.android.com/develop/ui/compose/side-effects) — DisposableEffect and keys.
 - [Lifecycle in Compose](https://developer.android.com/topic/libraries/architecture/lifecycle) — visibility-bound effects.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Sensor scenario is illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

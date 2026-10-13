@@ -23,11 +23,58 @@ A timeout handler exits the UI before enqueueing a reversal. How do you redesign
 
 ## Explanation in Arabic
 
-لو timeout handler يقفل UI قبل ما يضيف reversal للqueue، process death أو navigation ممكن يضيّع الالتزام المالي. نخلي repository/use case يملك state: في DB transaction يغيّر payment لـ`REVERSAL_PENDING` ويكتب outbox row، وبعد commit يطلع state للـUI فتقدر تقفل. Worker مستقل عن Activity يرسل ويؤكد. UI مجرد observer.
+معالج نفاد الوقت (Timeout Handler) يغلق شاشة الواجهة (UI) قبل إدراج طلب العكس (Reversal) في الطابور، مما يفقد العملية. كيف تعيد هندسة الملكية والترتيب المعماري لحل المشكلة؟
+
+1. تشريح العطل المعماري (Architectural Root Cause):
+   - **خلل الملكية (Ownership Flaw)**: تم ربط منطق الدفع والعكس بدورة حياة واجهة المستخدم (Activity / Fragment / `viewModelScope`).
+   - **خلل الترتيب (Ordering Flaw)**: عند نفاد مهلة الـ 30 ثانية، يستدعي كود الـ UI دالة `activity.finish()` أو يتنقل لشاشة الخطأ **قبل** اكتمال كتابة الـ Reversal في قاعدة البيانات!
+   - عندما تنتهي الـ Activity، يقوم نظام أندرويد بإلغاء كل الـ Coroutines المرتبطة بـ `lifecycleScope`؛ فيتوقف كود إدراج الـ Reversal في منتصفه ويضيع للأبد!
+
+2. إعادة الهندسة المعمارية الجذرية (Architectural Redesign):
+   - **1. فصل ملكية المعاملات عن الواجهة (Inversion of Ownership)**:
+     * لا تجعل الـ UI تملك تدفق الدفع! اجعل تدفق الدفع مملوكاً لـ **Application-Scoped Service** أو **WorkManager** يعمل بمعزل تام عن بقاء الشاشة مفتوحة أو مغلقة.
+   - **2. عكس ترتيب العمليات (Durable Enqueue BEFORE UI Notification)**:
+     * عند انتهاء المهلة، يقوم الكود أولاً بحفظ نية الـ Reversal ذرياً على القرص في Room (`markInDoubtAndEnqueueReversal`).
+     * **بعد اكتمال الحفظ على القرص بنجاح فقط**، يتم إرسال إشعار للواجهة عبر `StateFlow` لعرض شاشة الخطأ أو إغلاق الشاشة.
+   - **3. الواجهة مجرد مراقب سلبي (Passive UI Observer)**:
+     * الشاشة تراقب فقط حالة المعاملة (`collectAsState()`)؛ وإذا أُغلقت الشاشة، تستمر المعاملة والـ Reversal في الخلفية دون أي تأثر.
 
 ## Practical walkthrough
 
-الترتيب الصح: timeout event يدخل use case، DB transaction تحفظ `Unknown` وreversal obligation لو القواعد تطلبها، وبعد commit الـUI تتنقل. لو navigation حصلت قبل commit، Activity تختفي ومعاها coroutine ويمكن الالتزام يضيع. worker من DB، وstartup scan يصلح missed scheduling.
+إعادة هيكلة الملكية والترتيب لمنع فقدان الـ Reversals نهائياً:
+```kotlin
+// 1. خدمة ذات نطاق عام (Application Scope) تملك دورة حياة المعاملة وتصمد أمام إغلاق الشاشات:
+@Singleton
+class PaymentEngine @Inject constructor(
+    @ApplicationScope private val externalScope: CoroutineScope,
+    private val paymentDao: PaymentDao,
+    private val paymentApi: PaymentApi,
+    private val workScheduler: ReversalWorkScheduler
+) {
+    private val _txState = MutableSharedFlow<PaymentState>(replay = 1)
+    val txState: SharedFlow<PaymentState> = _txState.asSharedFlow()
+
+    fun executePaymentWithGuaranteedReversal(txId: String, request: PaymentRequest) {
+        // يتم الإطلاق في ApplicationScope: حتى لو ماتت الـ Activity بالكامل، الكود يكمل تنفيذه!
+        externalScope.launch {
+            try {
+                withTimeout(30_000L) {
+                    val response = paymentApi.authorize(request)
+                    paymentDao.markApproved(txId, response.authCode)
+                    _txState.emit(PaymentState.Approved(response.authCode))
+                }
+            } catch (e: TimeoutCancellationException) {
+                // ✅ الترتيب الحاسم: الحفظ الدائم على القرص أولاً وقبل إبلاغ الواجهة!
+                paymentDao.markInDoubtAndEnqueueReversal(txId, request.toReversalPayload())
+                workScheduler.triggerReversalWork()
+                
+                // الآن فقط نخبر الواجهة بأن العملية انتهت بمهلة وعكست بأمان:
+                _txState.emit(PaymentState.TimedOutAndReversed(txId))
+            }
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -69,15 +116,30 @@ Tests assert no navigation completion before DB commit, that reboot resumes the 
 
 ## Interview answer — short
 
-“I move timeout handling into a repository transaction and expose the next UI state only after the reversal obligation is committed. Navigation is an observer of durable progress, not the owner of the reversal.”
+Redesign ownership and ordering by decoupling payment execution from the UI lifecycle into an Application-scoped coroutine or WorkManager, and inverting operation order so the reversal intent is durably committed to SQLite before the UI is notified or dismissed.
 
 ## Interview answer — structured
 
-“I move financial state transitions out of the Activity. On timeout the use case writes Unknown or ReversalPending and inserts the outbox intent in one database transaction. Only after commit does it emit a UI state that may navigate away. A durable worker processes the row and the backend/provider handles repeated delivery. `lifecycleScope` or even `viewModelScope` is not enough across process death. A failed local transaction means the UI cannot claim the reversal was queued.”
+Coupling financial reversal persistence to ephemeral Android UI component lifecycles represents a catastrophic anti-pattern:
+
+1. **Root-Cause Flaws**:
+   - **Fragile Ownership**: Launching payment coroutines within `lifecycleScope` or UI ViewModels binds business logic to the screen. When a timeout occurs and the user or handler executes `finish()`, the lifecycle cancels all active coroutine jobs, silently aborting incomplete database inserts.
+   - **Inverted Sequencing**: Notifying the UI before completing disk persistence creates a race condition where the screen tears down the process while the disk write is in-flight.
+
+2. **Architectural Redesign Blueprint**:
+   - **Inversion of Ownership**: Transfer transaction ownership to a singleton `PaymentEngine` backed by an uncancelled `ApplicationScope` or persistent WorkManager. Transaction execution continues unhindered regardless of UI navigation, orientation changes, or screen dismissals.
+   - **Strict Persistence-First Sequencing**: Upon timeout detection, the engine must atomically commit the in-doubt state and reversal payload to SQLite *first* (`paymentDao.markInDoubtAndEnqueueReversal()`). Only after disk confirmation does it emit state updates to UI observers.
+   - **Passive State-Driven UI**: The UI becomes a purely passive observer of `StateFlow<PaymentState>`. If the user closes the screen, the reversal worker still dispatches reliably in the background.
 
 ## Interview answer — deep senior
 
-“I would draw the sequence and place the irreversible UI exit after a durable commit. The repository owns original transaction identity, guarded state transitions and reversal outbox uniqueness; the UI observes state but cannot erase obligations. Worker scheduling is repairable from the DB on startup, because enqueue itself may race with a crash. The remote reversal can be sent more than once after lost acknowledgment, so I preserve stable identity and reconcile. Tests kill the process before commit, after commit, after send and before confirmation, and assert one business reversal intent survives. Timeout event enters `resolveTimeout(operationId)`. Metrics alert on aging pending reversals. I test the exact crash boundary between timeout notification and navigation to prove the obligation survives. I make the timeout handler call a use case that owns the database transaction. It records Unknown and, only if the acquirer protocol requires it, inserts a reversal intent with a stable identity. Only after commit does it publish a state from which the Activity may navigate away. Worker scheduling occurs afterward, and a startup scan handles the small window where the database committed but enqueue was missed. If the transaction fails, the UI cannot claim the obligation was queued; it should show a recoverable error and keep the operation visible. I test a process kill before commit, after commit, and after send but before acknowledgment to prove the order is safe.”
+From an Android process lifecycle and Coroutines concurrency standpoint, execution boundaries must be hardened:
+
+1. **`NonCancellable` Context Protection**: In Kotlin Coroutines, when a timeout block cancels (`TimeoutCancellationException`), standard coroutine blocks immediately terminate. Enqueuing the reversal must be wrapped in `withContext(NonCancellable)` to prevent the active cancellation exception from aborting the emergency database commit.
+
+2. **Handling Low-Memory Process Termination (LMK)**: Even an `ApplicationScope` will not survive if Android's Low Memory Killer terminates the OS process due to RAM pressure. Pairing `ApplicationScope` with an immediate WorkManager job registration (`ExistingWorkPolicy.REPLACE`) guarantees that if the process is killed mid-write, the Android OS will reschedule and execute the reversal upon system recovery.
+
+3. **UI Event Back-Pressure**: If the UI exits during timeout, prevent the user from immediately re-entering the checkout flow until the background engine confirms the reversal intent has been durably secured.
 
 ## How to answer in the interview
 
@@ -93,8 +155,11 @@ Prompt for Activity lifecycle limit, DB-before-navigation ordering, outbox scan 
 
 ## Follow-up questions
 
-- [PAY-06](../pay-06/): Which writes are atomic? **Answer:** payment state and reversal intent.
-- [PAY-07](../pay-07/): What restarts delivery? **Answer:** durable queue plus worker/startup scan.
+- **Interviewer:** "Why must reversal enqueueing logic be wrapped in `withContext(NonCancellable)` inside a timeout catch block?"
+  **Answer:** "Because a timeout cancellation exception cancels the coroutine context, which would abort regular database writes unless protected by `NonCancellable`."
+
+- **Interviewer:** "What is the danger of binding transaction execution to `viewModelScope`?"
+  **Answer:** "If the user navigates away or the ViewModel is cleared, the scope is cancelled, dropping in-flight transaction and reversal operations."
 
 ## Self-check rubric
 
@@ -105,4 +170,4 @@ Can I identify the race and reassign ownership to durable domain state?
 - [Android lifecycle-aware coroutines](https://developer.android.com/topic/libraries/architecture/coroutines) — scope lifetimes.
 - [Android WorkManager overview](https://developer.android.com/topic/libraries/architecture/workmanager) — persistent work.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

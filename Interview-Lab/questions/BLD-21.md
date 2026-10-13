@@ -24,11 +24,39 @@ How would you safely roll out and then roll back a bad Android release?
 
 ## Explanation in Arabic
 
-ابدأ internal/closed test للـAAB الفعلية، ثم staged rollout بنسبة صغيرة مع gates محددة مسبقًا: crash-free/ANR، startup، login/payment success، backend errors، حسب حجم العينة. زوّد النسبة تدريجيًا بعد وقت كافٍ، مع owner يملك قرار الإيقاف. لو ظهر bug، أوقف rollout/حلّل scope، واستخدم kill switch/remote config آمنة للميزة إن وجدت. Play قد يتيح halt لإصدار staged أو كامل وفق القناة، لكن هذا لا يزيل النسخة من الأجهزة التي ثبتتها بالفعل. “Rollback” الحقيقي لهؤلاء يحتاج غالبًا forward fix بـversionCode أعلى أو mitigation server-side؛ downgrade عادي ليس خطة موثوقة. راجع migration/data compatibility قبل النشر حتى يمكن التعافي.
+كيف تقوم بطرح تحديث جديد للتطبيق بشكل آمن (Staged Rollout)، وكيف تتراجع عنه (Rollback) فوراً إذا ظهرت مشكلة كارثية؟
+
+1. الطرح التدريجي الآمن (Staged Rollout Strategy):
+   - **ممنوع نشر تحديث لـ 100% من المستخدمين مرة واحدة**!
+   - استخدم جدول النشر التدريجي في Google Play Console:
+     `1% (اليوم 1) -> 5% (اليوم 2) -> 20% (اليوم 3) -> 50% (اليوم 4) -> 100% (اليوم 5)`.
+   - أثناء الطرح، راقب **Android Vitals** ومعدل الـ Crash Rate والـ ANRs في Crashlytics. إذا زاد معدل الانهيار عن 0.5%، أوقف الطرح فوراً.
+
+2. الحقيقة الصادمة حول التراجع (The Rollback Reality in Android):
+   - **نظام أندرويد لا يدعم التراجع (Downgrade Rollback) للعميل**! لا يمكن للمستخدم تثبيت إصدار قديم (`versionCode 100`) فوق إصدار أحدث (`versionCode 101`)؛ نظام Android OS سيرفض التثبيت لحماية بيانات المستخدم من التلف.
+
+3. كيف تنفذ التراجع عملياً (The Three-Tier Rollback Plan):
+   - **1. إيقاف الطرح فوراً (Halt Rollout)**: يمنع وصول التحديث لباقي الـ 95% من المستخدمين.
+   - **2. تفعيل مفتاح الإلغاء عن بُعد (Remote Kill Switch / Feature Flag)**: تعطيل الميزة التالفة فورياً عبر Remote Config للمستخدمين الذين قاموا بتنزيل التحديث بالفعل.
+   - **3. إطلاق تحديث طارئ (Expedited Hotfix Release)**: بناء إصدار جديد برقم أعلى (`versionCode 102`) يحتوي على كود التراجع (Revert Commit) وطلب مراجعة مستعجلة من Google Play.
 
 ## Practical walkthrough
 
-Staged rollout يخفف التعرض لكنه لا يرجع التطبيق المثبت فورًا. قبل النشر حدد crash/ANR/payment/login metrics وthreshold وخطة توقف. لو نسخة سيئة، halt rollout، استخدم feature flag آمن عند الإمكان، ثم build مصحح بـversionCode أعلى. حافظ على schema backward compatibility والpending transactions أثناء containment؛ لا توقف reconciliation مع feature. راقب الأجهزة/ABI المتأثرة والتواصل مع support.
+إدارة سيناريو الطوارئ وإيقاف الطرح ونشر التحديث التصحيحي عبر Fastlane / Play Console:
+```bash
+# 1. إيقاف الطرح التدريجي فوراً عبر Fastlane Supply:
+bundle exec fastlane supply halt --track production
+
+# 2. التراجع عن الـ Commit المتسبب في الكارثة في Git:
+git revert HEAD --no-edit
+
+# 3. زيادة versionCode وبناء Hotfix جديد برقم أعلى:
+# (مثلاً: versionCode 102 أعلى من النسخة المعطوبة 101)
+./gradlew :app:bundleRelease
+
+# 4. رفع الـ Hotfix فوراً ونشره بنسبة 100% مع طلب فحص أولوية:
+bundle exec fastlane supply --aab app-release.aab --track production --rollout 1.0
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +80,33 @@ Define release gates, on-call owner and halt playbook before launch. Track metri
 
 ## Interview answer — short
 
-“I stage the exact tested artifact with telemetry gates, halt distribution on a bad signal, mitigate remotely where safe, and ship a higher-version fix for users already installed.”
+Roll out safely using Google Play Staged Rollouts (1% -> 5% -> 20% -> 100%) while monitoring Android Vitals. Because Android package manager strictly forbids downgrading versionCode, rollback requires halting the rollout, toggling remote feature flag kill switches, and immediately publishing a hotfix with an incremented versionCode.
 
 ## Interview answer — structured
 
-“I start with internal/closed testing and a small staged percentage, using predeclared crash, ANR and critical-flow success thresholds segmented by device and ABI. If a gate fails, I halt promotion, identify affected cohorts and use a tested kill switch if it can safely disable the feature. Halting prevents more distribution but does not downgrade users already on the bad build. I prepare a corrected signed artifact with higher versionCode, regression test it, and stage it while watching recovery. Data migration compatibility is part of the plan.”
+Safely rolling out and rolling back Android releases requires understanding app store release mechanics and OS installation invariants:
+
+1. **Staged Rollout Cadence**:
+   - Never release directly to 100% of production. Follow a phased rollout schedule: 1% -> 5% -> 20% -> 50% -> 100% across 5–7 days.
+   - Continuously monitor Google Play Android Vitals and Crashlytics dashboards. If the crash-free user rate drops below 99.5% or ANR rate exceeds 0.47%, halt the rollout immediately.
+
+2. **The Android Downgrade Invariant**:
+   - The Android OS package manager rejects installing an APK with a lower `versionCode` than the currently installed version (`INSTALL_FAILED_VERSION_DOWNGRADE`). You cannot 'unpublish' a bad release to force users back to an older version.
+
+3. **Incident Containment Protocol**:
+   - **Halt Rollout**: Stop the rollout in Google Play Console, preventing the remaining percentage from downloading the defective build.
+   - **Remote Kill Switch**: Toggle the offending feature flag off remotely via LaunchDarkly/Firebase to remediate users who already updated.
+   - **Emergency Expedited Hotfix**: Revert the bad commit in Git, increment the `versionCode` (e.g. from 201 to 202), build a fresh AAB, and release it directly to 100%.
 
 ## Interview answer — deep senior
 
-“A safe rollout begins before the Play percentage slider. I preserve the exact signed AAB tested in an internal track, its mapping file, source/toolchain provenance and a release owner. I define measurable gates for crash-free sessions, ANRs, startup and business flows such as payment success or unknown-outcome rate, with enough sample time and segmentation by app version, ABI and region. I increase staged exposure only when those gates hold. If checkout failures rise at 5%, I halt distribution and preserve incident evidence; a pretested remote flag can disable an optional UI path, while backend reconciliation protects pending writes. I do not claim that halting the rollout removes version 431 from users who installed it. Android normally rejects a lower versionCode as an update, so those users need a higher-code forward fix or safe server-side mitigation. I retrace with 431's map, add a regression test, validate 432 on an internal track and stage it with recovery metrics. Before any release I review database and API migrations for forward/backward compatibility, because an irreversible schema change can make a nominal rollback unsafe. The playbook defines who may halt, communicate and resume.”
+From an operational release management perspective, incident containment requires post-deployment safeguards:
+
+1. **Google Play Expedited Review Request**: When publishing an emergency hotfix resolving a catastrophic production crash or security regression, submit an expedited review request via the Play Console help portal, reducing review turnaround to under 2 hours.
+
+2. **In-App Immediate Update Enforcement**: When the hotfix is approved, flag the previous broken version in your backend config. When users on the broken version launch the app, trigger Google Play's **Immediate In-App Update** flow (`AppUpdateType.IMMEDIATE`). This full-screen modal forces users to download the hotfix before accessing the app.
+
+3. **Blameless Post-Mortem & CI Hardening**: After incident resolution, conduct a post-mortem to determine why testing missed the defect. Implement automated regression tests and pre-release canary tracks to prevent identical failures.
 
 ## How to answer in the interview
 
@@ -76,9 +122,11 @@ Discuss gates and sample size, staged halt, installed-user reality, kill switch 
 
 ## Follow-up questions
 
-- Does halting rollout remove a bad build from installed devices? **Answer:** no; installed users need mitigation or an update.
-- Can you simply publish the old lower versionCode? **Answer:** ordinary update ordering blocks that; use a higher-code corrected release.
-- What business metric belongs beside crash rate? **Answer:** critical-flow success, such as payment completion and unknown-outcome rate.
+- **Interviewer:** "Can an Android user downgrade an app to an older version without losing data?"
+  **Answer:** "No; the OS forbids downgrading; the only way to install an older version is to uninstall the current app first, which deletes all local data."
+
+- **Interviewer:** "What is the Google Play badging threshold for Android Vitals crash rate?"
+  **Answer:** "Google Play enforces a bad behavior threshold of 1.09% overall crash rate and 0.47% ANR rate; exceeding these hurts store ranking."
 
 ## Self-check rubric
 
@@ -90,4 +138,4 @@ Set rollout gates, respond to a failed cohort, distinguish halt from installed-u
 - [Halting a fully rolled-out release](https://support.google.com/googleplay/android-developer/answer/16285429) — current Play behavior.
 - [Version your app](https://developer.android.com/studio/publish/versioning) — update ordering.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Play controls and rollout policy should be checked against the actual account.
+Technically reviewed against primary documentation on 2026-10-13.

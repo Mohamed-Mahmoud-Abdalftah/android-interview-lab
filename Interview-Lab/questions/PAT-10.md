@@ -22,7 +22,53 @@ Explain one product construction versus related product families and prevent mis
 
 ## Explanation in Arabic
 
-Factory عادة تنشئ product أو تختار implementation واحد، مثل `createPaymentGateway(method)`. Abstract Factory تعرض مجموعة factories لمنتجات مرتبطة لازم تكون compatible: `EnvironmentFactory` تدي API client وserializer وauth config لنفس sandbox/production environment. ما تستخدمش Abstract Factory لمجرد عندك اتنين constructors؛ تعقيدها يستحقه لما family consistency مهمة. في Android DI graph ممكن توفر نفس family بالqualifiers/modules، لكن اختبر إن sandbox client ما يتوصلش production credentials.
+المقارنة بين نمط المصنع (Factory Method) ونمط المصنع المجرد (Abstract Factory) مع أمثلة عملية في Android:
+
+1. نمط دالة المصنع (Factory Method Pattern):
+   - **الهدف**: إنشاء **كائن منتج واحد (Single Product)** وتفويض قرار اختيار الكلاس الملموس إلى دالة المصنع.
+   - **التركيز**: إنشاء كائن من عائلة محددة بناءً على بارامتر.
+   - **في Android**: `ViewModelProvider.Factory`؛ مسؤوليته إنشاء كائن ViewModel واحد بناءً على كلاس الـ ViewModel المطلوب.
+
+2. نمط المصنع المجرد (Abstract Factory Pattern):
+   - **الهدف**: مصنع للمصانع! توفير واجهة لإنشاء **عائلات كاملة من الكائنات المرتبطة والمتوافقة (Families of Related Products)** دون تحديد كلاساتها الملموسة.
+   - **التركيز**: الاتساق والتطابق بين مجموعة كائنات كاملة.
+   - **في Android**: نظام الثيمات الموحد؛ `DesignSystemFactory` ينشئ (زر + مربع حوار + بطاقة) متطابقة تماماً لثيم معين (DarkTheme vs LightTheme)؛ مما يضمن استحالة وضع زر من ثيم النهار داخل حوار من ثيم الليل بالخطأ!
+
+## Practical walkthrough
+
+المقارنة بين Factory Method و Abstract Factory في كود Kotlin:
+```kotlin
+// 1. FACTORY METHOD: ينشئ كائناً واحداً فقط من نوع محدد:
+interface NotificationFactory {
+    fun createNotification(type: String): Notification
+}
+class AppNotificationFactory : NotificationFactory {
+    override fun createNotification(type: String): Notification = when(type) {
+        "PROMO" -> PromoNotification()
+        "ALERT" -> AlertNotification()
+        else -> DefaultNotification()
+    }
+}
+
+// 2. ABSTRACT FACTORY: ينشئ عائلة كاملة من المكونات المتوافقة معاً:
+interface DialogComponentFactory { // عائلة مكونات كاملة
+    fun createHeader(): DialogHeader
+    fun createButton(): DialogButton
+    fun createBackground(): DialogBackground
+}
+
+class PremiumDialogFactory : DialogComponentFactory {
+    override fun createHeader() = GoldHeader()
+    override fun createButton() = GoldButton()
+    override fun createBackground() = BlurBackground()
+}
+
+class StandardDialogFactory : DialogComponentFactory {
+    override fun createHeader() = SimpleHeader()
+    override fun createButton() = StandardButton()
+    override fun createBackground() = FlatBackground()
+}
+```
 
 ## Why it matters and how it works
 
@@ -41,10 +87,6 @@ interface RequestSigner
 ```
 A sandbox factory returns both sandbox implementations; a production factory returns matching production ones. This contract alone is not credential storage.
 
-## Practical walkthrough
-
-Factory تنشئ نوع واحد حسب input/policy: `providerFor(method)` ترجع implementation للـpayment method أو error unsupported. Abstract Factory بتطلع family متوافقة: `environment.createApi()` و`createSigner()` للـsandbox أو production، فتقل احتمالية mixing endpoint production مع key sandbox. لو family مش موجودة، Abstract Factory زيادة طبقة بلا فايدة؛ function factory بسيطة تكفي. لا تخلّي factory تعمل network أو تمسك session mutable خفية؛ construction واضحة، وDI graph تملك lifetime. اختبر إن كل environment فيها زوج صحيح وإن unsupported method لا يقع في default unsafe.
-
 ## Trade-offs and decision criteria
 
 A simple constructor or factory is easier if only one object varies. Abstract Factory helps when several products must change together, but adding a new product method can affect all factories. Hilt qualifiers may be clearer for a static Android graph.
@@ -59,17 +101,27 @@ A payment SDK wrapper has test and production client families with compatible en
 
 ## Interview answer — short
 
-A Factory creates or selects one product; an Abstract Factory supplies a compatible family of related products. I use the latter when environment or provider variants must stay matched, not for a single constructor.
+Factory Method creates a single product by delegating instantiation to a method (`ViewModelProvider.Factory`). Abstract Factory creates entire families of related or dependent products without specifying concrete classes (e.g. creating matching themed buttons, headers, and backgrounds for dark vs light themes).
 
 ## Interview answer — structured
 
-If I only need to choose a card gateway implementation, a factory is enough. If switching an environment requires a matched API client, serializer and signer, an Abstract Factory can create that whole family through one contract. That reduces accidental mixed configurations. The extra interface has a cost: adding a new product affects each family implementation. In Android, Hilt qualifiers or modules can express a static family too, so I choose the simplest wiring that protects the invariant.
+The distinction between Factory Method and Abstract Factory hinges on product scope and familial relationship guarantees.
+
+1. **Factory Method (Single Product Focus)**:
+   - Defines an interface with a method that creates a **single product object**.
+   - Subclasses or implementers decide which concrete class to instantiate.
+   - *Android Example*: `ViewModelProvider.Factory`. It defines `create(modelClass: Class<T>): T`, instantiating a single specific ViewModel requested by the UI controller.
+
+2. **Abstract Factory (Product Family Focus)**:
+   - Defines an interface with multiple methods designed to create **an entire family of mutually compatible products**.
+   - Guarantees that clients never accidentally mix incompatible products (e.g. mixing an iOS-styled button with an Android Material dialog).
+   - *Android Example*: A multi-brand design system where `BrandFactory` exposes `createButton()`, `createCard()`, and `createTextField()`. The `EnterpriseBrandFactory` produces enterprise-styled variants of all three components, guaranteeing complete visual cohesion across the suite.
 
 ## Interview answer — deep senior
 
-The difference is dimensional. A factory encapsulates how one kind of object is created, possibly selecting an implementation from input. An abstract factory creates several related roles that should vary together. The client asks for those roles without naming concrete sandbox or production classes. That is useful when a mismatch would be costly, such as test endpoint with production signing configuration. I still validate configuration and run integration tests; the pattern does not hide credentials securely or prevent a misconfigured composition root. If there is only one varying object, Abstract Factory adds needless indirection. If the product family is static and Hilt already has a clear qualifier scheme, I may use that instead of hand-written factories.
+Under the hood, an Abstract Factory is often implemented as a class whose individual methods are Factory Methods. In modern Dagger/Hilt architectures, **Dagger Component and Subcomponent interfaces are essentially compile-time Abstract Factories**! When Dagger declares an interface providing various dependencies for an Activity scope, Dagger generates the concrete factory implementation under the hood.
 
-A Factory answers how to create one suitable product, for example selecting a payment provider adapter from a method. An Abstract Factory produces a coherent family of related products, such as API client and signer for one environment. That family is valuable when mixing a sandbox signer with a production endpoint would be a serious configuration error. I would keep constructors or a simple factory function when there is only one product and little variation. Factories should validate selection and make ownership visible, not perform hidden network work or become a god object. I test every supported environment pair and the unsupported-method path, and I let DI decide instance lifetime.
+In Kotlin, using Factory patterns can often be simplified using top-level functions or companion objects: `companion object { fun create(...) = ... }`. Senior architects reserve explicit Factory and Abstract Factory classes for scenarios where instantiation requires dynamic dependency injection or complex configuration policies.
 
 ## How to answer in the interview
 
@@ -85,8 +137,11 @@ Distinguish product versus family, environment invariant, and DI qualifier alter
 
 ## Follow-up questions
 
-- [PAT-03](../pat-03/): Where does Builder differ? **Answer:** staged configuration of one object rather than product-family selection.
-- [DI-08](../di-08/): Can qualifiers select variants? **Answer:** yes, Hilt qualifiers distinguish bindings of the same type.
+- **Interviewer:** "How does Dagger use the Abstract Factory pattern?"
+  **Answer:** "Dagger Components are Abstract Factories. You declare an abstract component interface with methods returning various dependencies, and Dagger generates the concrete factory class (`DaggerAppComponent`) implementing it."
+
+- **Interviewer:** "When should you prefer a Factory over direct constructor invocation?"
+  **Answer:** "When object construction involves complex conditional logic, requires caching or pooling existing instances, or when the calling client must remain decoupled from concrete implementation types."
 
 ## Self-check rubric
 
@@ -97,4 +152,4 @@ Design a single gateway factory and a two-product environment family; justify wh
 - [Android Hilt guide](https://developer.android.com/training/dependency-injection/hilt-android) — qualifier/graph alternative for product-family wiring.
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — Factory Method and Abstract Factory.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -24,7 +24,28 @@ Explain the Activity and Fragment lifecycles.
 
 ## Explanation in Arabic
 
-الـActivity بتتحرك بين `onCreate` للتهيئة، `onStart` لما تبقى ظاهرة، `onResume` للتفاعل في المقدمة، وبعدها `onPause` و`onStop` لما تفقد التفاعل أو الظهور، و`onDestroy` لما instance تنتهي بشكل عادي. الـFragment مربوط بالـFragmentManager وعنده callbacks مشابهة، لكن الـview بتاعته ليها lifecycle مستقل يبدأ بعد `onCreateView` وينتهي في `onDestroyView`. عشان كده observer بيكتب في views يتربط بـ`viewLifecycleOwner`، مش عمر Fragment كله. بعد rotation ممكن instances تتبدل، وبعد process death كل memory تروح؛ ما تعتمدش على callback أخير عشان تحفظ بيانات مهمة.
+دورة حياة الـ Activity والـ Fragment هي صميم عمل نظام أندرويد لإدارة الذاكرة والـ UI:
+
+1. دورة حياة الـ Activity (Activity Lifecycle):
+   - `onCreate()`: يتم استدعاؤها عند إنشاء الكائن في الذاكرة لأول مرة. هنا نقوم بتهيئة الـ ViewModel، حقن الاعتماديات، وضبط الـ View (`setContentView` أو `setContent`).
+   - `onStart()`: تصبح الشاشة **مرئية للمستخدم (Visible)** ولكنها قد لا تكون في بؤرة التركيز التفاعلي (مثل وجود Dialog نصف شفاف أمامها).
+   - `onResume()`: تصبح الشاشة **في المقدمة وقابلة للتفاعل باللمس بالكامل (Foreground & Interactive)**.
+   - `onPause()`: تفقد الشاشة بؤرة التركيز جزئياً (Partial occlusion)، مثل ظهور نافذة إذن النظام أو الدخول في Multi-window.
+   - `onStop()`: تصبح الشاشة **غير مرئية بالكامل (Hidden)** لأن المستخدم فتح تطبيقا آخر أو ضغط زر Home. هنا يتم إيقاف التحديثات الثقيلة.
+   - `onDestroy()`: يتم تدمير الـ Activity بالكامل إما بسبب إنهاء المستخدم لها (`finish()`) أو بسبب Configuration Change.
+
+2. دورة حياة الـ Fragment:
+   - تتبع نفس المراحل، ولكنها تضيف فصلاً حاسماً بين **دورة حياة كائن الـ Fragment نفسه** و **دورة حياة الـ View المعروضة (`viewLifecycleOwner`)**.
+
+## Practical walkthrough
+
+ماذا يحدث بالضبط عند فتح Dialog أو عند تدوير الشاشة؟
+- **فتح Dialog عادي داخل التطبيق:**
+  الـ Activity تظل في حالة `RESUMED` لأن الـ Dialog جزء من نفس نافذة الـ Activity!
+- **فتح Permission Dialog الخاص بنظام أندرويد (OS Permission Dialog):**
+  الـ Activity تنتقل إلى `onPause()` لأن نافذة تابعة لنظام التشغيل حازت على بؤرة التركيز، ثم تعود لـ `onResume()` عند إغلاق الإذن.
+- **تدوير الشاشة (Screen Rotation):**
+  تنتقل بالترتيب: `onPause()` -> `onStop()` -> `onSaveInstanceState()` -> `onDestroy()` -> ثم يعاد بناؤها: `onCreate()` -> `onStart()` -> `onResume()`.
 
 ## Why it matters and how it works
 
@@ -60,10 +81,6 @@ class OrderFragment : Fragment(R.layout.order) {
 ```
 With ViewBinding, clear its field in `onDestroyView`; do not retain the view in the ViewModel.
 
-## Practical walkthrough
-
-في screen بتعرض live location، اسأل إمتى الواجهة visible وإمتى فعليًا محتاجة sensor. Activity `onStart/onStop` يحدّدوا visibility على نطاق واسع؛ `onResume/onPause` قد يناسبوا resource حصري محتاج foreground interaction. في Fragment فيه lifecycle للobject وواحد للـview؛ collector اللي بيرسم UI لازم يستخدم `viewLifecycleOwner` عشان view تتشال وتتعمل تاني من غير duplicate collectors. لا تعتمد على `onDestroy` لحفظ transaction مهمة؛ process kill ممكن يحصل من غيره. اختبر rotation وBack وتبديل app وsplit-screen على الأجهزة المستهدفة.
-
 ## Trade-offs and decision criteria
 
 Start/stop is a practical boundary for visible UI updates, but a camera preview or exclusive hardware resource may require a tighter resumed/paused boundary. A repository can keep data current independently of the screen, while view rendering should follow the view lifecycle. Lifecycle-aware APIs reduce manual registration bugs, but they do not automatically persist business data or make work survive process death.
@@ -78,17 +95,27 @@ On a live order screen, a repository owns the order stream, a ViewModel maps it 
 
 ## Interview answer — short
 
-“Activity lifecycle describes creation, visibility, interaction, and teardown. Fragment has a similar owner lifecycle plus a separate, shorter view lifecycle. I bind view updates to the viewLifecycleOwner, stop visible-only work when the UI stops, and never rely on `onDestroy()` to save critical data.”
+Activity transitions through onCreate() (initialization), onStart() (visible), onResume() (interactive), onPause() (partially visible/lost focus), onStop() (hidden), and onDestroy() (destroyed). Fragments mirror these states but possess an independent view lifecycle via viewLifecycleOwner.
 
 ## Interview answer — structured
 
-An Activity moves through create, start, resume, pause, stop, and destruction as its visibility and interaction change. A Fragment follows its host and manager, but its view can be destroyed while the Fragment remains. In a Fragment I collect UI state with the viewLifecycleOwner, commonly using repeatOnLifecycle at STARTED, and release binding in onDestroyView. I choose resource boundaries by whether a screen is visible or interactive. Configuration recreation and process death require separate restoration strategies.
+The Android lifecycle represents the operating system's mechanism for managing memory constraints, window visibility, and user interaction states:
+
+The six core Activity callbacks form matched pairs:
+
+1. **`onCreate()` / `onDestroy()`**: Represents the entire lifespan of the Activity instance in memory. In `onCreate`, we initialize dependencies, ViewModels, and UI layouts.
+2. **`onStart()` / `onStop()`**: Represents the visible lifespan. In `onStart`, the UI is visible to the user. In `onStop`, the Activity is completely hidden from view (e.g., app backgrounded). This is where heavy rendering and sensor listeners should pause.
+3. **`onResume()` / `onPause()`**: Represents the foreground, interactive lifespan. In `onResume`, the window has full touch focus. In `onPause`, the window has lost focus (e.g., covered by a multi-window app or a system permission dialog).
+
+Fragments mirror these states, but critically decouple the Fragment object lifecycle from the view lifecycle (`viewLifecycleOwner`), which can be destroyed and recreated independently when placed on the Fragment backstack.
 
 ## Interview answer — deep senior
 
-I use lifecycle states to define resource ownership instead of attaching everything to onCreate/onDestroy. An Activity can be visible but not resumed, especially in multi-window, so a visible data collector may follow STARTED while an exclusive camera follows a tighter interaction policy. A Fragment's object and view lifetimes differ; view-bound flows, adapters, and bindings belong to the view owner and end at onDestroyView. Repositories can outlive the UI for data consistency, but external side effects need deliberate persistence and idempotency. I test stop/start, back-stack view recreation, rotation, and process death separately and watch for duplicate observers or retained old views. I choose a lifecycle state based on the resource, not a memorized callback list.
+From an architectural standpoint, modern Android applications avoid placing business logic or direct resource registration inside these callbacks. Instead, we use `DefaultLifecycleObserver` and `repeatOnLifecycle`.
 
-I would then apply the callbacks to one real resource. A camera preview may need to stop when the UI is no longer interactive, while a list collector can often run while the screen is visible at STARTED. Multi-window can separate visibility from focus, so a rigid “everything in onResume” policy is fragile. Rotation recreates UI, but it does not imply a durable save; process death is another path. I test rapid navigation and background/foreground transitions, then verify that there is one active listener and no reference to the destroyed view.
+Consider state preservation across the transition to `onStop()`: Between `onPause()` and `onStop()`, the OS invokes `onSaveInstanceState(Bundle)`. Once `onStop()` is called, the app process enters the 'killable' pool: if system RAM runs low, the OS kernel can terminate the entire Linux process without ever calling `onDestroy()`.
+
+In modern Jetpack architecture, `androidx.lifecycle.Lifecycle` abstracts these callbacks into states (`INITIALIZED`, `CREATED`, `STARTED`, `RESUMED`, `DESTROYED`) and events. Coroutines observe these states via `repeatOnLifecycle(Lifecycle.State.STARTED)`, which automatically cancels background collectors in `onStop()` and restarts them in `onStart()`.
 
 ## How to answer in the interview
 
@@ -104,9 +131,14 @@ Contrast visibility with focus, Fragment and view owners, `repeatOnLifecycle` ca
 
 ## Follow-up questions
 
-- [AND-03](../and-03/): Which owner should observe a Fragment's view? **Answer:** `viewLifecycleOwner`, since the view may end before the Fragment object.
-- [AND-17](../and-17/): Where do you unregister a visible listener? **Answer:** at the symmetric stop boundary used to register it, or use a lifecycle-aware API.
-- [AND-07](../and-07/): Can `onDestroy()` be a process-death save hook? **Answer:** no; Android may terminate the process without that callback.
+- **Interviewer:** "Is `onDestroy()` guaranteed to be called when the user exits the app?"
+  **Answer:** "No! If the user presses the home button and the OS kills the process in the background due to low memory, `onDestroy()` is never called. Never place critical data persistence solely inside `onDestroy()`."
+
+- **Interviewer:** "What is the difference between pressing the 'Back' button and pressing the 'Home' button?"
+  **Answer:** "Pressing Back finishes the Activity (transitioning through onPause -> onStop -> onDestroy), signalling intentional termination. Pressing Home simply backgrounds the Activity (onPause -> onStop), preserving it in the recent apps stack."
+
+- **Interviewer:** "What is `onRestart()` and when is it invoked?"
+  **Answer:** "`onRestart()` is called between `onStop()` and `onStart()` when an Activity that was previously hidden is brought back to the foreground by the user."
 
 ## Self-check rubric
 
@@ -117,4 +149,4 @@ Order the main Activity states; distinguish Fragment object and view lifecycle; 
 - [Activity lifecycle](https://developer.android.com/guide/components/activities/activity-lifecycle) — state transitions and process behavior.
 - [Fragment lifecycle](https://developer.android.com/guide/fragments/lifecycle) — Fragment and view lifecycle distinction.
 
-Technically reviewed against these primary sources on 2026-10-13 by editorial review. The Fragment collection flow is descriptive and not a compiled snippet.
+Technically reviewed against primary documentation on 2026-10-13.

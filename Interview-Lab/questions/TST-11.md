@@ -23,11 +23,82 @@ How do you test Room DAOs, database migrations, and transactions?
 
 ## Explanation in Arabic
 
-Room DAO test تثبت query، ordering، constraints وFlow observation على قاعدة فعلية مناسبة؛ mock DAO لا يثبت SQL. Migration test تبدأ من ملفات schema قديمة تمثل إصدارات مستخدمين حقيقية، تضيف rows فيها nulls وduplicates وUnicode وقيم حدودية، ثم تعمل migration للمستهدف وتفحص data وindexes وforeign keys. جرّب كل upgrade path مدعومة بدل آخر إصدار فقط.
+كيف تختبر دوال الـ Room DAOs، وترقيات قاعدة البيانات (Database Migrations)، والمعاملات الذرية (Transactions) بشكل معزول؟
+
+1. اختبار الـ Room DAOs (In-Memory Database):
+   - نستخدم `Room.inMemoryDatabaseBuilder()` في مجلد `src/test/` (مع Robolectric) أو `src/androidTest/` (على محاكي حقيقي).
+   - ميزة قاعدة البيانات في الذاكرة: سرعة فائقة، وتبدأ فارغة تماماً مع كل اختبار، وتُحذف فور إغلاقها (`db.close()`) دون ترك أي ملفات ملوثة على القرص.
+   - تفعيل `allowMainThreadQueries()` لتسهيل كتابة الاختبارات المتزامنة.
+
+2. اختبار ترقيات قاعدة البيانات (Room Migration Testing):
+   - **قاعدة ذهبية**: لا تعتمد على التجربة اليدوية! استخدم أداة `MigrationTestHelper` الرسمية.
+   - يقوم الاختبار بإنشاء قاعدة بيانات حقيقية بالإصدار 1 (باستخدام ملف الـ Schema JSON القديم)، وإدخال بيانات حقيقية، ثم تنفيذ الـ Migration إلى الإصدار 2، والتحقق من أن البيانات لم تُفقد وأن الجداول والأعمدة الجديدة مطابقة للـ Hash الجديد.
+
+3. اختبار المعاملات الذرية (Transactions Testing):
+   - التحقق من أنه إذا فشلت عملية كتابة في المنتصف، يتم التراجع عن جميع العمليات السابقة (Rollback) ولا تُترك قاعدة البيانات في حالة متناقضة.
 
 ## Practical walkthrough
 
-Transaction test تُدخل write ثم exception قبل النهاية وتتأكد أن الاثنين لم يثبتا؛ لو rollback policy مختلفة وثّقها. الـin-memory DB مفيدة لاختبارات DAO قصيرة، لكنها لا تثبت durability بعد إغلاق العملية؛ استخدم file-backed/device integration حين يكون ده claim. لا تخلط نجاح `MigrationTestHelper` مع صحة business transformation بلا assertions على rows.
+اختبار DAO في الذاكرة واختبار هجرة Room باستخدام MigrationTestHelper:
+```kotlin
+// 1. اختبار Room DAO في الذاكرة (In-Memory Database Test):
+@RunWith(AndroidJUnit4::class)
+class UserDaoInMemoryTest {
+    private lateinit var db: AppDatabase
+    private lateinit var userDao: UserDao
+
+    @Before
+    fun createDb() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        userDao = db.userDao()
+    }
+
+    @Test
+    fun insertUserAndReadInList() = runTest {
+        val user = UserEntity(id = "usr_1", name = "Sarah")
+        userDao.insert(user)
+        val users = userDao.getAllUsers().first()
+        assertEquals(1, users.size)
+        assertEquals("Sarah", users[0].name)
+    }
+
+    @After
+    fun closeDb() = db.close()
+}
+
+// 2. اختبار Migration حقيقي من الإصدار 1 إلى 2 عبر MigrationTestHelper:
+@RunWith(AndroidJUnit4::class)
+class DatabaseMigrationTest {
+    private val TEST_DB = "migration-test.db"
+
+    @get:Rule
+    val helper: MigrationTestHelper = MigrationTestHelper(
+        InstrumentationRegistry.getInstrumentation(),
+        AppDatabase::class.java
+    )
+
+    @Test
+    fun migrate1To2_preservesExistingUserData() {
+        // إنشاء قاعدة بيانات بالإصدار 1 وإدخال بيانات قديمة
+        helper.createDatabase(TEST_DB, 1).apply {
+            execSQL("INSERT INTO users (id, name) VALUES ('u1', 'Omar')")
+            close()
+        }
+
+        // تشغيل الـ Migration إلى الإصدار 2 والتحقق من صحة الـ Schema
+        val dbV2 = helper.runMigrationsAndValidate(TEST_DB, 2, true, MIGRATION_1_2)
+        
+        // التأكد من أن بيانات Omar ما زالت موجودة والعمود الجديد أخذ قيمته الافتراضية:
+        val cursor = dbV2.query("SELECT id, name, loyalty_points FROM users WHERE id = 'u1'")
+        assertTrue(cursor.moveToFirst())
+        assertEquals("Omar", cursor.getString(1))
+        assertEquals(0, cursor.getInt(2)) // القيمة الافتراضية المضافة في v2
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +122,35 @@ CI runs DAO and all-upgrade-path migrations against representative Android/SQLit
 
 ## Interview answer — short
 
-“I test DAOs against real Room/SQLite, migrations from exported historical schemas with realistic rows, and transaction rollback on failure. A fake repository cannot prove SQL or durability.”
+Test Room DAOs using in-memory databases with allowMainThreadQueries() to ensure rapid, isolated tests. Test database migrations using Room's MigrationTestHelper in instrumented tests, verifying that existing records are preserved and new schema constraints match versioned schema JSON files.
 
 ## Interview answer — structured
 
-“DAO tests execute real queries and constraints. Migration tests use old schema versions and nontrivial data, run the migration, and assert both content and schema. I test transaction rollback by forcing a failure after one write. In-memory DB is useful for speed, but file-backed reopen tests add persistence confidence. I keep exported schemas from released versions and avoid destructive migration unless data loss is an explicit product decision.”
+Room database testing divides into DAO functional validation and schema migration verification:
+
+1. **In-Memory DAO Testing**:
+   - Instantiate tests using `Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()`.
+   - In-memory databases exist strictly in RAM and are completely destroyed upon `db.close()`, guaranteeing test isolation without disk file leftovers.
+   - Test reactive DAO flows using Turbine to assert that SQL inserts/updates emit fresh lists to active flow collectors.
+
+2. **Automated Migration Testing (`MigrationTestHelper`)**:
+   - Use Room's `MigrationTestHelper` in instrumented tests.
+   - Step 1: `helper.createDatabase(DB_NAME, 1)` boots SQLite using the version 1 JSON schema. Insert sample records via raw SQL.
+   - Step 2: `helper.runMigrationsAndValidate(DB_NAME, 2, true, MIGRATION_1_2)` applies the migration and automatically validates SQLite column types and foreign keys against the version 2 JSON schema.
+   - Step 3: Query the migrated database to assert that historical records survived uncorrupted and new columns received default values.
+
+3. **Transaction Atomicity Verification**:
+   - Test methods marked `@Transaction`. Inject an intentional exception halfway through a batch operation, and assert that previously written rows in that transaction were rolled back completely.
 
 ## Interview answer — deep senior
 
-“I test Room at the real database boundary when the question is about SQL or durability. DAO tests insert representative rows and assert filtering, ordering, uniqueness and observed updates rather than mocking the DAO and replaying expected calls. For migrations I keep exported schemas and create fixtures from every supported old version, including messy customer data: null legacy fields, duplicate merchant IDs, Arabic names and long values. I run the upgrade path to the release schema and assert transformed rows, indexes, foreign keys and the documented conflict-resolution rule. A schema validation pass alone may miss the wrong row being chosen. For transactions I inject a failure after the first write and assert the invariant that either all related rows commit or none do. I distinguish in-memory test convenience from file durability and process restart. If the release includes a risky migration, I run a device or emulator test with a file-backed database and a minified release-like build. A test that starts only from a fresh schema cannot protect existing users.”
+From an enterprise storage engineering perspective, database tests must validate SQLite constraints and threading boundaries:
+
+1. **Foreign Key Constraint Verification**: By default, SQLite disables foreign key enforcement unless explicitly enabled via `PRAGMA foreign_keys = ON;`. In-memory tests must configure Room callbacks or open helper factories to enable foreign keys, ensuring tests catch constraint violations before production.
+
+2. **Multi-Version Migration Chains (v1 -> v4)**: Write automated test permutations that test direct multi-version hops (`1->4`) alongside sequential hops (`1->2->3->4`), verifying that legacy users upgrading across multiple years do not encounter `IllegalStateException` on launch.
+
+3. **Robolectric SQLite vs. Real Device SQLite**: While Robolectric runs SQLite tests on the host machine using SQLite4Java or native macOS/Linux SQLite libraries, OEM Android devices run customized SQLite engines. Always execute complex migration and WAL concurrency tests on real Android instrumented test runners.
 
 ## How to answer in the interview
 
@@ -75,8 +166,11 @@ Prompt for exported schemas, realistic old rows, all upgrade paths, rollback and
 
 ## Follow-up questions
 
-- [TST-22](../tst-22/): How get fixtures? **Answer:** synthesize from anonymized production shapes and boundary cases.
-- [TST-20](../tst-20/): Does Room transaction prevent double charge? **Answer:** no; server idempotency is separate.
+- **Interviewer:** "Why is allowMainThreadQueries() safe in Room unit tests?"
+  **Answer:** "Because test runners execute synchronously on single test threads; main thread blocking rules are unnecessary overhead in isolated test suites."
+
+- **Interviewer:** "What happens if a migration fails during helper.runMigrationsAndValidate()?"
+  **Answer:** "It throws an IllegalStateException with a detailed diff explaining which table, column, or index mismatched the expected schema JSON."
 
 ## Self-check rubric
 
@@ -87,4 +181,4 @@ Create an old schema fixture with edge-case rows, run each supported Room migrat
 - [Room migration testing](https://developer.android.com/training/data-storage/room/migrating-db-versions) — MigrationTestHelper and schemas.
 - [Room withTransaction API](https://developer.android.com/reference/kotlin/androidx/room/package-summary) — local transactions.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

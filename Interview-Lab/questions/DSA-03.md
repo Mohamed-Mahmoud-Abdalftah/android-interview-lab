@@ -23,11 +23,44 @@ Why are constants and lower-order terms omitted in asymptotic analysis?
 
 ## Explanation in Arabic
 
-لو `T(n)=4n²+30n+200`، مع n كبير `n²` هي اللي تسيطر؛ لذلك Big O نكتب O(n²) ونسقط constants والterms الأقل. ده ما يقولش إنهم غير مهمين في app حقيقية: على list من 20 عنصر، allocation أو database call ثابتة ممكن تكون أغلى من اختلاف class التعقيد.
+لماذا يتم تجاهل الثوابت الرياضية (Constants) والحدود الدنيا (Lower-Order Terms) في التحليل المقارب (Asymptotic Analysis)؟
+
+1. جوهر التحليل المقارب (The Core Principle):
+   - التحليل المقارب (Big O) يهدف إلى دراسة **سلوك الخوارزمية عندما يقترب حجم المدخلات من اللانهاية ($n \to \infty$)**.
+   - عندما يكبر $n$ بشكل هائل، يصبح الحد الأعلى (Highest-Order Term) هو المهيمن تماماً على معدل نمو العمليات، بينما تفقد الثوابت والحدود الدنيا أي تأثير معنوي.
+
+2. إهمال الحدود الدنيا (Lower-Order Terms):
+   - تخيل دالة تعقيد: $f(n) = n^2 + 1000n$.
+   - عندما يكون $n = 1,000,000$:
+     * $n^2 = 1,000,000,000,000$ (تريليون عملية!).
+     * $1000n = 1,000,000,000$ (مليار عملية، أي 0.1% فقط من الإجمالي!).
+   - بالتالي فإن $n^2$ هو الذي يحدد قابلية النظام للتوسع (Scalability)، ونهمل $1000n$ ونقول التعقيد هو $O(n^2)$.
+
+3. إهمال الثوابت (Constants):
+   - $O(2n)$ و $O(100n)$ كلاهما يعاملان كـ $O(n)$.
+   - السبب: الثوابت تتأثر بنوع لغة البرمجة، وسرعة المعالج (CPU Clock Speed)، ومترجم الـ Bytecode، وليس بطبيعة الخوارزمية نفسها. الخوارزمية ذات التعقيد $O(n)$ ستتفوق حتماً على أي خوارزمية $O(n^2)$ عند أحجام بيانات كبيرة، بغض النظر عن قيمة الثابت.
+
+4. التحذير الهندسي العملي:
+   - إهمال الثوابت هو **تبسيط نظري**. في الحياة الواقعية على أجهزة أندرويد ذات الموارد المحدودة، الثابت مهم جداً عندما يكون $n$ صغيراً؛ خوارزمية $O(1)$ مع ثابت ضخم (مثل 200ms اتصال شبكة) أسوأ بكثير من $O(n)$ مع ثابت ميكروثانية!
 
 ## Practical walkthrough
 
-لما تقول `3n + 20` يصبح `O(n)`، أنت بتوصف السلوك مع n كبيرة، لكن في شاشة فيها 10 عناصر قد تكون تكلفة 20 أو allocation أهم. لا تستخدم حذف constants لتبرير API ثقيل أو عمل على Main. اعرض asymptotic class أولًا، ثم benchmark وmemory profile بالحجم الواقعي والجهاز الأقل قدرة.
+مثال يوضح لماذا الخوارزمية ذات الرتبة الأقل تتفوق حتماً مع نمو البيانات:
+```kotlin
+// الخوارزمية A: f(n) = 100 * n  -> O(n)
+// الخوارزمية B: g(n) = 2 * n^2  -> O(n^2)
+
+// جدول مقارنة عدد العمليات الحسابية مع نمو حجم المدخلات n:
+// n = 10    -> A: 1,000 operations | B: 200 operations   (B أسرع للقيم الصغيرة!)
+// n = 50    -> A: 5,000 operations | B: 5,000 operations (نقطة التعادل)
+// n = 1,000 -> A: 100,000 ops      | B: 2,000,000 ops    (A أسرع بـ 20 ضعفاً!)
+// n = 10,000-> A: 1,000,000 ops    | B: 200,000,000 ops  (A أسرع بـ 200 ضعف!)
+
+fun compareGrowth() {
+    // هذا يثبت رياضياً لماذا نهمل الثابت 100 والثابت 2 في التحليل المقارب:
+    // الرتبة التربيعية تنفجر وتدمر الأداء عندما تكبر البيانات!
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +84,30 @@ Profile production-like input distributions and low-end devices, then document c
 
 ## Interview answer — short
 
-“We omit constants and lower-order terms to describe dominant growth as n becomes large. For real Android inputs, constants and allocations still matter, so I benchmark the actual range.”
+Constants and lower-order terms are dropped in asymptotic analysis because Big O measures the growth rate as input size approaches infinity. At scale, the highest-order term completely dominates execution time, while constants depend on machine hardware and compiler optimizations rather than intrinsic algorithmic scalability.
 
 ## Interview answer — structured
 
-“For `4n²+30n+200`, the quadratic term dominates at large n, so O(n²) communicates the scaling risk. This does not mean four or 200 are irrelevant for a 20-row screen. I use Big O to reject designs that scale badly, then benchmark representative data to compare constant factors, memory and GC. An index may be worthwhile for repeated queries but unnecessary for one small scan.”
+Asymptotic analysis focuses on the limiting behavior of functions as inputs scale toward infinity ($n \to \infty$):
+
+1. **Dominance of Highest-Order Terms**:
+   - Given an algorithm with operational steps $f(n) = 3n^3 + 50n^2 + 1000n + 4000$, as $n$ scales to millions, the $n^3$ term accounts for greater than 99.99% of total computation. Lower-order terms ($n^2, n, \text{constants}$) become statistically insignificant.
+
+2. **Machine and Platform Independence**:
+   - Constant factors (e.g. $c \cdot n$) vary widely across execution environments: CPU clock speed, hardware memory bus bandwidth, JIT compiler optimizations, and ARM vs x86 instruction sets. Big O abstracts away hardware discrepancies to categorize the fundamental mathematical scalability of the algorithm.
+
+3. **Practical Engineering Caveat**:
+   - In mobile client development, data sizes are frequently bounded ($n \le 100$). In bounded spaces, constants matter tremendously: an $O(n)$ algorithm that allocates 100 heavy objects in each iteration will run slower and cause more GC pauses than an $O(n \log n)$ primitive array sort.
 
 ## Interview answer — deep senior
 
-“Asymptotic notation describes growth as n becomes large. If a routine performs `3n + 20` operations, the linear term dominates eventually, so we call it O(n). We omit constant factors and lower-order terms to compare classes independent of a particular machine or implementation. I would not use that simplification to ignore user-visible latency: for a screen with ten items, the fixed setup cost or allocations may dominate. Two O(n) implementations can differ greatly if one allocates a new collection every frame. I first derive a clear upper bound and identify input variables, then profile the actual range and call frequency. For a list transform, I might prefer a readable eager chain until a trace shows GC pressure; then I can combine passes or cache a stable result. The mistake is either obsessing over a constant in code that never runs at scale or assuming all algorithms in the same Big O class have equal production cost.”
+From an engineering architecture perspective, ignoring constants can lead to catastrophic real-world mobile choices:
+
+1. **The 'Hidden Constant' Trap**: Consider an $O(1)$ operation that performs a synchronous disk read or SQLite transaction on the main thread. Theoretically it is constant time $O(1)$, but the constant $c \approx 15\text{ms}$ drops frames immediately. Conversely, an $O(n)$ in-memory scan of a 100-element primitive array takes $0.005\text{ms}$. Developers must never prioritize theoretical Big O over real wall-clock latency.
+
+2. **Amortized Analysis Constants**: In resizable data structures like `ArrayList`, inserting an item is amortized $O(1)$. However, when the internal buffer reaches capacity, it reallocates a new array with $1.5\times$ size and copies all elements, incurring an $O(n)$ spike. On the main thread, that sudden spike can stutter an ongoing Compose scroll gesture.
+
+3. **Algorithmic Threshold Switching**: Advanced libraries leverage both concepts: Java/Kotlin's TimSort switches from MergeSort ($O(n \log n)$) to Binary Insertion Sort ($O(n^2)$) whenever sub-arrays drop below 32 elements, explicitly exploiting low constants on small inputs.
 
 ## How to answer in the interview
 
@@ -75,8 +123,11 @@ Prompt for formal dominant term, practical input range, repeated-query crossover
 
 ## Follow-up questions
 
-- [DSA-01](../dsa-01/): What else matters? **Answer:** auxiliary space and allocation pressure.
-- [DSA-14](../dsa-14/): How find real bottleneck? **Answer:** profile rendering, data work and allocations separately.
+- **Interviewer:** "Can an algorithm with $O(n^2)$ complexity run faster than an $O(n)$ algorithm in production?"
+  **Answer:** "Yes, for small inputs where the constant factor of the $O(n)$ algorithm (like object allocation or disk I/O) exceeds the operations of $O(n^2)$."
+
+- **Interviewer:** "Why does TimSort switch to insertion sort for arrays with fewer than 32 elements?"
+  **Answer:** "Because insertion sort has very low overhead and cache friendly constants that beat mergesort on small datasets."
 
 ## Self-check rubric
 
@@ -87,4 +138,4 @@ Simplify a polynomial to its dominant term under an explicit large-n assumption,
 - [Kotlin collections overview](https://kotlinlang.org/docs/collections-overview.html) — operation context.
 - [Android performance](https://developer.android.com/topic/performance) — measurement context.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

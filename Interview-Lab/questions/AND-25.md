@@ -24,7 +24,48 @@ How would you support predictable navigation after notification taps and process
 
 ## Explanation in Arabic
 
-الـnotification tap ممكن يفتح التطبيق وهو مقفول تمامًا، من غير أي navigation history أو ViewModel قديم. لازم تحدد المستخدم لما يضغط Back يروح فين: لو destination جزء طبيعي من التطبيق ابني parent stack مناسب بـ`TaskStackBuilder` أو جهّز graph داخل Navigation؛ لو شاشة مستقلة فعلًا قد يكون لها task مختلف. `PendingIntent` لازم تحدد mutability وupdate semantics، وتخلي request code/URI يميز الإشعارات المختلفة عشان ما يفتحش آخر order بدل المطلوب. مرّر order ID فقط، وبعد الفتح حمّل التفاصيل من repository وافحص login والauthorization؛ الـIntent ليس دليل ثقة. بعد process death نفس المسار لازم يشتغل.
+دعم التنقل القابل للتنبؤ (Predictable Navigation) بعد النقر على الإشعارات وإعادة إنشاء العمليات (Process Recreation):
+
+1. المشكلة التي يواجهها المستخدمون (The Broken Navigation Bug):
+   - المستخدم ضغط على إشعار وصله: 'تم شحن طلبك #1234'.
+   - التطبيق فتح شاشة 'تفاصيل الطلب' مباشرة.
+   - المستخدم ضغط زر الرجوع (Back button) متوقعاً العودة إلى شاشة 'قائمة الطلبات' أو 'الصفحة الرئيسية':
+   - **الكارثة:** التطبيق أُغلق فجأة وخرج لشاشة الهاتف الرئيسية (Home screen) لأن الـ Backstack لا يحتوي إلا على شاشة التفاصيل فقط!
+
+2. الحل المعماري القياسي: `TaskStackBuilder`:
+   - نظام أندرويد يوفر **`TaskStackBuilder`** لبناء **Synthetic Backstack (سجل تنقل اصطناعي كامل)**.
+   - يتيح لك تحديد الشاشة المستهدفة مع تحديد شاشاتها الأب (Parent Activities) المحددة في الـ `AndroidManifest.xml` عبر `android:parentActivityName`.
+   - عندما يفتح المستخدم الإشعار ويضغط 'Back'، النظام يعيده للشاشة الأب بشكل طبيعي ومنطقي كأنه دخل إليها بنفسه!
+
+3. التنفيذ في Jetpack Compose و Navigation Component:
+   - استخدام `NavDeepLinkBuilder` لبناء نفس السجل الاصطناعي مع دوال الـ Composable.
+
+## Practical walkthrough
+
+بناء Synthetic Backstack حقيقي للإشعارات باستخدام `TaskStackBuilder`:
+```kotlin
+fun createOrderNotification(context: Context, orderId: String): Notification {
+    // 1. إنشاء Intent الشاشة المستهدفة:
+    val detailsIntent = Intent(context, OrderDetailsActivity::class.java).apply {
+        putExtra("order_id", orderId)
+    }
+
+    // 2. استخدام TaskStackBuilder لبناء السجل الهرمي للأب:
+    val pendingIntent = TaskStackBuilder.create(context).run {
+        // يقرأ parentActivityName من الـ Manifest (مثلاً HomeActivity):
+        addNextIntentWithParentStack(detailsIntent)
+        getPendingIntent(0, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
+
+    // 3. بناء الإشعار مع الـ PendingIntent:
+    return NotificationCompat.Builder(context, CHANNEL_ID)
+        .setContentTitle("Order Shipped!")
+        .setContentIntent(pendingIntent)
+        .setAutoCancel(true)
+        .build()
+}
+```
+في Compose Navigation: نستخدم `navController.createDeepLink().setDestination(R.id.order_details).createPendingIntent()`.
 
 ## Why it matters and how it works
 
@@ -57,10 +98,6 @@ fun orderTap(context: Context, orderId: String): PendingIntent {
 ```
 The destination fetches the order after current-account authorization and handles missing or signed-out states. Test Back and Up for the app's actual task/Navigation setup; a different architecture may route through a single host Activity instead.
 
-## Practical walkthrough
-
-notification tap لازم يفتح order المقصود سواء process عايشة أو اتقتلت. استخدم explicit Activity PendingIntent بهوية مختلفة لكل order/action، و`FLAG_IMMUTABLE` لما ما تحتاجش تعديل من طرف تاني؛ راجع update flag عشان data الجديدة ما تتخلطش بnotification قديمة. Activity/NavHost تقرأ opaque order ID وتعيد بناء route/back stack منطقي، ثم repository تطلب order بعد auth/ownership check. لو order اتحذف أو account اتبدل، اعرض missing/sign-in بدل crash. اختبر نقر notification مختلفة بالتتابع، app warm/cold، Back/Up، process recreation وtask switching؛ single test من launcher مش كفاية.
-
 ## Trade-offs and decision criteria
 
 `TaskStackBuilder` is appropriate for a normal Activity hierarchy; a special isolated destination can use a separate-task pattern, but it changes Back expectations. Navigation libraries can synthesize an in-app destination stack when the app uses one host Activity. Immutable PendingIntents reduce tampering for fixed actions; mutable ones are needed only for specific fill-in use cases and require extra care. Stable IDs are safer than bundling a stale serialized Order.
@@ -75,17 +112,33 @@ Create a notification routing contract with explicit destination type and stable
 
 ## Interview answer — short
 
-“I design notification taps as cold external launches: supply a stable destination ID, construct the expected back stack, validate authorization, and rebuild data after process death. PendingIntent identity and mutability must be deliberate.”
+Support predictable notification navigation using TaskStackBuilder (or NavDeepLinkBuilder in Compose). This creates a synthetic backstack based on parentActivityName declarations, ensuring that pressing Back from a notification-opened detail screen navigates up to the logical parent screen rather than exiting the application.
 
 ## Interview answer — structured
 
-For an ordinary destination I create a content PendingIntent and a parent stack, or configure the app's navigation graph to produce equivalent Back behavior. Each notification has a distinct identity so the system does not reuse stale extras. The launched screen accepts a stable ID and loads current data rather than depending on in-memory state. It handles signed-out and missing-item cases. I test multiple notifications, warm and cold launch, process recreation, and both Back and Up.
+To support predictable navigation when users tap notifications—even after process death—we construct a **Synthetic Backstack** using **`TaskStackBuilder`** or **`NavDeepLinkBuilder`**.
+
+If you launch a detail screen directly via a plain Intent from a notification, that Activity becomes the sole task root. When the user taps Back, the application exits immediately to the OS launcher, violating user expectations of hierarchical navigation.
+
+`TaskStackBuilder` resolves this:
+
+1. In `AndroidManifest.xml`, we declare hierarchical parent relationships using `android:parentActivityName=".MainActivity"`.
+2. When building the notification's PendingIntent, we use `TaskStackBuilder.create(context).addNextIntentWithParentStack(detailIntent).getPendingIntent(...)`.
+3. The OS constructs a synthetic task stack: when the notification is tapped, Android launches the detail screen, but synthesizes the parent Activity below it on the backstack. Pressing Back smoothly navigates the user up to the parent list or home screen.
 
 ## Interview answer — deep senior
 
-A notification can outlive the process, the session, and even the underlying entity. I therefore treat it as an untrusted external route, not a shortcut into an existing ViewModel. The PendingIntent is explicit, uses the least mutability required, and has identity chosen so distinct notifications do not collide. I choose a normal parent stack or a special task based on product navigation expectations, then verify Back and Up after a cold launch. The route carries a small stable ID; a repository fetches current data and checks account authorization. If the session expired, sign-in or a safe destination takes over.
+In modern Jetpack Navigation and Compose, this is streamlined via `NavDeepLinkBuilder`:
 
-For an order-delivered notification, I make each content Intent distinct using stable route data or a suitable request identity; extras alone can collide under PendingIntent matching. I normally set `FLAG_IMMUTABLE`, choose the update behavior deliberately, and construct a parent stack when this is a regular Activity destination. A single-Activity NavHost may instead route internally after launch. On cold or restored process entry, the destination reads only an opaque order ID, authenticates the current account, and fetches authorized data; missing or deleted orders get a safe state. I test two notifications in sequence, Back and Up, task switching, and process kill.
+```kotlin
+val pendingIntent = NavDeepLinkBuilder(context)
+    .setGraph(R.navigation.nav_graph)
+    .setDestination(R.id.orderDetailsFragment)
+    .setArguments(bundleOf("order_id" to orderId))
+    .createPendingIntent()
+```
+
+Under the hood, `NavDeepLinkBuilder` inspects the navigation graph hierarchy and pushes all antecedent destinations onto the synthetic `NavController` backstack. Even if the process was completely dead when the notification was clicked, Android starts the single Activity and initializes the full navigation stack, allowing fluid Back and Up navigation across the entire application.
 
 ## How to answer in the interview
 
@@ -101,9 +154,14 @@ Discuss PendingIntent identity, immutable versus mutable flags, task stack, Back
 
 ## Follow-up questions
 
-- Why can two notifications open the same item? **Answer:** PendingIntents with the same identity can be reused; distinguish requests and apply intentional update semantics.
-- Is the order ID inside an Intent trusted? **Answer:** no; load and authorize the entity against the current user.
-- What if the app process has been killed? **Answer:** recreate navigation from the Intent and saved state, then load durable data without relying on prior in-memory objects.
+- **Interviewer:** "What is the difference between the Up button (toolbar arrow) and the Back button?"
+  **Answer:** "The Up button strictly navigates up the logical hierarchical screen structure within your application (defined by parentActivityName). The Back button navigates through the chronological temporal history of screens the user visited."
+
+- **Interviewer:** "What happens if you don't declare `parentActivityName` when using `TaskStackBuilder`?"
+  **Answer:** "`TaskStackBuilder` won't know which parent activities to synthesize, and will only launch the target Intent, falling back to exiting on Back press unless parent intents are added manually via `addNextIntent()`."
+
+- **Interviewer:** "How do you handle deep links in notifications with Navigation Compose?"
+  **Answer:** "Using deep link URIs attached to composable destinations (`composable("order/{id}", deepLinks = listOf(navDeepLink { uriPattern = ... }))`) and setting the deep link URI on the notification Intent."
 
 ## Self-check rubric
 
@@ -115,4 +173,4 @@ Design a cold route, a parent stack, distinct PendingIntent identities, safe dat
 - [PendingIntent API](https://developer.android.com/reference/android/app/PendingIntent) — identity, flags, and mutability.
 - [Save UI states](https://developer.android.com/topic/libraries/architecture/saving-states) — restoration boundaries.
 
-Technically reviewed against these primary sources on 2026-10-13 by editorial review. The order route is illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

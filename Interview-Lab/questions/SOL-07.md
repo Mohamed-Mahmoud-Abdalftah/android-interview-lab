@@ -22,7 +22,52 @@ Separate a design principle from object construction/wiring, with a counterexamp
 
 ## Explanation in Arabic
 
-DIP principle: high-level policy تعتمد على abstraction مش low-level detail. DI technique: dependency تيجي من برّه constructor/provider بدل class تنشئها بنفسها. ممكن تستخدم Hilt وتحقن `RetrofitService` في UseCase، يبقى DI موجودة لكن DIP مش متحققة. وممكن تحقق DIP بـmanual factory من غير Hilt. الـcontract لازم يستخدم domain types ومكانه يخلي policy مستقلة. DI بتحسن wiring/test replacement، لكن مش بتصمم interface ولا بتحدد boundary لوحدها.
+المقارنة الجوهرية بين مبدأ عكس التبعية (DIP) وحقن التبعيات (Dependency Injection - DI):
+
+1. ما هو مبدأ عكس التبعية (DIP - Dependency Inversion Principle)؟
+   - هو **مبدأ تصميم معماري عالي المستوى (High-level Architectural Principle)**.
+   - يركز على: **اتجاه التبعيات (Direction of Dependencies)** وهيكلة العلاقات بين الطبقات.
+   - يقول: "لا تجعل الكود العالي يعتمد على التفاصيل، بل اجعل كلاهما يعتمد على واجهات مجردة (Abstractions)".
+
+2. ما هو حقن التبعيات (DI - Dependency Injection)؟
+   - هو **نمط تصميم عملي / أسلوب تنفيذي (Creational Design Pattern / Technique)**.
+   - يركز على: **كيفية تزويد الكائنات بالاعتماديات التي تحتاجها من الخارج بدلاً من إنشائها بنفسها بالداخل** (`new` أو instantiation).
+   - يتم تنفيذه برمجياً عبر Constructor Injection أو عبر أطر عمل مثل Hilt و Koin و Dagger.
+
+3. هل يمكن استخدام أحدهما دون الآخر؟
+   - **نعم!**:
+     * يمكنك استخدام DI بدون DIP: إذا قمت بحقن كلاس ملموس مباشر `class ViewModel(val api: RetrofitApi)`، فأنت استخدمت Dependency Injection، ولكنك انتهكت مبدأ DIP لأنك ارتهنت بكلاس منخفض المستوى دون أي تجريد!
+     * الـ DI هو الأداة التقنية التي تجعل تطبيق مبدأ DIP سهلاً وعملياً في أندرويد.
+
+## Practical walkthrough
+
+توضيح الفرق بين DI بدون DIP و DI مع DIP:
+```kotlin
+// ❌ حقن تبعيات (DI) لكن بدون عكس التبعية (Violates DIP):
+// هنا استخدمنا Constructor Injection (DI)، لكن الـ ViewModel يعتمد على كلاس ملموس مباشر من طبقة الشبكة:
+class LoginViewModel @Inject constructor(
+    private val retrofitService: RetrofitLoginService // 💥 DI مطبق لكن DIP منتهك!
+) : ViewModel() { ... }
+
+// ✅ DI متناغم مع DIP بنسبة 100%:
+// 1. DIP: اعتماد على abstraction نقي في Domain:
+interface AuthRepository {
+    suspend fun login(creds: Credentials): Result<User>
+}
+
+// 2. DI + DIP: حقن الـ Abstraction في ViewModel وربط الـ Implementation عبر Hilt Module:
+@HiltViewModel
+class LoginViewModel @Inject constructor(
+    private val authRepository: AuthRepository // DIP مطبق بامتياز!
+) : ViewModel() { ... }
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class AuthModule {
+    @Binds
+    abstract fun bindAuthRepository(impl: AuthRepositoryImpl): AuthRepository // DI يقوم بتوصيل الأسلاك
+}
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +76,6 @@ DI is a construction mechanism; DIP is source-level dependency design. They ofte
 ## Worked example
 
 Counterexample: `class TransferRule @Inject constructor(private val api: RetrofitTransferApi)` uses DI but policy imports transport. Better: `TransferRule(private val status: TransferStatusSource)` with a data adapter bound in Hilt or a manual composition root.
-
-## Practical walkthrough
-
-ممكن تستخدم Hilt وتحقن `RetrofitTransferApi` مباشرة في `TransferRule`؛ دي DI شغالة لكن DIP ضعيف لأن policy عارفة HTTP وDTO. وممكن تعمل DIP من غير Hilt: `main` أو composition root يبني `TransferRule` بـ`TransferStatusSource` adapter. في المقابلة ارسم سهم dependencies: مين بيستورد مين؟ وبعدها اشرح مين بيكوّن objects وقت التشغيل. الاختبار يثبت الفرق: fake source يخلي policy test مستقل عن الشبكة. بس ما تعملش interface لكل dependency؛ الـseam مهم لما يمنع transport من التسرب للقرار.
 
 ## Trade-offs and decision criteria
 
@@ -50,15 +91,31 @@ A marketplace uses Hilt to bind a pricing repository contract to an API-backed a
 
 ## Interview answer — short
 
-DIP is about which types high-level code depends on; DI is how an object receives its dependencies. Hilt can implement DI without achieving DIP, and a manual factory can support DIP.
+DIP is an architectural principle stating that high-level modules should depend on abstractions rather than low-level details. DI is a creational pattern/technique of supplying dependencies from the outside (via constructor injection or Hilt). You can use DI without DIP by injecting concrete classes directly.
 
 ## Interview answer — structured
 
-I can inject a concrete Retrofit service into a use case with Hilt. That is dependency injection, but the use case still depends on a low-level transport detail, so DIP has not been achieved. To invert that boundary, I define a contract in domain terms and let the adapter implement it; Hilt or manual wiring then supplies the implementation. DI makes dependencies explicit and replaceable. DIP determines whether those dependencies point to stable policy or volatile mechanism. For example, a manual factory can construct `TransferRule(FakeStatusSource())` in a unit test and `TransferRule(NetworkStatusSource())` in production. The architecture is still inverted if the rule knows only the status contract.
+While frequently conflated, Dependency Inversion Principle (DIP) and Dependency Injection (DI) operate at fundamentally different architectural levels.
+
+1. **DIP (The Architectural Principle)**:
+   - Formulated as the 'D' in SOLID.
+   - Dictates **coupling direction**: high-level business policies must depend on abstractions (interfaces), and low-level detail implementations must depend on those same abstractions.
+   - It answers: *'How should my software layers be decoupled structurally?'*
+
+2. **DI (The Creational Technique / Pattern)**:
+   - A concrete implementation pattern (typically powered by frameworks like Hilt, Dagger, or Koin).
+   - Dictates **how dependencies are instantiated**: instead of a class instantiating its collaborators (`val repo = UserRepository()`), they are passed into its constructor from an external assembler.
+   - It answers: *'How does a class obtain references to its collaborators at runtime?'*
+
+Crucially, **using DI does not automatically satisfy DIP**. Injecting a concrete `RetrofitApi` into a `ViewModel` uses Dependency Injection, but severely violates the Dependency Inversion Principle because the high-level ViewModel remains tightly coupled to low-level networking details.
 
 ## Interview answer — deep senior
 
-The distinction matters because teams often confuse a tool with an architecture. DI is the act of providing collaborators from outside rather than constructing them internally. It can be constructor injection, a manual composition root, or Hilt. DIP asks whether high-level business decisions reference abstractions that are independent of low-level transport or persistence. A generated Hilt graph can still connect a use case directly to `RetrofitService`, leaking HTTP concerns into policy. Conversely, a small app can manually construct an adapter for a clean domain contract and satisfy DIP. I review imports, module edges, and types crossing the interface, then use DI to wire the chosen design. DI answers how an object receives collaborators; DIP answers which abstractions the source code depends on. Constructor injection can improve testability while still leaving a business rule coupled to Retrofit. Conversely, a manual composition root can inject a domain-shaped interface and satisfy the dependency direction without a framework. I would inspect imports and return types, not annotations. If the interface returns a network DTO, the dependency is still leaking. In production, Hilt is useful for Android object graphs and scopes, but I keep provider binding at the composition edge and policy tests independent of Hilt. That makes the design decision observable rather than a terminology exercise.
+Under the hood, DI acts as the practical enabler of DIP. When you apply DIP, a class depends on an abstract interface (`UserRepository`). However, at runtime, a concrete instance (`UserRepositoryImpl`) must actually be created and passed to that class. Without DI, the class or its caller would have to manually call `UserRepositoryImpl()`, resurrecting the compile-time coupling DIP was designed to eliminate.
+
+Dagger/Hilt resolves this using **`@Binds`**: it maintains a compile-time dependency graph that maps the Domain abstraction `UserRepository` to the Data implementation `UserRepositoryImpl`, injecting it seamlessly.
+
+In unit testing, DI allows passing an in-memory `FakeUserRepository` without any DI framework, making tests fast and deterministic.
 
 ## How to answer in the interview
 
@@ -74,8 +131,11 @@ Construct a Hilt-but-not-DIP example and a manual-DI-with-DIP example; inspect p
 
 ## Follow-up questions
 
-- [SOL-06](../sol-06/): What does DIP require? **Answer:** high-level policy relies on stable abstractions.
-- [DI-01](../di-01/): What does DI do? **Answer:** supplies dependencies externally and makes construction/replaceability explicit.
+- **Interviewer:** "Can you have DIP without a DI framework like Hilt?"
+  **Answer:** "Yes. You can invert dependencies using pure interfaces and wire them up manually using manual dependency injection (pure Constructor Injection in Application class) without any third-party framework."
+
+- **Interviewer:** "What is the `@Binds` annotation in Hilt/Dagger, and how does it relate to DIP?"
+  **Answer:** "`@Binds` tells Hilt which concrete implementation class to provide when an abstract interface is requested, directly wiring DIP abstractions at compile time without generating extra factory code."
 
 ## Self-check rubric
 
@@ -86,4 +146,4 @@ Give one counterexample proving DI and DIP are independent, then repair the boun
 - [Android dependency injection](https://developer.android.com/training/dependency-injection) — injection mechanisms.
 - [Robert C. Martin, A Little Architecture](https://blog.cleancoder.com/uncle-bob/2016/01/04/ALittleArchitecture.html) — inversion.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

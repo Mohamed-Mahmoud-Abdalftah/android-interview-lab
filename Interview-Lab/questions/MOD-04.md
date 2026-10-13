@@ -24,11 +24,46 @@ What is high cohesion and low coupling?
 
 ## Explanation in Arabic
 
-High cohesion تعني عناصر module تخدم مسؤولية/قدرة واضحة وتتغير غالبًا لنفس السبب. Low coupling تعني علاقتها بالآخرين عبر عقود صغيرة ومستقرة، فلا يحتاج feature معرفة تفاصيل implementation داخل غيره. مثلًا `:feature:checkout` يملك checkout UI/state/use cases المتصلة، لكنه لا يملك كل HTTP client للتطبيق. لو class واحدة مشتركة انتقلت إلى `:core:common` فذلك لا يقلل coupling تلقائيًا؛ قد يجعل عشرات modules تعتمد على API واسعة. قيّم أسباب التغيير واتجاه dependencies ووقت إعادة البناء.
+ما هو التماسك العالي (High Cohesion) والاقتران المنخفض (Low Coupling) في سياق معمارية موديولات Android؟
+
+1. التماسك العالي (High Cohesion - الارتباط الوثيق داخلياً):
+   - يعني أن جميع الكلاسات والدوال داخل الموديول الواحد تعمل معاً لخدمة **مسؤولية واحدة واضحة ومحددة (Single Cohesive Responsibility)**.
+   - **مثال لموديول عالي التماسك**: `:core:network` يحتوي فقط على إعدادات الـ HttpClient، والـ Interceptors، والـ SSL Pinning، وإدارة الـ WebSockets. كل كود فيه يخدم الاتصال بالشبكة.
+   - **مثال لموديول منخفض التماسك (Low Cohesion - كارثي)**: موديول يسمى `:core:utils` أو `:common` يحتوي على كود لتحميل الصور، وكود لحساب الضرائب، وكود لتنسيق التواريخ، ودوال للتعامل مع البلوتوث! الكلاسات داخله لا رابط منطقي بينها.
+
+2. الاقتران المنخفض (Low Coupling - قلة الاعتمادية خارجياً):
+   - يعني أن الموديول مستقل بذاته قدر الإمكان، ويعتمد على أقل عدد ممكن من الموديولات الخارجية، ويفصل تعاملاته عبر واجهات مجردة (Abstract Contracts).
+   - إذا أردت تعديل أو إعادة كتابة كود موديول `:feature:auth`، يجب ألا يؤثر ذلك أو يتطلب أي تعديل في موديول `:feature:cart`.
+
+3. القاعدة الهندسية:
+   - **High Cohesion** يجعل الموديول سهل الفهم، والصيانة، والاختبار.
+   - **Low Coupling** يجعل النظام مرناً، ويقلل من تسرب الأخطاء عند التعديل، ويسرع أوقات التجميع عبر تقليل تشابك شجرة التبعيات.
 
 ## Practical walkthrough
 
-High cohesion: feature payment تجمع ما يخص payment lifecycle؛ low coupling: لا تستورد شاشة profile لمجرد قراءة account ID. افحص “لماذا يتغير هذا module؟” و“من يتأثر؟”. لو model shared يتغير لأجل API جديد ويعيد compile 20 feature، ربما contract واسع. لا تفصل classes مترابطة فقط للحصول على dependency graph جميلة.
+المقارنة بين تصميم منخفض التماسك ومقترن بشدة وتصميم متماسك عالي ومنخفض الاقتران:
+```kotlin
+// ❌ تصميم كارثي: Low Cohesion + High Coupling في موديول عشوائي (:core:common):
+// يحتوي على كود ضرائب، وشاشات، وشبكة مخلطة في مكان واحد:
+class CommonUtils {
+    fun formatPrice(amount: Double): String = "$$amount"
+    fun parseJwtToken(token: String): JwtClaims = ... // منطق أمان!
+    fun calculateShipping(weight: Double, distance: Int): Double = ... // منطق مالي للشحن!
+}
+// أي موديول يستورد CommonUtils يرتبط تلقائياً بكل هذه التبعيات غير الضرورية!
+
+// ✅ تصميم معماري راقٍ: High Cohesion + Low Coupling:
+// 📁 في موديول :domain:pricing (High Cohesion: متخصص في التسعير فقط):
+class PriceCalculator @Inject constructor(private val currencyFormatter: CurrencyFormatter) {
+    fun calculateFinalTotal(items: List<CartItem>, taxRate: Double): Money = ...
+}
+
+// 📁 في موديول :core:auth (High Cohesion: متخصص في التحقق فقط):
+class TokenParser @Inject constructor() {
+    fun parse(rawToken: String): Result<AuthSession> = ...
+}
+// الموديولات لا تعتمد على بعضها إطلاقاً (Low Coupling)! كلاهما قابل لإعادة الاستخدام والاختبار في معزل.
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +87,27 @@ Review module change history, API surface and dependency graph. Ask whether one 
 
 ## Interview answer — short
 
-“High cohesion groups code with one reason to change; low coupling keeps collaboration through small stable contracts instead of implementation details.”
+High cohesion means elements inside a module belong together and serve a single, unified purpose. Low coupling means modules maintain minimal dependencies on each other, interacting through stable abstract contracts. Together, they isolate changes, prevent ripple effects across features, and optimize build caching.
 
 ## Interview answer — structured
 
-“I evaluate cohesion by asking whether classes in a module serve the same capability and evolve together. I evaluate coupling by checking what a consumer must import and know. Checkout should own its workflow and depend on a small product/payment contract, not catalog's internal DTOs. Extracting everything shared into common is not automatically good: the common API can become a high-fan-out bottleneck. I balance reuse, ownership and actual change patterns.”
+Cohesion and coupling are the twin pillars of sustainable software architecture, applied directly at the Gradle module level:
+
+1. **High Cohesion (Inside the Module)**: All components within a module change for the same business reason and serve a tightly focused domain responsibility. For example, `:feature:search` contains only query processing, search results UI, and recent searches storage. If a module contains auth helpers, date formatters, and payment models, it suffers from low cohesion and becomes an unmaintainable junk drawer.
+
+2. **Low Coupling (Between Modules)**: Modules minimize their knowledge of and dependencies on other modules. Instead of depending on concrete implementations or peer feature modules, they interact across clean boundaries using dependency inversion and API contracts.
+
+Architecturally, high cohesion ensures that when a feature changes, developers only modify files within that single module. Low coupling ensures that changes made inside that module never trigger unexpected regressions or recompilations in other modules.
 
 ## Interview answer — deep senior
 
-“Cohesion is about why code changes together; coupling is about how much one unit must know about another. A checkout module containing cart validation, payment initiation and confirmation may be cohesive because those pieces support one user capability. It becomes tightly coupled if it reaches into catalog's database DTO or private UI state to obtain a product label. I would expose a narrow contract or share an appropriately owned domain value. I do not chase zero dependencies: a feature still needs other capabilities, but the direction and API should be intentional. I also avoid reflexively extracting every repeated function into `:core:common`. That can make a large number of modules depend on an unstable grab bag and broaden rebuilds. A small duplication may be cheaper until the semantics are truly shared. To assess the architecture, I inspect the graph, public API, change history and team workflow: does a simple internal change require edits across unrelated modules? Do consumers need implementation types? The goal is a boundary that makes expected product changes local while leaving integration explicit and testable.”
+A common architectural trap in Android modularization is **False Cohesion through Over-sharing**.
+
+Teams often create a `:core:common` module containing utility extension functions, custom views, and network DTOs. Developers assume this is 'high reuse'. In reality, `:core:common` exhibits **extremely low cohesion and catastrophic high coupling**—every feature module imports it. When an engineer modifies a string utility in `:core:common`, the ABI change invalidates the build cache for 100% of the downstream feature modules.
+
+To achieve true high cohesion and low coupling:
+- Break `:core:common` into hyper-focused modules: `:core:model`, `:core:network`, `:core:ui`.
+- Tolerate minor duplication of trivial helper functions (e.g., 2 lines of string formatting) rather than introducing a global shared dependency that couples otherwise independent features.
 
 ## How to answer in the interview
 
@@ -76,9 +123,11 @@ Discuss reasons to change, public API size, semantic reuse, fan-out, duplication
 
 ## Follow-up questions
 
-- Does low coupling mean no dependencies? **Answer:** no; it means deliberate narrow dependencies on stable contracts.
-- Is extracting all duplicate code good? **Answer:** no; semantic ownership and shared API cost matter.
-- What evidence shows poor cohesion? **Answer:** unrelated product changes repeatedly modify one mixed module.
+- **Interviewer:** "Is zero coupling achievable between two features?"
+  **Answer:** "Yes, at compile time! Feature A and Feature B can communicate via deep link navigation URLs or event buses registered in the :app module without any compile-time dependency between them."
+
+- **Interviewer:** "What is the danger of prioritizing DRY (Don't Repeat Yourself) over Low Coupling?"
+  **Answer:** "Coupling unrelated modules to share a 3-line utility creates tight build and architectural coupling that costs far more in maintenance and build time than harmless code duplication."
 
 ## Self-check rubric
 
@@ -89,4 +138,4 @@ Define both terms, diagnose one boundary violation, and weigh sharing versus dup
 - [Android modularization guide](https://developer.android.com/topic/modularization) — encapsulation and ownership.
 - [Common modularization patterns](https://developer.android.com/topic/modularization/patterns) — practical boundaries.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Design criteria are reasoned guidance.
+Technically reviewed against primary documentation on 2026-10-13.

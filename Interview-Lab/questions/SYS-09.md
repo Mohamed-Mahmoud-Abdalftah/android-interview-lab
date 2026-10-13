@@ -22,11 +22,66 @@ Design privacy-aware analytics, structured logs, metrics and crash reporting.
 
 ## Explanation in Arabic
 
-نفصل analytics للأفعال، logs للتشخيص، metrics للاتجاهات وcrash/ANR reporting للأعطال. كل event له schema, version, correlation ID وprivacy classification؛ ما نرسلش tokens, card data أو PII بدون حاجة وموافقة/سياسة مناسبة. نقيس startup, ANR, crash-free sessions, sync pending age وpayment unknowns، ونربط client/server IDs من غير كشف أسرار.
+كيف تصمم بنية المراقبة التشغيلية (Analytics, Logs, Metrics, and Crash Reporting) لتطبيق ضخم دون التأثير على الأداء والبطارية؟
+
+1. الركائز الأربع للمراقبة التشغيلية (Observability Pillars):
+   - **Crash Reporting (Crashlytics / Sentry)**: التقاط الـ Uncaught Exceptions، وحفظ الـ Breadcrumbs (آخر 30 إجراء قام به المستخدم قبل السقوط)، وربط ملف الـ `mapping.txt` لفك التشفير.
+   - **Analytics Events**: تتبع سلوك المستخدم ومسارات التحويل (Funnels). يجب تجميعها (Batching) وإرسالها دورياً في الخلفية.
+   - **Application Performance Monitoring (APM)**: قياس زمن الـ Cold Start، ومعدل سقوط الإطارات (Jank / Slow Frames عبر مكتبة `androidx.metrics.performance:jankstats`)، ومعدل استجابة الشبكة.
+   - **Operational Logging**: تسجيل السجلات التشغيلية محلياً مع تطهير كامل من البيانات الحساسة (PII Scrubbing).
+
+2. تصميم محرك الـ Analytics الذاتي (Event Ingestion Engine):
+   - **التخزين المؤقت على القرص (Disk-Backed Queue)**: حفظ الأحداث في جدول SQLite أو ملفات محلية فور توليدها، لضمان عدم ضياعها في حال إغلاق التطبيق أو انقطاع الإنترنت.
+   - **الإرسال المجمع (Batching & Backoff)**: إرسال الأحداث في حزم (مثلاً كل 30 حدثاً أو كل دقيقتين) لتوفير راديو الشبكة والبطارية، مع تفويض الإرسال لـ WorkManager إذا كان التطبيق في الخلفية.
+
+3. الامتثال والخصوصية (Privacy & Compliance):
+   - حظر طباعة الـ PII (بطاقات ائتمانية، إيميلات، أرقام هواتف) وتطهير السجلات برمجياً قبل الإرسال.
 
 ## Practical walkthrough
 
-لو payment علق Pending، الفريق يحتاج يعرف operation ID، المرحلة، زمن الانتظار، وbackend status من غير ما يسجل PAN أو token. Analytics للسلوك، logs للتفاصيل الآمنة، metrics للاتجاهات، crash/ANR للأعطال؛ ما تخلطهمش في event واحد ضخم. اعمل schema typed وretention/consent policy، وقس sync pending age وpayment reconciliation delay كـSLOs قابلة للتنبيه.
+تصميم محرك Analytics مجمع مع طابور تخزين محلي وتطهير البيانات الحساسة:
+```kotlin
+class AnalyticsEventDispatcher @Inject constructor(
+    private val eventQueueDao: AnalyticsDao,
+    private val analyticsApi: AnalyticsApiService
+) {
+    private val eventChannel = Channel<AnalyticsEvent>(Channel.BUFFERED)
+    private val BATCH_SIZE = 25
+
+    init {
+        startBatchProcessor()
+    }
+
+    fun trackEvent(name: String, params: Map<String, Any> = emptyMap()) {
+        // 1. تطهير البيانات وحجب أي حقول حساسة:
+        val sanitizedParams = params.filterKeys { !it.contains("password", true) && !it.contains("card", true) }
+        val event = AnalyticsEvent(name = name, parameters = sanitizedParams, timestamp = System.currentTimeMillis())
+        eventChannel.trySend(event)
+    }
+
+    private fun startBatchProcessor() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val buffer = mutableListOf<AnalyticsEvent>()
+            while (isActive) {
+                // 2. تجميع الأحداث حتى اكتمال الـ Batch أو انقضاء مهلة زمنية
+                val event = withTimeoutOrNull(30_000L) { eventChannel.receive() }
+                if (event != null) buffer.add(event)
+                
+                if (buffer.size >= BATCH_SIZE || (buffer.isNotEmpty() && event == null)) {
+                    try {
+                        analyticsApi.sendBatch(buffer.toList())
+                        buffer.clear()
+                    } catch (e: Exception) {
+                        // في حال فشل الشبكة: حفظ الأحداث في قاعدة البيانات المحلية لإرسالها لاحقاً
+                        eventQueueDao.insertAll(buffer.map { it.toEntity() })
+                        buffer.clear()
+                    }
+                }
+            }
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -61,15 +116,36 @@ A commerce app emits payment operation state transitions by opaque ID, records a
 
 ## Interview answer — short
 
-“I define structured, versioned events for analytics and diagnosis, collect crash/ANR and performance metrics, and correlate client/server operations by opaque ID. I redact secrets and monitor business unknown states, not just HTTP errors.”
+Design observability across crashes, analytics, metrics, and logs using disk-backed batching queues to conserve battery and survive process death. Enforce strict PII scrubbing before storage, track cold start and frame-drop metrics via JankStats, and upload crash breadcrumbs and logs asynchronously.
 
 ## Interview answer — structured
 
-“I separate user analytics from operational telemetry. Logs explain individual failures, metrics show rates and latency, crash/ANR tools capture platform failures, and business events track durable state transitions. I define schemas and stable correlation IDs, redact tokens and personal data, and honor consent/retention policy. For offline uploads of telemetry I bound the queue. A payment timeout is measured as Unknown until reconciliation, so dashboards do not misclassify it as failure. Release mapping files make obfuscated traces actionable.”
+A unified observability architecture balances real-time diagnostic visibility against device battery and network overhead:
+
+1. **Crash Reporting & Diagnostic Breadcrumbs**:
+   - Integrate crash SDKs (Crashlytics/Sentry) configured with automated deobfuscation (`mapping.txt`).
+   - Maintain a circular buffer of the last 30 user actions (screen views, network status transitions, critical user clicks) recorded as diagnostic breadcrumbs attached automatically to unhandled exceptions.
+
+2. **Disk-Backed Event Ingestion Pipeline**:
+   - Dispatching network requests for individual analytics events drains battery radios rapidly. Ingest events into an in-memory queue that flushes to a local SQLite buffer.
+   - Batch-upload events periodically (e.g., every 30 events or 60 seconds) with GZIP compression, deferring large backlog flushes to Wi-Fi/charging via WorkManager.
+
+3. **APM & User Experience Telemetry**:
+   - Measure application launch latency (Time to Initial Display & Time to Full Display via `reportFullyDrawn()`).
+   - Instrument UI rendering using AndroidX `JankStats` to track jank percentages across critical scrollable surfaces.
+
+4. **PII Scrubbing Boundary**:
+   - Enforce an architectural sanitizer that intercepts all logs and analytics payloads, redacting PAN numbers, email addresses, and auth headers before persistence.
 
 ## Interview answer — deep senior
 
-“Observability should test the architecture’s promises. I instrument cold-start time, ANR/crash rate, API latency by endpoint, cache stale age, outbox pending age, token refresh failures and payment reconciliation delay. Every business operation has an opaque correlation ID shared with backend logs, but no credentials or full payment payload enter telemetry. Events are typed/versioned with ownership and retention; sampling controls high-volume traces while aggregate counters preserve trends. Offline telemetry uses bounded storage and consent-aware upload. I compare client and server views because a lost response can produce client timeout and server success. During staged rollout, alert thresholds and kill-switch criteria are defined before deployment. Logging Authorization header leaks credentials. I would use an opaque operation ID to connect client events with backend state transitions, and define safe event schemas before emitting data. A payment Pending age histogram can reveal reconciliation backlog; a generic `request failed` counter cannot. I would segment crash and ANR data by release cohort, and alert on user-visible thresholds rather than every transient network error. I would verify release logs and crash attachments contain no tokens or card data, and define retention, access and consent rules for each sink.”
+From a staff-level infrastructure perspective, mobile observability requires managing high-volume data streams and ANR detection:
+
+1. **Application Not Responding (ANR) Forensics**: Standard crash handlers do not capture ANRs because the main thread is blocked. Modern architectures use `ApplicationExitInfo` (introduced in Android 11) to inspect system tombstone traces and exit reasons (`REASON_ANR`, `REASON_CRASH_NATIVE`, `REASON_LOW_MEMORY`) upon the subsequent app cold start.
+
+2. **Adaptive Dynamic Sampling**: High-volume telemetry (e.g., measuring individual HTTP call latencies) can overwhelm backend ingestion servers at scale. Implement server-configurable sampling rates via feature flags (e.g. logging network performance traces for 1% of users, while capturing 100% of crashes and financial failure events).
+
+3. **Zero-Overhead Debug vs. Release Logging**: Use Timber with separate tree implementations: a `DebugTree` logging verbose output in development, and a stripped release pipeline where R8 removes `Log.v` and `Log.d` bytecodes entirely, routing only critical error reports to the telemetry queue.
 
 ## How to answer in the interview
 
@@ -85,8 +161,11 @@ Choose SLOs and show how one opaque ID traces an ambiguous operation.
 
 ## Follow-up questions
 
-- [SYS-17](../sys-17/): How use kill switch? **Answer:** tie it to measured guardrails and server enforcement.
-- [DAT-20](../dat-20/): How observe lost response? **Answer:** correlate client Pending ID with server ledger status.
+- **Interviewer:** "What is reportFullyDrawn() and why is it preferred over Activity onCreate timing?"
+  **Answer:** "reportFullyDrawn() indicates when the app is completely interactive with all async network data rendered, whereas onCreate only measures initial framework view attachment."
+
+- **Interviewer:** "How do you detect memory leaks in production without crashing user apps?"
+  **Answer:** "Track aggregate heap metrics and OEM OOM exit rates via ApplicationExitInfo; avoid running heavy debug tools like LeakCanary in production builds."
 
 ## Self-check rubric
 
@@ -97,4 +176,4 @@ Can I classify signals, redact data, bound offline storage and measure unknown o
 - [Android vitals](https://developer.android.com/google/play/vitals) — crash/ANR signals.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — data ownership.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

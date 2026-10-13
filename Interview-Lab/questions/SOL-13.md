@@ -22,7 +22,38 @@ Explain interface cost and distinguish useful polymorphism from ceremonial one-t
 
 ## Explanation in Arabic
 
-Interface لكل class تخلي codebase فيها `Foo`/`FooImpl` حتى لو مفيش alternate implementation أو consumer محتاج abstraction. ده يضاعف navigation وDI bindings ويجمّد API قبل ما تفهم variation الحقيقية. tests تقدر تختبر pure concrete classes مباشرة؛ fake محتاجها عند boundary مهم مش كل helper. Interface مفيدة عند repository contract، provider strategies، أو module boundary له سبب مستقل للتغيير. اسأل: مين consumer؟ هل محتاج contract مختلف؟ هل signature domain-friendly؟ لو لا، خلّي class concrete واستخدم `internal`/constructor injection.
+لماذا قد يؤدي إنشاء واجهة (Interface) لكل كلاس إلى تدهور التصميم وجعله أسوأ (Interface Exhaustion / Over-abstraction)؟
+
+1. ظاهرة الـ Interface-itis (الإفراط في إنشاء الواجهات):
+   - بعض المطورين يعتقدون خطأً أن الاحترافية تعني كتابة `interface UserProfileUseCase` ومعه `class UserProfileUseCaseImpl`، و `interface CartCalculator` ومعه `class CartCalculatorImpl` لكل كلاس في التطبيق!
+
+2. لماذا يجعل هذا التصميم أسوأ؟
+   - **مضاعفة حجم وتعقيد الكود بلا داعٍ (Double the Code / Navigational Friction)**: يتضاعف عدد ملفات المشروع بنسبة 100%. عند الضغط على الدالة في Android Studio (Ctrl+B)، لا تذهب مباشرة للكود الحقيقي بل للـ Interface الفارغ، مما يشتت المطورين.
+   - **تضخم تكلفة الصيانة وتوليد الكود (Maintenance & DI Overhead)**: يتطلب كل Interface كتابة سطر `@Binds` إضافي في Dagger/Hilt، مما يزيد من وقت الـ Annotation Processing وحجم ملفات الـ DEX.
+   - **تجريد زائف (False Abstraction)**: التجريد الذي ليس له سوى تطبيق حقيقي وحيد ولن يتغير أبداً هو تجريد وهمي لا يقدم أي قيمة تعددية (Polymorphism).
+
+3. متى ننشئ Interface؟
+   - فقط عند وجود حدود معمارية حقيقية (Clean Architecture DIP)، أو وجود تطبيقات متعددة بالفعل (Polymorphism)، أو لعزل خدمات النظام الخارجية الصعبة.
+
+## Practical walkthrough
+
+المقارنة بين البويلربليت غير المجدي والتصميم البراغماتي النظيف:
+```kotlin
+// ❌ OVER-ABSTRACTION: واجهة عقيمة لكل كلاس UseCase بسيط:
+interface CalculateTaxUseCase {
+    fun execute(subtotal: Long): Long
+}
+class CalculateTaxUseCaseImpl : CalculateTaxUseCase {
+    override fun execute(subtotal: Long): Long = (subtotal * 0.15).toLong()
+}
+// بالإضافة لكتابة Hilt Module كامل لربط Interface بـ Impl لمجرد عملية حسابية!
+
+// ✅ تصميم نقي وعملي: الكلاس الملموس كافٍ ومثالي وقابل للاختبار الفوري:
+class CalculateTaxUseCase {
+    operator fun invoke(subtotal: Long): Long = (subtotal * 0.15).toLong()
+}
+// في الـ Test: يتم استدعاؤه فورياً: CalculateTaxUseCase().invoke(100L) دون أي Mocking أو DI!
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +62,6 @@ Abstraction is a trade-off. It can decouple change and enable substitution, but 
 ## Worked example
 
 Example: `PriceFormatter(locale)` has one deterministic implementation and can be tested directly. `PaymentGateway` has two SDK adapters and a policy consumer, so an interface has a clear role. Hilt can inject either a concrete formatter or a bound gateway interface.
-
-## Practical walkthrough
-
-لو `PriceFormatter` deterministic وله implementation واحد، interface بنفس الاسم وclass `Impl` مش هتضيف boundary مفيد؛ هتزود ملفات وnavigation بس. اختبر formatter مباشرة. أما `PaymentGateway` له SDKين أو external side effect وpolicy لازم تفضل مستقلة عنه؛ هنا interface صغير منطقي. اسأل قبل abstraction: مين المستهلك؟ ما هي variation المتوقعة؟ هل fake مطلوب لعزل I/O فعلي؟ واعمل refactor لما تظهر إجابة حقيقية. اختبار class concrete مش عيب، وHilt يقدر يبنيها مباشرة؛ annotations مش سبب كافي لإنشاء interface.
 
 ## Trade-offs and decision criteria
 
@@ -50,15 +77,25 @@ A feature team keeps concrete validators and formatters internal, with narrow in
 
 ## Interview answer — short
 
-An interface per class adds indirection and maintenance without necessarily isolating change. I use interfaces for real consumer contracts or multiple implementations, and keep simple cohesive helpers concrete.
+Creating an interface for every class doubles file counts, introduces IDE navigation friction, adds redundant Dagger/Hilt binding boilerplate, and creates 'false abstractions' with no polymorphic value. Concrete classes are simpler, faster to compile, and trivially testable in modern Kotlin.
 
 ## Interview answer — structured
 
-A one-to-one interface and implementation often change together, so the interface may not be protecting anything. It adds navigation, bindings and fake boilerplate. For a pure formatter, I can inject and test the concrete class directly. For a payment gateway or domain-facing repository, a narrow contract may isolate a volatile adapter or support multiple providers. I decide from the consumer and change boundary, not from a rule that every class must have a mockable interface. A warning sign is when each small feature change edits both the interface and its only implementation, then updates a binding module and several mocks. That is usually not independent variation.
+The dogmatic practice of creating an interface for every single concrete class (the `IFoo` / `FooImpl` anti-pattern) harms codebases through cognitive friction, maintenance bloat, and compile-time costs.
+
+1. **Navigational Friction & Cognitive Overhead**: It doubles the file count in the project. When developers navigate code in Android Studio ('Go to Implementation'), they are constantly routed through empty interface definitions rather than directly to the executing code.
+
+2. **False Abstraction**: An interface that has exactly one implementation and will only ever have one implementation is not an abstraction—it is redundant ceremony. True abstractions emerge from polymorphism or strict dependency inversion boundaries, not mechanical habits.
+
+3. **Build & Dagger Overhead**: Every 1-to-1 interface requires an explicit `@Binds` declaration in a Dagger module, bloating generated annotation processor code (KSP) and increasing APK DEX method counts.
+
+In modern Kotlin, concrete classes are open to testing (instantiating pure classes directly or using MockK), meaning speculative interfaces offer zero testing benefit for pure business classes like Use Cases.
 
 ## Interview answer — deep senior
 
-The cost of an abstraction is paid on every read and every refactor. If `Thing` and `ThingImpl` have identical APIs and no independent consumers or implementations, the pair may make a small feature harder to understand. It can even freeze a poor interface too early. I prefer to keep a pure helper concrete and test its behavior directly. When a high-level policy would otherwise import Retrofit or a vendor SDK, a consumer-oriented contract has a real job; provider strategies also justify one. I inspect module dependencies and signature types, because an interface returning `Response<Dto>` does not decouple business policy. Hilt can inject concrete classes, so DI framework use is not a reason to multiply interfaces. I judge an interface by the boundary it protects, not by a class-count rule. A pure price formatter with one implementation can be constructed and tested directly. A payment gateway facing several SDKs and an I/O boundary benefits from a stable, consumer-shaped contract. One-to-one interfaces introduce navigation cost, binding modules, and the illusion of flexibility while the implementation and interface still change together. I would ask which independent change or test needs substitution. If there is no answer, keep the concrete type and refactor when variation becomes real. If the answer is provider selection, define failure and cancellation semantics before creating the abstraction.
+Historically, Java codebases relied on interfaces because Java proxies (and legacy Mockito) could not mock final or concrete classes without bytecode manipulation tools like PowerMock. In modern Android with Kotlin and contemporary testing tools, this technical constraint no longer exists.
+
+Furthermore, senior architects distinguish between **API Boundaries** and **Internal Implementation Details**. Interfaces belong at architectural boundaries (such as a Domain Repository consumed by a ViewModel across a multi-module boundary). Within the boundaries of a single cohesive module, internal helper classes, validators, and single-purpose use cases should remain concrete until polymorphism is genuinely required.
 
 ## How to answer in the interview
 
@@ -74,8 +111,11 @@ Compare one-to-one interface pair with provider contract; inspect client and cha
 
 ## Follow-up questions
 
-- [ARC-15](../arc-15/): When is concrete sufficient? **Answer:** when no meaningful variation or boundary is protected.
-- [SOL-06](../sol-06/): When is abstraction valuable? **Answer:** when it keeps policy independent of volatile details.
+- **Interviewer:** "What is the 'Rule of Three' regarding abstractions?"
+  **Answer:** "Do not extract an abstraction or interface until you find yourself writing the same code or needing polymorphism for the third time. Premature abstraction is worse than slight duplication."
+
+- **Interviewer:** "Does creating an interface make code automatically decoupled?"
+  **Answer:** "No. If an interface leaks implementation details in its method signatures or exceptions (e.g. `fun fetchSqliteUser()`), it is tightly coupled despite being an interface."
 
 ## Self-check rubric
 
@@ -86,4 +126,4 @@ Choose a formatter and a payment gateway; justify which one needs an interface a
 - [Android architecture recommendations](https://developer.android.com/topic/architecture/recommendations) — adaptable design guidance.
 - [Android dependency injection](https://developer.android.com/training/dependency-injection) — constructor injection without mandatory interfaces.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

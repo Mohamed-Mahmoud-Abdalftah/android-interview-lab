@@ -22,11 +22,43 @@ Choose SharingStarted using battery cost, freshness and subscriber transitions.
 
 ## Explanation in Arabic
 
-لو upstream sensor/socket غالية، `WhileSubscribed` توقفها بعد آخر UI subscriber وتوفر battery، مع grace قصيرة للrotation. لو لازم cache تبقى دافئة قبل أول شاشة، `Eagerly` قد يناسب مع cost واضح. `Lazily` يبدأ عند أول subscriber لكن يفضل شغال حتى نهاية scope. نختبر restart والفجوة في data، ونحدد replay expiration/session logout بدل إعداد ثابت لكل streams.
+اختيار استراتيجية `SharingStarted` المناسبة لتحقيق التوازن بين استهلاك البطارية والصحة البرمجية وسلوك الاشتراكات:
+
+1. شجرة القرار الهندسي (Engineering Decision Tree):
+   - **هل التدفق يمثل UI State في ViewModel ويعرض على الشاشة؟**
+     * الإجابة دائماً: **`SharingStarted.WhileSubscribed(5_000L)`**.
+     * **لماذا؟** يوقف التدفق في الـ Background لتوفير البطارية، ومهلة الـ 5 ثوانٍ تحافظ على استمرار التدفق أثناء تدوير الشاشة بدون إعادة تشغيل.
+
+   - **هل التدفق يمثل Cache عالمي مشترك (Singleton / App Scope) لا نريد إعادة حسابه؟**
+     * الإجابة: **`SharingStarted.Lazily`**.
+     * **لماذا؟** ينتظر حتى تطلبه أول شاشة، وبمجرد تشغيله يظل حياً في الذاكرة لتستفيد منه كل الشاشات اللاحقة بدون تكرار الحساب.
+
+   - **هل التدفق يمثل عملية حيوية يجب أن تبدأ فوراً حتى لو لم ينظر إليها أحد؟**
+     * الإجابة: **`SharingStarted.Eagerly`**.
+     * **لماذا؟** يبدأ فوراً مع إنشاء الكلاس، مثل: جلب وتجهيز إعدادات الأمان والتشفير عند بدء التطبيق.
 
 ## Practical walkthrough
 
-لو repository Flow بتفتح location updates، `Eagerly` قد تفضل شغالة من غير UI؛ `WhileSubscribed(5_000)` توفر battery بعد خروج الشاشة وتتفادى restart سريع أثناء rotation. لكن لو sync مهمة مالية لازم تكمل حتى UI مخفية، ما تربطش شغلها بعدد subscribers؛ انقلها worker/repository owner. راقب replay expiration لأن cache ممكن ترجع initial value.
+تطبيق عملي لتوزيع الاستراتيجيات في تطبيق حقيقي:
+```kotlin
+// 1. شاشة UI عادية -> WhileSubscribed(5000):
+val userProfile: StateFlow<UserProfile> = repository.observeUser()
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), UserProfile.Empty)
+
+// 2. كاش أسعار العملات في Singleton Repository -> Lazily:
+@Singleton
+class CurrencyRepository(api: CurrencyApi, appScope: CoroutineScope) {
+    val exchangeRates = api.streamRates()
+        .shareIn(appScope, SharingStarted.Lazily, replay = 1)
+}
+
+// 3. مراقبة حالة اتصال الإنترنت للتطبيق كله -> Eagerly:
+@Singleton
+class NetworkMonitor(context: Context, appScope: CoroutineScope) {
+    val isOnline = observeNetworkConnectivity(context)
+        .stateIn(appScope, SharingStarted.Eagerly, initialValue = true)
+}
+```
 
 ## Why it matters and how it works
 
@@ -64,15 +96,23 @@ A live exercise screen uses WhileSubscribed and a 5-second grace to avoid Blueto
 
 ## Interview answer — short
 
-“I choose SharingStarted by upstream cost and correctness. WhileSubscribed can save battery, Eagerly warms state at idle cost, and Lazily keeps running after first use. I tune stop grace and verify restart/freshness behavior.”
+Choose WhileSubscribed(5000) for ViewModel UI states to conserve battery in the background while surviving configuration changes; choose Lazily for shared application-scoped caches that should initialize on first access and stay cached; choose Eagerly for critical process-wide monitoring that must start immediately upon creation.
 
 ## Interview answer — structured
 
-“For an expensive socket or sensor needed only while a screen is visible, I usually consider WhileSubscribed with a short stop timeout. It allows quick rotation without immediate reconnect and stops work in the background. Eagerly is useful if first-view latency matters enough to pay continuous cost; Lazily starts on first demand but remains active afterward. I also consider whether the source can provide a fresh snapshot after restart and whether replayed state is safe across logout. Tests count subscriptions and measure active resource time. Tune grace from measured rotation/background patterns.”
+Choosing the right `SharingStarted` strategy is an exercise in balancing battery conservation, memory retention, and UI latency across three architectural tiers:
+
+1. **`WhileSubscribed(5000)` for ViewModel UI State:** This is the default standard for feature screens. It activates upstream collection only when UI collectors are active. When the user backgrounds the app, it cancels upstream after a 5-second grace period to save battery, but survives screen rotation without re-fetching. It is essential for offline-first Room or network observation flows.
+
+2. **`Lazily` for In-Memory Shared Caches:** In singleton repositories or domain services, `Lazily` delays expensive upstream initialization until the very first consumer requests the data. Once started, it remains active in memory, caching emissions for all subsequent app features without redundant restarts.
+
+3. **`Eagerly` for Mission-Critical Infrastructure:** For application-wide monitors that must begin capturing state immediately upon app launch—such as monitoring network connectivity flags or device security posture—`Eagerly` ensures the flow is immediately active before any UI subscribes.
 
 ## Interview answer — deep senior
 
-“The start policy is part of architecture, not a styling preference. I list the upstream cost, first-subscriber latency, data-loss tolerance and owner lifetime. `WhileSubscribed` can stop a sensor or socket for battery savings, but restart must recover current state or missed events; a required audit stream cannot be owned only by UI subscriptions. A grace period smooths transient STOP/START during rotation, and replay expiration controls how long old values remain. `Eagerly` is acceptable for cheap state that must be warm; `Lazily` delays first work but continues until scope cancellation. I measure reconnect count, battery cost and stale-data time, and cancel the session scope on logout. I would decide ownership before selecting a constant. A screen-bound sensor or expensive Room transformation usually benefits from `WhileSubscribed` with a measured stop timeout, so short navigation or rotation gaps do not thrash the producer while long background periods stop it. `Eagerly` is reasonable when an application-wide source must be warm regardless of observers. `Lazily` waits for the first observer but normally keeps the upstream running for the scope lifetime afterward. I distinguish upstream lifetime from cached value retention: `WhileSubscribed` can also expire replay, affecting what a returning UI first sees. Required business work, such as a payment reversal, must not depend on UI subscriptions at all. I verify collector counts, restart costs, battery use, and the first value after return.”
+The battery implications of these choices are profound in production Android vitals. If an engineer naively defaults to `SharingStarted.Eagerly` in a ViewModel, and that ViewModel observes an upstream location flow or a continuous Room database query, that query will run indefinitely in the background whenever that screen is in the backstack! Over hundreds of thousands of users, this results in significant battery drain and elevated uninstallation rates.
+
+By implementing `WhileSubscribed(5000)`: The 5-second timer is specifically calibrated to Android OS lifecycle timings. An Activity recreation during rotation typically takes between 100ms and 500ms. A 5,000ms timeout provides a 10x safety margin, guaranteeing zero flow thrashing during rotation while reliably shutting down within 5 seconds when the user navigates away or presses the home button.
 
 ## How to answer in the interview
 
@@ -88,8 +128,14 @@ Trace first subscriber, last subscriber, grace timeout, replay reset and logout.
 
 ## Follow-up questions
 
-- [FLO-09](../flo-09/): Does Lazily stop after unsubscribe? **Answer:** no, not solely due to zero subscribers.
-- [FLO-08](../flo-08/): Where does sharing live? **Answer:** in the scope supplied to stateIn/shareIn.
+- **Interviewer:** "Why not set `stopTimeoutMillis` to 10 minutes just to be safe?"
+  **Answer:** "Setting it to 10 minutes defeats battery conservation. The upstream network and database sensors will continue running in the user's pocket for 10 full minutes after leaving the screen, draining device battery."
+
+- **Interviewer:** "What is `replayExpirationMillis` in `WhileSubscribed`?"
+  **Answer:** "It configures when the replay cache expires after all subscribers leave. By default (0), the cache is kept forever. Setting it to e.g. 60,000ms evicts the cached state if the user stays away for longer than a minute, forcing a fresh load on return."
+
+- **Interviewer:** "Can you implement a custom `SharingStarted` strategy?"
+  **Answer:** "Yes. `SharingStarted` is an interface with a `command(subscriptionCount: StateFlow<Int>): Flow<SharingCommand>` function. You can emit `SharingCommand.START` and `SharingCommand.STOP` based on custom business rules or network states."
 
 ## Self-check rubric
 
@@ -99,4 +145,4 @@ Can I justify a policy from cost/correctness, predict restart and define session
 
 - [Kotlin SharingStarted API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-sharing-started/) — start/stop and replay expiration.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -24,11 +24,33 @@ Compare memory leak, OutOfMemoryError, ANR, and StackOverflowError.
 
 ## Explanation in Arabic
 
-الـmemory leak معناه object مبقاش له استخدام لكنه لسه reachable من GC root، زي singleton ماسك Activity قديمة؛ الاستهلاك يزيد مع الوقت. `OutOfMemoryError` بيحصل لما runtime ما يقدرش يوفّر مساحة لتخصيص جديد، وده ممكن يحصل من leak أو صورة ضخمة واحدة أو cache بلا حد. الـANR معناه التطبيق ما استجابش في المهلة المطلوبة؛ غالبًا Main thread محجوز بـI/O أو lock أو شغل CPU، حتى لو الذاكرة طبيعية. `StackOverflowError` غالبًا من recursion عميق أو غير منتهٍ استهلك stack بتاع thread. الأربعة أعراض مختلفة؛ شخّص بالدليل قبل ما تصلح.
+المقارنة الشاملة بين كوارث أندرويد الأربعة: `Memory Leak` و `OutOfMemoryError` و `ANR` و `StackOverflowError`:
+
+1. الـ Memory Leak (تسريب الذاكرة):
+   - **السبب:** كائن لم يعد مطلوباً ولكنه محبوس في الـ Heap بسبب Strong Reference متصل بـ GC Root.
+   - **الأثر:** لا يسبب كراش فوري؛ بل تراكم بطيء للذاكرة.
+
+2. الـ OutOfMemoryError - OOM (نفاد الذاكرة):
+   - **السبب:** التطبيق طلب حجز ذاكرة على الـ **Heap** (مثل Bitmap ضخم)، ولكن الـ Heap ممتلئ تماماً والـ GC عاجز عن توفير مساحة.
+   - **الأثر:** Crash فوري وانهيار للتطبيق.
+
+3. الـ ANR - Application Not Responding (تجميد التطبيق):
+   - **السبب:** حظر الـ **Main (UI) Thread** لعدة ثوانٍ (عمليات حسابية ثقيلة، قراءة ديسك، أو Thread.sleep) مما يمنع معالجة أحداث اللمس ورسم الفريمات.
+   - **الأثر:** لا يغلق التطبيق فوراً؛ يظهر للمستخدم نافذة من النظام تخبره بأن التطبيق لا يستجيب وتسأله هل يريد إغلاقه.
+
+4. الـ StackOverflowError (فيضان الـ Stack):
+   - **السبب:** امتلاء ذاكرة الـ **Stack** الخاصة بالـ Thread بسبب استدعاءات دوال متداخلة لا نهائية (Infinite Recursion).
+   - **الأثر:** Crash فوري في كود التنفيذ.
 
 ## Practical walkthrough
 
-لما crash dashboard يجمع OOM وANR تحت كلمة performance، فرّقهم من الأدلة: OOM فيه allocation فشل وheap/native footprint؛ ANR فيه Main مش بيرد وthread dump؛ stack overflow فيه frames متكررة؛ leak فيه retained objects تزيد عبر دورة عمر متكررة. ممكن leak يسبب OOM، أو GC pressure يبطّأ الواجهة، لكن الربط يحتاج traces مش افتراض. رتّب التحقيق حسب الضرر وعدد المستخدمين، مش حسب اسم الاستثناء بس.
+جدول مقارنة حاسم وسريع:
+| الكارثة | مكان الحدوث | السبب الجوهري | النتيجة الظاهرة |
+| :--- | :--- | :--- | :--- |
+| **Memory Leak** | Heap | كائن ميت ممسوك بـ Reference | استهلاك RAM متزايد تدريجياً |
+| **OOM** | Heap | امتلاء الـ Heap وعدم كفاية الرام | Crash فوري بـ OutOfMemoryError |
+| **ANR** | Main Thread | حظر الـ UI Thread لأكثر من 5 ثوانٍ | نافذة 'التطبيق لا يستجيب' |
+| **StackOverflow** | Call Stack | استدعاء دالة متداخل لا نهائي | Crash فوري بـ StackOverflowError |
 
 ## Why it matters and how it works
 
@@ -52,15 +74,29 @@ For a media feed with crashes and freezes, segment reports by OOM stack, ANR clu
 
 ## Interview answer — short
 
-“A leak is unwanted reachable heap memory; OOM is an allocation failure; ANR is a responsiveness timeout; StackOverflowError is call-stack exhaustion. A leak can cause OOM or jank, but these are different diagnoses and need different evidence.”
+A Memory Leak is an unintended object retention in the Heap; an OutOfMemoryError is a Heap exhaustion crash; an ANR is a Main Thread freeze (>5s) blocking user input; and a StackOverflowError is a Thread call stack exhaustion crash caused by infinite recursion.
 
 ## Interview answer — structured
 
-“I look at the failing resource. A leak keeps unused objects alive through GC roots, so I inspect a heap dump and reference path. An OOM can come from that leak or one oversized allocation, so I inspect allocation and cache behavior. An ANR means the app missed a responsiveness deadline, often because Main is blocked; I inspect thread traces and Perfetto. A StackOverflowError points to a deep or runaway call chain. I would not label an ANR as a memory leak without evidence.”
+These four system failure modes represent fundamentally different failure domains across memory and threading architecture:
+
+1. **Memory Leak**: An architectural retention defect where unreachable heap objects are retained by active GC Roots. It does not crash immediately, but progressively inflates the heap baseline.
+
+2. **OutOfMemoryError (OOM)**: A runtime fatal error thrown when the application requests heap allocation (e.g. allocating a bitmap) and the ART garbage collector cannot reclaim sufficient contiguous memory despite garbage collection.
+
+3. **ANR (Application Not Responding)**: A threading and responsiveness defect caused by blocking the **Main UI Thread** for longer than 5 seconds (preventing touch input dispatch) or 10-20 seconds in services and broadcast receivers. It prompts a system dialog offering the user to force-close the app.
+
+4. **StackOverflowError**: A thread call stack failure thrown when the LIFO execution stack exceeds its physical frame budget (typically 1MB), almost universally caused by infinite or excessively deep recursive method calls.
 
 ## Interview answer — deep senior
 
-“These failures have different causal mechanisms and telemetry. For a leak, I compare retained-object populations over repeated lifecycle transitions and trace GC roots. For OOM, I examine the attempted allocation, heap limit, image size, cache policy, and whether leak pressure contributed. For ANR, I inspect the main-thread state and the thread or Binder target it waits on; the apparent top frame can be misleading if the trace was captured late. For StackOverflowError, I inspect recursion depth and cycle detection. In production I cluster each symptom separately, form a reproducible hypothesis, make a targeted fix, and verify the corresponding memory, crash, or responsiveness metric. The incidents may be related: retained screens reduce headroom until a later allocation fails, and heavy allocation can increase GC pauses without producing an ANR. I correlate timestamps and release cohorts before claiming causation. A fix for one symptom gets its own proof: retained count, allocation peak, Main wait time, or maximum recursion depth.”
+In Android production diagnostics, each failure triggers different tracing artifacts:
+
+- **OOM**: Captured in Crashlytics with stack traces originating at allocation sites (e.g., `BitmapFactory.nativeDecodeStream` or `ByteArrayOutputStream.toByteArray()`). Resolving it requires analyzing heap dumps (`.hprof`) via LeakCanary or Memory Profiler.
+
+- **ANR**: Captured in the Android OS system dump `/data/anr/traces.txt`. The trace reveals what state the Main thread was in (e.g., `BLOCKED` on a database lock or executing a synchronous network read). It is resolved by offloading the blocked work to `withContext(Dispatchers.IO)`.
+
+- **StackOverflowError**: Manifests with hundreds of repeated lines of the same method in Crashlytics. It is resolved by applying tail recursion (`tailrec`) or converting recursive algorithms into iterative loops with explicit queue/stack data structures.
 
 ## How to answer in the interview
 
@@ -76,9 +112,14 @@ Compare GC reachability and heap limit, large single allocations, thread-stack r
 
 ## Follow-up questions
 
-- [MEM-04](../mem-04/): Can an OOM happen without a leak? **Answer:** yes; a single bitmap or unbounded but still-used cache can exceed the heap.
-- [MEM-10](../mem-10/): Can an ANR happen with free memory? **Answer:** yes; Main can be blocked by I/O, a lock, or a slow Binder call.
-- [MEM-14](../mem-14/): What proves an Activity leak? **Answer:** a heap path from a GC root to a destroyed Activity that should no longer be retained.
+- **Interviewer:** "Can a memory leak cause an ANR?"
+  **Answer:** "Indirectly, yes! When memory leaks fill the heap near capacity, ART triggers continuous, aggressive garbage collection sweeps in a desperate attempt to free memory. These frequent GC pauses halt the main thread, leading to severe jank and eventually triggering an ANR."
+
+- **Interviewer:** "Can an ANR happen if CPU usage is 0%?"
+  **Answer:** "Yes. If the Main thread is blocked waiting on a lock held by a background thread (Deadlock) or waiting on a synchronous IPC call, CPU usage is 0% but the thread is blocked, triggering an ANR."
+
+- **Interviewer:** "Does Kotlin's `tailrec` prevent `StackOverflowError`?"
+  **Answer:** "Yes. When a recursive function is marked `tailrec`, the Kotlin compiler transforms the recursion into a standard iterative loop in bytecode, executing within a single stack frame and completely preventing stack overflow."
 
 ## Self-check rubric
 
@@ -89,4 +130,4 @@ Define all four failures; give a non-leak OOM example; choose one diagnostic art
 - [Android memory overview](https://developer.android.com/topic/performance/memory-overview) — heap/GC and OOM behavior.
 - [Diagnose and fix ANRs](https://developer.android.com/topic/performance/anrs/diagnose-and-fix-anrs) — responsiveness and trace analysis.
 
-Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. Examples are diagnostic scenarios, not device experiments.
+Technically reviewed against primary documentation on 2026-10-13.

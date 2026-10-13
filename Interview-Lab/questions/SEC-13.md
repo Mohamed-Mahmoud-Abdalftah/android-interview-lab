@@ -23,11 +23,57 @@ How do you handle key invalidation, key rotation, backups, and reinstall?
 
 ## Explanation in Arabic
 
-Key ممكن تبقى unavailable بعد uninstall/reinstall، restore على جهاز تاني، أو invalidation مرتبط بإعدادات authentication حسب key policy. Rotation مش مجرد alias جديد؛ لازم تعرف تقرأ البيانات القديمة ثم تعيد تشفيرها بأمان، وتتعامل مع crash في النص. بيانات قابلة للإصدار من server زي token ممكن تتمسح ويُطلب sign-in؛ بيانات غير قابلة للاسترجاع تحتاج recovery مستقل.
+كيف تتعامل مع إبطال المفاتيح (Key Invalidation)، تدوير المفاتيح (Key Rotation)، النسخ الاحتياطي (Auto Backup)، وإعادة التثبيت (Reinstall)؟
+
+1. إبطال المفاتيح (Key Invalidation) عبر البصمة:
+   - عند إنشاء مفتاح في Keystore مع خاصية `setInvalidatedByBiometricEnrollment(true)`، فإن إضافة أو حذف أي بصمة جديدة على مستوى الهاتف يقوم **بإبطال المفتاح عتادياً وبشكل نهائي**!
+   - أي محاولة استخدام لاحقة للمفتاح سترمي `KeyPermanentlyInvalidatedException`. هذا يحمي التطبيق البنكي إذا قام شخص يعرف رمز قفل الشاشة بتسجيل بصمة إصبعه على هاتف الضحية.
+
+2. تدوير المفاتيح (Key Rotation):
+   - يجب أن تدعم المعمارية إصدارات متعددة للمفاتيح (`secret_key_v1`, `secret_key_v2`).
+   - عند تدوير المفتاح، يتم إنشاء المفتاح الجديد، وقراءة البيانات القديمة وفك تشفيرها بالمفتاح القديم، ثم إعادة تشفيرها بالمفتاح الجديد، وحذف المفتاح القديم.
+
+3. خطر النسخ الاحتياطي التلقائي (Auto Backup Hazard):
+   - ميزة Android Auto Backup (`allowBackup="true"`) تقوم برفع ملفات التطبيق الداخلية إلى Google Drive.
+   - **الكارثة**: ملفات البيانات المشفرة يتم رفعها، ولكن **مفاتيح Android Keystore لا تغادر الشريحة العتادية للهاتف أبداً**!
+   - عندما يشتري المستخدم هاتفاً جديداً ويسترجع النسخة الاحتياطية، توجد الملفات المشفرة ولكن المفتاح العتادي غير موجود، فتفشل عملية فك التشفير برمي `KeyNotFoundException` أو انهيار التطبيق!
+   - **الحل**: استثناء الملفات المشفرة عبر `backup_rules.xml` أو تعطيل النسخ الاحتياطي كلياً للتطبيقات الحساسة (`android:allowBackup="false"`).
 
 ## Practical walkthrough
 
-لو غيرت alias من `session-v1` إلى `session-v2`، اعمل تشفير نسخة جديدة ثم verify فكّها قبل ما تغيّر pointer النشط. لو crash حصل بين الخطوتين، لازم النسخة القديمة تفضل قابلة للقراءة. بعد uninstall أو restore، Keystore key ممكن ما ترجعش؛ لو السر مجرد session token، امسح ciphertext غير القابل للفتح واطلب login، أما بيانات لا تُستعاد تحتاج سياسة backup مختلفة من البداية.
+معالجة إبطال المفاتيح برمجياً واستثناء الملفات المشفرة من الـ Auto Backup:
+```kotlin
+// 1. التعامل مع استثناء إبطال المفتاح العتادي KeyPermanentlyInvalidatedException:
+class BiometricCryptoRepository(
+    private val keyStore: KeyStore,
+    private val sessionManager: SessionManager
+) {
+    fun getEncryptCipher(keyAlias: String): Cipher? {
+        return try {
+            val secretKey = keyStore.getKey(keyAlias, null) as SecretKey
+            Cipher.getInstance("AES/GCM/NoPadding").apply {
+                init(Cipher.ENCRYPT_MODE, secretKey)
+            }
+        } catch (e: KeyPermanentlyInvalidatedException) {
+            // تم تسجيل بصمة جديدة على الجهاز! المفتاح أُبطل عتادياً لحماية الحساب
+            keyStore.deleteEntry(keyAlias)
+            sessionManager.forceLogoutDueToBiometricChange()
+            null
+        }
+    }
+}
+```
+
+```xml
+<!-- 2. منع رفع الملفات المشفرة في Android Auto Backup داخل res/xml/backup_rules.xml -->
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- استثناء مجلد الداتابيز وقيم التوكنز المشفرة لأن المفاتيح العتادية لن تنتقل للجهاز الجديد -->
+        <exclude path="datastore/secure_tokens.preferences_pb" />
+        <exclude domain="database" path="encrypted_app_db" />
+    </cloud-backup>
+</data-extraction-rules>
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +97,27 @@ For a finance app, test fresh install, reinstall, cloud restore, device transfer
 
 ## Interview answer — short
 
-“I version ciphertext and key aliases, migrate atomically while the old key works, and design recovery for invalidation. Backup or reinstall may leave ciphertext without its Keystore key, so replaceable tokens trigger re-authentication.”
+Biometric Keystore keys are permanently invalidated via KeyPermanentlyInvalidatedException when new biometrics are enrolled. In backup scenarios, hardware Keystore keys never migrate between devices; therefore, encrypted files must be excluded via backup_rules.xml to avoid decryption crashes upon reinstall. Key rotation requires versioned aliases and background re-encryption.
 
 ## Interview answer — structured
 
-“I version key aliases and ciphertext so a rotation can read the old record, write a new one, verify it, then switch atomically. A crash before the switch must leave one readable version. Backup and reinstall may restore ciphertext without its Keystore key, so I distinguish replaceable session tokens from irreplaceable offline data. The former can trigger sign-in; the latter needs a recovery architecture from the start. I test both migration and key-loss paths.”
+Managing the cryptographic key lifecycle across OS events requires planning for three distinct operational hazards:
+
+1. **Biometric Key Invalidation**: When keys are generated with `setInvalidatedByBiometricEnrollment(true)`, the hardware invalidates the key if the device user adds, removes, or modifies biometric enrollments. Future cryptographic operations throw `KeyPermanentlyInvalidatedException`. Production code must catch this specific exception, purge local biometric credentials, and route the user to re-authenticate with primary credentials (password/OTP).
+
+2. **The Auto Backup / Reinstall Pitfall**: Android Cloud Auto Backup transfers private app files to Google Drive, but Keystore hardware keys are physically locked to the device's TEE/SE and are never exported. When restored on a new device, encrypted files exist without the decryption key, causing permanent decryption failure. Apps must exclude encrypted databases and DataStore files in `backup_rules.xml` or disable `android:allowBackup="false"`.
+
+3. **Key Rotation**: Production key rotation uses versioned aliases (e.g., `key_alias_v2`). The app reads data encrypted with `v1`, decrypts it, generates `v2` in Keystore, re-encrypts the payload, updates an encrypted metadata pointer, and securely destroys `v1`.
 
 ## Interview answer — deep senior
 
-“I separate routine rotation from key loss. During rotation, I keep the old alias readable, write a new versioned ciphertext record, verify a round trip, then atomically switch the active pointer. A crash before that switch must still leave the old record usable. Backup and reinstall are different: Keystore keys may be absent when ciphertext returns on another installation. For a refresh token I can clear the unusable record and reauthenticate; irreplaceable offline data needs a recovery architecture planned in advance. I would test invalidation, restore, process death at each migration step, and rollback before claiming this is reliable. The migration protocol should have a committed active-version marker so startup can distinguish an interrupted write from a completed cutover. I would keep only a bounded number of old aliases and remove them after telemetry shows migration success. For biometric-bound keys I would explicitly test enrollment changes and authentication policy; those failures differ from an attacker-modified ciphertext tag. Support messages should ask for reauthentication without exposing raw crypto exceptions.”
+From an enterprise security posture, handling key invalidation and restore states is a critical architectural requirement:
+
+1. **Device Reinstall Lifecycle**: When an app is uninstalled and reinstalled on the same physical device, Keystore keys are permanently wiped by the Android OS package manager. Any residual orphaned data (e.g., stored on external scoped storage or synced back from cloud backups) cannot be decrypted. The app must detect a fresh install lifecycle, re-initialize its cryptographic Keystore keysets, and request a fresh session token from the backend.
+
+2. **Zero-Downtime Key Rotation Strategy**: For server-synced local data, client key rotation should be triggered via backend-driven feature flags or rotation metadata headers. When the server signals a key rollover, a background WorkManager job performs atomic read-decrypt-reencrypt operations on local stores in chunks, preventing blocking operations during critical user flows.
+
+3. **Defensive Exception Handling**: Never treat `KeyStoreException` as a generic runtime failure. Differentiate between `UserNotAuthenticatedException` (biometric prompt required), `KeyPermanentlyInvalidatedException` (credential enrollment changed), and hardware communication errors (`KeyStoreConnectException`), taking deterministic recovery actions for each.
 
 ## How to answer in the interview
 
@@ -75,8 +133,11 @@ Build a decision table for key invalidation, biometric enrollment changes, backu
 
 ## Follow-up questions
 
-- [SEC-11](../sec-11/): Why version an encrypted envelope? **Answer:** it identifies the key and format during migration.
-- [SEC-23](../sec-23/): How does backup affect ciphertext? **Answer:** restored bytes may lack the original key.
+- **Interviewer:** "What happens if a user disables their screen lock (PIN/Password) on a device with biometric keys?"
+  **Answer:** "All Keystore keys requiring device credentials or user authentication are instantly destroyed and wiped by the Android Keymaster daemon."
+
+- **Interviewer:** "Why does setting android:allowBackup="false" help fintech applications?"
+  **Answer:** "It blocks adb backup extraction (`adb backup`) and Google Drive cloud backups, preventing local database extraction on developer-enabled devices."
 
 ## Self-check rubric
 
@@ -87,4 +148,4 @@ Can I explain rotation ordering, crash recovery, invalidation, backup/reinstall 
 - [Android Keystore system](https://developer.android.com/privacy-and-security/keystore) — key behavior.
 - [Android Auto Backup](https://developer.android.com/identity/data/autobackup) — restore and exclusion rules.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

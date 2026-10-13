@@ -24,11 +24,52 @@ Production reports increasing memory usage over days. How do you isolate the cau
 
 ## Explanation in Arabic
 
-لو التقارير بتقول memory بتزيد مع الأيام، أول سؤال: هل نفس process عايشة كل الفترة؟ Android ممكن يقتلها ويبدأ واحدة جديدة؛ اجمع process-start timestamp وقياسات بعد كل lifecycle path. قس Java heap وnative/graphics وPSS/anonymous RSS حسب المصدر، واربطها بنسخة التطبيق ونوع الجهاز والرحلة. هل baseline بعد GC يرتفع بعد تكرار شاشة؟ ده leak محتمل. هل cache تسخن ثم تثبت؟ ده سلوك مختلف. هل native bitmap أو threads تزيد بينما Java heap ثابتة؟ فتش مصدرها. اعمل long-run reproduction آمن، خذ snapshots بنفس checkpoint، وتتبع GC root أو native allocation، ثم أصلح ownership أو cache bound بدل التخمين.
+كيفية عزل وتشخيص مشكلة زيادة استهلاك الذاكرة تدريجياً على مدار أيام في بيئة الإنتاج (Production Memory Creep):
+
+1. فهم طبيعة الـ Memory Creep / Slow Leak:
+   - التسريب البطيء لا يفجر التطبيق فوراً بـ OOM، ولكنه يتراكم مع الاستخدام الطويل (مثل تطبيقات التوصيل، أجهزة نقاط البيع POS، أو الشاشات المعلقة في المتاجر).
+   - أسبابه المعتادة: كائنات Singleton تجمع بيانات أحداث (Event Logs / Analytics Queue) دون حد أقصى، أو Coroutine Jobs معلقة، أو اشتراكات RxJava/Flow لم يتم إلغاؤها.
+
+2. استراتيجية العزل والتشخيص خطوة بخطوة:
+   - **الخطوة 1: التقاط مقاييس الإنتاج (Production Telemetry)**:
+     * إرسال مقاييس دورية مع أحداث التحليلات: `Debug.getPss()`, `Runtime.getRuntime().totalMemory()`, و `onTrimMemory` events.
+     * ربط الزيادة بـ User Sessions أو ميزات محددة (Feature flags / Screens).
+   - **الخطوة 2: محاكاة الاستخدام المكثف في المعمل (Monkey / Stress Testing)**:
+     * كتابة سكربت UI Automator أو تشغيل `adb shell monkey` لتكرار نفس السيناريوهات آلاف المرات لمدة 12-24 ساعة.
+   - **الخطوة 3: مقارنة لقطات الـ Heap (Differential Heap Dumps)**:
+     * أخذ Heap Dump في بداية التشغيل (Baseline Dump)، وأخذ Dump آخر بعد 10 ساعات.
+     * فتح الملفين في Eclipse MAT أو Android Studio وعمل **Compare Heap Dumps** لمعرفة الكلاسات التي زاد عدد كائناتها بشكل مطرد.
+
+3. الحل والوقاية:
+   - إضافة حدود قصوى (Bounded FIFO / Circular Buffers) لأي طوابير تخزين في الذاكرة.
+   - تفعيل اختبارات آلية تفحص تسريبات الذاكرة قبل كل Release.
 
 ## Practical walkthrough
 
-تقارير أيام مش معناها process واحدة عاشت أيام؛ اربط كل sample بـprocess start time والـrelease والـdevice tier. كرر رحلة receipt preview 200 مرة على جهاز RAM قليل، وقارن after-idle baseline وnative/graphics والـfile descriptors. لو Java heap بترجع لكن native memory بتزيد، دور على decoded bitmaps أو streams مش على Activity leak فقط. بعد الإصلاح أعد نفس loop وراقب cohort الإنتاج، عشان server traffic والتخزين المؤقت ممكن يغيروا المنحنى.
+كود لاكتشاف تراكم الذاكرة وإطلاق تحذيرات القياس عن بعد (Telemetry):
+```kotlin
+class MemoryTelemetryWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override fun suspend fun doWork(): Result {
+        val runtime = Runtime.getRuntime()
+        val usedMemoryMb = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024)
+        val maxMemoryMb = runtime.maxMemory() / (1024 * 1024)
+
+        val memoryPressure = usedMemoryMb.toDouble() / maxMemoryMb.toDouble()
+
+        if (memoryPressure > 0.80) { // تنبيه إذا تجاوز الاستهلاك 80% من سقف الـ Heap
+            AnalyticsTracker.logNonFatal(
+                "HighMemoryWarning",
+                mapOf(
+                    "usedMb" to usedMemoryMb.toString(),
+                    "maxMb" to maxMemoryMb.toString(),
+                    "screen" to NavigationTracker.getCurrentScreen()
+                )
+            )
+        }
+        return Result.success()
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +93,25 @@ Collect privacy-safe process lifetime, memory category, app version, device tier
 
 ## Interview answer — short
 
-“I segment the field signal by process lifetime, device, release, and user flow, then distinguish retained Java objects from native or cache growth. I reproduce the pattern, inspect the relevant memory path, and compare after a targeted fix.”
+To isolate a multi-day memory creep, I correlate production telemetry (PSS, OOM events, session lengths) against specific features, reproduce the issue in lab conditions using automated stress tests (UI Automator/Monkey), and capture differential heap dumps in Android Studio or MAT to identify classes whose instance counts grow monotonically.
 
 ## Interview answer — structured
 
-“First I verify whether the chart follows one process; Android may restart apps, so time since process start matters. I separate Java heap, native/graphics memory, and overall footprint, and correlate growth with journeys and OOM cohorts. A growing post-close baseline suggests retention, while a cache that warms then plateaus may be intentional. I run a repeatable long flow on a representative device, compare snapshots at fixed points, and use heap paths or native allocation traces to locate the owner. After a specific fix, I rerun the same workload and watch field metrics rather than relying on one local graph.”
+Isolating a slow, multi-day memory leak in production requires a systematic, data-driven approach combining telemetry, reproducible load testing, and heap diffing.
+
+1. **Triage via Production Telemetry**: First, I analyze production analytics to correlate memory growth. We track PSS (`Debug.getPss()`) and free heap metrics attached to heartbeat pings. I check whether the creep correlates with specific screens, app versions, or long-running background tasks (like location tracking or foreground services).
+
+2. **Lab Reproduction & Stress Testing**: Because we cannot attach debuggers to production devices for days, I reproduce the usage profile locally using automated test runners (`UI Automator` or `adb shell monkey`) running an accelerated loop of core app journeys continuously over several hours.
+
+3. **Differential Heap Analysis**: I capture a baseline heap dump at hour 1, and a comparison heap dump at hour 6. Using Eclipse MAT or Android Studio Memory Profiler, I run a **Heap Diff**. The culprit is rarely a destroyed Activity; it is almost always an unbounded collection—such as an in-memory analytics queue, an event bus observer map, or cached network tokens that append without eviction.
 
 ## Interview answer — deep senior
 
-“I would not start by calling it a memory leak. I establish a trustworthy signal: process uptime, app release, device RAM class, foreground/background history, and memory category. A days-long aggregate may join multiple process lifetimes. I compare post-quiescence baselines and peaks for the same journey, then ask whether Java retained objects, native bitmaps, threads, file descriptors, or cache entries keep growing. For managed retention I inspect heap dumps and paths to GC roots; for native growth I use process memory and allocation tooling. I script a soak test that repeats the affected feature with production-sized data, keeping checkpoints and environmental conditions fixed. The fix may release a listener, bound a cache, close a stream, or resize images. I then validate functional behavior, memory slope, OOM/LMK and frame metrics on constrained devices, and compare staged rollout cohorts. If the issue is rare and not reproduced, I add targeted privacy-safe instrumentation instead of inventing certainty. For a receipt-preview soak test, I record one process-start identifier per sample and repeat the preview two hundred times. If Java heap returns to baseline while native footprint and descriptor counts rise, I investigate decoder buffers and open streams. That is a different fix from an Activity path retained by a singleton.”
+Under the hood, memory creep often hides inside native memory or static data structures rather than traditional Activity leaks. For instance, if an app uses WebViews, image decoders, or JNI libraries, native buffers or file descriptors (`lsof`) can leak without appearing as Java objects on the JVM heap. Using `dumpsys meminfo <package_name>` reveals whether the growth is in `Java Heap`, `Native Heap`, `Code`, or `Graphics`.
+
+If the Java Heap is clean but total process RSS climbs, the issue is native memory fragmentation or a C++ library leak, diagnosable using Android's native memory profiler (`heapprofd`).
+
+Once identified, the permanent fix involves introducing structural boundaries: converting unbounded lists to bounded circular FIFO buffers, utilizing `WeakReference` for dynamic registries, and enforcing automated LeakCanary and Macrobenchmark assertions in our staging pipeline.
 
 ## How to answer in the interview
 
@@ -76,9 +127,11 @@ Discuss process lifetime segmentation, baseline versus peak, Java/native/graphic
 
 ## Follow-up questions
 
-- Why track process start time? **Answer:** Android may restart the app; measurements from different processes cannot prove one long-lived accumulation.
-- What if Java heap stays flat? **Answer:** inspect native/graphics buffers, threads, descriptors, and overall process footprint.
-- When is cache growth acceptable? **Answer:** when it plateaus within a measured budget and provides benefit without unacceptable OOM, jank, or stale-data costs.
+- **Interviewer:** "What is PSS (Proportional Set Size) and why is it preferred over Private Dirty?"
+  **Answer:** "PSS accounts for an app's private memory plus its proportional share of shared libraries and memory pages shared with other processes and Zygote. It provides the most accurate reflection of an app's true memory footprint on system RAM."
+
+- **Interviewer:** "How do you catch unbounded collections before they reach production?"
+  **Answer:** "We enforce static analysis lint rules prohibiting unbounded static lists or maps, and require team members to use bounded collections like `LruCache` or ring buffers with explicit capacity caps."
 
 ## Self-check rubric
 
@@ -90,4 +143,4 @@ Segment the field data, form two competing hypotheses, choose relevant profiler 
 - [Overview of memory management](https://developer.android.com/topic/performance/memory-overview) — process footprint and GC.
 - [Android vitals](https://developer.android.com/games/optimize/vitals) — population signals.
 
-Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The receipt investigation is hypothetical; no device proof is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

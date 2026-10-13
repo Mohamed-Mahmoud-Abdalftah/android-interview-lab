@@ -24,11 +24,59 @@ An app freezes only when decoding a large image. How do you diagnose it?
 
 ## Explanation in Arabic
 
-أولًا حدد “freeze” يعني dropped frames ولا ANR ولا OOM crash. سجل حجم الصورة الحقيقي وأبعادها، لأن ملف مضغوط صغير قد يفك إلى عشرات MB. خذ trace وقت فتح الصورة: هل Main thread تنادي decoder أو تنتظر bitmap allocation/GC؟ هل الـdecode على worker لكن Main تنتظر `join` أو lock؟ هل التأخير في upload للـGPU أو layout؟ راقب Java/native/graphics memory. بعدها اطلب حجم يناسب الشاشة، decode خارج Main عبر image loader، وألغِ طلبات الواجهة المغلقة. لصورة zoom استخدم tiles أو rendition مناسب بدل ضغط كل الأصل في thumbnail. اختبر الجودة والوقت والذاكرة على جهاز ضعيف.
+تشخيص وعلاج تجمد التطبيق (App Freeze) الذي يحدث فقط عند فك تشفير صورة كبيرة (Decoding Large Image):
+
+1. الأسباب الجذرية لتجمد التطبيق عند فك تشفير الصور:
+   - **Main Thread Decoding**: استدعاء `BitmapFactory.decode*` مباشرة على الـ UI Thread؛ فك تشفير صورة بدقة 20 ميجابكسل يستغرق 300-800ms من الحسابات الثقيلة، مما يجمد الشاشة ويسقط عشرات الفريمات.
+   - **Out of Memory Heap Thrashing**: الصورة تستهلك عشرات الميجابايتات؛ قبل حدوث OOM صريح، يحاول الـ Garbage Collector القيام بـ GC Compactions متتالية في وضع Stop-The-World في محاولة يائسة لتوفير مساحة متصلة، مما يوقف التطبيق لعدة ثوانٍ.
+
+2. التشخيص المنهجي (Diagnosis Workflow):
+   - فحص الـ **Logcat**: البحث عن رسائل `Choreographer: Skipped XX frames` أو رسائل ART GC مثل `Background concurrent copying GC freed ...` متكررة.
+   - فتح **CPU Profiler**: تشغيل System Trace ورؤية هل الـ `main` thread مشغول في دالة `BitmapFactory.nativeDecodeStream()`.
+   - فحص **Memory Profiler**: رؤية قفزة هائلة في مساحة الذاكرة (Native أو Java Heap) بالتزامن مع لحظة الضغط على الصورة.
+
+3. الحل الهندسي المتكامل:
+   - **نقل فك التشفير إلى Background Thread**: استخدام `withContext(Dispatchers.IO)`.
+   - **Subsampling (inJustDecodeBounds & inSampleSize)**: قراءة أبعاد الصورة الأصلية أولاً دون تحميل بكسلاتها، ثم حساب معامل التصغير المناسب لحجم الشاشة فقط.
+   - **Bitmap Region Decoder**: للصور العملاقة والخرائط، فك تشفير الجزء المعروض على الشاشة فقط (`BitmapRegionDecoder`).
 
 ## Practical walkthrough
 
-صورة 6000×4000 في preview 300×200: الـdecode ممكن يقرب 96MB لو ARGB_8888. حدد هل freeze jank ولا ANR ولا OOM، وخذ Perfetto مع Memory Profiler على جهاز ضعيف. لو decoder على Main، انقله لطلب image loader مرتبط بالـview؛ لو Main مستنية worker، دور على join/lock؛ لو المشكلة upload للـGPU، راقب frame stages. اختبر thumbnail وzoom منفصلين بعد الإصلاح.
+كود فك تشفير صورة آمن هندسياً ومحمي من التجمد والـ OOM:
+```kotlin
+suspend fun decodeSampledBitmapFromUri(
+    context: Context,
+    uri: Uri,
+    reqWidth: Int,
+    reqHeight: Int
+): Bitmap? = withContext(Dispatchers.IO) { // 1. ضمان التنفيذ في Background Thread تماماً
+    // 2. قراءة الأبعاد فقط دون حجز ذاكرة للبكسلات:
+    val options = BitmapFactory.Options().apply {
+        inJustDecodeBounds = true
+    }
+    context.contentResolver.openInputStream(uri)?.use {
+        BitmapFactory.decodeStream(it, null, options)
+    }
+
+    // 3. حساب معامل التصغير المناسب (Power of 2):
+    var inSampleSize = 1
+    val (height: Int, width: Int) = options.outHeight to options.outWidth
+    if (height > reqHeight || width > reqWidth) {
+        val halfHeight = height / 2
+        val halfWidth = width / 2
+        while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+            inSampleSize *= 2
+        }
+    }
+    options.inSampleSize = inSampleSize
+    options.inJustDecodeBounds = false
+
+    // 4. فك تشفير الصورة بالمقاس المخفض المناسب للشاشة:
+    context.contentResolver.openInputStream(uri)?.use {
+        BitmapFactory.decodeStream(it, null, options)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +100,23 @@ Capture input metadata, trace slice, frame metric, and memory categories without
 
 ## Interview answer — short
 
-“I trace the freeze to distinguish synchronous decode, GC/OOM pressure, and rendering cost. Then I request an image near the view size, decode off Main with bounded concurrency, and measure frame time and memory on a constrained device.”
+App freezes during image decoding are caused by decoding high-resolution images synchronously on the main thread, or triggering severe GC thrashing from multi-megabyte allocations. Diagnosis involves using CPU Profiler's System Trace to locate `BitmapFactory.nativeDecode` and Memory Profiler to inspect heap spikes. Resolution requires decoding on `Dispatchers.IO` using `inSampleSize` downsampling.
 
 ## Interview answer — structured
 
-“I reproduce with the original image and device, record dimensions and target size, and clarify whether the symptom is jank, ANR, or OOM. A compressed file can expand to tens of megabytes. I capture a system trace and memory profile to see whether Main decodes synchronously, waits on a worker, or stalls during allocation and upload. I use a lifecycle-aware image loader to downsample for the preview and cancel stale work. If users need zoom, I provide a separate larger or tiled strategy. I compare responsiveness, peak process memory, and visual quality after the change.”
+An app freeze localized to image decoding points to two culprits: executing the decode operation synchronously on the main thread, or triggering intense Garbage Collector thrashing due to severe memory pressure.
+
+1. **Diagnosis**: I begin by reproducing the freeze with the **Android Studio CPU Profiler** recording a System Trace. If the Flame Chart reveals `BitmapFactory.nativeDecodeStream()` occupying hundreds of milliseconds on the `main` thread, the root cause is thread misplacement. Concurrently, in the Memory Profiler, I check whether memory spikes into near-OOM territory. If memory is exhausted, ART executes back-to-back compacting GCs, freezing application threads in Stop-The-World pauses.
+
+2. **Resolution**: First, all decoding must be isolated on a background dispatcher (`Dispatchers.IO`). Second, we must avoid full-resolution decodes by implementing two-pass downsampling: using `BitmapFactory.Options.inJustDecodeBounds = true` to query the image's raw dimensions with zero pixel allocation, calculating a power-of-two `inSampleSize` matching the destination ImageView bounds, and decoding only the scaled-down bitmap.
 
 ## Interview answer — deep senior
 
-“The phrase ‘freezes on a large image’ hides several mechanisms. I first classify the failure with an ANR trace, frame timeline, and OOM evidence. I calculate the decoded footprint from pixel dimensions and format, then capture a Perfetto trace and memory categories while opening the exact image on a representative low-memory device. If decode executes on Main, I move it to a loader-managed worker path and request dimensions close to the target. If Main is blocked waiting on a worker, I remove the synchronous join or lock; if native bitmap memory or GPU upload dominates, I reduce size, cap parallel decodes, or use tiling for zoom. I guard malformed input and cancel requests when the view ends so old results cannot bind to recycled rows. I verify slow frames, first-preview latency, peak footprint, OOM rate, and acceptable image quality, then watch staged rollout cohorts. For a 6000-by-4000 image shown in a 300-by-200 preview, the decoded footprint is about 96 MB at four bytes per pixel. I inspect not only decode threads but any Main-side join and GPU upload. Thumbnail and zoom modes get separate fidelity and memory budgets, and the image loader request follows the current view lifecycle.”
+Under the hood, `BitmapFactory` utilizes native Skia C++ decoders (`libskia.so`). When dealing with ultra-high-resolution images (such as architectural diagrams or 100-megapixel panoramas), downsampling still degrades quality if users need to zoom in. In those cases, the production standard is using `BitmapRegionDecoder`, which decodes only the visible viewport tile on demand as the user pans and zooms.
+
+Another nuance is color depth: by default, `BitmapFactory` decodes in `ARGB_8888` (4 bytes/pixel). If alpha transparency is unnecessary, decoding using `RGB_565` (2 bytes/pixel) cuts memory consumption by 50% immediately.
+
+In modern enterprise apps, rather than writing custom `BitmapFactory` code, we rely on established libraries like **Coil**, configuring custom `Decoder.Factory` components and enabling `Bitmap.Config.HARDWARE` to offload bitmap storage to GPU graphic buffers.
 
 ## How to answer in the interview
 
@@ -76,9 +132,11 @@ Discuss decoded footprint, Main wait versus worker decode, GPU upload, bounded c
 
 ## Follow-up questions
 
-- Does `withContext(IO)` always solve the freeze? **Answer:** no; Main could still wait synchronously, allocation/GC or GPU work may dominate, and full-size decode may OOM.
-- Why separate thumbnail and zoom strategies? **Answer:** the preview needs few pixels, while zoom requires detail without loading every image at full resolution.
-- What evidence distinguishes ANR from OOM? **Answer:** ANR traces show unresponsive execution; OOM crash and memory profiles show allocation failure and footprint.
+- **Interviewer:** "Why must `inSampleSize` ideally be a power of two?"
+  **Answer:** "`BitmapFactory` decoders can optimize decoding by skipping decoder passes when `inSampleSize` is a power of 2 (2, 4, 8), resulting in substantially faster native decoding compared to non-power-of-two ratios."
+
+- **Interviewer:** "What is `BitmapRegionDecoder` and when is it preferred?"
+  **Answer:** "`BitmapRegionDecoder` decodes specific rectangular sub-regions of a large image on demand, which is essential for map viewers and deep-zoom image galleries to prevent loading the full multi-hundred-megabyte image into RAM."
 
 ## Self-check rubric
 
@@ -90,4 +148,4 @@ Classify the symptom, calculate decoded size, inspect trace and memory, propose 
 - [Bitmaps and memory](https://developer.android.com/topic/performance/memory/guide/bitmaps) — footprint and pixel storage.
 - [System tracing](https://developer.android.com/topic/performance/tracing) — thread and frame timeline.
 
-Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. No image decode benchmark was performed.
+Technically reviewed against primary documentation on 2026-10-13.

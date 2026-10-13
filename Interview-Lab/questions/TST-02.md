@@ -23,11 +23,47 @@ Compare fake, mock, stub, spy, and test double.
 
 ## Explanation in Arabic
 
-`test double` هو الاسم العام لأي بديل بنستخدمه بدل dependency حقيقية. Stub يرد بقيم جاهزة؛ fake عنده سلوك بسيط لكنه متماسك، زي repository in-memory؛ mock بنضبط عليه توقعات عن التفاعل؛ spy يسجل ما حدث، وقد يمرر التنفيذ لمكوّن حقيقي. مش لازم نعمل mock لكل object.
+قارن بين الـ Dummy، والـ Fake، والـ Stub، والـ Spy، والـ Mock، ومفهوم الـ Test Double العام وفقاً لمعايير مارتن فاولر؟
+
+1. ما هو الـ Test Double؟
+   - هو المفهوم المظلي الشامل لأي كائن بديل يُستخدم في بيئة الاختبار ليحل محل كائن حقيقي معقد أو يعتمد على موارد خارجية (مثل الشبكة أو قاعدة البيانات).
+
+2. الأنواع الخمسة للـ Test Doubles:
+   - **1. Dummy**: كائن يمرر فقط لملء المعاملات المطلوبة (Parameters) لتفادي أخطاء الـ NullPointerException، ولا يتم استخدام كوده أو استدعاء دواله إطلاقاً.
+   - **2. Stub**: كائن يقدم إجابات معلبة وجاهزة مسبقاً (Canned Answers) لاستدعاءات محددة أثناء الاختبار (مثلاً: دالة `getUser()` تعيد دائماً مستخدماً ثابتاً `User("1")`).
+   - **3. Spy**: كائن يسجل معلومات حول كيفية استدعائه (مثل: كم مرة تم استدعاؤه، وما هي المعاملات التي مُررت له) للتحقق منها لاحقاً.
+   - **4. Mock**: كائن مبرمج مسبقاً بتوقعات صريحة (Expectations)؛ يتحقق تلقائياً من استدعاء دوال محددة بترتيب محدد عبر أدوات مثل MockK أو Mockito.
+   - **5. Fake**: **البديل الأفضل والأكثر موثوقية**! كائن يملك تنفيذاً حقيقياً وشغالاً لمنطق العمل (Working Implementation)، ولكنه يعتمد على اختصار خفيف (مثل استبدال قاعدة بيانات SQLite بـ `MutableList` في الذاكرة).
 
 ## Practical walkthrough
 
-لو المطلوب إثبات إن ViewModel عرض Error بعد فشل، fake repository متحكم في نتيجته مع assertion على `UiState` أوضح من التحقق من سلسلة calls داخلية. لكن لو إرسال audit event نفسه requirement، يبقى فحص تفاعل الـport مناسب. احذر إن fake تختلف عن Room أو الشبكة في transaction/cancellation؛ نحتاج integration test عند الـboundary الحقيقي. اختَر الـdouble حسب السلوك المطلوب إثباته، وليس حسب سهولة الـframework.
+المقارنة البرمجية بين كتابة Fake قوي وكتابة Mock هش باستخدام MockK:
+```kotlin
+// 1. Fake Repository (تطبيق شغال وقوي وخالٍ من الهشاشة في الذاكرة):
+class FakeUserRepository : UserRepository {
+    private val users = mutableMapOf<String, User>()
+
+    override suspend fun getUser(id: String): User? = users[id]
+    override suspend fun saveUser(user: User) {
+        users[user.id] = user
+    }
+}
+
+// 2. استخدام Mock عبر MockK (يتحقق من تفاصيل الاستدعاء ولكنه قد يكون هشاً عند إعادة الهيكلة):
+class UserViewModelTest {
+    @Test
+    fun `loadUser calls repository exactly once with mock`() = runTest {
+        val mockRepo = mockk<UserRepository>()
+        coEvery { mockRepo.getUser("101") } returns User("101", "Mohamed")
+
+        val viewModel = UserViewModel(mockRepo)
+        viewModel.loadUser("101")
+
+        // التحقق من أن الدالة تم استدعاؤها تحديداً مرة واحدة بنفس الـ ID:
+        coVerify(exactly = 1) { mockRepo.getUser("101") }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +87,36 @@ Keep doubles local to test modules, specify failure/cancellation behavior, and r
 
 ## Interview answer — short
 
-“A test double replaces a dependency; stubs return canned data, fakes implement simplified behavior, mocks verify calls, and spies observe real or wrapped behavior. I prefer outcome assertions unless interaction is the contract.”
+Test double is the umbrella term. Dummies fill parameter slots without being used. Stubs return canned responses. Spies record interactions for verification. Mocks define pre-programmed expectations verified on assertions. Fakes provide lightweight, working in-memory implementations (like an in-memory list repository).
 
 ## Interview answer — structured
 
-“I choose the double according to the risk. A fake repository is useful for stateful ViewModel tests, a stub for a one-off response, and a mock for an important interaction such as dispatching an audit event. A spy can observe a real implementation but may retain real side effects. I avoid tests that assert incidental call order and add integration tests so a fake cannot hide database or network behavior.”
+Understanding test doubles follows the classic Martin Fowler taxonomy:
+
+1. **Dummy**:
+   - Objects passed around simply to satisfy method signatures (e.g. an empty constructor parameter), never actually interrogated or invoked.
+
+2. **Stub**:
+   - Provides canned responses to method calls during a test (e.g. `every { api.getUser() } returns sampleUser`). Stubs do not verify interaction behavior; they only supply required data state.
+
+3. **Spy**:
+   - Wraps a real or stubbed instance to record telemetry: capturing argument parameters, invocation counts, and order of calls for post-execution assertions.
+
+4. **Mock**:
+   - Objects pre-programmed with expected interaction behavior and verified at assertion time (`verify { service.trackEvent("purchase") }`). Mocks focus on behavior verification rather than state verification.
+
+5. **Fake**:
+   - Objects that have working business logic, but take shortcuts unsuitable for production (e.g., an in-memory `FakeUserRepository` backed by a `ConcurrentHashMap` rather than SQLite).
 
 ## Interview answer — deep senior
 
-“I use ‘test double’ as the umbrella term, then choose the least complicated kind that proves the contract. A stub returns scripted data; a fake has a small working implementation, such as an in-memory repository; a mock verifies interactions; and a spy records calls, sometimes around a real object. For a ViewModel loading account data, I prefer a controllable fake that emits Loading and then Error, and I assert the visible state and retry behavior. If I mock every repository method call and its exact order, a harmless refactor can break tests without changing the user outcome. Interaction verification is valid when the interaction is the product requirement, for example one audit command or one idempotent submission to a gateway port. I also document the fake’s limits. An in-memory map does not reproduce Room transactions, migrations or process death, and a fake HTTP client cannot certify Retrofit cancellation. Those claims need integration tests against the real boundary. Good tests make a failure diagnostic: they say which observable contract broke, rather than which implementation detail moved.”
+From a software maintainability and Google engineering practices perspective, Fakes are heavily favored over Mocks:
+
+1. **The Fragility of Over-Mocking**: Tests relying heavily on MockK/Mockito verify implementation details (which methods were called and how many times) rather than observable behavior and state. When an engineer refactors internal repository code to batch calls or use caching, mocked tests break instantly despite correct user behavior.
+
+2. **Fakes Enable Realistic Multi-Feature Tests**: A well-designed `FakeCartRepository` behaves like the real repository: saving items, updating quantities, and emitting reactive state flows. Multiple ViewModels and tests can share the same fake across integration suites with zero mocking boilerplate.
+
+3. **When Mocks are Justified**: Use mocks sparingly: primarily for un-fakeable external boundaries where asserting exact side effects is the direct goal (e.g. asserting that a payment SDK's `initiatePayment()` or analytics tracker was triggered exactly once).
 
 ## How to answer in the interview
 
@@ -75,8 +132,11 @@ Prompt for five roles, outcome versus interaction, fake drift and real-adapter v
 
 ## Follow-up questions
 
-- [TST-08](../tst-08/): What double fits ViewModel state? **Answer:** a controllable fake repository.
-- [TST-07](../tst-07/): How catch fake drift? **Answer:** run shared contract expectations on real and fake adapters.
+- **Interviewer:** "Why does Google's Android testing guidance recommend Fakes over Mocks for Repositories?"
+  **Answer:** "Fakes provide realistic stateful behavior, survive internal code refactoring without breaking tests, and can be reused across hundreds of tests without brittle mock setup."
+
+- **Interviewer:** "What is the risk of using relaxed mocks in MockK (relaxed = true)?"
+  **Answer:** "Relaxed mocks return default dummy values (0, empty string, null) for unmocked calls, which can mask missing setup errors and hide broken data flow."
 
 ## Self-check rubric
 
@@ -87,4 +147,4 @@ Distinguish the umbrella term test double from stubbed answers, behavior-verifyi
 - [Android test doubles](https://developer.android.com/training/testing/fundamentals/test-doubles) — official definitions and guidance.
 - [Mockito documentation](https://site.mockito.org/) — mock interaction behavior.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

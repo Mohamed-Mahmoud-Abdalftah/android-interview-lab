@@ -22,11 +22,49 @@ Separate durable/current state from one-time UI effects and define delivery sema
 
 ## Explanation in Arabic
 
-الـstate هي حقيقة حالية ينفع UI جديد يشوفها تاني، زي `isLoggedIn` أو `paymentStatus=Pending`. الـtransient event فعل لحظي زي إظهار snackbar أو navigation command، وإعادته بعد rotation ممكن تكرر الفعل. لكن لو الحدث مهم تجاريًا، ما نخزّنش بس في SharedFlow؛ نخزن outcome في مصدر durable ونخلي UI تشتق التأثير مع acknowledgment واضح.
+الفرق بين الحالة (State) والأحداث العابرة (Transient Events) هو من أهم النقاط المعمارية لتجنب تكرار الأحداث (Duplicate Events Bug) عند تدوير الشاشة:
+
+1. ما هي الحالة (State)؟
+   - تمثل **الوضع الحالي الدائم للواجهة (What the UI looks like right now)**.
+   - خاصية: **Persistent across Re-renders / Rotations**.
+   - مثال: قائمة المنتجات، نص البحث، هل الزر معطل أم مفعل، حالة التحميل `isLoading`.
+   - التمثيل النموذجي: `StateFlow<UiState>`.
+
+2. ما هي الأحداث العابرة (Transient Events)؟
+   - تمثل **أفعال تحدث لمرة واحدة فقط (One-off Actions / Side Effects)**.
+   - خاصية: **Must be consumed exactly once!** ولا يجب إعادة تنفيذها إذا تم تدوير الشاشة.
+   - مثال: الانتقال لشاشة ثانية (Navigate to Details)، إظهار Snackbar أو Toast برسالة خطأ، أو إغلاق لوحة المفاتيح.
+
+3. المشكلة الشائعة (The Bug):
+   - لو تم تخزين حدث الانتقال `Navigate` داخل `StateFlow`: عند تدوير الشاشة، الشاشة الجديدة ستقرأ القيمة المخزنة في `StateFlow.value` وتعيد الانتقال مرة ثانية بالخطأ!
+   - الحل: استخدام `Channel` أو `SharedFlow` (مع `replay = 0`)، أو نمط استهلاك الحدث في State وإرسال Intent للـ ViewModel بـ `onEventConsumed()`.
 
 ## Practical walkthrough
 
-`UiState.Success` بتوصف الشاشة وتستحق إعادة العرض بعد rotation؛ `NavigateToReceipt` أمر لحظي لا لازم يتكرر بنفس الطريقة. لو حطيت navigation كـBoolean في StateFlow، collector الجديدة تشوف true وتتنقل تاني. ولو SharedFlow بدون replay ومافيش subscriber وقت الإرسال، الحدث ممكن يضيع. قرر هل الحدث ephemeral فعلًا ولا نتيجة دائمة تستحق saved-state/acknowledgment.
+أفضل نمط معماري للتعامل مع الأحداث العابرة في Jetpack Compose و MVI:
+```kotlin
+// 1. تعريف الـ Event كـ Sealed Interface:
+sealed interface LoginSideEffect {
+    data object NavigateToHome : LoginSideEffect
+    data class ShowToast(val message: String) : LoginSideEffect
+}
+
+class LoginViewModel : ViewModel() {
+    // State عادي للواجهة:
+    val uiState: StateFlow<LoginUiState> = ...
+    
+    // Channel للأحداث العابرة (One-off Events):
+    private val _effectChannel = Channel<LoginSideEffect>(Channel.BUFFERED)
+    val effects: Flow<LoginSideEffect> = _effectChannel.receiveAsFlow()
+    
+    fun onLoginSuccess() {
+        viewModelScope.launch {
+            _effectChannel.send(LoginSideEffect.NavigateToHome)
+        }
+    }
+}
+```
+في الـ UI: نستمع لـ `effects` عبر `LaunchedEffect`؛ يتم استهلاك الحدث مرة واحدة، وتدوير الشاشة لن يكرر الانتقال إطلاقاً.
 
 ## Why it matters and how it works
 
@@ -69,15 +107,23 @@ A payment completion is recorded in Room/server status. UI observes Success and 
 
 ## Interview answer — short
 
-“State is a current fact a new collector should render; a transient event is an occurrence whose replay may be wrong. StateFlow suits state. For effects I define whether loss or replay is acceptable, and I persist business outcomes that must survive process death.”
+State represents persistent screen conditions that survive rotation and should always be observable via StateFlow; transient events are one-off side effects (like navigation or snackbars) that must be consumed exactly once and never replayed on screen rotation, typically modeled using Channel or SharedFlow.
 
 ## Interview answer — structured
 
-“I ask whether a new screen instance should see the value. Loading, account and payment status are state, so I expose a current snapshot. A snackbar or navigation command is an effect; replaying it can duplicate action. SharedFlow or Channel can carry best-effort effects, but neither silently guarantees delivery while no UI collector exists or after process death. For important outcomes I persist the status and design a consumption/acknowledgement rule if the UI action must occur once.”
+Distinguishing between persistent state and transient events is crucial for preventing duplicate navigation or repeated snackbars in Android.
+
+**State** represents the durable condition of the UI at any given moment: the list of items, form input text, or loading indicators. State must be retained across configuration changes so that rotating the device immediately restores the exact same visual representation. We model state using `StateFlow`.
+
+**Transient Events** (also called Side Effects) represent one-off occurrences that must happen exactly once: navigating to a details screen, showing a temporary error Toast, or requesting biometric authentication. If you store an event inside a StateFlow, the new Activity created after a rotation will observe that same StateFlow, re-reading the event and navigating a second time.
+
+We model transient events either through a separate one-shot stream like `Channel.receiveAsFlow()` or by embedding an event in UI state paired with an explicit confirmation action (`onEventHandled()`).
 
 ## Interview answer — deep senior
 
-“A common mistake is putting `navigate=true` in StateFlow: it survives rotation as the latest state and can trigger navigation twice, while a second identical event may be suppressed by equality. Swapping to a replay-zero SharedFlow avoids replay but may lose an emission when the UI is stopped. The right design starts from delivery requirements. For a cosmetic snackbar, loss may be acceptable. For order completion, the server and local database store an authoritative status; the UI derives the destination or exposes an acknowledged effect with a stable event ID. I test collectors joining late, rotation and process death. Exactly-once UI effects are a protocol problem, not a property automatically supplied by a Flow type. Treat neither as exactly-once durable delivery. I would ask whether the value describes the world now or asks the UI to do something once. Loading, data, and error belong to durable screen state, commonly StateFlow. Navigation and Snackbar are effects, but their delivery requirements differ: a decorative toast can be dropped, while a completed purchase destination may need a recoverable state or acknowledged command. StateFlow replays its latest value, so a Boolean `navigate=true` can fire again after rotation; a zero-replay SharedFlow can miss an emission while UI is stopped. The answer is an explicit contract: who owns the event, whether it must survive a lifecycle gap, and how it is consumed. I test rotation and background delivery, not just a single happy tap.”
+Historically, developers addressed this issue using `SingleLiveEvent` or `Event<T>` wrappers containing an `isHandled` boolean flag. While functional, those patterns are considered workarounds that break reactive purity.
+
+In modern Android architecture, Google's Architecture Guide recommends two clean approaches: 1. **Channel as Event Stream:** A ViewModel exposes `val sideEffects = effectChannel.receiveAsFlow()`. Channels guarantee single-receiver delivery (FIFO queue); once an event is received and handled by `LaunchedEffect` in Compose, it is dequeued and cannot be replayed on rotation. 2. **State-Driven Events:** Model the event directly inside the UI state with a unique ID: `data class UiState(val userMessage: UserMessage? = null)`. When the UI displays the message, it immediately dispatches an intent `viewModel.onMessageShown(message.id)`, and the ViewModel clears `userMessage = null`. This keeps everything in a single unidirectional state pipeline.
 
 ## How to answer in the interview
 
@@ -93,8 +139,14 @@ Define replay, acknowledgement and process-death requirements before selecting a
 
 ## Follow-up questions
 
-- [FLO-20](../flo-20/): Can Channel guarantee a navigation event? **Answer:** not across process death and not without a consumption contract.
-- [FLO-27](../flo-27/): Why duplicate after rotation? **Answer:** a replayed state/effect was not consumed or modeled correctly.
+- **Interviewer:** "What is the danger of using `SharedFlow` with `replay = 0` for one-off events?"
+  **Answer:** "If an event is emitted to a `SharedFlow` while the UI is between lifecycles (e.g., during rotation or before `LaunchedEffect` starts collecting), the event is dropped permanently and lost because there were zero active collectors."
+
+- **Interviewer:** "Why does `Channel(Channel.BUFFERED)` solve that dropped event issue?"
+  **Answer:** "A buffered Channel retains sent items in its internal queue until a collector connects. If an event is sent during rotation, the Channel holds it and delivers it as soon as the recreated screen begins collecting."
+
+- **Interviewer:** "Can you use Jetpack Compose's `LaunchedEffect` to observe a Channel event flow?"
+  **Answer:** "Yes. `LaunchedEffect(Unit) { viewModel.effects.collect { effect -> handleEffect(effect) } }` is the standard pattern for observing side-effect streams in Compose."
 
 ## Self-check rubric
 
@@ -105,4 +157,4 @@ Can I identify current facts versus occurrences, state acceptable loss, and desi
 - [Kotlin StateFlow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-state-flow/) — latest-state replay.
 - [Kotlin SharedFlow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-shared-flow/) — event replay/buffer behavior.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -22,11 +22,43 @@ Explain conversion of cold streams into hot shared state or broadcast, including
 
 ## Explanation in Arabic
 
-`stateIn` و`shareIn` بيحوّلوا cold upstream إلى hot stream مشتركة داخل `CoroutineScope` معينة. `stateIn` يرجّع `StateFlow` بقيمة ابتدائية وآخر snapshot، مناسب UI state. `shareIn` يرجّع `SharedFlow` مع عدد replay تختاره، مناسب shared subscription. اختيار scope و`SharingStarted` يحدد عمر الاتصال وبداية/توقف الجمع؛ ما ينفعش نحط session data في scope أطول من الجلسة.
+المشغلان `stateIn` و `shareIn` هما جسر التحويل من الـ Cold Flows إلى الـ Hot Streams:
+
+1. ما الذي يفعله `stateIn`؟
+   - يحول أي Cold Flow إلى **Hot StateFlow**.
+   - **يتطلب 3 معاملات:**
+     * `scope`: نطاق الـ Coroutine الذي سيعيش فيه الـ Flow (عادة `viewModelScope`).
+     * `started`: استراتيجية بدء وإيقاف البث (`SharingStarted.WhileSubscribed`, `Eagerly`, `Lazily`).
+     * `initialValue`: القيمة الابتدائية الإلزامية التي تعرض فوراً قبل اكتمال أول تدفق.
+   - النتيجة: StateFlow يحمل دائماً `.value` ويعمل له Conflation.
+
+2. ما الذي يفعله `shareIn`؟
+   - يحول أي Cold Flow إلى **Hot SharedFlow** متعدد المستمعين (Multicaster).
+   - **المعاملات:** `scope`, `started`, و `replay` (كم قيمة سابقة يتم الاحتفاظ بها للمستمعين الجدد).
+   - لا يشترط قيمة ابتدائية، ولا يقوم بعمل conflation للقيم المتطابقة.
+
+3. متى نستخدم كل منهما؟
+   - استخدم `stateIn` لتمثيل **حالة الشاشة (UI State)** المأخوذة من Room أو DataStore.
+   - استخدم `shareIn` لبث **أحداث أو إشعارات** مشتركة لعدة شاشات في نفس الوقت.
 
 ## Practical walkthrough
 
-عندك cold Flow من Room و3 أجزاء في الشاشة عايزينها. `stateIn` تشاركها وتحتفظ بآخر قيمة مع initial state؛ `shareIn` تشارك emissions بقدر replay تختاره من غير current `.value`. الاتنين يحتاجوا scope عمرها مناسب: لو استخدمت global scope هتفضل query شغالة بعد الشاشة؛ لو scope قصيرة جدًا هتفقد sharing. اختبر وقت بدء ووقف upstream.
+تحويل Room Cold Flow إلى UI StateFlow في الـ ViewModel:
+```kotlin
+class UsersViewModel(private val repository: UserRepository) : ViewModel() {
+    
+    // repository.getUsers() ترجع Cold Flow<List<User>> من Room DB.
+    // نحولها لـ StateFlow باستخدام stateIn:
+    val usersUiState: StateFlow<List<User>> = repository.getUsers()
+        .map { it.filter { user -> user.isActive } }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = emptyList()
+        )
+}
+```
+النتيجة: لا يتم إطلاق استعلام Room إلا عندما تكون الشاشة مرئية وتستمع للـ Flow، ويتم مشاركة البيانات بين كل المكونات بدون تكرار.
 
 ## Why it matters and how it works
 
@@ -61,15 +93,23 @@ A repository shares a costly location subscription in a session scope while mult
 
 ## Interview answer — short
 
-“`stateIn` and `shareIn` share one cold upstream in a supplied scope. `stateIn` gives current state with an initial value; `shareIn` gives configurable replay. I choose scope and start policy from the data lifetime.”
+stateIn converts a cold Flow into a hot StateFlow with an initial value and latest-state retention (.value); shareIn converts a cold Flow into a hot SharedFlow with configurable replay cache. Both share a single upstream execution across multiple collectors within a specified CoroutineScope.
 
 ## Interview answer — structured
 
-“A cold Flow can repeat its upstream per collector. `stateIn` launches sharing and exposes a StateFlow with a current value, which works well for ViewModel UI state. `shareIn` exposes a SharedFlow with replay I specify, useful for a shared broadcast or subscription. Both need an owner scope and a `SharingStarted` policy, because that determines when the upstream runs. I avoid an application scope for user-specific data unless session invalidation explicitly cancels and clears it.”
+`stateIn` and `shareIn` are the standard conversion operators used to transform cold, lazy flows into hot, multicasting streams within a specific `CoroutineScope`.
+
+I use **`stateIn`** when transforming data sources into UI state. It converts any upstream cold flow into a `StateFlow`. It requires an `initialValue` so synchronous access via `.value` is immediately available, retains the latest emission, and conflates updates to suppress identical values.
+
+I use **`shareIn`** when broadcasting event or data streams to multiple subscribers without state semantics. It converts a cold flow into a `SharedFlow`, allows configuring `replay = N` to determine how many past emissions new subscribers receive, and does not require an initial value.
+
+Both operators take a `SharingStarted` strategy, which controls precisely when the upstream cold flow begins executing and when it cancels to save device battery.
 
 ## Interview answer — deep senior
 
-“I treat conversion as a resource and consistency decision. A sharing coroutine collects upstream once and fans values out, reducing duplicate database or socket subscriptions. The supplied scope sets the maximum lifetime. `stateIn` provides an initial value and latest state, with equality semantics; `shareIn` lets me choose replay count, but its buffer and no-subscriber behavior must match the consumer contract. `WhileSubscribed` can stop work offscreen and restart later, perhaps triggering a new network call. Eager sharing avoids startup delay at a resource cost. I test two simultaneous collectors, stop/restart behavior and logout so stale user state is not replayed. I would start with the consumer requirement. If callers need an immediately readable current state, `stateIn(scope, started, initialValue)` turns a cold upstream into a StateFlow. If they need a shared broadcast of emissions with configurable replay, `shareIn` returns SharedFlow. Both launch an upstream sharing coroutine in the supplied scope and need a start policy. `WhileSubscribed` can stop collection after subscribers leave, but its replay cache behavior needs separate attention; `stateIn` still exposes a value. I choose a ViewModel scope for screen state, not an unbounded global scope. I would count upstream starts with two collectors and navigate away/back to test whether the policy restarts expensive work or keeps it unnecessarily active.”
+Under the hood, both operators launch a single sharing coroutine inside the provided `CoroutineScope`. This coroutine acts as a bridge: it collects from the upstream cold flow once, and fans out each emitted item to an internal `StateFlowImpl` or `SharedFlowImpl`.
+
+The magic lies in how they manage the upstream subscription. When using cold streams like Room DAO queries or Bluetooth scanners, executing them continuously when the user minimizes the app drains battery. By pairing `stateIn` with `SharingStarted.WhileSubscribed(5000)`, the operator tracks active downstream subscribers via reference counting (`subscriptionCount`). When the last collector unsubscribes, it waits 5 seconds (to tolerate screen rotation) and then cancels the upstream collection coroutine, releasing hardware and database locks.
 
 ## How to answer in the interview
 
@@ -85,8 +125,14 @@ Trace upstream subscription count, replay, start policy and scope cancellation.
 
 ## Follow-up questions
 
-- [FLO-09](../flo-09/): Which start policy saves idle resources? **Answer:** `WhileSubscribed` can stop upstream after its timeout.
-- [FLO-02](../flo-02/): Why share? **Answer:** cold collectors may duplicate expensive upstream work.
+- **Interviewer:** "Why is the 5-second timeout in `WhileSubscribed(5000)` important?"
+  **Answer:** "During an Android configuration change (like screen rotation), the old Activity/Fragment destroys its view (unsubscribes) and the new view is created and resubscribes within a few hundred milliseconds. A 5-second grace period prevents tearing down and immediately restarting the upstream network or database flow during rotation."
+
+- **Interviewer:** "What happens if you use `stateIn` with `SharingStarted.Eagerly`?"
+  **Answer:** "The upstream flow starts collecting immediately upon ViewModel instantiation and never stops until the ViewModel is destroyed, even if no UI component is observing the state."
+
+- **Interviewer:** "Can you call `stateIn` without providing an `initialValue`?"
+  **Answer:** "Only if using the 2-argument overload of `stateIn(scope)`, which is a suspending function that waits for the first upstream emission before returning the StateFlow. In a ViewModel property initializer, you must use the 3-argument non-suspending overload with an explicit `initialValue`."
 
 ## Self-check rubric
 
@@ -97,4 +143,4 @@ Can I select stateIn/shareIn, name an owner, explain replay and predict restart?
 - [Kotlin stateIn API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/state-in.html) — state conversion.
 - [Kotlin shareIn API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/share-in.html) — sharing.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -22,11 +22,50 @@ Design debounced search with stale-request cancellation, query ownership and UI 
 
 ## Explanation in Arabic
 
-نحفظ text كـStateFlow في ViewModel، نعمل normalize ثم debounce ثم distinct، وبعدها `flatMapLatest` لنتائج query الحالية. blank query تعرض اقتراحات/empty state متعمدة. كل emission تحمل query أو generation علشان UI ما تعرضش نتيجة قديمة لو client تجاهل cancel. Network errors تبقى state مرتبطة بالquery، و`CancellationException` ما تتحولش error.
+تصميم شريط بحث (Search Box) احترافي يجمع بين الـ Debounce وإلغاء الطلبات القديمة (Cancelling stale API calls) هو أحد أهم الأسئلة المعمارية العملية:
+
+1. المتطلبات الهندسية لشريط البحث المثالي:
+   - **تأخير الإرسال (Debounce):** لا نرسل طلب شبكة مع كل حرف يكتبه المستخدم؛ ننتظر 300ms حتى يتوقف عن الكتابة.
+   - **منع التكرار (Deduplication):** لو مسح المستخدم حرفاً وأعاده فوراً في أقل من 300ms، لا نكرر نفس البحث.
+   - **إلغاء الطلبات البطيئة السابقة (Stale Request Cancellation):** لو تم إرسال طلب للبحث عن 'App' واستغرق وقتاً طويلاً، ثم كتب المستخدم 'Apple'، يجب **إلغاء طلب 'App' فوراً** حتى لا تعود نتيجته متأخرة وتمسح شاشة نتائج 'Apple' (Race condition)!
+   - **معالجة النصوص الفارغة (Empty Query):** مسح النتائج فوراً دون إرسال طلب للسيرفر.
+
+2. التركيبة المعمارية الثلاثية:
+   - `debounce(300L)`
+   - `distinctUntilChanged()`
+   - `flatMapLatest { query -> ... }`
 
 ## Practical walkthrough
 
-الـTextField تتحدث فورًا من `query`، لكن API request تتأخر `debounce(250)` بعد آخر حرف. `distinctUntilChanged` بعد normalization تمنع نفس بحث يتكرر؛ `flatMapLatest` تلغي collection القديمة، وstate تعرض Loading/Ready/Error للquery الحالية. لو backend request ما بتتلغيش فعليًا، tag كل response بـquery وتأكد قبل commit عشان نتيجة `a` ما تغطيش `ab`.
+تنفيذ كامل للـ Search Pipeline في ViewModel:
+```kotlin
+class SearchViewModel(
+    private val searchRepository: SearchRepository
+) : ViewModel() {
+
+    val queryFlow = MutableStateFlow("")
+
+    val searchState: StateFlow<SearchUiState> = queryFlow
+        .map { it.trim() } // 1. تنظيف الفراغات
+        .debounce(300L)   // 2. تأخير 300ms للانتظار بعد انتهاء الكتابة
+        .distinctUntilChanged() // 3. تجاهل الكلمات المكررة المتتالية
+        .flatMapLatest { query -> // 4. يلغي الطلب القديم المعلق فوراً بمجرد وصول كلمة جديدة
+            if (query.isBlank()) {
+                flowOf(SearchUiState.Idle)
+            } else {
+                searchRepository.searchProducts(query)
+                    .map { SearchUiState.Success(it) }
+                    .onStart { emit(SearchUiState.Loading) }
+                    .catch { emit(SearchUiState.Error(it.message ?: "Error")) }
+            }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = SearchUiState.Idle
+        )
+}
+```
 
 ## Why it matters and how it works
 
@@ -87,15 +126,24 @@ A marketplace search screen emits typed Loading/Ready/Error per query, logs requ
 
 ## Interview answer — short
 
-“I normalize and debounce query input, suppress adjacent duplicates and use flatMapLatest for replaceable results. I expose one ViewModel StateFlow, tag results with query identity and preserve cancellation so stale responses cannot overwrite current UI.”
+Design the search pipeline using query.map { it.trim() }.debounce(300).distinctUntilChanged().flatMapLatest { query -> repository.search(query) }. flatMapLatest guarantees that any in-flight, stale network call is immediately cancelled the moment a new query arrives.
 
 ## Interview answer — structured
 
-“The ViewModel owns query state. Its pipeline normalizes input, debounces remote calls, applies distinctUntilChanged and switches inner search streams with flatMapLatest. Empty input has an explicit state. I model loading, result and error with the query that produced them, so a late old result is rejected even if the network client does not promptly cancel. The UI collects lifecycle-aware and the ViewModel shares upstream to avoid duplicate requests. Tests advance virtual time and deliver responses out of order.”
+To build a responsive search pipeline that debounces input and cancels stale API calls, I chain four essential Flow operators in the ViewModel:
+
+1. **`map { it.trim() }`**: Sanitizes whitespace to avoid trivial variations.
+2. **`debounce(300L)`**: Waits for a 300ms quiet period after the user stops typing, preventing rapid keystroke storms.
+3. **`distinctUntilChanged()`**: Prevents redundant search dispatches if the query string after trimming equals the previous search.
+4. **`flatMapLatest { query -> ... }`**: This is the critical cancellation operator. If a query 'A' is sent and takes 800ms, and the user types 'AB' at 500ms, `flatMapLatest` immediately cancels the ongoing HTTP call for 'A' via cooperative cancellation, executing the fresh search for 'AB' instead. This completely eliminates out-of-order response race conditions.
 
 ## Interview answer — deep senior
 
-“Search is a latest-state problem, so discarding old results is correct, but implementation details matter. I keep immediate text rendering separate from a debounced network path, normalize before equality filtering, and switch to a new cancellable request when the query changes. A request may already be on the wire; therefore I tag every result with the originating query or generation and refuse to commit it if it no longer matches the current input. Expected API failures map to query-scoped error state, while CancellationException propagates. I share the final stream in viewModelScope with a policy that avoids duplicate collectors, bound API load and measure latency. Tests cover rapid typing, duplicate queries, blank input, slow old response, rotation and cancellation. I would separate input responsiveness from network policy. The ViewModel accepts every character immediately and exposes it to the field. A separate query pipeline normalizes, debounces, removes consecutive duplicates, and uses `flatMapLatest` for repository search so old inner collections are cancelled. The UI receives an explicit Loading/Ready/Error state carrying the query identity. Cancellation may stop client observation but may not undo remote server work, so I also check that a late result belongs to the current query before committing it if the adapter is not fully cancellable. I would choose the debounce interval with product input latency in mind and test rapid `a` to `ab`, empty query, error recovery, and screen recreation.”
+From an API optimization and networking standpoint, `flatMapLatest` cancels the OkHttp Call at the network layer if OkHttp's asynchronous enqueue or Coroutine bridge is used, terminating the underlying socket read loop and saving device radio battery.
+
+Inside `flatMapLatest`, we wrap the repository call with: `.onStart { emit(SearchUiState.Loading) }` and `.catch { emit(SearchUiState.Error(...)) }`. This encapsulates the entire asynchronous lifecycle of each individual query cleanly within the inner flow.
+
+Finally, pairing this with `stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SearchUiState.Idle)` ensures that if the user rotates the device, the current search results are retained instantly from the `StateFlow`'s cache without re-triggering the network query.
 
 ## How to answer in the interview
 
@@ -111,8 +159,14 @@ Trace query generation, stale response race, lifecycle sharing and error/cancell
 
 ## Follow-up questions
 
-- [FLO-15](../flo-15/): Why normalize before distinct? **Answer:** semantically equal queries should not repeat requests.
-- [FLO-14](../flo-14/): Which operator replaces old inner flow? **Answer:** flatMapLatest.
+- **Interviewer:** "What happens if the network API returns responses out of order without `flatMapLatest`?"
+  **Answer:** "If query 'A' is slow (takes 2s) and query 'AB' is fast (takes 200ms), without `flatMapLatest`, 'AB' will render first, and 1.8 seconds later 'A' will arrive and overwrite the screen with stale results! `flatMapLatest` completely prevents this."
+
+- **Interviewer:** "How do you handle immediate searches when the user taps the search keyboard button?"
+  **Answer:** "Expose an `onSearchSubmitted(query)` method in the ViewModel that directly updates an active query without going through the debounce delay."
+
+- **Interviewer:** "Can you test this search pipeline deterministically in a unit test?"
+  **Answer:** "Yes, using `runTest` and Turbine. Emit 'A', call `advanceTimeBy(100)`, emit 'AB', call `advanceTimeBy(300)`, and verify that only the search for 'AB' was dispatched."
 
 ## Self-check rubric
 
@@ -123,4 +177,4 @@ Can I define pipeline order, guard late responses, model all UI states and test 
 - [Kotlin Flow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-flow/) — debounce/flatMapLatest.
 - [Android StateFlow/SharedFlow guide](https://developer.android.com/kotlin/flow/stateflow-and-sharedflow) — ViewModel UI state.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

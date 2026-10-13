@@ -24,7 +24,42 @@ How do multi-window, rotation, and background/foreground transitions affect stat
 
 ## Explanation in Arabic
 
-الدوران غالبًا configuration change: الـActivity تتدمر وتتعمل تاني، والـViewModel عادة يفضل موجود لنفس logical screen. لكن النظام ممكن يقتل process وهو في الخلفية، وساعتها الـViewModel يضيع ولازم ترجع من saved state وstorage. في multi-window الشاشة ممكن تكون ظاهرة من غير ما تكون resumed أو focused، لذلك ربط كل تحديث بـ`onResume` فقط ممكن يوقف واجهة ظاهرة. `onStart`/`onStop` أو lifecycle-aware collection عادة أنسب للمحتوى المرئي. لا تستخدم `onPause` كضمان لحفظ طويل أو إكمال upload؛ persist المهمات المهمة مبكرًا واستعمل آلية background work مناسبة.
+تأثير الـ Multi-Window (تقسيم الشاشة)، التدوير (Rotation)، والانتقال بين الخلفية والمقدمة (Background/Foreground) على حالة التطبيق:
+
+1. الـ Multi-Window / Split-Screen (تقسيم الشاشة):
+   - في وضع تقسيم الشاشة، قد يكون تطبيقك **مرئياً تماماً على الشاشة ولكنه ليس في بؤرة التركيز التفاعلي (Visible but Not Focused)** لأن المستخدم يتفاعل مع التطبيق الآخر في النصف الثاني!
+   - **حالة الـ Lifecycle:** التطبيق يكون في حالة **`onStart()` / `onPause()`** (أو `RESUMED` في أندرويد 10+ مع ميزة Multi-resume)!
+   - **الخطأ الكارثي:** لو كنت توقف تحديثات الفيديو أو الرسوم في `onPause()`، فالفيديو سيتوقف ويتجمد أمام عيني المستخدم في وضع تقسيم الشاشة! لذلك يجب إيقاف الفيديو والرسوم في **`onStop()`**، وليس في `onPause()`.
+
+2. الـ Rotation (تدوير الشاشة):
+   - يدمر الـ Activity ويعيد بناؤها بالكامل (`onDestroy` -> `onCreate`).
+   - الـ ViewModel والـ SavedStateHandle ينجوان في الذاكرة.
+
+3. الـ Background / Foreground Transitions:
+   - عند الانتقال للخلفية: تستدعى `onPause()` ثم `onStop()`. يدخل التطبيق في تجمع الـ 'Killable' للـ Low Memory Killer.
+   - حفظ الحالة الإلزامي يتم في `onSaveInstanceState(Bundle)` قبل أن يصبح التطبيق عرضة للـ Process Death.
+
+## Practical walkthrough
+
+تطبيق عملي: مشغل فيديو (Video Player) في وضع Multi-Window:
+```kotlin
+class VideoPlayerActivity : AppCompatActivity() {
+    private var player: ExoPlayer? = null
+
+    override fun onStart() {
+        super.onStart()
+        // 1. نبدأ تشغيل الفيديو في onStart حتى يعمل في وضع Multi-Window بسلاسة:
+        initializePlayer()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // 2. نحرر الـ Player في onStop عندما تختفي الشاشة تماماً عن عين المستخدم:
+        releasePlayer()
+    }
+    // لا نوقف الفيديو في onPause() أبداً حتى لا يتجمد في Split-screen!
+}
+```
 
 ## Why it matters and how it works
 
@@ -33,10 +68,6 @@ Rotation changes resources and can recreate UI components. Multi-window changes 
 ## Worked example
 
 A search screen keeps its query and selected tab in saveable state, search results in a repository/cache, and the active request in a ViewModel with cancellation. On rotation it recreates layout and continues from retained state. If the process dies in background, it restores the query and reloads results. In split screen it adapts width and continues visible updates even when another window has focus. The scenario describes ownership; implementation must be tested for supported API levels.
-
-## Practical walkthrough
-
-multi-window مش مجرد rotation؛ Activity ممكن تكون visible لكنها مش resumed حسب الجهاز والإصدار ووضع النوافذ، فاختار STARTED للrendering اللي لازم يكمل وهي ظاهرة، وRESUMED لو resource حصري محتاج focus. rotation يعيد بناء view/layout حسب configuration؛ background/foreground عادة يوقف ويرجع بدون إعادة إنشاء فورية، لكن process ممكن يموت أثناء الغياب. search query/tab تحفظ كstate صغير، results ترجع من repository، وrequest تتلغى أو تُستأنف حسب owner. جرّب resize وsplit screen والتبديل بين apps، ولا تعتبر emulator rotation وحده تغطية لكل الحالات.
 
 ## Trade-offs and decision criteria
 
@@ -52,17 +83,23 @@ For a delivery checkout, save the address draft and idempotency key durably befo
 
 ## Interview answer — short
 
-“Rotation can recreate UI, multi-window separates visibility from focus, and backgrounding can lead to process death. I keep small UI state saveable, business data durable, and never assume a ViewModel survives a killed process.”
+In multi-window, the app can be visible (onStart) without having input focus (onPause), so media playback and rendering must be controlled in onStart/onStop, not onResume/onPause. Rotation triggers full Activity recreation with ViewModel preservation, and backgrounding moves the app to onStop where it becomes killable by the OS.
 
 ## Interview answer — structured
 
-I treat these as different events. A configuration change commonly recreates an Activity, while its ViewModel normally remains for that logical screen. Multi-window can leave a screen visible without focus, so I use lifecycle states appropriate to visibility rather than equating pause with hidden. After background process death, in-memory ViewModels and coroutines are gone; saved instance state can restore small UI keys, and repositories reload durable data. I test each path separately and avoid placing large result objects in a Bundle.
+These three transitions impact Android lifecycle states and resource management differently:
+
+1. **Multi-Window / Foldable Resizing**: The app shares screen real estate with another process. The app is fully visible, but may not have user touch focus. Prior to Android 10, an app without focus was kept in `onPause()`. In Android 10+ with **Multi-Resume**, all visible apps in multi-window remain in `RESUMED`. Therefore, video playback, map rendering, and animations must be bound to **`onStart()` and `onStop()`**; stopping them in `onPause()` causes frozen video playback in split-screen mode.
+
+2. **Screen Rotation**: Triggers a full Configuration Change: `onPause -> onStop -> onDestroy` followed by recreation. The UI hierarchy and view bindings are destroyed, while the ViewModel and SavedStateHandle survive in memory.
+
+3. **Background/Foreground Transitions**: Navigating away invokes `onPause()` followed by `onStop()`. The OS calls `onSaveInstanceState()` to serialize state. Once in `onStop()`, the app's process is marked killable by the Low Memory Killer if RAM is constrained.
 
 ## Interview answer — deep senior
 
-State ownership drives my implementation. Ephemeral view details can be saveable, screen logic can live in a ViewModel, and anything the user must not lose belongs in durable storage or a backend. Rotation recreates views and resources, so side effects must not accidentally duplicate; a ViewModel handles ordinary configuration changes but is rebuilt after process death. Multi-window means STARTED and RESUMED are not interchangeable for visible updates. Background work that must complete cannot depend on an Activity coroutine. On return I restore stable keys, reconcile with current repository state, and avoid replaying a non-idempotent action such as payment.
+On modern **Foldable devices** (e.g., Samsung Galaxy Fold, Google Pixel Fold), unfolding the device transitions the app from a compact external display to a large unfolded inner display. This triggers dynamic configuration changes where screen size, aspect ratio, and smallest screen width (`sw600dp`) change on the fly.
 
-A split-screen search page can be visible without being the currently focused window, so I do not equate `onPause` with invisibility for every feature. I choose STARTED collection for results that should update while visible and RESUMED for a resource that needs exclusive interaction. Rotation or resize may recreate views while the process survives; a long background interval may instead lead to process death. I save a small query and selected tab, reload results from the repository, and cancel or continue requests according to their owner. I test resize, rotation, app switching, and restored process separately.
+To support foldables seamlessly in modern architecture: 1. Use **Jetpack WindowManager** (`WindowInfoTracker.getOrCreate(context).windowLayoutInfo(activity)`) to observe folding postures (Flat, Half-Opened / Tabletop mode, and display hinge folding features). 2. Adopt adaptive UI layouts with Compose (`calculateWindowSizeClass()`), switching dynamically between single-pane, list-detail, and supporting pane layouts without manual Activity recreation hacks.
 
 ## How to answer in the interview
 
@@ -78,9 +115,14 @@ Discuss visible versus focused lifecycle states, configuration change, process d
 
 ## Follow-up questions
 
-- Does a ViewModel survive process death? **Answer:** no; it is retained across ordinary configuration recreation, while process death creates a new instance.
-- Why might `onPause` fire while content remains visible? **Answer:** multi-window can transfer focus to another window without fully hiding this one.
-- Where should a payment idempotency key live? **Answer:** durably with the pending transaction so a restored process can reconcile rather than duplicate submission.
+- **Interviewer:** "What is 'Multi-Resume' in Android 10+?"
+  **Answer:** "In Android 10 (API 29) and above, all visible activities in multi-window mode or split-screen are placed in the `RESUMED` state simultaneously, rather than keeping only the top-focused activity resumed."
+
+- **Interviewer:** "How does `isInMultiWindowMode` help?"
+  **Answer:** "It is an Activity method (`isInMultiWindowMode`) that returns a boolean indicating whether the activity is currently operating in multi-window split-screen mode, allowing customized UI layouts."
+
+- **Interviewer:** "Why must you avoid fixed orientation lock (`android:screenOrientation="portrait"`) on foldables and tablets?"
+  **Answer:** "Locking orientation is explicitly ignored or letterboxed by Android 12L+ on large screens and foldables to prevent broken user experiences. Apps must support fluid multi-orientation layouts."
 
 ## Self-check rubric
 
@@ -91,4 +133,4 @@ Contrast rotation, multi-window, and process death; allocate three types of stat
 - [Save UI states](https://developer.android.com/topic/libraries/architecture/saving-states) — state ownership and process recreation.
 - [Multi-window support](https://developer.android.com/develop/ui/views/layout/support-multi-window-mode) — lifecycle and resizing considerations.
 
-Technically reviewed against these primary sources on 2026-10-13 by editorial review. The checkout flow is illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

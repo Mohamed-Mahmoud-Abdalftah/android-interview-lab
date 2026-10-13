@@ -24,11 +24,47 @@ What does stability mean for Compose types and parameters?
 
 ## Explanation in Arabic
 
-Compose تعتبر type stable عندما يمكنها معرفة إذا value تغيرت بين recompositions؛ immutable value أو mutable properties ترسل إشعارًا مرصودًا. `@Immutable`/`@Stable` وعود من المطور، وليست أدوات سحرية لتسريع أي class. مثلًا `var name` عادية داخل class معلّم `@Stable` دون observable state قد تجعل UI قديمة. Kotlin `List` interface قد تعتبر غير مستقرة لأن محتواها قابل للتغير؛ وفي إصدارات compiler الحديثة strong skipping يغيّر شروط تجاوز calls وكيف تُقارن parameters. افحص compiler reports وقياس الأداء الفعلي قبل وضع annotations.
+ماذا يعني استقرار الأنواع والبارامترات (Type & Parameter Stability) في Jetpack Compose؟
+
+1. العقد الأساسي للاستقرار (Stability Contract):
+   - الـ Compose Compiler يفحص كل نوع (Class / Interface) ويصنفه ليحدد ما إذا كان يمكنه **تخطي (Skip)** الـ Composable أثناء إعادة التركيب أم لا.
+   - الشروط الثلاثة للنوع المستقر (Stable):
+     * نتيجة مقارنة `equals()` بين كائنين متماثلين تعطي دائماً نفس النتيجة لنفس الكائنات.
+     * إذا تغيرت خاصية عامة في الكائن، يُشعر الكائن محرك Compose بالتغيير (عبر `SnapshotState`).
+     * كل الحقول العامة للكائن من أنواع مستقرة أيضاً.
+
+2. تصنيفات المترجم الثلاثة:
+   - **`@Immutable`**: نوع ثابت لا يتغير أبداً بعد إنشائه؛ جميع حقوله `val` من أنواع بدائية أو Immutable. يقدم أعلى درجات التحسين والتخطي.
+   - **`@Stable`**: نوع قد يحتوي على خصائص متغيرة، ولكنه يضمن إشعار Compose عند حدوث أي تعديل (مثل كائن يحمل `mutableStateOf`).
+   - **`Unstable`**: أي كائن يحتوي على حقول `var` عادية، أو واجهات (Interfaces)، أو مجموعات كوتلن القياسية مثل `List<T>` (لأن الـ `List` قد تكون في الحقيقة `ArrayList` قابلة للتعديل خلف الستار!).
+
+3. الحلول العملية لمشكلة الـ Unstable Types:
+   - استخدام **Kotlinx Immutable Collections** (`ImmutableList<T>`, `PersistentList<T>`).
+   - وسم الـ Data Classes الخارجية أو الـ Models بـ `@Immutable` صراحة.
+   - الاعتماد على **Strong Skipping Mode** المتاح في المترجم الحديث لتخطي الكائنات بالمرجع.
 
 ## Practical walkthrough
 
-لو `ProductRow` بياخد model فيها `var price` عادية، Compose ممكن ما تعرفش إن القيمة اتغيرت؛ و`@Stable` هنا وعد كاذب. خلّي UI model immutable أو خلي التغييرات Observable. راجع compiler report الأول: سلوك skipping بيتأثر بإصدار compiler وstrong skipping؛ متوعدش إن annotation وحدها هتحل jank. وعد `@Stable` الكاذب ممكن يخلي السعر على الشاشة قديم رغم إن object اتغيرت داخليًا. افحص correctness أولًا، وبعدها compiler report وframe timing على نسخة المشروع الفعلية.
+جعل الكائنات مستقرة وإصلاح عدم الاستقرار في Data Models:
+```kotlin
+// ❌ كائن غير مستقر: المترجم يعتبره Unstable بسبب List و var:
+data class BadUserModel(
+    val id: String,
+    val tags: List<String>, // List هي Interface غير مضمونة الثبات للمترجم!
+    var score: Int // وجود var يجعل الكائن Unstable فوراً!
+)
+
+// ✅ كائن مستقر بنسبة 100% ويقبل التخطي الذكي (Skippable):
+import androidx.compose.runtime.Immutable
+import kotlinx.collections.immutable.ImmutableList
+
+@Immutable
+data class GoodUserModel(
+    val id: String,
+    val tags: ImmutableList<String>,
+    val score: Int
+)
+```
 
 ## Why it matters and how it works
 
@@ -65,15 +101,26 @@ Diagnose measured jank first, inspect compiler stability reports for the affecte
 
 ## Interview answer — short
 
-“Stability is Compose's contract that parameter changes can be detected reliably. It influences skipping, but annotations must reflect observable behavior and current compiler rules. Stability is a correctness promise that may enable skipping, not a speed switch.”
+In Compose, type stability determines whether a composable can be skipped during recomposition. An `@Immutable` type never mutates; a `@Stable` type notifies Compose if it mutates. Unstable types—such as classes with mutable `var` properties or standard Kotlin `List<T>`—force recomposition of the composables that accept them.
 
 ## Interview answer — structured
 
-“I distinguish stable data from a type merely labeled stable. Immutable values are easy to reason about; mutable stable types must notify Compose whenever UI-relevant data changes. Stability affects whether Compose can skip a child with unchanged inputs, but strong skipping and comparison rules are compiler-version-sensitive. I use reports and traces to identify a real problem. I would never annotate a plain mutable object `@Stable` just to silence a warning, because that can produce stale UI. I contrast an immutable ProductUi replacement with an unobserved mutable price field marked @Stable.”
+Type stability is the core contract that governs the Compose Compiler's smart skipping optimization.
+
+When a parent composable recomposes, Compose evaluates child composables. If all parameters passed to a child are **Stable** and their values evaluate as equal via `equals()`, Compose skips re-executing that child composable entirely.
+
+The compiler infers stability into three categories:
+1. **Immutable (`@Immutable`)**: All public properties are `val` and their types are also immutable. The object's state is guaranteed never to change post-creation (e.g. primitives, `String`, or annotated data classes).
+2. **Stable (`@Stable`)**: The object may be mutable, but it guarantees that any state mutations notify the composition (such as holding `mutableStateOf` properties).
+3. **Unstable**: Any class containing public `var` properties, external multi-module classes uncompiled by the Compose compiler plugin, or standard Kotlin collection interfaces (`List`, `Set`, `Map`). Because `List<T>` is an interface that could hide a mutable `ArrayList`, Compose assumes it can change without notification, marking any composable accepting it as unskippable.
 
 ## Interview answer — deep senior
 
-“Stability tells Compose whether it can trust parameter comparisons when deciding to skip a call during parent recomposition. A deeply immutable UI model has a straightforward contract. A mutable stable model is possible, but every property that affects rendering must change observably; a naked `var` modified in place breaks that promise. `@Stable` and `@Immutable` are therefore semantic assertions, not performance switches. In modern compiler configurations, strong skipping can make restartable functions with unstable parameters skippable, often comparing unstable values by instance identity. That makes blanket statements about unstable classes wrong, and adding a supposedly stable wrapper can even replace a cheap identity check with a costlier equality comparison. I begin with a user-visible frame issue, inspect recomposition and compiler reports for the specific call, then verify which state read or parameter causes work. If a model change is justified, I prefer immutable UI values or an explicitly observable mutable state holder and test that every field update renders. I compare release benchmarks before and after. Correctness wins over a prettier skip count, and the exact optimization advice must match the project's Compose compiler version. I check this project’s compiler reports because strong-skipping behavior can change the optimization advice.”
+To resolve collection instability in production architectures, teams historically wrapped lists in `@Immutable data class ImmutableHolder<T>(val items: List<T>)` or adopted `kotlinx.collections.immutable` (`ImmutableList<T>`). Annotating domain entities with `@Immutable` promises the compiler that callers will treat the model as immutable, allowing full skipping.
+
+In recent releases, Compose introduced **Strong Skipping Mode** (standard in Kotlin 2.0+). Under strong skipping, composables with unstable parameters *can* still be skipped if the instance reference has not changed (`===`), and lambdas with captures are automatically remembered. However, if a new instance of an unstable class is passed—even with identical data—it still forces recomposition.
+
+We audit stability using Compose Compiler metrics (`./gradlew assembleRelease -PcomposeCompilerReports=true`), inspecting the generated `-classes.txt` and `-composables.txt` files to eliminate any accidental stability regressions.
 
 ## How to answer in the interview
 
@@ -89,9 +136,11 @@ Discuss inference, observability, strong skipping, identity versus equality, fal
 
 ## Follow-up questions
 
-- Is `@Stable` enough to make a plain mutable field observable? **Answer:** no; the annotation promises behavior but does not implement notifications.
-- Are unstable parameters always unskippable? **Answer:** no; strong skipping can permit skipping under version-specific comparison rules.
-- Why not annotate every model? **Answer:** skipping and equality checks have costs, and false contracts can break UI correctness.
+- **Interviewer:** "Why is standard `List<T>` considered unstable by the Compose Compiler?"
+  **Answer:** "`List<T>` in Kotlin is a read-only interface, not an immutable one. At runtime, the backing implementation may be a mutable `ArrayList` whose contents could change without altering the list reference, so Compose cannot safely skip."
+
+- **Interviewer:** "How do you enable Strong Skipping Mode in Kotlin 2.0+?"
+  **Answer:** "In Kotlin 2.0+, Strong Skipping Mode is enabled by default in the new Jetpack Compose Compiler Gradle plugin, though explicit stability annotations remain best practice for cross-module boundary optimization."
 
 ## Self-check rubric
 
@@ -102,4 +151,4 @@ Define the contract, explain one stale-UI bug, account for strong skipping, and 
 - [Stability in Compose](https://developer.android.com/develop/ui/compose/performance/stability) — type contract.
 - [Strong skipping mode](https://developer.android.com/develop/ui/compose/performance/stability/strongskipping) — version-sensitive skip rules.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Compiler behavior should be checked against the actual project toolchain.
+Technically reviewed against primary documentation on 2026-10-13.

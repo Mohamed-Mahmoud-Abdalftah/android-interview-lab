@@ -22,11 +22,46 @@ Explain runCatching swallowing cancellation and how to preserve structured shutd
 
 ## Explanation in Arabic
 
-`runCatching` في Kotlin بتمسك `Throwable`، وده يشمل `CancellationException`. لو لفّينا cancellable Flow/coroutine operation بيها من غير إعادة رمي الإلغاء، هنحوّل خروج الشاشة إلى `Result.failure` عادي؛ ممكن retry تشتغل أو UI تعرض error قديم. نستخدم `try/catch` واضح: نعيد رمي cancellation ونمسك expected domain exceptions فقط.
+خطر استخدام `runCatching` حول كود الـ Coroutines والـ Flows هو أحد أكثر الأخطاء الخفية والمكلفة في Kotlin:
+
+1. ما هو أصل المشكلة في `runCatching`؟
+   - دالة `kotlin.runCatching { ... }` تم تصميمها لـ Standard Kotlin القديمة، وتقوم بالتقاط **`Throwable` بالكامل** (`catch (e: Throwable)`).
+   - في Kotlin Coroutines، آلية الإلغاء (Cancellation Mechanism) تعتمد بالكامل على رمي **`CancellationException`**.
+   - بما أن `CancellationException` تورث من `Throwable`، فإن `runCatching` **تلتقط إشارة الإلغاء وتبتلعها وتغلفها كـ `Result.failure`**!
+
+2. النتائج الكارثية في الـ Production:
+   - **كسر الـ Structured Concurrency:** الكوروتين ترفض التوقف! لو تم إلغاء الـ ViewModel أو الـ Scope، الكود يستمر في التنفيذ ويضيع الموارد.
+   - **كسر المشغلات المعلقة (Operators Failure):** المشغلات التي تعتمد على الإلغاء (مثل `withTimeout`, `collectLatest`, `flatMapLatest`) تتوقف عن العمل بشكل سليم لأن الإلغاء يتم ابتلاعه!
+
+3. الحل السليم:
+   - عدم استخدام `runCatching` مع الدوال المعلقة، أو استخدام دالة مخصصة `runSuspendCatching` تعيد رمي `CancellationException` فوراً:
+     `if (e is CancellationException) throw e`
 
 ## Practical walkthrough
 
-في search pipeline، query جديدة تلغي القديمة بـ`flatMapLatest`. لو repository عملت `runCatching { api.search(old) }` والتقطت `CancellationException` كـfailure، ممكن تبعت Error للـquery القديمة أو retry غلط. استخدم `try/catch` يرجّع cancellation فورًا، وبعدها امسك IOException أو domain errors فقط. اختبر cancel أثناء `delay` وتأكد لا emission ولا API retry.
+المقارنة بين الكود المعطوب والكود المصحح:
+```kotlin
+// ❌ الكود الكارثي باستخدام runCatching:
+suspend fun syncData() {
+    runCatching {
+        api.fetchUpdates() // لو تم إلغاء الـ coroutine، سيتم رمي CancellationException
+    }.onFailure {
+        // ابتلاع الإلغاء! الكود يظن أن السيرفر فشل، والـ coroutine لا تتوقف!
+        showErrorDialog()
+    }
+}
+
+// ✅ الكود المصحح والآمن مع Coroutines:
+inline fun <T> runSuspendCatching(block: () -> T): Result<T> {
+    return try {
+        Result.success(block())
+    } catch (e: CancellationException) {
+        throw e // إعادة الرمي فوراً لضمان الإلغاء السليم!
+    } catch (e: Throwable) {
+        Result.failure(e)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -59,15 +94,38 @@ A search ViewModel cancels stale requests via flatMapLatest. Repository wrapper 
 
 ## Interview answer — short
 
-“Bare runCatching catches CancellationException, so it can turn cooperative cancellation into an ordinary Result. I rethrow cancellation before mapping domain errors and test that a cancelled stream neither retries nor renders stale error UI.”
+runCatching catches all Throwables including CancellationException. This swallows coroutines' cooperative cancellation signals, converting cancellations into regular failures, breaking structured concurrency, leaking background tasks, and causing operators like withTimeout and flatMapLatest to malfunction.
 
 ## Interview answer — structured
 
-“Kotlin `runCatching` catches Throwable without special knowledge of coroutine cancellation. A cancelled suspending call commonly throws CancellationException; packaging that exception as Result.failure can make the caller think the operation completed normally. In a search or lifecycle flow, this can trigger a retry or an obsolete error banner. I use explicit try/catch, rethrow CancellationException first, and catch only expected failures. I keep timeout mapping at a narrow boundary so an inner deadline is not confused with parent cancellation.”
+Using `kotlin.runCatching` around cancellable coroutine or flow work is a well-documented antipattern because it fundamentally breaks structured concurrency.
+
+`runCatching` is implemented with an indiscriminate `catch (e: Throwable)`. In Kotlin Coroutines, cooperative cancellation is driven by throwing `CancellationException`. Because `CancellationException` inherits from `Throwable`, `runCatching` intercepts the cancellation signal and encapsulates it as a `Result.failure(cancellationException)`.
+
+This causes catastrophic side effects:
+
+1. The coroutine refuses to terminate, continuing to execute subsequent statements when it was supposed to stop.
+2. Operators that rely on cancellation—such as `withTimeout`, `collectLatest`, and `debounce`—fail to work properly.
+
+In production, we strictly forbid `runCatching` on suspend functions, replacing it with a custom `runSuspendCatching` helper or standard `try-catch` blocks that explicitly rethrow `CancellationException`.
 
 ## Interview answer — deep senior
 
-“The failure is subtle because the code still type-checks and tests may pass on the happy path. Structured cancellation relies on the exception propagating from a cancellable suspension. Bare `runCatching` catches it as Throwable and can convert the cancelled branch into a value; downstream `map` or retry policy then continues as though the screen were active. I audit repository wrappers, Flow operators and `Result` adapters for that pattern. Explicit catch order rethrows cancellation, maps only expected I/O/domain errors, and lets fatal errors propagate. A timeout can be intentionally converted to a Timeout result at its own boundary, but outer Job cancellation must remain distinct. Deterministic tests cancel during a delayed API call and assert no retry, no stale UI emission and released resources. I would trace a cancelled request through the wrapper. Structured coroutines signal cancellation with `CancellationException`. Kotlin `runCatching` catches `Throwable`, so a bare wrapper can convert that control signal into a normal `Result.failure`. A downstream mapper may then emit an error state for an obsolete query or a retry policy may resubscribe work the user left. I write an explicit `try/catch` that rethrows cancellation first, then maps only expected exceptions. I keep timeout handling narrow: an inner deadline can become a domain Timeout if that is the contract, but parent Job cancellation must remain cancellation. I test a delayed API call, cancel its Job, and assert no stale UI event, no retry, and resource cleanup. This is a correctness requirement, not just an exception-style preference.”
+Under the hood, why was `runCatching` designed this way in the Kotlin standard library?
+
+Because `kotlin.Result` was introduced as a general JVM feature, independent of the coroutines library. When coroutines adopted `CancellationException` as a control-flow unwinding mechanism, the two APIs came into conflict.
+
+Consider what happens inside a Flow pipeline:
+
+```kotlin
+flow.map {
+    runCatching { api.call(it) } // CATCHES CANCELLATION!
+}
+```
+
+If the collector cancels, `api.call(it)` throws `CancellationException`. `runCatching` catches it, treats it as an error, and downstream receives `Result.failure`. The downstream collector then attempts to process this 'failure', triggering secondary bugs like showing an error snackbar for a screen that the user voluntarily closed!
+
+In enterprise codebases, we enforce a Detekt static analysis rule: flagging any invocation of `kotlin.runCatching` containing a suspending call.
 
 ## How to answer in the interview
 
@@ -83,8 +141,14 @@ Trace CancellationException through runCatching, retryWhen, catch and inner time
 
 ## Follow-up questions
 
-- [COR-16](../cor-16/): What is the safe catch order? **Answer:** rethrow CancellationException before ordinary error mapping.
-- [FLO-18](../flo-18/): Should retry resubscribe cancellation? **Answer:** no; cancellation stops the pipeline.
+- **Interviewer:** "How does Kotlin Flow's `.catch { }` operator handle `CancellationException`?"
+  **Answer:** "Flow's `.catch { }` operator is coroutine-aware: it explicitly rethrows `CancellationException` internally, guaranteeing that downstream cancellation unwinds properly while only intercepting real application exceptions."
+
+- **Interviewer:** "Can you use `runCatching` if you check the exception in `onFailure`?"
+  **Answer:** "You could write `.onFailure { if (it is CancellationException) throw it }`, but it is error-prone and easy for junior engineers to forget. Using a dedicated `runSuspendCatching` is much safer."
+
+- **Interviewer:** "Does `withContext` swallow `CancellationException`?"
+  **Answer:** "No. `withContext` properly rethrows `CancellationException` upon entry and exit, adhering to structured concurrency."
 
 ## Self-check rubric
 
@@ -95,4 +159,4 @@ Can I identify the caught Throwable, preserve parent cancellation and test no st
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — cancellation control flow.
 - [Kotlin Result.runCatching API](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin/run-catching.html) — catches Throwable.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

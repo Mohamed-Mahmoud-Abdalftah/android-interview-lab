@@ -24,11 +24,52 @@ How do you support accessibility, screen readers, and adaptive layouts?
 
 ## Explanation in Arabic
 
-في Compose، semantics تقدم معنى العنصر لخدمات accessibility والاختبارات: label، role، state، action. أي icon-only button يحتاج وصف مفهوم؛ decorative icon يمكن إخفاؤه من القراءة إذا parent يشرح الوظيفة. رتّب focus منطقيًا، لا تدمج semantics بشكل يمحو actions، ووفّر touch targets مناسبة. التصميم المتكيف يعتمد على مساحة النافذة الفعلية (window size classes) وليس “tablet” من model name؛ اختبر split-screen، foldable، font scaling وRTL عربي. UI تنقل المعلومات النصية بوضوح حتى لو اللون لا يُرى.
+كيفية دعم إمكانية الوصول (Accessibility)، وقارئات الشاشة (TalkBack)، والتصميمات المتكيفة (Adaptive Layouts) في Jetpack Compose:
+
+1. دعم قارئات الشاشة (TalkBack) وشجرة الدلالات (Semantics Tree):
+   - في Compose، يتم تمثيل واجهة المستخدم بشجرتين: شجرة الـ Layout وشجرة الـ **Semantics Tree** التي تقرأها خدمات إمكانية الوصول.
+   - **ContentDescription**: إضافة وصف نصي واضح للأيقونات والصور غير التزيينية، ووضع `contentDescription = null` للأيقونات التزيينية فقط لتجاهلها.
+   - **دمج الدلالات (Merge Descendants)**: عند وجود بطاقة تحتوي على عنوان وسعر وحالة، يجب استخدام `Modifier.semantics(mergeDescendants = true)` حتى يقرأ TalkBack البطاقة كوحدة واحدة متماسكة بضغطة واحدة بدلاً من إجبار المستخدم على النقر 4 مرات!
+   - **Touch Targets**: الالتزام بالحد الأدنى لمساحة اللمس وهو **48dp × 48dp** لتسهيل النقر لذوي الاحتياجات الخاصة.
+
+2. التصميمات المتكيفة (Adaptive Layouts) للشاشات الكبيرة والقابلة للطي:
+   - استخدام **Window Size Classes** المعتمدة من Google (`Compact`, `Medium`, `Expanded`):
+     * **Compact (الهواتف العادية)**: واجهة بعمود واحد (Single Pane).
+     * **Medium / Expanded (الأجهزة اللوحية والقابلة للطي Foldables)**: واجهة متكيفة ذات لوحين (List-Detail Pane Scaffold).
+   - تجنب فحص أبعاد البكسل الثابتة، واستخدام مكونات Material 3 Adaptive مثل `SupportingPaneScaffold` و `NavigationSuiteScaffold`.
 
 ## Practical walkthrough
 
-زرار أيقونة بس لازم يبقى له وصف مفهوم للـTalkBack، والـdecorative icon ما تتقرأش مرتين. في layout كبيرة استخدم المساحة المتاحة، مش اسم الجهاز؛ split-screen ممكن يخلي tablet ضيق. اختبر Arabic RTL و200% font وتاب keyboard وترتيب القراءة، لأن screenshot سليمة مش كفاية. لو icon بتعمل action مختلفة عن الصف، دمج semantics كله ممكن يخفيها من TalkBack. جرّب swipe order وkeyboard focus على نافذة ضيقة مع font كبير قبل اعتماد التصميم.
+تطبيق دمج الدلالات في TalkBack ودعم الـ Window Size Classes المتكيفة:
+```kotlin
+// 1. دمج دلالات بطاقة المنتج لقارئات الشاشة TalkBack:
+@Composable
+fun AccessibleProductCard(product: Product, onCardClick: () -> Unit) {
+    Card(
+        onClick = onCardClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            // دمج العناصر الداخلية ليقرأها TalkBack جملة واحدة متسلسلة:
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Product ${product.name}, Price: ${product.price} dollars"
+            }
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(product.name, style = MaterialTheme.typography.titleMedium)
+            Text("$${product.price}", style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+// 2. تكييف الواجهة حسب فئة حجم الشاشة (WindowWidthSizeClass):
+@Composable
+fun AdaptiveHomeScreen(windowSizeClass: WindowWidthSizeClass) {
+    when (windowSizeClass) {
+        WindowWidthSizeClass.Compact -> SinglePaneFeed() // الهواتف العادية
+        WindowWidthSizeClass.Medium, WindowWidthSizeClass.Expanded -> TwoPaneFeedWithDetail() // التابلت والـ Foldables
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -71,15 +112,29 @@ Add semantics assertions, automated accessibility checks where available, and ha
 
 ## Interview answer — short
 
-“I give controls meaningful semantics and touch targets, verify TalkBack/focus, and adapt layout to current window size, text scale and RTL. Give controls meaningful semantics and adapt to current window space.”
+Support accessibility by populating the Semantics tree with meaningful `contentDescription`s, merging compound components with `Modifier.semantics(mergeDescendants = true)`, and ensuring minimum 48dp touch targets. Support adaptive layouts using Window Size Classes (Compact, Medium, Expanded) and Jetpack Compose Material 3 Adaptive components like List-Detail panes.
 
 ## Interview answer — structured
 
-“I use standard components when possible because they carry baseline semantics, then add clear labels, roles, states and actions for custom UI. I test screen-reader order and keyboard focus, not just visual screenshots. For adaptive layouts I branch on current window constraints or size classes, so split-screen and fold changes work. I also test large fonts and Arabic RTL for clipping and logical order. I would make an icon-only receipt action speak its purpose and switch layout at a width constraint.”
+Building accessible and adaptive applications in Jetpack Compose is a core engineering requirement for global-scale products.
+
+1. **Accessibility & Semantics**:
+   - Alongside the Layout Tree, Compose generates a parallel **Semantics Tree** consumed by Android Accessibility Services (TalkBack, Switch Access).
+   - Every interactive element must supply meaningful semantics. Purely decorative icons must explicitly set `contentDescription = null` to prevent screen reader noise.
+   - For compound widgets (like a shopping cart item with title, image, and price), we apply `Modifier.semantics(mergeDescendants = true)`. This groups children into a single accessibility focus node, reading them as a coherent sentence rather than forcing frustrating sequential focus jumps.
+   - We enforce a minimum **48dp × 48dp touch target** using `Modifier.minimumInteractiveComponentSize()`.
+
+2. **Adaptive Layouts**:
+   - Rather than checking device models or orientation booleans, we categorize display width into canonical **Window Size Classes** (`Compact < 600dp`, `Medium 600-840dp`, `Expanded > 840dp`).
+   - On `Compact` screens, we show standard single-pane flows. On `Medium`/`Expanded` (foldables, tablets, Chromebooks), we render multi-pane layouts using Material 3 Adaptive components like `ListDetailPaneScaffold` and `NavigationSuiteScaffold`.
 
 ## Interview answer — deep senior
 
-“I treat accessibility as part of the UI contract. The semantics tree needs to tell a screen reader what each control is, its state, and what action it performs; a visual icon alone is not enough. For a transaction row, I decide whether to merge merchant and amount into one concise spoken unit or expose the receipt action separately. I verify focus order, actionable target size and state changes with TalkBack and keyboard, because a passing screenshot cannot reveal those failures. For adaptive design I respond to the app window's actual width and posture rather than assuming every tablet is wide or every phone is narrow; multi-window and folding change constraints while the app runs. A list/detail layout may collapse to one pane, so selected-item state must survive that transition. Large font scaling, Arabic RTL, dark mode and color contrast are part of the same test matrix. I prefer standard Material components for built-in behavior but inspect custom semantics and avoid merging nodes that hide independent actions. Device and assistive-technology checks complete the evidence beyond automated assertions. I verify TalkBack order, keyboard focus, 200% text, and Arabic RTL on resizable windows.”
+Under the hood, TalkBack navigates nodes using Android's `AccessibilityNodeInfo`. In Compose, custom actions can be exposed directly to TalkBack via `customActions`: `semantics { customActions = listOf(CustomAccessibilityAction("Delete item") { ... }) }`. This empowers users relying on screen readers to trigger secondary actions without hunting for small swipe gestures or nested overflow menus.
+
+For adaptive design, foldable devices present dynamic hinge postures. Using Jetpack **WindowManager** and Compose's `FoldingFeature`, we detect tabletop and book postures, adjusting spacing so content isn't split awkwardly across a physical screen crease.
+
+We automate accessibility verification in CI using Compose UI tests with `assertHasClickAction()`, `assertContentDescriptionEquals()`, and Android Studio's Accessibility Scanner, establishing strict zero-regression gates.
 
 ## How to answer in the interview
 
@@ -95,9 +150,11 @@ Discuss semantics tree, roles/actions, merge policy, focus, current window size,
 
 ## Follow-up questions
 
-- Is a content description enough for every custom control? **Answer:** no; role, state, action and focus behavior may also be needed.
-- Why use window size rather than device category? **Answer:** a window can resize or enter split-screen regardless of device model.
-- What can semantics merging break? **Answer:** independent child actions may become hidden from assistive navigation.
+- **Interviewer:** "What does `mergeDescendants = true` do in Compose semantics?"
+  **Answer:** "It instructs accessibility services like TalkBack to treat the composable and all its child elements as a single unified semantic node, reading its contents together and combining click targets."
+
+- **Interviewer:** "Why should touch targets never be smaller than 48dp x 48dp?"
+  **Answer:** "Android accessibility guidelines require a minimum 48dp physical target size to accommodate users with motor impairments or vision difficulties and prevent accidental taps."
 
 ## Self-check rubric
 
@@ -108,4 +165,4 @@ Design one accessible row, choose an adaptive breakpoint response, and describe 
 - [Compose semantics](https://developer.android.com/develop/ui/compose/accessibility/semantics) — accessibility meaning and actions.
 - [Window size classes](https://developer.android.com/develop/adaptive-apps/guides/use-window-size-classes) — adaptive layout decisions.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Device validation remains necessary.
+Technically reviewed against primary documentation on 2026-10-13.

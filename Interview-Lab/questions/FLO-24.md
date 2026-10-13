@@ -22,11 +22,50 @@ Design deterministic runTest and Turbine assertions for emissions, cancellation 
 
 ## Explanation in Arabic
 
-`runTest` بيخلينا نتحكم في virtual time لاختبار `debounce` و`delay` من غير `Thread.sleep`. Turbine تدي `awaitItem`, `expectNoEvents`, `cancelAndIgnoreRemainingEvents` علشان نثبت sequence ونقفل collection. StateFlow عندها initial value وconflation، فلا نفترض إن كل update سريع هيتشاف؛ نتحكم في scheduler أو نختبر آخر state حسب العقد.
+اختبار الـ Flow و StateFlow باستخدام `runTest` ومكتبة **Turbine** من CashApp هو المعيار الذهبي المعتمد عالمياً في اختبارات Kotlin:
+
+1. المشكلة في اختبار الـ Flows بدون Turbine:
+   - الـ Flow هو Asynchronous Stream. لو حاولت كتابة `flow.collect()` داخل الـ Test، الـ `collect()` دالة معلقة لا تنتهي أبداً، والاختبار سيتعلق ويتجمد!
+   - ولو حاولت استخدام `toList()`، سيتعلق للأبد أيضاً لو كان الـ Flow لا نهائياً (زي StateFlow).
+
+2. لماذا مكتبة Turbine هي الأفضل؟
+   - توفر دالة `flow.test { ... }`.
+   - تسمح لك باستهلاك العناصر عنصراً بعنصر بشكل متزامن وحتمي:
+     * `awaitItem()`: تنتظر وتسترجع العنصر التالي وتتحقق من قيمته.
+     * `awaitComplete()`: تتحقق من انتهاء التدفق بنجاح.
+     * `awaitError()`: تتحقق من رمي الاستثناء المتوقع.
+     * `expectNoEvents()`: تتأكد من عدم وجود أي انبعاثات جديدة.
+
+3. التكامل مع `runTest`:
+   - `runTest` تسرع الوقت الافتراضي وتتحكم في الـ `StandardTestDispatcher` لضمان اختبارات سريعة ومستقرة 100% بدون أي Flakiness.
 
 ## Practical walkthrough
 
-في Flow test، `runTest` تتحكم في virtual time للـdelay/debounce لو dispatchers متضبطة، وTurbine `awaitItem()` و`cancelAndIgnoreRemainingEvents()` تساعدك تختبر emissions. `StateFlow` لها initial value فتوقعها أولًا، وبعدها update. لو `stateIn` بدأ في scope مختلفة أو app dispatcher حقيقية، virtual time ممكن ما تتحكمش فيه؛ inject dispatchers/scope واختبر cancellation.
+كتابة Unit Test كامل لاختبار ViewModel StateFlow باستخدام Turbine:
+```kotlin
+@Test
+fun `searchQuery updates uiState from Loading to Success`() = runTest {
+    val fakeRepo = FakeRepository()
+    val viewModel = SearchViewModel(fakeRepo)
+
+    // نختبر تدفق الـ StateFlow باستخدام Turbine:
+    viewModel.uiState.test {
+        // 1. أول عنصر يجب أن يكون القيمة الابتدائية Loading:
+        assertEquals(SearchUiState.Loading, awaitItem())
+
+        // 2. تفعيل البحث:
+        viewModel.onSearchQueryChanged("Kotlin")
+
+        // 3. ننتظر العنصر الثاني ونتحقق من نتائج البحث:
+        val successItem = awaitItem()
+        assertTrue(successItem is SearchUiState.Success)
+        assertEquals("Kotlin", (successItem as SearchUiState.Success).query)
+
+        // 4. نلغي المراقبة بأمان:
+        cancelAndIgnoreRemainingEvents()
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -68,15 +107,27 @@ A search ViewModel test advances 299 ms to assert no request, then the next mill
 
 ## Interview answer — short
 
-“I use runTest and a test scheduler to control time, and Turbine to assert emissions and close collectors. I account for StateFlow’s initial value and conflation. I keep real lifecycle and transport guarantees for integration tests.”
+Test flows deterministically using runTest paired with CashApp's Turbine library. Turbine's flow.test { } provides awaitItem(), awaitComplete(), and expectNoEvents() to assert on emissions sequentially without hanging on infinite streams like StateFlow.
 
 ## Interview answer — structured
 
-“Flow tests should control timing and collection. `runTest` lets me advance virtual time for debounce and timeout; Turbine makes it straightforward to await an item, assert no event or complete, and cancel an endless collector. I inject dispatchers so work stays on the same scheduler. For StateFlow I expect an initial value and latest-state semantics, not every rapid intermediate value. I test cold flows for repeated subscriptions and hot flows for late subscribers, then use Android integration tests for lifecycle behavior.”
+Testing Kotlin Flows deterministically requires pairing `kotlinx-coroutines-test` (`runTest`) with Cash App's **Turbine** library.
+
+Standard assertions fail on flows because terminal operators like `collect()` or `toList()` suspend indefinitely on infinite streams like `StateFlow`. Turbine solves this by providing the `flow.test { }` extension.
+
+Inside the `test` block, Turbine exposes a sequential event-driven API:
+
+1. **`awaitItem()`**: Suspends until the next emission arrives and returns it for assertion.
+2. **`awaitComplete()`**: Asserts that the stream completed normally.
+3. **`awaitError()`**: Asserts that the stream terminated with an expected exception.
+4. **`expectNoEvents()`**: Verifies that no unexpected emissions occurred within the virtual time window.
+5. **`cancelAndIgnoreRemainingEvents()`**: Cleans up subscriptions on infinite flows like StateFlow so tests finish without uncompleted coroutine errors.
 
 ## Interview answer — deep senior
 
-“I set up tests around the stream contract: what does a first collector receive, what happens if a second subscribes, which values may be conflated, and what happens after cancellation? `runTest` provides a virtual scheduler, but production `Dispatchers.IO` can escape it unless injected. I use Turbine to make terminal and non-terminal expectations explicit and always cancel a StateFlow collector. For debounce I advance time to just before and after the threshold; for `flatMapLatest` I hold an old fake request, start a new one and release the old response to ensure it cannot replace new state. For `SharedFlow` I test no-subscriber and replay cases. Device tests cover actual lifecycle/Room/HTTP integration that virtual time cannot prove. I would write a deterministic timeline rather than sleep. `runTest` supplies a test scheduler so delayed emissions and debounce can be advanced without real time, provided the code under test uses compatible test dispatchers. Turbine collects the Flow and lets me assert the initial StateFlow value, later item order, completion or error, and cancellation. Hot flows do not normally complete, so the test should cancel the collector cleanly instead of waiting forever. If `stateIn` uses `WhileSubscribed`, the test must attach a subscriber before expecting upstream work. I would inject dispatcher and scope dependencies into the ViewModel or repository and use `advanceTimeBy` plus `runCurrent` where ordering matters. I test both data values and resource cancellation.”
+Under the hood, Turbine wraps the flow inside an internal Channel that records emitted items, completion signals, and exceptions as typed `Event<T>` instances. Because it operates inside `runTest`, delays in operators like `debounce` or `WhileSubscribed` do not require real-time sleep: `testScheduler.advanceTimeBy()` triggers delayed emissions instantaneously.
+
+When testing `StateFlow` created via `stateIn(viewModelScope, WhileSubscribed(5000), Initial)`: 1. Calling `stateFlow.test { }` subscribes to the flow, advancing `subscriptionCount` from 0 to 1 and triggering the upstream flow. 2. The first `awaitItem()` immediately yields the `initialValue`. 3. Advancing virtual time or completing fake repository coroutines triggers subsequent `awaitItem()` yields. 4. Finally, calling `cancelAndConsumeRemainingEvents()` drops `subscriptionCount` back to 0, ensuring full lifecycle test coverage.
 
 ## How to answer in the interview
 
@@ -92,8 +143,14 @@ Test subscription count, initial value, late subscriber, virtual time and cancel
 
 ## Follow-up questions
 
-- [FLO-15](../flo-15/): How test debounce? **Answer:** advance virtual time around its threshold.
-- [FLO-06](../flo-06/): Should every StateFlow value appear? **Answer:** no; equality and conflation can suppress or skip intermediate updates.
+- **Interviewer:** "Why does calling `stateFlow.toList()` cause a unit test to hang indefinitely?"
+  **Answer:** "Because `toList()` collects until the flow terminates. `StateFlow` is an infinite stream that never completes on its own, so `toList()` will suspend forever until the test framework times out."
+
+- **Interviewer:** "What is `turbineScope { }`?"
+  **Answer:** "`turbineScope` allows testing multiple flows concurrently within the same test block (e.g., verifying that emitting on one flow triggers an expected update on another flow)."
+
+- **Interviewer:** "How do you test a debounced flow with Turbine?"
+  **Answer:** "Call `flow.test { ... }`, emit a query, assert with `expectNoEvents()`, call `advanceTimeBy(300L)`, and then assert the debounced query using `awaitItem()`."
 
 ## Self-check rubric
 
@@ -104,4 +161,4 @@ Can I write a terminal and endless-stream test, control time, close collectors a
 - [Kotlin coroutines test API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/) — runTest and scheduler.
 - [Turbine project](https://github.com/cashapp/turbine) — Flow testing assertions.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

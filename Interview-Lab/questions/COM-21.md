@@ -24,11 +24,50 @@ What is NavHost, and how is state restored after process death?
 
 ## Explanation in Arabic
 
-في Navigation Compose، `NavHost` يربط NavController بالـnavigation graph وdestinations؛ لكل back-stack entry lifecycle وsaved state وViewModel ownership مناسب. عند system-initiated process death قد يعيد Android/Navigation حفظ back stack والarguments الصغيرة، لكن ViewModel instance لا تعيش؛ أعد إنشاءها واسترجع ID من `SavedStateHandle` ثم حمّل البيانات من repository. `rememberSaveable` لحالة UI صغيرة داخل destination. لا تعتمد على object كبير أو singleton in-memory وحده. تأكد من الإعدادات والنسخة وتجربة kill/recreate فعليًا.
+كيف يعمل الـ `NavHost` وكيف يتم استعادة حالة التطبيق بعد موت العملية (Process Death) في Jetpack Compose:
+
+1. كيف يعمل الـ NavHost داخلياً؟
+   - الـ `NavHost` هو حاوية Composable ترتبط بكائن الـ `NavHostController`.
+   - يحتفظ بـ **BackStack** مكوّن من كائنات `NavBackStackEntry`.
+   - كل `NavBackStackEntry` يمتلك دورة حياة خاصة به (`Lifecycle`), و `ViewModelStore` خاص به (لحفظ ViewModels خاصة بالوجهة), و `SavedStateRegistry` خاص به لاستعادة الحالة.
+
+2. ما هو موت العملية (System-Initiated Process Death)؟
+   - عندما يضع المستخدم التطبيق في الخلفية لعدة ساعات أو يفتح لعبة ثقيلة، يقوم نظام التشغيل بإنهاء عملية التطبيق (Kill Process) لتحرير الذاكرة.
+   - عندما يعود المستخدم للتطبيق، يحاول النظام استعادة الشاشة التي كان يقف عليها بالضبط.
+
+3. كيف تُستعاد الحالة عبر الـ NavHost و SavedStateHandle؟
+   - يحتفظ الـ `NavHost` تلقائياً بمسار الـ BackStack بالكامل داخل الـ `Bundle` الخاص بالنشاط (`onSaveInstanceState`).
+   - عند إعادة التشغيل، يعيد الـ `NavHost` بناء شجرة الشاشات السابقة بنفس الترتيب.
+   - كائنات `rememberSaveable` في الشاشات السابقة تُستعاد فورياً من الـ `SaveableStateRegistry`.
+   - الـ ViewModels المرتبطة بالوجهات تستعيد متغيراتها المحفوظة تلقائياً عبر **`SavedStateHandle`**.
 
 ## Practical walkthrough
 
-`NavHost` تعرض destination من back stack. لو Android رجّع task بعد process death، الـViewModel جديدة؛ استخدم `articleId` المحفوظ في args/`SavedStateHandle` لتحميل المقال من repository. `rememberSaveable` يصلح لتبويب صغير؛ لو المقال اتحذف، اعرض error بدل محاولة استرجاع object قديم من الذاكرة. استرجاع route لا يضمن إن المقال ما زال موجودًا؛ لازم Error واضحة لو ID اتحذف أو user فقد الصلاحية. اختبر eligible process death بالـID وبحالة data اتغيرت.
+استعادة حالة البحث وتفاصيل الشاشة عبر SavedStateHandle بعد موت العملية:
+```kotlin
+// في ViewModel: قراءة وحفظ الحالة داخل SavedStateHandle لضمان بقائها بعد موت العملية:
+class SearchViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel() {
+    // getStateFlow تحفظ القيمة تلقائياً في SavedStateHandle وتستعيدها فور موت العملية:
+    val searchQuery: StateFlow<String> = savedStateHandle.getStateFlow("QUERY_KEY", "")
+
+    fun onQueryChanged(newQuery: String) {
+        savedStateHandle["QUERY_KEY"] = newQuery
+    }
+}
+
+// في الـ NavHost: التنقل واستعادة الوجهة والحالة تلقائياً:
+@Composable
+fun AppNavHost(navController: NavHostController = rememberNavController()) {
+    NavHost(navController = navController, startDestination = "home") {
+        composable("home") { HomeScreen(...) }
+        composable("search") {
+            // ViewModel مرتبط بالـ NavBackStackEntry ويستعيد SavedStateHandle تلقائياً:
+            val searchVm: SearchViewModel = hiltViewModel()
+            SearchRoute(viewModel = searchVm)
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -73,15 +112,26 @@ Test rotation, background system process death, deep links, and missing/stale ID
 
 ## Interview answer — short
 
-“NavHost displays destinations from a NavController back stack. After eligible process recreation, restore small navigation/UI identifiers and rebuild new ViewModels that reload durable data. NavHost restores destination identity when eligible; the new ViewModel reloads by ID.”
+`NavHost` coordinates navigation by rendering composables bound to a backstack of `NavBackStackEntry` instances, each possessing its own Lifecycle, ViewModelStore, and SavedStateRegistry. Following process death, `NavHost` restores the full backstack hierarchy from the Activity's saved instance state bundle, while ViewModels recover state via `SavedStateHandle`.
 
 ## Interview answer — structured
 
-“I define destinations in NavHost and use the back-stack entry as the intended lifecycle and ViewModel owner. I navigate with a small ID. Navigation and saved-state mechanisms can restore the destination and arguments after system recreation, but the ViewModel instance and in-memory repository cache are gone. The new ViewModel reads the ID from `SavedStateHandle`, reloads the entity, and handles missing data. I save only small UI choices locally and test real process recreation. An article route passes articleId, and its recreated owner asks the repository for current content.”
+The `NavHost` manages the presentation of destinations defined in a navigation graph, mapping navigation backstack entries to active composables.
+
+1. **BackStack Architecture**: Under the hood, the `NavHost` orchestrates a stack of `NavBackStackEntry` objects. Each entry is an isolated architectural scope with three distinct responsibilities:
+   - Its own **Lifecycle**: Transitions to `RESUMED` when on top, and `CREATED` when pushed into the backstack.
+   - Its own **ViewModelStore**: Scoping destination-specific ViewModels that survive configuration changes and clear only when popped off the backstack.
+   - Its own **SavedStateRegistry**: Providing slot isolation for `rememberSaveable` calls.
+
+2. **Process Death Restoration**: When the OS terminates an application in the background, Android invokes Activity `onSaveInstanceState()`. The `NavController` serializes the destination backstack and typed route arguments into this Bundle.
+
+Upon relaunch, `NavHost` rebuilds the backstack structure. Screen composables restore local UI state through `rememberSaveable`, while ViewModels restore saved inputs and queries via **`SavedStateHandle`**, making process recovery seamless to the user.
 
 ## Interview answer — deep senior
 
-“NavHost is the Navigation Compose boundary that renders a graph's current back-stack entry, with entry-specific lifecycle, saved state and ViewModel ownership. That owner is important: an Activity-scoped ViewModel can unintentionally share one destination's state with another, while a destination-scoped one is recreated when its entry is removed. For restoration I pass a stable article ID in the route, not an entire domain object. On eligible system process death, Android and Navigation can restore small back-stack and argument state; the old ViewModel and caches do not survive. A new ViewModel obtains the ID from saved state and reloads article data from durable storage or network, showing loading and an error if the item no longer exists. A selected tab or draft text can use `rememberSaveable` or saved-state handle when small and appropriate. I avoid promising restoration after every user-initiated dismissal or arbitrary kill path. I test rotation, system recreation, deep link entry, stale IDs and back navigation on the installed Navigation version. Any in-flight high-value action needs its own durable recovery and idempotency, independent of NavHost restoration. I include a deleted-article error path because restoring an ID does not guarantee the resource still exists.”
+Testing process death restoration is mandatory for enterprise applications. We verify this via ADB: putting the app in the background (`pressHome()`) and executing `adb shell am kill <package_name>`, then relaunching the app from the recent apps switcher. If a screen crashes or resets to a blank state, it exposes un-hoisted memory state that wasn't backed by `SavedStateHandle` or `rememberSaveable`.
+
+Inside `NavHost`, transitions between destinations are animated using Compose animations (`enterTransition`, `exitTransition`). When navigating forward, `SaveableStateHolder` saves the composition state of the leaving composable and unbinds its Slot Table nodes from memory to preserve RAM. When popping the backstack, `SaveableStateHolder` restores the saved composition state, instantly recovering scroll positions and local text fields without re-instantiating the screen.
 
 ## How to answer in the interview
 
@@ -97,9 +147,11 @@ Discuss back-stack owners, saved arguments, ViewModel recreation, durable reload
 
 ## Follow-up questions
 
-- Does NavHost preserve a ViewModel object after process death? **Answer:** no; a new process constructs a new instance.
-- Why pass an ID instead of a domain object? **Answer:** small stable arguments restore and deep-link more reliably; data can be reloaded.
-- Is every task guaranteed to restore? **Answer:** no; behavior depends on system-initiated saved-state conditions and task lifecycle.
+- **Interviewer:** "What is `SaveableStateHolder` and how does NavHost use it?"
+  **Answer:** "`SaveableStateHolder` allows saving and restoring the composition state of composable subtrees by key. `NavHost` uses it to preserve the UI state of backstack entries that are not currently displayed on screen."
+
+- **Interviewer:** "How do you test process death locally without waiting for OS low-memory events?"
+  **Answer:** "Enable 'Don't keep activities' in Developer Options to test configuration death, or send the app to background and run `adb shell am kill <package-name>` to simulate true OS process death."
 
 ## Self-check rubric
 
@@ -110,4 +162,4 @@ Trace one route through process recreation, assign owners, and handle stale data
 - [Navigation with Compose](https://developer.android.com/develop/ui/compose/navigation) — NavHost and destination practices.
 - [Save UI state in Compose](https://developer.android.com/develop/ui/compose/state-saving) — process recreation limits.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Exact restoration depends on platform and Navigation version.
+Technically reviewed against primary documentation on 2026-10-13.

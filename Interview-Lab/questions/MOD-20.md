@@ -24,11 +24,52 @@ How do you migrate a monolith to modules without blocking feature delivery?
 
 ## Explanation in Arabic
 
-ابدأ audit للdependencies وbuild times وأماكن ownership. ضع module rules وأول seam مستقرة، ثم استخرج feature واحدة كاملة مع API صغيرة بدل نقل كل `utils` إلى core. أثناء النقل حافظ على public behavior، اختبارات/فakes وnavigation، واجعل app composition تدمج القديم والجديد. امنع cycle بإصلاح العقد لا بإخفائها، وشغّل full variant build. الفريق يواصل features عبر migration تدريجية وflag/adapter محدود العمر. قِس build/CI ووقت تعديل feature قبل وبعد، واحذف مسار قديم بعد انتقال كل callers.
+كيف تهاجر تطبيقاً متجانساً ضخماً (Monolith) إلى هيكل نمطي (Modularized Architecture) دون تعطيل تسليم الميزات الجديدة للفريق؟
+
+1. الاستراتيجية المعمارية الأساسية: نمط شجرة التين الخانقة (Strangler Fig Pattern):
+   - لا تقم أبداً بإيقاف تطوير الميزات لمدة 3 أشهر لإعادة كتابة التطبيق (وصفة للفشل المؤكد).
+   - تتم الهجرة بشكل تزايدي وتدريجي شريحة بشريحة (Vertical Slices)، مع بقاء التطبيق القديم والجديد يعملان معاً في كل Release.
+
+2. مراحل خطة الهجرة خطوة بخطوة:
+   - **المرحلة 1: بناء الأساسات (Foundations & Build Infrastructure)**: إعداد Version Catalog و Convention Plugins في مجلد `build-logic` لتوحيد إعدادات Gradle.
+   - **المرحلة 2: استخراج موديولات الـ Core من القاع (Bottom-Up Infrastructure Extraction)**:
+     * استخراج `:core:designsystem` (الألوان والخطوط والمكونات العامة).
+     * استخراج `:core:network` و `:core:database`.
+   - **المرحلة 3: استخراج شريحة ميزة رأسية كاملة كـ Pilot Feature (Vertical Slice)**:
+     * اختيار ميزة صغيرة ومحددة (مثل شاشة الإعدادات أو الملف الشخصي).
+     * استخراجها في `:feature:profile` مع تطبيق نمط الـ DI و Navigation Contracts.
+   - **المرحلة 4: تدريب الفريق وتوثيق المعايير (Documentation & Playbook)**: تحويل التجربة إلى دليل عمل للفريق لهجرة باقي الشاشات بالتوازي مع مهام السبرنت العادية.
+   - **المرحلة 5: ضمور الموديول القديم**: يستمر موديول `:app` في فقدان الكلاسات تدريجياً حتى يتحول إلى مجرد موديول تجميع فارغ (Thin Composition Root).
 
 ## Practical walkthrough
 
-Migration monolith تبدأ من slice لها boundary واضحة، مثل feature catalog، مع characterization tests وCI baseline. استخرج API صغير، انقل code تدريجيًا مع adapter/compatibility، وقس build time والfeature delivery كل خطوة. لا تنقل 100 package في PR واحدة، ولا تكسر imports لكل الفرق. لو ظهر cycle، أصلح ownership بدل service locator يخفيه.
+خطة الهجرة التدريجية لشريحة رأسية (Vertical Slice Extraction):
+```text
+المرحلة 1: Monolith مع موديولات أساسية مستخرجة:
+┌────────────────────────────────────────────────────────┐
+│                         :app                           │
+│ (Cart, Feed, Profile, Checkout, Auth كود مختلط بالداخل)│
+└───────────┬────────────────────────────────┬───────────┘
+            ▼                                ▼
+    ┌───────────────┐                ┌───────────────┐
+    │ :core:design  │                │ :core:network │
+    └───────────────┘                └───────────────┘
+
+المرحلة 2: استخراج أول ميزة مستقلة بنجاح (:feature:profile):
+┌────────────────────────────────────────────────────────┐
+│                         :app                           │
+│        (فقط يجمع ويشغل Navigation و Hilt)             │
+└───────┬────────────────────────────────────────┬───────┘
+        ▼                                        ▼
+┌─────────────────┐                     ┌─────────────────┐
+│ :feature:profile│ (كود معزول جديد)    │ Monolith Legacy │ (القديم ينكمش)
+└───────┬─────────┘                     └────────┬────────┘
+        └────────────────┬───────────────────────┘
+                         ▼
+                 ┌───────────────┐
+                 │ :core:*       │
+                 └───────────────┘
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +93,36 @@ Track migration checklist, owner, old-caller count, graph rules, build metrics a
 
 ## Interview answer — short
 
-“I baseline the graph and builds, extract one cohesive vertical feature behind a small contract, keep compatibility while callers move, test the full app, then delete old wiring.”
+Migrate a monolith incrementally using the Strangler Fig pattern. Establish Gradle convention plugins first, extract core horizontal foundations (:core:designsystem, :core:network) bottom-up, migrate one vertical feature slice as a pilot to validate the pattern, and gradually extract remaining features during regular sprints until :app becomes a thin assembly root.
 
 ## Interview answer — structured
 
-“I would not pause all delivery for a full rewrite. I map dependencies and choose a bounded feature such as Orders, design its public API, move its UI and data ownership, and let app composition bridge existing routes. Tests and release variants continue to run during migration. I enforce no new reverse dependencies, measure compile and team impact, and retire temporary adapters after the last caller moves.”
+Migrating an enterprise Android monolith to a multi-module architecture without halting feature velocity relies on the **Strangler Fig Pattern** executed in four controlled phases:
+
+1. **Phase 1: Build Governance & Tooling**:
+   - Introduce `libs.versions.toml` and custom Gradle convention plugins in `build-logic`.
+   - Establish CI performance baselines for Gradle build times and memory consumption.
+
+2. **Phase 2: Bottom-Up Foundation Extraction**:
+   - Extract horizontal infrastructure that has zero feature dependencies: `:core:designsystem`, `:core:network`, and `:core:model`.
+   - The legacy monolith consumes these modules immediately, proving they work in production.
+
+3. **Phase 3: The Pilot Vertical Slice**:
+   - Select an isolated, low-risk feature (e.g. `:feature:settings`).
+   - Extract its UI, ViewModel, Domain logic, and Data layer into dedicated modules, establishing the navigation and DI patterns for the entire organization.
+
+4. **Phase 4: Opportunistic Feature Migration**:
+   - Create a 'Modularization Playbook'. Feature teams extract their own modules incrementally whenever embarking on a major feature redesign, until `:app` shrinks to a thin composition shell.
 
 ## Interview answer — deep senior
 
-“A monolith-to-modules migration is safest as a sequence of behavior-preserving boundary changes. I first collect a dependency graph, build-time baseline, ownership map and integration tests for critical flows. Then I select one cohesive, moderate-risk feature with a clear entry point and define the smallest API it should expose. I move a vertical slice—screen state, use case and owned data access—rather than scatter random utility files into core. The app composition root registers its navigation and DI bindings; a temporary adapter can keep old callers working while they migrate. I watch for duplicate shared state if both old and new containers construct a session service. Each slice has a full debug/release build and user-flow test, not only module tests, and a rollback path if release behavior changes. I prohibit new reverse imports so the graph improves rather than oscillates. Finally I delete old code once its caller count reaches zero, compare incremental build and delivery metrics, and adjust the next boundary. This lets feature teams ship while architecture changes in reviewable increments.”
+The greatest danger during a monolith migration is **The Entangled Dependency Knot** (where Class A in the feature imports 25 random utility and helper classes from the monolith).
+
+If you try to extract everything Class A touches, you end up moving half the monolith into the new module. To break this knot in production:
+
+1. **Invert the Seam with an Interface**: If the feature needs a monolith service (`LegacySessionManager`), define an interface inside the new feature module (`interface SessionProvider`). Have the legacy monolith implement this interface and inject it into the feature.
+
+2. **Temporary Bidirectional Bridge**: The feature compiles against its own interface, completely isolated from monolith internals. Once the session logic itself is migrated to a core module later, you simply delete the bridge implementation in the monolith.
 
 ## How to answer in the interview
 
@@ -76,9 +138,11 @@ Discuss baseline, first slice selection, compatibility adapters, DI identity, no
 
 ## Follow-up questions
 
-- What makes a good first feature? **Answer:** clear ownership and moderate coupling/risk so the boundary can be proven.
-- Why delete temporary adapters? **Answer:** they otherwise preserve old coupling and dual paths indefinitely.
-- What test is essential beyond feature tests? **Answer:** full app variant assembly and an integrated user route.
+- **Interviewer:** "Why shouldn't you freeze feature development during modularization?"
+  **Answer:** "Freezing feature development stalls business value for months, and merging back a massive refactoring branch inevitably causes catastrophic merge conflicts and regressions."
+
+- **Interviewer:** "What defines a 'Thin Composition Root' in `:app`?"
+  **Answer:** "An `:app` module that contains almost no Kotlin code except the `Application` class, top-level `NavHost` wiring, and root Hilt entry points."
 
 ## Self-check rubric
 
@@ -89,4 +153,4 @@ Give an incremental sequence, identify dual-wiring risk, define gate evidence an
 - [Android modularization guide](https://developer.android.com/topic/modularization) — phased boundaries.
 - [Guide to app architecture](https://developer.android.com/topic/architecture) — ownership layers.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Migration sequence is an engineering recommendation.
+Technically reviewed against primary documentation on 2026-10-13.

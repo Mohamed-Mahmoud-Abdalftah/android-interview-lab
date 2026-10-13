@@ -22,7 +22,39 @@ Explain code-size trade-off with call-site count, body size, and runtime optimiz
 
 ## Explanation in Arabic
 
-لو `inline` function body كبير واتنادت من مواقع كتير، compiler ينسخ body في كل موقع. المكسب من إزالة call أو lambda object ممكن يبقى أصغر من تكلفة DEX/APK size، instruction cache، ووقت build. ده واضح في functions فيها parsing أو logging أو branching كتير ومش hot أصلًا. JVM/JIT وR8 ممكن يعملوا optimizations تانية، لذلك لازم تقيس release artifact على أجهزة ممثلة بدل ما تحكم من source. خلي wrapper صغير inline لو محتاج `reified`، وسيب العمل الثقيل في function عادية.
+الـ `inline` keyword في Kotlin هي أداة لتحسين الأداء (Optimization)، لكن استخدامها الخاطئ بيؤدي لـ **Code Bloat** وتضخم كبير في حجم الـ Bytecode والـ APK:
+
+1. إمتى `inline` بيكون مكسب ممتاز (Performance Win)?
+   - لما تكون الدالة **Higher-Order Function** بتاخد Lambda parameter (زي `filter`, `map`, `repeat`).
+   - بدون inline، الـ JVM مضطر ينشئ كائن جديد (`Function0` أو `Function1`) في الـ Heap لكل استدعاء للـ Lambda، مما يسبب GC allocations.
+   - مع inline، المترجم بينسخ كود الـ Lambda وكود الدالة مباشرة في مكان الاستدعاء (Call Site)، فيختفي الـ Object Allocation والـ Function Call Overhead.
+
+2. إمتى `inline` يسبب Code Bloat وكوارث في الأداء؟
+   - **لما يكون جسم الدالة كبيراً (Large Function Body):** لو الدالة فيها 50 سطر كود ومستدعاة في 100 مكان، المترجم هينسخ الـ 50 سطر 100 مرة في الـ Bytecode! ده بيكبر حجم الـ DEX/APK ويملأ الـ CPU Instruction Cache.
+   - **دوال بدون Function Parameters:** استخدام inline على دالة عادية بتاخد Parameters عادية (مش Lambdas) لا فائدة منه، والـ JVM JIT Compiler أصلاً بيعمل Inlining للدوال الصغيرة تلقائياً وبذكاء أكبر.
+   - **Reified Type Parameters:** أحياناً بنضطر نستخدم inline علشان `reified` (زي `inline fun <reified T> parse()`)، لكن لو دالة الـ parse كبيرة جداً، الحل الصح هو فصلها: دالة inline صغيرة لـ `T::class.java` تفوض العمل لدالة خاصة عادية غير inlined.
+
+## Practical walkthrough
+
+في شاشة معالجة الأحداث والـ Logging:
+- **النهج السيئ المسبب لـ Code Bloat:**
+  inline fun executeWithTracing(action: () -> Unit) {
+      // 40 سطر من تهيئة الـ Trace، قراءة الـ Thread info، حساب الوقت، والكتابة في ملف...
+      val start = System.currentTimeMillis()
+      action()
+      // 30 سطر إضافي لحساب الإحصائيات وإرسال تقرير...
+  }
+  لو تم استدعاء الدالة دي 200 مرة في التطبيق، 70 سطر كود تم تكرارهم 200 مرة = 14,000 سطر Bytecode متكرر في ملف الـ DEX!
+- **النهج الاحترافي (Inline Wrapper + Private Non-inlined Helper):**
+  inline fun executeWithTracing(action: () -> Unit) {
+      val traceId = startTraceInternal() // دالة عادية غير inlined
+      try {
+          action()
+      } finally {
+          stopTraceInternal(traceId) // دالة عادية غير inlined
+      }
+  }
+  هنا الـ Lambda تم عمل Inlining لها بدون أي Heap Object، وفي نفس الوقت الكود الثقيل ظل مركزاً في دالة واحدة بدون أي تضخم في الـ Bytecode.
 
 ## Why it matters and how it works
 
@@ -36,10 +68,6 @@ inline fun <reified T : Any> typeName(): String = T::class.java.name
 fun parsePayload(bytes: ByteArray): Int = bytes.sumOf { it.toInt() and 0xff }
 ```
 This is not a benchmark; compare release bytecode size and measured latency before changing a real parser.
-
-## Practical walkthrough
-
-لو `inline fun parsePayload(bytes)` جسمها كبير واتنادت من عشرات modules، compiler يكرر body في مواقع النداء؛ ممكن DEX/compile time يزيدوا ويضروا instruction cache. لو السبب الوحيد `reified`, خلّي wrapper inline وصغير وخلّي parsing الثقيلة في function عادية بتاخد `Class<T>` أو codec. قارن APK/DEX size وrelease startup/hot-path latency قبل وبعد؛ debug microbenchmark مضلل. أحيانًا runtime أو R8 يعملوا inline بشكل أفضل من keyword اليدوي. `noinline` ممكن يمنع نسخ lambda معينة لكن لازم سبب عقدي أو قياس، مش علاج عشوائي.
 
 ## Trade-offs and decision criteria
 
@@ -55,17 +83,23 @@ A media app profiles frame-time hot paths with a release build, checks DEX/APK d
 
 ## Interview answer — short
 
-Inlining can increase code size when a large body is copied to many call sites. I keep reified wrappers small, move heavy work into ordinary functions, and compare release DEX size and measured latency before claiming a gain.
+Inline causes code bloat when applied to functions with large bodies or functions that do not take lambda parameters. Because the compiler copies the entire function bytecode into every single call site, inlining large functions repeatedly balloons the generated DEX bytecode, degrades CPU instruction cache locality, and inflates APK size.
 
 ## Interview answer — structured
 
-The performance trade-off depends on body size times call-site count. A tiny higher-order function may save lambda overhead, but a large parser copied across many sites can grow bytecode and DEX, slow compilation, and hurt instruction-cache behavior. If I need `reified T`, I keep only the type-token wrapper inline and delegate substantial work to a normal function. I measure release startup or hot-path latency alongside size; a debug microbenchmark is not enough. The Android optimizer may already inline useful calls, so I apply the keyword for semantics or demonstrated gains, not as a blanket style rule.
+The inline modifier is primarily intended for higher-order functions that take lambda parameters. Without inline, every lambda invocation instantiates an anonymous Function object on the heap. Inlining eliminates this allocation by copying the function's body and the lambda directly into the call site.
+
+However, inline causes code bloat when developers inline large functions or functions without functional parameters. Because bytecode is duplicated at every single call site, inlining a 50-line function called in 100 places injects 5,000 lines of bytecode into your compiled DEX files. This inflates APK size and pollutes the CPU's instruction cache (I-cache), which can actually make execution slower due to cache misses.
+
+In production, I follow the rule: only inline higher-order functions with small, concise bodies. If a function requires inlining for a reified type parameter but contains substantial logic, I extract the heavy work into a non-inlined private helper, keeping the inline public shell as minimal as possible.
 
 ## Interview answer — deep senior
 
-I evaluate body size, call-site count, frequency, lambda allocation, and runtime optimizer behavior. The relevant metric is not one microbenchmark alone: on Android, DEX size and startup/layout may matter as much as nanoseconds per call. Public inline bodies can also expose ABI/visibility constraints to downstream callers. A common pattern is a tiny reified wrapper delegating to a non-inline implementation. I compare minified release builds and device traces, then keep the simpler implementation unless the gain is material.
+At the JVM and ART level, the runtime JIT compiler is already capable of inlining hot standard methods during execution using runtime profiling. Forcing Kotlin compiler-level inlining on non-higher-order methods bypasses runtime heuristics and permanently bloats compiled DEX binaries.
 
-A large inline parser copied into dozens of call sites can increase DEX size and compilation work even if one microbenchmark reports fewer function calls. I would leave the heavy parser as a normal function and keep a small reified wrapper only where the type token is useful. Then I would compare a minified release build’s size, startup, and hot-path latency on representative devices. Runtime JIT/AOT and R8 may already optimize ordinary calls, so source-level inlining is not the whole cost model. I would keep the change only if the measured improvement outweighs code growth and public API constraints.
+When using `reified` type parameters—which mandate the `inline` keyword because the compiler needs concrete class metadata at the call site—developers frequently write monolithic functions like `inline fun <reified T> parseNetworkResponse(json: String): T`. If that function contains 80 lines of error-handling and logging logic, that entire block is stamped into every API call site across the project.
+
+To solve this, we use the 'trampoline' or 'delegate' pattern: the public inline function extracts `T::class.java` and immediately passes `Class<T>` to an internal, non-inlined function that does the heavy lifting. Furthermore, if an inline higher-order function takes multiple lambdas and one of them is large or executed infrequently, annotating it with `noinline` prevents unnecessary call-site expansion.
 
 ## How to answer in the interview
 
@@ -81,8 +115,14 @@ Discuss call-site expansion, DEX size, instruction cache, JIT/R8 optimization, A
 
 ## Follow-up questions
 
-- [KOT-12](../kot-12/): What does inline save? **Answer:** eligible function/lambda call overhead and some allocations.
-- [KOT-13](../kot-13/): Why keep a small wrapper inline? **Answer:** it can provide reified type information while delegating heavy work.
+- **Interviewer:** "What is the difference between `inline`, `noinline`, and `crossinline`?"
+  **Answer:** "`inline` inlines both the function and its lambda parameters. `noinline` tells the compiler not to inline a specific lambda parameter, keeping it as an object (e.g., if you need to store it in a property). `crossinline` allows inlining the lambda but forbids non-local returns (`return`), which is necessary when the lambda is executed inside an execution context like a nested runnable or coroutine."
+
+- **Interviewer:** "Does the Kotlin compiler warn you if you use inline improperly?"
+  **Answer:** "Yes. If you add `inline` to a function that has no lambda parameters, the compiler issues a warning: 'Expected performance impact from inlining is insignificant. Inlining works best for functions with parameters of functional types.'"
+
+- **Interviewer:** "Can inline functions access private members of their declaring class?"
+  **Answer:** "By default, no. Because the bytecode is inlined into external call sites, the JVM access rules forbid access to private members. To allow access, private members must be annotated with `@PublishedApi`, which makes them effectively public in bytecode while hiding them from Kotlin autocompletion."
 
 ## Self-check rubric
 
@@ -92,4 +132,4 @@ Name a bloat scenario, a valid inline scenario, and two release measurements.
 
 - [Kotlin inline functions](https://kotlinlang.org/docs/inline-functions.html) — benefits and code growth.
 
-Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets unless explicitly labeled conceptual; no Android device claim is made.
+Technically reviewed against primary documentation on 2026-10-13.

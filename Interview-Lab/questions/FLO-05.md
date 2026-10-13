@@ -22,11 +22,36 @@ Explain required initial StateFlow value, readable current state and explicit lo
 
 ## Explanation in Arabic
 
-`MutableStateFlow` لازم تبدأ بـvalue لأن عقدها إن أي collector جديد يقدر يشوف current state فورًا، و`state.value` متاحة بشكل synchronous. لو البيانات لسه ما اتحملتش، نعبّر عن ده بـ`Loading` أو sealed UI state بدل fake empty value ملتبسة. تغيير القيمة يحدّث آخر snapshot، ومافيش completion عادي للـStateFlow.
+اشتراط وجود قيمة ابتدائية (Initial Value) في `MutableStateFlow` هو قرار تصميمي مقصود ومحوري لفهم مفهوم 'الحالة' (State):
+
+1. ما هو الفرق بين الحالة (State) والحدث (Event)؟
+   - **الحالة (State)** شيء موجود دائماً وله قيمة حالية في أي لحظة زمنية. لا يمكن أن تسأل: 'ما هي حالة الشاشة الآن؟' فيكون الجواب: 'لا يوجد شيء، فراغ تام!'.
+   - الشاشة دائماً إما في حالة `Loading` أو `Empty` أو `Success` أو `Error`.
+
+2. الـ Synchronous Access (`.value`):
+   - الـ `StateFlow` يوفر دالة قراءة متزامنة فورية: `stateFlow.value`.
+   - لو لم يكن هناك قيمة ابتدائية، ماذا سترجع `stateFlow.value` لو استدعاها كود قبل وصول أي تحديث؟ هل ترجع `null`؟ هذا سيجبر المطورين على جعل كل أنواع البيانات `Nullable`!
+
+3. منع الـ Race Conditions والـ Flashing في واجهة المستخدم (UI):
+   - عند فتح شاشة جديدة أو تدوير الجهاز، الـ Composable أو الـ View يحتاج لقراءة حالة فورية لرسم الإطار الأول (First Frame) دون انتظار غير متزامن.
 
 ## Practical walkthrough
 
-الشاشة لازم تعرف ترسم إيه قبل أول network response؛ عشان كده `MutableStateFlow` تطلب قيمة أولية زي `Loading` أو `Empty`، مش انتظار مبهم. بعد rotation collector جديدة تقرأ آخر قيمة. لو مش عارف الحالة بعد، عرّفها صراحة كـ`Uninitialized`/`Loading` بدل `null` تفسرها كل شاشة بطريقة.
+تصميم حالة الشاشة بنظافة مع قيمة ابتدائية واضحة:
+```kotlin
+sealed interface ProductUiState {
+    data object Loading : ProductUiState // حالة البداية الواضحة
+    data class Success(val products: List<Product>) : ProductUiState
+    data class Error(val message: String) : ProductUiState
+}
+
+class ProductViewModel(private val repository: ProductRepository) : ViewModel() {
+    // نمرر Loading كـ Initial Value إلزامي:
+    private val _uiState = MutableStateFlow<ProductUiState>(ProductUiState.Loading)
+    val uiState: StateFlow<ProductUiState> = _uiState.asStateFlow()
+}
+```
+عندما يفتح المستخدم الشاشة، الـ UI يرسم شريط التحميل فوراً بدون وميض وبدون أي Null checks.
 
 ## Why it matters and how it works
 
@@ -65,15 +90,32 @@ A profile ViewModel starts in Loading, moves to Ready or Error, and reconstructs
 
 ## Interview answer — short
 
-“StateFlow requires an initial value because it always has a readable current state and immediately gives that value to new collectors. I model loading explicitly instead of using an ambiguous placeholder, and publish immutable snapshots.”
+MutableStateFlow requires an initial value because it represents continuous, stateful data that must guarantee a non-null, synchronously readable state via .value at any instant, eliminating undefined states and ensuring the UI can render its first frame immediately.
 
 ## Interview answer — structured
 
-“A `StateFlow` is current-state storage, not just a stream of future events. Its `value` property must always return something, and a new collector gets that latest value. That is why `MutableStateFlow` needs an initial state. For a profile screen I use a sealed `Loading`, `Ready` or `Error` model so an empty response is not confused with data still loading. StateFlow suppresses equal values and can skip intermediate updates, so I keep state immutable and do not use it as an audit or event queue.”
+MutableStateFlow requires an initial value by fundamental architectural design: it represents state, and state cannot be undefined.
+
+First, StateFlow guarantees synchronous access to its current state via the `.value` property. If an initial value were not mandatory, calling `.value` before the first emission would have to return null, forcing every single StateFlow to be nullable (`StateFlow<T?>`) and burdening codebases with null-assertions.
+
+Second, in UI frameworks like Jetpack Compose, the UI renders immediately upon composition. A mandatory initial state (such as `UiState.Loading` or `UiState.Initial`) guarantees that the screen always has valid, predictable data for its very first frame without flicker or unhandled states.
+
+If your use case genuinely represents a stream that has no initial value until an action occurs, then it is an **event stream**, not a state stream, and should be modeled using `SharedFlow` or `Channel` instead.
 
 ## Interview answer — deep senior
 
-“The initial value is a semantic choice. If I pick `emptyList()` merely to satisfy the constructor, a user may see a false empty-state UI before the first query completes. A sealed screen state or a well-defined nullable contract makes loading explicit. StateFlow’s hot instance exists without collectors, its `value` is synchronously readable, and new collectors see the latest snapshot. Equality-based conflation means repeated equal state is suppressed and fast intermediate states may be skipped, which is correct for rendering but wrong for transaction history. Rotation often reuses the ViewModel and its current state; process death reconstructs from saved/durable data, not from the old in-memory flow. I would explain that the initial value is part of the state contract, not an API inconvenience. A new subscriber can synchronously read `.value` and receives the latest state immediately. If data is not loaded yet, the type should express that as Loading or Uninitialized; using a nullable model without semantics pushes ambiguity to every consumer. Once the repository emits Ready, StateFlow replaces the current value and equality suppresses equal repeats. For process death, the ViewModel and its flow are recreated, so the initial value may appear again while authoritative data reloads; the flow itself is not durable storage. I would test first render and rotation separately to verify both experiences.”
+From a type-theory perspective, StateFlow models a continuous signal `t -> V`, where for any time `t >= 0`, there exists a value `V`. In contrast, cold Flow and SharedFlow model discrete events `(t_i, V_i)` where emissions occur at discrete points in time.
+
+Because StateFlow models a continuous signal, `StateFlow.collect()` immediately delivers the current value to any new collector before suspending. Requiring an initial value ensures that this contract is unbroken: a collector is never left in an uninitialized limbo awaiting an asynchronous task.
+
+When converting a cold Flow to a StateFlow using the `stateIn()` operator in a ViewModel, the compiler explicitly enforces this contract by requiring an `initialValue` parameter:
+
+```kotlin
+val items = repository.observeItems()
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+```
+
+Here, `emptyList()` guarantees that the UI has a valid baseline state while the repository initializes.
 
 ## How to answer in the interview
 
@@ -89,8 +131,14 @@ Explain initial value semantics, equality, rotation versus process death and why
 
 ## Follow-up questions
 
-- [FLO-06](../flo-06/): What happens to equal updates? **Answer:** StateFlow suppresses them through equality-based conflation.
-- [FLO-26](../flo-26/): How restore after rotation? **Answer:** a ViewModel StateFlow provides the latest state while its owner survives.
+- **Interviewer:** "What should you do if your initial value can only be computed asynchronously?"
+  **Answer:** "Define a sealed UI state hierarchy (e.g., `sealed interface UiState`) with a dedicated `data object Loading : UiState` as the synchronous initial value, and emit `Success` once the asynchronous computation completes."
+
+- **Interviewer:** "Can a StateFlow's initial value be `null`?"
+  **Answer:** "Yes, if the generic type parameter is explicitly declared as nullable: `MutableStateFlow<User?>(null)`. However, using a sealed state (Loading/Success/Error) is generally cleaner domain modeling than nullable types."
+
+- **Interviewer:** "How does `SharedFlow` behave without an initial value?"
+  **Answer:** "`SharedFlow` suspends new collectors until an emission occurs. It does not expose a synchronous `.value` property unless initialized with `replay >= 1` and at least one item has already been emitted."
 
 ## Self-check rubric
 
@@ -101,4 +149,4 @@ Can I select a truthful initial state, explain `value`/replay, and distinguish r
 - [Kotlin StateFlow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-state-flow/) — initial value and latest state.
 - [Android StateFlow/SharedFlow guide](https://developer.android.com/kotlin/flow/stateflow-and-sharedflow) — UI state.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

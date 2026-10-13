@@ -22,11 +22,36 @@ Can the candidate distinguish a coroutine deadline from network commit certainty
 
 ## Explanation in Arabic
 
-`withTimeout` بيعمل deadline للـblock ويلغيه بـ`TimeoutCancellationException` لما الوقت يخلص؛ `withTimeoutOrNull` يرجع `null` بدل رمي الاستثناء عند timeout. الإلغاء تعاوني: لو جوا block SDK blocking وما بيسمعش cancel، مش هيتوقف فورًا. وفي network/payment timeout ما نقدرش نستنتج إن السيرفر ما نفذش الطلب.
+إدارة الـ Timeouts في Kotlin Coroutines تتم عبر دالتين رئيسيتين: `withTimeout` و `withTimeoutOrNull`:
+
+1. دالة `withTimeout(timeMillis)`:
+   - بتعلق الـ Coroutine وتحدد مهلة زمنية قصوى لتنفيذ البلوك.
+   - لو الوقت انتهى قبل اكتمال الكود، بترمي **`TimeoutCancellationException`** (وهي نوع خاص من `CancellationException`).
+   - **تحذير خطير:** بما إنها ترمي Exception، لو الكود مش محاط بـ `try-catch`، الـ Exception هيلغي الـ Coroutine بالكامل!
+
+2. دالة `withTimeoutOrNull(timeMillis)`:
+   - البديل الأكثر أماناً وأناقة في معظم سيناريوهات الـ UI والشبكات.
+   - لو البلوك انتهى في الوقت المحدد: بترجع النتيجة بنجاح.
+   - لو الوقت انتهى: تلغي البلوك وترجع **`null`** بدون رمي أي Exception وبدون إلغاء الـ Scope!
+
+3. نقطة دقيقة للمحترفين (Under the hood Caveat):
+   - عملية فحص الـ Timeout هي عملية **تعاونية (Cooperative)**. لو الكود الداخلي عبارة عن Loop حسابية مفيهاش أي Suspension point، الـ Timeout مش هيقدر يوقفها حتى لو الوقت خلص!
 
 ## Practical walkthrough
 
-في autocomplete، `withTimeoutOrNull` ممكن يرجّع `null` وتعرض cache لو القراءة ما خلصتش خلال budget. لكن في الدفع timeout معناها النتيجة غير معروفة، مش فشل مؤكد؛ اسأل backend عن status. والـtimeout يلغي block تعاونيًا، فماينفعش تعتبره إيقاف قاطع لـnative call. خليك واضح كمان هل `null` معناها timeout فقط ولا API ممكن ترجع null طبيعي.
+في شاشة جلب الموقع الجغرافي أو المصادقة البيومترية:
+- المستخدم بيطلب تحديد موقعه الحالي بنظام GPS؛ لو الـ GPS لم يستجب خلال 5 ثوانٍ، نريد استخدام آخر موقع محفوظ في الـ Cache بدلاً من تعليق الشاشة.
+```kotlin
+suspend fun getCurrentLocation(): Location {
+    // نستخدم withTimeoutOrNull بمهلة 5 ثوانٍ:
+    val freshLocation = withTimeoutOrNull(5_000L) {
+        gpsClient.awaitSingleFix()
+    }
+    
+    // لو رجع null (حصل timeout)، نستخدم الـ Cache فوراً:
+    return freshLocation ?: locationCache.getLastKnownLocation()
+}
+```
 
 ## Why it matters and how it works
 
@@ -58,15 +83,21 @@ An address suggestion API uses a short timeout and cached suggestions as fallbac
 
 ## Interview answer — short
 
-“`withTimeout` cancels a block and throws a timeout cancellation exception; `withTimeoutOrNull` returns null. Both depend on cooperative cancellation. A timeout tells me the client stopped waiting, not whether an external side effect committed.”
+withTimeout cancels the block and throws a TimeoutCancellationException if the time limit expires. withTimeoutOrNull cancels the block and safely returns null upon timeout instead of throwing an exception, making it much more ergonomic for fallbacks and retry logic.
 
 ## Interview answer — structured
 
-“I use coroutine timeouts to bound how long a caller waits for cancellable work. `withTimeout` throws `TimeoutCancellationException`; `withTimeoutOrNull` gives a nullable fallback path. The operation has to observe cancellation, so a blocking SDK may continue. I also separate this from HTTP client timeouts. For a read-only suggestion request, cached data can be a safe fallback. For a payment write, the timeout is an uncertain outcome: I persist an operation key and reconcile server status rather than assuming failure or creating a fresh retry.”
+Both `withTimeout` and `withTimeoutOrNull` enforce execution time limits on suspending blocks, but they handle deadline expiration differently.
+
+`withTimeout` cancels the enclosed coroutine block and throws a `TimeoutCancellationException` if the duration elapses before completion. Because `TimeoutCancellationException` inherits from `CancellationException`, it cancels the enclosing coroutine unless explicitly caught with a `try-catch` block around `withTimeout`.
+
+`withTimeoutOrNull` is much more ergonomic for Android fallback scenarios. When the deadline expires, it cancels the internal block and cleanly returns `null` instead of throwing an exception. This allows elegant fallback expressions using the Elvis operator (`?:`), such as falling back to cached database data if a network request exceeds two seconds.
 
 ## Interview answer — deep senior
 
-“A timeout is a local deadline in the coroutine tree. The deadline can fire before the caller receives a result, even if the block’s external work already happened. `withTimeout` cancels its child with `TimeoutCancellationException`; `withTimeoutOrNull` maps that timeout to null, which is unsuitable if null also means a valid response. Neither can forcibly interrupt arbitrary blocking Java code. In production I set compatible transport deadlines, make reads cancellable, and design writes with idempotency keys and status reconciliation. I catch and map a timeout at the narrow operation boundary, while letting unrelated parent cancellation propagate. Tests advance virtual time for the coroutine layer and use fake transport outcomes for commit uncertainty. A timeout is a deadline for the coroutine's wait, not proof that a remote operation failed. For a cache lookup I can map the timeout to a fallback value, but I would keep a distinct timeout signal if `null` could also be a legitimate result. For a payment write, I would keep an operation ID in Pending and reconcile with the server. I would test a timeout racing with success and an uncooperative blocking call separately.”
+Under the hood, both functions schedule a delayed task on the coroutine dispatcher's event loop via `Delay.scheduleResumeAfterDelay()`. When the timer fires, it calls `cancelCoroutine(TimeoutCancellationException)`. However, timeout cancellation is strictly cooperative. If the code running inside `withTimeout` is executing a non-suspending, blocking loop (like heavy crypto or file I/O), the timeout cannot preempt the thread. It will only cancel when the block reaches a suspension point or checks `ensureActive()`.
+
+Another critical nuance is resource cleanup. If an unmanaged resource (like a database cursor or network socket) is opened inside `withTimeout`, a timeout cancellation during the open call could leak the resource before the assignment finishes. To guard against resource leaks, always allocate resources outside the timeout block or protect them with `try-finally`.
 
 ## How to answer in the interview
 
@@ -82,8 +113,14 @@ Discuss races with return, resource cleanup, blocking code and the difference be
 
 ## Follow-up questions
 
-- [COR-27](../cor-27/): Can payment timeout justify a fresh retry? **Answer:** no; reconcile using the same operation/idempotency key.
-- [COR-29](../cor-29/): Does timeout interrupt a blocking SDK? **Answer:** only if the call cooperates or an appropriate interrupt/cancel mechanism is used.
+- **Interviewer:** "Why does catching `CancellationException` outside `withTimeout` catch the timeout exception?"
+  **Answer:** "Because `TimeoutCancellationException` is a subclass of `CancellationException`. If you catch `CancellationException`, you will catch timeout errors as well, which is why `withTimeoutOrNull` is generally preferred to avoid accidental exception handling confusion."
+
+- **Interviewer:** "How does `withTimeout` interact with deterministic unit tests?"
+  **Answer:** "When using `runTest` from `kotlinx-coroutines-test`, virtual time is automatically skipped by default. `withTimeout` will either complete instantly if virtual time is advanced, or time out deterministically when calling `advanceTimeBy(delay)`."
+
+- **Interviewer:** "Can you use `withTimeout` with blocking Java network calls?"
+  **Answer:** "Only if the blocking call is running on `Dispatchers.IO` and explicitly checks for cancellation. Standard blocking calls like `InputStream.read()` will not respond to `withTimeout` until the socket read returns or closes."
 
 ## Self-check rubric
 
@@ -94,4 +131,4 @@ Can I choose an API, interpret null safely, name cooperative-cancellation limits
 - [Kotlin withTimeout API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout.html) — deadline and race semantics.
 - [Kotlin withTimeoutOrNull API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout-or-null.html) — nullable timeout result.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

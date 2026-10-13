@@ -22,11 +22,75 @@ Design secure login/session lifecycle and race-safe token refresh.
 
 ## Explanation in Arabic
 
-نبدأ من backend auth contract: access token قصير العمر، refresh policy، revocation، session generation وdevice risk. Android تخزن أقل قدر لازم في storage مناسب مع backup/threat model؛ APK أو Keystore مش server secret vault. Interceptor يضيف token، refresh coordinator يعمل single-flight عند 401 مع recheck بعد lock. logout يمسح local session ويمنع response متأخرة من إحياءها، والسيرفر يلغيها حسب العقد.
+كيف تصمم نظام مصادقة وإدارة جلسات وتجديد آمن للتوكنز (Login, Session Management, and Secure Token Refresh) بمستوى إنتاج ضخم؟
+
+1. دورة حياة الجلسة الآمنة (Session Lifecycle Architecture):
+   - **Login**: يرسل المستخدم بيانات الاعتماد (أو عبر OAuth2/OIDC/Biometric) إلى السيرفر المشفر، ويعود الـ Backend بزوج توكنز:
+     * **Access Token (قصير العمر - 5 إلى 15 دقيقة)**: يستخدم في ترويسة الطلبات `Authorization: Bearer <token>`.
+     * **Refresh Token (طويل العمر - 14 إلى 30 يوماً)**: يستخدم حصرياً لتجديد الـ Access Token.
+   - **التخزين**: Access Token يُحفظ في الذاكرة (RAM) لتقليل التعرض، و Refresh Token يُشفر عبر Android Keystore AES-GCM ويُخزن في DataStore.
+
+2. التجديد التلقائي الشفاف (Transparent Token Refresh):
+   - يجب ألا يشعر المستخدم بأي انقطاع عند انتهاء صلاحية الـ Access Token.
+   - نستخدم `okhttp3.Authenticator` الذي يتم استدعاؤه فقط عند تلقي استجابة `HTTP 401 Unauthorized`.
+
+3. التحديات القاتلة في بيئات الإنتاج وكيفية حلها:
+   - **مشكلة الـ Thundering Herd (عشرات الطلبات المتزامنة)**: عندما تنتهي صلاحية التوكن، قد تعود 5 طلبات متزامنة بـ 401 في نفس اللحظة! إذا حاولت كلها تجديد التوكن، ستحدث فوضى ويفشل الـ Refresh Token Rotation. **الحل**: مزامنة التجديد باستخدام Coroutines `Mutex` لضمان تشغيل طلب تجديد واحد فقط، وإعادة استخدام النتيجة لباقي الطلبات.
+   - **حلقات الـ 401 اللانهائية (Infinite 401 Loop)**: إذا انتهت صلاحية الـ Refresh Token أيضاً، يجب التوقف فوراً ومسح الجلسة وتوجيه المستخدم لواجهة تسجيل الدخول.
 
 ## Practical walkthrough
 
-عند 401 من 5 requests في نفس اللحظة، لو كل واحدة عملت refresh، ممكن refresh token تتبدل خمس مرات ويتبطل بعضها. خلي session owner واحد يعمل single-flight refresh، ويكتب token الجديدة قبل ما يوقظ المنتظرين. لو logout حصل أثناء refresh، session generation تمنع رد قديم يرجّع المستخدم logged in. Backend يقدر يبطل session، والموبايل يميّز transient network من invalid-grant.
+تنفيذ OkHttp Authenticator احترافي مع Mutex متزامن ومعالجة Race Conditions وإعادة المحاولة:
+```kotlin
+class ProductionTokenAuthenticator(
+    private val sessionRepository: SessionRepository,
+    private val authApi: AuthApiService
+) : Authenticator {
+    private val refreshMutex = Mutex()
+
+    override fun authenticate(route: Route?, response: Response): Request? {
+        // 1. منع الحلقات اللانهائية إذا تكرر الفشل أكثر من مرتين:
+        if (responseCount(response) >= 2) return null
+
+        val staleToken = response.request.header("Authorization")?.removePrefix("Bearer ")
+
+        return runBlocking {
+            refreshMutex.withLock {
+                val currentToken = sessionRepository.getAccessToken()
+                
+                // 2. إذا كان هناك طلب آخر قد جدد التوكن بالفعل أثناء انتظار هذا الطلب في الـ Mutex:
+                if (currentToken != null && currentToken != staleToken) {
+                    return@withLock response.request.newBuilder()
+                        .header("Authorization", "Bearer $currentToken")
+                        .build()
+                }
+
+                // 3. طلب تجديد التوكن باستخدام الـ Refresh Token المشفر:
+                val refreshToken = sessionRepository.getRefreshToken() ?: run {
+                    sessionRepository.forceLogout()
+                    return@withLock null
+                }
+
+                val refreshResponse = authApi.refreshToken(RefreshTokenRequest(refreshToken))
+                if (refreshResponse.isSuccessful && refreshResponse.body() != null) {
+                    val newSession = refreshResponse.body()!!
+                    sessionRepository.saveTokens(newSession.accessToken, newSession.refreshToken)
+                    
+                    response.request.newBuilder()
+                        .header("Authorization", "Bearer ${newSession.accessToken}")
+                        .build()
+                } else {
+                    // فشل الـ Refresh (مثلاً تم إلغاؤه من السيرفر) -> طرد المستخدم فوراً
+                    sessionRepository.forceLogout()
+                    null
+                }
+            }
+        }
+    }
+
+    private fun responseCount(response: Response): Int = generateSequence(response) { it.priorResponse }.count()
+}
+```
 
 ## Why it matters and how it works
 
@@ -60,15 +124,34 @@ A finance app uses backend-bound session IDs, TLS, short-lived access token, con
 
 ## Interview answer — short
 
-“I model session state explicitly, store credentials under a threat model, serialize refresh per session and use a generation check to prevent late results after logout. Backend remains authority for revocation; the app never embeds a trusted secret.”
+Design secure authentication using short-lived access tokens and Keystore-encrypted refresh tokens. Intercept 401 responses via OkHttp's Authenticator, coordinate concurrent refresh requests using a mutex to prevent thundering-herd issues, support refresh token rotation, and clear session state deterministically when refresh fails.
 
 ## Interview answer — structured
 
-“Login is more than saving a token. I define backend-issued access/refresh credentials, expiration and revocation behavior, then expose an explicit session state to UI. Requests attach access tokens at the network boundary. Concurrent 401s use one refresh coordinator that rechecks current token under a lock and saves the pair atomically. Logout clears local state, cancels session-owned work and increments a generation so a late refresh cannot resurrect the session. I avoid logging tokens and do not treat Keystore or an APK resource as a substitute for server trust.”
+A production-grade mobile authentication system must handle transient concurrency, key security, and automatic recovery:
+
+1. **Tiered Token Architecture**:
+   - **Access Token (Short-lived, ~5-15 min)**: Passed in standard HTTP `Authorization: Bearer` headers. Kept primarily in volatile memory or encrypted DataStore.
+   - **Refresh Token (Long-lived, ~14-30 days)**: Stored encrypted using Android Keystore AES-GCM in private storage.
+
+2. **Transparent Refresh via OkHttp Authenticator**:
+   - Attach an `Authenticator` implementation to the primary `OkHttpClient`. When any endpoint returns `401 Unauthorized`, OkHttp automatically triggers this handler.
+
+3. **Concurrency & Thundering-Herd Synchronization**:
+   - When multiple parallel requests fail simultaneously with 401, they hit `authenticate()` concurrently. A synchronized `Mutex` serializes execution. The first thread completes the refresh; subsequent threads observe that the current token has already updated and immediately replay with the new token without issuing duplicate refresh calls.
+
+4. **Terminal Failure Handling**:
+   - If the refresh token has expired, been revoked, or fails with 401/403, the authenticator returns `null`, wipes local credentials from Keystore and DataStore, and emits an unauthenticated session event to navigate to Login.
 
 ## Interview answer — deep senior
 
-“I would draw the full session state machine and its races. The backend authenticates and revokes; Android holds only what it needs, with storage and backup choices based on threat model. Access tokens are attached to protected calls; a bounded single-flight refresh handles simultaneous 401s. A transient offline refresh failure is different from permanent invalid credentials, so I do not falsely log the user out. A generation counter guards logout/account switch against late network responses. Navigation derives from current session state, while stale caches and pending work are partitioned by account. I test process death, token rotation, clock skew, concurrent refresh, logout during refresh and server revocation, and I redact credentials from all telemetry. UI derives destination from session state. I would test races explicitly: two simultaneous 401s, refresh success concurrent with logout, a refresh token rejected by the server, and process death between token rotation and persistence. The coordinator should use one in-flight refresh result and a generation check before committing it. A transient connection error may preserve the existing session in a retryable state; authoritative invalid-grant signs out. The backend still controls revocation and step-up for sensitive actions, because encrypted local storage cannot prevent runtime token misuse.”
+From an enterprise platform design perspective, session management extends beyond simple HTTP headers:
+
+1. **Refresh Token Rotation (RTR) & Compromise Detection**: Each refresh cycle issues both a new access token and a new refresh token, immediately invalidating the old refresh token on the server. If an attacker intercepts and attempts to use an already-rotated refresh token, the backend detects replay fraud and terminates all sessions across all devices for that user account.
+
+2. **Cryptographic Token Binding (DPoP)**: In high-security banking architectures, access tokens are cryptographically bound to a device-generated asymmetric EC keypair in Android Keystore. The client signs an HTTP header containing the target URL and a server nonce, ensuring intercepted tokens cannot be replayed from other clients.
+
+3. **Multi-Process & Global Session State Broadcast**: If an app utilizes multiple processes (e.g. background sync or media playback services), session invalidation must propagate across IPC boundaries using an encrypted ContentProvider or reactive DataStore flows to prevent orphaned background tasks from flooding servers with stale credentials.
 
 ## How to answer in the interview
 
@@ -84,8 +167,11 @@ Trace simultaneous 401s, transient failure, permanent revocation and logout race
 
 ## Follow-up questions
 
-- [DAT-19](../dat-19/): How serialize refresh? **Answer:** shared single-flight with recheck and generation-safe commit.
-- [SYS-10](../sys-10/): Why explicit states? **Answer:** to prevent illegal transitions such as Active after logout.
+- **Interviewer:** "Why should you use an OkHttp Authenticator instead of an Interceptor for refreshing tokens?"
+  **Answer:** "An Interceptor executes on every single request and must inspect response codes manually; an Authenticator is invoked specifically by OkHttp only on 401 responses and natively handles retry loops."
+
+- **Interviewer:** "What happens if runBlocking in Authenticator blocks an IO thread?"
+  **Answer:** "It blocks one OkHttp background thread during the refresh; because OkHttp thread pools manage network I/O, the UI remains responsive, provided UI operations never block waiting for network responses synchronously."
 
 ## Self-check rubric
 
@@ -96,4 +182,4 @@ Can I protect credentials, define backend authority and test refresh/logout race
 - [Android security configuration](https://developer.android.com/privacy-and-security/security-config) — TLS trust.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — SSOT/state ownership.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

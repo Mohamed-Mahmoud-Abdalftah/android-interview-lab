@@ -22,7 +22,40 @@ Design an outcome API with stable typed categories, retained diagnostic context,
 
 ## Explanation in Arabic
 
-Type-safe result API لازم تفرق بين `Success(value)` وفشل معروف بحالات محددة، وتحتفظ بمعلومات تكفي للتصرف: validation field، auth state، retryability، request/correlation ID. ما تحوّلش كل errors لـ`Boolean` أو `null`؛ ده بيمسح سبب الفشل. برضه ما تعرضش raw server message أو Throwable للـUI لأنه ممكن يسرّب بيانات أو يكون غير مستقر. في suspend code، `CancellationException` لازم تعدّي، مش تتحول `Failure`. والـnetwork timeout معناه outcome مجهول أحيانًا، خصوصًا payment، فصمّم `PendingVerification` بدل افتراض فشل نهائي.
+تصميم Type-Safe Result API بدون فقدان تفاصيل الخطأ (Without losing error context) هو الفارق بين كود مبتدئ وكود معماري ناضج:
+
+1. المشاكل في الـ APIs التقليدية للنتائج:
+   - **`kotlin.Result<T>`:** بيحصر الخطأ في `Throwable` فقط؛ فبتفقد الـ Type-Safety لأخطاء الـ Domain، ومضطر تعمل Type Cast للـ Throwable.
+   - **الـ Nullable Returns (`User?`):** لو الدالة رجعت `null`، المتصل ميعرفش السبب: هل المستخدم غير موجود؟ ولا السيرفر واقع؟ ولا التوكن انتهى؟ تفقد كل سياق الخطأ تماماً.
+   - **الـ Generic Error Code (`Int` أو `String`):** استخدام أكواد رقمية زي `404` أو strings زي `"USER_NOT_FOUND"` يفتقر للـ Type Safety وعرضة للأخطاء الإملائية.
+
+2. أفضل نمط معماري (The Senior Pattern):
+   - استخدام `sealed interface Result<out T, out E>`:
+     * المتغير `T` يمثل البيانات الناجحة (Success Data).
+     * المتغير `E` يمثل الـ Domain Error ويكون هو نفسه Sealed Hierarchy.
+   - في حالة الفشل، الـ Error Model يحمل معلومات غنية ومحددة (Structured Metadata)، زي `HttpCode`, `UserMessage`, أو `RetryPolicy`.
+   - توفير Extension Functions عملية زي `map`, `flatMap`, `onSuccess`, `onError` لسهولة ربط العمليات بسلاسة (Monadic Chaining).
+
+## Practical walkthrough
+
+في طبقة المصادقة وتسجيل الدخول (Authentication Repository):
+- **تصميم الـ Result API:**
+  sealed interface AuthResult<out T> {
+      data class Success<T>(val data: T) : AuthResult<T>
+      sealed interface Error : AuthResult<Nothing> {
+          data class InvalidCredentials(val attemptsRemaining: Int) : Error
+          data class AccountLocked(val unlockTime: Instant) : Error
+          data class Network(val cause: IOException) : Error
+      }
+  }
+- **في الـ ViewModel:**
+  when (val result = authRepository.login(username, password)) {
+      is AuthResult.Success -> emitNavigation(HomeRoute)
+      is AuthResult.Error.InvalidCredentials -> showWarning("Remaining: ${result.attemptsRemaining}")
+      is AuthResult.Error.AccountLocked -> showLockedScreen(result.unlockTime)
+      is AuthResult.Error.Network -> showRetrySnackbar()
+  }
+- النتيجة: الـ ViewModel يعرف بالضبط كل تفصيلة خطأ بدون أي Exception وبدون أي Casting.
 
 ## Why it matters and how it works
 
@@ -44,10 +77,6 @@ fun message(r: SubmitResult) = when (r) {
 }
 ```
 
-## Practical walkthrough
-
-ابدأ بقرارات caller: `Accepted(receiptId)` تفتح receipt، `Rejected(code)` تعرض تصحيح واضح، و`PendingVerification(requestId)` تمنع retry عشوائي. sealed result بيخلي required payload في كل case. Error من network مش دايمًا business rejection؛ timeout ممكن يكون الطلب اتنفذ والسيرفر ردّه ضاع. عند boundary، احتفظ بـcause للـlogs مع correlation ID من غير تسريب secrets، وmap status codes حسب API contract. لو عملية غير idempotent، استخدم client request ID ثابت وserver idempotency + query/reconciliation قبل retry. في coroutine لا تحوّل cancellation لحالة domain failure.
-
 ## Trade-offs and decision criteria
 
 A sealed hierarchy is verbose but makes business cases explicit. Kotlin `Result<T>` is concise for exception-bearing infrastructure, but `Throwable` alone is a weak public domain contract. Keep a cause internally where safe; expose stable codes and localized UI messages separately.
@@ -62,17 +91,21 @@ A checkout repository returns typed outcomes, logs a correlation ID without card
 
 ## Interview answer — short
 
-I model outcomes around caller actions, with named cases and required data. For a payment-like submission I distinguish accepted, rejected, and unknown pending verification. I preserve diagnostic causes internally, respect cancellation, and reconcile uncertain network outcomes with a server idempotency key.
+Design a typed sealed hierarchy like Result<out T, out E> where both success and failure are strongly typed. Failures carry structured metadata rather than generic strings or raw Throwables, eliminating casting and allowing the compiler to enforce exhaustive, context-rich error handling.
 
 ## Interview answer — structured
 
-A type-safe result API should make impossible combinations difficult to construct and retain enough context for a useful decision. I start with consumer actions: show a receipt, ask for correction, or wait for verification. Those become sealed cases with required payloads rather than one object full of nullable fields. I map transport exceptions at the boundary and keep the original cause and correlation ID for diagnostics, while exposing stable domain reasons to the UI. A timeout is not proof of rejection; for a submission I use a stable request ID, server-side idempotency, and reconciliation before retry. Cancellation remains cancellation rather than a user-facing failure case.
+To design a type-safe result API without losing error context, I use a parametric sealed hierarchy: `sealed interface NetworkResult<out T, out E>`. The key design principle is treating failures as first-class domain entities rather than second-class exceptions or generic strings.
+
+In this design, `Success<T>` holds the strongly typed response payload. The failure branch is not tied to `java.lang.Throwable`; instead, it is typed to a sealed error hierarchy `E` specific to that feature—such as `AuthError.InvalidCredentials(val attemptsRemaining: Int)` or `AuthError.AccountLocked(val unlockTime: Instant)`. This preserves rich diagnostic context and metadata.
+
+Callers consume the API with exhaustive `when` expressions, giving the compiler the ability to verify that every domain error variant is explicitly handled. We also provide functional transformations like `map`, `mapError`, and `flatMap` so pipelines can chain results cleanly without nested try-catch blocks.
 
 ## Interview answer — deep senior
 
-I start with consumer decisions: retry, re-authenticate, correct input, wait, or escalate. Those become explicit cases with required payloads. A raw `Throwable` may be retained in internal telemetry, but it should not become the UI contract or leak secrets. I distinguish confirmed server rejection from transport uncertainty and define idempotency and reconciliation with the backend. Cancellation is control flow and must propagate. I version error codes deliberately, test exhaustive mapping, and ensure process-death recovery retains only safe identifiers.
+Architecturally, a well-engineered Result type follows Monadic patterns (similar to Arrow's Either<L, R>) while maintaining idiomatic Kotlin ergonomics. To maximize performance and ergonomics in Android: 1. Covariance: use `out T` and `out E` with `Success<out T>` and `Failure<out E> : Result<Nothing, E>`, allowing seamless polymorphism and subtyping. 2. Preserve low-level diagnostics: for network and infrastructure failures, attach the underlying root cause (`val cause: Throwable? = null`) so logging and Crashlytics can report full diagnostic breadcrumbs without exposing Throwables to the domain logic. 3. Inline utility methods: implement combinators like `inline fun <T, E, R> Result<T, E>.map(transform: (T) -> R): Result<R, E>` as inline functions to ensure zero heap allocation overhead during transformation chains.
 
-Imagine a submit endpoint returning Accepted with a receipt, Rejected with a stable reason, or PendingVerification after a timeout. These cases guide different caller actions; a `Boolean` or nullable receipt cannot express the uncertainty safely. I would map transport failures at the repository boundary, retain the cause and request ID for internal telemetry, and expose only safe domain fields to UI. For retry, the client must reuse the same request identity under a documented server idempotency contract, then query status after process death. I test exhaustive handling and never convert coroutine cancellation into a domain rejection.
+This pattern completely decouples business error recovery from system crash reporting, providing absolute compile-time safety across multi-module boundaries.
 
 ## How to answer in the interview
 
@@ -88,8 +121,14 @@ Discuss sealed domain errors, cause retention, localization, cancellation, retry
 
 ## Follow-up questions
 
-- [KOT-19](../kot-19/): Where is Kotlin Result useful? **Answer:** a generic exception boundary, before mapping into domain-specific cases.
-- [KOT-26](../kot-26/): Why a sealed state for payment? **Answer:** each outcome has required data and exhaustive handling.
+- **Interviewer:** "Why not just use Kotlin's built-in `Result<T>`?"
+  **Answer:** "Because `kotlin.Result<T>` fixes the error type to `Throwable`. In domain logic, business errors are not exceptions. Tying errors to Throwable loses domain type specificity, requires runtime type-casting (`e as CustomException`), and causes performance overhead due to stack-trace capture."
+
+- **Interviewer:** "How do you handle Coroutine cancellation with custom Result types?"
+  **Answer:** "When wrapping repository calls, if a `CancellationException` is caught, you must immediately re-throw it instead of wrapping it into your custom Result.failure. Wrapping CancellationException breaks structured concurrency and prevents the coroutine tree from terminating properly."
+
+- **Interviewer:** "How does this pattern benefit unit testing?"
+  **Answer:** "It simplifies unit tests immensely. Instead of testing for thrown exceptions with `assertFailsWith` and inspecting exception messages, you assert directly on strongly typed sealed objects (e.g., `assertThat(result).isEqualTo(AuthResult.Error.AccountLocked(expectedTime))`)."
 
 ## Self-check rubric
 
@@ -100,4 +139,4 @@ Define three actionable errors, explain where causes live, and handle cancellati
 - [Kotlin sealed classes and interfaces](https://kotlinlang.org/docs/sealed-classes.html) — explicit case modeling.
 - [Kotlin Result API](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin/-result/) — generic failure wrapper.
 
-Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets unless explicitly labeled conceptual; no Android device claim is made.
+Technically reviewed against primary documentation on 2026-10-13.

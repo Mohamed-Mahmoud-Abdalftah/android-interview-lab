@@ -24,7 +24,37 @@ When must you use an Activity Context rather than Application Context?
 
 ## Explanation in Arabic
 
-تحتاج Activity Context لما العملية مرتبطة فعلًا بالـActivity الحالية: Dialog متوصل بنافذتها، inflate لازم يقرأ theme/display بتوع الشاشة، أو API يتطلب Activity owner نفسه زي Activity Result registration. الـApplication Context مش معاه نفس window token أو visual configuration، وده ممكن يظهر كـcrash أو UI غلط. لكن مش كل استدعاء فيه UI يستلزم Activity Context؛ بعض العمليات تقبل Application Context بشرط flags أو سلوك مختلف. المهم تقرأ عقد الـAPI، تستخدم الـowner الحالي، وما تخزنش Activity Context في singleton بعد ما الشاشة تتقفل.
+متى يجب عليك استخدام `Activity Context` تحديداً ولا يمكن استبداله بـ `Application Context` إطلاقاً؟
+
+1. الحالات الإلزامية التي تتطلب Activity Context:
+   - **عرض الـ Dialogs (AlertDialog, BottomSheetDialog, DatePickerDialog):**
+     * تتطلب **Window Token** حقيقي مسجل في نظام تشغيل أندرويد. محاولة استخدام Application Context سترمي فوراً استثناء: `WindowManager.BadTokenException` وتغلق التطبيق بكراش حتمي!
+   - **إنشاء وتضخيم الـ Views (Layout Inflation):**
+     * الـ `LayoutInflater` يحتاج للـ Activity Context لقراءة الـ Theme والألوان والـ Styles المحددة في الـ `AndroidManifest` للـ Activity الحالية. استخدام Application Context سينتج عناصر بتصميم افتراضي قبيح أو غير متناسق.
+   - **بدء Activity جديدة داخل نفس الـ Task:**
+     * الانتقال الطبيعي بين الشاشات يتطلب Activity Context للحفاظ على الـ Backstack وتسلسل النوافذ بدون فرض `FLAG_ACTIVITY_NEW_TASK`.
+
+2. القاعدة الذهبية:
+   - أي شيء له علاقة بـ **الرسم على الشاشة، النوافذ، أو الـ Themes** يتطلب حتماً Activity Context.
+
+## Practical walkthrough
+
+أمثلة كود توضح متى يكون Activity Context إلزامياً:
+```kotlin
+// ❌ سيفشل بكراش فوري BadTokenException:
+fun showConfirmationBad(appContext: Context) {
+    AlertDialog.Builder(appContext) // BadTokenException!
+        .setTitle("Confirm")
+        .show()
+}
+
+// ✅ استخدام Activity Context الإلزامي للـ Dialogs:
+fun showConfirmationGood(activityContext: Context) {
+    AlertDialog.Builder(activityContext)
+        .setTitle("Confirm")
+        .show() // ينجح لأن activityContext يحمل Window Token شرعي
+}
+```
 
 ## Why it matters and how it works
 
@@ -33,10 +63,6 @@ An Activity is a Context associated with a window, display, configuration, and t
 ## Worked example
 
 For a confirmation Dialog, use the current Activity or a lifecycle-aware `DialogFragment`, then dismiss it when that owner ends. For a global image cache, use Application Context to locate cache files and pass the loaded image data to the screen without retaining the Activity. For a system picker result, register the launcher with the Activity/Fragment lifecycle owner. These three needs have different owners even though all participate in one user flow.
-
-## Practical walkthrough
-
-وقت إظهار confirmation Dialog، استخدم Activity الحالية أو `DialogFragment` عشان الـwindow تتربط بـvalid Activity token والtheme الحالية. لو Activity انتهت أو اتغيرت configuration، ما تحتفظش بمرجع قديم عشان تعيد استخدام Dialog. في المقابل، image cache عمرها process واحتياجها `cacheDir`، فـApplication Context كافية أو حتى حقن `File`. System picker registration مربوط بـlifecycle owner بتاع Activity/Fragment، مش cache singleton. معيار الاختيار هو نوع capability المطلوبة وعمرها، مش قاعدة “Activity context ممنوعة”.
 
 ## Trade-offs and decision criteria
 
@@ -52,17 +78,23 @@ A checkout confirmation belongs to the visible checkout Activity or its DialogFr
 
 ## Interview answer — short
 
-“Use Activity Context when an API needs the current screen's window, theme, display configuration, or lifecycle owner, such as an attached Dialog. Application Context is appropriate for process-long non-visual work. I follow the specific API contract and never retain the Activity beyond its lifetime.”
+An Activity Context is strictly mandatory when showing Dialogs (which require an active Window Token to prevent BadTokenException), inflating themed UI layouts via LayoutInflater, and starting Activities within the same existing task stack without forcing FLAG_ACTIVITY_NEW_TASK.
 
 ## Interview answer — structured
 
-A Dialog or themed view attached to a screen needs a visual Context representing the current Activity. Activity Result registration is even more specific: it needs the Activity or Fragment lifecycle owner. A cache directory or non-visual service can use Application Context. I avoid broad rules such as ‘all startActivity calls need an Activity’; the Context and task flags affect that API differently. Most importantly, I never inject a screen Activity into a singleton.
+An Activity Context is strictly mandatory for any operation that interacts with the Android Window Manager, requires a Window Token, or depends on theme styling:
+
+1. **Showing Dialogs and Popups:** Showing an `AlertDialog`, `BottomSheetDialog`, or `PopupWindow` requires a valid **Window Token** provided exclusively by an active Activity window. Attempting to show a dialog using `ApplicationContext` crashes instantly with `WindowManager.BadTokenException`.
+
+2. **Layout Inflation and View Creation:** Views created programmatically or inflated via `LayoutInflater` require an Activity Context to resolve theme attributes (`?attr/colorPrimary`, custom styles, and dynamic colors). Using Application Context falls back to raw system defaults, ignoring your app's custom Activity theme.
+
+3. **In-Task Navigation:** Starting an Activity using an Activity Context preserves the natural backstack within the current task. Using Application Context forces `FLAG_ACTIVITY_NEW_TASK`, creating fragmented task stacks.
 
 ## Interview answer — deep senior
 
-I inspect the capability the API requires. Window-attached UI needs a current visual Context and token; themed inflation needs the correct display and configuration, particularly with multi-window and foldables; result launchers need a lifecycle owner. An Application Context is intentionally longer-lived and suitable for file or non-visual service access, but it is not a universal UI owner. I pass Activity only at the presentation boundary for the duration of the operation, handle a late result after navigation, and test dialog rotation and memory retention. If a library asks for Context without explaining why, I wrap it behind a narrow interface and verify its actual requirement. The key is not a universal rule that Activity Context is always better.
+At the Android OS system level, the distinction lies in the **IBinder Window Token** registered with `WindowManagerService` (WMS). When an Activity transitions to `onResume()`, WMS assigns a unique surface token to its window hierarchy. When a Dialog attempts to display, it queries its context's `WindowManager.addView()`. WMS verifies whether the token attached to the context is an active, valid window token. Since `ApplicationContext` is owned by the app process rather than a surface window, its token is null, prompting the fatal `BadTokenException`.
 
-For example, an Activity-owned confirmation dialog can be dismissed and recreated as the screen changes, while an image cache created from Application Context can keep its files across screen changes. Passing Application Context to UI that expects an Activity window may fail or use an unintended theme. Conversely, keeping the screen Activity in a cache leaks it after a configuration change. I would inspect the API’s documented Context requirement, narrow constructor dependencies where possible, and test rotation while the dialog or cache request is active. That makes the lifetime decision observable.
+Furthermore, with the introduction of **Android 12/13 per-app language preferences and Dynamic Theming (Material You)**, theme attributes and configuration overrides (like configuration night mode or font scaling) are tied to specific Activity configurations. An Application Context does not receive Activity-level configuration overrides, leading to visual bugs and broken dark/light theme rendering.
 
 ## How to answer in the interview
 
@@ -78,9 +110,14 @@ Discuss window token, visual resource configuration, lifecycle registration, Ser
 
 ## Follow-up questions
 
-- [AND-04](../and-04/): Can Application Context load app-private files? **Answer:** yes; it suits a process-lifetime file/cache dependency.
-- [AND-14](../and-14/): What owns an Activity Result launcher? **Answer:** the registering Activity or Fragment lifecycle owner.
-- [AND-23](../and-23/): How can a payment SDK leak a screen? **Answer:** by retaining the Activity passed for UI launch after that Activity is destroyed.
+- **Interviewer:** "Can you show a Toast using an Application Context?"
+  **Answer:** "Yes! A Toast is rendered by the system's `NotificationManagerService` in a system-managed overlay window, so it works completely fine with an Application Context."
+
+- **Interviewer:** "What is `ContextThemeWrapper` and how does it relate to this?"
+  **Answer:** "`ContextThemeWrapper` is a class that allows wrapping an existing Context with a custom theme resource (e.g., `ContextThemeWrapper(baseContext, R.style.MyCustomTheme)`), which Activities inherit from by default."
+
+- **Interviewer:** "Why does Jetpack Compose still need an Activity Context for dialogs?"
+  **Answer:** "Even in Compose, the `Dialog()` composable creates an underlying Android `DialogWindowProvider` which requires an Activity Context to anchor the dialog window to the host Activity surface."
 
 ## Self-check rubric
 
@@ -91,4 +128,4 @@ Give two cases requiring a visual Activity owner, one valid Application Context 
 - [Context API reference](https://developer.android.com/reference/android/content/Context) — visual Context and resource configuration.
 - [Activity Result APIs](https://developer.android.com/training/basics/intents/result) — lifecycle-bound result handling.
 
-Technically reviewed against these primary sources on 2026-10-13 by editorial review. Examples describe API ownership and were not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

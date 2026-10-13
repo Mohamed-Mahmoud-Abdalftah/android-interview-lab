@@ -23,11 +23,70 @@ How would you test SDK callback timeout and device disconnection?
 
 ## Explanation in Arabic
 
-لازم نختبر SDK timeout/disconnect كـunknown financial outcome، مش بس exception في UI. Fake adapter يتحكم في callback order والوقت: success بعد timeout، callback مرتين، disconnection أثناء authorization، process kill. وhardware tests تفصل الجهاز أو الشبكة فعلًا؛ fake وحده ما يثبتش behavior بتاع firmware/acquirer.
+كيف تقوم باختبار مهلة الاستدعاءات (SDK Callback Timeout) وفصل العتاد المفاجئ (Device Disconnection) برمجياً دون الحاجة لأجهزة حقيقية؟
+
+1. تحدي اختبارات العتاد في بيئة الـ CI:
+   - يستحيل توصيل ماكينة POS حقيقية بكل سيرفر في GitHub Actions لنزع كابل الـ USB يدوياً أثناء الاختبارات!
+   - إذا اعتمدت على الاختبار اليدوي، فلن تتمكن من تغطية حالات نادرة مثل: ماذا لو استجاب البنك بعد 29.9 ثانية؟ ماذا لو فُصل قارئ البطاقات اللاسلكي أثناء إدخال الـ PIN؟
+
+2. استراتيجية الاختبار الهندسي عبر الـ Fake Test Double:
+   - بفضل عزل الـ SDK وراء واجهة `CardReaderManager` (كما صممنا في PAY-09)، يمكننا بناء `FakeCardReaderManager` يحتوي على **مقابض تحكم بالاختبار (Test Knobs)**.
+   - **مقابض الاختبار الأساسية**:
+     * `simulateTimeout()`: محاكاة عدم رد الهاردوير نهائياً لتفعيل مؤقت الـ Timeout.
+     * `simulateHardwareDisconnect()`: إطلاق حدث فصل فوري أثناء المعالجة.
+     * `simulateBadChipError()`: محاكاة تلف الشريحة الإلكترونية.
+
+3. اختبار الوقت الافتراضي باستخدام `runTest` في Kotlin Coroutines:
+   - استخدام `runTest` للتحكم في الوقت الافتراضي (Virtual Time) عبر `advanceTimeBy(30_000)`.
+   - التحقق من أنه بعد 30 ثانية تحديداً، قام النظام بإلغاء الجلسة، وتحديث الحالة إلى `UNKNOWN`، وإدراج طلب Reversal في قاعدة بيانات Room!
 
 ## Practical walkthrough
 
-في fake SDK اعمل clock قابلة للتحكم: timeout ييجي الأول وبعده callback Approved، أو callback مرتين، أو disconnect والعملية لسه remote pending. اختبر إن local state ما تتحولش Declined تلقائيًا وإن restart يعمل lookup بنفس ID. بعد unit tests لازم hardware test: firmware ممكن تعمل callbacks بترتيب مختلف عن fake.
+اختبار كامل في كوتلن يحاكي انقطاع العتاد ونفاد الوقت ويتحقق من إطلاق الـ Reversal:
+```kotlin
+class PaymentOrchestratorTest {
+    private val fakeCardReader = FakeCardReaderManager()
+    private val paymentDao = FakePaymentDao()
+    private val orchestrator = PaymentOrchestrator(fakeCardReader, paymentDao)
+
+    @Test
+    fun `card reader timeout enqueues reversal and aborts transaction`() = runTest {
+        // 1. ضبط الـ Fake لمحاكاة الصمت التام (عدم الرد):
+        fakeCardReader.shouldSimulateTimeout = true
+
+        val job = launch {
+            orchestrator.processCardPayment(amountCents = 10000)
+        }
+
+        // 2. تقديم الوقت الافتراضي لـ 30 ثانية لتجاوز مهلة الـ Timeout:
+        advanceTimeBy(30_001)
+
+        // 3. التحقق من أن النظام رصد الـ Timeout وعكس العملية:
+        val pendingReversals = paymentDao.getAllPendingReversals()
+        assertEquals(1, pendingReversals.size)
+        assertEquals(10000, pendingReversals.first().amountCents)
+        assertEquals("TIMEOUT_REVERSAL", pendingReversals.first().reason)
+        job.cancel()
+    }
+
+    @Test
+    fun `abrupt usb disconnect during pin entry emits reader error`() = runTest {
+        val events = mutableListOf<CardReaderEvent>()
+        val collectJob = launch {
+            fakeCardReader.startCardInteraction(5000).collect { events.add(it) }
+        }
+
+        fakeCardReader.emitEvent(CardReaderEvent.PinRequired)
+        // محاكاة فصل الكابل فجأة أثناء كتابة الـ PIN:
+        fakeCardReader.simulateDisconnection()
+
+        val lastEvent = events.last()
+        assertTrue(lastEvent is CardReaderEvent.ReaderError)
+        assertEquals(999, (lastEvent as CardReaderEvent.ReaderError).errorCode)
+        collectJob.cancel()
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -70,15 +129,30 @@ Keep a failure matrix by device model, firmware, ABI, SDK version and network mo
 
 ## Interview answer — short
 
-“I inject a fake gateway and clock to force the race: timeout first, approval later. The domain must keep Unknown until it has authoritative evidence, and hardware tests must confirm the adapter’s real callback behavior.”
+Test SDK timeouts and hardware disconnects programmatically using a configurable FakeCardReaderManager implementing the domain interface. Use Kotlin Coroutines runTest and advanceTimeBy() to simulate virtual timeouts and trigger simulated disconnections, asserting that the state machine enqueues the reversal and fails gracefully.
 
 ## Interview answer — structured
 
-“I test the state machine with a fake SDK and fake clock: no callback, callback after timeout, duplicate success, disconnect and process death. Each test asserts the persisted operation ID and whether status lookup or reversal is required. Then I repeat critical flows on real terminals and provider sandbox because firmware and EMV behavior cannot be inferred from mocks. I check that a retry never creates a new charge identity. The fake controls a late approval after timeout, and the hardware test checks whether the vendor actually behaves that way.”
+Verifying peripheral hardware failures deterministically requires software-mediated fault injection:
+
+1. **The Configurable Test Double Architecture**:
+   - Because proprietary payment kernels cannot run in cloud CI environments, implement a full-fidelity `FakeCardReaderManager`. Expose explicit programmatic fault hooks: `simulateTimeout()`, `simulateDisconnection()`, and `simulateTamperEvent()`.
+
+2. **Virtual Time Testing with `runTest`**:
+   - In Kotlin Coroutines, test timeout logic using `runTest`. Calling `advanceTimeBy(30_000L)` instantly advances virtual time without delaying CI execution by real clock seconds. Assert that the underlying timeout handler triggers, cancels the active peripheral flow, marks the transaction as `UNKNOWN`, and persists a reversal payload.
+
+3. **Simulating Asynchronous Disconnection Events**:
+   - Emit abrupt disconnection errors mid-transaction (e.g. between `PinRequired` and `CardReadSuccess`). Verify that the presentation layer clears confidential screens immediately and logs the hardware fault telemetry without leaving leaked coroutines or corrupted database locks.
 
 ## Interview answer — deep senior
 
-“The test oracle is financial correctness, not merely a screen message. I inject faults at every durable boundary: before send, after provider approval but before callback, after callback but before DB commit, and during reversal. Tests restart the process from the same DB, replay late/duplicate callbacks, and verify one intended business effect under the backend’s idempotency contract. I also test SDK cancellation semantics separately from coroutine cancellation. Real device unplug/battery/network drills reveal vendor-specific recovery references and ABI/firmware bugs that fakes cannot cover. I assert database state after restart, not only the callback value seen by a still-open Activity. The first deterministic test makes the adapter return Unknown after its timeout and then delivers a late Approved callback. I verify that the repository neither creates a new attempt nor blindly trusts a stale callback over a reconciled state. Another test sends the callback twice; a third kills the process before final persistence and checks restart lookup. I inject clock and callback order where possible, then test the vendor adapter on actual supported terminals with a controllable network and power interruption. Fakes prove domain decisions, but they cannot validate firmware error codes or the acquirer's interpretation of a reversal. I would record the exact SDK build and hardware model for each test run.”
+From an Android instrumentation and edge-case testing perspective, integration testing extends to OS hardware simulations:
+
+1. **USB Host State Simulation via ADB**: On instrumented test devices connected via ADB, developers can simulate USB OTG disconnection by altering Android USB power states via ADB shell: `adb shell am broadcast -a android.hardware.usb.action.USB_DEVICE_DETACHED`. This verifies that Android `BroadcastReceiver` lifecycle handlers fire and gracefully release hardware device handles.
+
+2. **Chaos Fault Injection in Android Services**: In high-end fintech teams, an automated Chaos Proxy intercepts IPC Binder calls between the main app and vendor hardware daemon services. The proxy randomly injects a 3% rate of dead-object exceptions (`DeadObjectException`) to continuously verify that client retry and recovery state machines are bulletproof.
+
+3. **Verifying WorkManager Escalation**: Ensure tests verify that when a hardware disconnect causes a timeout reversal, the scheduled `ReversalDispatchWorker` is properly registered with WorkManager and ready for eventual background execution.
 
 ## How to answer in the interview
 
@@ -94,8 +168,11 @@ Prompt for fake clock/callback order, persisted-state assertions, cancellation d
 
 ## Follow-up questions
 
-- [PAY-08](../pay-08/): What does timeout mean? **Answer:** unknown until authority resolves it.
-- [PAY-09](../pay-09/): What does an adapter fake test? **Answer:** domain mapping/order, not certified hardware behavior.
+- **Interviewer:** "How does Kotlin's `runTest` accelerate timeout testing in CI pipelines?"
+  **Answer:** "It uses virtual time skipping (`advanceTimeBy`), testing a 30-second hardware timeout in a few milliseconds without real-world thread sleep."
+
+- **Interviewer:** "What Android OS exception occurs when an external hardware service process crashes during an IPC call?"
+  **Answer:** "`android.os.DeadObjectException`, which the client must catch and handle by restarting the connection."
 
 ## Self-check rubric
 
@@ -106,4 +183,4 @@ Can I propose a failure matrix that checks financial state, not just UI exceptio
 - [Android testing guidance](https://developer.android.com/training/testing) — test layers and device tests.
 - [Kotlin cancellation](https://kotlinlang.org/docs/cancellation-and-timeouts.html) — cancellation semantics.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

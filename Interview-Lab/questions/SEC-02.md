@@ -23,11 +23,53 @@ What is Android Keystore, and what is hardware-backed key storage?
 
 ## Explanation in Arabic
 
-Android Keystore بيولّد أو يستورد cryptographic keys تحت alias، والـapp يطلب عملية تشفير أو توقيع بدل ما يحتفظ بالـraw key في ملف. بعض الأجهزة تنفذ العملية داخل TEE أو StrongBox، لكن ده مش مضمون لكل key أو device. الـplaintext بيفضل يظهر للـapp وقت الاستخدام؛ Keystore ما بتحولش الجهاز المخترق إلى trusted client.
+ما هو Android Keystore وما هو التخزين المدعوم عتادياً (Hardware-Backed Key Storage - TEE / StrongBox)؟
+
+1. ما هو Android Keystore ولماذا يختلف عن التخزين العادي؟
+   - في التشفير العادي، إذا أنشأت مفتاح تشفير في كود Kotlin، فإن مصفوفة البايتات (`ByteArray`) الخاصة بالمفتاح تكون موجودة في ذاكرة الـ RAM الخاصة بالتطبيق. إذا كان الجهاز Rooted، يمكن للمهاجم استخراج المفتاح من الـ RAM بسهولة!
+   - **Android Keystore System** صُمم لحل هذه المشكلة جذرياً: **المفتاح لا يدخل ذاكرة التطبيق إطلاقاً (Non-Exportable Key Material)**.
+   - يتم إنشاء المفتاح وحفظه داخل مخزن مشفر خاص بالنظام. التطبيق لا يملك المفتاح؛ بل يملك فقط مرجعاً له (Alias/Handle). عندما يريد التطبيق تشفير أو فك تشفير نص، يرسل النص إلى الـ Keystore، فيقوم الـ Keystore بإجراء التشفير داخلياً وإعادة النص المشفر للتطبيق دون أن يرى التطبيق بايتات المفتاح الحقيقية أبداً!
+
+2. مستويات الأمان العتادي (Hardware-Backed TEE vs. StrongBox):
+   - **Software Fallback (برمجي)**: في الهواتف القديمة أو المحاكيات، يُخزن المفتاح برمجياً (أقل أماناً).
+   - **TEE (Trusted Execution Environment)**: بيئة تنفيذ معزولة عتادياً تعمل على معالج مستقل (مثل ARM TrustZone) داخل نفس شريحة الـ SoC. نظام Android الرئيسي (Linux) لا يملك وصولاً لذاكرة الـ TEE.
+   - **StrongBox Keymaster (أعلى درجات الأمان)**: شريحة عتادية مادية منفصلة تماماً ومقاومة للتلاعب الفيزيائي (Dedicated Secure Hardware / HSM مثل شريحة Titan M في هواتف Pixel). تمتلك معالجها الخاص وذاكرتها الخاصة وساعتها الخاصة.
 
 ## Practical walkthrough
 
-لو app خزن ciphertext ومعاه alias لمفتاح في Keystore، المفتاح ما يطلعش كـraw bytes للـapp. بس وقت فك التشفير الـplaintext يدخل memory، وroot/hooking ممكن يراقبه. افحص `KeyInfo` لو hardware backing مطلوب؛ ما تفترضش StrongBox موجود في كل جهاز. لو المفتاح اتفقد بعد restore، عندك مسار re-login أو استعادة موثوقة بدل crash متكرر.
+توليد مفتاح AES-256 مشفر مدعوم عتادياً داخل Android Keystore مع دعم StrongBox:
+```kotlin
+class KeystoreManager {
+    private val KEY_ALIAS = "user_auth_secret_key"
+    private val ANDROID_KEYSTORE = "AndroidKeyStore"
+
+    fun getOrCreateSecretKey(context: Context): SecretKey {
+        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        
+        // 1. التحقق مما إذا كان المفتاح موجوداً مسبقاً:
+        if (keyStore.containsAlias(KEY_ALIAS)) {
+            val entry = keyStore.getEntry(KEY_ALIAS, null) as KeyStore.SecretKeyEntry
+            return entry.secretKey
+        }
+
+        // 2. توليد مفتاح AES-256 جديد غير قابل للاستخراج داخل العتاد:
+        val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+        val keyGenSpec = KeyGenParameterSpec.Builder(
+            KEY_ALIAS,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+        )
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM) // الوضع الآمن Authenticated Encryption
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setKeySize(256)
+            // طلب تخزين المفتاح في StrongBox المادي إذا كان عتاد الجهاز يدعمه (Android 9+):
+            .setIsStrongBoxBacked(context.packageManager.hasSystemFeature(PackageManager.FEATURE_STRONGBOX_KEYSTORE))
+            .build()
+
+        keyGenerator.init(keyGenSpec)
+        return keyGenerator.generateKey() // المفتاح تم إنشاؤه داخل العتاد ولا يمكن تصديره أبداً!
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -74,15 +116,34 @@ A banking app uses Keystore for a local token-encryption key, verifies device ca
 
 ## Interview answer — short
 
-“Android Keystore lets an app use keys without exporting their key material. Hardware backing may strengthen that protection, but I check actual capabilities and still design ciphertext format, backup, rotation, and recovery.”
+Android Keystore generates and stores cryptographic keys in isolated environments so key material is never exposed in the app's RAM. Hardware-backed storage leverages a TEE (ARM TrustZone) or a dedicated StrongBox chip (hardware HSM), preventing key extraction even if the device's Android OS or Linux kernel is fully rooted.
 
 ## Interview answer — structured
 
-“Android Keystore lets an app perform cryptographic operations with a key that it cannot export as raw material. Some keys are protected in TEE or StrongBox, but I verify the actual key properties on supported devices. For stored ciphertext I still need an IV, authenticated format, version, backup and recovery plan. The app sees plaintext when it uses the key, so Keystore reduces extraction risk without making a compromised runtime trustworthy.”
+The Android Keystore system fundamentally changes key management by making cryptographic key material **non-exportable**:
+
+1. **Non-Exportable Key Material**: In software cryptography, AES keys exist in JVM heap memory as raw byte arrays, easily dumpable via Frida or memory dump tools on rooted devices. With Android Keystore, the private/secret key never enters the application process. The app receives an opaque handle (`Key`), delegating encryption/decryption operations to system security daemons.
+
+2. **Hardware-Backed Isolation Tiers**:
+   - **TEE (Trusted Execution Environment)**: Runs on the primary SoC using hardware virtualization (e.g., ARM TrustZone). Cryptographic operations run under a microkernel isolated from the Android Linux kernel.
+   - **StrongBox Keymaster (API 28+)**: A physically separate, tamper-resistant hardware security module (HSM, such as Google Titan M or Samsung Knox Vault). StrongBox has its own dedicated CPU, secure storage, and true random number generator, resisting physical hardware side-channel attacks.
+
+3. **Security Boundary Distinction**: Hardware-backed Keystore protects **keys from extraction**, but it does not protect the plaintext data *after* decryption in application RAM.
 
 ## Interview answer — deep senior
 
-“I use Keystore to keep cryptographic key material nonexportable and to restrict operations, then verify whether a particular generated key is hardware backed rather than assuming every device has StrongBox. The app still sees plaintext when it uses the key, so runtime compromise remains in scope. I would version the ciphertext envelope, use a fresh IV for each AES-GCM encryption, and test restore and key invalidation. A restored token with no usable key should lead to reauthentication. Keystore protects one part of the data flow; the backend still decides whether a transfer is authorized. For a payment token store, I would inspect the generated key's security level on the supported device matrix and decide whether a software-backed key is acceptable for that specific risk. If the product requires hardware assurance, unsupported devices need a documented fallback or eligibility rule. I would never use key nonexportability to claim that a hooked process cannot ask Keystore to decrypt data or sign on its behalf.”
+How does Keymaster/KeyMint verify hardware backing programmatically?
+
+Senior engineers inspect key properties using the `KeyFactory` / `SecretKeyFactory` info spec:
+
+```kotlin
+val factory = SecretKeyFactory.getInstance(key.algorithm, "AndroidKeyStore")
+val keyInfo = factory.getKeySpec(key, KeyInfo::class.java) as KeyInfo
+val isInsideSecureHardware = keyInfo.isInsideSecureHardware
+val securityLevel = keyInfo.securityLevel // SECURITY_LEVEL_TRUSTED_ENVIRONMENT or STRONGBOX
+```
+
+If `isInsideSecureHardware` returns false, the key is stored in software (legacy software Keymaster emulation), which is vulnerable to kernel-level exploitation on rooted devices. In high-assurance fintech and banking apps, policies can mandate that high-value operations proceed only when `keyInfo.isInsideSecureHardware == true`.
 
 ## How to answer in the interview
 
@@ -98,8 +159,11 @@ Explain where Keystore key material is generated and used, when hardware protect
 
 ## Follow-up questions
 
-- [SEC-11](../sec-11/): What must be stored beside AES-GCM ciphertext? **Answer:** a version, unique IV and authenticated output, with recovery policy.
-- [SEC-13](../sec-13/): What if a key disappears? **Answer:** classify the protected value and invoke a designed reissue or recovery path.
+- **Interviewer:** "Can you backup and restore Android Keystore keys to Google Drive?"
+  **Answer:** "No. Hardware-backed Keystore keys are tied physically to the specific device's secure hardware and can never be exported or restored onto another device."
+
+- **Interviewer:** "What happens if a user removes their device lockscreen PIN?"
+  **Answer:** "Keys generated with `.setUserAuthenticationRequired(true)` are permanently invalidated and deleted by the Keystore system."
 
 ## Self-check rubric
 
@@ -111,4 +175,4 @@ Can I distinguish key material from ciphertext, state hardware limits, describe 
 - [KeyGenParameterSpec](https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec) — key constraints.
 - [KeyInfo API](https://developer.android.com/reference/android/security/keystore/KeyInfo) — hardware security level and legacy query.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

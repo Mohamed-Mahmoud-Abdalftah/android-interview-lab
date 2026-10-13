@@ -23,11 +23,72 @@ How do you test cancellation, error, retry, timeout, and backoff?
 
 ## Explanation in Arabic
 
-افصل الحالات بدل test واحدة تقول “retry اشتغلت”. في failure عادي حدّد error قابل لإعادة المحاولة، عدد المحاولات، backoff والحد الأقصى. بـ`runTest` تأكد إن الطلب الثاني لم يخرج قبل الوقت المحدد، ثم ألغِ parent قبل المحاولة التالية وتحقق إن ما فيش request جديد؛ `CancellationException` لازم تفضل cancellation مش تتحول إلى failure قابلة للretry.
+كيف تختبر سيناريوهات الإلغاء (Cancellation)، والأخطاء (Errors)، وإعادة المحاولة (Retries)، وفترات الانتظار (Timeouts) للكوروتينات حتمياً؟
+
+1. اختبار إلغاء الكوروتين (Cancellation Testing):
+   - التأكد من أن إلغاء الـ `Job` يوقف العمل فوراً ولا يترك أي مهام معلقة في الخلفية.
+   - التحقق من تنفيذ كود التنظيف داخل `withContext(NonCancellable)` أو داخل بلوك `finally`.
+   - **قاعدة حرجة**: التحقق من أن الكود لا يبتلع `CancellationException` ويقوم بإعادة رميها دائماً.
+
+2. اختبار فترات الانتظار (Timeouts):
+   - اختبار الدوال التي تستخدم `withTimeout(duration)` عبر القفز بالوقت الافتراضي في `runTest`.
+   - نستخدم `advanceTimeBy(timeoutMs)` للتحقق من رمي `TimeoutCancellationException` بدقة دون انتظار حقيقي.
+
+3. اختبار إعادة المحاولة والتأخير التضاعفي (Exponential Backoff):
+   - اختبار خوارزمية الـ Retry التي تعيد المحاولة 3 مرات عند حدوث خطأ في الشبكة.
+   - نتحقق من عدد المحاولات والتقدم بالوقت الافتراضي بين كل محاولة وأخرى للتأكد من حساب فترات الانتظار بدقة.
 
 ## Practical walkthrough
 
-Timeout غير HTTP error: قد يكون server نفّذ العملية والرد ضاع، خصوصًا في payment؛ هنا استخدم نفس operation ID واستعلام status، مش إنشاء charge جديدة. fake clock/scheduler للتحكم في الوقت، وHTTP integration test لسلوك adapter. تأكد من jitter في حدود يمكن اختبارها بحَقن policy أو مصدر randomness. لا تستخدم `Thread.sleep` ولا تعتمد على سرعة CI.
+اختبار إعادة المحاولة التلقائية مع Exponential Backoff والتحقق من السلوك بالوقت الافتراضي:
+```kotlin
+class NetworkRetryEngine {
+    suspend fun <T> fetchWithRetry(maxRetries: Int = 3, block: suspend () -> T): T {
+        var attempts = 0
+        while (true) {
+            try {
+                return block()
+            } catch (e: IOException) {
+                attempts++
+                if (attempts >= maxRetries) throw e
+                val delayMs = 1000L * (1 shl (attempts - 1)) // 1s, 2s, 4s...
+                delay(delayMs)
+            }
+        }
+    }
+}
+
+class RetryEngineTest {
+    @Test
+    fun `fetchWithRetry retries 3 times with exponential delays then succeeds`() = runTest {
+        val engine = NetworkRetryEngine()
+        var callCount = 0
+
+        val deferredResult = async {
+            engine.fetchWithRetry(maxRetries = 3) {
+                callCount++
+                if (callCount < 3) throw IOException("Network failed")
+                "Success"
+            }
+        }
+
+        // المحاولة 1: تفشل فوراً (callCount = 1) وتبدأ delay(1000)
+        runCurrent()
+        assertEquals(1, callCount)
+
+        // التقدم بالوقت 1000ms: المحاولة 2 تفشل (callCount = 2) وتبدأ delay(2000)
+        advanceTimeBy(1000)
+        runCurrent()
+        assertEquals(2, callCount)
+
+        // التقدم بالوقت 2000ms: المحاولة 3 تنجح!
+        advanceTimeBy(2000)
+        runCurrent()
+        assertEquals(3, callCount)
+        assertEquals("Success", deferredResult.await())
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -107,15 +168,34 @@ Use unit tests for state/timing, MockWebServer for HTTP classes, and backend/pro
 
 ## Interview answer — short
 
-“I inject time and dispatchers, script failures, advance virtual time stepwise, and assert attempts and cancellation. For payments, timeout is unknown and retries require a stable server-enforced idempotency identity.”
+Test cancellation by asserting job.cancel() propagates and cleanup blocks execute under NonCancellable. Test timeouts and exponential retries deterministically by advancing virtual time using advanceTimeBy() in runTest, verifying attempt counts and interval spacing without real clock delays.
 
 ## Interview answer — structured
 
-“I test normal result, transient error, permanent error, timeout, cancellation and backoff at each retry boundary. With runTest I control delays and verify attempt counts before and after each virtual-time step. I make sure CancellationException propagates instead of being treated as a retryable error. For a remote payment, I test lost response after server success and require the same operation ID; local tests alone cannot guarantee server deduplication.”
+Testing asynchronous failure modes requires coordinating virtual clocks and exception dispatchers:
+
+1. **Testing Coroutine Cancellation**:
+   - Launch a coroutine job under test, verify it enters active processing, and invoke `job.cancel()`.
+   - Assert that `job.isCancelled` becomes true, child jobs terminate, and cleanup routines (e.g. closing network streams or wiping memory buffers) inside `withContext(NonCancellable)` or `finally` execute completely.
+   - Assert that code never swallows `CancellationException`, which breaks structured concurrency.
+
+2. **Testing Timeouts (`withTimeout`)**:
+   - Execute code wrapped in `withTimeout(5000L)` inside `runTest`.
+   - Advance virtual time via `advanceTimeBy(5001L)`.
+   - Assert that `TimeoutCancellationException` is thrown, or that `withTimeoutOrNull` safely returns `null` without hanging the test.
+
+3. **Testing Exponential Backoff and Retries**:
+   - Simulate network failures and step through retry intervals using `advanceTimeBy()`. Validate that calls occur at exact mathematical intervals (1s, 2s, 4s) and assert that terminal failures surface the original exception once maximum retry thresholds are reached.
 
 ## Interview answer — deep senior
 
-“I write a decision table before testing retries: which failures are retryable, what the attempt cap is, how backoff is calculated, and what cancellation must stop. Under `runTest`, a fake endpoint fails twice, and I assert the exact call count at t=0, just before and at the backoff boundary. I cancel the parent before a later scheduled attempt and assert no more calls or stale UI emissions. I do not catch `CancellationException` as ordinary data; otherwise the operation may continue after the owner disappears. I test timeout separately from a known server rejection. A timeout can mean the server committed but the response was lost, so a payment client must retain the same durable operation ID and reconcile status under a backend idempotency contract. I also test a non-retryable 4xx or validation error, max attempts, jitter bounds and a successful attempt after a transient failure. Unit tests prove policy and scheduling; an HTTP adapter test verifies request identity and cancellation propagation. The backend, not the Android fake, proves duplicate-safe business effects.”
+From an advanced concurrency testing perspective, handling exception boundaries requires strict isolation:
+
+1. **CoroutineExceptionHandler in Unit Tests**: Unhandled exceptions launched via `launch` bubble to the parent scope and crash `runTest`. To assert that a ViewModel handles unexpected network errors gracefully, supply a custom `CoroutineExceptionHandler` or wrap repository results in `runCatching` / `Result<T>`.
+
+2. **SupervisorScope Isolation**: When testing concurrent operations where one worker fails (e.g., three parallel API requests), wrap child jobs in `supervisorScope`. Assert that an exception in child A does not cancel child B or child C, verifying resilient partial execution.
+
+3. **Testing Jitter Distributions**: When retries use randomized jitter (`Random.nextLong(0, delay)`), inject a deterministic pseudo-random generator or seed so that backoff test assertions do not flake due to unpredictable random values.
 
 ## How to answer in the interview
 
@@ -131,8 +211,11 @@ Prompt for cooperative cancellation, virtual timing, lost-response ambiguity, st
 
 ## Follow-up questions
 
-- [TST-20](../tst-20/): What test proves no duplicate charge? **Answer:** backend/provider idempotency integration after response loss.
-- [TST-05](../tst-05/): How avoid real sleeps? **Answer:** TestCoroutineScheduler.
+- **Interviewer:** "Why does catching generic Exception inside a coroutine cause bugs?"
+  **Answer:** "Because CancellationException extends Exception; catching Exception without rethrowing CancellationException prevents coroutine cancellation from functioning."
+
+- **Interviewer:** "How do you test that withTimeoutOrNull returns a fallback value?"
+  **Answer:** "Call advanceTimeBy(timeoutMillis + 1) in runTest and assert that the returned variable equals null or the fallback object."
 
 ## Self-check rubric
 
@@ -143,4 +226,4 @@ Assert call counts and virtual timestamps across two failures and backoff, cance
 - [Kotlin cancellation](https://kotlinlang.org/docs/cancellation-and-timeouts.html) — cooperative cancellation.
 - [Kotlin coroutine testing](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/) — virtual time.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

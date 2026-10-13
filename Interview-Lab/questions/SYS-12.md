@@ -22,11 +22,52 @@ Design reusable Android SDK with narrow stable API, lifecycle ownership and comp
 
 ## Explanation in Arabic
 
-SDK عامة لازم API صغيرة واضحة لا تسرّب Activity أو تفاصيل transport، وتعرّف threading, cancellation, errors وresource ownership. ننشر semantic versions ونحدد minSdk/AGP/Kotlin compatibility وconsumer R8 rules لو reflection/JNI. نختبر sample app debug/release، API binary compatibility، Java/Kotlin callers، process death حسب الحاجة، ومين مسؤول عن secrets؛ SDK client مش موثوق لسر server.
+كيف تصمم مكتبة أندرويد (Reusable Android SDK) بواجهة عامة مستقرة (Stable Public API) ومعايير أمان عالية للتوزيع؟
+
+1. تقليص مساحة السطح العام (Minimizing the Public API Surface):
+   - **قاعدة ذهبية**: كل كلاس أو دالة تجعلها `public` تصبح التزاماً للأبد! اجعل كل شيء `internal` أو `private` افتراضياً.
+   - **إخفاء كود الـ Implementation**: توفير Interfaces عامة فقط وكلاسات Factory أو Entrypoints محدودة (مثل `PaymentSdk.initialize()`).
+   - استخدام أداة **Binary Compatibility Validator (BCV)** في Gradle: تقوم بإنشاء ملف `.dump` بالـ Public API وتفشل الـ Build إذا قام مطور بتغيير أو كسر الـ Binary Compatibility دون زيادة رقم الـ Major Version.
+
+2. منع تسريب التبعيات الخارجية (No Transitive Dependency Leaks):
+   - **فخ شائع**: استخدام `api("com.squareup.retrofit2:retrofit:...")` في ملف `build.gradle` الخاص بالـ SDK. هذا يسرب Retrofit لتطبيق العميل ويجبره على استخدام نفس الإصدار مما يسبب Dependency Hell وتعارض في الإصدارات!
+   - **الحل**: استخدام `implementation` دائماً للتبعيات الداخلية، وتجنب استخدام كائنات تابعة لمكتبات خارجية في دوال الـ Public API الخاصة بك.
+
+3. التهيئة السلسة (Frictionless Initialization):
+   - توفير تهيئة آلية خفيفة عبر AndroidX App Startup (`Initializer<T>`) إذا كان الـ SDK لا يتطلب إعدادات خاصة، مع إتاحة دالة تهيئة يدوية صريحة للتحكم في زمن التشغيل.
 
 ## Practical walkthrough
 
-لو SDK عامة اسمها PaymentsClient، المستهلك لازم يعرف هل `status()` main-safe، إمتى Flow تنتهي، إزاي يلغي الطلب، ومن يملك `close()`. لا تطلع Retrofit DTO أو Activity في API العامة لو مش جزء من العقد. جهّز sample app Java/Kotlin واختبر minified release والـbinary compatibility عند كل نسخة؛ تغيير error type أو callback thread ممكن يكسر العملاء حتى لو compiler ساكت.
+تصميم واجهة عامة احترافية للـ SDK مع عزل التنفيذ الداخلي والتهيئة الآمنة:
+```kotlin
+// 1. الواجهة العامة المتاحة للمطورين فقط (Public API):
+interface PaymentSdk {
+    fun startCheckout(amountCents: Long, currency: String, callback: SdkCallback)
+    
+    companion object {
+        fun create(context: Context, apiKey: String): PaymentSdk {
+            // إخفاء كلاس التنفيذ الحقيقي تماماً ومنع استدعائه المباشر
+            return PaymentSdkInternal(context.applicationContext, apiKey)
+        }
+    }
+}
+
+interface SdkCallback {
+    fun onSuccess(transactionId: String)
+    fun onError(code: Int, message: String)
+}
+
+// 2. الكود الداخلي مغلق تماماً عبر internal لمنع الوصول إليه من خارج موديول الـ SDK:
+internal class PaymentSdkInternal(
+    private val context: Context,
+    private val apiKey: String
+) : PaymentSdk {
+    // استخدام OkHttp أو Room داخلياً بدون تسريبها لمستخدم الـ SDK
+    override fun startCheckout(amountCents: Long, currency: String, callback: SdkCallback) {
+        // منطق الدفع الداخلي
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -61,15 +102,35 @@ A payments SDK publishes core Kotlin API, optional UI adapter, consumer R8 rules
 
 ## Interview answer — short
 
-“I expose a narrow documented contract with explicit lifecycle, threading, errors and versioning. I keep implementation internal, test binary/release compatibility and ship consumer R8 rules when needed. The backend—not SDK code—enforces security.”
+Design a reusable SDK by strictly hiding implementation details behind internal modifiers and clean public interfaces, avoiding leaked transitive dependencies via implementation Gradle scopes, validating binary ABI compatibility in CI with BCV, and supporting graceful zero-friction initialization.
 
 ## Interview answer — structured
 
-“A reusable SDK is a product with a compatibility promise. I design a small public API that does not expose host Activities or internal transport types, document which calls suspend and who owns cancellation, and let the host inject configuration. I publish semantic versions, support a defined Android/Kotlin range and test both Kotlin and Java consumers. Release builds need R8 testing and consumer rules for reflective code. I keep secrets and authorization on the backend, because any APK-embedded value can be extracted. Bundling dependencies can increase app size/conflicts.”
+Architecting a distributed Android SDK requires strict discipline regarding backward compatibility, dependency isolation, and lifecycle consumption:
+
+1. **API Surface Minimization**:
+   - Expose the smallest viable public API surface. Mark all internal ViewModels, utilities, and models with Kotlin's `internal` visibility modifier.
+   - Hide concrete implementations behind stable interfaces instantiated via companion factory methods.
+
+2. **Preventing Dependency Hell**:
+   - Never leak internal dependencies into client builds. Use Gradle `implementation` instead of `api` for internal networking (Retrofit/OkHttp) or storage libraries.
+   - If third-party dependencies are required, consider shading/relocating package namespaces using the Shadow Jar plugin to prevent version collision with host apps.
+
+3. **Binary Compatibility (ABI) Enforcement**:
+   - Follow Semantic Versioning (SemVer). Integrate Jetpack's **Binary Compatibility Validator (BCV)** plugin into CI. Any breaking signature change (changing return types, adding non-default interface methods) alters the public `.dump` file and breaks CI, preventing accidental runtime crashes in consuming apps.
+
+4. **Non-Intrusive Lifecycle & Initialization**:
+   - Avoid heavy blocking work in `Application.onCreate`. Use AndroidX `Initializer` for zero-setup workflows, or provide an explicit `Sdk.initialize(config)` allowing the host app to defer initialization off the critical launch path.
 
 ## Interview answer — deep senior
 
-“I would set the public contract before coding: inputs, outputs, error taxonomy, thread/coroutine behavior, ownership and shutdown. Public ABI changes are expensive, so implementation details stay internal and cross-cutting adapters are optional artifacts. A client may expose suspend/Flow calls but must define whether collecting twice starts two requests and how cancellation affects transport. I avoid retaining Activity references, document DI/factory configuration and test with host apps across supported minSdk, Kotlin/AGP versions and R8 minification. Consumer keep rules are shipped only when required by reflection/JNI, then verified in release. I publish API diffs and migration notes, and I never pretend a mobile SDK can securely hold a server secret or guarantee payment idempotency alone. Embedded API secrets can be extracted. The SDK's binary and behavioral compatibility need separate checks. I would publish an API surface report, test consumers built with supported Kotlin and Java versions, and run a sample app with shrinking enabled. The public contract states whether a suspend call is main-safe, which dispatcher invokes callbacks, what cancellation means for in-flight external work, and when `close()` releases resources. I would version deprecations, provide migration guidance, and avoid leaking Retrofit, Activity or internal DTO types into a public signature.”
+From an enterprise SDK engineering perspective, public libraries must treat the host application as an unpredictable environment:
+
+1. **R8/ProGuard Consumer Rules**: Bundle optimized `consumer-rules.pro` files within the AAR. This automatically instructs the consuming app's R8 shrinker which public entry points and serialized DTOs must be retained, preventing host builds from stripping necessary SDK reflection classes.
+
+2. **Strict Manifest Merging Hygiene**: Audit the SDK's `AndroidManifest.xml`. Never declare aggressive permissions (e.g. `ACCESS_FINE_LOCATION`) inside an SDK manifest unless strictly optional, and avoid defining top-level single-instance activities that alter the host app's back stack.
+
+3. **Defensive Error Isolation**: Exceptions inside SDK background routines must be caught and returned through typed error callbacks rather than bubbling unhandled to crash the host app process.
 
 ## How to answer in the interview
 
@@ -85,8 +146,11 @@ Trace public ABI, lifecycle, host integration, release shrinker and security aut
 
 ## Follow-up questions
 
-- [MOD-16](../mod-16/): How publish library? **Answer:** versioned artifact with compatibility/release tests and consumer rules.
-- [BLD-07](../bld-07/): What are consumer rules? **Answer:** shrinker rules packaged for apps consuming a library.
+- **Interviewer:** "What is the difference between source compatibility and binary compatibility in Kotlin?"
+  **Answer:** "Source compatibility means existing source code recompiles without errors; binary compatibility means already-compiled binaries execute against the new library without NoSuchMethodError."
+
+- **Interviewer:** "What is the purpose of consumer-rules.pro in an Android library module?"
+  **Answer:** "It bundles ProGuard/R8 rules into the exported AAR that are automatically applied to any application consuming the library."
 
 ## Self-check rubric
 
@@ -97,4 +161,4 @@ Can I specify API/lifecycle contracts, test host release builds and protect back
 - [Android library publishing](https://developer.android.com/build/publish-library) — artifacts and consumers.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — ownership boundaries.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -23,11 +23,40 @@ How do you review code for correctness, security, readability, and testability?
 
 ## Explanation in Arabic
 
-Code review تبدأ بالـbehavior والحدود: requirement اتحققت؟ هل في race، cancellation، auth bypass، data leak أو migration risk؟ بعدين API design، testability، readability وstyle. اكتب comment محدد بسبب وتأثير واقتراح أو سؤال؛ ما تحولش review لمنافسة preferences. في payment code لازم تشوف unknown outcome وidempotency قبل اسم variable.
+كيف تدير عملية مراجعة الكود (Code Review) بشكل منهجي يغطي الصحة البرمجية (Correctness)، والأمان (Security)، وسهولة القراءة، وقابلية الاختبار؟
+
+1. فلسفة مراجعة الكود للـ Senior Engineer:
+   - مراجعة الكود ليست تصيداً للأخطاء الشخصية، بل هي **بوابة جودة هندسية (Quality Gate) وأداة لنشر المعرفة داخل الفريق**.
+   - **أتمتة ما يمكن أتمتته**: لا تضيع وقتك البشري في مراجعة المسافات والتنسيق؛ دع Spotless و ktlint و Detekt يرفضون الـ PR آلياً.
+
+2. المحاور الأربعة للمراجعة العميقة:
+   - **1. الصحة البرمجية ومنطق العمل (Correctness)**: هل الكود يلبي متطلبات الـ User Story؟ هل تم التعامل مع الحالات الحدية (Empty states, Network timeout, Screen rotation, Process Death)؟ هل هناك تسريبات ذاكرة أو Coroutine leaks؟
+   - **2. الأمان والخصوصية (Security)**: هل تم تشفير البيانات الحساسة؟ هل تم منع كشف الـ Tokens في الـ Logs؟ هل يوجد فحص لمدخلات الـ Deep Links؟ هل تم تعيين `android:exported="false"` للمكونات غير العامة؟
+   - **3. سهولة القراءة والمعمارية (Readability & Architecture)**: هل الكود يتبع النمط المعتمد (MVI/MVVM)؟ هل التسميات تعبر عن نية الكود (Intent-revealing names)؟ هل تم احترام Single Responsibility Principle؟
+   - **4. قابلية الاختبار وجودة الفحص (Testability)**: هل الكود الجديد مغطى بـ Unit Tests حقيقية تفحص منطق العمل وليس مجرد رفع نسبة التغطية (Code Coverage) بسطور وهمية؟
 
 ## Practical walkthrough
 
-في PR فيه payment retry، ابدأ correctness: هل timeout `unknown` ولا failure نهائي؟ هل ID ثابت؟ بعدين security: logs فيها card data؟ exported component اتغير؟ بعدين readability: state transitions مسماة؟ وبعدها testability: هل في fake clock وintegration test للbackend؟ خليك محدد بالسطر والسلوك، وافصل blocking issue عن suggestion. اسأل عن contract لو ناقص، وما تحول review لمجرد formatting أو عدد tests.
+قائمة مراجعة عملية (Code Review Checklist) ونموذج للتعليقات البناءة:
+```markdown
+### ❌ نموذج تعليق سيئ وغير بناء:
+"This is wrong. Change it to Coroutines and fix your architecture."
+
+### ✅ نموذج تعليق Senior بناء وتعليمي:
+"[Blocking - Correctness]: I noticed we're collecting this Flow directly inside `onCreate`:
+`viewModel.state.collect { ... }`
+On Android, if the app goes to the background, this coroutine continues emitting,
+which can trigger UI updates and waste battery or crash if accessing views.
+Could we wrap this in `repeatOnLifecycle(Lifecycle.State.STARTED)`?
+Here's the official Android guide for reference: [link]"
+
+### مستويات تصنيف الملاحظات (Conventional Comments):
+- **[Blocking]**: خطأ منطقي، تسريب ذاكرة، ثغرة أمنية (يمنع الدمج).
+- **[Non-blocking / Suggestion]**: تحسين أداء طفيف أو إعادة صياغة بديلة.
+- **[Question]**: طلب توضيح حول قرار معين.
+- **[Nitpick]**: تفصيلة جمالية غير مؤثرة (لا تمنع الدمج إطلاقاً).
+- **[Praise]**: إشادة بحل هندسي ذكي ومكتوب باحترافية.
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +80,33 @@ Team review checklist includes release variant, data migration, API contract, te
 
 ## Interview answer — short
 
-“I review for behavior and risk first, then maintainability. I give actionable feedback with a failure case and test suggestion, and let automation handle style.”
+Review code systematically by automating style and formatting via linters, focusing human review on business correctness, edge cases, memory leaks, security vulnerabilities, architectural alignment, and meaningful unit test coverage. Use conventional comment prefixes (Blocking, Non-blocking, Nitpick) to communicate intent constructively.
 
 ## Interview answer — structured
 
-“I read the requirement and trace data through the changed code: who owns state, what happens on cancellation or process death, where trust crosses to the backend, and what tests prove it. For a payment retry I look for stable identity and unknown-outcome reconciliation before discussing naming. I distinguish blocking defects from optional improvements, suggest a concrete reproduction or test, and ask clarifying questions when intent is unclear. Lint handles routine formatting, while review focuses on decisions that tests may miss.”
+A structured code review process balances technical rigor with psychological safety and team velocity:
+
+1. **Automate Mechanical Checks**:
+   - Enforce formatting (Spotless/ktlint), static analysis (Detekt), and framework issues (Android Lint) in automated CI gates. Human reviewers should never spend time debating tab widths or unused imports.
+
+2. **Four-Pillar Review Rubric**:
+   - **Correctness**: Validate business logic fidelity, edge cases (empty states, process death, offline states), coroutine lifecycle safety (`repeatOnLifecycle`), and thread-safety.
+   - **Security**: Inspect sensitive data storage (EncryptedSharedPreferences), log sanitization (no PII in Logcat), secure component exports (`android:exported`), and deep-link payload validation.
+   - **Architecture & Maintainability**: Ensure separation of concerns, adherence to team architectural boundaries (Clean Architecture / MVI), and clear domain naming.
+   - **Testability**: Verify that new code introduces robust unit tests verifying behavior and edge cases rather than tautological mock assertions.
+
+3. **Empathetic and Actionable Feedback**:
+   - Use structured conventional prefixes: `[Blocking]`, `[Suggestion]`, `[Question]`, `[Nitpick]`. Provide clear technical rationale and links to official documentation rather than subjective directives.
 
 ## Interview answer — deep senior
 
-“I review from the user and system contract inward. For a payment retry change, the blocking correctness questions are whether timeout is treated as an unknown outcome, whether the operation identity survives retry and process death, and whether the server can deduplicate. I then inspect security boundaries: logging, secrets, exported components, input validation and least privilege. Readability matters because an explicit state transition is easier to audit than nested booleans, but I separate style preferences from defects. Testability asks whether clocks, dispatchers and remote results can be controlled, and whether unit tests are supplemented by integration evidence at the actual boundary. I leave actionable comments tied to a failure case and expected behavior, run or inspect relevant checks, and mark which points block merging. I also look for migration and rollout effects that may not appear in the diff’s main file. The trade-off is review depth versus delivery time, so I spend attention where the blast radius is highest.”
+From an engineering leadership and team velocity standpoint, code reviews require operational governance:
+
+1. **PR Size Caps and Review Latency SLA**: Research proves review thoroughness drops precipitously on PRs exceeding 400 lines of code. Enforce a team cultural limit: PRs should be small and atomic ($< 300$ lines). Establish an internal SLA where PRs are reviewed within 4 business hours to avoid blocking teammates.
+
+2. **Pairing on Complex Architecture**: When reviewing foundational changes (e.g. migrating authentication engines or introducing a new database schema), asynchronous GitHub comments are inefficient and lead to misunderstandings. Senior leads jump on a 15-minute synchronous pairing session to align on the mental model before final sign-off.
+
+3. **Fostering Codebase Collective Ownership**: Use reviews to mentor engineers and highlight great work with explicit `[Praise]` comments. Encourage junior engineers to review senior PRs; asking questions on unfamiliar patterns democratizes architectural knowledge across the squad.
 
 ## How to answer in the interview
 
@@ -75,8 +122,11 @@ Prompt for severity, trust boundary, targeted test, respectful feedback and roll
 
 ## Follow-up questions
 
-- [LEAD-03](../lead-03/): How prioritize review debt? **Answer:** by impact and frequency, not style annoyance.
-- [TST-23](../tst-23/): What test evidence matters? **Answer:** threat-to-control mapping at real boundary.
+- **Interviewer:** "Why should formatting and linting checks be completely removed from human code reviews?"
+  **Answer:** "Because automated CI linters execute them instantaneously and objectively, freeing human reviewers to focus on architectural correctness and security."
+
+- **Interviewer:** "What is the benefit of using prefixes like `[Blocking]` and `[Nitpick]` in review comments?"
+  **Answer:** "It provides unambiguous clarity to the PR author on which comments require resolution before merge versus which are purely optional suggestions."
 
 ## Self-check rubric
 
@@ -87,4 +137,4 @@ Review correctness, security boundaries, readability and testability with one co
 - [Android architecture guide](https://developer.android.com/topic/architecture) — design boundaries.
 - [Google code review guidance](https://google.github.io/eng-practices/review/reviewer/) — primary review process guidance.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

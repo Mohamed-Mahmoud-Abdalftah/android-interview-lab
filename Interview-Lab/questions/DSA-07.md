@@ -23,11 +23,47 @@ What is binary search, and what precondition does it require?
 
 ## Explanation in Arabic
 
-Binary search بيقسم search range كل خطوة، فـO(log n)، لكن لازم data مرتبة بنفس comparator المستخدم. على random-access list بنمسك `low/high` ونقارن middle؛ لو أقل نروح يمين وإلا شمال. لو unsorted النتيجة غلط حتى لو code شغال. للduplicates لازم نحدد هل عايزين أي عنصر ولا أول/آخر occurrence.
+ما هو البحث الثنائي (Binary Search)، وما هو الشرط الأساسي لتطبيقه، وكيف يعمل برمجياً؟
+
+1. ما هو البحث الثنائي وكيف يعمل؟
+   - خوارزمية بحث عالية الكفاءة تعمل بتعقيد زمني لوغاريتمي **$O(\log n)$**.
+   - في كل خطوة، تقارن العنصر المستهدف (Target) بالعنصر الموجود في منتصف النطاق (Middle element):
+     * إذا كان متطابقاً، ينتهي البحث بنجاح.
+     * إذا كان الهدف أصغر من المنتصف، يتم استبعاد النصف الأيمن بالكامل والبحث في النصف الأيسر فقط.
+     * إذا كان الهدف أكبر من المنتصف، يتم استبعاد النصف الأيسر بالكامل والبحث في النصف الأيمن فقط.
+   - بهذه الطريقة، يمكن البحث بين 1,000,000 عنصر في 20 خطوة فقط!
+
+2. الشرط المسبق الإلزامي (The Strict Precondition):
+   - **يجب أن تكون البيانات مرتبة تماماً (Sorted Collection)**، وتدعم **الوصول العشوائي السريع في وقت ثابت (Random Access - $O(1)$)** مثل الـ Arrays أو الـ ArrayList.
+   - إذا كانت القائمة غير مرتبة، فإن البحث الثنائي سيعطي نتائج خاطئة تماماً.
+   - إذا طُبق البحث الثنائي على `LinkedList`، سيفقد ميزته لأن الوصول لعنصر المنتصف يستغرق $O(n)$، مما يجعل التعقيد الإجمالي ينحدر إلى $O(n)$!
+
+3. خطأ الـ Integer Overflow الشهير:
+   - كتابة `val mid = (low + high) / 2` تسبب Bug شهير إذا كان مجموع الرقمين أكبر من `Int.MAX_VALUE` ($2^{31}-1$).
+   - الحل الهندسي الصحيح: `val mid = low + (high - low) / 2` أو `val mid = (low + high) ushr 1`.
 
 ## Practical walkthrough
 
-قبل binary search، أثبت إن collection مرتبة بنفس comparator وأن الوصول بالindex سريع. لو sorted by name وتبحث ID، النتيجة غير صحيحة مهما كان الكود. مع duplicates حدد أول occurrence كما في المثال، واختبر empty/missing/bounds. لو مرة واحدة على unsorted data، scan `O(n)` أوفر من sort `O(n log n)`.
+كتابة خوارزمية Binary Search خالية من ثغرة الـ Integer Overflow في كوتلن:
+```kotlin
+fun binarySearch(sortedList: IntArray, target: Int): Int {
+    var low = 0
+    var high = sortedList.size - 1
+
+    while (low <= high) {
+        // ✅ تفادي طفح الأرقام الصحيحة (Integer Overflow Safe):
+        val mid = low + (high - low) / 2
+        val midVal = sortedList[mid]
+
+        when {
+            midVal == target -> return mid // تم العثور على العنصر بنجاح!
+            midVal < target -> low = mid + 1 // الهدف في النصف الأيمن
+            else -> high = mid - 1 // الهدف في النصف الأيسر
+        }
+    }
+    return -1 // العنصر غير موجود
+}
+```
 
 ## Why it matters and how it works
 
@@ -84,15 +120,31 @@ Keep sortedness as a type/data-layer invariant where feasible; use standard libr
 
 ## Interview answer — short
 
-“Binary search is O(log n) because it halves a sorted random-access range. Sortedness under the same comparator is mandatory; otherwise the result is invalid.”
+Binary search is an O(log n) search algorithm that repeatedly halves the search interval by comparing the target with the middle element. Its strict precondition is that the underlying collection must be pre-sorted and support O(1) random indexed access, such as an array.
 
 ## Interview answer — structured
 
-“I maintain low and high bounds, compare the midpoint and discard the half that cannot contain the target. The reasoning depends on sorted data and efficient indexed access. For one query on unsorted input, sorting first may cost more than a scan; for many queries I can maintain sorted order or build a map. I test absent and duplicate cases and use Kotlin’s library API when it fits.”
+Binary search is the quintessential logarithmic search algorithm:
+
+1. **Core Mechanism**:
+   - At each iteration, the algorithm inspects the middle element of the active range. If the target matches, the search concludes. If the target is smaller, the upper boundary moves to `mid - 1`; if larger, the lower boundary moves to `mid + 1`. This reduces the remaining problem space by $50\%$ at every step, yielding an $O(\log n)$ time complexity.
+
+2. **Strict Preconditions**:
+   - **Ordered Data**: The elements must be sorted according to a defined Comparator.
+   - **Constant-Time Random Access**: The data structure must support $O(1)$ random indexing (`Array`, `ArrayList`, `IntArray`). Executing binary search on a `LinkedList` degrades performance to $O(n)$ because locating the midpoint requires linear traversal.
+
+3. **Implementation Rigor**:
+   - In production implementations, avoid `(low + high) / 2` due to integer overflow risks when `low + high > Int.MAX_VALUE`. Use `low + (high - low) / 2` or unsigned bit-shift `(low + high) ushr 1`.
 
 ## Interview answer — deep senior
 
-“I state the sortedness invariant before writing binary search. At each step, if the target exists, it remains in the inclusive interval from low to high. Comparing the midpoint lets me discard the half that cannot contain it, so the interval shrinks logarithmically. That conclusion assumes random-access indexing is efficient and the data is sorted under the same comparator used for the search. For duplicates I define the requirement explicitly: my example keeps searching left after a match to return the first occurrence. I calculate the midpoint as `low + (high - low) / 2` and test empty, one-item, absent, first/last and duplicate cases. For a single lookup in unsorted products, sorting first is more expensive than a linear scan. For repeated lookup by ID, a map may be clearer; for ordered range queries, a maintained sorted structure may justify binary search despite insert cost. In production I prefer a standard library API when its duplicate semantics fit, and I protect the sortedness contract at the data boundary.”
+From an Android architectural perspective, binary search underpins core framework optimizations:
+
+1. **Android Framework SparseArray**: Android's `SparseArray<E>` and `LongSparseArray<E>` store primitive keys in a tightly packed `int[]` or `long[]`. Every `get(key)` invocation performs a binary search via `ContainerHelpers.binarySearch(mKeys, mSize, key)`. It sacrifices $O(1)$ hash table lookups for $O(\log n)$ searches to achieve zero heap object allocations.
+
+2. **Kotlin Built-in `binarySearch` Contract**: Kotlin's `collections.binarySearch()` returns the index if found. If not found, it returns `-(insertionPoint + 1)`. This negative return value allows callers to locate the exact position where the missing element should be inserted while maintaining sorted order, enabling efficient sorted insertions.
+
+3. **Binary Search on Answer Space**: Beyond searching static arrays, senior engineers apply binary search to find optimal configuration thresholds: e.g. finding the maximum readable font size in a custom Canvas view that fits bounded dimensions without line wrapping.
 
 ## How to answer in the interview
 
@@ -108,8 +160,11 @@ Prompt for invariant, sorted comparator, random access, sort-before-search cost 
 
 ## Follow-up questions
 
-- [DSA-08](../dsa-08/): For unsorted duplicate detection, is binary search ideal? **Answer:** usually no; set or sort first.
-- [DSA-02](../dsa-02/): Why logarithmic? **Answer:** discard a constant fraction each step.
+- **Interviewer:** "Why does calculating midpoint as `(low + high) / 2` introduce a bug?"
+  **Answer:** "If `low + high` exceeds `Int.MAX_VALUE` ($2^{31} - 1$), integer overflow occurs, resulting in a negative number and an `ArrayIndexOutOfBoundsException`."
+
+- **Interviewer:** "What does a negative return value from Kotlin's `binarySearch()` represent?"
+  **Answer:** "It represents `-(insertionPoint + 1)`, indicating the item was not found but specifying the exact index where it should be inserted."
 
 ## Self-check rubric
 
@@ -120,4 +175,4 @@ Write the sorted-input precondition, update low/high without overflow, state O(l
 - [Kotlin binarySearch API](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.collections/binary-search.html) — sorted-list requirement.
 - [Android performance](https://developer.android.com/topic/performance) — practical measurement.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

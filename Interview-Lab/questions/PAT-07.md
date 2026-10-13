@@ -22,7 +22,46 @@ Explain external provisioning of dependencies, graph composition, test substitut
 
 ## Explanation in Arabic
 
-Dependency Injection pattern يعني object تستقبل dependencies من برّه بدل تعمل `Retrofit.Builder()` أو `Room.databaseBuilder()` جوا نفسها. Constructor injection تخلي الاحتياجات صريحة وسهلة الاختبار؛ Hilt/Dagger أو manual composition root يكوّنوا graph. ده يساعد تبديل implementation وscope ownership، لكن DI مش نفسها DIP: ممكن تحقن concrete SDK في business policy وتبقى لسه coupled. Android lifecycle مهمة: singleton ما يمسكش Activity context؛ ViewModel-scoped object ما ينفعش نفترض إنها durable بعد process death.
+ما الذي يحققه نمط حقن التبعيات (Dependency Injection - DI كنمط تصميم) في تطبيقات Android؟
+
+1. ما هي المشكلة بدون حقن التبعيات؟
+   - عندما يقوم الكلاس بإنشاء التبعيات التي يحتاجها بنفسه داخل جسمه (`val api = Retrofit.Builder()...build()` أو `val repo = UserRepositoryImpl()`):
+   - **اقتران شديد (Hard Coupling)**: الكلاس ارتهن بكلاس ملموس محدد، ولا يمكن تبديله.
+   - **استحالة الـ Unit Testing**: لا يمكنك اختبار الكلاس بشكل معزول على الـ JVM، لأنك لا تستطيع استبدال `api` أو `db` بـ Fake أو Mock.
+   - **فوضى إدارة دورات الحياة (Lifecycle Chaos)**: كل كلاس ينشئ نسخته الخاصة، مما يكرر كائنات ثقيلة في الذاكرة.
+
+2. ما الذي يحققه نمط الـ Dependency Injection (DI)؟
+   - **فصل الإنشاء عن الاستخدام (Separation of Creation from Consumption)**: الكلاس يعلن فقط عما يحتاجه في الـ Constructor (`Constructor Injection`)، ويتولى مجمع خارجي (DI Container مثل Hilt/Koin) تزويده بها.
+   - **سهولة الاختبار الخارق (Testability)**: في الـ Unit Test، تمرر ببساطة `FakeUserRepository()` في الـ Constructor مباشرة دون الحاجة لأي مكتبات أو أطر عمل.
+   - **إدارة مركزية للـ Scopes ودورات الحياة**: ضمان مشاركة نسخة واحدة من كائن الـ Singleton وتحرير الكائنات المرتبطة بنشاط محدد عند انتهائه.
+
+## Practical walkthrough
+
+المقارنة بين كلاس ينشئ تبعياته بنفسه وكلاس يعتمد على الـ Dependency Injection:
+```kotlin
+// ❌ بدون DI: كلاس ينشئ تبعياته بنفسه؛ اقتران صلب واستحالة للاختبار:
+class BadOrderViewModel : ViewModel() {
+    // إنشاء مباشر يربط الـ ViewModel بالسيرفر وقاعدة البيانات الحقيقية:
+    private val repository = OrderRepositoryImpl(RetrofitClient.api, AppDatabase.getDao())
+    // لا يمكن اختبار هذا الـ ViewModel على الـ JVM دون تشغيل قاعدة بيانات وشبكة حقيقية!
+}
+
+// ✅ مع Dependency Injection (Constructor Injection):
+@HiltViewModel
+class GoodOrderViewModel @Inject constructor(
+    private val repository: OrderRepository // التبعية تُمرر من الخارج
+) : ViewModel() {
+    val orders = repository.observeOrders()
+}
+
+// في الـ Unit Test: اختبار فوري في 2 مللي ثانية بتمرير Fake:
+@Test
+fun testOrderViewModel() {
+    val fakeRepo = FakeOrderRepository()
+    val viewModel = GoodOrderViewModel(fakeRepo) // تمرير التبعية يدوياً بسهولة فائقة!
+    assertNotNull(viewModel.orders)
+}
+```
 
 ## Why it matters and how it works
 
@@ -39,10 +78,6 @@ class ExpiryPolicy(private val clock: Clock) {
 ```
 Production composition supplies a system clock; tests supply a fixed clock. No Android dependency is needed for policy tests.
 
-## Practical walkthrough
-
-DI معناها dependency تيجي من برّه بدل class تعمل `RealClock()` و`RealApi()` جوه constructor. `ExpiryPolicy(clock: Clock)` تتجرب بـfake clock، وproduction graph يمرر implementation مناسب. Hilt/Dagger tools تنظم graph وscopes لكن DI نفسها ممكن manual. Lifetime مهم: Activity/Fragment dependency ما تتخزنش في singleton، وsession service تتبدل بعد logout. الإفراط في interfaces لكل class يزيد noise؛ اعمل abstraction لما فيه behavior variation أو test boundary حقيقية. الاختبار يثبت deterministic time/network failure من غير global mutable state، مش مجرد “class قابلة للmock”.
-
 ## Trade-offs and decision criteria
 
 Manual DI is transparent for small graphs; Hilt reduces repetitive wiring as a graph grows but adds build tooling and scope complexity. Service locator hides dependencies and makes tests order-dependent. Avoid interfaces for every pure helper.
@@ -57,17 +92,29 @@ An Android app wires repositories, API clients and ViewModels through Hilt, whil
 
 ## Interview answer — short
 
-DI supplies collaborators from outside an object, making dependencies explicit and replaceable. It can be manual or framework-driven. I use it to simplify testing and scope ownership, while reviewing DIP and lifecycle separately.
+Dependency Injection as a pattern decouples object consumption from object creation by passing dependencies from the outside (typically via constructor injection). It enables effortless JVM unit testing via Fakes, centralizes lifecycle and scope management, and enforces the Inversion of Control principle.
 
 ## Interview answer — structured
 
-Without DI, a class may construct its own Retrofit client or read a global singleton, making tests and configuration difficult. Constructor injection exposes that dependency in the API, and an app composition root supplies the production implementation. Hilt can automate the graph, but manual DI is also valid. I choose scopes by lifecycle, not convenience: an application singleton cannot retain an Activity. DI helps substitution and tests; it does not by itself ensure the business code depends on the right abstraction.
+Dependency Injection (DI) is a specialized form of the Inversion of Control (IoC) pattern where an object receives its dependencies from an external assembler rather than instantiating them internally.
+
+1. **Core Problem Solved**:
+   - Without DI, a class hardcodes its dependencies (`val api = RetrofitInstance.create()`). The class becomes tightly coupled to concrete implementations, lifecycle configuration, and infrastructure environments.
+   - Unit testing becomes impossible because collaborators cannot be substituted with test doubles.
+
+2. **What DI Accomplishes**:
+   - **Separation of Creation from Use**: Classes declare *what* collaborators they need in their constructor; an external container (Hilt, Koin, or manual DI) decides *how and when* to instantiate them.
+   - **Frictionless Unit Testing**: In JVM tests, developers instantiate classes directly, passing fast in-memory Fakes without bootstrapping DI containers or Android frameworks.
+   - **Centralized Scope & Lifecycle Management**: Tools like Hilt manage object scopes (`@Singleton`, `@ViewModelScoped`, `@ActivityScoped`), eliminating manual memory retention and teardown boilerplate.
 
 ## Interview answer — deep senior
 
-Dependency injection is a construction pattern. The consumer states what it needs, and the composition root decides which implementation and lifetime to provide. That allows a domain policy to be tested with deterministic fakes and lets infrastructure change without editing every caller, provided the contracts are well designed. Hilt/Dagger are graph tools, not a substitute for deciding boundaries. I distinguish DI from DIP by inspecting types: a Hilt-injected Retrofit service inside a use case is still a transport dependency. I also audit scopes. A singleton containing Activity context can leak; a ViewModel-scoped object disappears with its owner and cannot hold durable transaction truth. In production I test graph wiring and lifecycle separately from pure policy behavior.
+A vital architectural realization is that **Dependency Injection is a pattern, not a library**. You can practice clean DI using **Pure / Manual Constructor Injection** without Dagger, Hilt, or Koin. Frameworks simply automate the tedious compile-time graph resolution and factory generation.
 
-DI moves construction and ownership to a composition point. In `ExpiryPolicy(clock: Clock)`, a test can inject a fixed clock and exercise edge times without changing a global singleton; production injects the platform clock. Android tooling such as Hilt can build the graph and manage scopes, but the principle also works manually. The design review asks which object lives for the application, session, destination, or view. If a singleton retains an Activity or a token from the previous account, DI has been configured incorrectly despite using annotations. I do not create an interface for every class automatically; I add one when it communicates a contract, variant, or valuable test seam.
+There are three types of Dependency Injection:
+1. **Constructor Injection**: The gold standard in modern Android. Guarantees that dependencies are non-null, immutable (`val`), and explicit upon creation.
+2. **Method / Parameter Injection**: Passing a collaborator into a specific function (e.g. `useCase.execute(dispatcher)`).
+3. **Field Injection**: Necessary in Android only when the system instantiates classes via reflection (e.g. Activities and Services in `@AndroidEntryPoint`).
 
 ## How to answer in the interview
 
@@ -83,8 +130,11 @@ Compare manual composition with Hilt, constructor visibility, service locator an
 
 ## Follow-up questions
 
-- [SOL-07](../sol-07/): DI versus DIP? **Answer:** provisioning mechanism versus source dependency direction.
-- [DI-02](../di-02/): Which injection style exposes required dependencies? **Answer:** constructor injection.
+- **Interviewer:** "Why is Constructor Injection preferred over Field Injection?"
+  **Answer:** "Constructor injection ensures dependencies are required, immutable (`val`), and fully initialized at construction time, preventing temporal coupling and allowing classes to be instantiated cleanly in unit tests without reflection."
+
+- **Interviewer:** "What is the difference between Service Locator and Dependency Injection?"
+  **Answer:** "A Service Locator queries an external registry internally (`locator.get<Repo>()`), hiding dependencies inside the class. DI inverts control by explicitly passing dependencies into the constructor from the outside."
 
 ## Self-check rubric
 
@@ -95,4 +145,4 @@ Show one constructor-injected dependency, a fake test, and a scope mistake DI do
 - [Android dependency injection](https://developer.android.com/training/dependency-injection) — DI on Android.
 - [Kotlin classes](https://kotlinlang.org/docs/classes.html) — constructor mechanics.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

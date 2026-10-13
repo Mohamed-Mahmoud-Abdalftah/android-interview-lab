@@ -24,7 +24,40 @@ Compare ViewModel, SavedStateHandle, rememberSaveable, and persistent storage.
 
 ## Explanation in Arabic
 
-الأربع أدوات مش بدائل متطابقة. الـViewModel بيحتفظ بـscreen logic وstate في memory أثناء configuration change، لكن بيختفي مع process death. `SavedStateHandle` جوه ViewModel بيحفظ قيم صغيرة تساعده يعيد بناء الحالة لما النظام يرجّع الشاشة. `rememberSaveable` مناسب لحالة UI محلية في Compose، زي tab أو input بسيط، وبيستخدم saved-state mechanism تحت الغطاء. التخزين الدائم زي Room أو DataStore بيحفظ بيانات المستخدم بعد غلق التطبيق أو موت الـprocess، لكن له تكلفة I/O وإدارة schema. احفظ ID أو query صغيرة في saved state، وحمّل المحتوى الكبير من مصدر دائم.
+المقارنة الشاملة بين أدوات حفظ الحالة الأربعة في أندرويد:
+
+1. الـ `ViewModel`:
+   - **مكان الحفظ:** في الذاكرة الحية (JVM Heap Memory).
+   - **ماذا ينجو منه؟** ينجو من الـ Configuration Changes فقط.
+   - **هل ينجو من Process Death؟** **لا!** يضيع بالكامل.
+   - **الاستخدام:** البيانات الكبيرة، الـ UI State المعقد، والعمليات الجارية في `viewModelScope`.
+
+2. الـ `SavedStateHandle`:
+   - **مكان الحفظ:** في الـ OS System Server عبر `onSaveInstanceState` (Bundle Serialized).
+   - **ماذا ينجو منه؟** ينجو من الـ Configuration Changes **وينجو من الـ Process Death**!
+   - **حدوده:** محكوم بسعة الـ Binder Buffer (حوالي 50-100KB كحد أقصى للسلامة)؛ مخصص للمعرفات الصغيرة (IDs) والمدخلات النصية فقط.
+
+3. الـ `rememberSaveable` (في Compose):
+   - **مكان الحفظ:** في الـ `SaveableStateRegistry` المربوط بـ Bundle الـ Activity.
+   - **ماذا ينجو منه؟** ينجو من الـ Configuration Changes و Process Death داخل واجهة Compose.
+   - **الاستخدام:** حالة الـ UI المحلية الخاصة بـ Composable معين (مثل: هل القائمة مفتوحة، موضع الـ Scroll).
+
+4. الـ Persistent Storage (Room / DataStore / Files):
+   - **مكان الحفظ:** على القرص الصلب (Flash Storage / Disk).
+   - **ماذا ينجو منه؟** ينجو من كل شيء: Process Death، إعادة تشغيل الهاتف، وإغلاق التطبيق لأسابيع.
+   - **الاستخدام:** البيانات الحيوية، المقالات، التوكنز، والإعدادات الدائمة.
+
+## Practical walkthrough
+
+جدول مقارنة معماري واضح:
+| المعيار | ViewModel | SavedStateHandle | rememberSaveable | Room / DataStore |
+| :--- | :--- | :--- | :--- | :--- |
+| **مكان التخزين** | RAM (Heap) | OS Bundle (Binder) | OS Bundle (Binder) | Disk (Flash) |
+| **ينجو من التدوير؟** | نعم | نعم | نعم | نعم |
+| **ينجو من Process Death؟** | لا | نعم | نعم | نعم |
+| **ينجو من Reboot الجهاز؟** | لا | لا | لا | نعم |
+| **السرعة** | فورية (O(1) memory) | سريعة (Serialization) | سريعة | أبطأ (Disk I/O) |
+| **حدود الحجم** | حجم الـ Heap المتاح | < 50 KB | < 50 KB | جيجابايت |
 
 ## Why it matters and how it works
 
@@ -33,10 +66,6 @@ ViewModel is retained in memory across ordinary configuration recreation for its
 ## Worked example
 
 In a product detail screen, keep `productId` in navigation/saved state, `selectedTab` in `rememberSaveable`, and fetched product UI state in a destination-scoped ViewModel. Cache products in Room if offline access is a requirement. On process recreation, rebuild the ViewModel, read the ID, and query the repository. This is a design example; whether a local cache is appropriate depends on freshness and data sensitivity.
-
-## Practical walkthrough
-
-في product page، `rememberSaveable` تحفظ selected tab/scroll الصغير طالما نوعه saveable، والـViewModel تملك data fetching وscreen state على navigation scope. `SavedStateHandle` تحفظ `productId` أو query صغير تحتاجه ViewModel بعد restore. Room أو server يبقى source of truth للproduct نفسه لما correctness/offline مطلوب؛ لا تخزن object كبير في Bundle. `remember` وحدها بس داخل composition الحالية، وViewModel ما تنجو من process death. لو item اتحذف أو user اتسجل خروج أثناء غياب app، restoration لازم تعرض missing/unauthorized بدل stale product.
 
 ## Trade-offs and decision criteria
 
@@ -52,17 +81,37 @@ An offline-first note editor stores note content in Room after each debounced ed
 
 ## Interview answer — short
 
-“ViewModel keeps screen logic and state in memory across configuration changes. SavedStateHandle stores small ViewModel reconstruction values; rememberSaveable does the same for local Compose UI state. Persistent storage holds data that must survive process death and future launches. I save IDs and small inputs, not large objects, in saved state.”
+ViewModel stores complex state in RAM across rotation but dies on process death; SavedStateHandle serializes lightweight IDs in OS Bundles to survive process death; rememberSaveable does the same for local Compose UI state; and Persistent Storage (Room/DataStore) saves arbitrary data to disk across app reboots.
 
 ## Interview answer — structured
 
-I choose by lifetime and owner. ViewModel is the screen's in-memory state holder and survives rotation, but not process death. SavedStateHandle carries compact keys into a recreated ViewModel, and rememberSaveable handles small composable-local UI values. Room or DataStore belongs to the data layer for durable content. For a product page I save the product ID and selected tab, then reload the product from a repository.
+These four state mechanisms represent distinct tiers across longevity, storage location, and size limits:
+
+1. **`ViewModel`**: Resides in RAM heap. Survives configuration changes, but is completely destroyed upon process death. Ideal for rich domain models, complex UI states, and active coroutine streams.
+
+2. **`SavedStateHandle`**: Integrated into the ViewModel, backed by Android's `onSaveInstanceState` Bundle in the OS system server. Survives both configuration change and process death. Strictly bounded by Binder IPC limits (<50KB), ideal for saving navigation arguments, active search text, and record IDs.
+
+3. **`rememberSaveable`**: Compose's UI-layer equivalent of `SavedStateHandle`. Restores transient Composable UI state (scroll positions, expanded dropdown flags, tab indices) across rotation and process death.
+
+4. **Persistent Storage (Room / DataStore)**: Written directly to flash storage on disk. Survives process death, device reboots, and app updates. Used for domain databases, offline caching, and user authentication credentials.
 
 ## Interview answer — deep senior
 
-The distinction is retention versus reconstruction versus durability. ViewModel retention works while the owner is recreated in the same process. SavedStateHandle and rememberSaveable serialize limited UI inputs at saved-state lifecycle points; they are backup mechanisms, not guaranteed databases. A durable store survives process loss and normal restarts, but its schema, transaction boundaries, encryption and backup policy require design. For a note editor I persist the draft to Room, save only its ID and cosmetic UI state in saved state, then reconstruct streams and repository state after restart. For server actions I reconcile with the backend rather than trusting any client-side flag.
+Architecturally, a well-engineered screen orchestrates all four in harmony:
 
-The distinction matters during account switching and process recreation. A saveable tab index is harmless to restore, but a cached product object may be stale, too large for the saved-state Bundle, or belong to a previous account. I restore the small product ID, query the repository under the current user, and let the ViewModel rebuild screen state. If offline display is required, a persistent cache needs freshness and access rules; it is not automatically justified by state restoration. I test route restoration with deleted products and signed-out users, not only the happy path.
+```kotlin
+class OrderViewModel(savedStateHandle: SavedStateHandle, repository: OrderRepository) : ViewModel() {
+    // 1. SavedStateHandle: يسترجع ID الطلب بعد process death بأمان:
+    private val orderId: String = checkNotNull(savedStateHandle["order_id"])
+    
+    // 2. Room (Persistent Storage): جلب بيانات الطلب من الديسك:
+    // 3. ViewModel: حفظ الـ StateFlow في الرام أثناء التدوير:
+    val orderState: StateFlow<OrderUiState> = repository.observeOrder(orderId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), OrderUiState.Loading)
+}
+```
+
+In Compose, `rememberSaveable` manages the local UI scroll state, `SavedStateHandle` tracks the screen's core query, `ViewModel` manages the active stream, and `Room` provides the durable data.
 
 ## How to answer in the interview
 
@@ -78,9 +127,14 @@ Discuss ViewModelStore retention, Bundle size and save timing, business versus U
 
 ## Follow-up questions
 
-- [AND-06](../and-06/): Which state survives rotation without serialization? **Answer:** a correctly scoped ViewModel's in-memory state.
-- [AND-07](../and-07/): Which of these is a transaction ledger after process death? **Answer:** durable storage can record local operations, while the server decides remote transaction status.
-- [COM-05](../com-05/): Does `rememberSaveable` make a large list persistent? **Answer:** no; it saves compact UI state through the saved-state mechanism.
+- **Interviewer:** "What error occurs if you put too much data in `SavedStateHandle`?"
+  **Answer:** "`TransactionTooLargeException`. The Android Binder buffer is shared across all inter-process communications with a maximum limit of approximately 1MB total. Storing large lists in SavedStateHandle causes immediate crashes."
+
+- **Interviewer:** "Can custom objects be saved in `SavedStateHandle`?"
+  **Answer:** "Yes, if they implement `Parcelable` or `Serializable`, or by providing a custom `SavedStateRegistry.AutoSavedStateProvider`."
+
+- **Interviewer:** "How does `rememberSaveable` handle custom classes in Compose?"
+  **Answer:** "By providing a custom `Saver` object: `rememberSaveable(stateSaver = MyCustomSaver) { mutableStateOf(MyObject()) }`."
 
 ## Self-check rubric
 
@@ -91,4 +145,4 @@ Compare all four tools by owner and lifetime; choose a home for product ID, sele
 - [Save UI states](https://developer.android.com/topic/libraries/architecture/saving-states) — saved state, ViewModel, and durable storage boundaries.
 - [ViewModel overview](https://developer.android.com/topic/libraries/architecture/viewmodel) — screen state ownership.
 
-Technically reviewed against these primary sources on 2026-10-13 by editorial review. The note-editor example is architectural and was not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

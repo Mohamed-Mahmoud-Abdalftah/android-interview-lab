@@ -23,11 +23,33 @@ How would you create a risk-based test plan for a security-sensitive release?
 
 ## Explanation in Arabic
 
-Risk-based test plan تبدأ من تهديدات التغيير: token storage migration، key invalidation، backup restore، logout race، tampered amount، logs فيها بيانات حساسة، وminified build. رتّب likelihood × impact وحدد owner وrelease gate لكل خطر. JVM tests لسياسة auth والredaction، Android tests لـKeystore/backup/lifecycle على API matrix، backend tests ترفض تعديل amount أو reuse غير مصرح، وpenetration/manual review للحدود الحساسة.
+كيف تضع خطة اختبار مبنية على المخاطر (Risk-Based Test Plan) لإصدار أمني حساس (Security-Sensitive Release) لتطبيق بنكي؟
+
+1. مفهوم الـ Risk-Based Testing في أندرويد:
+   - التركيز على الميزات الأكثر خطورة (High-Impact / High-Probability Areas) بدلاً من إضاعة الوقت في اختبار شاشات ثابتة.
+   - في التطبيقات المالية، المجالات الأكثر خطورة هي: **المصادقة وتخزين التوكنز، التشفير العتادي، تحويل الأموال، وحماية الذاكرة**.
+
+2. محاور خطة الاختبار الأمني الحساسة (The 4 Security Testing Pillars):
+   - **1. اختبارات الـ Cryptographic Integrity**: التحقق من أن مفاتيح Keystore AES-GCM مقفلة عتادياً بالبصمة ولا تفتح برمجياً عند محاكاة نجاح البصمة بدون `CryptoObject`.
+   - **2. اختبارات هجمات التلاعب (Tampering & Hooking via Frida)**: تشغيل اختبارات أمنية على محاكي معمول له Root وتطبيق سكربتات Frida للتحقق من أن التطبيق يرفض العمليات السيرفرية عند غياب شهادة Play Integrity.
+   - **3. اختبارات تسريب البيانات (Data Leakage Verification)**: فحص ملفات Logcat، والـ Screenshots في الـ App Switcher، وتقارير الأعطال للتأكد من خلوها تماماً من أي Bearer tokens أو أرقام بطاقات (PAN).
+   - **4. اختبارات التوافق العكسي وتشفير التخزين**: اختبار فتح قاعدة بيانات SQLCipher المشفرة والتأكد من عدم تخزين المفتاح كنص صريح في الـ SharedPreferences.
 
 ## Practical walkthrough
 
-لا تجعل SDK أو local flag سلطة على payment؛ server هو authority. قبل release جرّب بيانات من الإصدار القديم، وتأكد من reauthentication عند فقد key بدل decrypt fallback غير آمن. السجل يذكر ما تم اختباره فعلاً وما بقي جهاز/مزود-dependent.
+مصفوفة اختبار أمني مبنية على المخاطر لتوثيق وتغطية المسارات الحساسة:
+```text
+مصفوفة الاختبار الأمني المبني على المخاطر (Risk-Based Test Matrix):
+┌────────────────────────────┬─────────────────────────────┬──────────────────────────────────────────┐
+│ المسار الحساس (Asset)      │ مستوى الخطر (Risk Level)     │ الاختبارات الإلزامية (Verification)       │
+├────────────────────────────┼─────────────────────────────┼──────────────────────────────────────────┤
+│ Biometric Keystore Unlock  │ Critical (High Impact)      │ اختبار أوتوماتيكي مع CryptoObject حقيقي   │
+│ Payment Double-Charge      │ Critical (Financial Loss)   │ اختبار شبكي لـ Idempotency Key مع Timeout │
+│ Sensitive Screen Capture   │ High (Compliance Violation) │ فحص تفعيل FLAG_SECURE في Recent Apps     │
+│ Logcat Token Leakage       │ High (PII Leak)             │ فحص آلي بـ Semgrep / Custom Lint في CI   │
+│ Root / Frida Detection     │ Medium (Client Friction)    │ فحص السلوك المتدرج مع السيرفر            │
+└────────────────────────────┴─────────────────────────────┴──────────────────────────────────────────┘
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +73,35 @@ Record risk owner, test evidence, residual limitation and release gate. Roll out
 
 ## Interview answer — short
 
-“I start from assets and threats, then choose tests that prove each control at its real boundary. I include release APK/device checks, backend tamper tests, and monitored staged rollout.”
+Create a risk-based test plan by ranking features by financial and security impact, prioritizing hardware Keystore cryptography, payment idempotency, and token leakage surfaces. Combine automated linting for PII leaks, on-device instrumentation tests for biometric ciphers, and simulated hooking attacks to verify server-side zero-trust defenses.
 
 ## Interview answer — structured
 
-“For a security release I rank risks such as credential leakage, insecure backup, exported components, TLS misconfiguration and payment replay. I map each to a test: static artifact/manifest inspection, dynamic device tests, backend authorization and idempotency tests, and provider sandbox flows. I run the actual minified variant and record evidence and unresolved limitations. Rollout gates monitor both attacks and legitimate-user failures. I keep a rollback trigger for any unresolved high-impact risk.”
+A risk-based security test plan prioritizes engineering verification according to asset criticality and threat modeling:
+
+1. **Threat Modeling & Risk Stratification**:
+   - Categorize application components into Risk Tiers. Tier 1 (Critical): Authentication tokens, Keystore encryption, biometric authorization, payment checkout. Tier 2 (Moderate): Profile management, deep link routing. Tier 3 (Low): Static marketing content.
+
+2. **Automated Security Gates in CI**:
+   - **Static Analysis**: Enforce custom Android Lint and Semgrep rules scanning for hardcoded secrets, missing `FLAG_SECURE`, cleartext traffic permissions, and insecure `FLAG_MUTABLE` PendingIntents.
+   - **Dependency Vulnerability Scanning**: Run automated CVE scans against all third-party Gradle dependencies.
+
+3. **Dynamic On-Device Security Assertions**:
+   - Execute instrumented tests verifying that Keystore keys mandate `setUserAuthenticationRequired(true)`.
+   - Assert that invoking biometric callbacks without valid hardware `CryptoObject` releases triggers `UserNotAuthenticatedException`.
+
+4. **Data Exfiltration Audits**:
+   - Audit release build outputs: inspect Logcat outputs, memory heap dumps, and SQLite database files to assert that PAN numbers, CVVs, and auth tokens are strictly absent from unencrypted storage.
 
 ## Interview answer — deep senior
 
-“I begin with a threat and change inventory, then assign evidence to each release risk. If the release changes token storage, I test migration from old encrypted data, missing or invalidated Keystore keys, backup restore to another device, logout and refresh races, and log redaction. A JVM suite covers policy and state transitions; Android instrumentation covers platform key and lifecycle behavior on supported API levels; a minified release-like build catches R8 or manifest differences. Backend tests prove it rejects a tampered amount, replayed or unauthorized request even if the client UI is modified. I prioritize by impact and likelihood, not by which test is easiest to automate, and give each blocking case an owner. A security SDK verdict is only a signal; it cannot replace server authorization. I also define what happens when a key is unrecoverable: clear a replaceable token and require sign-in rather than manufacturing a plaintext default. The release report states exact device, provider and environment coverage. I do not claim one emulator or a passing fake proves all hardware and threat-model behavior.”
+From an organizational compliance and release governance perspective, high-assurance releases require multi-party sign-offs:
+
+1. **Independent Penetration Testing (OWASP MASTG)**: Validate the release candidate against OWASP Mobile Application Security Testing Guide (MASTG) benchmarks. Engage external penetration testers to attempt dynamic method hooking (Frida), local storage extraction (`adb backup`), and proxy interception (Burp Suite).
+
+2. **Server-Side Zero Trust Verification**: Test that backend endpoints reject requests if the client's Play Integrity verdict indicates a tampered APK or unrecognized signing certificate SHA-256.
+
+3. **Rollback & Blast-Radius Mitigation**: Ensure the security release is backed by active remote feature kill switches. If an unanticipated issue occurs post-release, the security feature can be disarmed remotely without deploying an emergency app store update.
 
 ## How to answer in the interview
 
@@ -75,8 +117,11 @@ Prompt for threat-to-test matrix, real boundary, release variant, residual risk 
 
 ## Follow-up questions
 
-- [SEC-25](../sec-25/): How use MASVS? **Answer:** map controls to MASTG evidence, not checkboxes.
-- [CIC-14](../cic-14/): Why staged rollout? **Answer:** constrain blast radius and observe real cohorts.
+- **Interviewer:** "What is the primary objective of Risk-Based Testing?"
+  **Answer:** "To allocate testing effort and time proportionally to the areas of highest business, financial, and security risk."
+
+- **Interviewer:** "Why is static analysis alone insufficient for a security-sensitive release?"
+  **Answer:** "Static analysis inspects code syntax, but cannot verify dynamic runtime behavior like Keystore hardware key unlocks, memory dumps, or network race conditions."
 
 ## Self-check rubric
 
@@ -87,4 +132,4 @@ Rank token migration, key invalidation, backup restore, tampered requests and lo
 - [OWASP MASVS](https://mas.owasp.org/MASVS/) — mobile security controls.
 - [OWASP MASTG](https://mas.owasp.org/MASTG/) — test methods.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

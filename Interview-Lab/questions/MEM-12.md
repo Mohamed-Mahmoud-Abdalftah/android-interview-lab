@@ -24,11 +24,59 @@ How can callbacks, Handler, observers, listeners, or static references cause lea
 
 ## Explanation in Arabic
 
-أي source عمره أطول من الشاشة ممكن يمسك callback، والـcallback ماسك `Activity` أو `View` عن طريق lambda capture. `Handler.postDelayed` مثال: الـmessage queue تحتفظ بـRunnable لحد ما يتنفذ أو يتشال؛ لو Runnable ماسك binding، هتفضل view القديمة عايشة. `static` أو singleton field يحتفظ بمرجع طول عمر الـprocess، وobserver غير مفصول يحتفظ بالـowner. الحل مش بس `if (isDestroyed) return`، لأن reference ما زال موجود. لازم unregister، remove callbacks، أو استخدم lifecycle owner مناسب، مع عدم ضياع state مهمة عند إعادة الإنشاء.
+كيف تسبب الكولباكس (Callbacks)، الـ Handlers، الـ Observers، الـ Listeners، والمراجع الاستاتيكية (Static References) تسريبات ذاكرة؟
+
+1. المراجع الاستاتيكية (Static References):
+   - أي متغير ثابت (`companion object` أو `static field` في Java) يعيش في الذاكرة طوال حياة التطبيق.
+   - إذا احتفظ المتغير الاستاتيكي بمرجع لنشاط (Activity) أو View أو كائن واجهة، فلن يستطيع مجمع النفايات تحريره إطلاقاً، مما يجعله GC Root دائم.
+
+2. الـ Handlers والـ MessageQueue:
+   - الـ `Handler` غير الثابت (Non-static inner class) في Java/Kotlin يحتفظ ضمنياً بمرجع للكائن الخارجي (`this@Activity`).
+   - عندما ترسل رسالة مؤجلة (`handler.postDelayed(runnable, 60000)`):
+   - الرسالة توضع في الـ `MessageQueue` الخاص بالـ Looper الرئيسي.
+   - الكائن `Message` يحتفظ بمرجع للـ `Handler` (target)، والـ `Handler` يحتفظ بمرجع للـ `Activity`.
+   - إذا خرج المستخدم من الشاشة، يظل النشاط مسرباً في الذاكرة طوال الـ 60 ثانية حتى يتم استهلاك الرسالة!
+
+3. الـ Listeners والـ Observers غير الملغاة:
+   - تسجيل Listener في خدمة طويلة الأجل (مثل `LocationManager` أو `SensorManager` أو Event Bus أحادي) يضيف مرجعاً للـ Activity إلى قائمة الملاحظين.
+   - إذا نسيت إلغاء التسجيل في `onStop()` أو `onDestroy()` (`unregisterListener()`)، تظل الخدمة ممسكة بالـ Activity إلى الأبد.
 
 ## Practical walkthrough
 
-افترض screen سجلت network listener في `onStart` وحطت delayed Runnable يعرض tooltip. لو خرجت قبل انتهاء delay، الـqueue ممكن تفضل ماسكة Runnable اللي ماسكة binding. احتفظ بنفس Runnable instance عشان `removeCallbacks` تشيلها، وفك listener في `onStop` من نفس source اللي سجلت فيه. سجل lifecycle events أثناء reproduce، وخذ heap path؛ مجرد `if (isDestroyed)` يمنع تحديث UI لكنه ما يقطعش المرجع.
+أمثلة شائعة للتسريبات وكيفية معالجتها بدقة:
+```kotlin
+// ❌ أمثلة شائعة للتسريب:
+class LeakyActivity : AppCompatActivity() {
+    private val handler = Handler(Looper.getMainLooper()) // كائن داخلي يمسك النشاط
+
+    override fun onStart() {
+        super.onStart()
+        // 1. تسريب Handler: مهمة مؤجلة تبقى في MessageQueue:
+        handler.postDelayed({ showPromotionDialog() }, 120_000)
+
+        // 2. تسريب Listener: تسجيل في Singleton بدون إلغاء التسجيل:
+        AuthManager.registerListener { onAuthStatusChanged(it) }
+    }
+}
+
+// ✅ الكود النظيف المحمي من التسريب:
+class SafeActivity : AppCompatActivity() {
+    private val handler = Handler(Looper.getMainLooper())
+    private val authListener: (Boolean) -> Unit = { onAuthStatusChanged(it) }
+
+    override fun onStart() {
+        super.onStart()
+        AuthManager.registerListener(authListener)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // إلغاء المهام المؤجلة وإلغاء تسجيل الملاحظين فوراً:
+        handler.removeCallbacksAndMessages(null) // مسح الـ MessageQueue
+        AuthManager.unregisterListener(authListener) // تحرير مرجع النشاط
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -75,15 +123,27 @@ Wrap third-party listeners in a lifecycle-bound adapter that registers and unreg
 
 ## Interview answer — short
 
-“Long-lived callback sources can retain a destroyed screen through captured references. I remove or cancel registrations at the matching lifecycle boundary and verify the retaining path disappears.”
+Non-static Handlers retain outer Activity references; delayed messages in the MessageQueue keep the Activity pinned in memory until processed. Similarly, static fields act as permanent GC roots, and unregistered listeners or observers in long-lived singletons or system services keep transient UI components alive indefinitely.
 
 ## Interview answer — structured
 
-“A listener, Handler message, observer, or static field can hold a strong reference to an Activity or View after its lifetime ends. For example, a delayed Runnable captures a binding and sits in a message queue. Checking `isDestroyed` before rendering prevents some crashes but does not release that reference. I pair registration with unregister using the same callback instance, scope UI observation to the view lifecycle, and remove pending delayed messages. I test repeated navigation for duplicate callbacks and use a heap dump to identify any remaining root path.”
+Memory leaks from callbacks, Handlers, observers, and static references stem from breaking object lifecycle symmetry.
+
+1. **Handlers & MessageQueue**: A non-static Handler holds an implicit reference to its enclosing Activity. When a message is scheduled with `postDelayed()`, the `Message` in the main thread's `MessageQueue` holds a reference to the Handler target, which holds the Activity. Until the message executes or is cleared with `removeCallbacksAndMessages(null)`, the entire Activity graph is retained as a GC Root.
+
+2. **Static References**: Any `companion object` property or static variable persists across the entire application process. Assigning an Activity or View to a static field directly prevents GC reclamation.
+
+3. **Unregistered Observers**: When an Activity registers as a listener with a long-lived publisher—such as `LocationManager`, `SensorManager`, or a singleton EventBus—the publisher stores a strong reference. Failing to unregister symmetry (`unregisterListener()` in `onStop()` or `onDestroy()`) creates a permanent leak.
+
+In modern Android development, we prevent these by replacing raw Handlers with lifecycle-aware coroutines (`lifecycleScope`), binding observers with `LifecycleOwner`, and utilizing `AutoCloseable` or structured cleanup patterns.
 
 ## Interview answer — deep senior
 
-“I diagnose these leaks as ownership chains, not as special behavior of one API. A process-wide singleton, SDK event bus, or Handler queue remains reachable; the stored callback captures a short-lived screen or binding; therefore GC cannot collect that UI graph. I identify the source and its intended lifetime, then make subscription ownership explicit. A visible-only listener can register at STARTED and unregister at STOPPED, a Fragment UI stream uses `viewLifecycleOwner`, and a delayed Runnable is removed when its view is destroyed. I retain the exact callback token needed for removal and avoid simply adding a destroyed-state guard, which still leaves the graph retained. Important events are persisted in model state so cleanup does not lose them. I verify with a repeatable rotation/back-stack loop, registration counts, and heap retaining paths. The trade-off is missed transient events while a visible-only listener is stopped, so important status belongs in durable repository state and is re-queried on return. I also count registrations after repeated navigation to detect duplicate delivery. The same cleanup principle applies to a Handler queue and a third-party SDK registry.”
+Under the hood, Java and Kotlin inner classes differ in reference semantics: a standard inner class holds an implicit `$this$0` synthetic pointer to the outer instance. In Kotlin, declaring an anonymous lambda or `object : Runnable` inside an Activity implicitly captures the outer instance unless it references no instance properties or is explicitly declared in a `companion object` or static file-level context.
+
+When dealing with Handlers specifically, the classic Java remedy was declaring a static class paired with a `WeakReference<Activity>`. However, in modern Kotlin, Handlers are largely legacy; suspending coroutines with `delay()` within `lifecycleScope` are automatically cancelled via cooperative cancellation when the `LifecycleOwner` reaches `DESTROYED`, dropping the continuation and preventing the leak entirely.
+
+In enterprise monitoring, LeakCanary excels at pinpointing these leaks by identifying the `target` field in queued `android.os.Message` instances or scanning registered observer arrays in system managers.
 
 ## How to answer in the interview
 
@@ -99,9 +159,11 @@ Discuss callback capture, Handler queue retention, static root, exact removal to
 
 ## Follow-up questions
 
-- Does `if (activity.isDestroyed) return` fix the leak? **Answer:** no; it may avoid UI work but the callback still retains the Activity until removed.
-- Why use the same listener instance for removal? **Answer:** many APIs remove by callback identity; a newly created lambda is not the registered object.
-- Can lifecycle-aware observation still leak a Fragment view? **Answer:** yes if the wrong owner is used or another callback captures the old binding.
+- **Interviewer:** "What happens if a static Handler has no delayed messages but is active?"
+  **Answer:** "If it has no messages in the queue, it does not retain memory. But if a message is posted, each queued `Message` references the Handler as `msg.target`. If that Handler holds an outer reference, the entire outer scope is retained until queue execution."
+
+- **Interviewer:** "How do modern Android Jetpack components eliminate manual listener cleanup?"
+  **Answer:** "Components like `LiveData` and `Flow` combined with `lifecycleScope` or `repeatOnLifecycle` automatically attach and detach observers in synchrony with lifecycle events, eliminating human error in unregistering."
 
 ## Self-check rubric
 
@@ -113,4 +175,4 @@ Trace one root path, pair register/unregister, cancel a Handler callback, identi
 - [Fragment lifecycle](https://developer.android.com/guide/fragments/lifecycle) — view lifetime.
 - [Handler reference](https://developer.android.com/reference/android/os/Handler) — callback queue and removal APIs.
 
-Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The cleanup sketch is illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

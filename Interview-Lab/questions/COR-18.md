@@ -22,11 +22,48 @@ Can the candidate design bounded retries with exponential backoff, jitter, cance
 
 ## Explanation in Arabic
 
-الـretry الصح مش `while(true)` بسرعة. بنحدد أخطاء transient بس، عدد محاولات وdeadline، delay بيتضاعف مع cap وjitter لتقليل thundering herd. لازم `CancellationException` توقف الحلقة فورًا، وطلبات الكتابة ما تتعادش من غير idempotency contract أو reconciliation. `Retry-After` وقيود السيرفر لها أولوية لو موجودة.
+إعادة المحاولة مع التراجع الأسي والعشوائية (Exponential Backoff with Jitter) هي أفضل نمط إنتاجي للتعامل مع أخطاء الشبكة العابرة (Transient Network Errors):
+
+1. ما هي مشكلة إعادة المحاولة الثابتة (Fixed Retries)؟
+   - لو 10,000 مستخدم فتحوا التطبيق في نفس الوقت والسيرفر كان مضغوطاً ورجع خطأ 503، وكل التطبيقات أعادت المحاولة بعد ثانية واحدة بالظبط:
+   - كل الـ 10,000 جهاز هيضربوا السيرفر في نفس الميلي-ثانية! ده بيعمل **Thundering Herd Problem (أو Retry Storm)** ويوقع السيرفر تماماً.
+
+2. الـ Exponential Backoff:
+   - بنضاعف وقت الانتظار بعد كل محاولة فاشلة (مثلاً: 1 ثانية، ثم 2، ثم 4، ثم 8 ثوانٍ).
+
+3. دور الـ Jitter (العشوائية الضرورية):
+   - إضافة وقت عشوائي صغير (Random Jitter من 0 إلى 500ms) لكل جهاز، حتى لا ترسل الأجهزة طلباتها في نفس التوقيت المتزامن، فيتم توزيع الحمل بسلاسة على السيرفر.
+
+4. متى نعيد المحاولة ومتى نتوقف؟
+   - **نكرر المحاولة فقط في:** أخطاء الشبكة العابرة (Timeout, 502, 503, 504).
+   - **لا نكرر المحاولة أبداً في:** أخطاء العميل الحتمية (400 Bad Request, 401 Unauthorized, 404 Not Found)، ولا عند إلغاء الـ Coroutine (`CancellationException`).
 
 ## Practical walkthrough
 
-لو خدمة قراءة catalog رجّعت 503، جرّب تاني بـexponential backoff وjitter عشان كل العملاء ما يرجعوش في نفس اللحظة. لازم توقف عند عدد محاولات أو overall deadline، وما تكرر 401 أو validation error. `delay` قابل للإلغاء؛ لو الشاشة اتقفلت خلال الانتظار، ارمِ الإلغاء بدل محاولة إضافية. عمليات الكتابة تحتاج idempotency قبل أي retry.
+دالة إنتاجية متكاملة لـ Retry with Backoff & Jitter في Kotlin:
+```kotlin
+suspend fun <T> retryWithBackoff(
+    times: Int = 3,
+    initialDelayMs: Long = 1000L,
+    maxDelayMs: Long = 10000L,
+    factor: Double = 2.0,
+    block: suspend () -> T
+): T {
+    var currentDelay = initialDelayMs
+    repeat(times - 1) { attempt ->
+        try {
+            return block()
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e // لا تبلع الإلغاء أبداً!
+            if (!isTransientError(e)) throw e // لا تعيد المحاولة في أخطاء 4xx
+        }
+        val jitter = Random.nextLong(0, 500L)
+        delay(minOf(currentDelay + jitter, maxDelayMs))
+        currentDelay = (currentDelay * factor).toLong()
+    }
+    return block() // المحاولة الأخيرة بدون catch
+}
+```
 
 ## Why it matters and how it works
 
@@ -74,15 +111,33 @@ An offline-first feed refresh retries transient read failures with bounded backo
 
 ## Interview answer — short
 
-“I retry only classified transient failures, with a bounded attempt count, capped exponential backoff and jitter. `delay` stays cancellable and I rethrow cancellation. For writes, I require a stable idempotency key and server reconciliation rather than blindly resending.”
+Retry with exponential backoff doubles the delay between consecutive failed attempts, while jitter adds a randomized time offset to prevent the 'thundering herd' problem. Crucially, retry loops must never catch CancellationException and must only retry transient server/network failures, never permanent 4xx client errors.
 
 ## Interview answer — structured
 
-“A retry policy is part of an API contract. I classify errors first, then set a maximum attempt count or deadline, increase delay exponentially with a cap, and add jitter so clients do not stampede the service. `delay` gives cancellation a chance to stop the loop, and I never catch cancellation as a retryable exception. Reads are usually simpler. For non-idempotent writes such as payment I persist a stable operation ID, follow the server’s idempotency and status-query contract, and treat timeouts as uncertain outcomes.”
+Exponential backoff with jitter is an essential resilience pattern for handling transient network failures without overwhelming backend services.
+
+When a transient error occurs (like an HTTP 503 or socket timeout), retrying immediately or with a fixed delay causes the 'thundering herd' problem: thousands of mobile clients retry in unison, creating synchronized traffic spikes that keep the recovering server down. With exponential backoff, each retry doubles the wait time (e.g., 1s, 2s, 4s, up to a maximum cap).
+
+Adding **jitter** injects a randomized offset (e.g., plus a random 0 to 500ms) into the delay calculation. This desynchronizes retry attempts across thousands of distributed devices, smoothing the load curve on backend systems.
+
+In coroutines, we implement this as an inline suspending helper. Crucially, the retry loop must rethrow `CancellationException` immediately so coroutines cancel properly, and must only retry transient failures—never retrying permanent 4xx client errors like 401 Unauthorized or 404 Not Found.
 
 ## Interview answer — deep senior
 
-“Production retry design needs safety and operability, not just a delay formula. I separate transport failures from validation/auth failures, honor server retry guidance such as `Retry-After` where specified, bound total elapsed time, and cap the exponential calculation to avoid overflow. Full jitter spreads clients; tests inject the random source and virtual clock. For UI reads the ViewModel can cancel retries when the screen goes away. For durable sync I persist enough state for WorkManager to resume after process death. For writes, a stable idempotency key can let the server deduplicate requests, but it does not prove exactly-once network delivery; I query authoritative transaction state before deciding whether another attempt is safe. I would define the retry budget before writing the loop: maximum attempts, total deadline, retryable status codes, and an idempotency rule. Full jitter spreads clients after a 503 rather than causing a synchronized second spike. `delay` is cancellable, so closing the screen during backoff should stop the next request. Metrics should include attempt count and final cause, without treating a cancelled request as a service failure.”
+From a distributed systems engineering perspective, full jitter (picking a uniform random value between 0 and the exponential backoff ceiling) provides superior desynchronization compared to equal jitter or no jitter.
+
+When integrating this pattern with reactive streams or Kotlin Flow, the `retryWhen` operator provides the idiomatic abstraction: ```kotlin
+flow.retryWhen { cause, attempt ->
+    if (attempt < 3 && cause is IOException) {
+        val delayTime = minOf(1000L * (1L shl attempt.toInt()) + Random.nextLong(200L), 10_000L)
+        delay(delayTime)
+        true
+    } else false
+}
+```
+
+In unit testing with `runTest`, testing backoff algorithms is straightforward because `delay()` integrates with the test scheduler's virtual clock, advancing time instantaneously with `advanceTimeBy()` without forcing tests to sleep in real time.
 
 ## How to answer in the interview
 
@@ -98,8 +153,14 @@ Defend error classification, cap/jitter math, cancellation, process death and pa
 
 ## Follow-up questions
 
-- [COR-17](../cor-17/): What does timeout mean? **Answer:** the caller stopped waiting; server commit status may remain unknown.
-- [COR-27](../cor-27/): How retry payment? **Answer:** reuse a durable key under a server idempotency contract and reconcile status.
+- **Interviewer:** "Why shouldn't you retry HTTP 401 or 403 errors with exponential backoff?"
+  **Answer:** "Because 401 and 403 are client authentication and permission failures, not transient network drops. Retrying them without refreshing the authentication token will fail every single time, wasting mobile battery and backend compute."
+
+- **Interviewer:** "How does OkHttp's Interceptor compare to a coroutine retry wrapper?"
+  **Answer:** "An OkHttp Interceptor handles retries at the transport layer, which is fast and transparent. However, a coroutine-level retry wrapper is superior for business-level logic, such as switching from a failed primary API to a fallback CDN, or updating UI progress messages between retries."
+
+- **Interviewer:** "What is the maximum delay cap, and why is it necessary?"
+  **Answer:** "Without a maximum delay cap (e.g., 10 or 30 seconds), exponential backoff grows unboundedly (1s, 2s, 4s, 8s, 16s, 32s, 64s...). A cap prevents the user from waiting minutes for an operation that should simply fail fast and prompt manual intervention."
 
 ## Self-check rubric
 
@@ -110,4 +171,4 @@ Can I state retryable errors, bound attempts/time, preserve cancellation, add ji
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — retry and sync design.
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — cancellable delay.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

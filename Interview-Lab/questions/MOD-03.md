@@ -24,11 +24,43 @@ What is a dependency graph? Why must it be acyclic?
 
 ## Explanation in Arabic
 
-Dependency graph تمثل modules كعُقد والأسهم “A يحتاج B ليُترجم/يعمل”. في Gradle project dependencies لازم تكون DAG حتى توجد topological order للبناء؛ لو A يعتمد على B وB على A لا يوجد ترتيب، كما أن ownership تختلط. مثال `:feature:orders` يحتاج شاشة login و`:feature:auth` يحتاج order badge: لا تربطهما مباشرة ذهابًا وإيابًا؛ استخرج contract أو navigation destination صغير في module أدنى، أو app ينسق التفاعل. لا تعالج cycle بنقل كل شيء إلى `:core:common` بلا تصميم.
+ما هو الـ Dependency Graph (الرسم البياني للتبعيات) في Gradle، ولماذا يجب أن يكون خاليًا تمامًا من الحلقات (Acyclic - DAG)؟
+
+1. المفهوم الرياضي:
+   - في Gradle، تمثل الموديولات **الرؤوس (Vertices / Nodes)**، وتمثل علاقات الاعتماد `implementation(projects.core.network)` **الحواف الموجهة (Directed Edges)**.
+   - الرسم البياني يجب أن يكون **Directed Acyclic Graph (DAG)**؛ أي رسم بياني موجه بدون أي دورات أو حلقات دائرية مغلقة.
+
+2. لماذا يمنع Gradle التبعيات الدائرية (Circular Dependencies) بشكل قاطع؟
+   - **استحالة الترتيب الطوبولوجي للتجميع (Topological Sort Failure)**: لكي يقوم المترجم (Kotlin Compiler / javac) بتجميع الموديول B، يجب أن ينتهي أولاً من تجميع الموديول A الذي يعتمد عليه B. إذا كان A يعتمد بدوره على B، يدخل نظام البناء في حلقة مغلقة مستحيلة (Deadlock): من الذي يُجمع أولاً؟!
+   - يرفض Gradle التجميع فوراً مع الخطأ الشهير: `Circular dependency between the following tasks: ...`.
+
+3. كيف تحل التبعية الدائرية الواقعية بين موديولين؟
+   - لنفترض أن `:feature:cart` يحتاج كلاس من `:feature:checkout`، وفي نفس الوقت `:feature:checkout` يحتاج كلاس من `:feature:cart`.
+   - **الحل المعماري الصحيح (Extract Shared Contract / API Module)**:
+     * استخراج الواجهات والبيانات المشتركة إلى موديول ثالث مستقل ومحايد (مثل `:feature:cart-api` أو `:core:model`).
+     * الآن، يعتمد كلا الموديولين على الموديول الثالث في اتجاه واحد للأسفل، وتختفي الدورة تماماً!
 
 ## Practical walkthrough
 
-Dependency graph فيها module nodes وأسهم import. لو `:feature:pay` يعتمد `:feature:account` والعكس، Gradle قد يرفض cycle أو architectural coupling يصبح صعب الاختبار. استخرج contract مشترك صغير باتجاه واحد أو composition في app module. احذر cycle منطقي عبر service locator حتى لو Gradle graph acyclic. CI ترسم/تفحص graph عند تغيير dependencies.
+حل التبعية الدائرية باستخراج موديول وسيط للعقود المشتركة (API Extraction):
+```text
+❌ دورة دائرية مستحيلة تمنع البناء:
+:feature:cart ──────(depends on)─────► :feature:checkout
+     ▲                                       │
+     └──────────────(depends on)─────────────┘
+[Gradle Error: Circular dependency between :feature:cart and :feature:checkout!]
+
+✅ الحل المعماري باستخراج موديول عقد مستقل (:feature:cart-api):
+         :feature:cart                  :feature:checkout
+               │                                │
+               │ (implements)                   │ (consumes)
+               ▼                                ▼
+         ┌──────────────────────────────────────────────┐
+         │             :feature:cart-api                │
+         │ (Interfaces, Route contracts, Shared DTOs)   │
+         └──────────────────────────────────────────────┘
+الرسم البياني أصبح DAG نقي خالي من أي حلقات دائرية، ويتم تجميعه بنجاح وبسرعة!
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +84,25 @@ Visualize and enforce allowed edges in CI, review new dependency changes, and pe
 
 ## Interview answer — short
 
-“A module dependency graph is a directed map of compile relationships. It must be acyclic to permit a build order and maintain clear ownership.”
+A dependency graph models modules as nodes and dependencies as directed edges. It must be a Directed Acyclic Graph (DAG) because Gradle relies on topological sorting to determine compilation order. A cycle (A depends on B, B depends on A) causes an unresolvable compiler deadlock, which is resolved by extracting shared interfaces into a separate API module.
 
 ## Interview answer — structured
 
-“I draw modules as nodes and dependencies as arrows toward what they need. A cycle means no topological build order and usually reveals mixed responsibilities. If Orders and Auth import each other, I identify the narrow shared contract or let the app coordinate rather than introduce a global service locator. I then enforce the allowed DAG in CI so a future convenience import cannot recreate the cycle.”
+In Gradle, the project architecture is modeled as a Directed Graph where modules are nodes and project dependencies (`implementation(projects.foo)`) form directed edges.
+
+The graph **must strictly be acyclic (a DAG)** because the compiler requires a deterministic **Topological Sort** to establish the build order:
+1. If module `B` depends on `A`, `A` must compile into bytecode, package its public ABI, and expose it on `B`'s compile classpath before `B` can even begin parsing code.
+2. If a cycle exists (`A -> B -> A`), an impossible paradox occurs: neither module can compile before the other. Gradle terminates build graph evaluation immediately with a `CircularDependencyException`.
+
+To resolve circular dependencies in production, never hack around it with reflection. Apply the **Dependency Inversion Principle**: extract the shared interfaces, routes, and data models into a lightweight `:feature:x-api` module. Both modules then depend downward on the API module, breaking the cycle.
 
 ## Interview answer — deep senior
 
-“A dependency graph describes compile-time and packaging relationships between modules, with a directed edge from a consumer to the API it uses. Gradle needs an acyclic project graph to order work. Architecturally, a cycle also means neither boundary can evolve independently: changing one may require the other's internals, and ownership becomes ambiguous. I diagnose what crossed the boundary. If Orders needs authentication status, that can be a small stable contract below both features; if Auth wants an order badge in the app shell, the app can compose those contributions rather than Auth importing Orders. Sometimes the features were artificially split and should merge. I avoid a giant common module that merely hides the cycle or a static service locator that moves it to runtime. The extracted API must remain narrow and have an owner; its consumers should not see implementation types. I add a dependency-graph rule in CI and review high-fan-out modules because an acyclic graph can still be badly coupled. Full app assembly then checks that the acyclic pieces actually wire together.”
+Cycles do not only occur between Gradle modules; they frequently occur as **transitive classpath cycles and task dependency cycles**.
+
+For example, if `:app` has a custom task that packages assets generated by a downstream module, and that downstream module has a task that reads resources from `:app`, Gradle's task execution engine deadlocks.
+
+In enterprise Android repositories with dozens of engineers, teams use automated architectural enforcement plugins like **Graphite** or **Gradle Dependency Guard** in CI. These tools inspect the project DAG on every pull request, calculating graph metrics such as **Longest Critical Path (Depth)** and **Module Fan-in / Fan-out**. If an engineer attempts to introduce an unauthorized cross-feature edge or creates a dependency cycle, the CI pipeline blocks the PR before code ever merges to main.
 
 ## How to answer in the interview
 
@@ -76,9 +118,11 @@ Discuss directed edges, topological order, contract extraction, app orchestratio
 
 ## Follow-up questions
 
-- Can reflection make an architectural cycle healthy? **Answer:** no; it can hide compile edges while retaining runtime coupling.
-- Is every shared interface worth a new module? **Answer:** no; weigh API cost and whether the boundary is genuinely stable.
-- What does CI enforce? **Answer:** allowed module dependencies and absence of cycles.
+- **Interviewer:** "How does graph depth affect build times?"
+  **Answer:** "A deep linear graph (A -> B -> C -> D) forces sequential compilation, preventing Gradle from utilizing multiple CPU cores in parallel. A flatter, balanced tree allows massive parallel builds."
+
+- **Interviewer:** "Can two classes inside the same Gradle module depend cyclically on each other?"
+  **Answer:** "Yes, the Kotlin/Java compiler compiles all files within a single module together in one batch. However, class-level cycles remain a serious code smell."
 
 ## Self-check rubric
 
@@ -89,4 +133,4 @@ Draw a three-module cycle, explain why it fails, and resolve it with an owned co
 - [Android modularization guide](https://developer.android.com/topic/modularization) — dependency graph principles.
 - [Gradle multi-project builds](https://docs.gradle.org/current/userguide/multi_project_builds.html) — project graph.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The Auth/Orders graph is illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

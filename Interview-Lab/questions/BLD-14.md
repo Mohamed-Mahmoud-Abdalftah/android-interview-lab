@@ -24,11 +24,48 @@ How do you diagnose missing native libraries or ABI incompatibility?
 
 ## Explanation in Arabic
 
-اجمع `UnsatisfiedLinkError` الكامل، device `SUPPORTED_ABIS`، version/variant وطريقة التوزيع. افحص APK/AAB-derived split: هل `/lib/<abi>/libname.so` موجودة للـABI المختارة؟ وهل dependencies native الأخرى مبنية لنفس architecture/NDK/STL؟ راجع `abiFilters`, packaging options وAAR dependencies. قد يعمل arm64 لكن x86 emulator يفشل لأن vendor SDK لا يقدم x86. لا تستخدم `pickFirst` لتخفي نسختين مختلفتين دون فهم؛ ولا تعلن دعم ABI لا تستطيع اختبارها. تأكد من load order والسيمبولات إذا الملف موجود ولكن loader يرفضه.
+كيف تستكشف وتصلح أخطاء غياب مكتبات الـ Native (UnsatisfiedLinkError) ومشاكل عدم توافق معمارية المعالج (ABI Incompatibility)؟
+
+1. خطأ الانهيار الشهير (UnsatisfiedLinkError: dlopen failed):
+   - يحدث عندما يحاول التطبيق استدعاء `System.loadLibrary("crypto")` أو تشغيل كود C++ عبر JNI، ولكنه لا يجد ملف `libcrypto.so` المخصص لمعمارية الهاتف الحالية.
+
+2. الكارثة الشائعة: الـ 32-bit vs 64-bit Mismatch (مشكلة الـ ABI غير المتناسقة):
+   - إذا استخدم تطبيقك مكتبتين:
+     * مكتبة A توفر كود لكل من: `arm64-v8a` و `armeabi-v7a`.
+     * مكتبة B توفر كود لـ `armeabi-v7a` فقط (لا تملك كود 64-bit)!
+   - **ماذا يفعل أندرويد على هاتف حديث (64-bit)**؟
+     * يرى النظام أن التطبيق يحتوي على مجلد `lib/arm64-v8a/`، فيقوم بتشغيل التطبيق في وضع 64-bit ويبحث عن جميع المكتبات داخل هذا المجلد فقط!
+     * عندما يحاول التطبيق تشغيل مكتبة B، لا يجدها في مجلد 64-bit، فينهار التطبيق فوراً برمي `UnsatisfiedLinkError`!
+
+3. خطوات التشخيص والحل:
+   - فحص الـ APK عبر **APK Analyzer**: فتح مجلد `lib/` والتأكد من أن كل ملف `.so` موجود في **جميع** مجلدات المعماريات بالتساوي.
+   - **الحل**: إما الحصول على نسخة 64-bit من المكتبة الناقصة، أو إجبار التطبيق على العمل في وضع 32-bit عبر تقييد الـ `ndk.abiFilters` على `armeabi-v7a` فقط.
 
 ## Practical walkthrough
 
-`UnsatisfiedLinkError` قد يكون `.so` ناقصة، ABI غير مدعومة، transitive dependency، أو JNI symbol تغير بـR8. حدد الجهاز وABI والartifact الحقيقي، افحص split delivered من AAB، وقارن vendor support matrix. شغّل minified release على الجهاز المتأثر، لا debug universal APK فقط. لو vendor لا تدعم ABI، غيّر eligibility بقرار واضح بدل crash بعد install.
+تشخيص محتويات الـ ABIs داخل الـ APK وحل مشكلة عدم تناسق المكتبات:
+```bash
+# 1. فحص ملفات الـ .so المضمنة في كل معمارية باستخدام unzip:
+unzip -l app-release.apk "lib/*"
+
+# النتيجة توضح وجود عدم تناسق (libfoo موجود في المعماريتين، بينما libbar ناقص في 64-bit!):
+# lib/arm64-v8a/libfoo.so
+# lib/armeabi-v7a/libfoo.so
+# lib/armeabi-v7a/libbar.so   <-- غائب في arm64-v8a!
+```
+
+```kotlin
+// 2. الحل المؤقت في build.gradle.kts إذا لم تتوفر نسخة 64-bit للمكتبة:
+android {
+    defaultConfig {
+        ndk {
+            // إجبار التطبيق بالكامل على العمل في وضع 32-bit لحين ترقية المكتبة:
+            abiFilters.clear()
+            abiFilters.add("armeabi-v7a")
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +89,34 @@ Maintain supported ABI matrix, install bundle-derived artifacts on representativ
 
 ## Interview answer — short
 
-“I match the loader error and device ABI to the actual delivered APK split, inspect `/lib/<abi>` plus transitive native dependencies, then test every supported architecture.”
+Diagnose UnsatisfiedLinkError by inspecting the APK's lib/ directory with APK Analyzer to detect ABI mismatches. If one library includes 64-bit (arm64-v8a) while another only provides 32-bit (armeabi-v7a), the 64-bit OS runs in 64-bit mode and crashes when looking for the missing library. Resolve by adding 64-bit binaries or filtering to 32-bit.
 
 ## Interview answer — structured
 
-“I capture the full `UnsatisfiedLinkError`, device ABI list and exact release artifact. I use APK Analyzer or bundletool to inspect the split delivered for that ABI, then compare `abiFilters`, vendor AAR contents and dependent `.so` files. If the file exists, I investigate unresolved symbols or incompatible binaries rather than call it missing. I choose a supported SDK build or an explicit ABI policy and add matrix tests; `pickFirst` is not a diagnosis.”
+`java.lang.UnsatisfiedLinkError` occurs when the Android dynamic linker (`dlopen`) fails to locate or load a required native shared object (`.so`) for the current CPU architecture:
+
+1. **The 32-bit vs. 64-bit Asymmetry Trap**:
+   - If any third-party SDK includes a 64-bit binary in `lib/arm64-v8a/`, the Android OS launches the app inside a 64-bit Zygote process.
+   - Once running in 64-bit mode, the OS dynamic linker looks **strictly** inside `lib/arm64-v8a/` and will never fall back to 32-bit folders.
+   - If a second library in your project only supplied 32-bit `armeabi-v7a` binaries, calls to load that library crash immediately with `UnsatisfiedLinkError: dlopen failed: library not found`.
+
+2. **Inspection & Diagnosis**:
+   - Open the compiled APK in Android Studio's **APK Analyzer** or execute `unzip -l app.apk "lib/*"`.
+   - Verify that the exact same set of `.so` library names exists across all supported ABI folders.
+
+3. **Resolution Strategies**:
+   - **Preferred**: Procure or compile 64-bit `.so` binaries for the missing dependencies (mandatory for Google Play compliance).
+   - **Fallback**: Enforce uniform 32-bit packaging via `ndk.abiFilters.add("armeabi-v7a")` until 64-bit dependencies are available.
 
 ## Interview answer — deep senior
 
-“Native failures are about the binary actually loaded on one device. I start with full loader text, version, device `SUPPORTED_ABIS`, OS and whether installation came from Play splits or a local APK. I inspect the delivered package for `/lib/<abi>/libfoo.so` and its transitive native dependencies. If one is absent, I trace vendor AAR contents, Gradle ABI filters and packaging rules. If the file is present, I look for `dlopen` symbol errors, incompatible STL/NDK build or minimum-platform assumptions. An arm64 success says little about x86_64; App Bundle targeting can distribute different native sets. I do not copy an arm64 binary under an x86_64 directory or use `pickFirst` on duplicate libraries without confirming ABI and version compatibility. The product choice may be to obtain the correct vendor binary, provide a non-native fallback, or intentionally narrow supported devices after reviewing user impact and store policy. CI installs bundle-derived APK sets on the supported ABI matrix and records native startup evidence, while production telemetry is segmented by ABI.”
+From an OS loader and systems architecture perspective, native linking errors can also stem from missing transitive dependencies and text relocations:
+
+1. **Missing Transitive Dependencies (`NEEDED` ELF headers)**: A `.so` file often depends on secondary libraries (e.g. `libnative.so` depends on `libcrypto.so`). If `libcrypto.so` is missing from the APK or stripped by packaging excludes, `dlopen("libnative.so")` fails with `library "libcrypto.so" not found`. Inspect ELF dependencies using `readelf -d libnative.so | grep NEEDED`.
+
+2. **Text Relocations (API 23+)**: Since Android 6.0, Android blocks libraries with text relocations (`W^X` memory protection). Libraries compiled with legacy NDK toolchains without `-fPIC` throw `dlopen failed: has text relocations` and crash on modern devices.
+
+3. **Automated ABI Verification in CI**: Add an automated assertion test in CI that unpacks the built APK and asserts that the file lists under `lib/arm64-v8a/` and `lib/armeabi-v7a/` are identical, failing the build on asymmetric native packaging.
 
 ## How to answer in the interview
 
@@ -76,9 +132,11 @@ Discuss loader text, ABI selection, split paths, transitive `.so`, symbols, filt
 
 ## Follow-up questions
 
-- Can an arm64 `.so` work if copied to x86_64 path? **Answer:** no; its machine code ABI is incompatible.
-- What if the `.so` exists but load fails? **Answer:** inspect dependent libraries, unresolved symbols and platform compatibility.
-- Why inspect AAB-derived splits? **Answer:** Play-targeted packaging may differ from a universal local APK.
+- **Interviewer:** "What does readelf -d libfoo.so show?"
+  **Answer:** "It displays the dynamic section of the ELF binary, including shared library dependencies listed in NEEDED tags."
+
+- **Interviewer:** "Does Google Play allow uploading 32-bit only APKs today?"
+  **Answer:** "No; since August 2019, Google Play mandates 64-bit (arm64-v8a) support for all apps bundling native code."
 
 ## Self-check rubric
 
@@ -89,4 +147,4 @@ Trace one loader error to ABI packaging, distinguish absent file from symbol fai
 - [Android ABIs](https://developer.android.com/ndk/guides/abis) — native package paths and compatibility.
 - [Build and test an App Bundle](https://developer.android.com/guide/app-bundle/test) — split delivery tests.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Vendor ABI availability must be verified separately.
+Technically reviewed against primary documentation on 2026-10-13.

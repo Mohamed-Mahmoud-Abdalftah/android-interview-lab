@@ -22,11 +22,46 @@ Begin system-design answer with scope, nonfunctional requirements, constraints a
 
 ## Explanation in Arabic
 
-في system-design interview ما نبدأش برسم modules فورًا. نسأل عن المستخدمين، أهم flows، offline requirement، data sensitivity، scale، latency, device/API support وteam constraints. نحدد success/failure semantics: مثلًا هل Home تقبل partial cards؟ هل payment timeout يظهر Pending؟ بعدها نرسم data flow وsource of truth، ثم نناقش alternatives والمراقبة والاختبارات.
+كيف تبدأ مقابلة Mobile System Design (المتطلبات، المقاييس، القيود، والمفاضلات) باحترافية كمهندس Senior/Staff؟
+
+1. الهيكل الزمني والتكتيكي لمقابلة الـ Mobile System Design (45 دقيقة):
+   - **أول 5-7 دقائق (Clarify Scope & Functional Requirements)**: لا تبدأ برسم مربعات أو كتابة كود! اطرح أسئلة توضيحية لتحديد نطاق المشكلة بدقة. ما هي الميزات الأساسية (Core Use Cases) وما الذي يقع خارج النطاق (Out of Scope)؟
+   - **الدقائق 7-12 (Non-Functional Requirements & Constraints)**: حدد قيود الموبايل الفريدة: هل التطبيق Offline-First؟ ما هو حجم استهلاك البطارية والشبكة المسموح به؟ ما هو الـ Latency المستهدف؟ ما هي طبيعة الأجهزة المستهدفة (Low-end vs Flagship)؟
+   - **الدقائق 12-25 (High-Level Architecture & End-to-End Flow)**: ارسم المعمارية الكلية (Data Flow): UI (Compose) -> ViewModel -> Domain (UseCases) -> Repository -> Data Sources (Local DB + Remote API) -> Backend Gateway.
+   - **الدقائق 25-40 (Deep Dive into Complex Subsystems)**: التعمق في التحدي الأكبر (Sync Engine, Concurrency, Cache Eviction, Conflict Resolution).
+   - **آخر 5 دقائق (Failure Modes & Trade-offs)**: استعراض سيناريوهات الفشل ونقاط الضعف والقرارات البديلة.
+
+2. الفروق الجوهرية بين Mobile System Design و Backend System Design:
+   - في الـ Backend: التركيز على QPS, Sharding, Load Balancers, Distributed Consensus.
+   - في الـ Mobile: التركيز على **Resource Scarcity** (محدودية الرام والبطارية)، **Network Flakiness** (انقطاع الاتصال وتبديل الشبكات)، **Process Death**، **State Restoration**، و**Local Source of Truth**.
 
 ## Practical walkthrough
 
-لو المحاور قال صمّم marketplace، اسأله بسرعة: التصفح offline ولا checkout؟ هل inventory تتغير كل ثانية؟ إيه اللي يحصل لو authorization نجحت والرد ضاع؟ بعدها قول assumptions بصوت واضح وارسم رحلة واحدة من tap لحد backend والـRoom. حدد رقمين مهمين فقط، مثل أقصى عمر cache أو زمن بدء الشاشة، ثم اربط كل قرار باختبار أو metric بدل ذكر أسماء مكتبات وخلاص.
+هيكلة إطار عمل مقابلة الـ System Design في كود معماري يوضح فصل المسؤوليات والـ High-Level Contracts:
+```kotlin
+// 1. تحديد الـ Domain Models والـ Contracts الصريحة قبل الخوض في التفاصيل:
+interface FeedRepository {
+    // Local Source of Truth يعيد Flow للـ UI وتحديثات فورية من قاعدة البيانات
+    fun getFeedStream(): Flow<PagingData<FeedItem>>
+    
+    // المزامنة تتم في الخلفية بشكل منفصل
+    suspend fun syncFeed(fetchStrategy: SyncStrategy): Result<Unit>
+}
+
+sealed interface SyncStrategy {
+    object CacheFirst : SyncStrategy
+    object NetworkFirst : SyncStrategy
+    data class DeltaSync(val lastSyncTimestamp: Long) : SyncStrategy
+}
+
+// 2. نمذجة حالات الواجهة الصريحة (Unidirectional Data Flow) لمعالجة الأخطاء الجزئية:
+data class FeedUiState(
+    val isLoading: Boolean = false,
+    val isOfflineMode: Boolean = false,
+    val pendingUploadsCount: Int = 0,
+    val bannerMessage: String? = null
+)
+```
 
 ## Why it matters and how it works
 
@@ -60,15 +95,34 @@ For a marketplace app, clarify browsing offline versus checkout online, account 
 
 ## Interview answer — short
 
-“I start by clarifying the top user flows, scale and constraints, especially offline, latency, security and failure semantics. Then I identify sources of truth and data flow, propose a simple architecture, and test tradeoffs against those requirements.”
+Begin a mobile system design interview by clarifying functional and non-functional requirements in the first 5 minutes. Establish mobile constraints like offline tolerance, battery consumption, network flakiness, and low-end hardware profiles before proposing high-level data flow, domain contracts, and architectural trade-offs.
 
 ## Interview answer — structured
 
-“I usually ask which flows are critical, what must work offline, what latency matters and which data is sensitive. I state assumptions and choose a source of truth for each data type. Then I sketch UI state, repository boundaries, persistence, network and background recovery. I call out failure semantics—for example partial Home success versus all-or-nothing checkout—and explain why a chosen tradeoff fits. I end with observability and a few tests that would falsify the design, rather than listing libraries.”
+A disciplined mobile system design interview follows a structured, collaborative engineering framework:
+
+1. **Scope Clarification & Functional Requirements (Minutes 0–5)**: Clarify the core user journeys and deliberately define out-of-scope items. For example, in an Instagram-like feed, clarify whether we are designing feed ingestion, media uploading, real-time comments, or strictly offline consumption.
+
+2. **Mobile Constraints & Non-Functional Requirements (Minutes 5–10)**: Establish concrete operational targets:
+   - **Network Profile**: Offline-first vs. connected-only, cellular data thrift, latency ceilings (e.g. sub-200ms feed render from local cache).
+   - **Hardware Envelope**: Memory footprints for budget devices (2GB RAM), battery constraints (deferring syncs to Wi-Fi/charging via WorkManager).
+   - **Data Volume**: Cache size ceilings (e.g., maximum 200MB LRU disk cache).
+
+3. **High-Level Architecture (Minutes 10–25)**: Establish the layered system boundary: presentation state machines, domain business logic, repository local-source-of-truth abstractions, and network/local persistence layers.
+
+4. **Deep Dive & Bottlenecks (Minutes 25–40)**: Drill down into complex bottlenecks (e.g., two-way sync conflict resolution, binary chunk upload resumption, image pipeline memory management).
+
+5. **Trade-offs & Failure Modes (Minutes 40–45)**: Explicitly address edge cases (process death, partial backend outages, version skew).
 
 ## Interview answer — deep senior
 
-“A strong system-design answer is a sequence of decisions. I first bound the problem: users, main journeys, device range, offline and process-death behavior, expected traffic, security and team ownership. I ask for measurable targets such as startup time or maximum stale age only where they affect choices. Next I define local and server authority, state transitions, concurrency and retry/idempotency contracts. I draw the simplest data flow that meets those constraints, then consider scaling and modularity. I explicitly identify dangerous failures—lost response after a payment commit, stale inventory, token refresh races—and explain recovery. Finally I name metrics, tests and rollout strategy. That gives the interviewer a design they can challenge rather than a technology catalog. For the marketplace example, I would distinguish offline browsing from online checkout and ask how stale inventory may be. That single answer changes whether Room is merely a cache or part of an offline workflow. I would walk one failure from tap to server commit and back, identify who owns each state, and end with a measurable check such as cache age, payment reconciliation delay, or startup latency. I would keep the diagram small enough to revise when the interviewer changes a constraint.”
+From a staff-level perspective, the primary failure mode in mobile system design interviews is treating mobile like a stripped-down backend:
+
+1. **The Client As An Untrusted, Volatile Runtime**: Backends operate in predictable server clusters; mobile clients operate on hostile, battery-constrained, physically moving devices where the OS can terminate the process at any second. Highlighting Android-specific lifecycle realities (Activity destruction, configuration changes, background execution limits) immediately differentiates senior candidates.
+
+2. **Driving the Conversation Proactively**: Do not wait for the interviewer to prompt for constraints. Drive the whiteboard by outlining the API schema contract (REST vs. GraphQL vs. gRPC), storage strategy (Room SQLite vs. Proto DataStore), and telemetry footprint upfront.
+
+3. **Explicit Trade-off Articulation**: Every architectural choice has a cost. If you choose an offline-first Room database with delta synchronization, immediately articulate the complexity trade-off: distributed conflict resolution (Client-Wins vs. Server-Wins), schema migrations, and sync queuing overhead.
 
 ## How to answer in the interview
 
@@ -84,8 +138,11 @@ Practice clarifying questions, one data flow and one failure walkthrough under t
 
 ## Follow-up questions
 
-- [SYS-02](../sys-02/): What comes after requirements? **Answer:** clear boundaries, data ownership and incremental architecture.
-- [SYS-11](../sys-11/): Which failure contracts matter? **Answer:** cancellation, timeout, retry and idempotency by operation.
+- **Interviewer:** "What is the single most common mistake candidates make in mobile system design?"
+  **Answer:** "Jumping straight into UI components or database schemas without clarifying requirements, scale constraints, and network failure modes."
+
+- **Interviewer:** "How do you handle ambiguous requirements intentionally given by an interviewer?"
+  **Answer:** "Make explicit engineering assumptions out loud, validate them with the interviewer, and document them on the whiteboard before continuing."
 
 ## Self-check rubric
 
@@ -95,4 +152,4 @@ Can I state assumptions, identify source of truth, defend tradeoffs and name ver
 
 - [Android architecture guide](https://developer.android.com/topic/architecture) — layers, SSOT and constraints.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

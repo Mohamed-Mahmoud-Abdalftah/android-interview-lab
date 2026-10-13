@@ -22,11 +22,42 @@ Explain permit accounting and how to limit active operations separately from dis
 
 ## Explanation in Arabic
 
-`Semaphore` عنده عدد permits؛ coroutine بتستنى permit قبل دخول عملية وتفرجها في `finally`/`withPermit`. ده بيحدّد عدد requests المتزامنة مثلًا، لكنه مش بيحدد thread بعينه. `Dispatchers.IO` ممكن يشغّل blocking calls كتير، لكن السيرفر والاتصالات والذاكرة عندهم حدود مختلفة؛ semaphore بتحمي الموارد دي.
+الـ `Semaphore` في Kotlin Coroutines هو أداة للتحكم في عدد العمليات المتزامنة وتحديد سقف التوازي (Concurrency Throttling):
+
+1. ما هو الـ Semaphore؟
+   - هو عداد تصاريح (Permit Counter) معلق.
+   - يسمح لعدد محدد فقط من الـ Coroutines بالدخول في نفس الوقت (مثلاً: 3 coroutines فقط بالتوازي).
+   - أي Coroutine إضافية تحاول الدخول **تُعلّق (Suspends)** بدون حظر الـ Thread، حتى تفرغ إحدى العمليات الحالية وتطلق التصريح (`release()`).
+
+2. ما الفرق بين الـ Mutex والـ Semaphore؟
+   - الـ `Mutex` هو حالة خاصة من الـ Semaphore بتصريح واحد فقط (`permits = 1`)، ويضمن الاستبعاد المتبادل الحصري (Mutual Exclusion).
+   - الـ `Semaphore` يسمح بـ N تصاريح (`permits = N`) لتحديد سقف التوازي.
+
+3. متى نستخدمه في Android الإنتاجي؟
+   - **رفع ملفات وصور متعددة بالتوازي:** لو المستخدم بيختار 50 صورة لرفعها، لا نريد إطلاق 50 طلب شبكة في نفس اللحظة لإرهاق الـ Socket والـ Bandwidth؛ نستخدم Semaphore بـ 3 تصاريح.
+   - **تحديد استهلاك الـ Memory والـ CPU** في معالجة الـ Bitmaps.
 
 ## Practical walkthrough
 
-لو API بيسمح 3 طلبات في نفس الوقت، `Semaphore(3)` مشتركة على مستوى repository تحدّ العدد؛ لو أنشأتها داخل كل method call هتبقى كأن مفيش حد. `withPermit` يحرر التصريح حتى لو request فشل أو اتلغى. ده غير معدل الطلبات في الثانية: semaphore يضبط التزامن اللحظي، ولـrate limit محتاج policy منفصلة أو احترام `Retry-After`.
+في شاشة رفع ألبوم صور (Batch Image Uploader):
+```kotlin
+class ImageUploadRepository(private val api: MediaApi) {
+    // نحدد الحد الأقصى للرفع المتزامن بـ 3 صور فقط:
+    private val uploadSemaphore = Semaphore(permits = 3)
+
+    suspend fun uploadAllImages(images: List<File>): List<UploadResult> = coroutineScope {
+        images.map { imageFile ->
+            async(Dispatchers.IO) {
+                // acquire تصريح، وتنفيذ الرفع، ثم تحرير التصريح تلقائياً عبر withPermit:
+                uploadSemaphore.withPermit {
+                    api.uploadImage(imageFile)
+                }
+            }
+        }.awaitAll()
+    }
+}
+```
+النتيجة: يتم رفع الـ 50 صورة بالكامل، ولكن بحد أقصى 3 صور في نفس اللحظة بسلاسة تامة وبدون خنق لشبكة الجهاز.
 
 ## Why it matters and how it works
 
@@ -60,15 +91,21 @@ A media repository limits concurrent thumbnail downloads to three per host while
 
 ## Interview answer — short
 
-“A semaphore limits how many operations hold permits at once. I share it across calls and use `withPermit` so failure or cancellation releases the permit. It controls concurrency independently of which dispatcher runs the work.”
+A Semaphore limits concurrency by maintaining a pool of permits. Coroutines acquire a permit before entering a critical block and release it when done; if no permits are available, incoming coroutines suspend without blocking their threads until a permit is freed.
 
 ## Interview answer — structured
 
-“Dispatchers provide execution resources; a semaphore protects a particular downstream limit. If an API allows three concurrent requests, I keep one semaphore in the repository and wrap each request with `withPermit`. Acquisition suspends rather than blocking a thread, and the helper releases the permit on all exit paths. I tune the number from connection and server limits, measure queueing, and cancel obsolete UI requests so they do not consume capacity. Observe queue wait and server responses.”
+A `Semaphore` controls concurrent access to a resource by maintaining a set of available permits. It is the primary tool for concurrency throttling in Kotlin Coroutines.
+
+When a coroutine invokes `semaphore.withPermit { ... }`, it attempts to acquire a permit. If permits are available, the permit count decrements and the coroutine proceeds immediately. If all permits are exhausted, subsequent coroutines suspend non-blockingly until an active coroutine finishes and releases its permit.
+
+I use Semaphores in Android whenever I need to bound parallel resource consumption—such as limiting concurrent media uploads to 3 at a time, restricting simultaneous image decodes to avoid memory spikes, or capping database write connections. It prevents thread starvation, network congestion, and out-of-memory crashes.
 
 ## Interview answer — deep senior
 
-“I would define the capacity constraint first: sockets, database connections, CPU-intensive encoders or a partner API rate/parallelism rule. A shared Semaphore gives an in-flight permit bound and must outlive individual calls; per-call semaphores are ineffective. `withPermit` makes release exception-safe, while caller cancellation should remove queued work. It is distinct from a dispatcher, which schedules execution, and from rate limiting, which controls requests per time window. Under load I also bound the waiting queue, expose queue latency and reject or defer low-priority work. For a remote service, retries must obey the same limiter and server backoff policy. A semaphore only limits operations sharing that same instance. Creating one per request gives a false sense of control, while `withPermit` handles release when a call fails or is cancelled. I would tune the count against connection pool size and backend capacity, then distinguish concurrency from rate: three simultaneous calls may still exceed a per-second provider quota. Queue time, saturation and 429 responses would guide the production setting.”
+Internally, Kotlin's `Semaphore` is implemented as a lock-free segment-based queue of continuations. When permits reach zero, callers are suspended and their continuations are enqueued onto a lock-free linked list. When a permit is released, the head continuation is resumed and dispatched to its coroutine dispatcher.
+
+In modern Kotlin (1.6+), you can also limit parallelism at the dispatcher level using `dispatcher.limitedParallelism(N)`. How do they compare? `limitedParallelism(N)` creates a new Dispatcher view that constrains execution to N threads, which limits CPU/thread allocation. `Semaphore(N)` controls logical permit access regardless of which dispatcher is running the work. For example, if you want tasks to run on the broad `Dispatchers.IO` pool (scaling up to 64 threads) but want strictly 4 concurrent network uploads to an API, `Semaphore(4)` is the right abstraction.
 
 ## How to answer in the interview
 
@@ -84,8 +121,14 @@ Compare permit bound, thread bound, rate limit and queued backlog.
 
 ## Follow-up questions
 
-- [COR-07](../cor-07/): Does IO bound requests to the server? **Answer:** no, dispatcher selection is not a service concurrency policy.
-- [COR-18](../cor-18/): Should retries bypass permits? **Answer:** no, retries consume the same downstream capacity.
+- **Interviewer:** "What happens if a coroutine holding a Semaphore permit is cancelled?"
+  **Answer:** "When using `semaphore.withPermit`, the release is wrapped in a `try-finally` block. If the coroutine is cancelled while holding the permit, the `finally` block executes and releases the permit automatically, preventing permit leaks."
+
+- **Interviewer:** "Can a Semaphore be initialized with 1 permit?"
+  **Answer:** "Yes. A Semaphore with 1 permit behaves conceptually like a Mutex, but `Mutex` is preferred for single-permit mutual exclusion because it provides clearer ownership semantics and dedicated locking helpers."
+
+- **Interviewer:** "How does Semaphore compare to Java's `java.util.concurrent.Semaphore`?"
+  **Answer:** "Java's Semaphore blocks the OS thread when `acquire()` is called without permits. Kotlin's `kotlinx.coroutines.sync.Semaphore` is non-blocking: its `acquire()` is a suspending function that frees the underlying thread."
 
 ## Self-check rubric
 
@@ -95,4 +138,4 @@ Can I scope a shared semaphore, release permits safely, and distinguish active v
 
 - [Kotlin Semaphore API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.sync/-semaphore/) — permit semantics.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

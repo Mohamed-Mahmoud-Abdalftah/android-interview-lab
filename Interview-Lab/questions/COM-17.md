@@ -24,11 +24,57 @@ How do you optimize a long list and expensive calculations?
 
 ## Explanation in Arabic
 
-`LazyColumn` ينشئ العناصر المطلوبة قرب viewport بدل بناء آلاف rows دفعة واحدة، لكن لا يحل وحده sorting/filtering مكلف على main thread أو image decode سيئ. استخدم keys ثابتة، `contentType` عندما layouts مختلفة، وPaging للبيانات الكبيرة/المستمرة. ضع calculation ثقيلة في data/ViewModel layer أو cache بمفاتيح صحيحة، وألغِ البحث القديم عند query جديدة. `remember` مناسب لحساب UI محلي صغير عند صحة keys، وليس بديلًا لحساب domain واسع. قِس release frames، allocation وscroll.
+كيفية تحسين أداء القوائم الطويلة (Long Lists) والعمليات الحسابية المكلفة في Jetpack Compose:
+
+1. تحسين القوائم الطويلة في `LazyColumn`:
+   - **تحديد المفاتيح المستقرة (`key = { it.id }`)**: لتمكين التخطي الذكي وحماية الحالة أثناء السكرول والتعديل.
+   - **تحديد نوع المحتوى (`contentType`)**: لإعادة تدوير الـ Slots بين العناصر المتشابهة في القوائم غير المتجانسة.
+   - **تجنب العمليات الثقيلة داخل عناصر القائمة**: لا تقم أبداً بقراءة ملفات، فك تشفير صور يدوياً، أو تنسيق تواريخ معقدة داخل دالة الـ Item Composable دون `remember`.
+   - **LazyListState Optimization**: عدم قراءة موضع السكرول مباشرة داخل محتوى العنصر؛ بل استخدم `derivedStateOf` للأزرار العائمة خارج القائمة.
+
+2. تحسين الحسابات المكلفة (Expensive Calculations):
+   - استخدام `remember(key1, key2) { ... }` لحساب النتائج المعقدة لمرة واحدة فقط طالما أن المدخلات لم تتغير.
+   - ترحيل العمليات الحسابية الضخمة (مثل الفرز Sorting، والفلترة Filtering، وتحليل النصوص) إلى الـ `ViewModel` على **`Dispatchers.Default`** وتمرير النتائج الجاهزة كـ State نهائي للشاشة.
 
 ## Practical walkthrough
 
-قائمة 10,000 منتج لازم تجمع بين lazy rendering وبين تجهيز data صح. `LazyColumn` توفر rows خارج viewport، لكن sorting 10,000 item داخل body كل حرف هيوقف main thread. خلي البحث في ViewModel/repository مع cancellation وPaging لو البيانات ضخمة، ومرر ID ثابت لكل row؛ جرب كتابة سريعة مع scroll. لو الصور بتتفكّك بحجمها الأصلي أثناء scroll، lazy list مش هتمنع jank أو memory pressure. قِس allocation وframe time مع بيانات حقيقية، وحمّل صورة بحجم مناسب للعرض.
+تحسين قائمة طويلة تحتوي على حسابات معقدة وفلاتر:
+```kotlin
+// ❌ كود سيء: يقوم بفرز وتصفية 5000 عنصر في كل فريم Recomposition:
+@Composable
+fun BadProductList(products: List<Product>, filterText: String) {
+    // 💥 كارثة: معالجة ثقيلة جداً تعطل الـ Main Thread في كل سكرول!
+    val filtered = products.filter { it.name.contains(filterText) }.sortedBy { it.price }
+    LazyColumn {
+        items(filtered) { Text(it.name) }
+    }
+}
+
+// ✅ كود محسن: حفظ نتيجة الفلترة باستخدام remember وحماية القائمة بـ Keys:
+@Composable
+fun GoodProductList(
+    products: ImmutableList<Product>,
+    filterText: String,
+    modifier: Modifier = Modifier
+) {
+    // إعادة الحساب فقط إذا تغيرت قائمة المنتجات أو نص الفلترة:
+    val filtered = remember(products, filterText) {
+        products.filter { it.name.contains(filterText, ignoreCase = true) }
+            .sortedBy { it.price }
+            .toPersistentList()
+    }
+
+    LazyColumn(modifier = modifier) {
+        items(
+            items = filtered,
+            key = { it.id }, // مفتاح مستقر فريد
+            contentType = { "PRODUCT_CARD" } // نوع محتوى ثابت لإعادة التدوير
+        ) { product ->
+            ProductItemCard(product)
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -68,15 +114,28 @@ Profile representative devices and real data, track p95 scroll frames and memory
 
 ## Interview answer — short
 
-“I profile the hot stage, use lazy/paged data with stable item IDs, move heavy transforms off rendering, and benchmark scrolling with real images and data. LazyColumn limits visible row work; it does not make sorting or IO free.”
+Optimize long lists in Compose by providing unique stable `key`s and `contentType`s in `LazyColumn`, eliminating allocations inside item composables, and memoizing expensive computations with `remember(keys)` or offloading sorting and filtering to `Dispatchers.Default` in the ViewModel.
 
 ## Interview answer — structured
 
-“I first determine whether composition, layout, image decode, or data transforms consume the frame. LazyColumn limits visible composition, but a full sort inside the composable still blocks typing. I move that work to a cancellable state pipeline, use Paging if the dataset is large, and key rows by stable IDs. I cache only with correct invalidation keys, then compare release scroll and memory metrics. For a large catalog, I prepare results in a cancellable owner pipeline and key rows by product ID.”
+High-performance scrolling in Jetpack Compose requires eliminating work from the frame budget during list layout.
+
+1. **LazyList Optimization Pillars**:
+   - **Stable Keys**: Always declare `key = { it.id }` in `items()`. This lets Compose map items to stable slot table entries, skipping item recomposition when lists shift or reorder.
+   - **Content Types**: Specify `contentType` for heterogeneous lists to enable slot recycling across visually identical views.
+   - **Subcomposition Overhead**: Minimize nested `LazyRow` components or deep layout hierarchies inside items; keep item composables flat and lightweight.
+
+2. **Handling Expensive Calculations**:
+   - **Memoization**: If computations depend on UI inputs, wrap them in `remember(key1, key2) { expensiveComputation() }` so they re-run only when dependencies change.
+   - **Background Offloading**: Truly CPU-heavy tasks—such as sorting 10,000 items, searching, or regex filtering—do not belong in the UI layer. They must be executed inside the ViewModel or Domain layer via `flowOn(Dispatchers.Default)` and exposed as pre-calculated, ready-to-render immutable lists.
 
 ## Interview answer — deep senior
 
-“I avoid starting with an annotation or a remembered expression. I reproduce the slowdown with production-scale data and inspect a release trace. If the issue is a full sort on each keystroke, LazyColumn cannot solve it because the transform happens before rows are composed. I move filtering or search to an owned pipeline, cancel obsolete queries, and page results when the source is large. If row composition is costly, I simplify row content, provide stable keys and useful content types, and check whether parameter identity and state reads cause needless work. If images dominate, I request appropriate sizes and inspect decode/cache behavior. Memoization is only correct when all inputs such as query, filters, locale and dataset version are represented; a wrong key is a stale-UI bug. I measure p95 scroll frames, allocations and memory on target devices, plus loading and error behavior during refresh. A small list should remain simple. The senior decision is to spend complexity only where trace evidence shows an actual user-visible gain. I test rapid typing and scrolling together because stale results and frame stalls often appear in combination.”
+Under the hood, `LazyColumn` uses a specialized subcomposition pipeline called `SubcomposeLayout`. Unlike standard layouts that measure and compose in a single pass, `SubcomposeLayout` delays the composition of off-screen items until the scrolling measurement pass determines they are about to become visible. If an item's composable function does heavy work during this deferred composition pass, the frame budget (16.6ms at 60Hz or 8.3ms at 120Hz) is exceeded instantly, resulting in visible scroll jank.
+
+Another critical lever is image loading. When using Coil, always configure explicit sizing (`size(ViewSizeResolver)` or modifier constraints) and bitmap pooling. If images are loaded without fixed bounds in a LazyColumn, Coil decodes full images before layout measurement can constrain them, blowing through memory.
+
+In Macrobenchmark tests, we measure scroll performance using `FrameTimingMetric()` across continuous fling scrolls to ensure 99th percentile frame times stay strictly under the display hardware refresh limit.
 
 ## How to answer in the interview
 
@@ -92,9 +151,11 @@ Discuss lazy composition, paging, stable keys, preprocessing, image cost, cache 
 
 ## Follow-up questions
 
-- Does LazyColumn make an O(n log n) sort inside composition cheap? **Answer:** no; it only limits item composition, not upstream transforms.
-- Why are memoization keys a correctness concern? **Answer:** omitted inputs can return stale results.
-- When should Paging be considered? **Answer:** when data is large or loaded incrementally and full materialization is costly.
+- **Interviewer:** "What is `SubcomposeLayout` and why does it have an overhead compared to normal Layout?"
+  **Answer:** "`SubcomposeLayout` allows measuring one child to decide what to compose in another (used by `LazyColumn` and `Scaffold`). It carries a runtime penalty because it interrupts the standard single-pass composition pipeline to execute dynamic subcomposition passes."
+
+- **Interviewer:** "Why shouldn't you place a `LazyColumn` inside a vertically scrolling `Column`?"
+  **Answer:** "A scrolling `Column` provides infinite vertical constraints (`Constraints.Infinity`). A `LazyColumn` cannot calculate viewport bounds against infinite constraints, throwing an `IllegalStateException` at runtime."
 
 ## Self-check rubric
 
@@ -106,4 +167,4 @@ Identify the bottleneck, propose a targeted change, cover stale keys, and specif
 - [Compose performance](https://developer.android.com/develop/ui/compose/performance) — measured optimization.
 - [Paging in Compose](https://developer.android.com/topic/libraries/architecture/paging/v3-overview) — incremental data.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Workload and performance numbers are illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

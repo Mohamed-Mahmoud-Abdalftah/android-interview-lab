@@ -24,11 +24,49 @@ How should feature modules communicate without direct coupling?
 
 ## Explanation in Arabic
 
-لا تجعل `:feature:checkout` يستدعي class داخلي في `:feature:catalog`. لو يحتاج data، اعتمد على domain/API contract صغير وتطبيقه في data أو app composition. لو يحتاج فتح شاشة، استخدم navigation contract/route ID بدون استيراد UI implementation. لو يحتاج نتيجة من feature ثانية، عرّف result contract وlifecycle/delivery semantics بدل global event bus مبهم. أحيانًا app shell هو المكان الذي ينسق الميزتين. لا تجعل shared ViewModel أو singleton mutable حلًا تلقائيًا؛ حدّد source of truth واستمراره بعد process death.
+كيف تتواصل موديولات الميزات (Feature Modules) مع بعضها البعض دون وجود اقتران مباشر (Direct Coupling) بينها؟
+
+1. التحدي الأساسي:
+   - في بنية الـ Multi-Module النظيفة، موديول `:feature:feed` لا يستطيع استيراد أي كلاس من `:feature:profile` أو `:feature:cart` (لا توجد تبعية `implementation(projects.feature.cart)`).
+   - ومع ذلك، يحتاج المستخدم في شاشة الـ Feed إلى الضغط على صورة الناشر لفتح ملفه الشخصي في شاشة الـ Profile، أو الضغط على زر إضافة إلى السلة.
+
+2. الأنماط المعمارية الثلاثة للتواصل غير المقترن:
+   - **نمط الـ API/Impl (Contract Extraction)**: لكل ميزة موديولان: `:feature:cart-api` و `:feature:cart-impl`. موديول `:feature:feed` يعتمد فقط على `:feature:cart-api` الذي يحتوي على واجهات مجردة ومسارات بدون أي كود UI.
+   - **التنقل عبر Deep Links أو مسارات مجردة (Navigation Routes)**: فتح الشاشات عبر مسار نصي أو نوعي (`NavigationContract` أو URIs مثل `app://profile/{userId}`) يتولى موديول الـ `:app` ربطه بالشاشة الفعلية.
+   - **التواصل عبر حالة مشتركة في الـ Data Layer (Shared State via Repositories)**: إذا أضاف المستخدم عنصراً إلى السلة من شاشة الـ Feed، لا تتحدث الـ Feed مباشرة مع الـ Cart Screen؛ بل تقوم باستدعاء `CartRepository.addToCart(id)`. تقوم شاشة الـ Cart بمراقبة `CartRepository.cartFlow` وتحديث واجهتها تلقائياً عبر تدفق البيانات التفاعلي (Reactive Single Source of Truth).
 
 ## Practical walkthrough
 
-Feature A لا تستدعي ViewModel Feature B مباشرة. استخدم interface صغير event/navigation contract أو shared state owner في طبقة أدنى، و`:app` يربط التنفيذ. مثال checkout تحتاج customer ID لا whole profile screen object. state بين features يجب تظل واحدة authoritative، وlogout يبطل requests القديمة. اختبر contract في isolation ثم app wiring.
+التواصل بين موديولين عبر Shared State Repository وعقد التنقل المجرد:
+```kotlin
+// 1. التواصل لحفظ وتحديث البيانات: عبر طبقة الـ Data المشتركة وليس بين الـ ViewModels:
+// في :feature:catalog:
+@HiltViewModel
+class CatalogViewModel @Inject constructor(
+    private val cartRepository: CartRepository // واجهة من :domain:cart
+) : ViewModel() {
+    fun addItemToCart(item: Product) {
+        viewModelScope.launch { cartRepository.addItem(item.id) }
+        // لا نكلم شاشة الـ Cart مباشرة! مجرد كتابة في الـ Single Source of Truth
+    }
+}
+
+// 2. التواصل للتنقل (Navigation Decoupling) عبر عقد مجرد:
+// في :feature:profile-api (موديول عقد خفيف جداً):
+interface ProfileNavigationContract {
+    fun openUserProfile(context: Context, userId: String)
+}
+
+// في :feature:feed:
+class FeedNavigator @Inject constructor(
+    private val profileNav: ProfileNavigationContract // محقونة من الخارج!
+) {
+    fun onAvatarClicked(context: Context, authorId: String) {
+        profileNav.openUserProfile(context, authorId)
+    }
+}
+// موديول الـ Feed لا يعلم أي شيء عن كلاسات شاشة الـ Profile أو تطبيقها الفعلي!
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +90,25 @@ Document contracts, event ownership and replay/acknowledgment policy. Test deep 
 
 ## Interview answer — short
 
-“Features communicate through narrow contracts, navigation IDs/results or app-level orchestration; shared durable data has one repository owner.”
+Feature modules communicate without direct coupling through three patterns: shared reactive state in lower data/domain layers, API contract modules (:feature:x-api) exposing abstract interfaces, and decoupled navigation using URL deep links or navigation delegates wired centrally in the :app module.
 
 ## Interview answer — structured
 
-“I choose the seam by what crosses it. For data, checkout depends on a product repository interface rather than catalog UI classes. For destination changes, app navigation passes a small product ID and maps it to checkout. For a result, I define delivery and restoration semantics rather than use an unowned global event bus. This keeps the graph acyclic and lets each feature change its internals independently.”
+Enforcing zero direct compile-time coupling between peer feature modules requires three complementary architectural patterns:
+
+1. **Shared Reactive Data Layer**: When features need to exchange information (e.g. adding an item in `:feature:catalog` that updates a badge in `:feature:cart`), they never communicate ViewModel-to-ViewModel. Instead, both depend downward on `:data:cart`. The catalog ViewModel mutates the repository, and the cart badge reacts to the resulting `StateFlow` emitted by the single source of truth.
+
+2. **API/Implementation Module Splitting**: When feature `A` must explicitly invoke a capability in feature `B`, split feature `B` into `:feature:b:api` (containing interfaces and models) and `:feature:b:impl`. Feature `A` depends only on `:api`. The concrete implementation is bound via Hilt in `:app`.
+
+3. **Decoupled Navigation**: Navigation between features is delegated to type-safe route contracts, deep link URIs, or navigation interfaces implemented in `:app`. Feature `A` requests navigation to an abstract route without importing Feature `B`'s Composable or Activity.
 
 ## Interview answer — deep senior
 
-“I try to keep each feature independently understandable, so I avoid importing another feature's implementation. If Checkout needs product facts, I give it a stable repository or domain contract and let the app graph supply an implementation. It receives a product ID from navigation and reloads authoritative price and availability, instead of trusting a mutable Catalog screen object. If the relationship is an action—opening Checkout or returning an order ID—I use a small navigation contract with clear back-stack result or shared repository semantics. I specify what happens when the receiver is stopped, recreated or deep-linked, because a generic hot event bus can lose a result and a replaying one can duplicate it. App-level orchestration can coordinate two features without either depending on the other's internals. I also watch for false abstraction: if two parts always evolve as one capability, merging them may be simpler. I enforce allowed edges and test the integrated path, including process recreation, to prove the contract works beyond isolated module compilation.”
+A frequent anti-pattern when communicating between features is **Global In-Memory Event Buses** (e.g. broadcasting untyped JSON strings or arbitrary event classes across an application-wide SharedFlow).
+
+Event buses create invisible, untraceable data dependencies: if an event payload changes, nothing fails at compile time, leading to silent runtime bugs. Furthermore, event buses fail across Android process recreation—if the app process dies while an event was fired, the listener in another screen will never receive it.
+
+By channeling inter-feature communication through **durable domain repositories backed by Room or DataStore**, data persistence and reactive UI synchronization are guaranteed across process death, background updates, and screen lifecycles.
 
 ## How to answer in the interview
 
@@ -76,9 +124,11 @@ Discuss data contracts, app orchestration, navigation IDs, result delivery, repo
 
 ## Follow-up questions
 
-- Why pass an ID into checkout? **Answer:** it is restorable and lets checkout reload authoritative data.
-- What is risky about a global event bus? **Answer:** ownership, delivery and replay can be unclear across lifecycles.
-- When might direct collaboration be okay? **Answer:** when code belongs to one cohesive feature boundary rather than artificial modules.
+- **Interviewer:** "Why shouldn't one ViewModel inject another ViewModel directly?"
+  **Answer:** "ViewModels are tied to specific lifecycle owners (Activity/Fragment/NavBackStackEntry). Cross-injecting ViewModels leads to severe lifecycle leaks and crashes."
+
+- **Interviewer:** "How does Deep Link navigation benefit multi-module apps?"
+  **Answer:** "It provides uniform navigation that works identically for in-app screen transitions, push notifications, and external web URLs without compile-time module coupling."
 
 ## Self-check rubric
 
@@ -89,4 +139,4 @@ Specify a data contract, navigation contract, result semantics and integration t
 - [Android modularization patterns](https://developer.android.com/topic/modularization/patterns) — feature boundaries.
 - [Navigation with Compose](https://developer.android.com/develop/ui/compose/navigation) — navigation arguments.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Result strategy depends on the navigation library and product flow.
+Technically reviewed against primary documentation on 2026-10-13.

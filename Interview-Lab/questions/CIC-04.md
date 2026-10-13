@@ -23,11 +23,36 @@ Compare Git merge, rebase, squash, revert, and reset.
 
 ## Explanation in Arabic
 
-`merge` يضم تاريخ فرعين ويحتفظ بالbranch topology؛ `rebase` يعيد تشغيل commits فوق base جديد فيغيّر hashes؛ `squash` يجمع commits؛ `revert` يعمل commit عكسي؛ `reset` ينقل branch pointer وقد يمسح working changes حسب mode. على shared branch نفضل revert للتراجع عشان التاريخ ما يتكتبش من جديد.
+قارن بين أوامر Git الأساسية: `merge`، و `rebase`، و `squash`، و `revert`، و `reset` من حيث السلوك وتعديل التاريخ وحالات الاستخدام؟
+
+1. المقارنة الهندسية الشاملة:
+   - **`git merge`**: يدمج فرعين عبر إنشاء commit جديد يُسمى Merge Commit (يمتلك 2 parents). يحافظ على التاريخ كاملاً بكل تفاصيله وتسلسله الزمني، ولكنه ينتج تاريخاً متشابكاً (Non-linear history).
+   - **`git rebase`**: يعيد تشغيل (Replay) التغييرات الخاصة بالفرع الحالي فوق قمة الفرع المستهدف (HEAD). يُنشئ تاريخاً خطياً نظيفاً جداً (Linear history)، ولكنه **يعيد كتابة التاريخ (Rewrites commit hashes)**، لذا يُحظر استخدامه على الفروع العامة المشتركة.
+   - **`git squash`**: يدمج عدة commits صغيرة أو تجريبية من فرع الميزة في commit واحد نظيف وذري (Atomic Commit). ممتاز لإخفاء رسائل الـ commits الفوضوية (مثل: "fix typo", "wip") قبل الدمج في Main.
+   - **`git revert`**: يلغي تأثير commit قديم عبر **إنشاء commit جديد معاكس (Forward-looking inverse commit)**. آمن 100% على الفروع المشتركة لأنه لا يعبث بالتاريخ إطلاقاً.
+   - **`git reset`**: يرجع مؤشر الفرع إلى نقطة زمنية سابقة في التاريخ. يمسح الـ commits من التاريخ، وإذا رُفعت للـ remote تتطلب `git push --force`، مما يجعله خطيراً على الفروع المشتركة.
 
 ## Practical walkthrough
 
-في hotfix: `merge` يحتفظ بتاريخ الفرعين ويصنع merge commit؛ `rebase` يعيد كتابة commits فرعك فوق base أحدث؛ `squash` يجمع تغييرات قبل الدمج؛ `revert` يصنع commit عكسي يحافظ على تاريخ shared branch؛ `reset` ينقل مؤشر branch وقد يرمي تغييرات حسب mode. ما تعملش force push على branch مشترك عشان تتخلص من release سيئ. لو hotfix لازم يروح `main` وrelease branch، cherry-pick أو merge حسب السياسة مع اختبار كل نسخة.
+أمثلة عملية توضح الفوارق بين هذه الأوامر في بيئة العمل اليومية:
+```bash
+# 1. Rebase فرعك المحلي على أحدث تغييرات main قبل فتح الـ PR (تاريخ خطي نظيف):
+git checkout feature/user-profile
+git fetch origin
+git rebase origin/main
+
+# 2. Squash دمج عدة commits أثناء الـ rebase التفاعلي:
+git rebase -i HEAD~3
+# في المحرر: غير 'pick' إلى 'squash' أو 's' للكوميتات الثانية والثالثة
+
+# 3. Revert آمن لكوميت سبب كراش على main المشترك (ينشئ كوميت جديد يعكس التغيير):
+git checkout main
+git revert 4f8a91b
+git push origin main # مسموح بدون force push لأن التاريخ لم يعد كتابته!
+
+# 4. Reset محلي لإلغاء آخر كوميت مع الحفاظ على التغييرات في الكود للتعديل:
+git reset --soft HEAD~1
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +76,36 @@ Branch protection blocks force-pushes to main, requires reviewed PRs and records
 
 ## Interview answer — short
 
-“Merge combines histories, rebase rewrites a branch onto a new base, squash condenses commits, revert adds an inverse commit, and reset moves a ref. On shared branches, revert is normally safer than history rewrite.”
+Merge joins branches preserving full history with a merge commit. Rebase replays commits linearly on top of upstream, rewriting hashes. Squash collapses multiple commits into a single atomic commit. Revert creates a new inverse commit to safely undo changes on shared branches, and Reset moves the branch pointer backward, rewriting history.
 
 ## Interview answer — structured
 
-“I choose Git operation based on whether commits are published. A private feature branch can be rebased for clean review; merge preserves branch structure; squash makes one integration commit. Revert is the audit-friendly way to undo an already shared change because it adds a new commit. Reset changes the branch pointer and can discard local work, so I do not use it to rewrite protected main.”
+These five Git operations govern how branch histories are combined, rewritten, or corrected:
+
+1. **`git merge`**:
+   - Integrates diverged branches by creating a 3-way merge commit with two parents. It guarantees complete historical accuracy and context, but creates a non-linear graph with merge commit noise.
+
+2. **`git rebase`**:
+   - Re-applies local commits one by one on top of the target base branch. Yields a clean, perfectly linear commit history. Because it assigns new commit SHA hashes, it must never be run on public shared branches.
+
+3. **`git squash`**:
+   - Compresses a series of incremental commits into a single commit. Frequently used in PR merges (Squash and Merge) to condense exploratory development into a single logical, bisect-friendly commit on main.
+
+4. **`git revert`**:
+   - Safely rolls back changes by creating a new forward commit containing the inverse diff. It preserves history and causes no merge conflicts for teammates on shared branches.
+
+5. **`git reset`**:
+   - Adjusts the current branch HEAD backward in time. Rewrites branch history and requires forced pushes if already remote, making it suitable only for local unshared work.
 
 ## Interview answer — deep senior
 
-“I choose the Git operation from the history contract. Merge joins branches without rewriting existing commits, making it appropriate when shared history matters. Rebase replays my local commits on a new base and can simplify review, but rebasing a published branch changes commit identities for collaborators. Squash creates a compact final change when the intermediate commits have no independent value. Revert adds a new commit that reverses an earlier change, which is usually the safe operation on a shared release branch; reset moves the branch pointer and is most useful for my own unpublished history. In a production hotfix I branch from the release commit, make the smallest fix, run release checks, then merge or cherry-pick it back to main and other supported branches with explicit conflict review. I avoid assuming a successful cherry-pick implies the same runtime behavior, because surrounding code may differ. The trade-off is clean history versus provenance, so I preserve an auditable link between incident, fix commit and release artifact.”
+In team Git architecture and CI governance, choosing between merge, rebase, and squash impacts debugging and bisecting:
+
+1. **Git Bisect Optimization**: A linear history generated by `git rebase` or `squash and merge` makes `git bisect` fast and reliable. When messy merge commit graphs exist, automated bisect scripts frequently stumble into broken intermediary states where commits were merged half-baked.
+
+2. **The Squash vs. Rebase Debate in PRs**: Squash-and-merge is preferred in many Android teams because it reduces PR clutter to a single cohesive feature commit linked to a Jira/Issue ID. However, if a 2,000-line PR contains 10 logical architectural refactors, squashing them destroys the context of each distinct change. A clean interactive rebase (`git rebase -i`) preserving 3 atomic commits is superior in complex refactorings.
+
+3. **Golden Rule of Git Rebase**: Never rebase a branch that has been published and shared with other engineers. Rebase changes commit SHAs; when peers pull the rebased branch, Git interprets their identical local commits as divergent, creating duplicate commits and painful merge conflicts.
 
 ## How to answer in the interview
 
@@ -75,8 +121,11 @@ Prompt for commit graph, public history, revert conflict and deployment traceabi
 
 ## Follow-up questions
 
-- [CIC-05](../cic-05/): How do reset modes differ? **Answer:** index and working-tree effects.
-- [CIC-06](../cic-06/): Why revert main? **Answer:** it preserves an auditable shared history.
+- **Interviewer:** "What is the primary risk of using rebase on a shared team branch?"
+  **Answer:** "It rewrites commit hashes, causing teammates' local branches to diverge and creating duplicate commits and messy conflict resolutions."
+
+- **Interviewer:** "How does squash-merge benefit git bisect?"
+  **Answer:** "It ensures every commit on main is a complete, working, compilable state rather than a half-broken 'work in progress' commit."
 
 ## Self-check rubric
 
@@ -87,4 +136,4 @@ Show the commit-graph effect of merge, rebase and squash; use revert for a share
 - [Git reset documentation](https://git-scm.com/docs/git-reset) — reset modes.
 - [Android app publishing](https://developer.android.com/studio/publish) — release traceability context.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

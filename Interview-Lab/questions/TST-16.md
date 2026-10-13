@@ -23,11 +23,55 @@ What should be unit-tested versus verified with an emulator/device?
 
 ## Explanation in Arabic
 
-اختار test layer حسب الشيء المراد إثباته. Rounding، validation وstate reducer من غير Android APIs تُختبر سريعًا على JVM مع edge cases. Room migration، permissions، process recreation وCompose semantics تحتاج emulator أو جهاز لأن contract متعلق بالـplatform.
+ما هي المعايير الدقيقة لتحديد ما يجب اختباره كـ Unit Test على الـ JVM وما يجب التحقق منه على محاكي أو جهاز حقيقي (Emulator/Device)؟
+
+1. المبدأ المعماري التوجيهي (The Golden Rule):
+   - **اختبر على الـ JVM المحلي كل ما هو منطق برمجي بحت (Logic & State)**.
+   - **اختبر على الجهاز الحقيقي كل ما يعتمد على عتاد الهاتف، نظام التشغيل، أو تعاريف النظام المنخفضة (Hardware, OS Drivers, Security)**.
+
+2. ما يجب اختباره حصرياً كـ Unit Test على JVM (`src/test/`):
+   - منطق الـ ViewModels وتدفقات الـ StateFlow والـ Events.
+   - الـ UseCases وقواعد العمل وحسابات الأسعار والخصومات.
+   - خوارزميات تحويل وتنسيق البيانات (Mappers & Adapters).
+   - محاكاة أخطاء الـ API والـ Retries عبر MockWebServer.
+
+3. ما يجب اختباره على جهاز حقيقي أو محاكي (`src/androidTest/`):
+   - **العمليات التشفيرية العتادية (Android Keystore / StrongBox)**: الـ TEE والـ Hardware Keymaster غير موجودين على JVM!
+   - **المصادقة البيومترية (BiometricPrompt)**: تتطلب عتاد مستشعر البصمة ونظام النظام.
+   - **ترقيات قاعدة البيانات (Room Migrations)**: لاختبار محرك SQLite الحقيقي للأندرويد.
+   - **الرسم المتقدم والـ Custom Views والأداء**: قياس الـ Frame Drops (JankStats) واختبارات الـ Macrobenchmark.
+   - **مكونات الـ IPC والـ AndroidManifest**: مثل الـ ContentProviders و Deep Links والـ BroadcastReceivers.
 
 ## Practical walkthrough
 
-POS reader disconnect أو camera timing يحتاج hardware/provider sandbox؛ fake callback تثبت state machine في التطبيق فقط. Emulator لا يمثل كل firmware أو OEM behavior، وجهاز واحد لا يغطي كل API levels. اكتب في التقرير claim دقيقة: “unit test يثبت قرار Unknown”، وليس “اختبرنا terminal” لو ما شغلناش terminal. رتّب matrix بالمخاطر: flows حرجة لها integration/device coverage، بينما logic بسيط لا يحتاج suite بطيئة لكل حالة.
+المقارنة بين كود يختبر على الـ JVM وكود يستحيل اختباره إلا على جهاز حقيقي:
+```kotlin
+// 1. يختبر على الـ JVM في 5ms (منطق أعمال نقي - Domain Logic):
+class LoanEligibilityCalculatorTest {
+    @Test
+    fun `eligible for loan when credit score above 700`() {
+        val calculator = LoanEligibilityCalculator()
+        val isEligible = calculator.evaluate(creditScore = 720, debtToIncomeRatio = 0.25)
+        assertTrue(isEligible)
+    }
+}
+
+// 2. يستحيل اختباره إلا على جهاز/محاكي حقيقي (تشفير عتادي بالـ Keystore):
+@RunWith(AndroidJUnit4::class)
+class HardwareKeystoreCryptoTest {
+    @Test
+    fun `keystore generates hardware key and encrypts payload`() {
+        val cryptoManager = KeystoreCryptoManager()
+        val secret = "ConfidentialToken123".toByteArray()
+        
+        val encrypted = cryptoManager.encrypt(secret)
+        val decrypted = cryptoManager.decrypt(encrypted)
+        
+        // يعتمد على شريحة الـ Keymaster الحقيقية داخل الهاتف:
+        assertEquals("ConfidentialToken123", String(decrypted))
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +95,31 @@ Build a supported API/device/ABI matrix. Run fast JVM PR checks, targeted emulat
 
 ## Interview answer — short
 
-“JVM tests cover deterministic Kotlin logic. Emulator/device tests cover Android framework behavior, and real hardware is needed for vendor SDK and physical peripheral risks.”
+Test pure business rules, ViewModels, UseCases, mappers, and state machines on the local JVM for millisecond speed. Reserve on-device/emulator tests for framework and hardware boundaries: Android Keystore, BiometricPrompt, Room SQLite migrations, Macrobenchmark performance, and IPC components.
 
 ## Interview answer — structured
 
-“I choose the environment based on what could fail. A use case or algorithm runs in JVM tests; permissions, lifecycle, Room migration and Compose UI need Android execution. Emulators cover API levels and screen sizes efficiently, while a POS SDK and reader disconnect require actual terminal hardware. I state which devices, OS versions and provider versions were actually exercised, because a mock cannot certify the hardware.”
+Allocating tests between the local JVM and real devices balances execution economics against operational fidelity:
+
+1. **Local JVM Tests (`src/test/`) — The 80% Rule**:
+   - **Scope**: ViewModels, pure domain UseCases, reactive StateFlow pipelines, business algorithms, DTO mappers, and state machines.
+   - **Why JVM**: Executes in milliseconds. Zero emulator boot overhead. Allows rapid Test-Driven Development (TDD) iteration without blocking local machines.
+
+2. **On-Device / Emulator Tests (`src/androidTest/`) — The 20% Rule**:
+   - **Hardware & Security Boundaries**: Android Keystore hardware-backed keys, Secure Element operations, and `BiometricPrompt` flows (the JVM has no Keymaster TEE daemon).
+   - **Real SQLite Engine**: Room database migrations and complex multi-threaded WAL transactions (desktop SQLite diverges from mobile OEM SQLite builds).
+   - **Framework IPC**: Validating exported ContentProviders, BroadcastReceivers, and Deep Link intent filter matching.
+   - **Performance Profiling**: Baseline Profiles and Macrobenchmark measuring real frame rendering and startup latency.
 
 ## Interview answer — deep senior
 
-“I choose the cheapest environment that can observe the contract. Pure fee rounding, ID validation and reducers belong in JVM unit tests with exhaustive edge cases. When the claim depends on Android framework behavior—Room migrations, permissions, Activity recreation, Compose semantics or manifest packaging—I run a targeted emulator or device test. Hardware and provider timing need another boundary: a fake POS callback can prove that my state machine enters Unknown after a disconnect, but it cannot certify the terminal firmware or payment provider protocol. I keep a small hardware and sandbox suite for release-critical paths, and state exactly which devices, API levels and provider versions were exercised. An emulator is valuable but cannot represent every OEM implementation; a physical device is not universal proof either. I separate app-policy tests from platform and external-system verification in the release report. That avoids both extremes: making every simple rule wait for a device, and declaring a payment integration safe because a mocked callback passed on the JVM.”
+From an engineering resource allocation and cloud cost perspective, minimizing on-device testing saves thousands of engineering hours:
+
+1. **The Infrastructure Cost Calculation**: 1,000 local unit tests execute in ~10 seconds on a standard GitHub Actions runner. 1,000 instrumented tests require spinning up dozens of nested-virtualization emulator containers, consuming 40+ minutes of cloud runner compute and thousands of dollars in monthly CI billing.
+
+2. **Robolectric as the Middle Tier**: Where code requires light Android framework abstractions (e.g. `Bundle`, `Intent`, `Parcelable`, or `ColorRes`), use Robolectric on the JVM. This keeps tests in `src/test/` while providing simulated framework fidelity without emulator overhead.
+
+3. **Architectural Separation as an Enabler**: When architecture cleanly decouples domain logic into pure Kotlin modules (`:core:domain`), developers are physically prevented from importing Android framework classes, ensuring code remains 100% JVM testable by design.
 
 ## How to answer in the interview
 
@@ -75,8 +135,11 @@ Prompt for JVM boundary, emulator API matrix, real hardware, release variant and
 
 ## Follow-up questions
 
-- [TST-11](../tst-11/): Why real Room? **Answer:** SQL and migration semantics depend on Android/SQLite.
-- [TST-17](../tst-17/): What needs a device benchmark? **Answer:** frame/startup performance in realistic runtime.
+- **Interviewer:** "Can Android Keystore encryption be tested on a standard JVM unit test?"
+  **Answer:** "No; AndroidKeyStore is an Android OS system provider coupled to hardware daemons (keystored/TEE), throwing NoSuchProviderException on a plain JVM."
+
+- **Interviewer:** "Why should Macrobenchmark tests run only on physical devices or specialized emulators?"
+  **Answer:** "Because standard emulators have artificial thermal and CPU profiles; Macrobenchmark requires real hardware to measure true user-perceived frame drops and cold start times."
 
 ## Self-check rubric
 
@@ -87,4 +150,4 @@ Place pure rounding/policy on JVM, Room or permission behavior on emulator, and 
 - [Android test fundamentals](https://developer.android.com/training/testing/fundamentals) — local versus instrumented tests.
 - [Android device testing](https://developer.android.com/training/testing) — test environment guidance.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

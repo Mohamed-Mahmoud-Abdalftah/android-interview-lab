@@ -23,11 +23,57 @@ How do you align mobile, backend, QA, and security teams on an API contract?
 
 ## Explanation in Arabic
 
-اتفاق API مش JSON happy path فقط. mobile وbackend يتفقوا على ownership، auth، states، timeout=unknown، idempotency key، error codes، pagination/versioning وbackward compatibility. QA تبني contract tests وsecurity تراجع trust boundary/data classification. نحط examples للnormal والفشل، ونحدد مين يملك التغيير وموعد deprecation.
+كيف تقوم بمواءمة وتنسيق العمل بين فرق الموبايل، والـ Backend، والـ QA، والأمان على عقد الـ API (API Contract) قبل كتابة الكود؟
+
+1. معضلة التطوير التقليدي المنعزل (Siloed Development):
+   - يكتب فريق الـ Backend الـ API على هواه بناءً على هيكل قاعدة البيانات (Data-centric).
+   - بعد أسبوعين يتسلمه مهندس الموبايل ليكتشف أن الـ API يتطلب 5 استدعاءات متتالية لعرض شاشة واحدة، وأن حقول الـ Nullability غير واضحة، وأن استجابة الـ JSON ضخمة وتستهلك باقات المستخدمين!
+   - النتيجة: إعادة كتابة الكود، وتأخر الإطلاق، وتبادل اللوم.
+
+2. منهجية الـ API-First / Contract-Driven Development:
+   - **1. الاجتماع المبكر لصياغة العقد (Contract Workshop)**: اجتماع مصغر يجمع مهندس الموبايل، ومهندس الـ Backend، وممثل الـ QA، ومهندس الأمان قبل كتابة سطر كود واحد.
+   - **2. توثيق العقد بصيغة قياسية موحدة (OpenAPI / Swagger / Protocol Buffers)**:
+     * تحديد أسماء الحقول بدقة، وأنواع البيانات، والـ Nullability الصريحة (هل الحقل قد يرجع `null`؟).
+     * تحديد رموز الأخطاء (HTTP Status Codes) وهيكل كائن الخطأ الموحد (`ErrorCode`, `UserMessage`, `Retryable`).
+   - **3. تصميم الـ API لتلبية تجربة المستخدم (UI-Driven API Design)**:
+     * تطبيق نمط **Backend For Frontend (BFF)** أو نقاط نهاية مخصصة تجمع البيانات لشاشة الموبايل في طلب واحد لتقليل استهلاك البطارية والشبكة.
+   - **4. فك ارتباط التطوير عبر الـ Mock Servers**:
+     * بمجرد اعتماد ملف الـ OpenAPI، يقوم فريق الموبايل والـ QA بتوليد **Mock Server** (عبر Prism أو Postman أو MockWebServer).
+     * يبدأ مهندس الموبايل في كتابة الواجهة واختبارها فوراً بالتوازي مع قيام الـ Backend ببناء الـ Services الحقيقية.
 
 ## Practical walkthrough
 
-عقد API للدفع مثلًا لازم يشمل أكثر من JSON success: operation ID، idempotency key، معنى timeout/unknown، status endpoint، error codes، retries، auth، وschema evolution. اجمع mobile/backend/QA/security على مثال lost response وبعده process death. اكتب sequence وما الذي يملكه كل طرف، ثم contract tests وsandbox evidence. لو backend يقول “كرر request” بدون dedup واضح، توقف وتصحح العقد قبل UI؛ Android وحدها لا تضمن أثر مالي واحد.
+نموذج عقد API قياسي متفق عليه بصيغة OpenAPI ومخطط استجابة أخطاء موحد:
+```yaml
+# openapi-contract.yaml
+paths:
+  /v1/checkout/summary:
+    get:
+      summary: Retrieve checkout summary for mobile
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [order_id, total_amount, currency, items]
+                properties:
+                  order_id: { type: string, example: "ord_9876" }
+                  total_amount: { type: string, example: "149.99" } # String لتفادي مشاكل تقريب Float
+                  discount_applied: { type: boolean }
+                  promo_code: { type: string, nullable: true } # Nullable صريح لمنع NPE
+        '422':
+          description: Business validation error
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error_code, message, is_retryable]
+                properties:
+                  error_code: { type: string, example: "ERR_INSUFFICIENT_STOCK" }
+                  message: { type: string, example: "Item out of stock" }
+                  is_retryable: { type: boolean, example: false }
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +97,33 @@ Hold joint review before implementation, publish schema and examples, run both c
 
 ## Interview answer — short
 
-“I align teams on semantics, not just fields: auth, state, retries, errors and compatibility. We write examples and contract tests, then stage changes for old installed clients.”
+Align cross-functional teams using Contract-First API Design: co-author the specification (OpenAPI/Protobuf) collaboratively before implementation, explicitly defining nullability, error payload schemas, and pagination. Spin up mock servers from the contract so mobile, QA, and backend build and test concurrently without blocking.
 
 ## Interview answer — structured
 
-“I bring mobile, backend, QA and security into one contract review. We define request/response schema, ownership and authorization, idempotency identity, timeout semantics, error mapping, versioning and telemetry. QA turns examples into contract tests; security checks that client-provided amounts or flags are not authority. Because Android versions persist in the field, backend changes are additive or explicitly versioned with a sunset plan. We monitor parsing and unknown-state rates during rollout. ”
+Cross-functional API contract alignment requires adopting a Contract-First / API-First methodology:
+
+1. **Collaborative Contract Co-Design**:
+   - Convene a short alignment workshop with Mobile, Backend, QA, and Security leads. Design endpoints around mobile UI consumption patterns (minimizing roundtrips) rather than raw database relational schemas.
+
+2. **Rigorous OpenAPI / Protobuf Specification**:
+   - Formulate the contract using OpenAPI (Swagger) or Protocol Buffers. Explicitly codify:
+     - **Nullability and Optionality**: Prevent Kotlin `NullPointerException` crashes by strictly documenting whether fields can be null.
+     - **Numeric Precision**: Transmit monetary values as Strings or integer cents to avoid floating-point inaccuracies.
+     - **Standardized Error Schemas**: Define a unified error envelope containing `error_code`, localized user message, and a boolean `is_retryable` flag.
+
+3. **Parallel Execution via Contract Mocking**:
+   - Export the verified spec into mock servers (MockWebServer, WireMock, or Prism). Mobile engineers develop and test against realistic mock payloads, and QA authors test matrices in parallel while backend engineers build database pipelines.
 
 ## Interview answer — deep senior
 
-“I align teams around one concrete failure trace. For a payment attempt, the client persists an operation ID, sends it, the backend commits, and the response is lost. We jointly define whether a retry with the same identity returns the original outcome, how status is queried, how long identity is retained, and what each error code means. Mobile owns durable local state and user-visible unknown status; backend owns authorization, deduplication and the ledger; QA tests the trace across process death and network loss; security reviews authentication and data minimization. I write the request/response and state transitions as a versioned contract, then use consumer and provider tests plus sandbox evidence. I also define backward compatibility during a staggered mobile rollout, because old clients remain active. The trade-off is extra coordination before coding versus far less ambiguity in production. If a requirement cannot be represented safely in the backend contract, I escalate it before promising an Android-only workaround.”
+From an API governance and backward compatibility angle, contracts must enforce long-term survivability:
+
+1. **The Asymmetry of Mobile Version Lifecycles**: A backend API can be updated in a single deployment, but legacy mobile app versions linger in production for years because users disable auto-updates. The contract must mandate **strict backward compatibility**: fields can be added, but existing fields must never be renamed, deleted, or have their types altered without incrementing the API path version (`/v2/`).
+
+2. **Security & Data Minimization Auditing**: Security and compliance teams must audit the API contract against GDPR/CCPA regulations. Mobile payloads must never leak excessive PII or backend server details (e.g. leaking raw SQL stack traces in 500 error responses).
+
+3. **Automated Contract Testing (Pact / Consumer-Driven Contracts)**: Modern engineering teams integrate Consumer-Driven Contract testing (such as Pact). Mobile test suites define contract expectations; if a backend engineer modifies a response field on a PR, the backend CI build breaks automatically before the breaking change reaches staging.
 
 ## How to answer in the interview
 
@@ -75,8 +139,11 @@ Prompt for semantic contract, mixed versions, lost response, ownership and contr
 
 ## Follow-up questions
 
-- [PAY-02](../pay-02/): What must API say about idempotency? **Answer:** key scope, parameter matching, retention and lookup.
-- [TST-07](../tst-07/): What tests catch drift? **Answer:** producer/consumer contract tests.
+- **Interviewer:** "Why is backward compatibility far more critical for mobile APIs than web frontend APIs?"
+  **Answer:** "Because users run old app versions indefinitely without updating, whereas web users receive the newest JavaScript bundle upon page refresh."
+
+- **Interviewer:** "Why should monetary amounts never be transmitted as standard Float or Double in API JSON responses?"
+  **Answer:** "Because binary floating-point representation causes precision loss and rounding errors; amounts should be passed as fixed strings or integer cents."
 
 ## Self-check rubric
 
@@ -87,4 +154,4 @@ Define request/response schema, errors, auth, idempotency and versioning with ba
 - [Android data-layer guide](https://developer.android.com/topic/architecture/data-layer) — repository/API boundaries.
 - [Stripe idempotent requests](https://docs.stripe.com/api/idempotent_requests) — example retry semantics.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

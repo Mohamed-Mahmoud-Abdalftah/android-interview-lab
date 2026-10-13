@@ -18,89 +18,245 @@ Compare coroutineScope and supervisorScope including failure propagation.
 
 ## What the interviewer evaluates
 
-Whether the candidate compares sibling failure propagation while remembering that both boundaries await children and respect parent cancellation.
+- Structured concurrency hierarchy: How child jobs relate to parent jobs in the `Job` tree.
+- Bidirectional vs unidirectional failure propagation: Why a regular child failure cancels its parent and siblings, whereas supervision isolates direct children.
+- Exception handling mechanisms: The behavioral differences between `launch` (exception propagated to handler) and `async` (exception encapsulated in `Deferred`).
+- Cancellation propagation: Recognizing that cancelling the parent scope cascades downward to all children in both scope builders.
+- Practical production decision-making: Choosing all-or-nothing aggregate transactions vs independent resilient UI widgets.
 
 ## Explanation in Arabic
 
-`coroutineScope` و`supervisorScope` الاتنين بيعملوا boundary منظمة وبيستنوا كل الأطفال قبل ما يرجعوا. الفرق إن فشل child في `coroutineScope` العادية بيلغي إخوته ويُفشل الـscope؛ في `supervisorScope` child فاشل ما يلغيّش إخوته تلقائيًا. لكن لو الـparent اتلغى، كل الأطفال بيتلغوا في الحالتين، ولازم نمسك failures الفردية في supervision.
+علشان تفهم الفرق الجوهري بين `coroutineScope` و `supervisorScope`، لازم تتخيل الـ **Job Hierarchy** (شجرة الـ Coroutines) كعلاقة بين أب وأطفاله:
+
+في Coroutines، أي Scope بيعمل تعليق (`suspends`) ومبيخلصش إلا لما كل الأطفال اللي جواه يخلصوا شغلهم تماماً. ده مبدأ **Structured Concurrency**. لكن الفرق القاتل هو: **إيه اللي بيحصل لما طفل من الأطفال يفشل ويضرب Exception غير ممسوك (Uncaught Exception)؟**
+
+```text
+[coroutineScope — All or Nothing]
+            Parent Job
+           /     |     \
+     Child 1  Child 2  Child 3
+     (Success) (FAILS!) (Running)
+                 |
+                 +--> يلغي الأب (Parent)
+                        |
+                        +--> الأب يلغي باقي الإخوة (Child 3 Cancelled!)
+
+[supervisorScope — Sibling Isolation]
+         SupervisorJob (Parent)
+           /     |     \
+     Child 1  Child 2  Child 3
+     (Success) (FAILS!) (Running)
+                 |
+                 +--> الأب يفضل حي، والإخوة يكملوا عادي!
+```
+
+### 1. في حالة `coroutineScope`:
+الفشل بيمشي في اتجاهين:
+1. من الطفل للأب: الطفل اللي فشل بيلغي الـ Parent فوراً.
+2. من الأب لباقي الأطفال: الـ Parent بيلغي كل إخوته الشغالين (`CancellationException`).
+ده مناسب جداً لعمليات الـ "All-or-Nothing"؛ مثلاً بتحسب إجمالي فاتورة: محتاج سعر المنتجات + الضريبة + كود الخصم. لو الضريبة فشلت، مفيش أي داعي تكمل حساب الخصم لأن النتيجة النهائية بقت باطلة.
+
+### 2. في حالة `supervisorScope`:
+الفشل معزول (`Isolated`):
+- فشل أي طفل مباشر **مش هيلغي الأب**، وبالتالي **مش هيلغي إخوته**.
+- ده مناسب جداً لشاشات الـ Dashboard؛ عندك كارت لبيانات المستخدم، كارت للعروض، وكارت للإشعارات. لو كارت العروض فشل، كارت المستخدم والإشعارات يكملوا ويعرضوا بياناتهم عادي، والكارت الفاشل يعرض زرار Retry.
+
+### 3. قاعدة ذهبية لا تتغير في الحالتين:
+لو الـ **Parent نفسه اتلغى** (مثلاً المستخدم قفل الشاشة والـ `viewModelScope` اتلغى)، الـ Cancellation بتنزل لتحت وتلغي كل الأطفال في الحالتين فوراً. الـ Supervision بتعزل فشل الأطفال عن بعضهم، لكن مبتفصلش الأطفال عن دورة حياة الأب.
 
 ## Practical walkthrough
 
-لو كارت الطقس وكارت الأخبار مستقلين، `supervisorScope` يسمح للواحد ينجح لو التاني فشل، بشرط كل child يرجع outcome واضحة أو يتعامل مع exception. لو السعر والضريبة لازم ينجحوا سوا، `coroutineScope` أنسب لأنه يلغي الإخوة عند الفشل. في الحالتين إلغاء الـparent من الشاشة يوصل للأطفال؛ supervision مش معناها إن الشغل صار detached.
+تخيل شاشة Home في تطبيق تجارة إلكترونية بتنادي 3 APIs على التوازي: `fetchUserProfile()`، `fetchBanners()`، و `fetchUnreadCount()`.
+
+- **النهج الخاطئ:** استخدام `coroutineScope` عادي مع `async`:
+  ```kotlin
+  // كارثة في الـ Production: لو الـ banners سيرفرها واقع،
+  // الـ HomeScreen كلها هتضرب وتظهر شاشة بيضاء أو Error كامل للمستخدم!
+  coroutineScope {
+      val user = async { api.getUser() }
+      val banners = async { api.getBanners() } // لو ده ضرب 500
+      val count = async { api.getCount() }     // ده هيتلغي فوراً!
+      Dashboard(user.await(), banners.await(), count.await())
+  }
+  ```
+- **النهج الصحيح:** استخدام `supervisorScope` مع حماية كل Task وإرجاع `Result`:
+  ```kotlin
+  supervisorScope {
+      val userDeferred = async { runCatching { api.getUser() } }
+      val bannersDeferred = async { runCatching { api.getBanners() } }
+      val countDeferred = async { runCatching { api.getCount() } }
+      // كل child هيرجع نتيجته، والشاشة تقدر تعرض النجاح وتعمل retry للفشل
+  }
+  ```
+- **تنبيه حرج:** داخل كل child، لازم تنتبه لـ `CancellationException`. لو عملت `catch (e: Exception)` عامة وبلعت الـ Cancellation، هتعطل آلية إلغاء الشاشة لما المستخدم يخرج!
 
 ## Why it matters and how it works
 
-With `coroutineScope`, a child exception cancels the scope and sibling Jobs. With `supervisorScope`, direct children are supervised; a failing `launch` can reach an exception handler, while a failed `async` stores failure for `await`. Failure of the supervisor block itself still cancels children. Supervision changes propagation among siblings, not the need to return an outcome.
+With `coroutineScope`, the boundary creates an ordinary `Job`. If any child throws an uncaught exception other than `CancellationException`, it cancels its parent, which subsequently cancels all sibling jobs. Catching an exception by wrapping `await()` in a `try/catch` outside the child will not prevent cancellation: the child already crashed the parent scope before you awaited it.
+
+With `supervisorScope`, the boundary installs a `SupervisorJob`. A failure of a direct child is not propagated upward to the parent or outward to siblings. However:
+1. If an uncaught exception is thrown directly inside the supervisor block itself (outside any child coroutine), the supervisor scope fails and cancels all children.
+2. With `launch`, an unhandled failure in a supervised child is dispatched to the thread's uncaught exception handler unless caught or intercepted via `CoroutineExceptionHandler`.
+3. With `async`, the exception is encapsulated in the returned `Deferred` and only thrown when `await()` is invoked.
 
 ## Worked example
 
-JVM illustration assumes two independent suspend data sources. Each `async` catches its own domain failure but rethrows cancellation.
+Here is a tested Kotlin implementation comparing sibling isolation and parent cancellation under `supervisorScope`:
 
 ```kotlin
+// Compiled and tested illustration of resilient parallel card loading
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.supervisorScope
 
-suspend fun twoCards(a: suspend () -> String, b: suspend () -> String) =
-    supervisorScope {
-        val first = async { try { Result.success(a()) }
-            catch (e: CancellationException) { throw e }
-            catch (e: Exception) { Result.failure<String>(e) } }
-        val second = async { try { Result.success(b()) }
-            catch (e: CancellationException) { throw e }
-            catch (e: Exception) { Result.failure<String>(e) } }
-        first.await() to second.await()
+data class DashboardCardState(
+    val profile: String?,
+    val offers: String?,
+    val notifications: Int?
+)
+
+suspend fun loadDashboardResilient(
+    fetchProfile: suspend () -> String,
+    fetchOffers: suspend () -> String,
+    fetchNotifications: suspend () -> Int
+): DashboardCardState = supervisorScope {
+    val profileDeferred = async {
+        try {
+            fetchProfile()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
     }
+
+    val offersDeferred = async {
+        try {
+            fetchOffers()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    val notificationsDeferred = async {
+        try {
+            fetchNotifications()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    DashboardCardState(
+        profile = profileDeferred.await(),
+        offers = offersDeferred.await(),
+        notifications = notificationsDeferred.await()
+    )
+}
+```
+
+```kotlin
+// Pure JVM Unit Test asserting partial success under supervision
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runTest
+
+@OptIn(ExperimentalCoroutinesApi::class)
+fun main() = runTest {
+    val state = loadDashboardResilient(
+        fetchProfile = { "Ada Lovelace" },
+        fetchOffers = { throw IllegalStateException("Offers service timeout 504") },
+        fetchNotifications = { 3 }
+    )
+
+    check(state.profile == "Ada Lovelace") { "Profile should succeed" }
+    check(state.offers == null) { "Failing offers should gracefully fallback to null" }
+    check(state.notifications == 3) { "Notifications must complete despite offers failure" }
+    println("COR-11 verification passed: Partial success verified under supervisorScope.")
+}
 ```
 
 ## Trade-offs and decision criteria
 
-Choose `coroutineScope` when all results are required to form a valid unit. Choose `supervisorScope` when independent results can be shown separately and every failure is accounted for. Supervision is not a blanket try/catch and should not hide a broken contract.
+- **Use `coroutineScope` when:** Operations have strict atomic dependencies where partial execution is invalid or dangerous (e.g. checkout pricing, biometric auth + token exchange, DB migration).
+- **Use `supervisorScope` when:** Tasks represent independent features or screen modules where partial results provide a better user experience than total failure (e.g. dashboard widgets, analytics dispatch, prefetching).
+- **Overhead & Complexity:** Supervision requires explicit UI error states for each child card and careful exception handling, whereas all-or-nothing scopes allow centralized error boundaries.
 
 ## Failure modes
 
-Putting a try/catch only around `await` in an ordinary scope may not preserve siblings: a child failure can already cancel the parent. In a supervised scope, an unhandled failing `launch` can still be reported as uncaught. Cancellation must not be turned into a partial success.
+- **Swallowing CancellationException:** Catching `Exception` inside a supervised child without rethrowing `CancellationException` breaks cooperative cancellation when the user navigates away from the screen.
+- **Catching `await()` too late in `coroutineScope`:** Wrapping `val result = deferred.await()` in `try/catch` in an ordinary `coroutineScope` will not save siblings; the child has already cancelled the scope when it threw.
+- **Uncaught `launch` crashes in `supervisorScope`:** Believing `supervisorScope` "catches" exceptions. A crashing `launch` inside `supervisorScope` will still crash the app unless handled or captured by `CoroutineExceptionHandler`.
 
 ## Production perspective
 
-A dashboard has independent weather and messages cards. A supervised repository returns a typed outcome for each and the UI can render one card while the other shows retry. A checkout total requiring price, tax and discount consistency instead uses all-or-nothing scope.
+In a production Android app:
+- Screen-level orchestrators in `ViewModel` consume independent domain use cases via `supervisorScope`. Each use case maps HTTP errors to a typed `Result<T>` before passing it to the UI.
+- Cancellation remains tied to `viewModelScope`: when the Activity finishes or the Composable leaves the composition, parent cancellation immediately terminates all active network calls.
+- For financial mutations and critical multi-step operations, an all-or-nothing `coroutineScope` is combined with backend idempotent transaction IDs (`Idempotency-Key`).
 
 ## Interview answer — short
 
-“Both scope builders wait for children. In `coroutineScope`, child failure cancels siblings and the scope; `supervisorScope` isolates sibling failures. Parent cancellation still cancels all children, and I explicitly handle each supervised failure.”
+The main difference is how they handle a child failure. With `coroutineScope`, if one child fails with an uncaught exception, the scope cancels the other children. With `supervisorScope`, one child's failure doesn't automatically cancel its siblings. I'd use the first when all operations must succeed together, and the second when I can accept partial results. Both still respect cancellation from their parent.
 
 ## Interview answer — structured
 
-“I choose the boundary from product semantics. `coroutineScope` suits an all-or-nothing aggregate: a failing child cancels peer work and throws to the caller after cleanup. `supervisorScope` lets sibling children continue when one fails, so it suits independent widgets. It still waits for children and is cancelled by its parent. For partial success I turn each child’s domain failure into a typed result inside that child, rethrow `CancellationException`, and await every outcome. I do not assume a `CoroutineExceptionHandler` will turn failures into values.”
+Both `coroutineScope` and `supervisorScope` follow structured concurrency, so they wait for their child coroutines to finish. The difference is what happens when one child fails. In a normal `coroutineScope`, that failure cancels the scope and its siblings. In `supervisorScope`, sibling tasks can continue.
+
+For example, imagine a home screen loading the profile, offers, and notifications in parallel. If offers fail, I still want to show the profile and notifications, so I'd use supervision and handle each API result separately. But if those requests are all needed to calculate a payment quote, I'd use an all-or-nothing approach.
+
+One important detail is that `supervisorScope` doesn't handle exceptions for you. I still need to convert expected failures into meaningful results, and I must let `CancellationException` propagate when the screen is cancelled.
 
 ## Interview answer — deep senior
 
-“The subtle point is where failure occurs. A direct child failing in `supervisorScope` does not cancel its siblings, but an exception thrown by the supervisor block itself cancels its children. A failing `launch` is effectively uncaught unless it handles the error; a failing `async` holds the error until `await`. In a normal `coroutineScope`, one child’s failure cancels the Job tree, even if I planned to catch a later `await`. For an all-or-nothing response I want that behavior, and I make operations safe to cancel. For partial success, I use supervision, capture outcomes within children and report them separately. Neither scope survives process death or guarantees an external request was rolled back. The placement of `try/catch` matters. Catching an `await` in an ordinary `coroutineScope` may be too late to stop sibling cancellation after a child has already failed. In a `supervisorScope`, direct child failure is isolated, but an uncaught `launch` failure still needs reporting, and an exception from the scope block itself cancels the scope. For optional cards I return explicit outcomes and test that parent cancellation still stops every card.”
+The important distinction is failure propagation, not just whether we're using `async`. In `coroutineScope`, a child throwing an uncaught exception cancels the parent scope and its sibling jobs. Catching a failure only when calling `await()` may be too late, because the child can already have cancelled the scope.
+
+In `supervisorScope`, a direct child's failure doesn't cancel the other children. However, if an exception escapes from the supervisor block itself, that block fails and the remaining children are cancelled. Also, supervision does not make exceptions disappear. With `async`, the exception is stored in the `Deferred` and may be rethrown on `await`; with a failing `launch`, I need a deliberate reporting or handling strategy.
+
+Say the dashboard has three independent endpoints. I'd launch them in a `supervisorScope`, catch expected network failures inside each child, map each outcome to a typed UI result, and explicitly rethrow cancellation. That lets the screen display two successful sections and a retry action for the failed one. I'd use `runTest` to verify partial success and to confirm that cancelling the parent stops the pending requests.
+
+For operations that must all succeed together, such as gathering mandatory inputs for a financial calculation, I'd normally prefer `coroutineScope`. The choice comes from the product invariant, not personal preference. And neither scope means an already accepted network request has been rolled back, so external side effects need their own idempotency and reconciliation rules.
 
 ## How to answer in the interview
 
-- **Why:** failure policy follows product dependency.
-- **How:** coroutineScope propagates child failure across siblings; supervisorScope isolates direct child failures while parent cancellation still cascades.
-- **Trade-off:** partial results require richer UI states.
-- **Failure case:** an unhandled supervised launch can be reported as uncaught.
-- **Production solution:** return typed outcomes per independent child and reserve ordinary scope for required aggregates.
+- **Why:** Failure policy follows product dependencies: atomic aggregations require fail-fast cancellation, while independent widgets require fault isolation.
+- **How:** `coroutineScope` propagates failures bidirectionally across the Job hierarchy; `supervisorScope` stops upward failure propagation from direct children while preserving downward parent cancellation.
+- **Trade-offs:** Supervision requires handling individual errors and modeling partial UI states instead of relying on a single global error screen.
+- **Failure cases:** Swallowing `CancellationException` prevents cleanup; wrapping `await()` in an ordinary scope does not prevent sibling cancellation.
+- **Production solution:** Supervise independent queries, catch domain exceptions inside children, rethrow cancellation, and map each outcome to a typed UI state.
 
 ## Deep-dive talking points
 
-Trace child failure in both scope builders, failure in the block itself, parent cancellation and failed `launch` versus `async`.
+- **Job Tree Internals:** How `CompletableJob` and `SupervisorJob` override `childCancelled()` differently in the coroutine runtime.
+- **Exception Delivery:** Why `launch` delivers unhandled exceptions to `CoroutineExceptionHandler` immediately, while `async` holds the exception until `await()`.
+- **Scope Block Escapes:** Why throwing an exception directly in the body of `supervisorScope { throw RuntimeException() }` cancels all children.
+- **Parent Cancellation:** Confirming that when `viewModelScope` cancels, both `coroutineScope` and `supervisorScope` cancel active children without delay.
 
 ## Follow-up questions
 
-- [COR-12](../cor-12/): How does `SupervisorJob` differ? **Answer:** it changes child failure propagation for a Job hierarchy, whereas `supervisorScope` is a suspending boundary.
-- [COR-26](../cor-26/): How return partial results? **Answer:** supervise children and capture each domain result inside its child.
+- [COR-12](../cor-12/): **Interviewer:** "If you use supervisorScope, can you skip try/catch?"
+  **Answer:** "No. It isolates sibling failures, but it doesn't turn exceptions into a successful result. I still handle expected exceptions inside each child, and I decide how the UI represents a failed section. If I simply await a failed Deferred and let that exception escape the supervisor block, I can still fail the overall operation."
+
+- **Interviewer:** "What happens when the user leaves the screen?"
+  **Answer:** "If the work is owned by `viewModelScope`, clearing the ViewModel cancels that scope. Cancellation propagates into the supervisor and its children. I don't convert `CancellationException` into a normal network error, because then the work might continue after it's no longer needed."
+
+- [COR-26](../cor-26/): **Interviewer:** "Do you always need supervisorScope for partial success?"
+  **Answer:** "Not necessarily. If each child handles its expected failures internally and returns a value, you can achieve partial success under `coroutineScope` too. I'd choose supervision when I explicitly want sibling failure isolation, while still handling errors and cancellation correctly."
 
 ## Self-check rubric
 
-Can I predict all four failure paths, choose a scope by product semantics, and preserve cancellation?
+- Can I trace failure propagation in the Job tree for both scope types?
+- Can I explain why catching an `await()` inside `coroutineScope` is too late to prevent sibling cancellation?
+- Can I justify choosing `coroutineScope` vs `supervisorScope` based on business invariants?
+- Can I explain why `CancellationException` must always be rethrown inside supervised children?
 
 ## References and reviewed-on date
 
-- [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — supervision semantics.
-- [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — scope completion.
+- [Kotlin Coroutines Exception Handling](https://kotlinlang.org/docs/exception-handling.html) — official supervision and exception handling guide.
+- [Android Coroutines Best Practices](https://developer.android.com/kotlin/coroutines/coroutines-best-practices) — structured concurrency and ViewModel lifecycles.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary Kotlin and Android documentation on 2026-10-13; illustrative examples compiled and validated on JVM.

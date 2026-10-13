@@ -23,11 +23,57 @@ How do you identify an accidental O(n²) transformation in a RecyclerView/Compos
 
 ## Explanation in Arabic
 
-RecyclerView/Compose list ممكن تبقى O(n²) لو لكل item نعمل `others.find { id == ... }` أو `filter` على list كلها. الـUI يظهر كويس مع 20 item ويهنّج مع آلاف، خصوصًا لو transformation تتعاد في recomposition. نعمل lookup map مرة لكل snapshot أو join في data layer، ونقيس allocations والframe time.
+كيف تكتشف وتصلح التحويلات الحسابية ذات التعقيد التربيعي العرضي ($O(n^2)$) داخل قوائم RecyclerView أو Compose؟
+
+1. الفخ القاتل الشائع (The Accidental $O(n^2)$ Trap):
+   - في كثير من التطبيقات، يطلب مصمم الواجهة عرض علامة "محدد" (Selected Checkbox) بجانب كل عنصر.
+   - يقوم المطور بكتابة الكود التالي داخل `onBindViewHolder` أو داخل Compose `items()`:
+     `val isSelected = selectedIdsList.contains(item.id)`
+   - حيث `selectedIdsList` هي `List<String>` عادية!
+   - الكارثة: `List.contains()` هي عملية بحث خطي تستغرق $O(m)$. وبما أن RecyclerView أو LazyColumn يمر على $n$ عنصر، فإن التكلفة الإجمالية تصبح **$O(n \times m) \approx O(n^2)$** مع كل عملية تمرير أو إعادة رسم!
+   - إذا كانت القائمة تحتوي على 5,000 عنصر، فإن التمرير يتطلب ملايين المقارنات في أجزاء من الثانية على الـ Main Thread، مما يجمد الشاشة ويسقط الإطارات فوراً.
+
+2. فخاخ تربيعية أخرى:
+   - استدعاء `list.indexOf(item)` داخل حلقة العرض.
+   - عمل `items.filter { ... }` داخل دالة الـ Composable أثناء كل Recomposition.
+
+3. الحل الهندسي الصارم:
+   - تحويل هياكل البيانات المساعدة إلى **`Set`** أو **`Map`** ذات بحث في وقت ثابت **$O(1)$** (`selectedIds.toHashSet()`).
+   - إجراء جميع التحويلات في الـ ViewModel مسبقاً قبل إرسال الـ UI State للشاشة.
 
 ## Practical walkthrough
 
-لو كل RecyclerView bind أو Compose item يعمل `allProducts.find { id == ... }` على n عنصر، rendering كل القائمة قد يصبح `O(n²)`. احسب product map مرة في ViewModel/repository ومرر item جاهز أو keyed lookup. لكن لا تحرك state mutable إلى composable بدون observation؛ ستستبدل freeze بـstale UI. استخدم profiler يميز time في transform عن layout/draw.
+مقارنة بين الكود الكارثي والإصلاح الهندسي المحسن في كوتلن:
+```kotlin
+// ❌ الكود الكارثي: O(n^2) داخل Compose LazyColumn يسبب Jank شديد:
+@Composable
+fun ProductListBad(products: List<Product>, selectedIdsList: List<String>) {
+    LazyColumn {
+        items(products, key = { it.id }) { product ->
+            // كل عنصر يقوم ببحث خطي O(m) في قائمة selectedIdsList:
+            val isSelected = selectedIdsList.contains(product.id) // O(n * m) -> O(n^2)!
+            ProductItemRow(product, isSelected)
+        }
+    }
+}
+
+// ✅ الإصلاح الهندسي الأول: تحويل الـ List إلى HashSet للبحث في O(1):
+@Composable
+fun ProductListOptimized(products: List<Product>, selectedIdsList: List<String>) {
+    // تذكر تحويل القائمة إلى Set لضمان بحث O(1) ثابت:
+    val selectedSet = remember(selectedIdsList) { selectedIdsList.toHashSet() }
+    LazyColumn {
+        items(products, key = { it.id }) { product ->
+            val isSelected = selectedSet.contains(product.id) // O(1) lookup!
+            ProductItemRow(product, isSelected)
+        }
+    }
+}
+
+// 🏆 الإصلاح الأفضل معمارياً: دمج الحالة في ViewModel قبل إرسالها للـ UI:
+data class ProductUiModel(val product: Product, val isSelected: Boolean)
+// تحويل القائمة مرة واحدة فقط على Dispatchers.Default في ViewModel
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +97,32 @@ Use traces to split bind/recomposition time from data transform time. Benchmark 
 
 ## Interview answer — short
 
-“A linear lookup inside per-item mapping makes O(n²) work. I preindex the lookup data once, move transforms to the data layer, and measure frames and allocations.”
+Accidental O(n²) transformations occur when calling linear-time operations like List.contains() or List.indexOf() inside onBindViewHolder or LazyColumn items(). Fix them by transforming secondary collections into HashSets for O(1) contains checks, and moving data mapping upstream into the ViewModel on background dispatchers.
 
 ## Interview answer — structured
 
-“I inspect nested operations, including hidden `find` or `contains` calls. If n rows each scan n prices, the transform is quadratic. Building an `associateBy` map once costs expected O(n) time/space and makes each lookup expected constant. I keep that derivation outside composition and invalidate it when inputs change. I still profile because rendering/image work can also cause jank.”
+Accidental quadratic operations in Android list adapters represent the leading cause of scrolling jank:
+
+1. **The Classic Vulnerability Pattern**:
+   - Calling `list.contains(id)` inside item binding. Because `List.contains()` performs an $O(m)$ linear scan, evaluating it across $n$ list items multiplies complexity to $O(n \times m) \approx O(n^2)$. Under rapid scrolling, this triggers thousands of redundant object comparisons on the Main Thread.
+
+2. **Detection Techniques**:
+   - **Android Studio CPU Profiler**: Record a trace during fast fling scrolling. Look for call-tree hotspots dominated by `ArrayList.contains()`, `ArrayList.indexOf()`, or `equals()` invocations.
+   - **AndroidX JankStats**: Flags dropped frames exceeding 16.6ms.
+
+3. **Architectural Remediation**:
+   - **Collection Indexing**: Convert secondary lookup collections to `HashSet` or `Map`, reducing membership lookups from $O(m)$ to $O(1)$.
+   - **ViewModel Pre-Mapping**: Never compute data relations inside Composable bodies or ViewHolders. Map entities into composite UI state models (`ProductItemUiState(item, isSelected)`) on `Dispatchers.Default` before emitting to the UI.
 
 ## Interview answer — deep senior
 
-“I look for hidden multiplication in the rendering path. If each RecyclerView bind or Compose item calls `allProducts.find` over n items, rendering n rows performs roughly n² comparisons, even though each callback contains only one simple scan. I confirm it with a trace showing repeated transformation work, then build an ID-to-product index once in a ViewModel or repository and pass ready row models into the UI. That trades O(n) memory for expected O(n) preparation and cheap per-row access. I ensure the index is rebuilt when the source changes; caching a mutable map without observable state can trade jank for stale content. I also distinguish algorithmic work from layout, image decoding and recomposition cost—pre-indexing will not fix oversized images or unstable keys. I test correctness for missing IDs, duplicates and updates, then measure frame timing on a low-end device in a release build. The goal is a stable user interaction, not merely a better complexity label.”
+From an ART compilation and Compose recomposition perspective, hidden quadratic costs ripple through layout cycles:
+
+1. **Compose Recomposition Amplification**: In Jetpack Compose, if `selectedIdsList` changes, every item in `LazyColumn` reading that unstable list recomposes. If each item recalculates an $O(n)$ check, the main thread locks up during animations. Using `@Immutable` state holders and pre-calculated booleans prevents nested recomposition passes.
+
+2. **RecyclerView DiffUtil Complexity Multiplication**: `DiffUtil.calculateDiff` runs in $O(n \cdot d)$. If your `areItemsTheSame` or `areContentsTheSame` callbacks inadvertently execute linear scans (e.g. comparing inner lists), the diffing calculation explodes beyond $O(n^2)$, stalling UI updates. DiffUtil callbacks must execute strictly in $O(1)$ constant time.
+
+3. **Zero-Allocation Primitive Collections**: For selection sets of primitive IDs (`Long`), using AndroidX's `LongSparseArray` or primitive `LongArray` with binary search avoids autoboxing overhead while keeping lookup costs tightly bounded.
 
 ## How to answer in the interview
 
@@ -75,8 +138,11 @@ Prompt for hidden find, one-time index, snapshot invalidation, rendering versus 
 
 ## Follow-up questions
 
-- [DSA-06](../dsa-06/): What is map lookup bound? **Answer:** expected O(1), with hash caveats.
-- [DSA-14](../dsa-14/): How distinguish jank sources? **Answer:** trace CPU/render work separately.
+- **Interviewer:** "Why should `DiffUtil` callbacks (`areItemsTheSame`) strictly execute in $O(1)$ time?"
+  **Answer:** "Because DiffUtil compares items across lists hundreds or thousands of times; non-$O(1)$ comparisons inside the callback explode total diff calculation time."
+
+- **Interviewer:** "What is the Big O time complexity of `HashSet.contains()` compared to `List.contains()`?"
+  **Answer:** "`HashSet.contains()` operates in $O(1)$ average time, whereas `List.contains()` operates in $O(n)$ linear time."
 
 ## Self-check rubric
 
@@ -87,4 +153,4 @@ Find the repeated scan or map lookup inside a list bind/composition path, derive
 - [Kotlin associateBy](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.collections/associate-by.html) — index construction.
 - [Android rendering performance](https://developer.android.com/topic/performance/rendering) — frame diagnosis.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

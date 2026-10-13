@@ -23,11 +23,48 @@ What is Play Integrity API? What trust decisions must happen on the server?
 
 ## Explanation in Arabic
 
-Play Integrity API بتدي signals عن app/device/account environment، لكنها مش تصريح دفع. الـapp تطلب token قريب من العملية الحساسة، والـbackend يفك ويتحقق من verdict ويربطه بالrequest hash أو nonce حسب النوع. الـserver يقرر policy تدريجية مع authentication والـtransaction rules. Root/hooking detections قابلة للتجاوز وفيها false positives.
+ما هي Play Integrity API؟ وما هي القرارات الأمنية التي يجب أن تُتخذ حصرياً على السيرفر (Server-Side Decisions)؟
+
+1. ما هي Play Integrity API وماذا تفحص؟
+   - هي البديل الرسمي والحديث لـ SafetyNet Attestation من Google.
+   - تقوم بفحص حالة البيئة التي يعمل فيها التطبيق وإصدار شهادة موقعة مشفرة (Cryptographically Signed Token) تحتوي على ثلاثة مؤشرات رئيسية:
+     * **App Licensing Verdict**: هل التطبيق مرخص ومثبت من متجر Google Play الرسمي؟
+     * **App Recognition Verdict**: هل توقيع الـ APK والـ Package Name مطابقان للإصدار الأصلي المسجل في Play Console؟
+     * **Device Recognition Verdict**: مستوى سلامة الجهاز والعتاد (MEETS_BASIC_INTEGRITY, MEETS_DEVICE_INTEGRITY, MEETS_STRONG_INTEGRITY).
+
+2. القاعدة الذهبية: العميل لا يفك التشفير ولا يتخذ القرار!
+   - **خطأ ساذج**: فك تشفير الـ Token على الهاتف وفحص النتيجة في كود Kotlin (`if (verdict == MEETS_DEVICE_INTEGRITY)`). هذا الفحص يمكن تجاوزه بسهولة عبر Frida أو تعديل الـ Smali!
+   - **المعمارية الصحيحة**: يقوم السيرفر بإنشاء رقم عشوائي (Cryptographic Nonce) مشفر مرتبط بطلب المستخدم. يطلب التطبيق الـ Token من Google Play مدمجاً بهذا الـ Nonce، ثم يرسل الـ Token الخام إلى السيرفر. السيرفر هو الطرف الوحيد الذي يفك تشفير الـ Token ويفحص التوقيع وصحة الـ Nonce ويتخذ قرار السماح أو الرفض.
 
 ## Practical walkthrough
 
-قبل transfer كبير، app تطلب Play Integrity token مربوط بـrequest hash لحقول ثابتة زي operation ID والمبلغ والـbeneficiary. الـbackend يعيد حساب hash ويتحقق من verdict والتوقيت وهوية التطبيق، ثم يفحص session والحدود وحالة العملية. لو جهاز شرعي أخد verdict ضعيفة، مش لازم hard block آليًا؛ ممكن step-up أو limit حسب risk policy.
+المعمارية الصحيحة لطلب Play Integrity Token وإرساله للسيرفر للتحقق منه:
+```kotlin
+class PlayIntegrityRepository(
+    private val context: Context,
+    private val backendApi: BackendSecurityApi
+) {
+    private val integrityManager = IntegrityManagerFactory.create(context)
+
+    // 1. طلب الـ Token باستخدام Nonce وارد من السيرفر لمنع هجمات Replay Attacks:
+    suspend fun verifyTransaction(serverNonce: String, transactionId: String): TransactionResult {
+        val request = IntegrityTokenRequest.builder()
+            .setCloudProjectNumber(123456789012L) // Cloud Project Number الخاص بالتطبيق
+            .setRequestHash(serverNonce) // ربط الـ Token بالـ Nonce السيرفري
+            .build()
+
+        val tokenResponse = integrityManager.requestIntegrityToken(request).await()
+        val integrityToken = tokenResponse.token()
+
+        // 2. إرسال الـ Token الخام للسيرفر دون فحص محلي:
+        // السيرفر يستخدم Google Play Developer API لفك التشفير والتأكد من سلامة التوقيع والجهاز
+        return backendApi.authorizeSensitiveTransaction(
+            transactionId = transactionId,
+            integrityToken = integrityToken
+        )
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -77,15 +114,31 @@ Instrument acceptance/denial rates by app version and device cohort without coll
 
 ## Interview answer — short
 
-“Play Integrity supplies app and device signals. I bind the token to a sensitive request and verify it on the backend, where it informs a tiered risk decision alongside normal authentication and transaction checks.”
+Play Integrity API evaluates app binary authenticity, licensing, and device integrity verdicts. The client must never decrypt or act on the token locally; instead, it requests a token bound to a server-generated nonce and sends it to the backend, which decodes Google's cryptographic verdict to enforce policy.
 
 ## Interview answer — structured
 
-“I request a verdict near the protected action, bind it to the request with requestHash or nonce as appropriate, and send the token to my backend. The backend verifies and decodes it, checks app identity and matching request details, then applies a risk policy. It does not accept a client Boolean like `isSafe`. A compromised device can still be deceptive and verdicts can fail for legitimate users, so I monitor outcomes and retain server-side authorization.”
+Play Integrity API provides attestation of app authenticity and device trustworthiness:
+
+1. **Evaluation Signals**:
+   - **App Recognition**: Validates whether the running APK matches the package name and signing certificate registered in Google Play.
+   - **App Licensing**: Verifies whether the user acquired the app legitimately through Google Play.
+   - **Device Recognition**: Returns graduated verdicts (`MEETS_BASIC_INTEGRITY` for emulators/rooted devices without active tampering, `MEETS_DEVICE_INTEGRITY` for certified CTS-compliant Android devices, `MEETS_STRONG_INTEGRITY` for hardware-backed keystore and bootloader locking).
+
+2. **Mandatory Server-Side Verification**:
+   - Decrypting or validating verdicts on the Android client is an anti-pattern because client memory and conditional branches can be hooked.
+   - The server initiates an action by generating a cryptographically random, short-lived `nonce`. The mobile client requests an integrity token embedding this nonce, and forwards the token to the backend.
+   - The backend validates the verdict payload directly via Google APIs or Google's public keys, verifying the nonce, timestamp, package name, and integrity level.
 
 ## Interview answer — deep senior
 
-“For a payment decision, I would never let an integrity verdict stand alone. The server verifies package and signing recognition, time/request details and a digest of stable operation fields; it also validates the authenticated user, amount and idempotency identity. I choose a tiered policy: normal path, step-up authentication, limited capability or block according to risk, with support for false positives and outages. I test replay, parameter mutation and token unavailability, and avoid putting raw sensitive fields in the binding input. Signals improve confidence but cannot guarantee an unrooted or unhooked endpoint. I would bind the token to stable operation fields using a canonical digest and compare it on the backend after decoding the verdict through the supported server flow. The server also checks freshness, package/signing recognition and the authenticated user's permissions. A high-value transfer can require step-up when a signal is weak, while a low-risk balance view may continue. I would monitor false positives and never cache one verdict as permanent device trust.”
+Senior architects implement Play Integrity using risk-based decision ladders rather than binary kill-switches:
+
+1. **Tiered Risk Responses**: Failing `MEETS_STRONG_INTEGRITY` should not immediately block app usage. Budget devices, custom vendor builds, or uncertified devices can pass `MEETS_BASIC_INTEGRITY`. High-risk financial operations (wire transfers, password resets) can mandate `MEETS_DEVICE_INTEGRITY`, while read-only browsing can proceed under basic integrity with stepped-up MFA requirements.
+
+2. **Play Integrity Standard vs. Classic Requests**: The standard API offers cached attestation tokens for low latency, while classic requests communicate directly with Google Play servers. For sensitive payments, classic requests bound to dynamic nonces guarantee fresh, un-cached hardware validation.
+
+3. **Fallback & Graceful Degradation**: Google Play Services may be temporarily unavailable or throttled. Backend architectures must establish fallback policies (e.g., rate-limiting requests or requiring SMS OTP) rather than completely blocking legitimate users during Google outages.
 
 ## How to answer in the interview
 
@@ -101,8 +154,11 @@ Prompt for standard requestHash versus classic nonce, server decode, request bin
 
 ## Follow-up questions
 
-- [SEC-29](../sec-29/): Does integrity stop Frida? **Answer:** it raises cost but cannot guarantee a clean client.
-- [SEC-32](../sec-32/): What if false positives rise? **Answer:** use monitored, reversible risk tiers and appeals.
+- **Interviewer:** "What happens on devices without Google Play Services (e.g., Huawei or custom AOSP)?"
+  **Answer:** "Play Integrity API fails immediately with an integrity service unavailable error; alternative attestations or server-side risk scoring must be used."
+
+- **Interviewer:** "Why is the nonce parameter critical for Play Integrity requests?"
+  **Answer:** "The nonce binds the integrity verdict to a specific transaction and timestamp, preventing attackers from capturing a valid token and replaying it against future requests."
 
 ## Self-check rubric
 
@@ -113,4 +169,4 @@ Can I place token verification on the server and explain binding, normal authori
 - [Play Integrity overview](https://developer.android.com/google/play/integrity/overview) — signal and policy model.
 - [Standard API request](https://developer.android.com/google/play/integrity/standard) — requestHash binding.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

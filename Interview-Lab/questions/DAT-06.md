@@ -22,7 +22,58 @@ Explain Room schema/access components, all-or-nothing transaction, migration and
 
 ## Explanation in Arabic
 
-`Entity` تمثل row/table، `DAO` يحدد SQL access، و`@Transaction` أو `withTransaction` تجمع updates كلها commit أو rollback. `Migration` تغيّر schema بين versions من غير مسح data. `Flow` query تعيد emission عند invalidation للجداول المعنية؛ مش promise إن كل intermediate row change هتوصل كevent مستقل. لازم نختبر migration من schemas القديمة.
+ما هي مكونات مكتبة Room الأساسية:
+`@Entity`، و `DAO`، و `@Transaction`، و `Migration`، و `Flow Query`، وكيف تعمل تحت الغطاء؟
+
+1. المكونات الأساسية وتفاصيلها:
+   - **`@Entity` (جدول قاعدة البيانات)**:
+     * كلاس يمثل جدولاً في SQLite (`@Entity(tableName = "users")`). كل حقل يمثل عموداً، مع تعريف المفتاح الأساسي `@PrimaryKey` والـ Indices لتحسين سرعة الاستعلامات.
+   - **`DAO` (Data Access Object - منفذ الوصول للبيانات)**:
+     * واجهة (`interface`) تعرف عمليات التفاعل مع قاعدة البيانات (`@Insert`, `@Update`, `@Delete`, `@Query`).
+     * يقوم Room في وقت التجميع بالتحقق من صحة استعلامات الـ SQL المدخلة: لو كتبت اسم جدول أو عمود خاطئ، يفشل الـ Build فوراً!
+   - **`@Transaction` (المعاملة الذرية)**:
+     * تضمن تنفيذ مجموعة من عمليات القراءة والكتابة كوحدة واحدة غير قابلة للتجزئة (Atomic Unit):
+     * إما أن تنجح جميع العمليات وتُثبت في الـ Database (`COMMIT`)، أو تلغى جميعها بالكامل عند حدوث أي Exception (`ROLLBACK`).
+   - **`Migration` (ترقية المخطط)**:
+     * كود تدريجي يعدل هيكل الجداول (`ALTER TABLE ...`) عند الانتقال من إصدار إلى إصدار جديد لقاعدة البيانات دون مسح بيانات المستخدم الحالية.
+   - **`Flow Query` (الاستعلام التفاعلي المباشر)**:
+     * دالة استعلام في الـ DAO تُرجع `Flow<T>`.
+     * يسجل Room مستمعاً على جدول الـ SQLite (عبر `InvalidationTracker`). بمجرد تعديل أو إضافة أي سطر في هذا الجدول، يعيد Room تنفيذ الاستعلام تلقائياً ويبث القائمة المحدثة إلى الـ UI.
+
+## Practical walkthrough
+
+التطبيق العملي لمكونات Room المتكاملة مع الـ Transaction والـ Flow Query:
+```kotlin
+// 1. Entity:
+@Entity(tableName = "cart_items")
+data class CartItemEntity(
+    @PrimaryKey val itemId: String,
+    val quantity: Int,
+    val priceCents: Long
+)
+
+// 2. DAO مع Transaction و Flow Query:
+@Dao
+interface CartDao {
+    // Flow Query: يعيد البث تلقائياً عند أي تعديل في جدول cart_items:
+    @Query("SELECT * FROM cart_items")
+    fun observeAllItems(): Flow<List<CartItemEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertItem(item: CartItemEntity)
+
+    @Query("DELETE FROM cart_items")
+    suspend fun clearCart()
+
+    // @Transaction: تضمن حذف السلة القديمة وإدخال العناصر الجديدة كعملية واحدة:
+    @Transaction
+    suspend fun replaceCart(newItems: List<CartItemEntity>) {
+        clearCart()
+        newItems.forEach { insertItem(it) }
+        // لو حدث crash في المنتصف، تعود السلة القديمة كما كانت ولا تصبح فارغة أبداً!
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -49,10 +100,6 @@ import kotlinx.coroutines.flow.Flow
 }
 ```
 
-## Practical walkthrough
-
-`@Entity` بتحدد جدول وprimary key، `@Dao` بتحدد SQL/insert/update، `@Transaction` بتربط عمليات محلية لازم تنجح أو تفشل مع بعض. لو حفظت order header وبعدين items في call منفصل، crash بين الاتنين يسيب order ناقصة؛ خليهم transaction واحدة. `Flow` query تراقب invalidation وتطلع snapshot جديد عند تغييرات tables ذات الصلة، لكنها مش server push ومش ضمان إن كل intermediate state هتتشاف. migration بين versions لازم تحافظ على صفوف المستخدم وتختبر exported schemas والقيود. لا تعمل network call جوه transaction عشان ما تمسكش DB lock مدة I/O.
-
 ## Trade-offs and decision criteria
 
 Room improves SQL safety and observability but does not decide remote conflict policy or encryption. Auto migrations handle supported schema changes; complex transforms need manual migration. Transactional writes can still fail from disk full and need error handling.
@@ -67,17 +114,30 @@ An offline order repository stores header/items atomically, exposes DAO Flow to 
 
 ## Interview answer — short
 
-“Entity maps table rows, DAO defines access, transaction groups writes atomically, migration evolves schema, and Flow query observes updated snapshots. I test migrations and do not treat query emissions as an event log.”
+Room translates @Entity to SQLite tables, and DAO interfaces to type-safe SQL operations verified at compile time. @Transaction guarantees all-or-nothing atomicity for multi-step writes. Migration alters schemas between versions preserving user data. Flow queries automatically emit fresh query results whenever InvalidationTracker detects table mutations.
 
 ## Interview answer — structured
 
-“Room sits above SQLite. I define entities for persisted rows and DAOs for verified queries. A transaction wraps related writes so callers see either the whole update or none. A migration moves stored user data to a new schema when app versions change; schema export and tests are essential. A DAO Flow reruns its query when relevant tables invalidate, giving UI current snapshots. That is useful for offline-first rendering, but it does not by itself resolve server conflicts or preserve every intermediate change.”
+Room structures SQLite database interactions through five core architectural constructs:
+
+1. **`@Entity`**: Models a SQLite table. Defines primary keys, auto-generation rules, foreign key constraints, and column indexes.
+
+2. **`DAO` (Data Access Object)**: Declares data interactions. The Room compiler verifies SQL query syntax and column mappings at compile time against Entity properties, preventing runtime SQL crashes.
+
+3. **`@Transaction`**: Wraps multiple DAO operations within a single SQLite transaction (`BEGIN TRANSACTION ... COMMIT`). If any statement throws an exception, the entire sequence rolls back, preventing inconsistent database states.
+
+4. **`Migration`**: Explicit migration definitions (`Migration(1, 2)`) executing raw SQL `ALTER TABLE` statements when bumping the database version, preserving existing user data.
+
+5. **`Flow Query`**: Reactive streams returning `Flow<List<T>>`. Powered by Room's internal `InvalidationTracker`, any insert, update, or delete on the queried table triggers a re-query on a background dispatcher, automatically emitting the new dataset to collectors.
 
 ## Interview answer — deep senior
 
-For a real order workflow, schema, consistency and observation are separate concerns. Entities and DAOs define local representation and access. I put header/item changes in one Room transaction, because a process crash between two independent writes would leave an invalid order. A migration preserves existing files across releases; I export schemas and run upgrade tests from every supported shipped version, including representative rows and constraints. A Flow query is an invalidation-driven snapshot stream, so UI can render the current state after a transaction, but it is not a transaction history. Server synchronization needs IDs, versions and conflict rules outside Room’s local atomicity. I also test disk-full and corrupted-file paths.
+Under the hood, understanding **Room InvalidationTracker Mechanics** is vital for senior engineers:
 
-I would design the local invariant first: an order header, lines, and a pending-sync marker must appear together. An Entity defines stored rows, a DAO owns typed operations, and a Room transaction gives local all-or-nothing behavior for those operations. A Flow query lets UI observe database invalidation and reload, but it is not a live network feed and should be collected with lifecycle awareness. A migration is a shipped-data contract, not just a version increment. I export schemas and test upgrades from supported old versions with realistic rows and foreign keys. I keep remote calls outside the DB transaction and handle server consistency with a separate protocol.
+Room does **NOT** observe individual rows; it observes **entire tables**.
+When Room initializes, it sets SQLite triggers on observed tables. When a write occurs, SQLite increments an internal invalidation counter in `room_master_table` or an in-memory bitset. The `InvalidationTracker` polls or receives trigger notifications on `Dispatchers.IO`, and dispatches an invalidation signal. The active Flow query re-runs the entire SQL query from scratch and emits the fresh result.
+
+Crucial Performance Consequence: If you query a 5,000-row table and update just 1 unrelated row in that table, Room re-executes the entire 5,000-row query! To prevent UI jank in high-frequency update tables, use targeted queries (`WHERE id = :id`), index foreign keys, and split rapidly changing columns into separate tables.
 
 ## How to answer in the interview
 
@@ -93,8 +153,11 @@ Trace local atomicity, observable snapshots, migration chain and remote conflict
 
 ## Follow-up questions
 
-- [DAT-12](../dat-12/): How write two tables atomically? **Answer:** one Room transaction.
-- [DAT-11](../dat-11/): How test upgrades? **Answer:** exported schemas and migration tests from shipped versions.
+- **Interviewer:** "What is the difference between `@Transaction` on a DAO method and `roomDatabase.withTransaction { }`?"
+  **Answer:** "`@Transaction` is an annotation for DAO methods; `withTransaction` is a coroutine extension function allowing multi-DAO transactions from repositories."
+
+- **Interviewer:** "Why does a Room Flow query never complete?"
+  **Answer:** "Because it represents an infinite hot reactive stream observing future database mutations; it stays alive until the collecting coroutine scope cancels."
 
 ## Self-check rubric
 
@@ -105,4 +168,4 @@ Can I define each component, explain Flow invalidation and test a migration with
 - [Android Room guide](https://developer.android.com/training/data-storage/room) — entities, DAOs and database.
 - [Android Room migrations](https://developer.android.com/training/data-storage/room/migrating-db-versions) — schema evolution tests.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

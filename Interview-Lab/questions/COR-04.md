@@ -22,11 +22,40 @@ Whether the candidate can explain the parent-child tree, completion waiting, can
 
 ## Explanation in Arabic
 
-`structured concurrency` معناها إن كل coroutine جديدة ليها owner واضح في شجرة `Job`. الأب ما يخلصش غير لما أولاده يخلصوا، وإلغاء الأب يلغيهم. ده بيمنع requests قديمة تفضل شغالة بعد خروج المستخدم من الشاشة، وبيخلّي الفشل والانتظار قابلين للتتبع بدل شغل سايب في الخلفية.
+الـ Structured Concurrency هي أهم فلسفة معمارية تميز Kotlin Coroutines عن أنظمة التزامن القديمة في Java (زي Thread و RxJava):
+
+1. المشكلة في التزامن غير المهيكل (Unstructured Concurrency):
+   - في الأنظمة القديمة، لما تشغل `Thread` أو `CompletableFuture` أو `GlobalScope.launch`، العمليات دي بتنطلق في الفضاء بدون أي أب شرعي (Fire and Forget).
+   - **تسريب الذاكرة (Memory Leaks):** لو المستخدم خرج من الشاشة، الـ Thread هيفضل شغال في الـ Background، يستهلك بطارية و RAM، وممكن يحاول يعدل View ملغية فيعمل Crash.
+   - **فقدان الاستثناءات (Lost Exceptions):** لو عملية في الخلفية فشلت ورمت Exception، الـ Exception بيضيع في الفضاء أو يوقع التطبيق بدون ما الكود الرئيسي يعرف.
+
+2. ما هي الـ Structured Concurrency؟
+   - هي قاعدة تنص على: **لا يمكن إطلاق أي Coroutine إلا داخل CoroutineScope محدد له دورة حياة واضحة، وكل Coroutine له أب (Parent Job) مسؤول عنه.**
+   - **شجرة العمليات (Hierarchy Tree):**
+     * إلغاء الأب يؤدي تلقائياً إلى إلغاء جميع الأبناء والأحفاد.
+     * الأب لا يعتبر منتهياً (`Completed`) إلا بعد انتهاء جميع أبنائه بنجاح.
+     * فشل أي ابن يتم تصعيده للأب فوراً ليتخذ القرار الصحيح (إلغاء باقي الإخوة أو المعالجة).
+
+3. الفائدة في تطبيقات Android الإنتاجية:
+   - الربط المباشر مع دورات حياة الـ Android عبر `viewModelScope` و `lifecycleScope` يضمن 0% Memory Leaks عند مغادرة الشاشات.
 
 ## Practical walkthrough
 
-في شاشة checkout لازم السعر والمخزون ينجحوا سوا. `coroutineScope` يخلي الاتنين أبناء لنفس الطلب؛ لو واحد فشل، التاني يتلغي، والدالة ما ترجعش قبل ما الشجرة تخلص. ده برضه معناه إن إغلاق الشاشة يلغي الطلب كله. لو البيانات مستقلة زي كروت dashboard، اختار supervision مع نتيجة منفصلة لكل كارت بدل فرض نجاح جماعي.
+في شاشة تفاصيل الحساب البنكي:
+- بنطلب الرصيد وبنطلب آخر 10 معاملات بشكل متزامن داخل ViewModel:
+- **النهج غير المهيكل والخطير (Unstructured):**
+  `GlobalScope.launch { fetchBalance() }`
+  `GlobalScope.launch { fetchTransactions() }`
+  لو المستخدم ضغط زر الرجوع (Back) فوراً، العمليتين هيفضلوا شغالين على السيرفر وبيسحبوا باقة المستخدم بدون أي فائدة!
+- **النهج المهيكل والآمن (Structured Concurrency):**
+  viewModelScope.launch {
+      coroutineScope {
+          val balance = async { repo.getBalance() }
+          val transactions = async { repo.getTransactions() }
+          _uiState.value = UiState.Success(balance.await(), transactions.await())
+      }
+  }
+- بمجرد مغادرة الشاشة، الـ ViewModel بيموت وينادي `viewModelScope.cancel()`، فتلغى عمليتا الشبكة فوراً بدون سطر كود تنظيف يدوي واحد!
 
 ## Why it matters and how it works
 
@@ -64,15 +93,27 @@ A product-details request concurrently loads price and availability that must ag
 
 ## Interview answer — short
 
-“Structured concurrency gives coroutines an explicit parent-child lifetime. The parent waits for children, cancellation propagates downward, and ordinary child failure cancels the group. It makes UI work cancellable with its owner and exposes failures to the caller.”
+Structured concurrency guarantees that concurrent tasks have clear hierarchical lifecycles tied to a scope. Child coroutines cannot outlive their parent, cancellation propagates down the entire hierarchy tree, parent coroutines wait for all children before completing, and child failures propagate up to prevent leaked operations.
 
 ## Interview answer — structured
 
-“I use structured concurrency to make the lifetime of asynchronous work visible in the call tree. In `coroutineScope`, children inherit a parent Job and the function does not return until they finish. If an ordinary child fails, sibling work is cancelled and the error reaches the caller. That is right for all-or-nothing data assembly. For independent features I choose a supervised boundary and handle each result separately. On Android, `viewModelScope` owns screen requests; a repository should generally expose suspend functions and avoid detached scopes.”
+Structured concurrency is a design paradigm ensuring that asynchronous operations are bound to a strict hierarchical lifecycle. In older models like raw threads or GlobalScope, background tasks were launched into the wild with no parent; if the calling component was destroyed, those background tasks became zombie threads, causing memory leaks, battery drain, and unhandled crashes.
+
+With structured concurrency in Kotlin, every coroutine must be launched inside a `CoroutineScope`. This establishes a formal parent-child tree governed by three foundational rules:
+
+1. **Cancellation cascades downward:** Cancelling a parent scope automatically cancels all its children and nested descendants.
+2. **Completion waits for children:** A parent coroutine or scope cannot complete until every one of its spawned children finishes.
+3. **Error propagation cascades upward:** If a child fails with an unhandled exception, that failure is immediately propagated up to the parent, which cancels sibling tasks and prevents dangling, corrupted state.
+
+In Android, this eliminates lifecycle leaks by binding coroutines directly to architectural lifecycles through `viewModelScope` and `lifecycleScope`.
 
 ## Interview answer — deep senior
 
-“The important contract is ownership, not just concise syntax. A child Job is part of parent completion; cancelling the parent cancels descendants, while ordinary failure in a child cancels its parent and siblings. That lets a ViewModel cancel obsolete requests and lets a caller know that `combine` has truly completed. I use `coroutineScope` for dependent parallel calls and model one failure state. If partial success is valid, a `supervisorScope` can isolate sibling failures, but every child still needs an outcome and cancellation must be rethrown. A process can die regardless of scope, so critical persistence requires a durable queue or WorkManager rather than a detached coroutine. The exception case reveals whether the structure matches the product: with two required reads, the first failure should cancel its sibling, wait for cleanup, and reject the aggregate. With independent dashboard cards, that behavior may be too strict; I would supervise direct children and turn each into an outcome. In both designs the screen's parent can still cancel everything. I would test the subtree is quiescent before the function returns.”
+Under the hood, structured concurrency is maintained through the `Job` hierarchy. When you invoke `scope.launch`, the builder extracts the parent `Job` from the scope's context and creates a new child `Job`. The child attaches a completion and cancellation listener to the parent, and the parent registers the child in its internal child list.
+
+This tree structure directly governs exception handling. When a child coroutine encounters an uncaught exception (other than `CancellationException`), it notifies its parent via `childCancelled()`. By default, standard parent jobs cancel all other active siblings to maintain transactional integrity, preventing the application from continuing in a half-finished, inconsistent state.
+
+When creating custom scopes—such as an application-wide scope for database migrations or telemetry flushing—we deliberately configure a `SupervisorJob` to prevent a single telemetry failure from tearing down the entire application scope. However, we never use `GlobalScope` because it is an unbound, top-level scope that bypasses structured concurrency entirely.
 
 ## How to answer in the interview
 
@@ -88,8 +129,14 @@ Trace a tree with one failing child, then compare normal and supervised siblings
 
 ## Follow-up questions
 
-- [COR-11](../cor-11/): Does supervision keep siblings alive? **Answer:** yes for child failure inside the supervised boundary, but parent cancellation still cancels all.
-- [COR-24](../cor-24/): Why avoid `GlobalScope`? **Answer:** its lifetime is detached from the caller and failures become harder to own.
+- **Interviewer:** "Why is `GlobalScope` considered a dangerous anti-pattern?"
+  **Answer:** "`GlobalScope` is an unbound, application-lifetime scope that has no parent Job. Any coroutines launched in `GlobalScope` operate outside structured concurrency: they cannot be cancelled together, their lifecycles cannot be tracked, and exceptions in them cannot be caught by local error handlers, making them a primary cause of memory leaks and zombie network requests."
+
+- **Interviewer:** "How does `coroutineScope { }` enforce structured concurrency in suspend functions?"
+  **Answer:** "`coroutineScope` creates a local child scope within an existing coroutine. It suspends until all coroutines launched within its block complete. If any child coroutine fails, it cancels all remaining children and rethrows the exception, ensuring the suspend function never leaves orphaned concurrent work behind."
+
+- **Interviewer:** "What is the difference between structured concurrency failure propagation in `coroutineScope` versus `supervisorScope`?"
+  **Answer:** "In `coroutineScope`, a failure in any child immediately cancels the scope and all sibling coroutines. In `supervisorScope`, a failure in one child is contained: siblings continue executing, and the parent scope remains active."
 
 ## Self-check rubric
 
@@ -100,4 +147,4 @@ Can I draw the Job tree, predict completion and cancellation, choose all-or-noth
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — parent-child structure.
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — failure propagation.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

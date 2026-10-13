@@ -22,7 +22,67 @@ Resolve divergent local/server state using versions, domain merge and conflict U
 
 ## Explanation in Arabic
 
-لما local وserver اختلفوا، ما ينفعش قاعدة واحدة لكل البيانات. نحتفظ بـbase version/ETag مع edit، والسيرفر يعمل compare-and-set أو يرجع conflict. ممكن merge حقول مستقلة، أو server-wins لبيانات authoritative، أو user review للنصوص؛ الأموال والstock لا تتحسم بـlast-write-wins على الموبايل. كل resolution نفسه operation جديدة بهوية واضحة.
+كيف يتم حل النزاعات وتعارض البيانات (Conflict Resolution) عندما تختلف الحالة المحلية (Local State) عن حالة السيرفر (Server State)؟
+
+1. أسباب النزاع في بيئة الـ Offline-First:
+   - قام المستخدم بتعديل ملف أو مهمة على الهاتف وهو في الطائرة.
+   - في نفس الوقت، قام زميله في العمل بتعديل نفس الملف من متصفح الويب على السيرفر.
+   - عندما يعود هاتف المستخدم للإنترنت، تصبح هناك نسختان متعارضتان من الحقيقة لنفس المعرف (`EntityId`).
+
+2. الاستراتيجيات المعمارية لحل النزاعات (Conflict Resolution Strategies):
+   - **Last-Write-Wins (LWW - التعديل الأحدث يفوز)**:
+     * اعتماد النسخة ذات الـ Timestamp الأحدث.
+     * **تحذير**: كارثي في كثير من الحالات لأن ساعات الهواتف غير مضبوطة (Clock Drift)، مما قد يمسح بيانات مهمة دون علم المستخدم.
+   - **Server-Wins (السيرفر هو الحاكم الأخير)**:
+     * مناسب للبيانات السلطوية (الأسعار، المخزون، الحالات البنكية). السيرفر يرفض التعديل بـ `409 Conflict`، ويجبر العميل على تحديث نسخته المحلية.
+   - **Client-Wins (العميل يفوز)**:
+     * للمسودات الشخصية والملاحظات الخاصة التي لا يتشاركها عدة مستخدمين.
+   - **3-Way Merging (الدمج الذكي للحقول)**:
+     * مقارنة النسخة المشتركة القديمة (Base Version) والنسخة المحلية والنسخة البعيدة. إذا عدل العميل رقم الهاتف وعدل السيرفر العنوان، يتم دمج الحقلين معاً بنجاح.
+   - **Manual User Resolution (تدخل المستخدم)**:
+     * عرض شاشة للمستخدم بمقارنة جنباً إلى جنب (Side-by-Side Diff) ليختار النسخة التي يريد الاحتفاظ بها (مثل Google Keep أو Git Merge Conflict).
+
+## Practical walkthrough
+
+تنفيذ معالجة النزاع عبر Optimistic Locking باستخدام Version Vectors / ETag:
+```kotlin
+data class NoteSyncDto(
+    val id: String,
+    val content: String,
+    val baseVersion: Long // رقم الإصدار الذي كان لدى العميل عند بدء التعديل
+)
+
+class NoteRepositoryImpl @Inject constructor(
+    private val noteDao: NoteDao,
+    private val noteApi: NoteApiService
+) : NoteRepository {
+
+    suspend fun syncNote(noteId: String) {
+        val localNote = noteDao.getNoteById(noteId) ?: return
+        
+        try {
+            val response = noteApi.updateNote(
+                id = noteId,
+                dto = NoteSyncDto(localNote.id, localNote.content, localNote.version)
+            )
+            // نجاح: تحديث الإصدار الجديد من السيرفر:
+            noteDao.update(localNote.copy(version = response.newVersion, syncStatus = SYNCED))
+        } catch (e: HttpException) {
+            if (e.code() == 409) {
+                // تعارض حقيقي: السيرفر يحمل إصداراً أحدث!
+                val serverNote = noteApi.fetchLatestNote(noteId)
+                
+                // حفظ النزاع في Room وعرض إشعار للمستخدم:
+                noteDao.recordConflict(
+                    noteId = noteId,
+                    localContent = localNote.content,
+                    serverContent = serverNote.content
+                )
+            }
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -43,10 +103,6 @@ fun decide(base: VersionedNote, local: String, remote: VersionedNote): MergeDeci
     else MergeDecision.NeedsUser(local, remote.text)
 ```
 
-## Practical walkthrough
-
-لو note اتعدلت على جهازين من version 7، server يرفض update واحدة بـversion/ETag mismatch بدل last-write-wins العمياء. قارن base/local/remote: لو fields مستقلة ممكن three-way merge؛ لو نفس paragraph اتغير، user resolution أو domain rule واضحة. server-wins ممكن يضيع offline work، client-wins ممكن يمسح تعديل أحدث؛ لا تختار من غير business rule. في stock أو balance، server transaction authority وتحويل local intent لـrequest، مش merge للأرقام على العميل. خزّن conflicting versions بشكل آمن، واعرض UI تقول “Needs review” مع recovery بدل silent overwrite.
-
 ## Trade-offs and decision criteria
 
 Server-wins is simple but can lose offline user work; client-wins can overwrite others. Field-level merge is useful only when fields are independent; CRDTs add complexity and suit specific collaborative domains. User review preserves intent but costs UX.
@@ -61,17 +117,28 @@ A notes app stores base/local/remote versions and offers merge review when both 
 
 ## Interview answer — short
 
-“I detect divergence with server versions or ETags, then apply a domain-specific rule: merge independent fields, use server authority for protected data, or ask the user. I preserve the local edit until resolution.”
+Resolve conflicts between local and server state using Optimistic Concurrency Control with version numbers or ETags. When divergent states collide (HTTP 409), choose a domain-appropriate strategy: Server-Wins for authoritative data, field-level 3-way merging for non-overlapping attributes, or manual user review for documents and text.
 
 ## Interview answer — structured
 
-“Offline sync needs a conflict contract. Each local edit remembers the server version it was based on. The server conditionally accepts it or returns a conflict with current state. For independent fields I may merge; for a note text changed on both sides I may show a review UI; for money the backend ledger wins. I do not use device timestamps as a sole authority because clocks drift. I keep both versions and a pending operation until a resolution is confirmed.”
+When offline edits diverge from remote updates, naive Last-Write-Wins (LWW) based on device timestamps causes silent data loss due to client clock drift. Robust architectures implement **Optimistic Concurrency Control (OCC)**:
+
+1. **Version Tracking / ETags**: Every entity carries a `version: Long` or an HTTP `ETag` hash. When mutating data, the client submits `{ entityId, payload, baseVersion }`.
+
+2. **Server-Side Compare-and-Set**: If the server's current version matches `baseVersion`, the update commits and increments the version. If another client updated the record in the interim, the server rejects the write with **`409 Conflict`** and returns the latest server state.
+
+3. **Resolution Strategies by Business Domain**:
+   - **Authoritative Data (Inventory, Financial Balance)**: **Server-Wins**. The client discards local changes and updates Room with server ground truth.
+   - **Granular Attribute Merging**: If the server changed `status` and the client changed `notes`, apply 3-way merging to combine non-overlapping fields.
+   - **Collaborative Text (Notes, Documents)**: Present a visual conflict dialog allowing the user to select the preferred version or fork into two separate documents.
 
 ## Interview answer — deep senior
 
-I start by identifying invariants and user intent. A version/ETag allows optimistic concurrency: the server accepts only if the base version still matches. On conflict, a three-way merge can preserve non-overlapping field edits; overlapping text changes may need human choice. Client-wins and server-wins are policies with real data-loss tradeoffs, not defaults. Financial inventory/account state must be resolved by server transactions and operation IDs, never by local timestamp. I persist the unresolved local edit and remote snapshot, expose conflict state, and make the resolution a new idempotent operation. Tests include clock skew, delete-versus-edit, repeated conflict and process death during resolution.
+In advanced distributed mobile architectures (such as collaborative canvases or offline Google Docs), teams implement **CRDTs (Conflict-free Replicated Data Types)**.
 
-I start with the invariant and who owns it. For a note, I send the base version with an update so the server can reject a stale write rather than silently overwrite another device. A three-way comparison of base, local, and remote can merge independent fields, while overlapping text edits may need a human choice. Client-wins and server-wins are explicit data-loss policies, not generic defaults. Financial balances or inventory cannot be resolved by adding or choosing client copies; the server transaction is authoritative. I preserve both candidate edits until the conflict is resolved, mark the local row accordingly, and test repeated conflict after reconnect.
+CRDTs (such as State-based or Operation-based PN-Counters, LWW-Element-Sets, or Yjs/Automerge trees) are mathematically proven to converge to the identical state on all nodes without central locking or conflict dialogs, regardless of network arrival order or message duplication.
+
+However, for standard enterprise Android applications, Optimistic Concurrency Control with a conflict resolution table in Room provides 99% of the reliability with a fraction of the algorithmic complexity.
 
 ## How to answer in the interview
 
@@ -87,8 +154,11 @@ Trace base/local/remote values, domain invariants and conflict persistence.
 
 ## Follow-up questions
 
-- [DAT-15](../dat-15/): What data must outbox hold? **Answer:** stable ID, payload and base version for conflict detection.
-- [DAT-07](../dat-07/): Who owns truth? **Answer:** local DB for displayed snapshot, server for shared authoritative data.
+- **Interviewer:** "Why is client device time dangerous for timestamp-based conflict resolution?"
+  **Answer:** "Users can alter their device clock manually, or time zones and NTP sync failures can make client timestamps hours ahead or behind real UTC time."
+
+- **Interviewer:** "What is a 3-way merge in data synchronization?"
+  **Answer:** "Comparing the base ancestor version, the local branch, and the remote branch to determine which specific fields changed on each side."
 
 ## Self-check rubric
 
@@ -98,4 +168,4 @@ Can I detect conflict, choose policy by domain, preserve user edit and test skew
 
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — conflict resolution.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

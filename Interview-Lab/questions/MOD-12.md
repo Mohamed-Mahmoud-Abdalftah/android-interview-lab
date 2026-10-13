@@ -24,11 +24,52 @@ How do version catalogs and convention plugins reduce config duplication?
 
 ## Explanation in Arabic
 
-Gradle version catalog (`libs.versions.toml`) تجمع aliases للنسخ والإحداثيات، فتقلل تكرار strings وتسهّل رؤية اختلاف versions. لكنها لا تعني أن كل dependency تُضاف لكل module تلقائيًا. Convention plugin يطبق إعدادات متكررة مثل Android/Kotlin plugin، Java target، test setup، lint، Compose configuration على مجموعة modules، بدل copy-paste في كل `build.gradle.kts`. كلاهما يحتاج ownership وtests: تحديث plugin قد يؤثر في كل feature، وcatalog لا تحل version compatibility آليًا. تجنب plugin ضخمة فيها behavior خفي لكل الحالات.
+كيف تقلل ملفات كتالوج الإصدارات (Version Catalogs) و Convention Plugins تكرار إعدادات Gradle في المشاريع النمطية؟
+
+1. المشكلة في المشاريع الكبيرة بدون هذه الأدوات:
+   - تطبيق يحتوي على 60 موديولاً: كل ملف `build.gradle.kts` يكرر 40 سطراً من الإعدادات: `compileSdk = 35`, `minSdk = 26`, إعدادات `kotlinCompilerExtensionVersion`, إعدادات `JavaVersion.VERSION_17`, وتكرار نسخ المكتبات.
+   - إذا أردت ترقية نسخة Compose أو Kotlin، تضطر لتعديل 60 ملفاً يدوياً، مع خطر عدم توافق النسخ في بعض الموديولات.
+
+2. دور الـ Version Catalog (`gradle/libs.versions.toml`):
+   - **مصدر موحد للحقيقة (Single Source of Truth)** لجميع إصدارات المكتبات والـ Plugins.
+   - يوفر Type-Safe Accessors تلقائياً في Gradle: بدلاً من نصوص سحرية `implementation("androidx.compose.ui:ui:1.7.0")`، تكتب `implementation(libs.androidx.compose.ui)` مع إكمال تلقائي في الـ IDE.
+
+3. دور الـ Convention Plugins (في مجلد `build-logic`):
+   - تحويل كود إعدادات Gradle المتكرر إلى Plugins مخصصة وقابلة لإعادة الاستخدام:
+     * `com.example.android.feature`: يطبق تلقائياً مكتبة أندرويد، و Compose، و Hilt، ونسخ الـ SDK.
+     * `com.example.jvm.library`: يطبق إعدادات Kotlin النقي لموديولات الـ Domain.
+   - يتقلص ملف `build.gradle.kts` الخاص بكل موديول من 50 سطراً إلى 5 أسطر فقط!
 
 ## Practical walkthrough
 
-Version catalog يوحد أرقام AGP/Kotlin/libraries، وconvention plugin يطبق Android/Kotlin/lint defaults مرة واحدة. لا تجعل plugin عملاق يضيف كل dependency لكل module؛ هذا يضخم classpath ويخفي ownership. بعد migration قارن task graph وbuild cache/configuration cache ونسخ dependencies. مثال `androidLibrary` convention يضبط JVM target والlint، والfeature تختار Retrofit فقط إن تحتاجه.
+المقارنة بين ملف build.gradle.kts التقليدي وملف نظيف مدعوم بـ Convention Plugins:
+```kotlin
+// ❌ في السابق: 40 سطراً مكررة في كل موديول من الـ 60 موديولاً:
+plugins {
+    id("com.android.library")
+    id("org.jetbrains.kotlin.android")
+    id("com.google.dagger.hilt.android")
+    id("kotlin-kapt")
+}
+android {
+    compileSdk = 35
+    defaultConfig { minSdk = 26 }
+    compileOptions { sourceCompatibility = JavaVersion.VERSION_17 }
+    buildFeatures { compose = true }
+    // ... 30 سطراً أخرى مكررة!
+}
+
+// ✅ مع Convention Plugins و Version Catalog: ملف build.gradle.kts في 5 أسطر فقط!
+plugins {
+    alias(libs.plugins.example.android.feature) // يطبق كل ما سبق تلقائياً!
+}
+
+dependencies {
+    implementation(projects.core.designsystem)
+    implementation(projects.domain.order)
+}
+// ترقية إصدار الـ SDK أو المكتبات تتم الآن بتعديل رقم واحد فقط في libs.versions.toml!
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +93,37 @@ Version build logic, review catalog updates, run a representative module and ful
 
 ## Interview answer — short
 
-“Version catalogs centralize dependency coordinates; convention plugins centralize repeated Gradle behavior. Together they reduce drift, provided shared changes are tested across modules.”
+Version Catalogs (libs.versions.toml) centralize all dependency coordinates and versions in a single type-safe source of truth. Convention plugins (in build-logic) encapsulate repeated Gradle configuration (SDK versions, compiler options, Compose/Hilt setups) into reusable plugins, reducing individual module build scripts to a few declarative lines.
 
 ## Interview answer — structured
 
-“A catalog gives one alias and version source for libraries/plugins, while a convention plugin applies reusable configuration such as Android/Kotlin targets, Compose and test defaults. Modules still declare which libraries they need. I make conventions narrow enough that a payment SDK does not leak into every feature, and I test app variants after updating shared build logic because one change can affect the whole graph.”
+Managing dozens of Gradle subprojects requires centralizing both dependency versions and build logic:
+
+1. **Version Catalogs (`libs.versions.toml`)**: Centralizes third-party dependency coordinates, plugin identifiers, and version numbers. Gradle automatically generates type-safe DSL accessors (`libs.androidx.core.ktx`). Upgrading a library version across 80 modules requires editing a single line in the catalog, preventing version drift.
+
+2. **Convention Plugins (via `build-logic`)**: Encapsulates repeated Gradle configuration patterns into custom composite build plugins written in Kotlin (`AndroidFeatureConventionPlugin`, `AndroidLibraryConventionPlugin`, `JvmLibraryConventionPlugin`).
+
+Instead of copying 50 lines of `android { ... }` blocks, JVM target options, and Compose compiler configurations into every module, a feature module simply applies `plugins { alias(libs.plugins.myapp.android.feature) }`, keeping build scripts minimal, consistent, and maintainable.
 
 ## Interview answer — deep senior
 
-“I separate data from behavior in the build. `libs.versions.toml` names versions and dependency coordinates, making it easier to audit or upgrade them consistently. It does not decide that every module depends on a library, nor does it solve binary incompatibility by itself. Convention plugins encode repeated build behavior—Android library settings, Kotlin target, Compose compiler setup, test configuration and lint policy—so feature scripts can state their intent instead of copying dozens of lines. I prefer several focused plugins, such as android-feature and android-library, over a single plugin with hidden feature flags. A shared convention is also a high-fan-out code path: an accidental signing or minification change can affect every release module. I maintain tests or sample-project checks for build logic, assemble relevant variants in CI and measure configuration time after refactors. Specific SDK dependencies remain declared where used, and override points are documented. This reduces drift while keeping the actual module graph visible.”
+Architecturally, custom Convention Plugins are implemented inside an included composite build (typically named `build-logic`) in the project root.
+
+Because `build-logic` is an included build, Gradle compiles it first with full Kotlin DSL type safety and autocompletion before evaluating the main project's task graph. Inside convention plugins, we write clean extension functions that configure common Android blocks:
+
+```kotlin
+internal fun Project.configureKotlinAndroid(commonExtension: CommonExtension<*, *, *, *, *, *>) {
+    commonExtension.apply {
+        compileSdk = 35
+        defaultConfig { minSdk = 26 }
+        compileOptions {
+            sourceCompatibility = JavaVersion.VERSION_17
+            targetCompatibility = JavaVersion.VERSION_17
+        }
+    }
+}
+```
+This eliminates legacy, fragile Groovy scripts and avoids the dreaded `subprojects { ... }` block in `rootProject/build.gradle`, which breaks Gradle Configuration Caching and parallel execution.
 
 ## How to answer in the interview
 
@@ -76,9 +139,11 @@ Compare catalog aliases, convention behavior, direct dependencies, build logic t
 
 ## Follow-up questions
 
-- Does adding an alias install a dependency everywhere? **Answer:** no; a module must declare use or a convention deliberately adds it.
-- What belongs in a convention plugin? **Answer:** stable repeated build configuration for a coherent class of modules.
-- What risk comes with centralization? **Answer:** one bad shared change can affect many modules and variants.
+- **Interviewer:** "Why is `subprojects { ... }` considered an anti-pattern in modern Gradle?"
+  **Answer:** "It couples projects together imperatively, breaking Gradle Configuration Cache, Isolated Projects, and parallel configuration."
+
+- **Interviewer:** "Can convention plugins configure dependencies as well as build options?"
+  **Answer:** "Yes. An `AndroidFeatureConventionPlugin` can automatically add common dependencies like Hilt, Compose, and core testing libraries to all feature modules."
 
 ## Self-check rubric
 
@@ -89,4 +154,4 @@ Show one catalog alias and one convention, name a direct module dependency, and 
 - [Gradle version catalogs](https://docs.gradle.org/current/userguide/version_catalogs.html) — aliases and versions.
 - [Gradle convention plugins](https://docs.gradle.org/current/userguide/sharing_build_logic_between_subprojects.html) — reusable build logic.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Plugin API compatibility depends on the project's Gradle and AGP versions.
+Technically reviewed against primary documentation on 2026-10-13.

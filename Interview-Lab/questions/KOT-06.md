@@ -22,7 +22,25 @@ Explain closed hierarchies, payload support, enum limitations, and open extensio
 
 ## Explanation in Arabic
 
-`enum class` مجموعة قيم ثابتة من نفس enum، وكل قيمة ممكن يكون لها properties وسلوك، لكن مش subtype مختلف ببيانات constructor خاصة بكل حالة. `sealed class` و`sealed interface` يقفلوا الـdirect subtype set حسب قواعد Kotlin، فيقدر `when` يبقى exhaustive بدون `else` لو كل الحالات متغطية. sealed class تقدر تحتفظ state أو constructor، والـinterface تسمح بتنفيذها مع inheritance من class تانية وبأكثر من interface. `abstract class` مش closed hierarchy؛ مكتبات أو modules تقدر تزود implementations حسب visibility، فـ`when` مش مضمون exhaustive.
+المقارنة بين sealed class و sealed interface و enum class و abstract class بتحدد كيفية نمذجة البيانات والـ State في معمارية التطبيق:
+
+1. enum class: بيمثل مجموعة ثابتة ومحدودة من القيم الثابتة (Constants)؛ كل عنصر فيه بيملك نفس الخصائص والدوال بالضبط (زي OrderStatus.PENDING, SHIPPED, DELIVERED). مينفعش عنصر يشيل بيانات مختلفة عن الباقيين.
+2. sealed class: بيمثل تسلسل هرمي مقيد ومعروف مسبقاً للمترجم. كل Subclass يقدر يكون data class مستقل ببيانات وحقول مختلفة كلياً، وميزة المترجم إنه بيضمن الـ Exhaustiveness في when بدون الحاجة لـ else!
+3. sealed interface: ظهرت في Kotlin 1.5، وهي أفضل من sealed class لأنها بتسمح بالـ Multiple Inheritance؛ الكائن يقدر يورث من كذا sealed interface، وده مثالي لتنظيم حالات الـ UI المعقدة.
+4. abstract class: كلاس مفتوح للوراثة في أي مكان أو موديول، والمترجم ميعرفش كل فروعه، وبالتالي when عليه لازم تطلب else دايماً.
+
+## Practical walkthrough
+
+في شاشة تفاصيل الدفع:
+- استخدام enum class خطأ لأن حالة الفشل محتاجة كود الخطأ ورسالة وزرار إعادة المحاولة (PaymentState.Error(val code: Int, val canRetry: Boolean)) بينما حالة النجاح محتاجة رقم الإيصال.
+- الحل الأفضل: استخدام sealed interface لتحديد حالات الشاشة:
+  sealed interface PaymentUiState {
+      object Idle : PaymentUiState
+      object Loading : PaymentUiState
+      data class Success(val receiptId: String) : PaymentUiState
+      data class Error(val message: String, val canRetry: Boolean) : PaymentUiState
+  }
+- في Compose: دالة when بتكون Exhaustive؛ لو ضفت حالة جديدة زي PendingBiometric مستقبلاً، المترجم هيكسر الـ build وينبهك لكل شاشة محتاجة تتعامل مع الحالة دي.
 
 ## Why it matters and how it works
 
@@ -44,10 +62,6 @@ fun label(state: LoadState): String = when (state) {
 }
 ```
 
-## Practical walkthrough
-
-في `LoadState`، `Ready(items)` محتاجة payload مختلف عن `Failed(cause)`؛ sealed hierarchy تضمن إن `when` على الحالات المعروفة يغطيهم. `enum` أنسب لو مجرد مجموعة constants ثابتة زي sort mode، حتى لو enum عندها properties مشتركة، إنما مش payload فريد لكل occurrence. `abstract class` تقدر تسمح extension مفتوح لو ده مقصود؛ sealed بتقيّد direct subclasses حسب قواعد Kotlin. `sealed interface` مفيدة لو case لازم تطبق أكتر من contract، لكن لو public library بتتطور كتير، إضافة case جديدة ممكن تكسر exhaustive consumers عند إعادة الترجمة.
-
 ## Trade-offs and decision criteria
 
 Choose enum for fixed, uniform constants such as sort direction. Choose sealed types for case-specific data and exhaustive branching. Use abstract class or interface if consumers must add implementations. Serialization and cross-module API evolution need care when adding a new sealed case.
@@ -62,17 +76,25 @@ A checkout ViewModel exposes `CheckoutState` as sealed cases. Rendering handles 
 
 ## Interview answer — short
 
-I use an enum for a fixed set of constant choices, and a sealed hierarchy when each case can carry different data. A sealed `when` can be exhaustive. An abstract class is useful when extension is intentionally open, while a sealed interface can combine contracts.
+Enums represent a fixed set of constant values with identical schemas. Sealed classes and interfaces model restricted type hierarchies where each subtype can hold distinct data fields and states. Sealed interfaces allow multiple inheritance across hierarchies, while abstract classes allow unrestricted inheritance and require an else branch in when expressions.
 
 ## Interview answer — structured
 
-The design test is whether cases have different payloads and whether the set should be closed. A UI load result has Loading, Ready with data, and Failed with an error, so a sealed type models legal shapes and enables exhaustive handling. A sort order with fixed constants is simpler as an enum. A plain abstract class is appropriate when third parties should add implementations; a sealed class can share constructor state, while a sealed interface supports multiple interface inheritance. In production I consider API evolution: introducing another sealed case obliges consumers with exhaustive `when` expressions to handle it when they recompile.
+I choose between these constructs based on data variation and inheritance constraints.
+
+An enum class is strictly for constant values that share the exact same fields, such as days of the week or simple HTTP methods. However, if states require different payloads—like a UI state where Success carries data, Loading carries progress, and Error carries an exception—I use a sealed hierarchy.
+
+Between sealed class and sealed interface, I strongly prefer sealed interfaces in modern Kotlin. They avoid consuming a class's single inheritance slot, allowing a data class to implement multiple sealed interfaces while retaining compile-time exhaustive when checks without an else branch.
+
+Abstract classes remain useful for sharing base implementation logic across open, extensible libraries where the full set of subclasses cannot be known at compile time.
 
 ## Interview answer — deep senior
 
-The design question is whether the set of cases is closed and whether each case has a distinct payload. Sealed types make state transitions and rendering explicit, but adding a case can break exhaustive consumers, which is often desirable inside an app and more delicate in a public library. Enums are efficient and discoverable for fixed constants, but bolting payloads onto one enum often creates invalid states. Abstract classes permit extension and shared implementation, at the cost of weaker exhaustiveness. I choose based on API evolution as well as syntax.
+Under the hood, sealed hierarchies provide compile-time exhaustive pattern matching. In Kotlin bytecode, a sealed class compiles with a private or protected constructor, restricting subclassing to the same package and compilation module. The compiler generates metadata attributes listing all permitted subclasses. When evaluated in a when expression, the compiler inspects this table. If all branches are covered, it omits the default case; if a branch is missing, it fails compilation.
 
-Consider a search result: Loading has no data, Ready has a list, and Failed has a reason. A sealed hierarchy avoids a single record with nullable `items` and `error` that allows contradictory combinations. It does not, however, enforce that Ready can only follow Loading; transition rules belong in a reducer or coordinator. If this is a public library, adding a new sealed case requires consumers to update exhaustive `when` logic, which is a compatibility decision. For a simple fixed filter option, I would choose an enum and avoid the extra hierarchy.
+The addition of sealed interfaces solved a major JVM limitation: single class inheritance. Prior to Kotlin 1.5, if a data class extended a sealed class, it could not extend any other class. With sealed interfaces, a state object like UserSession can implement both a sealed NavigationDestination interface and a sealed AnalyticsTrackable interface. Furthermore, sealed interfaces allow enum classes or value classes to implement them, enabling rich compositional architectures.
+
+In production Android architecture, we use sealed interfaces for MVI/UDF UI states and domain errors. Enums are reserved for database-persisted lookup constants or query filters. Abstract classes are restricted to internal base classes (like a BaseRepository) where shared implementation code must be inherited rather than composed.
 
 ## How to answer in the interview
 
@@ -88,8 +110,14 @@ Discuss direct-subclass restrictions, exhaustive `when`, `data object`, state-sp
 
 ## Follow-up questions
 
-- [KOT-26](../kot-26/): Why prefer sealed payment states? **Answer:** each outcome can carry required payload and make invalid combinations unrepresentable.
-- [KOT-28](../kot-28/): How can errors retain detail? **Answer:** use a sealed error family with stable categories and associated data.
+- **Interviewer:** "Why is adding an `else` branch to a `when` expression over a sealed interface considered an anti-pattern?"
+  **Answer:** "Because it destroys compiler exhaustiveness checking. If you include an `else` branch, and another developer adds a new state like `PaymentState.RequiresVerification` next month, the compiler will not warn you. The new state will silently fall into the `else` branch, causing subtle production bugs. Omitting `else` forces the compiler to break the build until the new state is explicitly handled."
+
+- **Interviewer:** "Can a sealed class have subclasses in a different Gradle module?"
+  **Answer:** "No. Subclasses of a sealed class or interface must be defined in the same compilation module and package. This rule allows the compiler to guarantee that it knows every possible subtype at compile time."
+
+- **Interviewer:** "When would you prefer a sealed class over a sealed interface?"
+  **Answer:** "The only time I prefer a sealed class is when I need to store shared non-abstract state or constructor parameters across all subclasses, or enforce a common non-public constructor. If there is no shared constructor state, sealed interface is always the cleaner, more flexible choice."
 
 ## Self-check rubric
 
@@ -100,4 +128,4 @@ Give one enum use case and one sealed use case; explain payload advantage, exhau
 - [Kotlin sealed classes and interfaces](https://kotlinlang.org/docs/sealed-classes.html) — restricted hierarchies and exhaustive `when`.
 - [Kotlin enum classes](https://kotlinlang.org/docs/enum-classes.html) — enum constants and behavior.
 
-Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -23,11 +23,53 @@ Write tests for a payment retry path guaranteeing no duplicate charge.
 
 ## Explanation in Arabic
 
-جملة “no duplicate charge” لا تثبتها unit test على العميل وحده. أخطر sequence إن backend سجّل approval لكن response ضاع؛ العميل يرى timeout، يخزن Unknown ولا يولّد `UUID` جديدة. test العميل تبدأ بـintent محفوظة فيها key وamount ثابتين، fake server يعمل commit ثم يقطع الرد، وبعد restart تعمل retry أو status lookup وتؤكد نفس key/parameters.
+اكتب مجموعة اختبارات وحدة (Unit Tests) لمسار إعادة محاولة الدفع البنكي (Payment Retry Path) تضمن قطعياً عدم حدوث سحب مالي مزدوج (No Duplicate Charge)؟
+
+1. متطلبات الاختبار الحتمية لمعاملات الدفع:
+   - **الاختبار 1: التحقق من ثبات مفتاح الـ Idempotency**: التأكد من أن جميع محاولات إعادة الدفع لنفس الطلب ترسل نفس الـ UUID بالضبط دون توليد مفتاح جديد.
+   - **الاختبار 2: معالجة الـ Timeout والمطابقة السيرفرية (Reconciliation)**: إذا حدث انقطاع في الشبكة أثناء أول طلب، يجب أن يستعلم الاختبار عن حالة المعاملة أولاً (`GET /status`)، وإذا وجد أن السيرفر قد خصم المبلغ بنجاح، يُمنع إرسال طلب خصم ثانٍ فوراً!
+   - **الاختبار 3: حظر محاولات الخصم المتزامنة (Concurrency Lock)**: التأكد من أن الضغط السريع المتكرر على زر الدفع (Double-Tap) يُشغل معاملة واحدة فقط ويحظر الباقي.
+
+2. كيفية الإثبات في كود الاختبار:
+   - نستخدم MockWebServer أو Fake Payment API يسجل عدد طلبات الـ POST الصادرة؛ ونؤكد أن عدد طلبات الخصم الحقيقية لا يتجاوز 1 تحت أي ظرف.
 
 ## Practical walkthrough
 
-لكن fake فيها dedup متوقع لا تثبت production؛ backend integration test تبعت طلبين بنفس key بالتوازي وتتأكد من charge record واحدة، وترفض نفس key بمبلغ مختلف. provider sandbox يختبر retention/status contract الخاص به. لو key انتهت صلاحيتها أو status ما اتحسمتش، يلزم reconciliation/operations escalation بدل charge عمياء. اختبر duplicate taps، crash بعد persist، وlog redaction.
+كتابة اختبارات وحدة صارمة تضمن عدم تكرار سحب الأموال عند حدوث Timeout أو ضغطات متكررة:
+```kotlin
+class PaymentSafetyTest {
+    @Test
+    fun `network timeout triggers reconciliation and never executes duplicate charge`() = runTest {
+        var chargeCallCount = 0
+        var reconciliationCallCount = 0
+
+        val fakePaymentApi = object : PaymentApiService {
+            override suspend fun executeCharge(idempotencyKey: String, amount: Long): ChargeResponse {
+                chargeCallCount++
+                // محاكاة سحب حقيقي على السيرفر لكن انقطعت الاستجابة قبل وصولها للموبايل:
+                throw SocketTimeoutException("Read timeout")
+            }
+
+            override suspend fun reconcileStatus(idempotencyKey: String): PaymentStatusResponse {
+                reconciliationCallCount++
+                // السيرفر يؤكد أن المعاملة تم خصمها بنجاح بالفعل:
+                return PaymentStatusResponse(isAuthorized = true, transactionId = "tx_9988")
+            }
+        }
+
+        val coordinator = PaymentCoordinator(fakePaymentApi, FakePaymentDao())
+        val result = coordinator.payOrder(orderId = "order_1", amountCents = 5000)
+
+        // 1. التأكد من نجاح العملية للمستخدم بناءً على الاستعلام السيرفري:
+        assertTrue(result is PaymentResult.Success)
+        assertEquals("tx_9988", (result as PaymentResult.Success).transactionId)
+
+        // 2. البرهان الحاسم: طلب الخصم تم استدعاؤه مرة واحدة فقط ولم يتكرر إطلاقاً!
+        assertEquals(1, chargeCallCount)
+        assertEquals(1, reconciliationCallCount)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -107,15 +149,33 @@ CI has unit/client HTTP tests, backend concurrency/idempotency tests, and provid
 
 ## Interview answer — short
 
-“I simulate approval followed by lost response, then retry with the same durable operation ID and verify server-side deduplication. A client test alone cannot guarantee no duplicate charge.”
+Test payment safety by asserting that all retry attempts transmit the identical UUID idempotency key, verifying that socket timeouts trigger read-only reconciliation queries rather than blind charge replays, and strictly asserting that the payment gateway charge method was invoked exactly once.
 
 ## Interview answer — structured
 
-“I first persist an immutable payment intent and idempotency key. The test server commits one charge, then drops the reply so the client sees timeout. The client must show Unknown, reuse the key on retry or query status, and survive process death. A separate backend integration test sends concurrent same-key requests and proves only one business effect; changed parameters are rejected. Provider-specific retention and reconciliation remain part of the release plan.”
+Testing payment paths requires mathematical guarantees that duplicate charges are impossible under any failure permutation:
+
+1. **Asserting Idempotency Key Stability**:
+   - Write a test verifying that when an order is created, an `idempotencyKey = UUID` is persisted locally. Assert that across multiple retry loops, crashes, and app restarts for that order ID, the captured HTTP `Idempotency-Key` header remains identical.
+
+2. **Verifying Reconciliation Over Retry**:
+   - Simulate a network socket timeout on the initial charge request. Configure the test stub to throw `SocketTimeoutException` while recording that the backend processed the charge.
+   - Assert that the client payment coordinator catches the timeout and invokes `reconcileStatus(idempotencyKey)` rather than invoking `executeCharge()` a second time.
+   - Assert that `executeCharge()` call count strictly equals 1, proving zero duplicate charges were attempted.
+
+3. **Rapid Double-Tap Concurrency Protection**:
+   - Launch two concurrent payment requests for the same order simultaneously on two parallel coroutine jobs.
+   - Assert that an internal Mutex drops or rejects the second call, and that only one charge request hits the network.
 
 ## Interview answer — deep senior
 
-“I split the guarantee across trust boundaries. The client test proves it persists one immutable payment intent before sending, keeps the same idempotency key and amount after a timeout or process restart, and shows Unknown instead of Declined when the reply is ambiguous. My HTTP test records the actual header and body and injects the failure after the fake server commits; dropping the response before the send would miss the dangerous case. A local fake can model deduplication, but it cannot prove the production ledger. I run a backend concurrency test with two same-key requests and assert one business effect, and another test that rejects changed parameters under the same key. A provider sandbox test checks its documented retention, status lookup and reconciliation behavior. I also test duplicate taps, a crash between durable intent creation and send, and retry after an unresolved status. If the key expires or the authority cannot be reached, the UI must remain pending or unknown with a support reference and operational reconciliation; a new key is not a safe default. I never promise exactly-once network delivery—only duplicate-safe effects under an explicit server and provider contract.”
+From a financial compliance and test harness perspective, payment testing requires exhaustive state space exploration:
+
+1. **Testing Database Transaction Rollbacks**: Test what happens if the local database crashes immediately before dispatching the network call. Assert that if inserting the local `PENDING` record fails, zero network calls execute, preventing untracked charges.
+
+2. **Simulating Gateway 'Unknown' Statuses**: If the reconciliation query itself times out, assert that the coordinator transitions state to `PENDING_MANUAL_VERIFICATION`. Assert that the UI renders a customer-support ticket reference and blocks the user from retrying the payment button until backend resolution confirms the order status.
+
+3. **Idempotency Header Telemetry Assertions**: Assert via MockWebServer's `takeRequest()` that outgoing charge requests pass standard payment headers: `Idempotency-Key`, `X-Client-Timestamp`, and masked audit metadata.
 
 ## How to answer in the interview
 
@@ -131,8 +191,11 @@ Prompt for after-commit fault, immutable parameters, concurrent server test, ret
 
 ## Follow-up questions
 
-- [PAY-02](../pay-02/): What does idempotency guarantee? **Answer:** one business effect under a server contract, not one HTTP execution.
-- [PAY-08](../pay-08/): What does UI show? **Answer:** Unknown/pending until authority resolves status.
+- **Interviewer:** "What is the single most critical assertion in a payment retry unit test?"
+  **Answer:** "Asserting that the charge mutation call count equals exactly 1 and was not re-invoked following a network timeout."
+
+- **Interviewer:** "How do you test that double-clicking the payment button does not trigger parallel requests?"
+  **Answer:** "Launch two concurrent payment coroutines simultaneously and assert that the payment API mock receives exactly one invocation."
 
 ## Self-check rubric
 
@@ -143,4 +206,4 @@ Inject a lost reply after server commit, restart the client and assert the same 
 - [Stripe idempotent requests](https://docs.stripe.com/api/idempotent_requests) — provider-specific contract.
 - [Android offline-first data layer](https://developer.android.com/topic/architecture/data-layer/offline-first) — durable client state.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

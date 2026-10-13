@@ -24,11 +24,44 @@ What is a memory leak, and how is it different from a large memory allocation?
 
 ## Explanation in Arabic
 
-الـmemory leak يحصل لما object ما بقاش مطلوب لكن لسه reachable بسبب reference عمره أطول، مثل singleton ماسك Activity قديمة. الـlarge allocation ممكن تكون مقصودة ومؤقتة، زي decode لصورة كبيرة، وبرضه تسبب `OutOfMemoryError` لو تخطت الحدود، لكنها مش leak بالضرورة. الفرق يظهر بعد انتهاء العملية وتكرارها: هل baseline يرجع ولا retained objects تزيد؟ استخدم heap dump وretaining path لتعرف مين ماسك الحاجة. خفض حجم الصورة يحل allocation؛ إزالة listener أو تصحيح scope يحل leak.
+المقارنة بين تسريب الذاكرة (Memory Leak) والحجم الضخم للذاكرة (Large Memory Allocation):
+
+1. ما هو تسريب الذاكرة (Memory Leak)؟
+   - هو بقاء كائن في الذاكرة **لم يعد التطبيق بحاجة إليه إطلاقاً**، ولكن مجمع النفايات (GC) **عاجز عن حذفه** لأن هناك كائن حي آخر يمسك به بـ Strong Reference!
+   - مثال: إغلاق شاشة `ProfileActivity`، ولكن كلاس Singleton ما زال ممسكاً بـ Reference لها. الشاشة أصبحت ميتة وظيفياً، لكنها محبوسة في الـ Heap.
+   - **الخاصية المميزة:** المشكلة في **الملكية والربط (Retention Bug)**، وتتراكم الذاكرة تدريجياً بمرور الوقت حتى ينهار التطبيق.
+
+2. ما هو الحجم الضخم للذاكرة (Large Memory Allocation)؟
+   - هو حجز مساحة كبيرة جداً من الذاكرة في لحظة واحدة لكائن **يحتاجه التطبيق فعلياً ويستخدمه حالياً (Legitimate Usage)**.
+   - مثال: تحميل صورة 4K غير مضغوطة بحجم 40 ميجابايت لعرضها على الشاشة.
+   - **الخاصية المميزة:** المشكلة في **الكفاءة والحجم (Footprint / Scale)**، ويمكن للـ GC حذف الكائن فور الانتهاء من استخدامه.
+
+3. الفارق في العلاج:
+   - تسريب الذاكرة يعالج بـ: قطع الروابط، تصفير الـ References (`_binding = null`)، واستخدام Lifecycle Observers.
+   - الحجم الضخم يعالج بـ: تصغير حجم الصور (`inSampleSize`, downsampling)، استخدام Pagination، وضبط الـ Caching.
 
 ## Practical walkthrough
 
-جرب معرض صور بطريقتين: صورة 40MP واحدة تعمل peak ضخم ويمكن OOM فورًا، وسيناريو فتح وقفل المعرض 20 مرة يخلي baseline يزيد بسبب callback ماسك الشاشة. صوّر نفس خطوات التشغيل، واستنى لحد ما الشغل يهدأ، وبعدها قارن retained instances وحجم native/graphics. حل الأولى downsample حسب target، وحل الثانية فك المرجع. زيادة heap limit مش علاج لأي واحدة من غير قياس.
+مقارنة عملية في الكود:
+```kotlin
+// 1. Large Allocation (ليس تسريباً): يحجز 50MB لكنه مشروع ويحرر فور انتهاء الدالة:
+fun processHighResBanner() {
+    val bigBitmap = Bitmap.createBitmap(4000, 4000, Bitmap.Config.ARGB_8888) // 64 MB!
+    renderBanner(bigBitmap)
+    // بمجرد انتهاء الدالة، bigBitmap يصبح Unreachable والـ GC يستطيع حذفه بنجاح.
+}
+
+// 2. Memory Leak (تسريب ذاكرة خطير): كائن صغير أو كبير يظل محبوساً للأبد:
+object BadRepository {
+    val listeners = mutableListOf<OnDataLoadedListener>() // لا يتم تفريغه أبداً!
+}
+class MyActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        BadRepository.listeners.add(this) // تسريب! الـ Activity لن تموت أبداً!
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +85,25 @@ Define a deterministic user journey and a baseline after quiescence. Measure pea
 
 ## Interview answer — short
 
-“A leak is an object retained after it should be released; a large allocation is memory intentionally requested for work. Either can cause pressure, but I diagnose them by retained growth versus peak usage.”
+A memory leak is a structural retention bug where an unneeded object cannot be garbage collected due to an unintended lingering reference. A large memory allocation is a legitimate, high-volume memory consumption (like a 50MB bitmap) that is fully reclaimable by the GC once out of scope.
 
 ## Interview answer — structured
 
-“An Activity kept alive by a singleton listener is a leak because GC still sees a root path. A full-resolution image decoded once is a large allocation; it may OOM even if it becomes unreachable afterward. I run a repeatable open/close loop and compare post-close retained instances and heap paths. For an allocation spike I size the work or stream it; for a leak I correct lifecycle ownership. Cache bounds and native bitmap memory must also be considered.”
+The distinction between a memory leak and a large memory allocation comes down to **retention correctness versus volumetric consumption**:
+
+A **Memory Leak** is an architectural bug where memory that is no longer needed by the business logic cannot be reclaimed by the Garbage Collector because an active GC Root inadvertently retains a strong reference to it (e.g., an Activity retained inside a static singleton listener list). Leaks accumulate silently over time as the user navigates the app, gradually starving the heap until the app crashes with an `OutOfMemoryError`.
+
+A **Large Memory Allocation** is a valid allocation that consumes a significant portion of memory (e.g., loading an uncompressed 50MB bitmap or parsing a 20MB JSON string into memory). The allocation is legitimate, intentional, and fully eligible for garbage collection the moment execution exits its scope.
+
+While a large allocation can trigger an immediate OOM if memory is already tight, a memory leak is a persistent defect that guarantees eventual failure.
 
 ## Interview answer — deep senior
 
-“I use retention over time to distinguish the two. A leak is an unintended strong path from a GC root to data whose logical lifetime ended. Repeated navigation raises the retained baseline; a heap dump shows the owner, perhaps an observer in a singleton retaining a destroyed Activity. A large allocation can be valid yet exceed a device's available heap or graphics memory; its signature is a peak tied to one operation, possibly with a stable baseline afterward. I profile the same workload several times, inspect managed and native categories, and avoid interpreting a single high-memory sample as proof of a leak. The fix follows the cause: release the listener at the right lifecycle boundary, bound a cache, sample a bitmap, or use tiles for zoom. Then I reproduce on constrained devices and watch OOM and frame metrics. A 40-megapixel gallery image can create one dangerous decode peak, while twenty open-close cycles can expose a rising Activity count. A cache may warm and then plateau; that shape does not by itself indicate a leak. I define separate peak and post-close baseline budgets and verify both on a low-memory device.”
+In production performance profiling, distinguishing between the two dictates the diagnosis methodology:
+
+1. **Diagnosing Large Allocations**: Open the Android Studio CPU/Memory Profiler and inspect the **Memory Allocation Graph**. A large allocation appears as an immediate, sharp vertical cliff in memory usage. Once the operation finishes, a GC sweep causes the graph to drop back down to baseline. The remedy is technical optimization: image downsampling (`inSampleSize`), streaming JSON parsing via Jackson/Moshi streaming readers, or lazy pagination.
+
+2. **Diagnosing Memory Leaks**: A memory leak produces a **sawtooth graph that never returns to baseline**: with each screen rotation or navigation transition, the minimum heap baseline ratchets upward. Taking a heap dump (`.hprof`) via LeakCanary reveals the exact shortest reference path connecting the dead Activity to an active GC Root.
 
 ## How to answer in the interview
 
@@ -76,9 +119,14 @@ Discuss retained baseline, peak allocation, GC root path, bitmap sampling, cache
 
 ## Follow-up questions
 
-- Can a large allocation OOM without a leak? **Answer:** yes; one request can exceed available memory even if the result would later be collected.
-- Why doesn't GC fix an Activity listener leak? **Answer:** the listener remains reachable and retains the Activity, so the collector cannot reclaim it.
-- What measurement differentiates them? **Answer:** compare retained objects and post-cleanup baseline across repeated runs, alongside peak allocation and native memory.
+- **Interviewer:** "Can a small memory leak of just 100 bytes cause an OutOfMemoryError?"
+  **Answer:** "Yes! If a 100-byte listener leaks an entire Activity instance via its implicit outer class reference, that 100-byte leak actually pins the Activity, its View hierarchy, Drawables, and Bitmaps—retaining dozens of megabytes per leak."
+
+- **Interviewer:** "Can an app have zero memory leaks and still crash with an OutOfMemoryError?"
+  **Answer:** "Absolutely. If an app attempts to allocate a single 200MB bitmap on a device with a 192MB heap limit, it will crash with an OOM immediately despite having zero memory leaks."
+
+- **Interviewer:** "How does `largeHeap="true"` relate to these two issues?"
+  **Answer:** "`largeHeap` requests an expanded heap ceiling, which can accommodate legitimate large memory allocations (like photo editing apps), but it will never fix a memory leak—it only delays the inevitable crash."
 
 ## Self-check rubric
 
@@ -89,4 +137,4 @@ Define leak and peak allocation, give one example each, propose a measurement, a
 - [Manage your app's memory](https://developer.android.com/topic/performance/memory) — memory pressure and investigation.
 - [Overview of memory management](https://developer.android.com/topic/performance/memory-overview) — GC reachability.
 
-Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The gallery cases are illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

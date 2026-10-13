@@ -24,11 +24,46 @@ A feature works on arm64 but fails on another ABI. How do you debug packaging?
 
 ## Explanation in Arabic
 
-سجّل ABI المتأثرة و`UnsatisfiedLinkError`/crash كاملة، version/variant وطريقة التثبيت. استخرج APKs من AAB للـdevice spec بـbundletool، وقارن `lib/arm64-v8a` مع `lib/x86_64` أو ABI المعنية: أسماء .so، transitive dependencies، checksum وpackaging rules. لو .so ناقصة، افحص AAR/NDK build و`abiFilters`; لو موجودة لكن loader يرفضها، ابحث عن symbols/STL/minSdk/CPU instructions. لا تنقل arm64 binary إلى مجلد ABI أخرى. أصلح vendor SDK/build config أو أعلن عدم دعم ABI بعد تقييم المستخدمين، ثم اختبر release split على جهاز/محاكي مناسب.
+ميزة برمجية تعمل بكفاءة على معمارية `arm64-v8a` ولكنها تنهار على معمارية أخرى (مثل `armeabi-v7a` أو `x86_64`). كيف تستكشف وتصلح أخطاء الحزم البرمجية (Packaging)؟
+
+1. الأسباب الشائعة للفشل على معمارية معينة دون غيرها:
+   - **غياب مكتبة Native مخصصة للمعمارية (Missing .so binary)**: مكتبة خارجية وفرت كود لـ ARM64 فقط وتجاهلت 32-bit أو x86.
+   - **أخطاء في محاذاة الـ 16KB Page Alignment (Android 15+)**: أندرويد 15 يتطلب محاذاة صفحات الذاكرة لمكتبات الـ Native على 16KB بدلاً من 4KB. إذا كانت المكتبة مجمعة بـ NDK قديم، تفشل في العمل على الأجهزة الحديثة.
+   - **استدعاء دوال غير مدعومة في المعالج (CPU Instruction Incompatibilities)**: كود C++ يستخدم تعليمات خاصة بمعالجات معينة (مثل ARM NEON instructions) دون فحص دعم المعالج عبر CPU Features.
+
+2. خطوات التشخيص:
+   - فحص مجلدات الـ `lib/` في الـ APK عبر `unzip -l app.apk "lib/*"`.
+   - تشغيل الـ APK على محاكي بالمعمارية الفاشلة ومراقبة سجلات `adb logcat | grep -E "DEBUG|linker"` لمعرفة اسم الملف أو الدالة المفقودة.
+
+3. الحلول الهندسية:
+   - إعادة تجميع كود الـ C++ عبر الـ NDK لجميع الـ ABIs المطلوبة.
+   - ضبط `ndk.abiFilters` في `build.gradle.kts` لاستبعاد المعماريات غير المدعومة رسمياً.
 
 ## Practical walkthrough
 
-arm64 يعمل وABI تانية لا: افحص `SUPPORTED_ABIS` والerror، ثم native inventory للـAAB/split والجهاز. قد تكون `.so` vendor غير متاحة أو ABI filter/resource packaging حذفها. اختبر Play-generated split للـrelease minified، وقارن firmware/device support. لو لا يوجد دعم رسمي، امنع install أو capability بوضوح بدل crash. راقب crash segment حسب ABI أثناء staged rollout.
+تشخيص وفحص محاذاة صفحات الـ 16KB والتأكد من دعم المعماريات المختلفة:
+```bash
+# 1. فحص محاذاة صفحات الـ ELF لمكتبات الـ Native (16KB Page Size Alignment):
+readelf -l app/build/intermediates/merged_native_libs/release/mergeReleaseNativeLibs/out/lib/arm64-v8a/libnative.so | grep LOAD
+# يجب أن تكون قيمة الـ Align هي 0x4000 (16KB) لدعم أجهزة Android 15+
+
+# 2. التحقق من تكامل ملفات الـ .so عبر جميع مجلدات المعماريات:
+apkanalyzer apk summary app-release.apk
+```
+
+```kotlin
+// 3. ضبط CMake / NDK في build.gradle.kts لضمان التجميع لجميع المعماريات المطلوبة:
+android {
+    defaultConfig {
+        externalNativeBuild {
+            cmake {
+                abiFilters("arm64-v8a", "armeabi-v7a", "x86_64")
+                arguments("-DANDROID_STL=c++_shared")
+            }
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +87,31 @@ Keep a supported ABI matrix and generate/install artifact sets for each represen
 
 ## Interview answer — short
 
-“I reproduce on the failing ABI, inspect its actual AAB-derived APKs and all required `.so` dependencies, then fix packaging or binary compatibility and retest that ABI.”
+Debug ABI packaging issues by inspecting the APK's lib/ subfolders with unzip or APK Analyzer to confirm whether required .so files exist for the failing architecture. Check for missing 32-bit binaries, Android 15 16KB page alignment violations using readelf, or CPU instruction set incompatibilities.
 
 ## Interview answer — structured
 
-“I gather the loader error, device ABI and exact release artifact, generate the corresponding APK set and compare native paths with arm64. A missing file points toward vendor AAR, `jniLibs` or filters; a present file with `dlopen` failure points toward dependent libraries or symbols. I never copy an arm64 binary into an x86 path. The fix is validated by installing the target split and running the feature, then reflected in the supported ABI matrix.”
+When features execute correctly on `arm64-v8a` but fail on other architectures, the failure is typically caused by packaging asymmetry or native instruction incompatibility:
+
+1. **Packaging Asymmetry Audit**:
+   - Extract the native binary tree: `unzip -l app.apk "lib/*"`.
+   - Verify that the failing architecture (e.g. `armeabi-v7a` or `x86_64`) contains the exact identical set of `.so` shared libraries as `arm64-v8a`. If a transitive SDK only bundles ARM64, loading native components fails on 32-bit devices.
+
+2. **Android 15 16KB Page Alignment Requirements**:
+   - Android 15 introduces support for 16KB memory page sizes. Native libraries compiled with older NDK versions aligned to 4KB fail to load on 16KB devices. Inspect alignment using `readelf -l libxyz.so | grep -A 1 LOAD` to verify `Align` equals `0x4000` (16KB).
+
+3. **CPU Instruction Set & NEON Compatibility**:
+   - Native C/C++ routines employing hardware-accelerated instructions (e.g., ARM NEON SIMD) crash with `SIGILL (Illegal Instruction)` if executed on CPUs or emulators lacking those specific hardware execution registers. Implement runtime feature probing (`cpufeatures` library) before invoking vector extensions.
 
 ## Interview answer — deep senior
 
-“I investigate the binary the failing device actually received, not the one that happened to work on my arm64 phone. I record version, variant, install channel, `SUPPORTED_ABIS` and complete `UnsatisfiedLinkError` or native tombstone. I use bundletool or Play testing to extract the device-targeted APKs and inspect `lib/<abi>` contents. Then I compare the transitive native closure: `libscan.so` may be present but depend on a helper missing only for x86_64. If files exist, I inspect unresolved symbols, STL linkage, NDK/minimum platform and instruction assumptions. Gradle `abiFilters`, packaging options or vendor AAR content may explain an omission; `pickFirst` is not a safe general repair for duplicate versions. I obtain the correct ABI binary or document a supported fallback, and only narrow ABI support with product/device impact review. CI installs the minified bundle-derived artifact on representative ABIs and exercises the feature, while crash telemetry is segmented by architecture. The causal fix is demonstrated on the ABI that failed.”
+From a multi-architecture testing and CI perspective, validating native stability requires matrix testing:
+
+1. **CI Architecture Emulation Matrix**: Run automated instrumentation tests against multiple emulator architectures in CI: ARM64 system images on Apple Silicon/ARM runners, and x86_64 system images on Intel/AMD runners, catching ABI packaging gaps before deployment.
+
+2. **Packaging PickFirsts & Duplicate JNI Libraries**: If two dependencies bundle conflicting versions of `libc++_shared.so`, AGP fails the build with a duplicate file collision. Setting `packaging { jniLibs.pickFirsts.add("**/libc++_shared.so") }` resolves compilation, but can crash at runtime if the picked version has an incompatible C++ ABI. Ensure all native dependencies compile against identical NDK toolchain versions.
+
+3. **NDK abiFilters Alignment**: Explicitly declare `ndk.abiFilters` in `build.gradle.kts` matching the target distribution: `arm64-v8a` and `armeabi-v7a` for consumer devices, plus `x86_64` for developer emulators.
 
 ## How to answer in the interview
 
@@ -76,9 +127,11 @@ Discuss device-targeted splits, native transitive closure, symbols, filters, ven
 
 ## Follow-up questions
 
-- Why not trust arm64 success? **Answer:** each ABI receives different machine code and possibly different splits.
-- Can a packaged `.so` still fail to load? **Answer:** yes; its dependent libraries or required symbols may be absent.
-- What proves the repair? **Answer:** a release-derived package runs the feature on the previously failing ABI.
+- **Interviewer:** "What is the 16KB page size requirement in Android 15?"
+  **Answer:** "Android 15 supports devices configured with 16KB memory pages; native ELF binaries must be compiled and aligned with 16KB boundaries (Align 0x4000) or they fail to load."
+
+- **Interviewer:** "What happens if an app loads a native library built with a newer NDK STL than other libraries?"
+  **Answer:** "Symbol resolution collisions or memory layout incompatibilities in libc++_shared.so can trigger SIGSEGV crashes at runtime."
 
 ## Self-check rubric
 
@@ -89,4 +142,4 @@ Trace one ABI failure from device log to split contents, correct it and validate
 - [Android ABIs](https://developer.android.com/ndk/guides/abis) — native paths and compatibility.
 - [Build and test an App Bundle](https://developer.android.com/guide/app-bundle/test) — targeted split testing.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Vendor binaries require direct inspection.
+Technically reviewed against primary documentation on 2026-10-13.

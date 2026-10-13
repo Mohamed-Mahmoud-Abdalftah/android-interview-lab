@@ -22,11 +22,57 @@ Assign responsibilities to UI, optional domain, and data without confusing polic
 
 ## Explanation in Arabic
 
-Presentation بتاخد data وتحوّلها لـUI state، تستقبل user events، وتتعامل مع lifecycle/navigation. Domain اختيارية للـbusiness operations المشتركة أو المعقدة، زي حساب eligibility أو تنسيق workflow، من غير معرفة Compose أو DTO. Data layer فيها repositories، local/remote data sources، caching، conflict resolution، ومصدر الحقيقة. ViewModel مش مكان network mapping أو SQL؛ وRepository مش مكان snackbar text. الحدود تبقى واضحة في types: DTO عند transport، entity عند persistence، domain model في policy، UI model عند الشاشة.
+شرح طبقات Clean Architecture الثلاث: العرض (Presentation)، النطاق (Domain)، والبيانات (Data):
+
+1. طبقة النطاق (Domain Layer - The Core):
+   - هي قلب التطبيق والطبقة الأكثر استقراراً؛ مكتوبة بلغة **Kotlin نقية 100%** بدون أي اعتمادية على Android SDK أو Retrofit أو Room.
+   - تحتوي على: **Entities** (كائنات الأعمال الحقيقية)، **UseCases / Interactors** (منطق العمليات والقرارات الحسابية وقواعد التحقق)، و **Repository Interfaces** (العقود المجردة لجلب وحفظ البيانات دون معرفة كيفية التنفيذ).
+
+2. طبقة البيانات (Data Layer):
+   - مسؤولة عن إدارة وتنسيق مصادر البيانات المتعددة (Network, Local Database, Datastore/Preferences, In-Memory Caches).
+   - تحتوي على: **DataSources** (Retrofit API Service, Room DAO)، **DTOs & Entities** (كائنات السيرفر وقاعدة البيانات)، و **Repository Implementations** التي تنفذ الواجهات المعرفة في طبقة النطاق وتقوم بـ Mapping للبيانات إلى Domain Entities.
+
+3. طبقة العرض (Presentation / UI Layer):
+   - مسؤولة عن كيفية تقديم البيانات للمستخدم والتقاط تفاعلاته.
+   - تحتوي على: **UI Composables / Activities / Fragments**، و **ViewModels** التي تستدعي الـ UseCases أو Repositories وتحول النتائج إلى تدفق حالة موحد `StateFlow<UiState>`، وتلتقط الأحداث (`UiEvent`).
 
 ## Practical walkthrough
 
-Presentation يعرض UiState ويستقبل events، Domain يملك rule مستقل عن Android إن كان مفيدًا، Data ينسق Room/Retrofit/cache. مثال account balance: UI لا تقرر أن timeout يعني declined؛ domain يعبّر عن Unknown، data تطلب status من backend. لا تخلط DTO مع UiState لأن API field قد يتغير. اختبر كل طبقة حسب contract.
+توزيع كود شاشة سلة المشتريات عبر الطبقات الثلاث:
+```kotlin
+// 1. DOMAIN LAYER (Pure Kotlin - No Frameworks):
+data class CartItem(val productId: String, val quantity: Int, val unitPrice: Long)
+interface CartRepository {
+    fun observeCart(): Flow<List<CartItem>>
+    suspend fun updateQuantity(productId: String, quantity: Int)
+}
+class CalculateCartTotalUseCase {
+    operator fun invoke(items: List<CartItem>): Long = items.sumOf { it.quantity * it.unitPrice }
+}
+
+// 2. DATA LAYER (Implements Domain contracts, manages SQLite & Network):
+class CartRepositoryImpl(
+    private val cartDao: CartDao,
+    private val api: CartApi
+) : CartRepository {
+    override fun observeCart(): Flow<List<CartItem>> = cartDao.getCartEntities().map { it.toDomain() }
+    override suspend fun updateQuantity(productId: String, quantity: Int) {
+        cartDao.update(productId, quantity)
+        api.syncCart(productId, quantity)
+    }
+}
+
+// 3. PRESENTATION LAYER (Translates domain state into observable UI):
+@HiltViewModel
+class CartViewModel @Inject constructor(
+    private val repository: CartRepository,
+    private val calculateTotal: CalculateCartTotalUseCase
+) : ViewModel() {
+    val uiState: StateFlow<CartUiState> = repository.observeCart().map {
+        CartUiState.Success(items = it, total = calculateTotal(it))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CartUiState.Loading)
+}
+```
 
 ## Why it matters and how it works
 
@@ -50,15 +96,28 @@ An offline account screen observes repository data backed by Room; domain comput
 
 ## Interview answer — short
 
-Presentation produces UI state and handles UI events. Data owns repositories and data sources. An optional domain layer holds reusable or complex business operations. I keep transport and persistence models from leaking into the screen.
+Presentation displays UI and translates user gestures into state streams via ViewModels. Domain contains pure business rules, entities, use cases, and repository interfaces without Android framework dependencies. Data implements domain repository interfaces, coordinating network APIs and local databases via mappers.
 
 ## Interview answer — structured
 
-I would draw the path from a user action to visible state. The screen sends an event to a ViewModel, which manages screen state and delegates business work. A domain use case belongs between UI and data when it expresses reusable policy or coordinates multiple repositories. The repository owns network, database, caching, and mapping into app data. This division helps test UI behavior separately from data consistency. I do not create an empty domain layer just to satisfy a diagram. For example, locale-specific amount formatting is a screen concern, transfer eligibility is a product rule, and cache reconciliation belongs with the repository. If a ViewModel imports a DTO or a use case imports an Activity, I treat that as a boundary smell and ask what change would force a rewrite.
+Modern Android Clean Architecture partitions responsibilities into three distinct architectural layers:
+
+1. **Domain Layer (The Business Core)**: Represents the innermost layer and contains pure business logic. It has zero dependencies on Android frameworks, network libraries, or databases. It contains:
+   - **Entities**: Business models encapsulating core data structures and invariant validation.
+   - **Use Cases (Interactors)**: Single-purpose orchestrators executing specific business scenarios (e.g. `CalculateCartTotalUseCase`).
+   - **Repository Interfaces**: Abstract contracts specifying what data operations the business requires, completely divorced from storage mechanisms.
+
+2. **Data Layer (The Source Coordinators)**: Implements domain repository interfaces. It manages raw data sources (Retrofit REST APIs, Room SQLite DAOs, SharedPreferences/DataStore), handles caching strategies, and maps external DTOs into domain entities.
+
+3. **Presentation Layer (The UI)**: Consists of ViewModels and Composable screens. The ViewModel calls Use Cases, reacts to state updates, and projects data into immutable `StateFlow<UiState>` streams, while capturing user UI events.
 
 ## Interview answer — deep senior
 
-The boundaries are about change and ownership. Presentation knows resources, navigation and lifecycle; it should not decide database truth or parse HTTP payloads. Data knows transport, persistence, refresh policy, and source of truth. Domain, when present, expresses application rules that can be tested independently of Android and reused across screens. A repository might expose a Flow of domain data while reconciling local and remote sources; ViewModel turns that into loading/content/error UI state. I inspect actual imports and model types to catch leaks. I also ask where failures are mapped: transport errors can become typed domain errors, then actionable UI messages. This layered design should clarify product behavior, not multiply trivial passthrough classes. I also distinguish the classic Clean Architecture interpretation from Android guidance: Android calls domain optional and allows UI to depend on the data layer directly. The important contract is still that screen state is produced from stable app data and data sources are hidden. I test a repository using representative server/database cases and a ViewModel using a fake repository. A payment status does not become authoritative because it passed through a domain class; backend confirmation remains necessary.
+A critical design aspect of this division is the **Inversion of Control (IoC)** achieved through the Dependency Inversion Principle. Because the Domain layer defines the `Repository` interface and the Data layer implements it, compile-time source code dependencies point inward (`Data -> Domain` and `UI -> Domain`), while runtime execution flows outward.
+
+This division maximizes testability. Because the Domain layer is pure Kotlin without Android dependencies, its entire test suite runs as lightning-fast JVM unit tests executing in milliseconds without Robolectric or emulator bootstrapping.
+
+In enterprise Android modularization, these layers are often represented as separate Gradle modules: `:feature:cart:ui`, `:feature:cart:domain`, and `:feature:cart:data`, enforcing boundary discipline at the compiler level.
 
 ## How to answer in the interview
 
@@ -74,8 +133,11 @@ Compare a screen event, reusable rule, and repository refresh. Identify where lo
 
 ## Follow-up questions
 
-- [ARC-05](../arc-05/): Where should filtering for display live? **Answer:** UI-specific sorting/labels in Presentation; reusable business eligibility in Domain/Data.
-- [ARC-06](../arc-06/): Where does a Room entity live? **Answer:** in Data, close to persistence.
+- **Interviewer:** "Can the Presentation layer bypass Domain and call Data directly?"
+  **Answer:** "In simpler feature screens with no complex business rules (like simple CRUD lists), Google allows ViewModels to consume Repositories directly. However, in core business flows, bypassing Domain couples the UI to data concerns and bypasses business validations."
+
+- **Interviewer:** "Why shouldn't the Domain layer import Android `Context`?"
+  **Answer:** "Importing `Context` couples pure business rules to Android framework lifecycles and platform APIs, destroying JVM testability and making cross-platform migration (e.g. Kotlin Multiplatform) impossible."
 
 ## Self-check rubric
 
@@ -86,4 +148,4 @@ Can you assign a ViewModel, use case, repository, DTO, and Room entity without m
 - [Android architecture guide](https://developer.android.com/topic/architecture) — layer responsibilities.
 - [Android domain layer](https://developer.android.com/topic/architecture/domain-layer) — optional domain use cases.
 
-Technically reviewed against the linked official Android architecture guidance on 2026-10-11. Conceptual flows and snippets are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

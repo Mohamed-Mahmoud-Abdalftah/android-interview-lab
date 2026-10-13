@@ -24,11 +24,55 @@ How do you handle previews, permissions, and navigation?
 
 ## Explanation in Arabic
 
-خلّي Screen composable تأخذ state/callbacks فتقدر تعرض preview لحالات loading/error/permission بدون Hilt أو Activity حقيقية. Route تربط ViewModel وNavController وpermission launcher عبر Activity Result API، وتعرض rationale عندما يلزم وتتعامل مع رفض أو تغيير الإذن من Settings. لا تطلب permission أثناء كل recomposition؛ الطلب ينطلق من user action أو effect مضبوط. Navigation تمرر ID صغير أو route typed حسب API المستخدمة، وتعيد تحميل data من repository؛ لا ترسل object كبير أو sensitive في route.
+كيفية التعامل الاحترافي مع المعاينات (Previews)، الأذونات (Permissions)، والتنقل (Navigation) في Jetpack Compose:
+
+1. المعاينات (Compose Previews):
+   - استخدام الـ **Multipreview Annotations** لإنشاء وسم مخصص مثل `@DevicePreviews` يجمع بين:
+     * وضع النهار ووضع الليل (Light / Dark).
+     * أحجام شاشات متعددة (Phone, Tablet, Foldable).
+     * أحجام خطوط وصول متعددة (Font Scale 1.5x للتحقق من إمكانية الوصول Accessibility).
+   - استخدام `PreviewParameterProvider` لتمرير حالات بيانات مختلفة (Loading, Error, Success) إلى نفس دالة المعاينة.
+
+2. التعامل مع الأذونات (Runtime Permissions):
+   - استخدام مكتبة **Accompanist Permissions** أو الـ `rememberLauncherForActivityResult` المدمج مع `ActivityResultContracts.RequestPermission()`.
+   - التعامل مع تدفق الأذونات بثلاث حالات:
+     * إذن ممنوح (`PermissionStatus.Granted`): عرض الميزة فوراً.
+     * إذن مرفوض مع مبرر (`shouldShowRationale`): عرض شاشة تشرح للمستخدم لماذا يحتاج التطبيق هذا الإذن.
+     * إذن مرفوض نهائياً: توجيه المستخدم لفتح إعدادات النظام (`Settings`).
+
+3. التنقل (Navigation):
+   - استخدام **Type-Safe Navigation** المتاح في Jetpack Navigation 2.8+ المبني على Kotlin Serialization بدلاً من الـ String URLs القديمة والمعرضة للأخطاء الإملائية.
 
 ## Practical walkthrough
 
-Preview ما عندهاش Activity Result launcher حقيقي؛ اعرض Screen بحالة fake، وخلي Route هي اللي تسجل launcher وتقرر متى تطلب permission. طلبها يكون بسبب user action، وبعدين تعامل مع grant/deny/revoke، مش كل recomposition. عند navigation مرر draft ID صغير، لا تمرر Bitmap أو object حساس. لو المستخدم رفض location، البحث اليدوي لازم يفضل شغال؛ وإلا الإذن بقى باب مقفول بلا داعٍ. قبل كل استخدام للموقع راجع grant الحالية، وللصور استخدم Photo Picker بدل طلب access واسع إذا كان مناسب.
+إعداد Multipreview احترافي واستخدام Type-Safe Navigation وطلب الأذونات:
+```kotlin
+// 1. Multipreview Annotation لاختبار كل حالات الشاشة بضغطة زر:
+@Retention(AnnotationRetention.BINARY)
+@Target(AnnotationTarget.FUNCTION)
+@Preview(name = "Light Phone", showBackground = true)
+@Preview(name = "Dark Phone", uiMode = Configuration.UI_MODE_NIGHT_YES, showBackground = true)
+@Preview(name = "Large Font", fontScale = 1.5f, showBackground = true)
+annotation class DevicePreviews
+
+// 2. استخدام Type-Safe Navigation مع Kotlinx Serialization (Navigation 2.8+):
+import kotlinx.serialization.Serializable
+
+@Serializable
+data object HomeDestination
+
+@Serializable
+data class ProfileDestination(val userId: String)
+
+fun NavGraphBuilder.appNavGraph(navController: NavController) {
+    composable<HomeDestination> {
+        HomeScreen(onProfileClick = { id -> navController.navigate(ProfileDestination(id)) })
+    }
+    composable<ProfileDestination> {
+        ProfileRoute()
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -76,15 +120,25 @@ Maintain previews for key UI states, run device tests for grant/deny/revoke and 
 
 ## Interview answer — short
 
-“I preview a stateless Screen with sample states, handle runtime permissions in an owner using Activity Result APIs, and navigate with small validated identifiers. Preview the pure Screen; keep permission launch and navigation in the Route.”
+Handle Previews using custom Multipreview annotations and `PreviewParameterProvider` for multi-state rendering. Manage runtime permissions cleanly using `rememberLauncherForActivityResult` with rationale handling. Implement navigation using modern Type-Safe Navigation (Navigation 2.8+) via `@Serializable` classes instead of fragile route strings.
 
 ## Interview answer — structured
 
-“I separate the reusable Screen from its Route so previews can inject loading, error and permission states without Hilt or navigation setup. The Route owns permission launchers and NavController; it requests access from a user action, handles denial and later revocation, and sends results to the ViewModel. Navigation passes a small ID and reloads data, which is safer for recreation than passing a large object. I test deep links, grant and denial on device. For nearby places, the Route requests coarse location only after the user asks and keeps manual search available.”
+Managing Previews, Permissions, and Navigation cleanly requires adopting modern Jetpack Compose tooling standards.
+
+1. **Compose Previews**: Rather than writing individual `@Preview` annotations per file, we define custom **Multipreview Annotations** (e.g. `@ThemePreviews`, `@DevicePreviews`) that automatically render composables in Light mode, Dark mode, large accessibility font scales (1.5x), and tablet layouts. For state permutations, we use `@PreviewParameter(UserProvider::class)` to render empty, loaded, and error variants simultaneously.
+
+2. **Runtime Permissions**: We manage runtime permissions using `rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission())` paired with rationale logic. If denied, we check `ActivityCompat.shouldShowRationale()` to explain the user value before requesting again; if permanently denied, we provide a clean intent redirecting to Android System Settings.
+
+3. **Type-Safe Navigation (Navigation 2.8+)**: We discard legacy string URLs (`"profile/{userId}"`) in favor of official **Type-Safe Navigation**. Destined routes and arguments are modeled as `@Serializable` data classes and objects. The compiler verifies parameter types at compile time, eliminating URL encoding bugs and null-pointer parsing errors.
 
 ## Interview answer — deep senior
 
-“I use previews to exercise rendering contracts, not to simulate the whole Android runtime. A Screen takes explicit `UiState` and callbacks, so I can preview loading, permission-required, denied and ready states. A Route connects that screen to ViewModel, navigation and the Activity Result registry. Permission work must reflect platform state: I request only when the user reaches the capability, show rationale when appropriate, handle denial without trapping them, and recheck when returning from Settings because grants can change. A request launched from a composable body would repeat under recomposition, so it belongs to an event or carefully keyed effect. For navigation I pass a stable ID or supported typed route and load the entity from a repository; large mutable objects in arguments are fragile under process death. If the feature picks existing photos rather than reading location, I use the Photo Picker contract where suitable and account for the selected URI grant's lifetime. I verify previews for visual states, Compose tests for callbacks, and device tests for permission and back-stack restoration. Each layer proves a different claim. A preview cannot prove denial and Settings-return behavior, so I cover those paths on an emulator.”
+Type-Safe Navigation in Navigation 2.8+ transforms route handling under the hood. When navigating to `navController.navigate(ProfileDestination(userId = "123"))`, Navigation serializes the object into an internal route bundle using Kotlinx Serialization. Inside `composable<ProfileDestination> { backStackEntry -> ... }`, accessing arguments is completely type-safe: `val profile = backStackEntry.toRoute<ProfileDestination>()`, with automatic parsing of custom parcelable objects and primitive types.
+
+For permissions, handling configuration changes during an in-flight permission dialog is critical. Because `rememberLauncherForActivityResult` hooks into `ActivityResultRegistry`, recreation during rotation preserves the pending request callback, resolving correctly when the permission dialog dismisses.
+
+In testing, Type-Safe destinations make asserting navigation trivial: in Compose UI tests, we can query `navController.currentBackStackEntry?.toRoute<ProfileDestination>()` to verify that a button click routed to the expected typed destination.
 
 ## How to answer in the interview
 
@@ -100,9 +154,11 @@ Discuss stateless previews, Activity Result ownership, location rationale/denial
 
 ## Follow-up questions
 
-- Why not call a launcher during every composition? **Answer:** rendering can repeat and show duplicate requests.
-- Are permission grants permanent? **Answer:** no; users or the system can revoke access, so check at use time.
-- Why pass an ID rather than an entity through navigation? **Answer:** it is smaller and can be reloaded after recreation.
+- **Interviewer:** "What is the primary advantage of Type-Safe Navigation in Navigation 2.8+?"
+  **Answer:** "Compile-time validation of route parameters, eliminating runtime typos, manual URI string building, manual bundle key retrieval, and parameter type casting bugs."
+
+- **Interviewer:** "Why shouldn't you request a runtime permission directly in `LaunchedEffect(Unit)`?"
+  **Answer:** "Triggering permission dialogs automatically without user context or gesture violates Android guidelines, confuses users, and leads to high permission denial rates. Permissions should always be requested in response to an explicit user interaction."
 
 ## Self-check rubric
 
@@ -114,4 +170,4 @@ Show a preview contract, permission event flow, denial path, and process-safe na
 - [Navigation with Compose](https://developer.android.com/develop/ui/compose/navigation) — arguments and navigation.
 - [Android Photo Picker](https://developer.android.com/training/data-storage/shared/photo-picker) — selected-media access without a broad library permission.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Exact permission contract depends on the capability and API level.
+Technically reviewed against primary documentation on 2026-10-13.

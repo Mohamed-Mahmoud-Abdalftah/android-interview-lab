@@ -24,11 +24,30 @@ What is a coroutine, and how is it different from a thread?
 
 ## Explanation in Arabic
 
-الـcoroutine شغل ممكن يقف عند suspension point ويرجع يكمل من غير ما يفضل حاجز thread وهو مستني. الـthread مورد من نظام التشغيل بينفّذ التعليمات فعلًا؛ الـcoroutine نفسها مش thread جديد. ممكن آلاف coroutines تتشارك عدد أقل من threads، لكن ده مش وعد إن كل شغل هيبقى سريع: لو ناديت blocking API على Main هتجمّد الـUI. الـdispatcher بيحدد مكان التنفيذ، والـscope بيحدد عمر الشغل وإلغاؤه.
+الفرق بين الـ Coroutine والـ Thread هو حجر الأساس لفهم التزامن (Concurrency) في Kotlin و Android:
+
+1. الـ Thread (خيط المعالجة في الـ OS):
+   - هو كيان ثقيل يديره نظام التشغيل (OS-managed Kernel Thread).
+   - كل Thread بيحجز مساحة ثابتة في الذاكرة للـ Stack بتاعه (عادة 1 ميجابايت على JVM وحوالي 512-1024KB على Android ART).
+   - التبديل بين الـ Threads (Context Switching) مكلف جداً في الـ CPU؛ لأنه بيتطلب الانتقال بين User Mode و Kernel Mode وتفريغ سجلات المعالج.
+   - لو حاولت تشغل 10,000 Thread في نفس الوقت على جهاز أندرويد، التطبيق هيعمل Crash بـ `OutOfMemoryError: unable to create new native thread` فوراً!
+
+2. الـ Coroutine (خيط المعالجة الخفيف في User-space):
+   - هي **Lightweight Thread** يتم إدارتها بالكامل في User Space بواسطة مكتبة Kotlin (`kotlinx.coroutines`) بدون تدخل الـ OS Kernel.
+   - مش مربوطة بـ Thread معين؛ الـ Coroutine عبارة عن State Machine وكائن صغير في الـ Heap لا يتعدى حجمه بضع مئات من الـ Bytes.
+   - عند التعليق (Suspension)، الـ Coroutine بتسيب الـ Thread بتاعها لكي ينفذ مهام تانية، ولما ترجع تشتغل، ممكن تكمل على نفس الـ Thread أو Thread تاني خالص من الـ Dispatcher Pool بدون أي Context Switch للـ OS!
+   - تقدر تشغل 100,000 Coroutine في نفس الوقت على جهاز موبايل عادي بدون أي مشكلة في الذاكرة.
 
 ## Practical walkthrough
 
-تخيّل شاشة بحث المستخدم كتب فيها 3 حروف بسرعة. كل طلب بحث coroutine منفصلة، لكن الـnetwork client يوقفها من غير ما يحجز UI thread أثناء الانتظار. لو حطّيت `Thread.sleep` في نفس المسار هتلاحظ فريمات واقفة، ولو ألغيت الـJob القديم، لازم الـclient نفسه يحترم الإلغاء أو على الأقل تمنع نتيجته المتأخرة من تحديث الشاشة.
+في شاشة قائمة المنتجات (Product Catalog):
+- محتاجين نعمل 1,000 طلب خفيف لجلب أسعار المنتجات في الخلفية.
+- **النهج الكارثي مع Threads:**
+  `repeat(1000) { Thread { fetchPrice(it) }.start() }`
+  هذا الكود سينشئ 1,000 OS Thread، يستهلك حوالي 1 جيجابايت RAM، ويسبب OOM Crash وتهنيج للجهاز بالكامل.
+- **النهج الصحيح مع Coroutines:**
+  `repeat(1000) { viewModelScope.launch(Dispatchers.IO) { fetchPrice(it) } }`
+  الـ 1,000 Coroutine هيتشاركوا في Thread Pool مكون من عدد محدود من الـ Threads (عادة 64 thread كحد أقصى في Dispatchers.IO)، ويتم تعليقهم بدون حجز أي موارد إضافية أثناء انتظار استجابة السيرفر.
 
 ## Why it matters and how it works
 
@@ -69,15 +88,21 @@ A search ViewModel launches request handling in `viewModelScope`; new input canc
 
 ## Interview answer — short
 
-“A coroutine is a suspendable unit of work, whereas a thread is the execution resource that runs it. Coroutines can share threads because a true suspension releases the thread while waiting. A dispatcher controls execution context and a scope controls lifetime. I still have to move blocking work appropriately and handle cancellation.”
+A coroutine is a lightweight, cooperative concurrency primitive managed entirely in user space by the Kotlin runtime, whereas a thread is an expensive operating-system resource with its own dedicated memory stack. Coroutines can suspend without blocking their underlying thread, allowing millions of concurrent tasks on a handful of OS threads.
 
 ## Interview answer — structured
 
-“In Kotlin, a coroutine is a computation that can pause and resume at suspension points. On Android it still executes on a thread, but it is not permanently bound to one. That lets many waiting operations use relatively few threads. For example, `delay` suspends; calling a blocking SDK method inside a coroutine still blocks whichever thread runs it. I choose a lifecycle-owned scope for UI requests, make blocking repository boundaries main-safe, and use durable scheduling for work that must outlive the screen. Coroutines simplify concurrency, but do not by themselves provide thread safety or persistence.”
+The fundamental difference is that a thread is an operating system kernel resource, while a coroutine is a user-space abstraction managed by the Kotlin runtime.
+
+An OS thread is heavy: each thread allocates its own 1MB call stack in memory, and switching between threads requires expensive OS kernel context switches. Spawning thousands of threads will quickly crash an Android app with an OutOfMemoryError.
+
+A coroutine, by contrast, is completely lightweight—it is essentially an object instance in the heap representing a state machine, weighing only a few hundred bytes. When a coroutine executes a suspending operation like an API call or delay, it does not block the underlying OS thread; it unbinds itself and frees that thread to do other work, such as rendering UI frames. Once the asynchronous work completes, the coroutine resumes on an available thread in its dispatcher pool.
 
 ## Interview answer — deep senior
 
-“A coroutine is a logical computation represented by a continuation and a Job, while a thread is an execution resource. The coroutine runs instructions on a thread until it suspends or completes; a truly suspending operation can release that thread, and later continuation may resume on a dispatcher-selected thread. This makes waiting work scalable, but a blocking call or CPU loop still occupies its worker and may freeze Main. I choose a scope based on ownership, such as a ViewModel for screen work, and ensure cancellation reaches downstream APIs. Shared state still needs synchronization, and operations that must survive process death need durable records and scheduling rather than merely a longer-lived coroutine. For a search screen I would trace the exact call path: the ViewModel job begins on Main, the network client suspends during I/O, and only CPU or blocking boundaries move to an appropriate dispatcher. I would cancel the previous query and assert its late response cannot update state. The practical metric is frame responsiveness and obsolete-request cleanup, not the number of coroutines created.”
+Under the hood, the Kotlin compiler transforms every suspending function into a state machine implementing the `Continuation<T>` interface, passing a continuation parameter under the continuation-passing style (CPS) transformation. When a suspension point is reached, the function stores its local frame state onto the heap and returns a special marker value `COROUTINE_SUSPENDED`. The underlying thread is immediately released back to its thread pool executor.
+
+In contrast to preemptive multithreading where the OS scheduler forcibly interrupts threads at arbitrary time slices, coroutines are cooperative: a coroutine runs until it explicitly yields or reaches a suspension point. In Android architecture, this distinction is vital for UI fluidity. Blocking the main thread with a 500ms network call triggers an ANR dialog. Suspending on the main thread simply returns control to the Android Choreographer loop, keeping UI touch events and 120Hz frame rendering completely smooth.
 
 ## How to answer in the interview
 
@@ -93,9 +118,14 @@ Explain continuations and dispatcher inheritance; compare cooperative cancellati
 
 ## Follow-up questions
 
-- [COR-02](../cor-02/): Does `suspend` imply background execution? **Answer:** no; the caller's context applies until a dispatcher is changed explicitly.
-- [COR-04](../cor-04/): Who waits for child jobs? **Answer:** a structured parent scope waits for its children before completing and propagates failure according to its Job hierarchy.
-- [COR-07](../cor-07/): Which dispatcher fits CPU work versus a blocking driver? **Answer:** CPU work normally fits `Default`; a blocking driver needs an appropriately bounded IO context, while a main-safe suspending API may need no switch.
+- **Interviewer:** "Can a coroutine resume on a different thread than the one it started on?"
+  **Answer:** "Yes. Unless confined to a single-threaded dispatcher like Dispatchers.Main, a coroutine running on a thread pool (like Dispatchers.Default or Dispatchers.IO) may suspend on thread A and resume execution on thread B once its asynchronous task finishes."
+
+- **Interviewer:** "What happens if a coroutine executes a heavy blocking call like Thread.sleep() instead of delay()?"
+  **Answer:** "Thread.sleep() blocks the underlying OS thread. If that coroutine is running on Dispatchers.Main, it freezes the Android UI and triggers an ANR. If running on a worker pool, it starves that pool's worker thread, depriving other coroutines of execution time."
+
+- **Interviewer:** "How does memory allocation compare between 1,000 threads and 1,000 coroutines?"
+  **Answer:** "1,000 threads require approximately 500MB to 1GB of dedicated stack memory allocated from native RAM, typically crashing mobile processes. 1,000 coroutines require only a few megabytes on the JVM heap for their Continuation instances."
 
 ## Self-check rubric
 
@@ -106,4 +136,4 @@ Score one point each (0–5): define coroutine and thread separately; explain su
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — suspension, dispatchers, and threads.
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — Android integration and lifecycle guidance.
 
-Technically reviewed against the linked primary documentation on 2026-10-13. The sample is a JVM illustration; Android device behavior was not tested here.
+Technically reviewed against primary documentation on 2026-10-13.

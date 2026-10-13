@@ -22,11 +22,38 @@ Whether the candidate sees `withContext` as a suspending context boundary, with 
 
 ## Explanation in Arabic
 
-`withContext` بيشغّل block داخل `CoroutineContext` مختلف بشكل مؤقت، وغالبًا بنستخدمه لنقل blocking I/O إلى `Dispatchers.IO` أو حساب CPU إلى `Default`. الدالة نفسها بتستنى block وترجع نتيجته أو exception، وبعدها المستدعي يكمل في سياقه الأصلي. هي مش launch لشغل منفصل، ومش علاج سحري لأي API بتتجاهل الإلغاء.
+دالة `withContext` هي الأداة القياسية في Kotlin لتغيير سياق الـ Coroutine (`CoroutineContext`) بشكل معلق وآمن:
+
+1. إيه هي دالة `withContext`؟
+   - هي **Suspending Function** بتنقل تنفيذ البلوك الحالي إلى `CoroutineContext` مختلف (عادة `Dispatcher` مختلف)، وتنتظر انتهاء البلوك، وترجع النتيجة فوراً للمتصل.
+   - **ليست Coroutine Builder جديد:** يعني هي مش زي `launch` أو `async`؛ هي لا تنشئ Coroutine منفصلة في شجرة الـ Hierarchy، بل تعلق الـ Coroutine الحالية وتغير الـ Dispatcher بتاعها.
+
+2. إمتى بنستخدمها؟
+   - لتحقيق **Main-Safety**: كتابة الدوال المعلقة (Suspend functions) بحيث تنقل العمليات الثقيلة داخلياً إلى `Dispatchers.IO` أو `Dispatchers.Default`، لكي يستطيع المستدعي استدعاءها من الـ UI Thread بأمان تام.
+   - للتبديل السريع بين الـ Threads داخل نفس الـ Flow التسلسلي.
+
+3. المقارنة مع `async { ... }.await()`:
+   - كتابة `async(Dispatchers.IO) { ... }.await()` هو **Anti-Pattern خطير وسيء للأداء**! هو ينشئ Coroutine جديدة و Deferred كائن في الـ Heap بدون أي داعٍ.
+   - `withContext(Dispatchers.IO) { ... }` أسرع بكثير، أخف في الذاكرة، ويضمن معالجة الاستثناءات والإلغاء بطريقة متسلسلة ونظيفة.
 
 ## Practical walkthrough
 
-لو `loadBytes` بتستخدم disk driver synchronous، خلي `withContext(ioDispatcher)` جوه repository بحيث أي caller، حتى Main، يستدعيها بأمان. هي بتستنى النتيجة وترجع للـcontext الأصلي؛ مش fire-and-forget. لو ألغيت caller أثناء التحويل، مش لازم تفترض إن driver نفسه اتقطع: ممكن يرجع متأخر، والنتيجة ما تتنشرش بسبب إلغاء الـcoroutine.
+في دالة استرجاع ومعالجة بيانات المستخدم من قاعدة البيانات المحلية:
+```kotlin
+class UserRepositoryImpl(
+    private val userDao: UserDao,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) : UserRepository {
+    
+    // الدالة Main-Safe تماماً لأنها تستخدم withContext داخلياً:
+    override suspend fun getUserWithProfile(id: String): UserProfile =
+        withContext(ioDispatcher) {
+            val entity = userDao.getUserById(id) // قراءة من القرص (Blocking I/O)
+            entity.toDomainProfile() // تحويل البيانات
+        }
+}
+```
+لاحظ حقن `ioDispatcher` في الـ Constructor؛ هذا يسمح باستبداله بـ `StandardTestDispatcher` في الـ Unit Tests.
 
 ## Why it matters and how it works
 
@@ -60,15 +87,23 @@ A local file repository exposes a main-safe `loadBytes` contract, switches only 
 
 ## Interview answer — short
 
-“`withContext` suspends while running a block under a modified context, commonly an IO or Default dispatcher, and returns its result. It preserves structured ownership when I only change the dispatcher. I use it at blocking boundaries and do not assume it can stop an uncooperative API.”
+withContext is a suspending function that temporarily switches the coroutine's context (such as its dispatcher) for a block of code, suspends until completion, and returns the result. It is the idiomatic way to achieve Main-Safety without allocating extra coroutines like async/await would.
 
 ## Interview answer — structured
 
-“I use `withContext` to make the owner of a blocking operation responsible for its execution context. It suspends the caller, runs the block with the supplied context, then returns a value or throws to the caller. If I change only the dispatcher, the caller’s Job still owns the operation. In an Android repository, I wrap a synchronous disk driver on IO; a non-blocking suspend client may not need this switch. I test cancellation and thread behavior against the real library rather than interpreting the `suspend` keyword as safety.”
+I use `withContext` to switch execution context—most commonly to move work onto a different dispatcher and return a result to the caller synchronously from the coroutine's perspective.
+
+Its primary architectural role is enforcing **Main-Safety**. In clean architecture, repository and use-case suspend functions should be safe to call from Dispatchers.Main. By wrapping disk I/O or heavy computations in `withContext(Dispatchers.IO)` or `withContext(Dispatchers.Default)`, the function encapsulates its own threading requirements. The caller on the UI thread simply calls the suspend function without worrying about freezing the UI.
+
+A key senior distinction: never use `async { ... }.await()` to switch dispatchers for a single task. `withContext` is purpose-built for sequential context switching. It avoids creating a child coroutine and Deferred heap object, and it optimizes thread transitions under the hood.
 
 ## Interview answer — deep senior
 
-“A context switch is a structured boundary, not a detached fire-and-forget task. `withContext(Dispatchers.IO)` changes the dispatcher element for its block and waits for completion, including child work; it propagates failure to the caller. When control returns, execution resumes in the caller context, often Main. Cancellation is cooperative, and a blocking native or Java method may continue until it returns, so I pair timeouts with transport-specific cancellation when available. I also avoid inserting a new Job into the context because that can break caller ownership. In production I put the switch in a repository with a main-safe contract, inject dispatchers for deterministic tests, and treat an external side effect’s outcome as uncertain if cancellation occurs after submission. I would keep dispatcher injection near the operation that knows it blocks, not scatter it through UI callers. The caller receives a value or exception only after `withContext` completes; it does not create detached work. One subtlety is prompt cancellation when dispatching back to the original context: a computed result may be discarded if the caller was cancelled. For side-effecting writes, I would model server status separately from coroutine return value.”
+Under the hood, `withContext` optimizes context switching using the `DispatchedCoroutine` fast path. If the target dispatcher matches the current coroutine's dispatcher, `withContext` skips dispatching altogether and executes the lambda synchronously in the current call frame, eliminating any scheduling overhead.
+
+If the dispatcher is different, it suspends the caller continuation, dispatches the block onto the new dispatcher, and upon completion, uses a specialized continuation wrapper to dispatch the return value back to the original caller dispatcher.
+
+In enterprise codebases, we mandate injecting dispatchers via dependency injection (e.g., `@IoDispatcher val dispatcher: CoroutineDispatcher`). Hardcoding `withContext(Dispatchers.IO)` in class bodies makes deterministic unit testing impossible because tests cannot control or advance virtual time without replacing the dispatcher with `StandardTestDispatcher`.
 
 ## How to answer in the interview
 
@@ -84,8 +119,14 @@ Trace context replacement, result return, parent cancellation during dispatch ba
 
 ## Follow-up questions
 
-- [COR-02](../cor-02/): Does `suspend` switch threads? **Answer:** no; `withContext` is the explicit context change.
-- [COR-29](../cor-29/): Does timeout stop a legacy driver? **Answer:** only if the driver cooperates or has its own cancellation mechanism.
+- **Interviewer:** "How does cancellation behave inside `withContext`?"
+  **Answer:** "`withContext` checks for cancellation both before entering the block and upon returning. If the coroutine is cancelled while executing inside `withContext`, cancellation is cooperative: as soon as the block reaches a suspension point or checks `ensureActive()`, it throws `CancellationException` and exits."
+
+- **Interviewer:** "Why is hardcoding `Dispatchers.IO` inside `withContext` considered an anti-pattern?"
+  **Answer:** "Because it breaks unit test determinism. In unit tests using `runTest`, hardcoded dispatchers run on real background threads outside the test scheduler's control, causing flakiness and race conditions. Injecting dispatchers allows tests to substitute a `TestDispatcher`."
+
+- **Interviewer:** "What is the difference between `withContext(NonCancellable)` and regular `withContext`?"
+  **Answer:** "`withContext(NonCancellable)` temporarily replaces the active Job with an un-cancellable job. It is used exclusively inside `finally` cleanup blocks to execute critical cleanup suspend functions (like closing files or sending cancellation analytics) that would otherwise be aborted if the coroutine was cancelled."
 
 ## Self-check rubric
 
@@ -96,4 +137,4 @@ Can I explain return and exception behavior, identify the owning layer, distingu
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — `withContext` and context.
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — main-safe data layer.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

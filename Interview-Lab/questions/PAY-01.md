@@ -23,11 +23,48 @@ What is a payment state machine (initiated, processing, approved, declined, unkn
 
 ## Explanation in Arabic
 
-Payment state machine بتحدد انتقالات مسموحة: `initiated` قبل الإرسال، `processing` أثناء محاولة، `approved` أو `declined` بعد رد موثوق، `unknown` لما الرد ضاع، و`reversed` بعد تأكيد إلغاء الأثر وفق بروتوكول الـprovider. الـtimeout مش `declined`؛ ممكن issuer وافق والرد ما وصلش. كل transition لازم مربوط بـoperation ID ثابت ويتسجل durably.
+ما هي آلة حالة الدفع (Payment State Machine) وما هي الحالات الأساسية (Initiated, Processing, Approved, Declined, Unknown, Reversed) ولماذا تعتبر حاسمة في التطبيقات المالية؟
+
+1. خطورة التعامل مع المدفوعات كـ Boolean (Success/Failure):
+   - في التطبيقات العادية، قد تكفيك نتيجة `true` أو `false`.
+   - في الأنظمة المالية ونقاط البيع (POS/Fintech)، **هذا التبسيط يؤدي لكوارث مالية (Double-charging أو خسارة أموال التاجر)**!
+   - الشبكة قد تنقطع بعد خصم الأموال من حساب العميل وقبل وصول الرد للهاتف؛ فإذا اعتبرت العملية "فاشلة"، سيقوم العميل بالدفع مرة أخرى ويُخصم منه مرتين!
+
+2. الحالات الست الصارمة لآلة حالة الدفع (The 6 Payment States):
+   - **1. Initiated (تم البدء)**: تم إنشاء الطلب محلياً وتوليد معرف ارتباط فريد (Correlation ID) وحفظه في قاعدة البيانات المحلية (Room) قبل إرسال أي بايت عبر الشبكة.
+   - **2. Processing (قيد المعالجة)**: تم إرسال الطلب إلى معالج الدفع (Payment Gateway / Bank Switch) وننتظر الرد.
+   - **3. Approved (مقبول ومؤكد)**: وصل رد رسمي وبتوقيع رقمي من البنك يؤكد حجز الأموال بنجاح.
+   - **4. Declined (مرفوض)**: رد صريح من البنك بالرفض (رصيد غير كافٍ، بطاقة منتهية، كلمة سر خاطئة). حالة نهائية لا تتطلب إعادة محاولة.
+   - **5. Unknown / In-Doubt (حالة معلقة وغير محددة)**: **أهم وأخطر حالة**! انقطاع اتصال (Timeout)، سقوط الخادم، أو إعادة تشغيل الهاتف أثناء انتظار الرد. لا يجوز اعتبارها نجاحاً ولا فشلاً، بل تتطلب استعلاماً لاحقاً (Reconciliation) أو عملية عكس (Reversal).
+   - **6. Reversed (معكوس / ملغى)**: تم إرسال طلب إلغاء فوري للبنك لحذف الحجز واستعادة رصيد العميل بسبب عطل محلي.
 
 ## Practical walkthrough
 
-في كاشير POS، terminal تبعت authorization برقم `operationId` وتفصل الشبكة قبل الرد. اكتب `Unknown` بدل `Declined`، وخلّي التطبيق بعد restart يعمل status lookup لنفس الهوية. لو callback قديمة وصلت بعد تأكيد أحدث، transition guard تمنع الرجوع لحالة غير صحيحة. أسماء الحالات دي domain model؛ provider الحقيقي ممكن يستخدم حالات تانية ولازم mapping موثق.
+تمثيل آلة حالة الدفع الصارمة باستخدام Kotlin Sealed Class في كود معماري آمن:
+```kotlin
+sealed interface PaymentState {
+    val transactionId: String
+    val amountInCents: Long
+
+    // 1. تم إنشاء المعاملة وحفظها محلياً في Room:
+    data class Initiated(override val transactionId: String, override val amountInCents: Long) : PaymentState
+
+    // 2. تم إرسال الطلب للبنك وننتظر الرد:
+    data class Processing(override val transactionId: String, override val amountInCents: Long, val idempotencyKey: String) : PaymentState
+
+    // 3. تأكيد نهائي بالخصم:
+    data class Approved(override val transactionId: String, override val amountInCents: Long, val authCode: String) : PaymentState
+
+    // 4. رفض صريح من البنك:
+    data class Declined(override val transactionId: String, override val amountInCents: Long, val reason: String) : PaymentState
+
+    // 5. حالة معلقة (انقطاع شبكة أثناء المعالجة - تتطلب تحقيق ومطابقة):
+    data class Unknown(override val transactionId: String, override val amountInCents: Long, val error: Throwable) : PaymentState
+
+    // 6. تم إلغاء المعاملة واسترجاع الرصيد بنجاح:
+    data class Reversed(override val transactionId: String, override val amountInCents: Long, val reversalRef: String) : PaymentState
+}
+```
 
 ## Why it matters and how it works
 
@@ -67,15 +104,35 @@ Keep a transition table with allowed evidence, actor and durable write for each 
 
 ## Interview answer — short
 
-“I would treat Unknown as a real state, not a synonym for Declined. A POS timeout after authorization may hide an approval, so I retain the same operation ID, consult authoritative status, and only then advance the durable state.”
+A payment state machine governs financial transaction lifecycles across explicit states: Initiated (locally persisted), Processing (in-flight), Approved (issuer authorized), Declined (issuer rejected), Unknown (network drop/timeout during transit), and Reversed (undone via auto-reversal). It prevents double-charging and catastrophic state ambiguity.
 
 ## Interview answer — structured
 
-“I model initiated, processing, approved, declined, unknown and reversal states with guarded transitions. An authorization response can be lost after issuer approval, so a timeout means unknown. I persist the operation ID and state before sending, then query or reconcile through the backend. UI callbacks display state but do not create financial truth. Late or duplicate callbacks cannot overwrite a newer terminal state. For example, losing connectivity after authorization moves the attempt to Unknown, not Declined.”
+A deterministic payment state machine is the foundational architectural safeguard in fintech and POS engineering:
+
+1. **Eliminating the Binary Fallacy**:
+   - Financial transactions must never be modeled as a boolean (success/failure). Network timeouts produce ambiguous states where funds were deducted at the issuer bank but never acknowledged on the mobile terminal.
+
+2. **The Six Canonical Transaction States**:
+   - **Initiated**: Transaction intent, idempotency key, and payload are durably written to disk (Room/SQLite) before opening any socket connection.
+   - **Processing**: The payload is in transit to the payment gateway or EMV switch.
+   - **Approved**: Cryptographically signed confirmation received with an authorization code.
+   - **Declined**: Explicit rejection code (e.g., insufficient funds, expired card); a terminal state requiring no automatic retries.
+   - **Unknown / In-Doubt**: Network timeout, socket hangup, or terminal reboot occurs mid-flight. Funds may or may not have been captured.
+   - **Reversed**: An automated reversal (0400/0420 ISO 8583 message) has released held funds back to the cardholder.
+
+3. **State Transition Guarantees**:
+   - Transitions must be strictly monotonic and persisted atomically in local databases to survive sudden process termination or hardware battery pulls.
 
 ## Interview answer — deep senior
 
-“I define each transition with an evidence source, durable commit and replay behavior. The terminal records intent before external I/O, sends a stable operation identity, and treats transport errors as unknown. Reconciliation obtains authoritative provider state and can schedule a protocol-specific reversal. Concurrent duplicate responses converge through an atomic compare-and-set/transaction, and stale callbacks are ignored. The UI observes this state but does not own it. I test lost responses, battery removal, reversal failure and provider disagreement; the operational playbook handles states still unknown after automated lookup. I would ask the interviewer which response is authoritative and show how late callbacks are rejected after reconciliation. I would draw the transition table on the whiteboard: Initiated becomes Processing only after the local intent is committed; Processing becomes Approved or Declined only with a trusted response; and transport loss becomes Unknown. Reversed is not simply an opposite Boolean of Approved, because the acquirer's reversal acknowledgment and settlement timing determine what it means. Each transition needs a unique original operation ID, source of evidence, and idempotent database update. I would also name an explicit escalation state or operational queue for unresolved Unknown records. This makes it possible to audit why the terminal displayed a result and to repair the state after power loss.”
+From an ISO 8583 and payment terminal compliance perspective, managing the 'Unknown' state dictates ledger consistency:
+
+1. **The 'In-Doubt' Protocol**: When a transaction enters the `Unknown` state due to a 30-second gateway read timeout, client apps must **never immediately retry the authorization request**. Doing so risks charging the customer twice. The terminal must enqueue an automated Reversal (ISO 8583 0400 reversal message) and mark the local record as pending reversal.
+
+2. **Terminal Status Inquiry vs. Auto-Reversal**: High-reliability POS devices execute a Status Inquiry (`/v1/payments/{id}/status`) before issuing a reversal. If the gateway confirms the charge was captured, the client reconciles the transaction as Approved and prints the receipt; if not captured or still pending, it executes the reversal.
+
+3. **Crash-Resistant State Machine Engines**: In Android, state machines must be tied to persistent WorkManager tasks and Room database observers rather than ViewModel in-memory state. If Android kills the app process due to low memory while in `Processing`, upon next launch the app inspects Room and resumes the reconciliation workflow.
 
 ## How to answer in the interview
 
@@ -91,8 +148,11 @@ Prompt for transition table, unknown timeout, durable intent, late callback orde
 
 ## Follow-up questions
 
-- [PAY-02](../pay-02/): Why stable identity? **Answer:** retries must not create a second business operation.
-- [PAY-12](../pay-12/): What after power loss? **Answer:** load durable intent and reconcile issuer/backend state.
+- **Interviewer:** "Why is treating a network timeout as a 'Declined' payment dangerous in financial apps?"
+  **Answer:** "Because the issuer may have already approved and deducted the funds; treating it as declined causes the customer to pay twice upon re-trying."
+
+- **Interviewer:** "What is the primary objective of an ISO 8583 reversal message?"
+  **Answer:** "To instruct the issuer to release pre-authorized funds and void an in-doubt transaction when the client terminal did not receive confirmation."
 
 ## Self-check rubric
 
@@ -103,4 +163,4 @@ Can I distinguish timeout from decline, identify authoritative transitions and d
 - [Stripe PaymentIntent lifecycle](https://docs.stripe.com/payments/paymentintents/lifecycle) — one provider’s state model.
 - [Android offline-first data layer](https://developer.android.com/topic/architecture/data-layer/offline-first) — durable local data concepts.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

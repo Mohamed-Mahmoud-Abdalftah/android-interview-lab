@@ -24,11 +24,38 @@ A release manifest merge drops a required ContentProvider authority. What CI che
 
 ## Explanation in Arabic
 
-CI تبني `prodRelease` وتفحص merged manifest الناتجة بعد كل source sets وAAR manifests و`tools:` merge rules؛ assert على `provider android:name` و`android:authorities` المتوقعة (مع applicationId suffix)، وربما `exported`, permissions وgrantUri حسب contract. مجرد فحص `src/main/AndroidManifest.xml` لا يكفي؛ release source set أو library قد تغير/تحذف العقدة. استخدم manifest merger report لتفسير من غيّرها، ثم APK/AAB-derived manifest أو instrumented smoke test يؤكد ما شُحن. لا تحل المشكلة بإضافة authority ثابتة قد تصطدم بين flavors.
+أثناء دمج ملفات الـ Manifest في نسخة الـ Release، تم إسقاط (Drop) عنوان ContentProvider مطلوب. ما هو الفحص الآلي (CI Check) الذي يكشف هذه الكارثة قبل النشر؟
+
+1. كيف تسقط عناصر الـ Manifest أثناء الـ Merge؟
+   - في أندرويد، يتم دمج ملفات الـ `AndroidManifest.xml` الواردة من كل الموديولات والمكتبات الخارجية مع الـ Manifest الرئيسي.
+   - إذا استخدمت مكتبة خارجية أو Flavor قاعدة `tools:node="remove"` أو حدث تعارض في `tools:replace="android:authorities"`، قد يقوم الـ Manifest Merger بحذف الـ ContentProvider بالكامل من الـ APK النهائي دون إظهار أي خطأ أثناء الترجمة!
+   - النتيجة: عند تشغيل التطبيق أو استدعائه، ينهار برمي استثناء فادح أو يفشل تكامل الـ SDK.
+
+2. الفحوصات الآلية في الـ CI/CD لكشف المشكلة:
+   - **1. فحص تقرير دمج الـ Manifest (Manifest Merger Report)**: ملف `app/build/outputs/logs/manifest-merger-release-report.txt` يحتوي على سجل تفصيلي لكل عنصر تمت إضافته أو حذفه.
+   - **2. اختبار فحص آلي في الـ CI (Automated Manifest Assertion Test)**: كتابة سكريبت بايثون أو اختبار Unit Test في الـ CI يقوم بقراءة ملف الـ Manifest المدمج النهائي والتحقق من وجود الـ `<provider>` والـ `authorities` المطلوبة صراحة.
 
 ## Practical walkthrough
 
-في CI ابنِ `productionRelease` وافحص merged manifest النهائي أو packaged manifest: authority الصحيحة، exported flag، permission وplaceholder values. لو provider من library تغير مع manifest merger، source file وحده لا يكفي. أضف smoke test ل`ContentResolver` وURI grant إن الفعل مهم، واحتفظ بتقرير merger. افحص unexpected exports كذلك لأنها security boundary.
+تنفيذ فحص آلي في CI/CD للتحقق من وجود الـ ContentProvider في ملف الـ Manifest المدمج النهائي:
+```kotlin
+// اختبار Unit Test يعمل في CI للتحقق من سلامة الـ Merged Manifest:
+class ManifestIntegrityTest {
+    @Test
+    fun verifyRequiredContentProvidersAreNotDropped() {
+        val mergedManifestFile = File("build/intermediates/merged_manifests/release/AndroidManifest.xml")
+        assertTrue("Merged manifest must exist", mergedManifestFile.exists())
+
+        val manifestContent = mergedManifestFile.readText()
+        val expectedAuthority = "com.example.app.secureprovider"
+
+        assertTrue(
+            "Critical Error: Authority '$expectedAuthority' was dropped during manifest merge!",
+            manifestContent.contains("android:authorities=\"$expectedAuthority\"")
+        )
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +79,31 @@ Check required manifest contracts per published variant, store merger reports on
 
 ## Interview answer — short
 
-“CI should parse the final merged manifest of the shipped release variant and assert the provider's resolved authority and required attributes, then smoke-test the packaged flow.”
+Catch dropped manifest components by inspecting the manifest-merger-release-report.txt log and running an automated CI assertion script or test that parses the final merged AndroidManifest.xml to verify the presence of mandatory provider authorities.
 
 ## Interview answer — structured
 
-“I build the exact release flavor, not debug, and inspect AGP's merged manifest output. A test asserts provider class, resolved authority and relevant exported/permission or URI-grant attributes. On failure I attach the manifest merger report to show which source set or AAR changed it. For a critical file-sharing provider I also launch or query a packaged release artifact on an emulator, because presence in XML does not prove runtime behavior.”
+Manifest merging conflicts can silently strip essential components via conflicting `tools:node` attributes or namespace collisions:
+
+1. **Root Causes of Manifest Drops**:
+   - Upstream libraries declaring `tools:node="remove"` targeting shared component names.
+   - Conflicting `android:authorities` attributes across product flavors or merged dependencies resolved incorrectly via `tools:replace`.
+
+2. **The Manifest Merger Report**:
+   - AGP generates a detailed audit log: `app/build/outputs/logs/manifest-merger-release-report.txt`. It documents the line-by-line origin, merge decision, and justification for every element included or rejected.
+
+3. **Automated CI Validation Checks**:
+   - Implement a post-build CI test or custom Gradle task hooked after `processReleaseManifest`. The task parses `build/intermediates/merged_manifests/release/AndroidManifest.xml` using an XML parser and asserts that all critical `<provider>`, `<service>`, and `<activity>` authorities and exported attributes match expected security baselines, failing the build on discrepancies.
 
 ## Interview answer — deep senior
 
-“The check belongs after manifest merging for the artifact we intend to publish. AGP merges `main`, flavor, build-type and library manifests with priority and `tools:` rules, so a source file can look correct while the final `prodRelease` manifest has no provider or a different authority. I add a CI task that parses the merged manifest or final packaged manifest and asserts the exact provider class and resolved `applicationId`-specific authority. Depending on the contract I also assert exported state, permissions and URI grant settings, because a present provider with wrong access rules can still break or expose data. I store the merger decision report as a diagnostic artifact when the assertion fails. Then a focused release-variant integration test exercises the URI path on an emulator. I avoid a raw grep of `src/main` and avoid a fixed authority that collides across flavors or test installs. The check is small, deterministic and tied to the variant, while the device test verifies behavior that static XML cannot.”
+From an enterprise release governance viewpoint, manifest integrity auditing extends beyond simple text matching:
+
+1. **Custom Android Lint Rules (`Detector.XmlScanner`)**: Write an in-house Android Lint rule that runs during `./gradlew lintRelease`. The detector scans the merged XML AST for expected component authorities and flags errors if authorities do not match the expected variant namespace pattern.
+
+2. **AAPT2 Dump Manifest Verification**: To guarantee that what is packaged inside the binary matches expectations, run `aapt2 dump badging app-release.apk` inside the release CI runner. Inspect the output to verify declared providers in the final compiled `.arsc` table.
+
+3. **Security Implications of Dropped Providers**: If an initialization provider (such as AndroidX App Startup `androidx.startup.InitializationProvider`) is dropped, dependent security or tracing SDKs fail to initialize silently, leaving the application running in an uninitialized, insecure state.
 
 ## How to answer in the interview
 
@@ -76,9 +119,11 @@ Discuss merge priority, placeholders, `tools:` markers, parsed assertions, packa
 
 ## Follow-up questions
 
-- Why is `src/main` inspection insufficient? **Answer:** flavor, build type and libraries can override/remove entries during merge.
-- What report helps explain a changed provider? **Answer:** AGP's manifest merger decision report for that variant.
-- Does a manifest assertion prove provider functionality? **Answer:** no; add a focused runtime test for critical behavior.
+- **Interviewer:** "What does tools:node="remove" do in AndroidManifest.xml?"
+  **Answer:** "It instructs the manifest merger to completely remove the specified element from the final merged manifest, ignoring declarations from lower-priority manifests."
+
+- **Interviewer:** "Where is the merged AndroidManifest.xml file located in AGP builds?"
+  **Answer:** "Inside app/build/intermediates/merged_manifests/<variant>/AndroidManifest.xml."
 
 ## Self-check rubric
 
@@ -89,4 +134,4 @@ Name final variant, assert provider attributes, attach merge report, and verify 
 - [Manage manifest files](https://developer.android.com/build/manage-manifests) — merge rules and reports.
 - [Configure build variants](https://developer.android.com/build/build-variants) — source-set priority.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Authority values are illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

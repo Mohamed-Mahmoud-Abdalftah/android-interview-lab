@@ -24,11 +24,37 @@ A release bundle was signed with the wrong key. How do you contain it and correc
 
 ## Explanation in Arabic
 
-أوقف upload/promotion فورًا واعرف الحالة: AAB محلية فقط، Play رفضها لأن upload certificate غلط، أم تم قبول/توزيع artifact في قناة معينة؟ احفظ hash/logs بدون نشر secrets. قارن certificate fingerprint مع upload key المسجل، وميّزها عن app-signing key التي يستخدمها Play للأجهزة. لو مجرد wrong upload key، أصلح protected CI secret/config وأعد build أو signing من source/toolchain موثوق مع versionCode صالح، ثم افحص fingerprint قبل الرفع واختبر internal track. لو key مشبوهة أو artifact وُزع بالفعل، اتبع incident/Play recovery والـrollout halt. لا “تصلح” signed AAB بتعديل bytes يدويًا.
+تم توقيع ملف الـ Release Bundle بمفتاح خاطئ (Wrong Signing Key). كيف تحتوي المشكلة وتصحح الـ Pipeline فورياً؟
+
+1. تقييم الموقف وتحديد نطاق الضرر (Blast Radius Assessment):
+   - **الحالة أ: تم التوقيع ولكن لم يتم الرفع إلى Google Play بعد**: لا يوجد ضرر! يتم إلغاء الـ Artifact فوراً، وإصلاح مسارات المفاتيح في CI، وإعادة البناء.
+   - **الحالة ب: تم الرفع إلى Google Play Console بمفتاح Upload Key خاطئ**: سيرفض Google Play Console الـ AAB فوراً برمي خطأ `The upload key does not match the app's upload certificate`، ولن يصل الملف لأي مستخدم.
+   - **الحالة ج: تم توقيع وتوزيع APK مباشر (Enterprise MDM أو Direct Download)**: المستخدمون الحاليون لن يتمكنوا من تثبيت التحديث وستظهر رسالة `App not installed: Update incompatible`.
+
+2. إجراءات الاحتواء والتصحيح الفورية (Containment & Recovery):
+   - إيقاف الـ Pipeline فوراً وسحب الـ Artifact من خوادم التوزيع.
+   - إذا فُقد الـ Upload Key الأصلي تماماً، يقوم مالك الحساب (Account Owner) بتقديم طلب رسمي عبر Google Play Console لإعادة تعيين الـ Upload Key.
+
+3. تحصين مسار الـ CI/CD لمنع تكرار الخطأ:
+   - استخدام **Protected Environments في GitHub Actions** تتطلب موافقة يدوية (Manual Approval) للوصول لمفاتيح الإنتاج.
+   - إضافة خطوة فحص آلية في CI تقرأ الـ SHA-256 الخاص بالـ Keystore وتقارنه بالبصمة الرسمية قبل بدء التوقيع.
 
 ## Practical walkthrough
 
-Wrong key: أوقف promotion أولًا، وحدد هل upload اترفض أم وصل track وأي users تأثروا. قارن fingerprint مع expected upload/app signing roles؛ مسارات recovery تختلف. راجع secret reference والworkflow والartifact digest، ثم ابنِ من commit موثوق بمفتاح صحيح وفق حالة Play/versionCode. لا تفترض إن تغيير certificate بسيط؛ احتفظ بـincident log وراجع access.
+فحص بصمة مفتاح التوقيع في CI قبل رفع الـ Artifact ومنع استخدام المفاتيح الخاطئة:
+```bash
+# 1. فحص بصمة الـ SHA-256 للملف الموقع للتحقق من هويته قبل رفعه إلى المتجر:
+keytool -printcert -jarfile app/build/outputs/bundle/release/app-release.aab | grep "SHA256:"
+
+# 2. التحقق برمجياً في الـ CI Script ومقارنة البصمة بالبصمة الرسمية المعتمدة:
+EXPECTED_SHA256="A1:B2:C3:D4:E5:F6:..."
+ACTUAL_SHA256=$(keytool -printcert -jarfile app-release.aab | awk '/SHA256:/ {print $2}')
+
+if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+    echo "CRITICAL ERROR: Signing key mismatch! Build was signed with untrusted key."
+    exit 1
+fi
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +78,32 @@ Enforce pre-upload certificate fingerprint and artifact-hash gates, protect envi
 
 ## Interview answer — short
 
-“I halt promotion, determine upload/distribution state, compare the AAB certificate to the registered upload key, then rebuild through protected CI and verify before retrying.”
+If uploaded to Google Play, the console automatically rejects bundles signed with the wrong upload key. For external MDM distribution, halt deployments immediately. Correct the pipeline by adding a CI verification step that asserts the artifact's SHA-256 certificate fingerprint matches the authorized production key before publishing.
 
 ## Interview answer — structured
 
-“First I contain the artifact and establish whether Play rejected it or users received anything. I record its hash and fingerprint, distinguish upload key from Play's app-signing key, and identify the CI secret/config path that selected the wrong one. I correct that path in a protected job, produce a new verified AAB with valid versionCode, and test on an internal track. If a credential is compromised or a bad release was distributed, I invoke the relevant incident and rollout process.”
+Containing and rectifying an artifact signed with the incorrect cryptographic key depends on the distribution channel:
+
+1. **Google Play Containment (Safe by Default)**:
+   - If enrolled in Play App Signing, Google Play Console enforces certificate verification on upload. Uploading an AAB signed with an unrecognized key fails with an immediate rejection error (`The upload key does not match`). Zero production users are impacted.
+
+2. **Alternative Distribution / Direct APK Blast Radius**:
+   - For enterprise MDM or direct APK distribution, devices reject the update with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Users cannot be compromised, but the update channel is blocked.
+   - Immediately halt the rollout track and purge the invalid artifact from distribution CDNs.
+
+3. **Pipeline Remediation & Hardening**:
+   - Audit CI secret variables. Ensure the release workflow extracts signing credentials exclusively from a **Protected GitHub Environment** restricted to protected release branches and tags.
+   - Add an automated pre-publish CI assertion task: execute `keytool -printcert -jarfile <artifact>` and assert that the certificate's SHA-256 fingerprint matches the pinned production upload certificate, aborting the job on any divergence.
 
 ## Interview answer — deep senior
 
-“My response depends on the release state. I stop the pipeline and preserve the wrong-signed AAB hash, certificate fingerprint, source revision and CI logs without exposing secrets. If Play rejected the upload, users are not affected by that artifact; I fix the protected signing job and verify it selects the registered upload key. Under Play App Signing I do not confuse this with the app-signing key used for delivered APKs. I rebuild or re-sign only through an audited, reproducible pipeline, verify certificate, versionCode and hash before upload, and validate through an internal track before resuming promotion. I also check whether the artifact had been accepted on another channel or whether a key was compromised; those require containment, access review, possibly upload-key reset and rollout controls rather than a simple retry. I add a pre-upload fingerprint gate and an environment mapping test so prod can never silently select staging credentials. I do not modify bytes in a signed bundle or create an opaque local emergency artifact. The incident record ties the correction to one immutable binary and explains user impact accurately.”
+From a cryptographic identity governance perspective, key recovery requires clear protocols:
+
+1. **Upload Key Reset Protocol**: If the original upload key was irrevocably lost or corrupted, the Google Play Console account owner navigates to Setup -> App Signing and requests an Upload Key Reset. Provide the public PEM certificate of the newly generated upload key. Google updates the registration within 48 hours without affecting the master App Signing Key or installed user base.
+
+2. **Self-Signed Enterprise Keystore Rotation**: If the app is distributed outside Google Play without Play App Signing and the original private key is lost, updating the installed user base is technically impossible. The developer must register a new Application ID, forcing users to uninstall and reinstall—demonstrating why Play App Signing is vital.
+
+3. **HSM & Cloud KMS Integration**: Mitigate credential handling entirely by using Gradle plugins that sign via Google Cloud KMS or AWS KMS remote signing APIs, eliminating `.jks` file handling on CI runners.
 
 ## How to answer in the interview
 
@@ -76,9 +119,11 @@ Discuss rejected versus distributed state, key roles, fingerprints, versionCode,
 
 ## Follow-up questions
 
-- Does a wrong upload key always reach users? **Answer:** no; Play may reject it before distribution.
-- Which fingerprint should a pre-upload gate compare? **Answer:** the AAB upload certificate against the registered upload key.
-- When might upload-key reset be appropriate? **Answer:** if the key is lost or compromised, following Play's current process.
+- **Interviewer:** "Can an app update be installed if signed with a different key on Android?"
+  **Answer:** "No; Android package manager strictly enforces signature matching across updates to prevent application hijacking."
+
+- **Interviewer:** "How long does a Google Play Upload Key reset take to become active?"
+  **Answer:** "Typically between 24 to 48 hours after Google support confirms the public PEM certificate update."
 
 ## Self-check rubric
 
@@ -89,4 +134,4 @@ Classify exposure, preserve evidence, correct protected signing and add a preven
 - [Sign your app](https://developer.android.com/studio/publish/app-signing) — key roles and reset.
 - [Upload an App Bundle](https://developer.android.com/studio/publish/upload-bundle) — submission workflow.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Play acceptance state must be confirmed in the real incident.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -22,7 +22,58 @@ Replace a giant inheritance hub with optional capabilities while preserving life
 
 ## Explanation in Arabic
 
-ابدأ بـinventory لـ`BaseActivity`: toolbar، analytics، permission launcher، navigation، loading، dependency lookup. اختبر current behavior للشاشات المهمة. بعدها طلّع كل behavior له lifetime واضح لـcollaborator صغير: toolbar controller للشاشات المناسبة، analytics observer مسجّل/متشال مع lifecycle، navigator، permission coordinator. Activity تتركب من اللي تحتاجه بدل ترث كل شيء. نقل تدريجي screen واحدة كل مرة مع parity tests، مش حذف base في PR ضخمة. خليك حذر من callbacks محتفظة بـActivity بعد destroy.
+كيف تستبدل كلاس `BaseActivity` ضخم وعملاق بسلوكيات تركيبية صغيرة (Small Composable Behaviors)؟
+
+1. تشريح الـ BaseActivity العملاق (The God Base Class):
+   - يحتوي عادة على: تتبع التحليلات (Analytics tracking)، فحص الاتصال بالإنترنت (Network observer)، شريط الأدوات (Toolbar setup)، مؤشر التحميل العام (Global Progress Dialog)، وإدارة أذونات النظام (Permission handling).
+   - كل الشاشات مجبرة على وراثة كل هذا التعقيد حتى لو كانت شاشة بسيطة لا تحتاج شيئاً منه!
+
+2. استراتيجية التفكيك إلى سلوكيات تركيبية (Modular Decomposition):
+   - **السلوك 1: مراقبة دورة الحياة عبر LifecycleObserver**:
+     * سحب فحص الجلسة والتحليلات إلى كلاسات تنفذ `DefaultLifecycleObserver`.
+     * الـ Activity تقوم فقط بـ `lifecycle.addObserver(analyticsObserver)`.
+   - **السلوك 2: تفويض واجهة المستخدم عبر Jetpack Compose**:
+     * استبدال كود الـ Toolbar والـ Loading بـ Composable Reusable Scaffolds (`AppScaffold`).
+   - **السلوك 3: إدارة الأذونات عبر Activity Result APIs**:
+     * استخدام `registerForActivityResult` المدمج كـ Component مستقل.
+
+## Practical walkthrough
+
+تفكيك BaseActivity عملاق إلى كلاسات LifecycleObservers ومكونات Compose:
+```kotlin
+// 1. سلوك تتبع التحليلات معزول كمراقب لدورة الحياة:
+class AnalyticsLifecycleObserver(private val tracker: AnalyticsTracker) : DefaultLifecycleObserver {
+    override fun onResume(owner: LifecycleOwner) {
+        tracker.logScreenVisit(owner.javaClass.simpleName)
+    }
+}
+
+// 2. سلوك فحص الاتصال معزول كمراقب شبكة:
+class NetworkMonitorObserver(private val networkMonitor: NetworkMonitor) : DefaultLifecycleObserver {
+    override fun onStart(owner: LifecycleOwner) { networkMonitor.start() }
+    override fun onStop(owner: LifecycleOwner) { networkMonitor.stop() }
+}
+
+// 3. النشاط أصبح نظيفاً تماماً بدون أي وراثة من BaseActivity مخصص:
+@AndroidEntryPoint
+class OrderActivity : ComponentActivity() {
+    @Inject lateinit var analyticsObserver: AnalyticsLifecycleObserver
+    @Inject lateinit var networkObserver: NetworkMonitorObserver
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate()
+        // تركيب السلوكيات بنعومة واستقلالية:
+        lifecycle.addObserver(analyticsObserver)
+        lifecycle.addObserver(networkObserver)
+
+        setContent {
+            AppScaffold(title = "Orders") {
+                OrderScreenContent()
+            }
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +82,6 @@ A giant base class couples every child to unrelated hooks and shared lifecycle a
 ## Worked example
 
 Conceptual flow: `CatalogActivity` receives `ToolbarController` and `AnalyticsObserver`; `CameraActivity` receives only analytics. Both may extend the framework `ComponentActivity`, but neither has to implement an unsupported `setupToolbar()`. The analytics observer registers and unregisters at documented lifecycle points.
-
-## Practical walkthrough
-
-ابدأ بـ`BaseActivity` اللي ماسكة toolbar وanalytics وpermissions وnavigation. اعمل inventory: كل child بتستخدم إيه؟ اختار behavior قليل المخاطر زي analytics، وانقله لـobserver له lifecycle owner واضح. بعدين toolbar يبقى controller للشاشات اللي تحتاجه، وpermission flow يبقى explicit عند feature اللي تطلبه. حافظ على `ComponentActivity` أو framework base الطبيعي. أثناء النقل، أضف tests لـrecreation وduplicate callbacks، وخلي metrics تبين إن شاشات غير محتاجة toolbar بطلت تورثه. ما تعملش service locator جديد يخفي dependencies بدل الـbase.
 
 ## Trade-offs and decision criteria
 
@@ -50,15 +97,31 @@ A media app migrates toolbar screens first, then permission flows, while keeping
 
 ## Interview answer — short
 
-I inventory the base class’s responsibilities, add characterization tests, and move optional behaviors into lifecycle-aware collaborators. Screens compose only what they need, and I migrate incrementally to avoid hidden regressions.
+Replace a giant `BaseActivity` by decomposing its responsibilities into small, lifecycle-aware delegates implementing `DefaultLifecycleObserver` (for analytics and session timeouts), modern `ActivityResultContracts` (for permissions), and reusable Compose `AppScaffold` wrappers (for UI loading and toolbars).
 
 ## Interview answer — structured
 
-A giant BaseActivity often mixes toolbar, navigation, analytics and permissions because inheritance made sharing easy. I would first capture behavior and lifecycle assumptions, then extract cohesive collaborators one at a time. Toolbar screens receive a toolbar controller; full-screen camera does not. Analytics registration gets explicit lifecycle cleanup. I move screens incrementally and test recreation, permissions and back behavior. I do not replace the base with a global service locator or a dozen empty interfaces. I would migrate one representative screen first and compare behavior before moving the rest.
+Dismantling a monolithic `BaseActivity` requires migrating from inheritance-based coupling to modular lifecycle composition.
+
+A typical bloated `BaseActivity` agglomerates multiple orthogonal concerns:
+1. Screen analytics and tracking.
+2. Network connectivity monitoring.
+3. Global loading spinners and error dialogs.
+4. Runtime permissions management.
+5. Theme/Toolbar setup.
+
+**The Modular Replacement Architecture**:
+- **Lifecycle Concerns**: Extracted into self-contained classes implementing `DefaultLifecycleObserver` (e.g. `AnalyticsObserver`, `SessionTimeoutObserver`). Activities attach them via `lifecycle.addObserver(observer)`, allowing components to manage their own setup and teardown without overriding Activity lifecycle methods.
+- **System & Permissions Concerns**: Handled via Jetpack `registerForActivityResult(ActivityResultContracts.RequestPermission())` hoisted into standalone delegates or Compose state holders.
+- **Visual / UI Concerns**: Replaced by declarative Compose layout wrappers (e.g. `AppScaffold(showBackButton = true) { ... }`), keeping UI decorations purely functional.
+
+Activities inherit strictly from standard Android `ComponentActivity` or `AppCompatActivity`, eliminating the custom base class entirely.
 
 ## Interview answer — deep senior
 
-The important step is to map responsibilities and owners, not merely split a file. A toolbar is a UI capability, a permission launcher is tied to an Activity lifecycle, and analytics may need an observer registered only while active. Each should have a contract and scope appropriate to that lifetime. I would write characterization tests for representative screens and identify subclasses that override methods with no-op or throws—signs the base promise is too broad. Then I introduce collaborators behind the old API, migrate one screen at a time, and remove the old hooks after parity. Tests cover configuration change, navigation and callback cleanup; device inspection is needed before claiming leak freedom. The result is explicit composition, with framework inheritance only where required. I would first map actual child usage and change history, then extract one responsibility at a time. Analytics is a good first candidate if it can be attached to the correct lifecycle owner and verified on recreation. Toolbar setup becomes a capability for relevant screens; permissions remain close to the feature that requests them. The activities can still extend Android's required framework class. The migration trade-off is temporary duplication and more explicit constructor or composition wiring. A service locator would hide the same coupling under another name. I would run existing screen behavior tests after each extraction and compare changed-file locality for the next feature request.
+Under the hood, Android Jetpack was deliberately designed to render `BaseActivity` obsolete. Before Jetpack `LifecycleOwner`, activities were the only place that received `onStart()` or `onResume()`, forcing developers to dump cross-cutting logic into `BaseActivity.onResume()`. With `DefaultLifecycleObserver`, any plain Kotlin class can observe an Activity's lifecycle safely.
+
+Furthermore, eliminating `BaseActivity` unlocks **Gradle modularization**. When every feature activity inherits from `BaseActivity` located in a common module, every feature module is circularly coupled to that base module's compilation classpath. By using composition, feature modules depend only on standard AndroidX APIs, drastically speeding up parallel compilation.
 
 ## How to answer in the interview
 
@@ -74,8 +137,11 @@ Plan an incremental migration, assign lifecycle owners, and identify an LSP viol
 
 ## Follow-up questions
 
-- [SOL-10](../sol-10/): Why is mandatory toolbar setup risky? **Answer:** a no-toolbar child cannot honor the base contract.
-- [SOL-09](../sol-09/): Why composition? **Answer:** screens select capabilities without inheriting unrelated behavior.
+- **Interviewer:** "What is `DefaultLifecycleObserver` and why is it preferred over overriding Activity methods?"
+  **Answer:** "It provides callbacks (`onStart`, `onResume`, `onDestroy`) that decoupled components can observe directly, removing the need for subclasses to call `super.onStart()`."
+
+- **Interviewer:** "How does removing `BaseActivity` improve incremental build times?"
+  **Answer:** "In multi-module projects, modifying `BaseActivity` forces Gradle to recompile every single feature module that inherits from it. Modular delegates localize recompilations to the modified component only."
 
 ## Self-check rubric
 
@@ -86,4 +152,4 @@ List three base responsibilities, one lifecycle leak, and a two-step migration w
 - [Android app architecture](https://developer.android.com/topic/architecture) — component lifecycle and separation of concerns.
 - [Kotlin delegation](https://kotlinlang.org/docs/delegation.html) — composition helper.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

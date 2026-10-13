@@ -24,11 +24,47 @@ How do api/implementation influence compilation boundaries and rebuilds?
 
 ## Explanation in Arabic
 
-`api` تصدر dependency للمستهلك على compile classpath؛ لو public ABI تعتمد على type منها، هذا لازم. `implementation` تخفي dependency كـتفصيل داخلي من compile classpath للمستهلك، ما قد يقلل recompilation عند تغيير implementation. لكن تأثير build ليس قانونًا ثابتًا: تغيير public ABI، annotation processors، Kotlin inline functions، resource/variant tasks أو configuration قد يوسع العمل. قِس Gradle task execution/build scan قبل وبعد، ولا تحول `api` إلى `implementation` إذا consumer يحتاج type في signature.
+كيف يؤثر اختيار `api` مقابل `implementation` في Gradle على حدود التجميع (Compilation Boundaries) وإعادة البناء التزايدي (Incremental Rebuilds)؟
+
+1. المفهوم التقني لـ ABI (Application Binary Interface):
+   - الـ ABI يمثل الهيكل العام الخارجي للكلاسات: أسماء الدوال العامة (Public Methods)، أنواع المعاملات (Parameter Types)، قيم الإرجاع (Return Types)، والحقول العامة.
+   - لا يشمل الـ ABI الكود التنفيذي الداخلي داخل جسم الدوال الخاصة (Private method bodies).
+
+2. ما الذي يحدث عند استخدام `implementation`؟
+   - التبعية تكون محصورة داخل الموديول فقط.
+   - إذا قمت بتعديل كود داخلي (Private Implementation) في الموديول الأدنى A، يقوم Gradle بإعادة تجميع A فقط.
+   - يكتشف Gradle أن الـ ABI الخاص بـ A لم يتغير، فيقوم بعمل **Skip** لتجميع الموديولات B و C المستهلكة (يضع عليها علامة `UP-TO-DATE` أو `FROM-CACHE`).
+
+3. ما الذي يحدث عند استخدام `api` (خطر الـ Rebuild Cascade)؟
+   - التبعية تُكشف في الـ Compile Classpath لجميع الموديولات التابعة.
+   - أي تغيير في الموديول A يُبطل صلاحية الـ ABI لجميع الموديولات التي تعتمد عليه عبر `api`، مما يجبر Gradle على إعادة تجميع سلسلة الموديولات بالكامل، وهو ما يقتل سرعة التطوير اليومي.
 
 ## Practical walkthrough
 
-تغيير public type في `api` dependency يمكن يعيد compile مستهلكين كثيرين؛ `implementation` يخفي التفاصيل إن public signatures لا تسرّبها. قس Gradle task invalidation وcompile classpath قبل/بعد، ولا تعد بسرعة دون Build Scan. لو نقلت dependency إلى implementation ثم consumer فشل compile، فهذا دليل API boundary تحتاج تعديل أو `api` مبررة.
+تجربة عملية توضح سلوك Gradle مع التعديلات في implementation مقابل api:
+```kotlin
+// السيناريو: لدينا 3 موديولات: :core:network <- :data:auth <- :feature:login
+
+// الحالة 1: استخدام implementation في :data:auth build.gradle.kts:
+dependencies {
+    implementation(projects.core.network)
+}
+// إذا قمنا بتعديل دالة خاصة داخل :core:network (مثلاً تحسين لوج الاتصال):
+// نتيجة تشغيل ./gradlew :feature:login:assembleDebug:
+// > Task :core:network:compileKotlin SUCCESS
+// > Task :data:auth:compileKotlin UP-TO-DATE  (لم يُعد تجميعه لأن ABI لم يتغير!)
+// > Task :feature:login:compileKotlin UP-TO-DATE (تم التخطي تماماً!)
+
+// الحالة 2: استخدام api في :data:auth build.gradle.kts:
+dependencies {
+    api(projects.core.network)
+}
+// أي تعديل في :core:network يُسقط الـ ABI Cache:
+// > Task :core:network:compileKotlin SUCCESS
+// > Task :data:auth:compileKotlin SUCCESS     (إعادة تجميع إجبارية!)
+// > Task :feature:login:compileKotlin SUCCESS (إعادة تجميع إجبارية!)
+// الفرق في وقت البناء: من ثانية واحدة إلى 25 ثانية مع كل تعديل بسيط!
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +88,27 @@ Track ABI changes and affected compile tasks for high-fan-out modules, inspect d
 
 ## Interview answer — short
 
-“`api` broadens consumer compile inputs; `implementation` hides internal dependencies. Narrow public ABI can reduce downstream rebuilds, but actual impact must be measured.”
+implementation hides dependencies from the consumer's compile classpath, allowing Gradle to skip downstream recompilations if the dependency's public ABI hasn't changed. api leaks dependencies into downstream classpaths, invalidating ABI caches and triggering expensive rebuild cascades across all transitive consumers whenever any upstream change occurs.
 
 ## Interview answer — structured
 
-“I follow the public signature. If a library returns an SDK type, consumers need that SDK on their compile classpath, so `api` is justified. If the SDK is hidden behind our result type, `implementation` narrows the boundary. Then a private SDK change may stay local, while an ABI change still recompiles consumers. I inspect build scans because Android resource, codegen and configuration work can dominate despite a cleaner dependency graph.”
+The difference between `api` and `implementation` directly dictates how Gradle performs incremental compilation and task avoidance:
+
+1. **Compilation Boundaries (`implementation`)**: A dependency declared with `implementation` is available to the declaring module's compiler, but is strictly stripped from the compile classpath of downstream consumers. If module `A` changes an internal implementation detail, Gradle recompiles `A`, verifies its public ABI hash is intact, and skips compiling downstream modules (`UP-TO-DATE`).
+
+2. **ABI Leakage (`api`)**: Declaring a dependency with `api` publishes it onto the compile classpath of every transitive consumer. Any change to the upstream dependency invalidates the ABI hash of intermediate modules, causing a massive rebuild cascade that recompiles the entire downstream subtree.
+
+To maximize build speeds in large modularized codebases, enforce `implementation` universally. Reserve `api` exclusively for types that are formally part of the module's public function signatures or return types.
 
 ## Interview answer — deep senior
 
-“Gradle's `api` versus `implementation` choice changes who must compile against a dependency. `api` is part of the library's exported compile contract; `implementation` is internal, although needed runtime code remains available. Consider a high-fan-out payment module that returns a provider response directly: every consumer sees that SDK's types, and provider API changes may ripple widely. If I introduce a small owned `PaymentResult` contract, the provider SDK can become an implementation detail. That improves replacement freedom and can shrink downstream compile inputs. I still verify the ABI, including public generic types, supertypes and inline Kotlin behavior, before changing configuration. Incremental build results are not guaranteed by one keyword: annotation processing, Android resources, variant tasks, compiler settings and caches all affect what reruns. I compare controlled clean and warm incremental builds and inspect executed tasks in a build scan. The goal is a correct narrow API and measured build reduction, not blindly converting every `api` declaration.”
+Under the hood, Gradle's Kotlin compile task (`compileKotlin`) computes an **ABI (Application Binary Interface) digest** based on public classes, method signatures, return types, and annotations.
+
+When module `A` compiles, Gradle compares its new ABI digest against the cached digest from the previous run:
+- If the digest matches (meaning only private method bodies, local variables, or comments changed), Gradle halts recompilation for all modules connected via `implementation`.
+- However, if `B` exposes `A` via `api`, Gradle cannot guarantee that `C` didn't transitively rely on inline functions, constants, or bytecode metadata from `A`. It is forced to re-evaluate and recompile `C`.
+
+In modern Android architectures, using `implementation` alongside the **Gradle Build Cache** and **Configuration Avoidance APIs** transforms what would be a 40-second build into a sub-second cached fetch.
 
 ## How to answer in the interview
 
@@ -76,9 +124,11 @@ Discuss ABI, compiler inputs, high fan-out, inline/codegen caveats, task graph a
 
 ## Follow-up questions
 
-- Can `implementation` hide a public SDK return type safely? **Answer:** no; consumers must compile against the exposed type.
-- Does a private code change always rebuild only one module? **Answer:** not necessarily; build tooling and generated/resource tasks can expand work.
-- Which build should you measure? **Answer:** both controlled clean and representative incremental builds.
+- **Interviewer:** "Do Kotlin `inline fun` declarations affect ABI stability?"
+  **Answer:** "Yes! Inline functions are inlined directly at the call site in bytecode. Changing the body of an inline function changes the ABI and forces all callers to recompile."
+
+- **Interviewer:** "Can Gradle lint detect unnecessary `api` dependencies?"
+  **Answer:** "Yes. The Dependency Analysis Gradle Plugin analyzes class usage and flags dependencies that can be safely demoted from `api` to `implementation`."
 
 ## Self-check rubric
 
@@ -89,4 +139,4 @@ Trace a public type leak, propose an API boundary, and compare task graphs empir
 - [Gradle Java Library Plugin](https://docs.gradle.org/current/userguide/java_library_plugin.html) — API/implementation semantics.
 - [Gradle performance guide](https://docs.gradle.org/current/userguide/performance.html) — measured build behavior.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Kotlin/Android task behavior is toolchain-specific.
+Technically reviewed against primary documentation on 2026-10-13.

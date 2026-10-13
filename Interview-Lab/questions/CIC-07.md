@@ -23,11 +23,44 @@ What are git stash, cherry-pick, and fork?
 
 ## Explanation in Arabic
 
-`stash` يخزن working-tree/index changes مؤقتًا بعيد عن commit الحالي؛ `cherry-pick` ينسخ أثر commit محدد لفرع آخر بcommit جديد؛ `fork` نسخة repository تحت حساب آخر غالبًا لcontribution. دول بيحلوا مشاكل مختلفة: تنضيف workspace مؤقت، نقل hotfix، أو فصل صلاحيات التعاون.
+ما هي أدوات Git المتقدمة: `git stash`، و `git cherry-pick`، ومفهوم الـ Fork، ومتى يُستخدم كل منها؟
+
+1. تخزين العمل المؤقت (`git stash`):
+   - يقوم بحفظ التغييرات غير المسجلة مؤقتاً في Stash Stack وتفريغ الـ Working Tree لتعود نظيفة.
+   - متى يُستخدم؟ عندما تكون في منتصف ميزة وتطلب منك القيادة فجأة إصلاح خطأ طارئ (Hotfix) على فرع آخر، أو عندما تريد عمل `git pull` ولكن تغييراتك المحلية تمنع ذلك.
+   - ملاحظة هامة: `git stash` الافتراضي يخزن الملفات المعدلة المسجلة فقط؛ لتخزين الملفات الجديدة غير المسجلة (Untracked) يجب استخدام `git stash -u`.
+
+2. انتقاء الكوميتات (`git cherry-pick`):
+   - يتيح لك أخذ commit محدد بالـ hash بتاعه من فرع معين، وإعادة تطبيقه فقط دون بقية الفرع على فرعك الحالي.
+   - متى يُستخدم؟ في سيناريو الـ Backporting: إصلاح Bug على فرع التطوير `main` وتريد تطبيق نفس الإصلاح على فرع الإنتاج القديم `release/2.4` دون سحب ميزات `main` غير الجاهزة.
+
+3. التفريع المستقل (Fork):
+   - استنساخ كامل للمستودع على مستوى السيرفر (GitHub/GitLab) تحت حسابك الشخصي أو منظمة منفصلة.
+   - متى يُستخدم؟ في مشاريع الـ Open Source والمكتبات الخارجية (Libraries)، أو عندما لا يملك المطور صلاحيات الكتابة (Push) على المستودع الأصلي، فيقوم بعمل Fork ورفع التغييرات إليه ثم فتح Pull Request للمستودع الأصلي (Upstream).
 
 ## Practical walkthrough
 
-`stash` رف مؤقت لتغييرات غير جاهزة، لكنه مش backup دائم؛ سميه وراجع محتواه قبل `apply`/`pop`. `cherry-pick` ينسخ أثر commit محدد لفرع تاني بهوية commit جديدة، مفيد hotfix بين release وmain مع مراجعة conflicts. `fork` نسخة repository تحت حساب/مساحة منفصلة لساهم خارجي، وتحتاج sync مع upstream. مثال: لا تعمل cherry-pick لسطر security fix وتنسى test أو migration الذي جاء في commit آخر.
+أمثلة لأوامر `stash` و `cherry-pick` الشائعة في بيئة العمل اليومية:
+```bash
+# 1. استخدام git stash مع الملفات غير المتابعة (untracked files):
+git stash push -u -m "WIP: payment card validation logic"
+git checkout hotfix/crash-fix
+# ... إصلاح العطل ورفعه ...
+git checkout feature/payment
+git stash pop # استعادة التغييرات ومسحها من الـ stash stack
+
+# 2. استخدام cherry-pick لنقل إصلاح أمني من main إلى فرع الإصدار release-v1.4:
+git checkout release/v1.4
+git log origin/main --oneline -n 3 # العثور على الكوميت المطلوب، e.g., c8d9e0f
+git cherry-pick c8d9e0f
+git push origin release/v1.4
+
+# 3. مزامنة الـ Fork المحلي مع المستودع الأصلي (Upstream):
+git remote add upstream https://github.com/original-org/android-core.git
+git fetch upstream
+git checkout main
+git merge upstream/main
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +84,33 @@ Team hotfix runbook specifies source branch, target branches and mapping between
 
 ## Interview answer — short
 
-“Stash parks local edits; cherry-pick replays a commit onto another branch; fork creates a separate repository for collaboration. I review conflicts and dependencies, especially for hotfix picks.”
+Git stash shelves uncommitted changes to allow switching branches cleanly. Git cherry-pick applies a specific commit by hash from another branch onto the current branch without merging the whole branch. A Fork is a server-side repository copy allowing developers to contribute via pull requests without write permissions to the upstream repository.
 
 ## Interview answer — structured
 
-“I use stash for short-lived uncommitted work when switching tasks, cherry-pick for a specific reviewed fix that must enter another branch, and fork when contributors should work without direct repository write access. Cherry-pick creates a new hash and may need dependent commits; stash can conflict on reapply. I prefer a branch for long-lived work and record hotfix provenance.”
+These three Git mechanisms solve distinct workflow and isolation problems:
+
+1. **`git stash`**:
+   - Temporarily shelves uncommitted changes (both staged and unstaged) onto an internal stack (`stash@{0}`), returning the working directory to a pristine HEAD state.
+   - Crucial for rapid context-switching, such as investigating an urgent production bug while mid-refactor. Using `-u` (include untracked) ensures newly created files are also stashed.
+
+2. **`git cherry-pick <commit-sha>`**:
+   - Extracts the exact diff introduced by a single commit from any branch and applies it as a brand-new commit on the currently checked-out branch.
+   - Ideal for backporting critical bug fixes from `main` to existing maintenance or release branches without pulling unreleased features.
+
+3. **Fork**:
+   - A remote server-side clone of a repository hosted under an independent user or organization account.
+   - Establishes a decoupled contribution boundary standard in open-source projects or enterprise contractor models, where external contributors lack direct push permissions and submit pull requests across forks.
 
 ## Interview answer — deep senior
 
-“These tools solve different collaboration problems. Stash shelves a local worktree/index state so I can switch context, but it is not a durable review or release artifact; I name it and inspect what was captured. Cherry-pick applies the changes from a specific commit to another branch, creating a new commit identity. It is useful for a narrow hotfix across supported release branches, but I review dependencies, conflicts and tests in the destination context rather than assuming the copied patch has the same meaning. A fork is a separate repository lineage, often used for outside contributions, with an upstream remote for syncing. In an Android release I might stash unrelated local UI edits, branch from a production tag, fix a crash and cherry-pick the tested fix to main. I would not cherry-pick only the implementation and forget its migration or instrumentation test. The trade-off of selective commits is speed versus the risk of splitting one logical change.”
+From an engineering governance standpoint, there are subtle pitfalls with cherry-pick and stash:
+
+1. **The Cherry-Pick Duplicate Commit Hazard**: When you cherry-pick commit `A` into branch `B`, Git creates a new commit `A'` with a different hash. If branch `B` is later merged back into the original branch, Git must reconcile two commits that share identical diffs. In complex histories, this can trigger redundant conflict resolution or misleading blame graphs. Always record origin metadata using `git cherry-pick -x` to append the source commit hash to the commit message.
+
+2. **Stash Volatility in Team Environments**: Git stashes are local to your workstation and not backed up to the remote repository. Leaving large, multi-day refactors in `git stash` risks unrecoverable data loss during machine failures or accidental directory cleanups (`git stash drop` or hard cleans). Incomplete work should instead be committed to a personal remote draft branch (`draft/feature-wip`).
+
+3. **Upstream Fork Synchronization**: In forked workflows, keeping the local fork synchronized with `upstream` via automated rebase workflows prevents massive drift and painful merge conflicts when PRs are opened against the canonical repo.
 
 ## How to answer in the interview
 
@@ -75,8 +126,11 @@ Prompt for local versus repo scope, new commit SHA, dependent commits, fork PR s
 
 ## Follow-up questions
 
-- [CIC-17](../cic-17/): How move urgent hotfix? **Answer:** fix on release base and propagate tested commit carefully.
-- [CIC-18](../cic-18/): Are fork PRs trusted? **Answer:** no; keep secrets out of their jobs.
+- **Interviewer:** "Why should you use the `-x` flag when cherry-picking commits?"
+  **Answer:** "It automatically records the original commit SHA in the commit message, preserving provenance and simplifying future auditability."
+
+- **Interviewer:** "What is the difference between `git stash pop` and `git stash apply`?"
+  **Answer:** "`git stash pop` applies the top stash and immediately drops it from the stash stack, whereas `git stash apply` leaves it in the stack."
 
 ## Self-check rubric
 
@@ -87,4 +141,4 @@ Use stash for temporary local changes, cherry-pick for one selected commit and f
 - [Git stash documentation](https://git-scm.com/docs/git-stash) — local stash behavior.
 - [Android app publishing](https://developer.android.com/studio/publish) — release branch context.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

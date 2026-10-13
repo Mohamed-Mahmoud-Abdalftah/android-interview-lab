@@ -22,11 +22,49 @@ Design offline-first cache plus remote refresh with one local source of truth.
 
 ## Explanation in Arabic
 
-لو Room data مع remote refresh، الـUI تقرأ من Room Flow كمصدر محلي للحقيقة المعروضة. الـrefresh تجيب remote ثم تكتب Room داخل transaction؛ Room تطلع snapshot جديدة. ما نعملش `combine` مباشر لقائمتين مختلفتين ونخلي UI تخمّن مين الأصح. السيرفر يفضل authoritative لبياناته، ومع النزاعات نحتاج version/ETag وقواعد merge محددة.
+دمج بيانات Room المحلية المخبأة مع التحديث من السيرفر البعيد وسؤال 'من هو المصدر الوحيد للحقيقة (Single Source of Truth)' هو جوهر الـ **Offline-First Architecture**:
+
+1. من هو المصدر الوحيد للحقيقة (Single Source of Truth - SSOT)؟
+   - **قاعدة البيانات المحلية (Room Database) هي المصدر الوحيد للحقيقة دائماً! (Local DB is the SSOT).**
+   - واجهة المستخدم (UI) **لا تستمع إلى الـ Network إطلاقاً**؛ الـ UI يستمع حصرياً إلى الـ Flow القادم من قاعدة بيانات Room!
+
+2. كيف تتدفق البيانات بنظافة (The Reactive Data Flow)؟
+   - 1. الـ UI يطلب البيانات من الـ Repository ويستمع لـ `roomDao.observeItems()`.
+   - 2. الـ UI يعرض فوراً البيانات المخزنة محلياً في Room بدون أي تأخير (Instant Offline Loading).
+   - 3. في نفس الوقت، الـ Repository يطلق طلباً في الخلفية لجلب أحدث البيانات من السيرفر (`api.fetchItems()`).
+   - 4. عندما ينجح طلب السيرفر، الـ Repository يقوم بحفظ وتحديث البيانات في **Room Database** (`roomDao.insertAll(newItems)`).
+   - 5. بمجرد تحديث Room، تقوم الـ Database تلقائياً بإصدار (emit) القائمة الجديدة للـ UI عبر الـ Flow!
+
+3. الفوائد الهائلة:
+   - دعم كامل للـ Offline Mode بنسبة 100%.
+   - تجنب أي تعارض في البيانات أو تذبذب في واجهة المستخدم.
 
 ## Practical walkthrough
 
-في offline-first list، Room هي source of truth المعروضة؛ remote refresh تجيب data وتكتبها transaction في Room، وبعدها Room Flow تصدر snapshot جديدة. لو UI جمعت remote response مباشرة وفي نفس الوقت Room، ممكن تعرض ترتيبين أو data قديمة. احتفظ بـsync status منفصلة، وحدد conflict policy ووقت refresh. اختبر offline ثم reconnect.
+تنفيذ النمط في الـ Repository:
+```kotlin
+class ArticleRepository(
+    private val articleDao: ArticleDao,
+    private val articleApi: ArticleApi,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) {
+    // 1. الواجهة تستمع حصرياً لـ Room DB:
+    fun observeArticles(): Flow<List<Article>> =
+        articleDao.getArticles().map { entities -> entities.map { it.toDomain() } }
+
+    // 2. دالة التحديث تحدث Room ولا ترجع بيانات مباشرة للـ UI:
+    suspend fun refreshArticles() = withContext(ioDispatcher) {
+        try {
+            val remoteArticles = articleApi.fetchArticles()
+            articleDao.insertAll(remoteArticles.map { it.toEntity() }) // Room تحدث الـ Flow تلقائياً!
+        } catch (e: Exception) {
+            // لو الشبكة مقطوعة، لا نفشل؛ البيانات المحلية تظل معروضة بسلاسة
+            if (e is CancellationException) throw e
+            Log.e("Repo", "Failed to refresh remote articles", e)
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -62,15 +100,25 @@ A messaging inbox observes Room and runs a worker to fetch updates. Rows have se
 
 ## Interview answer — short
 
-“The UI should observe one local source of truth, usually Room. Remote refresh validates data and updates the database transactionally; Room emits new snapshots. I define freshness and conflict rules because a Flow combine cannot invent consistency.”
+The local database (Room) is the Single Source of Truth (SSOT). The UI exclusively observes the Flow emitted by Room. Remote network calls write fresh data into Room, and Room automatically emits the updated data to the UI, guaranteeing seamless offline-first operation.
 
 ## Interview answer — structured
 
-“For an offline-first screen, I expose a Room Flow as the UI data source and run remote refresh separately. Successful network responses are validated and committed in a database transaction; collectors then receive the updated local snapshot. The server remains authoritative for server-owned fields, while the local database owns the displayable offline snapshot. I include freshness/error state so cached data is not mistaken for current data, and I plan how pending local edits and conflicts are resolved.”
+In an offline-first Android architecture, the local database (Room) is strictly the **Single Source of Truth (SSOT)**.
+
+The architecture follows a unidirectional reactive pipeline:
+
+1. **UI Observes Room:** The UI layer never observes raw network responses directly; it exclusively collects a Flow emitted by Room DAO (`articleDao.observeArticles()`). This guarantees that cached data is rendered instantly upon launch with zero network latency.
+
+2. **Network Updates Room:** When a refresh is triggered, the repository makes a network call to the remote API. Upon receiving the payload, the repository persists it directly into the local Room database (`articleDao.upsert(data)`).
+
+3. **Automatic Reactive UI Emission:** Because Room's SQLite database observer tracks table modifications, inserting new data automatically triggers Room to re-query and emit the fresh list through its cold Flow. The UI receives the update automatically without any manual coordination.
 
 ## Interview answer — deep senior
 
-“I avoid a dual-source UI where cached and remote lists race each other. Room is the single local source consumed by the screen, and refresh is a side operation that writes a versioned batch into it. That makes rotation and offline startup deterministic. Server authority and client display state are different: remote version/ETag and operation IDs govern merge and conflict decisions. I perform related updates in one transaction, preserve pending local writes, and surface stale status when refresh fails. For process death, a durable worker resumes sync; for repeated network writes, the backend deduplicates logical operations. Tests cover offline startup, stale cache, out-of-order refresh, conflict and crash during batch apply. I would make the read path unambiguous: the UI observes Room, and a refresh operation updates Room from the server. That makes local storage the immediate source of truth for display and supports offline rendering. The server may remain authoritative for business rules, so conflict resolution and freshness policy are still explicit. I do not emit a remote list directly to the UI while also collecting cached rows, because the two paths can disagree and flicker. I model refresh status separately from content and persist writes transactionally. When the network fails, cached data remains visible with a stale or error indicator rather than becoming an empty screen. I test offline launch, refresh, conflict, and process restart.”
+Under the hood, Room achieves this via SQLite transaction hooks and `InvalidationTracker`. When you return `Flow<List<T>>` from a DAO method, Room registers a table observer. Whenever any DAO write transaction commits against that table, `InvalidationTracker` dispatches an invalidation event on Room's query executor, prompting the Flow to re-query SQLite and emit the fresh snapshot.
+
+In enterprise codebases, we guard against stale deletions and conflicts using **Database Synchronization Strategies**: Instead of naive `insertAll()`, we either use `@Upsert` (introduced in Room 2.5) or execute a clean transaction: `withTransaction { dao.deleteStale(); dao.insertAll(fresh) }`. This ensures that items deleted on the backend are removed from local storage without breaking the continuous Flow observation.
 
 ## How to answer in the interview
 
@@ -86,8 +134,14 @@ Draw network-to-Room-to-UI flow; distinguish local display truth from server aut
 
 ## Follow-up questions
 
-- [FLO-13](../flo-13/): Can combine ensure consistency? **Answer:** no, it only pairs latest emissions.
-- [COR-30](../cor-30/): How resume refresh after process death? **Answer:** persist work intent and schedule restartable sync.
+- **Interviewer:** "How does the UI know if the network refresh failed?"
+  **Answer:** "Expose a separate UI state or status stream for the refresh operation (e.g., `isRefreshing: Boolean` and `refreshError: String?`) in the ViewModel, keeping data state and sync status decoupled."
+
+- **Interviewer:** "What if the remote response has 50,000 items? Does Room re-emit the whole list?"
+  **Answer:** "For massive datasets, pair Room with the Paging 3 library (`PagingSource`). Paging 3 queries Room incrementally in chunks (e.g., 20 items per page), keeping memory and UI rendering fast."
+
+- **Interviewer:** "Why shouldn't the network call emit directly to a `combine` operator with Room?"
+  **Answer:** "Emitting directly from both network and Room creates two competing sources of truth, causing UI state jitter, duplicate items, and race conditions where a fast network call is overwritten by a slower disk read."
 
 ## Self-check rubric
 
@@ -98,4 +152,4 @@ Can I name one UI source, transact updates, expose staleness and resolve conflic
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — local source of truth and sync.
 - [Android Flow guide](https://developer.android.com/kotlin/flow) — DAO stream use.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

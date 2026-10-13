@@ -22,7 +22,36 @@ Explain aliasing at compile time without claiming a new runtime type or validati
 
 ## Explanation in Arabic
 
-`typealias` اسم تاني لنوع موجود، مفيد لتقصير function type طويل أو توضيح domain معنى متكرر. لكنه مش newtype: `typealias UserId = String` يفضل String، وينفع تخلط UserId وOrderId لو الاتنين aliases لـString. لو سلامة النوع مطلوبة استخدم value class أو data class مع validation. الـalias كمان ممكن يخفي تفاصيل مهمة لو الاسم مبهم أو يخلي refactoring أصعب عند public API boundaries.
+الـ `typealias` في Kotlin هو ميزة لإعادة تسمية الأنواع الموجودة بدون إنشاء كائن جديد في الـ Bytecode:
+
+1. إيه هو الـ `typealias` تحت الغطاء؟
+   - هو مجرد **Compile-Time Alias** (اسم مستعار). المترجم بيبدل الاسم المستعار بالنوع الأصلي تماماً في مرحلة الترجمة.
+   - لا يوجد أي Runtime Overhead، ولا يتم إنشاء Class جديد أو Wrapper في الـ Heap.
+
+2. إمتى يفيد جداً (When it helps)?
+   - **تبسيط الـ Function Types المعقدة:** لما يكون عندك Callback طويل زي `(Result<List<User>>, Int, String?) -> Unit`، تسميته `typealias UserFetchCallback = ...` بيخلي الكود مقروء جداً.
+   - **حل تعارض الأسماء (Disambiguation):** لما تستخدم مكتبتين فيهم نفس اسم الكلاس (زي `android.graphics.Path` و `com.squareup.wire.schema.internal.parser.Path`)، تقدر تعمل alias لواحد منهم بدلاً من كتابة الـ Fully Qualified Name في كل حتة.
+
+3. إمتى يضر الـ Readability ويكون خطر (When it hurts)?
+   - **وهم الـ Type Safety:** الـ `typealias` لا يوفر Type Safety إطلاقاً! لو عملت `typealias UserId = String` و `typealias OrderId = String`، تقدر تمرر `OrderId` في دالة متوقعة `UserId` بدون أي خطأ من المترجم! لو عايز حماية حقيقية للنوع، استخدم `@JvmInline value class`.
+   - إخفاء التعقيد غير المبرر: اختراع أسماء aliases غامضة يخلي المطورين الجدد محتاجين يعملوا Command+Click باستمرار لمعرفة ماهية النوع الحقيقي.
+
+## Practical walkthrough
+
+في نظام التحليلات والتتبع (Analytics Module):
+- عندنا Event Parameters عبارة عن `Map<String, List<Pair<String, Any>>>`.
+- كتابة النوع ده في 10 دوال مختلفة بيخلي الـ signatures كابوس للقراءة.
+- **الاستخدام الصحيح للـ Typealias:**
+  `typealias AnalyticsPayload = Map<String, List<Pair<String, Any>>>`
+  `typealias EventDispatcher = (eventName: String, payload: AnalyticsPayload) -> Unit`
+  ده وضح المقصد وجعل الكود نظيفاً بدون أي تكلفة في الذاكرة.
+- **المقارنة مع Value Class للأمان:**
+  // خطأ: typealias لا يمنع الخلط بين المعرفات:
+  typealias AccountId = Long
+  typealias TransactionId = Long
+  fun transfer(from: AccountId, tx: TransactionId) {}
+  transfer(txId, accountId) // سيمر بنجاح ويدمر البيانات منطقياً!
+  // الحل الصحيح هو: @JvmInline value class AccountId(val value: Long)
 
 ## Why it matters and how it works
 
@@ -41,10 +70,6 @@ fun main() {
 }
 ```
 
-## Practical walkthrough
-
-`typealias UserId = String` بيحسّن القراءة في function signature لكنه ما يمنعش تمرير `OrderId` لأن الاتنين String. لو غلط تبديل IDs يسبب data leak، استخدم `@JvmInline value class UserId(val value: String)` مع validation وinterop tests. Typealias مناسب لاسم طويل زي `(Event) -> Unit` لما يشرح دور الـcallback، بس لو اتكاثر aliases لدرجة إنك مش عارف النوع الأصلي بيبقى عبء. في public API وضّح nullability والـfunction signature؛ alias مش بيعمل type runtime جديد ولا serialization contract.
-
 ## Trade-offs and decision criteria
 
 Use aliases for a long function type or a clear local abbreviation. Use a value class for distinct identifier types and validated construction, considering boxing/interop. Avoid aliases that merely rename `String` while implying enforcement they do not provide.
@@ -59,17 +84,23 @@ A feature module defines `typealias ClickHandler = (ProductId) -> Unit` for call
 
 ## Interview answer — short
 
-A typealias gives an existing type another name; it does not create a distinct type. I use it to clarify a complex callback signature, but choose a value class when confusing two domain IDs would be a correctness bug.
+A typealias provides an alternative name for an existing type purely at compile time, introducing zero runtime or allocation overhead. It improves readability for long generic types and function signatures, but it offers zero type safety—the compiler treats the alias and underlying type as completely interchangeable.
 
 ## Interview answer — structured
 
-`typealias` is a readability tool. If `UserId` and `OrderId` both alias `String`, the compiler still accepts an order ID where a user ID is expected. That is acceptable for naming a complicated function type, but not for enforcing an invariant. For domain identifiers I consider a validated value class, with explicit serialization and Java interop checks. I also limit aliases in public APIs: a reader should be able to find the underlying type and understand nullability. I would choose the simplest name that clarifies the contract rather than building a shadow type system of aliases.
+A typealias is a compile-time alias for an existing type. Under the hood, the Kotlin compiler replaces every occurrence of the alias with the underlying type in the generated bytecode, so there is zero runtime penalty or memory allocation.
+
+It is best used to clean up verbose, deeply nested signatures—especially complex higher-order function types or nested generics like Map<String, List<Pair<String, Any>>>. It is also useful for resolving import name collisions between Android framework classes and third-party libraries.
+
+Where it hurts is when developers mistake it for domain modeling or type safety. If you write `typealias UserId = String` and `typealias OrderId = String`, they are 100% interchangeable to the compiler; passing an OrderId into a UserId parameter compiles without warning. When you need real type safety to prevent primitive obsession, a @JvmInline value class is the right architectural choice, not a typealias.
 
 ## Interview answer — deep senior
 
-I review whether a name is documentation or an invariant. `typealias` is only a compile-time synonym, so it neither validates construction nor gives overload-distinct type identity. It can make a public API more readable, but may obscure generic arguments or nullability if overused. If mixing customer IDs with order IDs would be harmful, a value class is a better choice, with deliberate serialization and Java interop tests. A descriptive callback alias is a good use because it reduces noise without pretending to enforce domain safety. I ask whether the proposed alias is naming a shape or enforcing a rule.
+Architecturally, typealias operates at the same abstraction level as C++ typedef or type aliases. It exists solely in the compiler's symbol table and Kotlin metadata. In decompiled Java bytecode, you will see the raw underlying type directly.
 
-I might use `typealias OnReceiptSelected = (ReceiptId) -> Unit` to make a callback’s role readable, while keeping the underlying function type visible in documentation. I would not use `typealias UserId = String` to claim type safety: an `OrderId` alias can be passed accidentally, and overloads cannot distinguish the aliases. If that mix-up can expose another user’s data, a validated value class is justified, with serialization and Java interop tests. A naming alias is best when it removes syntactic noise without concealing nullability, generic arguments, or a business invariant.
+In team codebases, excessive typealiasing can actually reduce cognitive velocity. When developers define aliases for standard framework types or shallow generics—such as `typealias StringList = List<String>`—it forces code reviewers to constantly jump to definitions to decipher simple types. It also muddies IDE autocompletion by introducing redundant symbols.
+
+Our engineering guideline is simple: use typealias only for: 1) complex functional callback signatures where parameter naming in the typealias documents the contract; 2) resolving unavoidable package name collisions; and 3) deprecation migration paths where a class has moved packages. For domain boundaries, ID wrappers, or units of measurement, we strictly mandate `@JvmInline value class` to get real compiler-enforced type boundaries.
 
 ## How to answer in the interview
 
@@ -85,8 +116,14 @@ Discuss aliases for nested function types, interchangeability, overload limitati
 
 ## Follow-up questions
 
-- [KOT-21](../kot-21/): What adds type identity without a heavy model? **Answer:** a value class can wrap one property and enforce construction rules.
-- [KOT-28](../kot-28/): Should error categories be type aliases? **Answer:** no if callers need distinct exhaustive cases.
+- **Interviewer:** "Can you define extension functions specifically for a typealias without affecting the original type?"
+  **Answer:** "No. Because a typealias is fully desugared at compile time, an extension function declared on the typealias is actually declared on the underlying type. Every instance of the original type will also receive that extension function."
+
+- **Interviewer:** "How does `typealias` compare with `@JvmInline value class` in terms of bytecode and performance?"
+  **Answer:** "A typealias has zero bytecode presence and zero wrapper overhead; it is literally the original type. A value class creates a distinct domain type that the compiler enforces, inlining the underlying primitive or reference whenever possible to avoid heap allocation, but boxing it when used in generic or nullable positions."
+
+- **Interviewer:** "Can a typealias have its own constructors or override methods?"
+  **Answer:** "No. A typealias cannot have constructors, companion objects, or method overrides because it is not a class or interface; it is purely an alias for an existing declaration."
 
 ## Self-check rubric
 
@@ -96,4 +133,4 @@ Show a valid alias use, demonstrate two aliases that can mix, and choose a safer
 
 - [Kotlin type aliases](https://kotlinlang.org/docs/type-aliases.html) — alias semantics and examples.
 
-Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against primary documentation on 2026-10-13.

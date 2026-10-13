@@ -24,11 +24,46 @@ How do you debug crashes that occur only in release builds?
 
 ## Explanation in Arabic
 
-أولًا اجمع artifact ID/version/variant، stack trace وdevice/ABI، ثم استخدم mapping file المطابقة لـretrace. شغّل نفس minified release أو AAB-derived APK على جهاز مماثل؛ debug مختلف في R8، source sets، manifest، signing/config. قارن merged manifest وbuild config/dependencies، واستخدم R8 reports لتحديد class/field أزيل أو تغير اسمه. جرّب تعطيل minification مؤقتًا لتضييق السبب، لكن لا تجعل “الحل” إيقاف R8 نهائيًا بلا فهم. أضف keep rule دقيقة أو صحح SDK/serialization، ثم اختبر release artifact في CI.
+كيف تستكشف وتصلح الانهيارات (Crashes) التي تحدث فقط في نسخة الـ Release بينما يعمل التطبيق بشكل مثالي في بيئة الـ Debug؟
+
+1. الأسباب الجذرية لانهيارات الـ Release-Only:
+   - **تقليص أو حذف كود مستخدم بالـ Reflection (R8 Stripping)**: استدعاء كلاس أو دالة ديناميكياً؛ R8 لا يرى أي استدعاء مباشر فيعتقد أنها Dead Code ويحذفها، فتحدث `ClassNotFoundException` أو `NoSuchMethodException`.
+   - **تشويش أسماء حقول الـ Serialization**: مكتبات مثل GSON أو Moshi تبحث عن أسماء الحقول في الـ JSON (مثل `user_id`). بعد التشويش، يتغير اسم الحقل في الـ DEX إلى `a`، فتفشل السيريالايزيشن أو تصبح كل الحقول `null` مما يسبب `NullPointerException`.
+   - **حذف كود الـ JNI / Native Code**: دوال الـ Native التي تستدعي كود Java بالاسم الصريح تفشل بعد التشويش.
+   - **تقليص الموارد (Resource Shrinking)**: استخدام `resources.getIdentifier("icon_" + name, "drawable", packageName)`؛ R8 يعتقد أن الصورة غير مستخدمة ويستبدلها بملف تالف.
+
+2. كيفية إعادة إنتاج المشكلة محلياً (Reproducing Locally):
+   - **إنشاء Build Type مخصص للتشخيص (`releaseTest` أو `benchmark`)**: يحتوي على `isMinifyEnabled = true` ولكن مع `isDebuggable = true` و `signingConfig = debug` لتشغيل الـ Debugger وفحص الـ Stack Trace مباشرة.
+
+3. أدوات التحقيق في مخرجات R8:
+   - فحص ملف `usage.txt` (الموجود في `build/outputs/mapping/release/`): يسرد كل الكلاسات والدوال التي حذفها R8 لمعرفة ما إذا كان الكلاس المنهار قد تم حذفه بالخطأ.
 
 ## Practical walkthrough
 
-Release-only crash؟ ثبت artifact والdevice والstack، اعمل retrace بالmapping المطابقة، ثم قارن minify/resource shrinker/signing/manifest/ABI. شغّل release-like build محليًا على نفس device، لا تعطل R8 فورًا وتعتبر root cause معروف. لو crash مالي أو login، أوقف rollout وراقب المستخدمين الذين حدّثوا. بعدها test regression على packaged artifact.
+إنشاء Build Type هجين محلياً لاكتشاف مشاكل R8 واستخدام ملفات seeds.txt و usage.txt:
+```kotlin
+// في build.gradle.kts: إنشاء نوع بناء مخصص يماثل الـ Release تماماً ولكن يقبل الـ Debugger:
+android {
+    buildTypes {
+        create("debugMinified") {
+            initWith(getByName("release"))
+            // تمكين الـ Debugging مع الحفاظ على نفس قواعد R8 والـ Obfuscation:
+            isDebuggable = true
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
+    }
+}
+```
+
+```bash
+# أوامر تشخيص مخرجات R8 عبر الـ CLI:
+# 1. معرفة الكلاسات التي حذفها R8 وظن أنها غير مستخدمة:
+grep "com.example.model.UserProfile" app/build/outputs/mapping/release/usage.txt
+
+# 2. معرفة الكلاسات التي حافظ عليها R8 بناءً على الـ Keep Rules:
+grep "com.example.model.UserProfile" app/build/outputs/mapping/release/seeds.txt
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +87,34 @@ Archive mapping and artifact hashes, reproduce from the exact distribution path,
 
 ## Interview answer — short
 
-“I identify the exact release artifact, retrace with its mapping file, reproduce the published variant, isolate its release-only differences, then add a targeted fix and regression test.”
+Debug release-only crashes by creating a debuggable minified build type (isDebuggable = true with isMinifyEnabled = true), deobfuscating the stack trace with retrace and mapping.txt, and checking usage.txt to verify if R8 stripped reflection, serialization, or JNI entry points.
 
 ## Interview answer — structured
 
-“I start with version, artifact, device and obfuscated stack, then retrace using the matching map. I install the same minified release or AAB-derived split, compare release/debug configuration and merged manifest, and inspect R8 reachability if dynamic classes are missing. Temporarily disabling shrinker can narrow a hypothesis, not be the final fix. I add a precise rule or correct the underlying SDK/configuration and make CI launch the actual release path.”
+Release-only crashes almost universally stem from bytecode optimizations, identifier obfuscation, or tree shaking executed by R8:
+
+1. **Common Failure Vectors**:
+   - **Reflection Stripping**: Classes instantiated via `Class.forName()` or dynamic reflection appear unreachable in static call graphs, causing R8 to strip them (`ClassNotFoundException`).
+   - **Serialization Mismatches**: Reflection-based serializers (GSON) expect exact field names. Obfuscation renames fields to `a`, leaving deserialized objects populated with `null` values.
+   - **JNI Breakage**: Native C/C++ code referencing Java methods via JNI signatures fails when R8 renames or inlines the Java method.
+   - **Dynamic Resource Lookups**: Using `Resources.getIdentifier()` fails when `shrinkResources = true` strips drawables flagged as unreferenced.
+
+2. **Local Reproduction Strategy**:
+   - Add a hybrid build type (`debugMinified`) that mirrors `release` (`isMinifyEnabled = true`, identical ProGuard rules), but sets `isDebuggable = true` and debug signing. This allows developers to attach Android Studio's debugger and reproduce the exact crash locally.
+
+3. **Investigating R8 Diagnostic Reports**:
+   - Inspect `build/outputs/mapping/release/usage.txt` to confirm if R8 pruned the missing class.
+   - Inspect `seeds.txt` to verify whether keep rules successfully preserved intended entry points.
 
 ## Interview answer — deep senior
 
-“A release-only crash is a differential diagnosis. I first identify the exact source revision, variant, signed artifact and affected device configuration; otherwise I may debug the wrong binary. I preserve and use its matching mapping file to retrace frames. Then I reproduce using the minified release artifact, ideally the AAB-derived APKs or internal Play track for the affected ABI. I compare release-only inputs: R8 rules, merged manifest, resource overrides, endpoint/config flags, signing-dependent API behavior and native splits. If disabling R8 locally removes the crash, that supports a reachability or naming hypothesis, but I inspect usage/rule reports and find the actual dynamic contract before adding a narrow keep rule. If the trace points to a provider authority or missing `.so`, I follow that evidence instead. The fix gets a release-variant regression test and artifact provenance; debug tests alone did not cover the failure. During staged rollout I watch crash and ANR rates by app version, device and ABI and pause promotion if the signal worsens.”
+From an advanced compiler engineering perspective, release-only crashes also involve timing and aggressive method inlining:
+
+1. **Aggressive Method Inlining & Class Merging**: With `proguard-android-optimize.txt`, R8 merges single-implementation interfaces directly into concrete classes and inlines short methods. If an SDK inspects the runtime class hierarchy or checks `instanceof` on merged interfaces, type casting exceptions (`ClassCastException`) arise exclusively in release builds.
+
+2. **Concurrency & Timing Discrepancies**: Release builds run significantly faster than debug builds because debug assertions are eliminated and bytecode is optimized. Race conditions or thread safety defects in asynchronous Coroutines that were masked by debug overhead can surface as timing bugs in optimized release binaries.
+
+3. **Deobfuscating Production Traces**: When diagnosing in the field, run Google's `retrace` CLI locally with the matching `mapping.txt`: `retrace mapping.txt obfuscated_trace.txt`. Ensure CI archives `mapping.txt` as a required build artifact for every released version code.
 
 ## How to answer in the interview
 
@@ -76,9 +130,11 @@ Cover matching mapping, artifact provenance, split reproduction, differential di
 
 ## Follow-up questions
 
-- Can any mapping file retrace a crash? **Answer:** no; use the one from the exact crashing build.
-- Is disabling R8 a final solution? **Answer:** usually no; diagnose and preserve the required dynamic contract precisely.
-- Why use AAB-derived APKs? **Answer:** device-targeted splits may differ from local universal/debug APKs.
+- **Interviewer:** "What is the difference between seeds.txt and usage.txt?"
+  **Answer:** "seeds.txt lists all classes and members preserved by keep rules; usage.txt lists all code stripped by R8 as dead code."
+
+- **Interviewer:** "Why does GSON fail more often in release builds than Moshi with codegen?"
+  **Answer:** "GSON uses runtime reflection requiring broad keep rules; Moshi with KSP generates explicit adapter classes at compile time, eliminating reflection lookups."
 
 ## Self-check rubric
 
@@ -89,4 +145,4 @@ Identify artifact, retrace, test release differences and close with a regression
 - [Recover obfuscated stack traces](https://developer.android.com/tools/retrace) — mapping and retrace.
 - [Build and test an App Bundle](https://developer.android.com/guide/app-bundle/test) — release split testing.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The checkout failure is illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

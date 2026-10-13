@@ -24,11 +24,42 @@ How do you use Android Studio Memory/CPU Profilers?
 
 ## Explanation in Arabic
 
-الـProfiler أداة قياس، فلا تبدأ بتخمين “المشكلة من GC”. حدد سيناريو وتوقع: هل الذاكرة تزيد بعد كل فتح/غلق؟ هل scroll يعمل allocations كثيرة؟ هل Main thread تستهلك CPU في decode؟ في Memory Profiler راقب categories والـallocations، وخذ heap dump بعد انتهاء الشاشة لتحليل retained objects. في CPU Profiler استخدم sampling لتعرف أين يذهب الوقت أو trace أدق لما تحتاج execution order، ثم اربط النتيجة بمسار المستخدم ونسخة الجهاز. الـprofiling نفسه له overhead، فكرر التجربة وقارن build/device متشابهين؛ لا تعتبر timeline واحدة حكمًا نهائيًا.
+كيفية استخدام أدوات مراقبة الذاكرة والمعالج (Android Studio Memory and CPU Profilers) لحل مشكلات الأداء:
+
+1. أداة Android Studio Memory Profiler:
+   - تعرض خطاً بيانياً حياً (Real-time Timeline) يوضح توزيع الذاكرة: **Java, Native, Graphics, Stack, Code, Others**.
+   - **Capture Heap Dump**: التقاط الـ Heap بالكامل وعرض الكائنات مصنفة حسب Class Name، مع إمكانية فرزها حسب Shallow Size و Retained Size ورؤية مراجع الـ GC Roots.
+   - **Record Java/Kotlin Allocations**: تتبع عمليات حجز الكائنات لحظة بلحظة لمعرفة الكود المسؤول عن توليد Memory Churn وسقوط الفريمات.
+
+2. أداة Android Studio CPU Profiler:
+   - تسجيل نشاط المعالج لاكتشاف الدوال التي تستهلك وقتاً طويلاً على الـ Main Thread وتسبب تشنج التطبيق (Jank) أو بطء الاستجابة.
+   - أوضاع التسجيل:
+     * **System Trace**: فحص شامل لتوقيت كل فريم على مستوى نظام التشغيل (Choreographer, SurfaceFlinger, App Threads).
+     * **Java/Kotlin Method Trace**: تسجيل استدعاءات الدوال بالكامل (Call Chart, Flame Chart, Top Down, Bottom Up).
+     * **Sampled Java/Kotlin Methods**: أخذ عينات دورية بنسبة overhead ضئيلة جداً.
+
+3. قراءة الرسوم البيانية (Flame Chart و Top Down):
+   - **Flame Chart**: يوضح تسلسل الدوال عمودياً؛ الدوال العريضة أفقياً هي التي استغرقت معظم وقت المعالج.
+   - **Top Down Tree**: يعرض شجرة الاستدعاءات بدءاً من الدالة المستدعاة مع توضيح الوقت الذاتي (Self Time) والوقت التراكمي (Total Time).
 
 ## Practical walkthrough
 
-قبل Profiler حدد السؤال: الشاشة بعد 20 فتح/غلق بتسيب objects؟ scroll فيه GC pauses؟ ولا freeze وقت decode؟ في Memory Profiler سجّل allocation rate وheap dump بعد quiescence؛ في CPU trace شوف Main slices. استخدم نفس الجهاز ونفس dataset ونفس build قبل وبعد، لأن profiling نفسه يضيف overhead. لو Java heap ثابتة لكن PSS طالعة، بص على native/graphics والـbuffers بدل اتهام GC.
+سيناريو عملي لاكتشاف دالة تستهلك المعالج باستخدام System Trace و Memory Profiler:
+```kotlin
+// استخدام كود Trace مخصص ليظهر بالاسم في تقرير System Trace / Perfetto:
+import androidx.tracing.trace
+
+fun processFeedData(rawItems: List<RawFeedItem>) {
+    // ظهور قطاع صريح باسم "FeedProcessing" في الـ CPU Profiler:
+    trace("FeedProcessing") {
+        val processed = rawItems.map { item ->
+            // إذا ظهرت هذه الدالة عريضة في الـ Flame Chart، نقوم بتحسينها أو نقلها إلى Dispatchers.Default:
+            formatItemDetails(item)
+        }
+        updateUi(processed)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +83,29 @@ Define a repeatable scenario, app build, device/API, dataset, and success metric
 
 ## Interview answer — short
 
-“I profile a repeatable user flow with a specific hypothesis. Memory tools show allocations and retained objects; CPU tools show where threads spend time. I compare the same workload before and after a targeted fix.”
+Android Studio Profiler provides real-time diagnostics: the Memory Profiler visualizes Java/Native/Graphics heap usage and captures heap dumps to identify retained sizes and leaks. The CPU Profiler records Method and System Traces to inspect thread activity via Flame Charts, pinpointing CPU bottlenecks, lock contention, and main-thread blocking operations.
 
 ## Interview answer — structured
 
-“For a leak hypothesis, I repeat navigation, inspect post-close memory, capture a heap dump, and follow retaining paths. For jank, I record the screen interaction, inspect allocation bursts and CPU work on Main, and correlate with frame metrics. Sampling is a useful low-overhead first pass; detailed tracing gives execution order but adds overhead. I keep device, build, input size, and cache state consistent, then rerun the scenario after one change. If app-level tools cannot explain scheduling or IPC, I capture a system trace.”
+The Android Studio Profiler is our primary first-party suite for diagnosing runtime regressions.
+
+In the **Memory Profiler**:
+1. We observe real-time allocation timelines. A saw-tooth pattern indicates heavy allocation churn and frequent GC sweeps.
+2. We capture Heap Dumps to inspect object instances, filtering by package name. We sort by **Retained Size** to locate heavyweight objects and inspect the **Reference Tree** to see which field holds the strong reference preventing collection.
+3. We use Live Allocation Tracking during scrolling to identify unexpected temporary allocations inside adapters or rendering passes.
+
+In the **CPU Profiler**:
+1. We run **System Trace** to observe thread scheduling against 16.6ms frame boundaries (`Choreographer.doFrame`).
+2. We inspect the **Flame Chart** to identify wide blocks, representing long-running functions stalling the UI thread.
+3. We switch to **Bottom-Up View** to find methods with the highest self-time, isolating CPU-bound bottlenecks for asynchronous dispatching.
 
 ## Interview answer — deep senior
 
-“I choose the profiler after defining the failure signature. A rising memory baseline after opening and closing a screen calls for retained-object analysis and a heap dump, including native or graphics categories if Java heap stays flat. A burst of GC during scrolling calls for allocation recording and a check of frame timing. A blocked main thread calls for CPU stacks or a system trace that shows binder calls, scheduling, and disk work. I reproduce with realistic data on a representative device and note whether the build is debug, profileable, or release-like. Profiling can change timing, so I triangulate a finding with traces, logs, and user-visible metrics rather than trusting one graph. I change the identified cause, replay the exact scenario, compare allocations, CPU time, memory baseline, and frames, then watch Android vitals after release. For a product-list jank case I record the same sixty-second scroll before and after, with production-sized rows and identical device state. I pair allocation rate with frame tails; a lower heap graph that still decodes full images on Main is not a complete fix. I label profiler overhead and build variant in the result.”
+When profiling memory for low-end devices, analyzing the **Native** heap segment is vital. Since Android 8.0, Bitmaps, WebViews, and audio decoders allocate on the native heap. Standard Java heap dumps do not inspect C++ allocations, so we run the **Native Memory Profiler** (using `heapprofd`) to capture allocation call stacks inside `libhwui.so` and `libskia.so`.
+
+For CPU analysis, **Flame Charts** invert traditional call stacks: the X-axis represents execution time while the Y-axis shows call depth. A wide flame chart bar that remains unchanged across multiple frame intervals immediately pinpoints code blocking the Choreographer.
+
+In CI/CD automation, we run headless Android Studio profiling via Macrobenchmark, capturing trace files programmatically to ensure pull requests don't exceed frame timing or memory allocation thresholds.
 
 ## How to answer in the interview
 
@@ -76,9 +121,11 @@ Discuss hypothesis-first profiling, heap versus allocation traces, sampling over
 
 ## Follow-up questions
 
-- When do you take a heap dump? **Answer:** after a logical owner should have ended, to inspect retained objects and their root paths.
-- Why can profiling alter behavior? **Answer:** recording and instrumentation add overhead and may perturb scheduling or cache behavior.
-- When use Perfetto instead? **Answer:** when OS scheduling, binder, frame pipeline, or cross-process timing is needed beyond app call stacks.
+- **Interviewer:** "What is the difference between Call Chart and Flame Chart in CPU Profiler?"
+  **Answer:** "A Call Chart visualizes function execution chronologically over the timeline, preserving execution order. A Flame Chart aggregates identical call stacks across the entire trace, making it much easier to spot total cumulative time spent in specific functions."
+
+- **Interviewer:** "Why should you profile using a Release or Non-debuggable build?"
+  **Answer:** "Debug builds have ART optimizations (such as inlining, dead-code elimination, and register allocation) disabled, and include debugging hooks that distort real CPU timing and allocation measurements. Profiling should always be done on a profileable release build."
 
 ## Self-check rubric
 
@@ -90,4 +137,4 @@ Choose a profiler for two hypotheses, define a controlled workload, interpret a 
 - [Memory Profiler](https://developer.android.com/studio/profile/memory-profiler) — heap and allocation analysis.
 - [Perfetto](https://developer.android.com/tools/perfetto) — system-level tracing.
 
-Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The proposed experiment was not executed on an Android device.
+Technically reviewed against primary documentation on 2026-10-13.

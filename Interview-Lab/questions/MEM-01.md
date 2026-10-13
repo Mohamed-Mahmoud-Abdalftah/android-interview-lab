@@ -24,11 +24,41 @@ What is memory management in Android? What does garbage collection do?
 
 ## Explanation in Arabic
 
-Android Runtime (`ART`) يدير Java/Kotlin objects داخل managed heap. الـGC يتتبع الأشياء اللي لسه reachable من roots ويستعيد مساحة غير reachable. ده لا يعني إن أي حاجة كبيرة هتختفي فورًا: لو listener أو singleton ماسك Activity، تفضل reachable وده leak. كمان bitmap/native allocations وfile descriptors ومصادر أخرى محتاجة إدارة عمرها؛ GC مش بديل عن `close()` أو lifecycle cleanup. الذاكرة المحدودة وكثرة allocations يزودوا GC pressure ويعملوا jank أو `OutOfMemoryError`، فبنقيس retained heap وallocation rate والـPSS حسب المشكلة.
+إدارة الذاكرة في Android ودور مجمع النفايات (Garbage Collector - GC) هي عصب أداء التطبيقات:
+
+1. كيف يدير نظام Android الذاكرة؟
+   - كل تطبيق يعمل داخل **Android Runtime (ART)** محدد بسقف أقصى للذاكرة (Heap Limit، عادة 192MB إلى 512MB حسب عتاد الجهاز).
+   - الذاكرة مقسمة إلى: **RAM Heap** (للكائنات والبيانات)، و **Stack** (لإطارات استدعاء الدوال والمتغيرات المحلية)، و **Native Memory** (للـ Bitmaps وكود C++).
+
+2. ما الذي يفعله الـ Garbage Collector (GC)؟
+   - الـ GC هو محرك آلي يبحث دورياً عن **الكائنات غير المستخدمة (Unreachable Objects)** على الـ Heap ويقوم بتحرير مساحتها في الذاكرة لتجنب نفاد الرام.
+   - في ART الحديث، الـ GC يعمل بنظام **Generational GC و Concurrent Mark-Sweep (CMS)**:
+     * الكائنات الجديدة توضع في الـ Young Generation؛ ومعظمها يموت سريعاً ويتم تنظيفه بـ Minor GC سريع جداً.
+     * الكائنات التي تعيش طويلاً تنتقل إلى Old Generation.
+
+3. أثر الـ GC على أداء وسلاسة التطبيق (Jank):
+   - إذا كان الكود ينشئ ملايين الكائنات المؤقتة داخل Loops أو في دالة `onDraw`، يحدث ما يسمى **Memory Churn**.
+   - يؤدي ذلك إلى إجبار الـ GC على إيقاف خيوط التطبيق مؤقتاً (Stop-The-World Pauses)، مما يسبب سقوط فريمات وتشنج في الشاشة (UI Jank).
 
 ## Practical walkthrough
 
-في feed صور، افتح واقفل الشاشة عشر مرات على نفس الجهاز وسجّل الـPSS والـJava heap والـnative/graphics قبل وبعد كل مرة. لو الذاكرة ارتفعت أثناء العرض ثم استقرت، ده غير إن كل Activity قديمة تفضل موجودة بعد الإغلاق. الـGC ممكن يشتغل بسبب ضغط التخصيص، لكنه مش تصريح إننا نهمل streams أو caches. دور على مالك الـreference ووقت انتهائه قبل تعديل حجم الـheap.
+المقارنة بين كود يسبب ضغطاً على الـ GC وكود محسّن:
+```kotlin
+// ❌ كود سيء يسبب Memory Churn و GC Pauses داخل RecyclerView أو onDraw:
+override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+    // إنشاء كائنات Formatters وتواريخ جديدة في كل لفة سكرول:
+    val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US) // allocation في Heap!
+    holder.dateText.text = formatter.format(Date(items[position].timestamp))
+}
+
+// ✅ كود محسّن يعيد استخدام الكائنات (Zero Allocations in Scroll):
+companion object {
+    private val DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE // كائن واحد معاد استخدامه
+}
+override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+    holder.dateText.text = DATE_FORMATTER.format(items[position].localDate)
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +82,27 @@ Set representative low-memory device tests and track crash/OOM and frame metrics
 
 ## Interview answer — short
 
-“ART manages Java/Kotlin heap objects and garbage collection reclaims unreachable ones. GC does not free objects still referenced or replace cleanup of native resources. I watch retention and allocation pressure because both affect memory and responsiveness.”
+Android manages memory via the Android Runtime (ART) with per-app heap limits. The Garbage Collector automatically tracks object reachability from GC Roots and reclaims unreachable memory using generational collection, but excessive allocations cause Stop-The-World GC pauses and UI jank.
 
 ## Interview answer — structured
 
-“Android processes have limited memory, and ART manages a heap for ordinary Java/Kotlin objects. GC traces reachability and reclaims unreachable objects, but timing is controlled by the runtime. A listener holding an Activity keeps it alive, while frequent allocations can increase GC work and jank. Native buffers, bitmaps, and open resources also matter. In practice I measure retained paths, allocation rate, and process footprint, then fix ownership or image sizing before adding cache or pooling complexity.”
+Android manages memory through the Android Runtime (ART), assigning each application a sandboxed virtual machine with a strict heap limit (typically 192MB-512MB).
+
+The **Garbage Collector (GC)** is the automated memory manager that reclaims heap memory occupied by objects that are no longer referenced or reachable by the application:
+
+1. **Tracing Reachability**: The GC starts from a set of **GC Roots** (active thread stacks, static variables, JNI global references) and traverses object reference graphs. Any object that cannot be reached from any GC Root is marked as garbage.
+
+2. **Generational Collection**: ART separates objects into generations: newly allocated objects reside in the *Young Generation*, while long-lived objects advance to the *Old Generation*. Minor GCs clean short-lived objects rapidly with minimal latency.
+
+3. **Performance Impact**: While ART employs concurrent garbage collection, high allocation churn (creating thousands of temporary objects in loops or `onDraw()`) triggers frequent GC sweeps that briefly pause application threads, causing dropped frames (jank).
 
 ## Interview answer — deep senior
 
-“I separate memory management into reachability, allocation behavior, and total process footprint. ART's collector can reclaim managed objects that are no longer reachable from roots; it cannot reclaim a destroyed Activity still referenced by a singleton or callback. It also cannot substitute for closing files, cursors, or other owned resources. A rising retained baseline suggests a leak; a stable baseline with frequent spikes and collections suggests allocation pressure; native or graphics growth may not appear as a Java heap leak. I reproduce the user flow, inspect heap retaining paths and memory categories, and correlate GC and frame timing before changing code. The fix may be lifecycle cleanup, bounded caching, or correctly sampled image decode. I verify on constrained devices and monitor OOM and jank after release. For a feed regression, I run ten matched open-close cycles and record post-quiescence PSS, managed heap, native or graphics use, and retained screen counts. A rising high-water mark alone is inconclusive; I want a slope tied to a resource class. That experiment separates an intentional warm cache from an old Activity still reachable.”
+Under the hood, ART has evolved through multiple GC implementations: from the Dalvik Stop-The-World collector, to ART's Concurrent Mark-Sweep (CMS), to the **Concurrent Copying (CC) GC** introduced in Android 8.0+. The Concurrent Copying collector is a compacting collector: it moves live objects to contiguous memory regions while application threads continue running, virtually eliminating heap fragmentation without long pause times.
+
+However, ART still enforces hard memory ceilings (`getMemoryClass()` and `getLargeMemoryClass()`). If an allocation request exceeds the available process heap and the GC cannot reclaim sufficient contiguous memory through collection and compaction, ART throws an irrecoverable `OutOfMemoryError` (OOM).
+
+In Android profiling, we monitor the **Allocations Track** in Android Studio Profiler to identify memory churn: high saw-tooth allocation spikes immediately indicate unnecessary object creation in high-frequency rendering paths.
 
 ## How to answer in the interview
 
@@ -76,9 +118,14 @@ Discuss reachability, GC scheduling, retained graph, native memory, PSS, allocat
 
 ## Follow-up questions
 
-- Will GC free an Activity after `onDestroy()`? **Answer:** only if no reachable reference still retains it; lifecycle termination alone does not guarantee collection.
-- Why can an app OOM with an acceptable Java heap graph? **Answer:** native, graphics, and other process memory can be significant; inspect the full footprint.
-- Should code call `System.gc()` to fix jank? **Answer:** no; address the allocation or retention pattern and measure the result.
+- **Interviewer:** "Can you force garbage collection by calling `System.gc()`?"
+  **Answer:** "Calling `System.gc()` is only a hint to the runtime, not a guarantee. Even if it triggers collection, calling it manually is an antipattern because it forces an expensive full-heap sweep, halting threads and causing noticeable UI stutter."
+
+- **Interviewer:** "Where are Bitmaps allocated in modern Android (API 26+)?"
+  **Answer:** "Starting in Android 8.0 (API 26), Bitmap pixel data is allocated in native C++ memory (graphics heap) rather than the Java heap, though the garbage collector still manages their lifecycle through NativeAllocationRegistry."
+
+- **Interviewer:** "What is the difference between `getMemoryClass()` and `getLargeMemoryClass()`?"
+  **Answer:** "`getMemoryClass()` returns the standard heap limit in megabytes. `getLargeMemoryClass()` returns the expanded limit available only if `android:largeHeap="true"` is declared in the manifest (which should only be used for specialized apps like photo editors)."
 
 ## Self-check rubric
 
@@ -89,4 +136,4 @@ Explain reachability and collection, name two non-heap resources, distinguish ch
 - [Overview of memory management](https://developer.android.com/topic/performance/memory-overview) — ART heap and collection behavior.
 - [Manage your app's memory](https://developer.android.com/topic/performance/memory) — practical memory management.
 
-Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The feed case is illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -22,11 +22,47 @@ Define one authoritative owner per data type and distinguish local cache from se
 
 ## Explanation in Arabic
 
-SSOT يعني لكل نوع data في التطبيق مصدر authoritative واضح، والتحديثات تمرّ عليه بدل كل شاشة تمسك copy mutable وتتنافس. في offline-first app، Room ممكن تكون local source of truth اللي UI تراقبه، والnetwork refresh يكتب فيها. لكن لمدفوعات أو account balance السيرفر يفضل authority النهائي حتى لو DB هي مصدر العرض المحلي. “واحد” مش معناها server واحد لكل شيء؛ بعض UI element state محلي للشاشة. المهم تعرف مين يحسم التعارض وكيف تتعامل مع stale/offline data.
+ما هو مبدأ المصدر الوحيد للحقيقة (Single Source of Truth - SSOT) وكيف نطبقه في أندرويد؟
+
+1. تعريف مبدأ الـ SSOT:
+   - ينص المبدأ على أن **كل معلومة أو بيان في التطبيق يجب أن يمتلك مالكاً ومصدراً وحيداً مسؤولاً عن حفظه وتعديله ونشره**.
+   - لا يجوز أبداً الاحتفاظ بنسخ متعددة قابلة للتعديل من نفس البيانات في أماكن متفرقة (مثل وجود نسخة في ViewModel ونسخة في Activity ونسخة في قاعدة البيانات).
+
+2. كيف نطبقه عملياً في Android (Offline-First Pattern)؟
+   - **قاعدة البيانات المحلية (Room) هي الـ SSOT لبيانات التطبيق**:
+   - الـ UI يراقب فقط قاعدة البيانات المحلية عبر `Flow<List<Item>>`.
+   - عندما يطلب التطبيق بيانات من السيرفر عبر Network API:
+     * لا يتم إرسال استجابة الشبكة مباشرة إلى الشاشة!
+     * يتم حفظ استجابة الشبكة داخل قاعدة بيانات Room أولاً.
+     * تقوم Room تلقائياً بإطلاق انبعاث (Emit) جديد للبيانات المحدثة إلى الشاشة.
+
+3. الفوائد الحقيقية للـ SSOT:
+   - **منع تضارب البيانات (No Inconsistencies)**: مستحيل أن تظهر الشاشة بيانات تختلف عن البيانات المحفوظة.
+   - **دعم Offline كامل تلقائياً**: التطبيق يعرض البيانات فوراً من الـ DB حتى لو انقطع الإنترنت، ثم يحدثها بصمت عند عودته.
 
 ## Practical walkthrough
 
-SSOT معناها مكان authoritative لكل معلومة، مش “استخدم Room دائمًا”. Offline notes قد تكون Room هي مصدر UI مع sync backend؛ payment status authority عند backend والـRoom local projection. حدد write path وconflict policy، وخلي UI تراقب stream واحدة بدل cache منفصلة في ViewModel. اختبر اختلاف local/remote ولا تمسح pending edits عند refresh.
+تطبيق نمط Offline-First بجعل Room هي المصدر الوحيد للحقيقة (SSOT):
+```kotlin
+class UserRepositoryImpl(
+    private val userDao: UserDao,
+    private val userApi: UserApi
+) : UserRepository {
+
+    // 1. القراءة تتدفق دائماً وحصرياً من الـ SSOT (قاعدة بيانات Room):
+    override fun observeUserProfile(userId: String): Flow<User> {
+        return userDao.observeUser(userId)
+            .map { it.toDomain() }
+    }
+
+    // 2. طلب الشبكة يحدث الـ SSOT فقط، والـ SSOT هي التي تخطر الواجهة تلقائياً:
+    override suspend fun refreshUserProfile(userId: String): Result<Unit> = runCatching {
+        val remoteDto = userApi.fetchUser(userId)
+        // كتابة البيانات في Room هي الخطوة الوحيدة؛ انبعاث الـ Flow سيحدث تلقائياً:
+        userDao.insertUser(remoteDto.toEntity())
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -50,15 +86,26 @@ An offline news app uses Room as SSOT for articles and tracks `lastSyncedAt`; a 
 
 ## Interview answer — short
 
-SSOT means one clearly owned authoritative source for each kind of app data. In offline-first Android, UI often observes a local database that network sync updates; server authority still governs business facts like payments.
+Single Source of Truth (SSOT) means every piece of data has a single owner that acts as the authoritative source. In Android, the local database (Room) is typically the SSOT: network responses write directly to Room, and the UI exclusively observes Room flows, preventing data inconsistency and providing offline support.
 
 ## Interview answer — structured
 
-I identify where a value becomes official for the app and make all consumers read through that path. For an offline-first feed, the repository can expose Room as the observable source and write network refreshes into it. That prevents one screen from showing a raw response while another shows stale cached data. I still separate local display truth from server authority: a payment cache cannot authorize a transfer. I define stale-data and conflict behavior rather than assuming “single source” solves synchronization automatically. For a news feed, I might let Room be the local observable source, with network refresh writing into it. For a payment, I can display locally cached status but must reconcile it with server authority before declaring completion. Each data type needs an explicit owner.
+Single Source of Truth (SSOT) is an architectural discipline ensuring that every piece of state has exactly one authoritative owner responsible for its storage, mutation, and distribution.
+
+In modern Android architectures, we implement SSOT via the **Offline-First Reactive Repository pattern**:
+1. **Authoritative Storage**: The local database (Room) serves as the definitive SSOT for app data.
+2. **Unidirectional Observation**: The UI layer and ViewModels observe data strictly through reactive streams (`Flow<T>`) emitted by the local database DAO. The UI never queries the network directly.
+3. **Write-Through Ingestion**: When network requests complete, the repository does not return network models to the UI. Instead, it writes the payload directly into Room inside a database transaction. Room's internal invalidation tracker automatically triggers a new emission on the active Flow, notifying all listening ViewModels.
+
+This eliminates state desynchronization: if five different screens or background workers observe the same user profile, modifying that profile in one place instantly updates all five screens automatically.
 
 ## Interview answer — deep senior
 
-SSOT is an ownership rule, not a claim that one database answers every question. A screen’s selected tab can be locally owned; product data may be database-backed; a transfer status may need server confirmation. The repository should state what consumers observe, how network updates are applied, and how conflicts or stale data are signaled. In an offline-first app I commonly expose a Flow from Room and update Room transactionally after refresh, so all screens converge on one local source. After process death the same persisted source restores state. For server-authoritative decisions I do not promote optimistic client flags to facts; I reconcile with the backend and retain pending uncertainty. I test refresh races, stale cache, offline behavior, and conflict resolution. I would specify conflict policy and freshness, not just draw a database icon. What happens when two refreshes overlap, the device is offline for a week, or a write is rejected by the server? The repository should expose stale metadata or a refresh error while keeping useful cached data. A single source of truth means consumers converge through a defined path; it does not mean local values are universally authoritative. Tests should cover races, process death, and contradictory updates.
+Contrast this with the flawed **Dual-Source Anti-Pattern**: a screen fetches data from Retrofit, displays it, and separately writes a copy to SharedPreferences or Room. If the network request succeeds but database persistence fails, or if an in-memory cache differs from disk, the user encounters jarring contradictions—such as navigating back and seeing an outdated item count.
+
+SSOT applies to the Presentation layer as well. Inside the ViewModel, a single `MutableStateFlow<ScreenUiState>` acts as the SSOT for the entire screen. Mutating UI state requires calling `_uiState.update { ... }`, preventing multiple independent LiveData streams from racing each other.
+
+In testing, SSOT drastically simplifies verification: repository tests simply verify that executing a network sync populates the local Fake DAO, and UI tests verify reactions to simulated DAO emissions.
 
 ## How to answer in the interview
 
@@ -74,8 +121,11 @@ Draw Room-backed observation plus network refresh. Specify stale data, conflict,
 
 ## Follow-up questions
 
-- [ARC-19](../arc-19/): How are server updates applied? **Answer:** through repository sync into the chosen local source with conflict rules.
-- [ARC-09](../arc-09/): Is a UI flag an SSOT for payment? **Answer:** no; it is presentation state, not authority.
+- **Interviewer:** "Can an in-memory cache serve as an SSOT?"
+  **Answer:** "Yes, for volatile session data that must not persist across app process death (like an active in-memory shopping cart or socket stream), a thread-safe in-memory cache (like `MutableStateFlow`) acts as the SSOT."
+
+- **Interviewer:** "How does Room notify observers when data changes in the table?"
+  **Answer:** "Room installs an internal SQLite `InvalidationTracker` that hooks into database table updates. When a write occurs on an observed table, it triggers a query re-evaluation and emits the updated result on the Flow."
 
 ## Self-check rubric
 
@@ -86,4 +136,4 @@ Identify a source of truth for an offline feed and for payment confirmation; des
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — repository and source-of-truth responsibilities.
 - [Android offline-first guide](https://developer.android.com/topic/architecture/data-layer/offline-first) — local source of truth.
 
-Technically reviewed against the linked official Android architecture guidance on 2026-10-11. Conceptual flows and snippets are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -26,11 +26,73 @@ How do you implement Keystore-backed encryption for small app secrets?
 
 ## Explanation in Arabic
 
-لتشفير سر حساس وصغير على الجهاز (زي refresh token أو biometric session key)، بنستخدم Android Keystore عشان المفتاح نفسه يتولد ويتخزن داخل بيئة معزولة عتاديًا (TEE أو StrongBox) ولا يخرج أبدًا للـRAM كـplaintext raw bytes. التشفير بيتم بـ `AES/GCM/NoPadding` بمفتاح 256-bit. الـprovider بيولد IV عشوائي فريد بطول 12 bytes لكل عملية تشفير منفصلة؛ إياك تعيد استخدام نفس الـIV مع نفس المفتاح نهائيًا، لأن ده بيكسر سرية وسلامة GCM تمامًا. البيانات المشفرة لازم تتخزن في envelope منظم فيه رقم إصدار (version byte)، طول الـIV، الـIV نفسه، والـciphertext مدمج معاه الـ128-bit authentication tag.
+كيف تقوم بتنفيذ تشفير مدعوم عتادياً بالـ Keystore لتخزين أسرار التطبيق الصغيرة (App Secrets) بشكل آمن؟
+
+1. ما هي خوارزمية التشفير القياسية الموصى بها؟
+   - **AES/GCM/NoPadding (Galois/Counter Mode)**: هي خوارزمية تشفير متماثل توفر **Authenticated Encryption with Associated Data (AEAD)**. هذا يعني أنها لا تكتفي بتشفير البيانات (Confidentiality) فقط، بل تولد أيضاً **Authentication Tag** يحمي من أي تلاعب أو تعديل في النص المشفر (Integrity & Authenticity).
+   - في حال حاول المهاجم تعديل حتى بايت واحد في البيانات المشفرة، تفشل عملية فك التشفير برمي استثناء `AEADBadTagException` فوراً.
+
+2. دور الـ Android Keystore:
+   - يُولد مفتاح AES-256 داخل الـ Keystore ولا يخرج منه أبداً (`PURPOSE_ENCRYPT or PURPOSE_DECRYPT`).
+   - التطبيق يستخدم اسم المفتاح (Alias) فقط لتوجيه أوامر التشفير وفك التشفير للنظام.
+
+3. إدارة متجه البدء (Initialization Vector - IV):
+   - تتطلب خوارزمية GCM متجه بدء (IV) فريداً تماماً لكل عملية تشفير (عادة 12 بايت).
+   - **قاعدة حرجة**: لا تقم أبداً بإعادة استخدام نفس الـ IV مع نفس المفتاح، لأن ذلك يدمر أمان خوارزمية GCM بالكامل!
+   - يُترك لـ `Cipher.init(Cipher.ENCRYPT_MODE, secretKey)` توليد IV عشوائي جديد تلقائياً في كل مرة، ويتم حفظ هذا الـ IV بجانب النص المشفر (مثلاً بدمجهما معاً في نفس المصفوفة) لأن الـ IV ليس سراً.
 
 ## Practical walkthrough
 
-أثناء القراءة، بنمرر نفس الـIV في `GCMParameterSpec(128, iv)` ونعمل `cipher.init(Cipher.DECRYPT_MODE, key)`. لو حصل أي تلاعب في حرف واحد من البيانات أو الـIV، التشفير هيرمي `AEADBadTagException` فورًا ويرفض فك التشفير. كمان لو المستخدم ضاف بصمة جديدة وكان المفتاح متظبط بـ `setInvalidatedByBiometricEnrollment(true)`، المفتاح هيرمي `KeyPermanentlyInvalidatedException`. الملف المتشفر لازم يتكتب على القرص بـ `AtomicFile` عشان لو النظام طفى في نص الكتابة ما يحصلش ملف مقطوع. لو فك التشفير فشل لأي سبب، القرار الهندسي الصح مش إنك تحاول تخمن أو ترجع قيمة فاضية، بل تمسح السجل المعطوب وتطلب من المستخدم re-authentication نظيف، بينما الـbackend يفضل صاحب السلطة في إلغاء الـsession.
+تطبيق احترافي لتشفير وفك تشفير البيانات الصغيرة باستخدام Android Keystore و AES-256-GCM:
+```kotlin
+class KeystoreSecretStorage {
+    private val KEY_ALIAS = "app_auth_secret_v1"
+    private val ANDROID_KEYSTORE = "AndroidKeyStore"
+    private val TRANSFORMATION = "AES/GCM/NoPadding"
+    private val GCM_TAG_LENGTH_BITS = 128
+    private val IV_SIZE_BYTES = 12
+
+    private fun getOrCreateKey(): SecretKey {
+        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        if (keyStore.containsAlias(KEY_ALIAS)) {
+            return (keyStore.getEntry(KEY_ALIAS, null) as KeyStore.SecretKeyEntry).secretKey
+        }
+        val keyGen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+        val spec = KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setKeySize(256)
+            .setRandomizedEncryptionRequired(true) // يجبر النظام على رفض IV مكرر
+            .build()
+        keyGen.init(spec)
+        return keyGen.generateKey()
+    }
+
+    fun encrypt(plaintext: ByteArray): ByteArray {
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
+        val iv = cipher.iv // 12-byte IV تم توليده عشوائياً بواسطة الـ Cipher
+        val ciphertextWithTag = cipher.doFinal(plaintext)
+        
+        // دمج الـ IV مع النص المشفر في مصفوفة واحدة: [12 bytes IV] + [Ciphertext + Tag]
+        return ByteBuffer.allocate(iv.size + ciphertextWithTag.size)
+            .put(iv)
+            .put(ciphertextWithTag)
+            .array()
+    }
+
+    fun decrypt(encryptedPayload: ByteArray): ByteArray {
+        val buffer = ByteBuffer.wrap(encryptedPayload)
+        val iv = ByteArray(IV_SIZE_BYTES).also { buffer.get(it) }
+        val ciphertextWithTag = ByteArray(buffer.remaining()).also { buffer.get(it) }
+
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        val spec = GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv)
+        cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), spec)
+        return cipher.doFinal(ciphertextWithTag)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -200,28 +262,29 @@ In a production banking or payment app:
 
 ## Interview answer — short
 
-“I generate a 256-bit AES key inside Android Keystore configured for AES-GCM without export rights. For encryption, I let the Keystore generate a fresh 12-byte IV per invocation and store an envelope containing version, IV, ciphertext, and 128-bit authentication tag atomically. During decryption, GCM checks data integrity, throwing `AEADBadTagException` if tampered. If the key is invalidated or lost, I purge the local record and prompt the user for clean re-authentication.”
+To encrypt small secrets, generate an AES-256 key inside Android Keystore configured for AES/GCM/NoPadding. Let the Cipher generate a fresh 12-byte IV on each encryption, store the IV prepended to the ciphertext, and decrypt using a GCMParameterSpec with 128-bit authentication tag. GCM ensures both confidentiality and tamper detection.
 
 ## Interview answer — structured
 
-“When implementing Keystore-backed encryption for small secrets like refresh tokens:
-1. **Key Generation:** I use `KeyGenerator` with provider `AndroidKeyStore`, generating an AES key with `PURPOSE_ENCRYPT or PURPOSE_DECRYPT`, `BLOCK_MODE_GCM`, and `ENCRYPTION_PADDING_NONE`. The key material remains permanently in hardware (TEE or StrongBox).
-2. **Encryption Protocol:** I use `AES/GCM/NoPadding`. Calling `cipher.init(Cipher.ENCRYPT_MODE, key)` automatically generates a cryptographically random 12-byte IV. I construct a versioned envelope containing `[version, iv_length, iv, ciphertext_length, ciphertext_and_tag]`.
-3. **Decryption & Validation:** I extract the IV, configure `GCMParameterSpec(128, iv)`, and invoke `cipher.doFinal()`. If any byte was altered, GCM tag verification fails with `AEADBadTagException`. I map this to a security error rather than falling back silently.
-4. **Resilience & Storage:** I write the envelope to `noBackupFilesDir` using `AtomicFile` to prevent torn writes and unwanted cloud backups.
-5. **Session Architecture:** If the key is lost after an OS upgrade or invalidated by biometric re-enrollment, the app handles it as a predictable lifecycle event, clearing the token and initiating user login.”
+Encrypting small secrets securely on Android requires Keystore-managed hardware isolation and authenticated encryption:
+
+1. **Key Generation in Keystore**: Generate a 256-bit AES key inside `AndroidKeyStore` using `KeyGenParameterSpec` configured with `PURPOSE_ENCRYPT or PURPOSE_DECRYPT`, `BLOCK_MODE_GCM`, `ENCRYPTION_PADDING_NONE`, and `setRandomizedEncryptionRequired(true)`. The key material never leaves hardware.
+
+2. **Authenticated Encryption (AES-GCM)**: GCM is an AEAD (Authenticated Encryption with Associated Data) mode. In addition to encrypting data, it appends a 128-bit authentication tag. If an attacker modifies even a single byte of ciphertext in storage, `cipher.doFinal()` throws `AEADBadTagException`, preventing bit-flipping attacks.
+
+3. **IV Management**: GCM requires a unique Initialization Vector (IV)—typically 12 bytes—for every encryption under the same key. Reusing an IV with GCM destroys cryptographic security. Always let `cipher.init(Cipher.ENCRYPT_MODE, key)` generate the random IV via the system's secure RNG, and prepend the IV to the stored ciphertext.
+
+4. **Decryption**: Extract the first 12 bytes as IV, initialize `Cipher.DECRYPT_MODE` with `GCMParameterSpec(128, iv)`, and decrypt the remaining bytes.
 
 ## Interview answer — deep senior
 
-“A senior engineer looks at Keystore encryption not just as calling crypto APIs, but as a complete system lifecycle: threat model, key storage, wire format, and failure recovery.
+From an architectural standpoint, implementing Keystore-backed encryption requires considering concurrency, performance, and key resilience:
 
-I generate an AES-256 key restricted to GCM mode directly inside `AndroidKeyStore`. I set `setRandomizedEncryptionRequired(true)` so the platform enforces fresh nonce generation, mitigating the catastrophic risk of GCM IV collision. If biometric binding is required, I set `setUserAuthenticationRequired(true)` and `setInvalidatedByBiometricEnrollment(true)`. In that design, the `Cipher` is wrapped in `BiometricPrompt.CryptoObject`, and `cipher.doFinal()` only succeeds after hardware-authenticated biometric confirmation.
+1. **Keystore IPC Bottlenecks**: Android Keystore operations involve IPC to the `keystored` daemon and hardware TEE/StrongBox calls. These calls are CPU-intensive and blocking. Encryption and decryption routines must never execute on the Main Thread; dispatch them to a dedicated background Coroutine dispatcher (`Dispatchers.IO` or `Dispatchers.Default`).
 
-For persistence, I design an explicit versioned envelope: version byte, IV length, 12-byte IV, and ciphertext with embedded 128-bit authentication tag. I save this file using `AtomicFile` inside `noBackupFilesDir`. This eliminates two major production bugs: corrupted partial writes during unexpected process kills, and orphaned ciphertext restored via Android Auto-Backup onto a new device that lacks the hardware private key.
+2. **Handling Corrupted Entries**: In production across diverse OEM implementations, Keystore operations occasionally throw `KeyStoreException` or `UnrecoverableKeyException` due to hardware glitches or OS upgrades. Resilient architectures catch these exceptions, clear the corrupted alias, purge stale encrypted tokens from storage, and gracefully prompt the user to re-authenticate.
 
-On the decryption side, any failure—whether `AEADBadTagException` from file tampering, or `KeyPermanentlyInvalidatedException` from biometric changes—is handled as an explicit invalidation trigger: the client purges the corrupted token and navigates to the login screen.
-
-Crucially, I never confuse device-level encryption with server-level security. A rooted device with runtime instrumentation can hook `cipher.doFinal()` when the secret is briefly held in memory. Therefore, the on-device secret must only be a replaceable refresh token with short validity, while the backend maintains strict token binding, rotation, and revocation authority.”
+3. **Size Constraints**: Keystore AES-GCM is designed for small payloads (tokens, encryption keys, PII strings). For large files or databases, use an **Envelope Encryption** pattern: generate a random data key in memory, encrypt the file using standard AES-CTR/CBC, and use Keystore only to encrypt that data key.
 
 ## How to answer in the interview
 
@@ -240,8 +303,11 @@ Crucially, I never confuse device-level encryption with server-level security. A
 
 ## Follow-up questions
 
-- [SEC-13](../sec-13/): What happens to Keystore keys when the user backs up and restores to a new phone? **Answer:** Hardware-backed Keystore keys cannot be exported, so ciphertext restored to a new phone cannot be decrypted; design a clean re-authentication path.
-- [SEC-14](../sec-14/): Does encrypting a refresh token with Keystore prevent token theft in RAM? **Answer:** No, once decrypted in process memory, a rooted device with memory inspection can read it; defense-in-depth requires short token TTL and backend rotation.
+- **Interviewer:** "Why should you never use AES/ECB/PKCS5Padding?"
+  **Answer:** "ECB mode encrypts identical plaintext blocks into identical ciphertext blocks, revealing patterns and structure, and lacks an authentication tag against tampering."
+
+- **Interviewer:** "What happens if you supply your own hardcoded IV to AES/GCM?"
+  **Answer:** "If `setRandomizedEncryptionRequired(true)` is set, Keystore throws an exception; if bypassed, reusing the same IV completely breaks GCM security and exposes key details."
 
 ## Self-check rubric
 
@@ -257,4 +323,4 @@ Crucially, I never confuse device-level encryption with server-level security. A
 - [Android cryptography guidance](https://developer.android.com/privacy-and-security/cryptography) — best practices for cipher suites and GCM.
 - [OWASP Mobile Application Security (MASVS-STORAGE)](https://mas.owasp.org/MASVS/04-MASVS-STORAGE/) — secure storage verification requirements.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

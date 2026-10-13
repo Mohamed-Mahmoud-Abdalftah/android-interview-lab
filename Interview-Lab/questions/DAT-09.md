@@ -22,7 +22,82 @@ Design token attachment and refresh handling without loops, leakage or racing re
 
 ## Explanation in Arabic
 
-Interceptor يضيف access token للطلبات المناسبة من session store، وAuthenticator يعالج `401` بعملية refresh مضبوطة. لازم نستثني login/refresh endpoints، نمنع infinite retry، وما نستخدمش نفس client بطريقة تعمل recursion/deadlock. عدة requests تلاقي 401 معًا: نعمل single-flight refresh أو Mutex مع recheck للتوكن بعد lock، ونبطل session فقط لو refresh فشل بشكل نهائي.
+كيف تنفذ معترِضات المصادقة (Authentication Interceptors) ومنطق تجديد التوكن (Refresh-Token Logic) بأمان في OkHttp؟
+
+1. تقسيم المسؤوليات في OkHttp (Interceptor vs Authenticator):
+   - **`Interceptor` (حقن التوكن في كل طلب)**:
+     * يضيف ترويسة المصادقة `Authorization: Bearer <token>` لكل طلب يخرج من التطبيق.
+     * يستثني طلبات تسجيل الدخول وتجديد التوكن العامة لتجنب إرسال توكنز قديمة.
+   - **`Authenticator` (التعامل مع انتهاء التوكن و 401 Unauthorized)**:
+     * صُمم خصيصاً في OkHttp للتعامل مع رد `401`.
+     * يستدعي خادم التجديد (Refresh Token Endpoint) بشكل متزامن لإصدار توكن جديد، وتحديث الجلسة في التخزين المشفر، وإعادة إرسال الطلب الأصلي بالتوكن الجديد تلقائياً.
+
+2. الأخطاء القاتلة وكيفية تجنبها (Deadlocks & Infinite Loops):
+   - **حلقة التكرار اللانهائية (Infinite Retry Loop)**: إذا أعاد طلب التجديد نفسه `401`، فقد يستدعي الـ Authenticator نفسه للأبد! يجب وضع شرط توقف: إذا كان الطلب الفاشل هو نفسه طلب الـ Refresh، أو إذا تكرر الفشل أكثر من 2 مرات، توقف وأعلن تسجيل الخروج (Logout).
+   - **استخدام نفس OkHttpClient لطلب الـ Refresh**: يؤدي إلى تجمد التطبيق (Deadlock). يجب استخدام OkHttpClient نقي ومستقل ومجرد من الـ Authenticator لتنفيذ طلب التجديد.
+
+## Practical walkthrough
+
+التنفيذ الكامل والآمن لـ Interceptor و Authenticator في OkHttp:
+```kotlin
+// 1. Auth Interceptor: يضيف التوكن الحالي لكل طلب:
+class AuthHeaderInterceptor(private val tokenManager: TokenManager) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val token = tokenManager.getAccessToken()
+        val request = if (token != null) {
+            chain.request().newBuilder()
+                .header("Authorization", "Bearer $token")
+                .build()
+        } else {
+            chain.request()
+        }
+        return chain.proceed(request)
+    }
+}
+
+// 2. OkHttp Authenticator: يتعامل مع 401 ويعيد المحاولة بالتوكن الجديد:
+class TokenAuthenticator(
+    private val tokenManager: TokenManager,
+    private val authService: RefreshAuthService // يستخدم OkHttpClient مستقل بدون Authenticator!
+) : Authenticator {
+    override fun authenticate(route: Route?, response: Response): Request? {
+        // حماية 1: منع الحلقات اللانهائية لو فشل الطلب أكثر من مرتين:
+        if (responseCount(response) >= 2) return null
+        
+        // حماية 2: التزامن لمنع سباق الطلبات المتزامنة (Mutex / Synchronized):
+        synchronized(this) {
+            val currentToken = tokenManager.getAccessToken()
+            // لو كان هناك طلب سابق قام بالفعل بالتجديد:
+            val requestToken = response.request.header("Authorization")?.removePrefix("Bearer ")
+            val validToken = if (currentToken != requestToken && currentToken != null) {
+                currentToken // استخدام التوكن الجديد فوراً بدون طلب refresh إضافي
+            } else {
+                // طلب تجديد حقيقي:
+                val newTokens = authService.refreshTokenBlocking(tokenManager.getRefreshToken())
+                if (newTokens != null) {
+                    tokenManager.saveTokens(newTokens.access, newTokens.refresh)
+                    newTokens.access
+                } else {
+                    tokenManager.clearSessionAndForceLogout()
+                    return null // إلغاء المحاولة وتسجيل الخروج
+                }
+            }
+            
+            // إعادة إرسال الطلب الأصلي بالتوكن المحدث:
+            return response.request.newBuilder()
+                .header("Authorization", "Bearer $validToken")
+                .build()
+        }
+    }
+    
+    private fun responseCount(response: Response): Int {
+        var result = 1
+        var prior = response.priorResponse
+        while (prior != null) { result++; prior = prior.priorResponse }
+        return result
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -48,10 +123,6 @@ class RefreshCoordinator(private val refresh: suspend () -> Token) {
 // session-generation checks and the OkHttp Authenticator adapter are app-specific.
 ```
 
-## Practical walkthrough
-
-interceptor يضيف access token للrequest الحالية، لكن 401 refresh محتاجة coordination. لو خمس requests رجعت 401 مع بعض وكل واحدة استخدمت refresh token rotating، أول واحدة قد تبطل الباقي ويقفل session غلط. coordinator يعمل single-flight، ويعيد فحص token داخل lock؛ لو token اتغير بعد الـ401، أعد request مرة واحدة بالتوكن الجديد. OkHttp `Authenticator` synchronous، فلا تعمل network refresh recursively على نفس client/pool بشكل يسبب deadlock أو loop؛ استخدم boundary/refresh client مناسب، حدّد max attempts، واحترم logout generation عشان late refresh ما يرجعش session. خزّن token pair atomically حسب threat model، بدون logging.
-
 ## Trade-offs and decision criteria
 
 Authenticator is a natural 401 challenge point but runs under OkHttp’s synchronous API; avoid blocking the same exhausted dispatcher or recursive client. An application interceptor can attach a snapshot token, but proactive expiry checks still need race handling. Server session invalidation must be authoritative.
@@ -66,17 +137,28 @@ A banking app has a session repository with atomic token replacement and one ref
 
 ## Interview answer — short
 
-“I attach tokens at a transport boundary, handle 401 with a bounded refresh path, and serialize refresh using a recheck under a lock. I avoid recursive clients, log no credentials and treat logout/session invalidation as authoritative.”
+Use an OkHttp Interceptor to attach access tokens to outgoing requests, and an Authenticator to handle 401 Unauthorized responses by fetching a new token and retrying the request. Protect against infinite retry loops by checking response count, synchronize refreshes to prevent race conditions, and use a dedicated clean OkHttpClient for refresh calls.
 
 ## Interview answer — structured
 
-“The interceptor reads a current access token and adds it only to protected requests. On 401, an authenticator or coordinated layer compares the failed request’s token with the latest stored token; if another request refreshed it, it retries with that token. Otherwise one caller refreshes while peers wait, then credentials are replaced atomically. I bound retries, exclude the refresh endpoint from the same loop, and clear session only on authoritative invalidation. The OkHttp Authenticator API is synchronous, so I design its adapter and client threading carefully.”
+Implementing resilient JWT authentication in OkHttp requires separating proactive header injection from reactive 401 recovery:
+
+1. **Proactive Injection (`Interceptor`)**: An Application Interceptor reads the cached access token from secure storage and injects `Authorization: Bearer <token>` into outgoing requests. Public endpoints (login, register) are excluded.
+
+2. **Reactive 401 Recovery (`Authenticator`)**: When the server returns `401 Unauthorized`, OkHttp triggers `Authenticator.authenticate()`. This method executes a synchronous token refresh, updates persistent storage, and builds a new request with the updated token, which OkHttp automatically retries.
+
+3. **Guardrails against Common Failures**:
+   - **Loop Prevention**: Inspect `response.priorResponse` chain. If attempts exceed 2, return `null` to abort and prompt user re-login.
+   - **Deadlock Isolation**: The refresh network call must execute on an isolated OkHttp client that has **no Authenticator attached**; using the primary client causes recursive lock deadlocks.
+   - **Double-Check Lock**: Check whether another concurrent thread already refreshed the token while this thread was waiting on the lock.
 
 ## Interview answer — deep senior
 
-Token refresh is a concurrency and security boundary. Multiple requests can receive 401 together; without a single-flight lock they may rotate one-time refresh credentials twice and invalidate the session. My coordinator acquires a mutex, rechecks the token inside it, refreshes once and stores the new pair atomically. It rejects a late result if logout or account switch changed session generation. The OkHttp challenge handler must not recursively call itself or block all available dispatch threads, and it must stop after a bounded follow-up count. I redact Authorization and refresh tokens from logs, use HTTPS and a defined local storage/backup threat model, and test simultaneous 401s, refresh rejection, cancellation and logout races. Logging Authorization headers leaks credentials.
+A critical edge case is **Refresh Token Rotation (RTR)**.
 
-I split token attachment from challenge handling. A request interceptor can read the current access token, but a 401 authenticator must coordinate a possible refresh. Several calls may fail together; the first successful refresh can replace the token, and later callers should re-read it rather than rotate the refresh token again. I limit challenge retries, avoid authenticating the refresh endpoint through the same loop, and use an independent refresh path with a clear blocking boundary for OkHttp’s synchronous Authenticator API. Logout or account switch increments a session generation so a late refresh cannot resurrect credentials. I test concurrent 401s, invalid refresh, cancellation, and redacted logs.
+Modern OAuth 2.0 backends rotate the refresh token on *every* refresh request (issuing both a new access token and a new single-use refresh token, immediately invalidating the previous refresh token). If client synchronization fails and two concurrent requests make separate refresh calls using the old refresh token, the server detects token reuse, treats it as a security breach, and invalidates all user sessions globally!
+
+To solve this, the refresh operation must be strictly serialized behind a **Single-Flight Lock (or Mutex)** with token double-checking: the thread entering the lock first executes the refresh, while subsequent threads detect that `currentToken != requestToken` and immediately replay with the new token without hitting the refresh API.
 
 ## How to answer in the interview
 
@@ -92,8 +174,11 @@ Trace two 401s, token rotation, logout generation and synchronous Authenticator 
 
 ## Follow-up questions
 
-- [DAT-10](../dat-10/): Why recheck after lock? **Answer:** another caller may have refreshed while this one waited.
-- [DAT-19](../dat-19/): What if refresh itself invalidates session? **Answer:** serialize and reject stale generation results.
+- **Interviewer:** "What happens if `Authenticator.authenticate()` returns `null`?"
+  **Answer:** "OkHttp halts retries and returns the original 401 response to the caller, allowing the UI layer to navigate to the login screen."
+
+- **Interviewer:** "Where should tokens be stored securely in Android?"
+  **Answer:** "EncryptedSharedPreferences or Proto DataStore with Android Keystore encryption, never in plaintext SharedPreferences."
 
 ## Self-check rubric
 
@@ -104,4 +189,4 @@ Can I prevent recursion and duplicate refresh, bound retries and protect logout 
 - [OkHttp calls guide](https://lysine.dev/okhttp/features/calls/) — Authenticator follow-up requests.
 - [Android security configuration](https://developer.android.com/privacy-and-security/security-config) — transport security.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

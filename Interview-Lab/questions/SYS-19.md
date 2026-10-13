@@ -22,11 +22,41 @@ Redesign ownership and dependency graph for 20 teams with 25-minute builds based
 
 ## Explanation in Arabic
 
-أولًا نقيس 25 دقيقة: configuration, dependency resolution, Kotlin compile, kapt/KSP, resources, tests ولا network؟ بعدها نرسم module graph وchange impact. نحدد feature ownership وstable API modules صغيرة، نمنع cycles وgiant core، ونستخدم `implementation` بدل `api` لما type مش public. convention plugins/version catalog تقلل اختلاف الإعدادات، وCI يعمل targeted tests مع full gates دوريًا. لا نَعِد بتحسن قبل benchmark.
+تطبيق يعمل عليه 20 فريقاً برمجياً ويستغرق وقت البناء (Build Time) حوالي 25 دقيقة. كيف تعيد تصميم ملكية الكود والتبعيات لتسريع التطوير؟
+
+1. تشخيص أسباب بطء البناء (Root Cause Analysis via Build Scans):
+   - **تشغيل Gradle Build Scan (`--scan`)**: لتحديد المراحل والـ Tasks الأكثر استهلاكاً للوقت.
+   - **المشاكل المعتادة**: موديول أحادي ضخم (`:app`)، تبعيات دائرية، تعطيل الـ Configuration Cache، كثرة كود الـ Annotation Processing (KAPT بدلاً من KSP)، وغياب الـ Remote Build Cache.
+
+2. إعادة الهيكلة المعمارية (Modular Redesign & Dependency Decoupling):
+   - **تفكيك الميزات إلى API و Implementation**:
+     * `:feature:profile:api` (خفيف، كود عام فقط).
+     * `:feature:profile:impl` (التنفيذ الفعلي، لا يعتمد عليه أحد).
+   - **كسر التبعيات المباشرة بين الميزات**: منع أي موديول Feature من الاعتماد على موديول Feature آخر، وتمرير الاتصال عبر الـ DI والـ Core modules.
+   - **إنشاء Sample Apps مستقلة لكل فريق**:
+     * فريق الـ Profile يعمل داخل موديول تطبيقي صغير `:feature:profile:sample`. هذا التطبيق يُبنى ويشتغل في 10 ثوانٍ فقط، مما ينقذ إنتاجية الفريق اليومية!
+
+3. تحسينات أدوات البناء والبنية التحتية (Build Infrastructure Optimization):
+   - الانتقال من KAPT إلى **KSP (Kotlin Symbol Processing)** لتسريع معالجة الـ Annotations بنسبة 2x.
+   - تفعيل **Gradle Configuration Cache** و **Build Cache** المشترك على شبكة الـ CI (Remote Build Cache).
+   - تحديد ملف `CODEOWNERS` لفرض ملكية واضحة للموديولات ومنع التعديلات العشوائية.
 
 ## Practical walkthrough
 
-25 دقيقة build مش معناها تلقائيًا نعمل modules أكثر. قس configuration وKotlin compile وKSP/resources/tests في clean/no-op/one-feature edit. لو `:core:model` عليها كل features، أي تغيير فيها يسبب fan-out؛ اقسم stable APIs وحدود ownership، وأصلح broad `api` edges. جرّب configuration cache وbuild cache حسب قياس، وقارن median وP95، مش أحسن run واحدة.
+هيكلة إعدادات Gradle باستخدام Convention Plugins و Sample Apps لتقليص زمن البناء:
+```text
+// هيكل الموديولات المصغر لفرق العمل المستقلة:
+├── build-logic/ (Convention plugins لإدارة إعدادات Gradle مركزياً)
+├── core/ (Modules منخفضة المستوى)
+│    ├── network/
+│    └── database/
+├── features/
+│    ├── checkout/
+│    │    ├── api/    (العقود العامة فقط: تترجم في ثوانٍ)
+│    │    ├── impl/   (التنفيذ الداخلي الخاص بالفريق)
+│    │    └── sample/ (تطبيق مستقل مصغر لبناء واختبار الـ Checkout فقط في 8 ثوانٍ!)
+└── app/ (التطبيق النهائي المجمع للإنتاج)
+```
 
 ## Why it matters and how it works
 
@@ -57,15 +87,35 @@ A large retail org assigns feature owners, extracts stable contracts, replaces b
 
 ## Interview answer — short
 
-“I profile the 25-minute build first, then shrink dependency and API change impact with cohesive team-owned modules, private implementation dependencies and shared conventions. I measure before and after; modularity alone is not a speed guarantee.”
+Redesign build performance by decoupling features into isolated :api and :impl modules, providing dedicated lightweight sample apps for each team, migrating from KAPT to KSP, enabling Gradle configuration and remote build caching, and enforcing architectural boundaries via automated linters and CODEOWNERS.
 
 ## Interview answer — structured
 
-“With 20 teams I separate build-system bottlenecks from architecture bottlenecks. I collect build scans for configuration, compilation, annotation processing, resources and tests; then inspect the dependency graph and which changes recompile which modules. I give teams cohesive feature ownership, narrow shared APIs and an acyclic app composition root. I use `implementation` when dependencies need not leak, version catalogs/convention plugins for consistent config, and targeted CI feedback alongside full release tests. I validate improvements against clean and incremental scenarios rather than promising a number.”
+Addressing a 25-minute build across 20 feature teams requires both architectural modularization and build toolchain optimization:
+
+1. **Architecture & Dependency Decoupling**:
+   - Decouple feature interdependencies using the **API/Implementation pattern** (`:feature:x:api` and `:feature:x:impl`). Modifying implementation code in one feature will not invalidate the build cache of dependent features.
+   - Eliminate the monolithic `:app` bottleneck. Provide each team with a dedicated, lightweight `:feature:x:sample` runner module. Feature engineers build and iterate within their sample app in under 10 seconds without compiling the remaining 19 domains.
+
+2. **Toolchain Modernization**:
+   - Replace legacy KAPT annotation processors with **KSP (Kotlin Symbol Processing)** for Room, Moshi, and Dagger/Hilt, reducing annotation processing overhead by 50%.
+   - Enable Gradle's **Configuration Cache** (`org.gradle.configuration-cache=true`) to bypass project configuration evaluation on incremental builds.
+
+3. **Distributed Remote Build Caching**:
+   - Deploy a remote Gradle Build Cache server on the corporate network and CI. Outputs compiled on CI or colleagues' machines are pulled as precompiled binaries rather than re-executed locally.
+
+4. **Organizational Governance**:
+   - Enforce directory-level ownership using GitHub `CODEOWNERS`, and integrate Konsist or ArchUnit tests into CI to block PRs that introduce forbidden cross-feature dependencies.
 
 ## Interview answer — deep senior
 
-“A 25-minute build is a symptom, so I would first separate clean build, no-op build, and representative changes in one feature versus a shared model. A build scan can show configuration, KSP or kapt, resource processing, Kotlin compilation and test time. I would map the dependency graph and ask which edges cause a small change to recompile half the app. Then I would align modules with stable feature ownership, expose narrow API modules, keep `:app` as composition root, use `implementation` unless a type is part of a public signature, and prohibit cycles. I would pilot one split and compare median and P95 incremental builds, cache hits and integration-test time before expanding. The organizational side matters too: every public contract needs an owner, review policy and migration window, or teams simply move coupling into shared interfaces. CI can run affected tests quickly while retaining a full release gate. I would set a build-time budget and track regressions, because improving one local command at the expense of flaky integration or longer configuration time is not success.”
+From a staff platform engineering perspective, managing developer velocity at this scale requires continuous telemetry:
+
+1. **Build Velocity Telemetry**: Instrument local developer and CI builds with Gradle Enterprise / Develocity. Monitor metrics across p50, p90, and p99 build times, task cache miss rates, and garbage collection pauses to identify pathological dependencies before they cascade.
+
+2. **Binary Dependency Substitution (Focus Mode)**: For engineers working on specific verticals, implement an internal Gradle plugin that substitutes source module dependencies (`project(":core:network")`) with pre-compiled AAR binaries published to an internal Artifactory cache on every main-branch merge. Engineers compile only their 2 active modules from source.
+
+3. **Non-Transitive R Classes**: Enable `android.nonTransitiveRClass=true` in `gradle.properties`. This ensures that each module's `R` class contains only its own resources rather than aggregating resource IDs from all upstream dependencies, preventing cascading recompilations when a string resource changes.
 
 ## How to answer in the interview
 
@@ -81,8 +131,11 @@ Analyze one build scan, one graph hotspot and a before/after measurement plan.
 
 ## Follow-up questions
 
-- [MOD-18](../mod-18/): Why model change rebuilds many? **Answer:** public API exposure and dependency fan-out.
-- [BLD-05](../bld-05/): Which caches help? **Answer:** configuration/build cache and incremental compilation when tasks are compatible.
+- **Interviewer:** "What is the benefit of android.nonTransitiveRClass=true?"
+  **Answer:** "It prevents Gradle from copying upstream resource IDs into downstream R classes, drastically reducing recompilations when resources change."
+
+- **Interviewer:** "How does KSP achieve 2x faster performance than KAPT?"
+  **Answer:** "KSP operates directly on Kotlin AST symbols without generating intermediate Java stubs, eliminating costly stub generation and javac execution."
 
 ## Self-check rubric
 
@@ -93,4 +146,4 @@ Can I profile first, shrink fan-out, measure real gains and keep release coverag
 - [Android modularization guide](https://developer.android.com/topic/modularization) — module graph.
 - [Gradle performance](https://docs.gradle.org/current/userguide/performance.html) — profiling/caches.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

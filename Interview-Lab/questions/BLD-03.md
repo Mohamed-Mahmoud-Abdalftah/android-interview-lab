@@ -24,11 +24,42 @@ Compare APK and Android App Bundle (AAB).
 
 ## Explanation in Arabic
 
-APK هو package قابل للتثبيت على جهاز Android. AAB صيغة نشر تجمع code/resources/modules؛ Play أو distributor يحولها إلى APKs مناسبة للجهاز، مثل base/configuration/feature splits. لا يمكنك تثبيت AAB مباشرة مثل APK؛ استخدم bundletool أو Play testing لإنتاج APK set واختبار ما سيصل لجهاز معين. AAB تساعد في تقليل download عبر استبعاد موارد/ABIs غير اللازمة وقد تدعم dynamic delivery، لكن عليك اختبار packaging/لغة/ABI وsigning في مسار النشر الفعلي.
+قارن بين ملف الـ APK وملف الـ Android App Bundle (AAB)، ولماذا أصبح الـ AAB إلزامياً للنشر في Google Play؟
+
+1. ما هو ملف الـ APK (Android Package)؟
+   - هو الأرشيف التقليدي القابل للتثبيت مباشرة على أجهزة أندرويد (`.apk`).
+   - **مشكلته التاريخية (Fat APK)**: يحتوي على كل لغات العالم (ar, en, fr, zh)، وكل كثافات الشاشات (mdpi, hdpi, xhdpi, xxxhdpi)، وكل مكتبات الـ Native ABIs (arm64-v8a, armeabi-v7a, x86_64).
+   - المستخدم الذي يملك هاتف ARM64 بشاشة xhdpi يُجبر على تنزيل حجم هائل من الملفات والصور التي لن يستخدمها جهازه أبداً!
+
+2. ما هو ملف الـ AAB (Android App Bundle)؟
+   - هو صيغة نشر مضغوطة (`.aab`) تُرفع إلى Google Play Console وتتضمن كود وموارد التطبيق بالكامل مقسمة إلى موديولات.
+   - **لا يُثبت مباشرة على الهاتف**؛ بل يستخدم Google Play أداة `bundletool` لإنشاء **Split APKs** مخصصة لكل هاتف على حدة:
+     * **Base APK**: يحتوي على الكود المشترك والموارد الأساسية.
+     * **Configuration APKs**: يحتوي فقط على لغة جهاز المستخدم، كثافة شاشته، ومعمارية معالجه (CPU ABI).
+   - النتيجة: تقليص حجم التحميل بنسبة تصل إلى 35%!
+
+3. الميزات المتقدمة للـ AAB:
+   - **Dynamic Feature Delivery (Play Feature Delivery)**: إمكانية تنزيل ميزات التطبيق عند الطلب (On-Demand) دون تضمينها في التثبيت الأولي.
+   - **Play Asset Delivery**: لألعاب وتطبيقات الوسائط لتحميل الملفات الضخمة تلقائياً.
 
 ## Practical walkthrough
 
-APK حزمة install مباشرة، AAB حزمة نشر يشتق منها المتجر split APKs حسب الجهاز. نجاح universal debug APK لا يثبت إن ABI أو resources وصلت في Play split. خذ bundle المنتج، افحص splits باستخدام أدوات رسمية، وجرّب install/update على device matrix. احتفظ بالmapping وnative symbols لنفس artifact؛ حجم الـAAB وحده ليس حجم تنزيل المستخدم.
+توليد واختبار Split APKs محلياً من ملف AAB باستخدام أداة bundletool قبل النشر:
+```bash
+# 1. بناء ملف AAB في بيئة Release عبر Gradle:
+./gradlew :app:bundleRelease
+
+# 2. استخدام أداة bundletool الرسمية من Google لتوليد Split APKs مخصصة للهاتف المتصل حالياً:
+bundletool build-apks \
+  --bundle=app/build/outputs/bundle/release/app-release.aab \
+  --output=app-release.apks \
+  --connected-device \
+  --ks=release.keystore \
+  --ks-key-alias=release_key
+
+# 3. تثبيت الـ Split APKs الناتجة على الهاتف المتصل للتأكد من خلوها من أي مشاكل:
+bundletool install-apks --apks=app-release.apks
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +83,31 @@ Test AAB-derived APK sets on target ABIs/locales/densities, inspect size and con
 
 ## Interview answer — short
 
-“APK is installable; AAB is a publishing format that a distributor processes into device-targeted APKs, potentially including splits and dynamic features.”
+An APK is a monolithic, directly installable package containing all languages, screen densities, and CPU ABIs. An AAB is an upload format containing modular app components from which Google Play dynamically generates optimized Split APKs tailored to each user's device specs, reducing download size by up to 35%.
 
 ## Interview answer — structured
 
-“I build an APK when I need a directly installable package. For Play publishing I upload an AAB; Play produces suitable APKs for each device from its code, resources and modules. The bundle itself is not installed with adb. To validate a release, I use bundletool or an internal Play track and test representative ABI and locale configurations, because a universal debug APK can hide split-packaging bugs.”
+Comparing APK and Android App Bundle (AAB) highlights a shift from fat client binaries to dynamic server-side artifact delivery:
+
+1. **Monolithic APK (Android Package)**:
+   - Directly installable via `adb install`. Traditionally packages all density assets (hdpi to xxxhdpi), localized string tables, and native CPU architectures (`armeabi-v7a`, `arm64-v8a`, `x86_64`). This bloats download sizes and wastes user bandwidth.
+
+2. **Android App Bundle (AAB)**:
+   - Google Play's mandatory publishing format (since August 2021). Developers upload a single `.aab` file containing compiled DEX, compiled resources, and modular splits.
+   - Google Play uses `bundletool` server-side to generate optimized **Split APKs**: a small Base APK accompanied by targeted configuration splits matching only the user's specific ABI, screen density, and device language.
+
+3. **Dynamic Delivery Capabilities**:
+   - AAB enables **Play Feature Delivery** (downloading optional modules on-demand or based on conditional hardware capabilities) and **Play Asset Delivery** for multi-gigabyte media packages, avoiding external downloader architectures.
 
 ## Interview answer — deep senior
 
-“The key difference is artifact role. An APK is the Android package a device installs. An App Bundle is a publishing input containing modules and resources; Google Play or another supporting distributor processes it into installable APKs, often selecting ABI, density and language resources and feature splits for the device. This can reduce downloaded bytes and enable on-demand features, but it means a locally installed universal debug APK is not sufficient evidence for the Play-delivered release. I generate an APK set from the AAB with bundletool for representative device specs, install it on emulators or devices, and exercise native-library and resource paths. I also test an internal Play track to cover the real signing/delivery path. If one ABI crashes with `UnsatisfiedLinkError`, I inspect which split contained the `.so` and the native dependency's supported ABIs. I distinguish the upload key used to submit the bundle from the app-signing key that signs delivered APKs under Play App Signing. AAB is not a runtime format that I pass directly to `adb install`.”
+From a release engineering perspective, adopting AAB introduces cryptographic and QA testing considerations:
+
+1. **Play App Signing Prerequisite**: Publishing with AAB mandates Google Play App Signing. Developers sign the AAB using an Upload Key, while Google manages the master App Signing Key inside Google's secure infrastructure to sign generated Split APKs. If the upload key is lost, Google can reset it without abandoning the application ID.
+
+2. **Local QA Verification with bundletool**: Because `.aab` files cannot be installed via `adb install` directly, QA teams must use Google's `bundletool` CLI. Generate device-spec JSON files (`bundletool get-device-spec --output=device.json`), produce the APKS set, and test split APK installation across local test devices.
+
+3. **Language Switching In-App Pitfall**: On older Android versions, Split APKs only bundle the system language selected at install. If an app provides an in-app language picker to switch to French, but French strings were stripped out by dynamic delivery, the app crashes or shows missing strings. Apps must use AndroidX `PlayCore` / `SplitInstallManager` to request deferred language splits.
 
 ## How to answer in the interview
 
@@ -76,9 +123,11 @@ Discuss installable package, bundle processing, splits, ABI/locales, bundletool 
 
 ## Follow-up questions
 
-- Can `adb install` install an AAB directly? **Answer:** no; first generate installable APKs through a supported tool/distributor.
-- Why test ABI-specific APK sets? **Answer:** targeted splits may omit or mispackage native code only on some devices.
-- Does AAB guarantee smaller downloads for every app? **Answer:** not universally; inspect actual delivered artifacts and configuration.
+- **Interviewer:** "Can an AAB be installed directly on a device without bundletool or Google Play?"
+  **Answer:** "No; Android OS package managers understand only APK files; AAB must be transformed into APKs by bundletool or an app store."
+
+- **Interviewer:** "What is the maximum download size for the base APK generated from an AAB on Google Play?"
+  **Answer:** "Google Play allows up to 200MB compressed download size for generated base APKs; larger assets must use Play Asset Delivery."
 
 ## Self-check rubric
 
@@ -89,4 +138,4 @@ Name artifact roles, describe split generation, and specify a release delivery t
 - [Android App Bundle FAQ](https://developer.android.com/guide/app-bundle/faq) — APK versus AAB.
 - [Build and test an App Bundle](https://developer.android.com/guide/app-bundle/test) — bundletool validation.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Size benefit depends on app contents.
+Technically reviewed against primary documentation on 2026-10-13.

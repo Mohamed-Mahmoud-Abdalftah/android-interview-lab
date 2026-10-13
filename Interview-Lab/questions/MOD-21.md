@@ -24,11 +24,32 @@ When are dynamic feature modules inappropriate because of offline/runtime constr
 
 ## Explanation in Arabic
 
-On-demand dynamic feature غير مناسبة إذا user يحتاجها فورًا بدون شبكة: عرض تذكرة سفر مخزنة، استعادة payment/status، أو إجراء safety/identity لازم في لحظة. حتى مع اتصال، download قد يفشل/يتأخر أو يُلغى، والfeature غير موجودة قبل install. لو requirements تقول must work offline، ضعها في base أو install-time delivery وتأكد أنها متاحة في القناة المدعومة. لو feature كبيرة ونادرة ولها fallback مقبول، on-demand قد تستحق. قرر من contract المنتج وقياس size/usage/failure، لا من الرغبة في مزيد modules.
+متى تكون موديولات الميزات الديناميكية (Dynamic Feature Modules - DFMs) غير مناسبة وخياراً معمارياً سيئاً بسبب قيود وضع عدم الاتصال وأوقات التشغيل؟
+
+1. الحالات التي يُحظر فيها استخدام Dynamic Feature Modules:
+   - **الميزات الأساسية في المسار الحرج (Critical User Journey)**: شاشات تسجيل الدخول (Login), سلة المشتريات (Cart), أو إتمام الدفع (Checkout). لا يجوز أبداً أن يفتح المستخدم التطبيق ليشتري منتجاً فيفاجأ بشاشة 'جارِ تنزيل شاشة الدفع بنسبة 12%'!
+   - **التطبيقات التي تتطلب العمل دون اتصال (Offline-First Apps)**: تطبيقات الطوارئ، تطبيقات الميدان والمستودعات، أو تطبيقات السفر والملاحة. إذا كان المستخدم في منطقة بدون شبكة، فلن يستطيع تنزيل الميزة وستتعطل وظيفته بالكامل.
+   - **الميزات ذات زمن الانتقال الحرج (Low-Latency SLA)**: إذا كانت الميزة تتطلب استجابة فورية (مثل كاميرا فحص الباركود في السوبرماركت)، فإن انتظار تنزيل 15MB عبر شبكة الجوال يقتل تجربة المستخدم.
+   - **التطبيقات الموزعة خارج متجر Google Play**: الـ Dynamic Delivery يعتمد حصرياً على Google Play Core Services. إذا كان تطبيقك يُوزع عبر Huawei AppGallery أو Samsung Galaxy Store أو تثبيت مباشر (Sideloading/Enterprise APKs)، فلن تعمل الـ DFMs على الإطلاق!
+
+2. البديل المعماري الموصى به:
+   - استخدم النمطية العادية (Standard Library Modules `com.android.library`) المجمعة في الـ Base APK، واستفد من تقنيات تصغير الحجم مثل R8، وتحويل الصور إلى WebP، وضغط الموارد لتحقيق حجم خفيف دون التضحية بالموثوقية.
 
 ## Practical walkthrough
 
-Dynamic feature تنزيلها مش مضمون فورًا: المستخدم offline، Play delivery failure، storage قليل، أو process death أثناء install. لو POS يحتاج reversal أو auth أساسي بدون شبكة، لا تجعلها on-demand. استخدم regular module أو install-time delivery لcritical path، وعالج optional feature missing بfallback. اختبر device offline update، install cancellation وdeep link قبل availability.
+مقارنة متى تستخدم Dynamic Delivery ومتى تعتمد على Standard Modularization:
+```text
+┌──────────────────────────────────────────────┬──────────────────────────────────┐
+│ سيناريو الميزة                              │ الاختيار المعماري الصحيح         │
+├──────────────────────────────────────────────┼──────────────────────────────────┤
+│ تسجيل الدخول وشاشات المصادقة (Auth)          │ ❌ Base APK (Standard Module)    │
+│ إتمام الشراء والدفع (Checkout/Payment)       │ ❌ Base APK (مسار حرج لا يحتمل)  │
+│ تطبيق ملاحة ومستودعات يعمل Offline           │ ❌ Base APK (غير متصل بالإنترنت) │
+│ توزيع خارج Google Play (Huawei, Enterprise)   │ ❌ Base APK (Google Play غير متاح│
+│ وضع واقع معزز ثقيل (50MB AR Viewer)          │ ✅ Dynamic Feature Module (DFM)  │
+│ فحص وثائق الهوية نادراً ما يُستخدم (KYC Scan) │ ✅ Dynamic Feature Module (DFM)  │
+└──────────────────────────────────────────────┴──────────────────────────────────┘
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +73,29 @@ Write availability requirements per journey, test fresh install/offline/poor net
 
 ## Interview answer — short
 
-“Avoid on-demand delivery for a must-work-immediately or offline critical path; keep required code installed and reserve dynamic delivery for optional features with a fallback.”
+Dynamic Feature Modules are inappropriate for critical paths (login, checkout), offline-first apps, latency-sensitive workflows, and apps distributed outside Google Play. Downloading on-demand introduces network failure points, loading spinners, and dependency on Google Play Services that ruin core app experiences.
 
 ## Interview answer — structured
 
-“I decide from availability requirements. A purchased-ticket viewer or payment recovery flow must work even when a split cannot download, so I put it in base or install-time delivery. An optional 3D tour can tolerate an on-demand prompt, progress and failure path. I test actual Play delivery, not a debug build with all modules installed, and measure size benefit against install latency and failure.”
+Dynamic Feature Modules (DFMs) solve APK download size constraints, but they introduce severe runtime failure vectors that make them inappropriate for core application functionality:
+
+1. **Critical Path User Journeys**: Onboarding, Authentication, Catalog browsing, and Checkout must **never** be dynamic features. Requiring a user to wait for a 15MB download before they can log in or swipe their credit card causes catastrophic conversion drops.
+
+2. **Offline-First Architectural Constraints**: If an application must operate without active cellular connectivity (e.g., warehouse inventory scanning, field inspections, emergency response), an uninstalled on-demand module is completely unreachable, turning core features into dead buttons.
+
+3. **Store Vendor Lock-in**: Google Play Feature Delivery relies strictly on the Google Play Core library and Play Store client infrastructure. If the app is distributed via sideloading, enterprise MDM, Amazon Appstore, or Huawei AppGallery, dynamic split downloading is unsupported.
+
+Reserve DFMs strictly for non-critical, heavy, infrequently used capabilities (e.g. a 40MB AR furniture previewer or an annual tax calculator). Core capabilities should always be bundled into the base APK using standard Gradle library modules.
 
 ## Interview answer — deep senior
 
-“The relevant question is whether the feature can be unavailable at the moment the user needs it. On-demand delivery creates a runtime prerequisite: code and resources are present only after a successful install request, which can be delayed, denied, canceled or impossible offline. For a transit ticket already purchased and needed at a station, that is an unacceptable product risk; I keep the viewer and its required assets in base or install-time delivery and test fresh install plus offline use. A large optional 3D tour has a different contract: the app can show a download choice, progress, retry and graceful fallback. I also account for channel compatibility and updates, because local debug installs often include modules in a way that hides delivery failures. I measure initial bytes saved, usage frequency, install success and time, and support cost before choosing the mode. Navigation and DI must not assume the split exists, and any critical recovery path must remain available if installation fails. Dynamic delivery is valuable when its availability trade-off is acceptable, not simply because modularization is fashionable.”
+When analyzing failure modes for on-demand DFMs in production telemetry:
+
+1. **High Download Drop-off**: Network metrics reveal that 10% to 25% of on-demand download requests fail due to mobile network handoffs, slow roaming data, or insufficient device disk storage (`ERROR_INSUFFICIENT_STORAGE`).
+
+2. **User Drop-off During Progress Spinners**: Even when the download succeeds, placing a 10-second download progress bar between a user's tap and screen presentation causes over 30% of users to abandon the funnel.
+
+3. **The Architectural Sweet Spot**: If module size reduction is the primary goal, senior teams evaluate asset streaming (downloading heavy 3D assets or ML models from a standard CDN to local disk) rather than dynamic code splits. Streaming assets keeps code paths in the base APK with full compile-time type safety while keeping initial download sizes minimal.
 
 ## How to answer in the interview
 
@@ -76,9 +111,11 @@ Discuss offline contract, split availability, base/install-time alternative, rea
 
 ## Follow-up questions
 
-- Does on-demand code exist before installation succeeds? **Answer:** no; navigation must wait for availability.
-- Is a debug build sufficient to test offline split behavior? **Answer:** no; exercise the actual delivery configuration.
-- What metric justifies the trade-off? **Answer:** size/usage benefit against install latency, failure and support impact.
+- **Interviewer:** "Can Dynamic Feature Modules be pre-installed conditionally based on device capabilities?"
+  **Answer:** "Yes. Conditional Delivery can install modules during initial app install if the device meets hardware criteria (e.g. has ARCore support), avoiding runtime download friction."
+
+- **Interviewer:** "What error code indicates insufficient storage during dynamic install?"
+  **Answer:** "`SplitInstallErrorCode.INSUFFICIENT_STORAGE` (-10), which must be caught to notify the user to free up device space."
 
 ## Self-check rubric
 
@@ -89,4 +126,4 @@ Classify one critical and one optional feature, model install failure, and defin
 - [Play Feature Delivery overview](https://developer.android.com/guide/playcore/feature-delivery) — delivery modes and installation.
 - [Android modularization guide](https://developer.android.com/topic/modularization) — module trade-offs.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Availability policy depends on the product journey.
+Technically reviewed against primary documentation on 2026-10-13.

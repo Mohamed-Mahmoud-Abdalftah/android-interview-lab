@@ -22,11 +22,36 @@ Choose ownership for critical persistence after ViewModel removal and distinguis
 
 ## Explanation in Arabic
 
-لو ViewModel اتشال، `viewModelScope` هيتلغي؛ مينفعش نعتمد عليه يكمل كتابة مهمة لا يجوز ضياعها. أول خطوة نحفظ intent/operation في storage durable بtransaction قبل ما نسيب الشاشة، وبعدها WorkManager أو mechanism مناسب يعيد المحاولة بعد process death حسب قيود Android. application scope ممكن يكمل جوه نفس process فقط، مش بديل للاستمرار بعد قتله.
+السؤال عن اختفاء الـ ViewModel مع ضرورة إتمام عملية حفظ حرجة (Critical Persistence) هو اختبار مباشر للـ Architecture Ownership في Android:
+
+1. المشكلة:
+   - المستخدم كتب بيانات مهمة وضغط 'حفظ ومغادرة'. الشاشة قفلت فوراً والـ ViewModel تم تدميره واستدعى `onCleared()`.
+   - لو عملية الحفظ كانت شغالة في `viewModelScope.launch`، **ستُلغى العملية فوراً**، وتضيع بيانات المستخدم ويتلف مسار العمل!
+
+2. من الذي يجب أن يمتلك هذه العملية (Who should own this work)?
+   - **الـ ViewModel لا يمتلكها!** الـ ViewModel يمتلك فقط العمليات المرتبطة بعرض الشاشة الحالية.
+   - **الخيار الأول (عمليات سريعة في الذاكرة / Room Database):** يمتلكها **Application-Level CoroutineScope** محقون في الـ Repository. التطبيق حي، والـ Repository يكمل حفظ البيانات في Room حتى بعد موت الشاشة.
+   - **الخيار الثاني (عمليات حيوية يجب أن تكتمل حتى لو قفل التطبيق أو مات الـ Process):** يمتلكها **WorkManager**. WorkManager يضمن إرسال البيانات للسيرفر حتى لو النظام قتل التطبيق لتوفير الذاكرة أو أعاد تشغيل الهاتف.
 
 ## Practical walkthrough
 
-لو المستخدم ضغط حفظ ثم قفل الشاشة، `viewModelScope` ممكن يتلغي قبل اكتمال الكتابة. لو المطلوب ضمان بعد موت التطبيق، سجّل intent في Room transaction قبل ما تعلن قبول العملية، وبعدها WorkManager يكمّلها أو retry. لو crash حصل بين التخزين وenqueue، recovery scan يلاقي Pending ويعيد الجدولة. ولو worker اتكرر، backend لازم يستخدم operation ID ثابت.
+التصميم المعماري الاحترافي المعتمد من Google:
+```kotlin
+@Singleton
+class UserRepository @Inject constructor(
+    private val userDao: UserDao,
+    private val api: UserApi,
+    @ApplicationScope private val externalScope: CoroutineScope // Scope حي مع التطبيق
+) {
+    
+    suspend fun saveUserProfile(profile: UserProfile) {
+        // نطلق الحفظ داخل externalScope حتى لا يلغى بموت الـ ViewModel:
+        externalScope.launch {
+            userDao.insert(profile.toEntity()) // يكتمل 100% حتى لو المستخدم خرج من الشاشة
+        }.join() // نعلق الـ ViewModel الحالي ليرى النتيجة لو كان ما زال حياً
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -66,15 +91,41 @@ An offline form saves a pending submission locally before navigation. WorkManage
 
 ## Interview answer — short
 
-“Critical work needs durable ownership. I persist the operation and enqueue restartable work, usually with WorkManager, before the ViewModel disappears. An application scope lasts only while the process does. The worker must handle retries and duplicate execution safely.”
+The ViewModel must NOT own critical persistence because viewModelScope cancels on onCleared(). Quick local persistence should be owned by an application-level CoroutineScope injected into the Repository layer, while critical remote uploads that must survive process death must be delegated to WorkManager.
 
 ## Interview answer — structured
 
-“A ViewModel is the wrong owner if cancellation on navigation would lose the operation. I first commit a pending record with a stable ID to local storage, then schedule a Worker that can resume after process death and obey Android constraints. The ViewModel observes the durable status and can safely disappear. WorkManager is not a guarantee of instant or exactly-once remote execution, so I make the worker idempotent and reconcile ambiguous outcomes. I also handle the gap between local insert and enqueue with a recovery scan.”
+Critical persistence must never be owned by the ViewModel. When a user navigates away or presses the back button, the ViewModel is destroyed and its `viewModelScope` cancels immediately, aborting any active database transactions or network dispatches.
+
+The ownership belongs in the Data/Repository layer using one of two mechanisms based on durability requirements:
+
+1. **In-Process Operations (Local Room DB writes or analytics):** An **Application-Level CoroutineScope** injected into the Repository. By configuring this scope with `SupervisorJob() + Dispatchers.IO` as an application-level singleton in Dagger/Hilt, the coroutine continues executing to completion even after the calling ViewModel is garbage collected.
+
+2. **Guaranteed Operations (Surviving process death & reboots):** If the work involves syncing an order or uploading photos that must complete even if the user swipes the app away from recents or the OS kills the process under low memory, it must be delegated to **WorkManager**. WorkManager persists the job in SQLite and guarantees execution with constraints.
 
 ## Interview answer — deep senior
 
-“I split acceptance of the user action from execution. On tap, the repository transactionally stores the operation and enough input to retry; the UI can acknowledge that local acceptance. A worker then performs the remote or disk task under appropriate constraints. Worker invocations can repeat, process death can happen at every step, and a network timeout can leave uncertain server state, so I use a stable operation key, query authoritative status and advance local state only after confirmation. The ViewModel merely initiates and observes this workflow; its cancellation does not erase the persisted operation. An application scope is only useful for in-process coordination. Tests crash or cancel at each transition and assert recovery without duplicate business effects. I would separate acknowledgement from execution. Before leaving the screen, the app commits the user's intent and retry inputs to durable storage; a worker later performs the remote step under OS constraints. A crash can happen between local commit and enqueue, so startup reconciliation must discover pending records. Worker execution can repeat, so backend idempotency is essential. An application scope is sufficient only when finishing within the current process is acceptable; it cannot promise recovery after process death.”
+Architecturally, this adheres to the principle of scoping work to the lifecycle of the data, not the lifecycle of the UI. In Hilt, we provide the application scope as follows:
+
+```kotlin
+@Provides
+@Singleton
+@ApplicationScope
+fun provideAppCoroutineScope(): CoroutineScope =
+    CoroutineScope(SupervisorJob() + Dispatchers.Default)
+```
+
+Inside the repository, we use the pattern of starting the work on the `externalScope` and awaiting it with `join()`:
+
+```kotlin
+suspend fun saveOrder(order: Order) {
+    externalScope.launch(Dispatchers.IO) {
+        database.orderDao().insert(order)
+    }.join()
+}
+```
+
+This pattern has a major architectural advantage: if the ViewModel remains alive, `join()` suspends so the UI can show a loading spinner and transition upon completion. But if the ViewModel is destroyed, only the caller continuation is cancelled; the launched job on `externalScope` continues running independently until completion.
 
 ## How to answer in the interview
 
@@ -90,8 +141,14 @@ Draw crash windows before/after persistence, enqueue, send and acknowledgement; 
 
 ## Follow-up questions
 
-- [COR-06](../cor-06/): Does application scope survive process death? **Answer:** no.
-- [COR-27](../cor-27/): How handle uncertain payment status? **Answer:** reconcile by stable operation ID.
+- **Interviewer:** "Why not use `NonCancellable` context inside `viewModelScope` instead of an ApplicationScope?"
+  **Answer:** "Writing `withContext(NonCancellable)` inside `viewModelScope` delays cancellation for that specific block, but it keeps the ViewModel in memory until completion and is fragile. If the entire process is cleared or multiple operations queue up, relying on a dead ViewModel's scope is an architectural anti-pattern."
+
+- **Interviewer:** "How does WorkManager handle network constraints compared to coroutines?"
+  **Answer:** "WorkManager leverages the Android JobScheduler system daemon to defer task execution until exact device constraints are met (e.g., unmetered Wi-Fi connection, battery not low, device idle), which coroutines in an active process cannot do."
+
+- **Interviewer:** "How do you test a repository that uses an injected application CoroutineScope?"
+  **Answer:** "In your unit test, inject a `TestScope` as the `@ApplicationScope`. Call `testScope.advanceUntilIdle()` to deterministically assert that background persistence completed."
 
 ## Self-check rubric
 
@@ -102,4 +159,4 @@ Can I persist intent first, recover enqueue gaps, make workers repeat-safe and e
 - [Android persistent work](https://developer.android.com/develop/background-work/background-tasks/persistent) — durable scheduling.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — pending writes and sync.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

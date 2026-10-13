@@ -23,11 +23,54 @@ A database migration fails only with old customer data. How do you generate real
 
 ## Explanation in Arabic
 
-Migration تفشل مع بيانات قديمة لأن fixture النظيفة لا تمثل الواقع. اجمع shape من schemas التاريخية وtelemetry آمنة بدون PII: null fields، duplicates، missing relations، Unicode/Arabic، long text، قيم enum قديمة. حدّد merge rule قبل الاختبار؛ لو v3 أضاف unique merchant ID والقديم فيه duplicates، مين الصف canonical وأين تذهب references؟ أنشئ DB لكل إصدار مدعوم، شغّل upgrade للمستهدف، ثم assert على row count، chosen values، indexes وforeign keys.
+ترقية قاعدة بيانات (Room Migration) تفشل فقط عند تطبيقها على بيانات حقيقية لعملاء قدامى في الإنتاج. كيف تنشئ عينات اختبار واقعية (Realistic Fixtures) لحل المشكلة؟
+
+1. لماذا تفشل الترقيات على بيانات الإنتاج وتنجح في الاختبارات البسيطة؟
+   - في الاختبارات الأولية، يختبر المطور بيانات مثالية ونظيفة (`User("1", "Ahmed")`).
+   - في بيانات الإنتاج الواقعية لآلاف العملاء القدامى، توجد حالات شاذة:
+     * حقول قديمة تحتوي على قيم `NULL` بينما يفرض الـ Migration الجديد `NOT NULL` بدون قيمة افتراضية!
+     * نصوص تحتوي على Emojis ورموز غير قياسية (Unicode Characters).
+     * سجلات تالفة أو مفاتيح خارجية مفقودة (Orphaned Foreign Keys) بسبب انهيارات قديمة.
+     * جداول ضخمة تحتوي على ملايين السجلات تستهلك الذاكرة وتتجاوز مهلة الـ SQLite Transaction.
+
+2. كيفية إنشاء Realistic Test Fixtures حتمية:
+   - **أخذ نسخة مشفرة ومطهرة (Anonymized & Sanitized DB Dump)**: استخراج عينة من قاعدة بيانات إنتاج قديمة، وتطهيرها من جميع البيانات الحساسة (PII) لاستخدامها كملف اختبار.
+   - **إنشاء سكريبت ملء بيانات شاذة (Dirty Data Populator)**: إدخال بيانات تحتوي على نصوص فارغة، رموز صينية، أرقام سالبة، وقيم قصوى في جدول الـ v1 قبل بدء الـ Migration.
+   - **فحص استثناء `SQLiteConstraintException`** وإصلاح الـ SQL بإضافة `DEFAULT` values أو تنظيف السجلات التالفة داخل الـ Migration نفسه.
 
 ## Practical walkthrough
 
-اختبر transaction rollback عند failure ولا تعتمد على “schema validation passed”. ممكن anonymized fixture لكن لا تنسخ بيانات عميل حقيقية إلى repo. بعد dry run على supported versions، نفّذ rollout تدريجي ورصد migration crash/OOM، وخطة recovery لا تفترض downgrade.
+إنشاء عينة بيانات إنتاج معقدة وشاذة واختبار هجرة Room المخصصة عليها:
+```kotlin
+@RunWith(AndroidJUnit4::class)
+class RealisticCustomerMigrationTest {
+    @get:Rule
+    val helper = MigrationTestHelper(
+        InstrumentationRegistry.getInstrumentation(),
+        AppDatabase::class.java
+    )
+
+    @Test
+    fun migration2To3_handlesDirtyCustomerDataGracefully() {
+        val dbV2 = helper.createDatabase("dirty-data-test.db", 2).apply {
+            // 1. إدخال بيانات غير مثالية ومطابقة لحالات الإنتاج الواقعية:
+            execSQL("INSERT INTO customers (id, name, legacy_email) VALUES ('c1', 'Ali 😊', NULL)") // Legacy email is NULL!
+            execSQL("INSERT INTO customers (id, name, legacy_email) VALUES ('c2', '', 'user@test.com')") // Empty name!
+            close()
+        }
+
+        // 2. تنفيذ الـ Migration الذي يضيف عمود NOT NULL:
+        // إذا لم يكن كود الـ Migration يحتوي على DEFAULT value صريح، سيفشل هذا السطر برمي SQLiteConstraintException!
+        val dbV3 = helper.runMigrationsAndValidate("dirty-data-test.db", 3, true, MIGRATION_2_3)
+
+        // 3. التحقق من بقاء بيانات العميل c1 دون انهيار واستبدال الـ NULL بقيمة آمنة:
+        val cursor = dbV3.query("SELECT id, name, standardized_email FROM customers WHERE id = 'c1'")
+        assertTrue(cursor.moveToFirst())
+        assertEquals("Ali 😊", cursor.getString(1))
+        assertEquals("no-email@domain.com", cursor.getString(2))
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +94,34 @@ CI archives schema JSON for each release, validates all upgrade paths on represe
 
 ## Interview answer — short
 
-“I use exported historical schemas and synthetic fixtures modeled on old customer data shapes: nulls, duplicates, Unicode, large tables and old enum values. I test every supported upgrade path and assert transformed data and constraints.”
+Generate realistic fixtures by creating pre-migration v1 SQLite databases populated with dirty legacy data: null values in deprecated columns, Unicode/emoji strings, and orphaned keys. Test using MigrationTestHelper to ensure ALTER TABLE and copy queries handle edge cases without SQLiteConstraintExceptions.
 
 ## Interview answer — structured
 
-“A migration is a function over every database shape allowed by previous releases, not just an empty schema. I keep exported Room schemas, create fixtures with realistic boundaries and use MigrationTestHelper to upgrade from each supported version. I assert row content, indexes, foreign keys and no unintended loss. Production aggregates and incidents guide fixture design, but CI should not contain raw customer records.”
+Database migrations frequently pass clean unit tests but crash on real devices due to historical dirty data accumulated across years of app usage:
+
+1. **Production Dirty Data Realities**:
+   - Adding a `NOT NULL` column to an existing table without an explicit `DEFAULT` value fails when legacy rows exist.
+   - Historical rows with `NULL` or empty strings in fields previously unconstrained.
+   - Broken foreign keys (orphaned rows) resulting from unconstrained deletes in legacy app versions.
+   - Non-standard UTF-8 strings (emojis, RTL Arabic scripts, zero-width spaces).
+
+2. **Constructing Realistic Test Fixtures**:
+   - Use `helper.createDatabase(DB_NAME, oldVersion)` to boot the historical schema.
+   - Populate the table with adversarial edge-case fixtures: `NULL` entries, 50,000 dummy rows to test SQLite transaction memory limits, malformed timestamps, and corrupted foreign key IDs.
+
+3. **Hardening Migration Logic**:
+   - Update manual SQL migrations to scrub or sanitize dirty data inline: execute `UPDATE customers SET email = 'unknown' WHERE email IS NULL` before executing the `ALTER TABLE` statement or table-copy routine.
 
 ## Interview answer — deep senior
 
-“I reproduce the old data shape, not just the old table definition. I start from exported schemas and supported installed versions, then build fixtures with the kinds of rows that trigger real migrations: null legacy values, duplicate merchant identifiers, orphaned references, Arabic or Unicode names and long text. If a new unique index requires merging duplicates, the product and backend owners must decide the deterministic canonical-row rule before code is written. For each supported upgrade path I run the migration and assert row count, chosen values, foreign-key integrity, indexes and any derived totals. I also inject a failure mid-migration to verify transactional rollback or the documented recovery path. A helper that validates only the final schema cannot tell me whether the wrong customer row survived. I keep fixtures synthetic or anonymized, never raw customer records in source control. Before release I test on a device/emulator with a representative file-backed database and release-like build, stage the rollout, and watch migration failures by source version. A database downgrade after users have opened the new schema is not a safe automatic rollback plan.”
+From an operational data integrity perspective, preventing migration crashes requires defensive SQL design:
+
+1. **Table Recreation Pattern for Complex Migrations**: SQLite versions prior to 3.35.0 do not support dropping columns. Complex migrations require: (1) creating `new_table`, (2) copying sanitized rows with `INSERT OR IGNORE INTO new_table SELECT ... FROM old_table`, (3) dropping `old_table`, and (4) renaming `new_table` to `old_table`. Test this exact 4-step sequence against dirty fixtures.
+
+2. **Sanitized Production Snapshot Testing**: For high-risk financial migrations, export an anonymized SQLite dump from an internal test account that has existed through 5 years of production upgrades. Load this real SQLite binary directly into an instrumented migration test fixture in CI.
+
+3. **Transaction Rollback Safety**: Verify that if a migration statement fails mid-script, the entire migration aborts atomically without leaving the database in an unrecoverable mixed-version schema state.
 
 ## How to answer in the interview
 
@@ -75,8 +137,11 @@ Prompt for exported schemas, production shape not raw PII, duplicate resolution,
 
 ## Follow-up questions
 
-- [TST-11](../tst-11/): What tool tests old Room schemas? **Answer:** MigrationTestHelper with exported schemas.
-- [CIC-14](../cic-14/): Why stage migration release? **Answer:** detect data-shape failures before full rollout.
+- **Interviewer:** "Why does adding a NOT NULL column without a DEFAULT fail in SQLite?"
+  **Answer:** "Because SQLite cannot populate existing historical rows for the new column, triggering an immediate SQLiteConstraintException: Cannot add a NOT NULL column with default value NULL."
+
+- **Interviewer:** "What is the 12-step table recreation procedure in SQLite?"
+  **Answer:** "The official SQLite pattern for modifying existing table structures (such as changing column constraints or types) by copying data into a newly created schema and dropping the old table."
 
 ## Self-check rubric
 
@@ -87,4 +152,4 @@ Seed every supported old schema with duplicate, null, Arabic/Unicode and long-te
 - [Room migration testing](https://developer.android.com/training/data-storage/room/migrating-db-versions) — exported schemas and helper.
 - [Room migration overview](https://developer.android.com/training/data-storage/room/migrating-db-versions) — migration paths.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

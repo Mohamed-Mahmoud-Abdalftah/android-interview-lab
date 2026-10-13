@@ -23,11 +23,58 @@ An embedded TLS certificate expires. How do you rotate pins without bricking the
 
 ## Explanation in Arabic
 
-لو certificate embedded كpin وانتهت أو اتبدلت key، النسخ القديمة ممكن تفقد الاتصال حتى لو الشهادة الجديدة valid. نستخدم public-key pins بمفتاح backup مختلف، ننشره قبل switch، نختبر أقدم app مدعوم، ونراقب الأخطاء. صلاحية pin في config مش magic fix؛ لو انتهت هتقل الحماية. ما نفتحش trust-all عشان نرجع الخدمة.
+انتهت صلاحية شهادة TLS المثبتة (Pinned Certificate) في التطبيق. كيف تقوم بتدوير الـ Pins وحل المشكلة دون تعطيل التطبيق (Bricking)؟
+
+1. سيناريو الكارثة:
+   - تطبيق مثبت لدى ملايين المستخدمين يحتوي على Certificate Pinning لشهادة انتهت صلاحيتها، أو اضطر السيرفر لتغييرها فجأة.
+   - النتيجة: كل مستخدم يفتح التطبيق يواجه خطأ `SSLPeerUnverifiedException`، وتفشل كل الاتصالات بالكامل!
+   - لا يستطيع التطبيق حتى الاتصال بالسيرفر لمعرفة الـ Pin الجديد!
+
+2. خطوات الإنقاذ الفوري (Disaster Recovery Operations):
+   - **السيناريو الأفضل: استخدام نفس الـ Key Pair**: إذا كان التطبيق يثبت الـ Public Key (SPKI Pinning) وليس ملف الشهادة، يمكن لفريق السيرفر إصدار شهادة جديدة تماماً بنفس المفتاح الخاص الأصلي (CSR)! في هذه الحالة، تستمر كل التطبيقات في العمل فوراً بدون أي مشكلة!
+   - **تفعيل المفتاح الاحتياطي (Backup Pin)**: إذا كانت المعمارية تحتوي على Backup Pin في الكود، يقوم فريق البنية التحتية بنشر الشهادة الاحتياطية على خوادم الـ Load Balancer فوراً.
+   - **انتهاء الصلاحية المبرمج في Network Security Config**: إذا كان ملف `network_security_config.xml` يحتوي على تاريخ انتهاء (`expiration="YYYY-MM-DD"`)، فإن النظام يتوقف تلقائياً عن فرض الـ Pinning بعد ذلك التاريخ ويعود للتحقق عبر الـ CAs الطبيعية.
+
+3. إذا كان التطبيق معطلاً بالكامل ولا يوجد مفتاح احتياطي:
+   - **التواصل عبر قنوات بديلة**: إرسال إشعار FCM فوري للمستخدمين (خوادم FCM تتبع Google ولا تتأثر بالـ Pinning الخاص بتطبيقك) لإبلاغهم بضرورة تحديث التطبيق.
+   - **إطلاق تحديث طارئ (Emergency Hotfix Release)** على Google Play مع رفع نسبة التوزيع إلى 100% وتفعيل ميزة In-App Update فور استعادة الاتصال.
 
 ## Practical walkthrough
 
-لو شهادة TLS انتهت، ده غير إن SPKI اتغيّرت. لو pin على public key والrenewal احتفظ بنفس key، pin قد تفضل صالحة؛ لو key اتبدلت، النسخ القديمة تحتاج backup pin مشحونة مسبقًا. اعمل جدول فيه app versions والـpins اللي كل نسخة تعرفها ومواعيد انتهاء الشهادات. ما تستخدمش trust-all كـemergency fix؛ ده يحوّل outage لثغرة.
+استراتيجية معالجة أخطاء الـ Pinning وتوفير دومين احتياطي (Fallback Domain) للإنعاش:
+```kotlin
+class ResilientNetworkClient {
+    // 1. عميل الشبكة الأساسي المزود بـ Certificate Pinning الصارم:
+    val primaryClient: OkHttpClient = OkHttpClient.Builder()
+        .certificatePinner(
+            CertificatePinner.Builder()
+                .add("api.example.com", "sha256/PRIMARY_KEY_HASH=")
+                .add("api.example.com", "sha256/BACKUP_KEY_HASH=") // مفتاح احتياطي للطوارئ
+                .build()
+        )
+        .build()
+
+    // 2. دومين طوارئ مستقل ومعزول (Disaster Recovery Endpoint) لا يعتمد على الـ Pinning:
+    // يُستخدم فقط عند فشل الـ Pinning لجلب توجيهات التحديث أو إظهار شاشة Force Update
+    val disasterRecoveryClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .build()
+
+    suspend fun executeSafeRequest(request: Request): Response {
+        return try {
+            primaryClient.newCall(request).execute()
+        } catch (e: SSLPeerUnverifiedException) {
+            // فشل التحقق من الشهادة! التحقق من دومين الطوارئ هل هناك تحديث إجباري للشهادات؟
+            handlePinningFailure(e)
+            throw e
+        }
+    }
+
+    private fun handlePinningFailure(e: SSLPeerUnverifiedException) {
+        // تسجيل تقرير الحادث في الـ Telemetry وإظهار واجهة للمستخدم بضرورة التحديث
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +98,29 @@ Keep a version-to-pin inventory, expiry alerts, rollout gates and old-client tra
 
 ## Interview answer — short
 
-“I avoid a single expiring certificate pin. I prepublish a backup public-key pin, test old clients before server rotation, and keep a controlled update path; I never recover by accepting arbitrary certificates.”
+If SPKI pinning was used, immediately re-issue the server certificate using the original private key to restore connectivity without app updates. If backup pins exist, activate the backup certificate on the server. If pinned via network_security_config with an expiration attribute, pinning auto-expires. Otherwise, push an emergency Google Play hotfix and notify users via FCM.
 
 ## Interview answer — structured
 
-“A pin mismatch can make a valid new certificate unusable to old apps. I distinguish a certificate renewal from public-key rotation, ship backup pins ahead of the change and test the oldest supported release against the new chain. Then I stage the server switch while monitoring failures by app version. Expiry and rollback policies are designed in advance. Normal TLS validation stays enabled throughout. ”
+Recovering from an expired or mismatched TLS pin requires a prioritized recovery playbook:
+
+1. **Re-issue Certificate with Identical SPKI**: If the app pinned the Subject Public Key Info (SPKI SHA-256 hash)—which is industry best practice—the ops team can immediately re-issue a fresh TLS certificate signed by any CA using the original private key CSR. Because the public key remains unchanged, client pins match instantly with zero app updates required.
+
+2. **Activate Backup Keys on Load Balancers**: If the private key was lost or compromised, deploy the pre-generated offline backup certificate to production servers. Because resilient pinning architectures embed at least one backup pin, apps connect seamlessly.
+
+3. **Rely on Network Security Config Expiration**: If configured via Android's `<pin-set expiration="...">`, the OS automatically disables pin enforcement once the expiration date passes, falling back to trusted system CAs.
+
+4. **Emergency App Hotfix & FCM Broadcast**: If the app is bricked without backup keys, deploy an expedited hotfix APK removing the dead pin via Google Play Console with Priority Review. Send high-priority Firebase Cloud Messages (FCM)—which route over Google's unaffected servers—to notify active clients to update.
 
 ## Interview answer — deep senior
 
-“This is an operational dependency across release and infrastructure teams. I track which binaries trust which keys, maintain backup key custody outside the primary certificate path, and rehearse rotation before expiry. If an incident requires emergency key change, the prepublished backup enables continuity; otherwise I may need a store-delivered app update and a service incident, not a trust-all override. I also verify the chosen Android/library pinning semantics, including pin-set expiration, on the production network stack. The backend still treats every request as untrusted. Keep a separately controlled recovery key. Monday checkout fails.  I would rehearse the renewal with a matrix of app versions, pins and certificate chains, including a client whose update is delayed. If the public key is unchanged, renewal may not require a new SPKI pin; if key material changes, the backup must already be in those old binaries. An emergency app release cannot instantly reach every user, so operational overlap is essential. I would reject a trust-all bypass even under outage pressure.”
+From an infrastructure resilience perspective, senior architects design proactive safeguards to eliminate certificate bricking risks entirely:
+
+1. **Dual-Pin Policy Enforcement in CI/CD**: Implement CI build linters that fail APK generation if fewer than two distinct pin hashes are defined for any production domain in `network_security_config.xml` or `CertificatePinner`.
+
+2. **Intermediate CA Pinning Strategy**: Instead of pinning volatile leaf public keys, pin the public keys of the organization's dedicated Intermediate Certificate Authorities. This allows the backend team to rotate leaf certificates weekly without modifying client pins, while retaining defense against rogue public CAs.
+
+3. **Dedicated Unpinned Configuration Subdomains**: Maintain an isolated, unpinned fallback subdomain (e.g., `status.example.com`) purely relying on standard system CA trust. If all pinned endpoints fail with `SSLPeerUnverifiedException`, the app queries this endpoint to display a user-friendly 'Maintenance / Update Required' screen rather than crashing with unhandled network exceptions.
 
 ## How to answer in the interview
 
@@ -75,8 +136,11 @@ Prompt for SPKI versus exact-cert pin, overlap order, old-client matrix, emergen
 
 ## Follow-up questions
 
-- [SEC-20](../sec-20/): What is the safe rotation order? **Answer:** client backup first, server switch later.
-- [SEC-08](../sec-08/): Why not always pin? **Answer:** outage risk may outweigh incremental CA-risk reduction.
+- **Interviewer:** "Why does FCM still work when an app's API is bricked by certificate pinning?"
+  **Answer:** "FCM maintains its own persistent TCP socket connection directly to Google Play Services servers, completely independent of the application's OkHttp client or network configuration."
+
+- **Interviewer:** "What is the primary trade-off of pinning an Intermediate CA rather than a Leaf Certificate?"
+  **Answer:** "Intermediate pinning allows seamless leaf rotations on the server, but marginally lowers security because any certificate issued by that intermediate is accepted."
 
 ## Self-check rubric
 
@@ -87,4 +151,4 @@ Can I explain why expiry bricks clients and give a safe ordered recovery plan?
 - [Android Network Security Configuration](https://developer.android.com/privacy-and-security/security-config) — pin sets and expiration.
 - [OWASP MASVS network](https://mas.owasp.org/MASVS/controls/MASVS-NETWORK-2/) — endpoint identity.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -22,7 +22,69 @@ Serialize refresh-token rotation and avoid false logout from two concurrent 401 
 
 ## Explanation in Arabic
 
-اتنين requests بنفس access token ممكن يرجعوا `401` معًا. لو كل واحدة استخدمت refresh token rotating، الثانية قد تستعمل token اتبطل وتفسّر ده كـlogout. نعمل session-scoped single-flight: بعد lock نعيد قراءة token؛ لو اتغير بسبب الأولى، نعيد request بالجديد. لو لسه نفسه، واحدة تعمل refresh وتحفظ الزوج atomically، والباقي تنتظر. logout generation تمنع refresh متأخرة ترجع session اتقفلت.
+طلبان متزامنان لتجديد التوكن (Refresh Token) أديا معاً إلى إبطال جلسة المستخدم وتسجيل خروجه بالخطأ. كيف تضبط تسلسل التجديد وتمنع هذا الخطأ؟
+
+1. تشريح المشكلة (Why Concurrent Requests Invalidate the Session):
+   - معظم خوادم الـ OAuth 2.0 الحديثة تطبق حماية **Refresh Token Rotation (RTR)**: عند استخدام Refresh Token، يُصدر السيرفر توكن جديد ويحرق (Revoke) التوكن القديم فوراً.
+   - إذا أرسل التطبيق طلبين متزامنين بـ Access Token منتهي، يستقبل الاثنان `401 Unauthorized`.
+   - إذا قام كلا الطلبين باستدعاء endpoint التجديد باستخدام نفس الـ Refresh Token القديم:
+     * الطلب الأول يصل السيرفر وينجح ويحرق الـ Refresh Token القديم.
+     * الطلب الثاني يصل بعده بـ 10 ميلي ثانية حاملاً نفس الـ Refresh Token القديم المحروق!
+     * يكتشف السيرفر محاولة استخدام توكن ملغى، ويعتبر ذلك هجوماً واختراقاً (Breach Detection)، فيقوم فوراً بإبطال جميع توكنز المستخدم وحظر الجلسة!
+
+2. المعمارية الصحيحة لتسلسل التجديد (Serialized Single-Flight Protocol):
+   - **قفل تسلسلي إجباري (Serialized Mutex)**: لا يجوز لأكثر من خيط واحد التحدث إلى endpoint التجديد في نفس الوقت.
+   - **فحص التوكن المزدوج (Double-Check under Lock)**: عند حصول أي خيط على القفل، يقارن التوكن الذي سبب الـ 401 بالتوكن المخزن حالياً. إذا كان التوكن قد تم تحديثه بالفعل بواسطة خيط سابق، يتخطى طلب التجديد ويعيد المحاولة بالتوكن الجديد فوراً.
+   - **جيل الجلسة (Session Generation Counter)**: عداد يمنع أي استجابة تجديد متأخرة من إعادة تنشيط جلسة تم تسجيل خروجها عمداً بواسطة المستخدم.
+
+## Practical walkthrough
+
+التنفيذ البرمجي المانع لسباق تجديد التوكن في OkHttp Authenticator:
+```kotlin
+class ThreadSafeAuthenticator @Inject constructor(
+    private val sessionStore: SessionStore,
+    private val refreshApi: DedicatedRefreshClient
+) : Authenticator {
+
+    private val lock = Any()
+
+    override fun authenticate(route: Route?, response: Response): Request? {
+        // 1. استخراج التوكن الذي فشل في هذا الطلب المحدد:
+        val failedToken = response.request.header("Authorization")?.removePrefix("Bearer ")
+
+        synchronized(lock) {
+            val currentToken = sessionStore.getAccessToken()
+
+            // 2. الفحص المزدوج الحاسم:
+            // إذا كان التوكن الحالي يختلف عن التوكن الذي فشل، فهذا يعني أن خيطاً آخر
+            // قد أكمل التجديد بنجاح أثناء انتظار هذا الخيط في الطابور!
+            if (currentToken != null && currentToken != failedToken) {
+                // أعد المحاولة مباشرة بالتوكن الجديد بدون استدعاء السيرفر:
+                return response.request.newBuilder()
+                    .header("Authorization", "Bearer $currentToken")
+                    .build()
+            }
+
+            // 3. إذا كنا الخيط الأول: استدعاء التجديد مرة واحدة فقط:
+            val refreshToken = sessionStore.getRefreshToken() ?: return null
+            val refreshResult = refreshApi.executeRefreshToken(refreshToken)
+
+            return if (refreshResult.isSuccessful && refreshResult.tokens != null) {
+                // حفظ التوكن الجديد و Refresh Token الجديد ذرياً:
+                sessionStore.updateTokens(refreshResult.tokens.access, refreshResult.tokens.refresh)
+                
+                response.request.newBuilder()
+                    .header("Authorization", "Bearer ${refreshResult.tokens.access}")
+                    .build()
+            } else {
+                // فشل حقيقي في التجديد -> مسح الجلسة وإلغاء المحاولات:
+                sessionStore.clearSession()
+                null
+            }
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,10 +113,6 @@ class SessionRefresh(private val store: TokenStore, private val api: AuthApi) {
 // tokens; it returns false after logout or account switch.
 ```
 
-## Practical walkthrough
-
-rotate-on-use refresh token بيحصل له race بسهولة: A وB شايفين 401، A refresh وتخزن pair v2، B لازم تلاحظ v2 بعد lock وما ترسلش old refresh v1. commit pair مرتبط بـsession generation حتى logout وقت network wait يمنع late result من إعادة login. لو server رفض refresh نهائيًا، clear session بشكل منسق؛ timeout transient ما يتحولش تلقائيًا لlogout مؤكد. في OkHttp Authenticator، synchronous callback + refresh client بنفس interceptor ممكن يعمل recursive 401 أو deadlock. اصنع concurrency test بحاجز يخلي الطلبين يستقبلوا 401 سوا، وتحقق refresh request واحدة فقط.
-
 ## Trade-offs and decision criteria
 
 Mutex is easy to reason about but makes waiters share refresh latency. An in-flight Deferred can reduce lock hold time but complicates cancellation ownership. The backend still determines token validity and rotation semantics.
@@ -69,17 +127,35 @@ A multi-tab banking app coordinates refresh per signed-in account, rechecks toke
 
 ## Interview answer — short
 
-“I serialize refresh per session, recheck the token after locking and reuse another request’s newly refreshed token. I atomically save the new pair only for the current session generation, avoiding false logout and late resurrection.”
+Prevent dual refresh invalidation by strictly serializing refresh calls behind a Mutex or synchronized lock with double-checked token validation. When a thread acquires the lock, it checks if the active token was already updated by a preceding thread. If updated, it replays immediately without calling the refresh endpoint.
 
 ## Interview answer — structured
 
-“Two simultaneous 401s are a race when the server rotates refresh tokens. I use one session-owned coordinator. Each caller carries the token it sent; after waiting on the lock it compares that with current storage. If another caller already refreshed, it retries with the new token. Otherwise one refresh executes and saves access plus refresh token atomically. I bound follow-up attempts, exclude the refresh endpoint from recursive handling, and use a generation number so logout invalidates late refresh results.”
+Under modern OAuth 2.0 Refresh Token Rotation (RTR), using an expired refresh token triggers backend breach detection, instantly revoking all active client sessions. When two concurrent requests receive 401s, both attempting to refresh using the same stale token inevitably invalidates the session.
+
+To serialize refresh correctly and prevent false logouts:
+
+1. **Lock Funneling**: Wrap the refresh block inside a thread-safe lock (`synchronized(lock)` in OkHttp Authenticator or a coroutine `Mutex`).
+
+2. **The Double-Check Token Protocol**: Before making any network call, extract the `failedToken` from the triggering request header and compare it to `sessionStore.getAccessToken()`:
+   - If `currentToken != failedToken`, another thread already executed the refresh while this thread was waiting on the lock. **Skip the refresh call entirely** and retry the request using `currentToken`.
+   - If `currentToken == failedToken`, this thread is the first to arrive. Execute exactly one refresh network request.
+
+3. **Atomic Session Mutation**: Save both the new access token and the rotated refresh token atomically before releasing the lock.
 
 ## Interview answer — deep senior
 
-The invariant is one logical rotation for a given expired access token and live session. I test this as a concurrency protocol, not just a lock around an HTTP call. Waiters recheck after acquiring the lock, shared refresh ownership is defined so one cancelled screen does not ruin unrelated requests, and token-pair commit is conditional on session generation. A permanent server rejection can end the session; a transient transport failure should be surfaced without falsely declaring revocation. OkHttp’s synchronous Authenticator adapter needs its own execution design and a bounded response chain. I log correlation IDs, never tokens, and verify no stale refresh can resurrect a logged-out account.
+A critical edge case is the **Stale Response Race Across Logout**:
 
-I would express this as a state machine keyed by the expired access token and live session generation. A obtains the refresh lock, rotates v1 to v2, and persists both tokens; B then re-reads v2 inside the lock and retries without another rotation. If logout occurred while A waited for the server, its result is discarded rather than resurrecting the session. A permanent refresh rejection differs from a network timeout, and callers need the correct outcome. The synchronous OkHttp Authenticator adapter must use an independent refresh path and bounded attempts to avoid recursive 401 or self-deadlock. I test two simultaneous failures, cancellation, logout, and retry exhaustion deterministically.
+Consider this sequence:
+1. Thread A fires a token refresh request.
+2. While the refresh is in flight on the network, the user explicitly taps 'Log Out'. The app clears credentials from storage.
+3. Thread A's refresh network request succeeds 1 second later and writes fresh tokens back into storage, accidentally resurrecting a logged-out session!
+
+To prevent this, implement a **Session Generation Counter**:
+- Maintain an atomic `sessionGeneration: Long` that increments on every explicit logout or login.
+- Capture the generation ID before initiating the refresh.
+- Before committing new tokens to storage, verify that `currentGeneration == capturedGeneration`. If mismatched, discard the newly fetched tokens.
 
 ## How to answer in the interview
 
@@ -95,8 +171,11 @@ Draw token observed/current comparison, session generation and refresh failure c
 
 ## Follow-up questions
 
-- [DAT-10](../dat-10/): Why recheck under lock? **Answer:** another request may already have produced a new access token.
-- [DAT-09](../dat-09/): Where handle 401? **Answer:** a coordinated auth boundary with bounded retries.
+- **Interviewer:** "What is Refresh Token Rotation (RTR)?"
+  **Answer:** "An OAuth 2.0 security mechanism where the server issues a new refresh token and revokes the old one on every single refresh, preventing replay attacks."
+
+- **Interviewer:** "Why must the refresh HTTP client be independent of the primary OkHttpClient?"
+  **Answer:** "If the refresh client shares the primary client's Authenticator, an unexpected 401 on the refresh endpoint triggers recursive authentication calls, causing a deadlock."
 
 ## Self-check rubric
 
@@ -107,4 +186,4 @@ Can I force two 401s, show one rotation, preserve logout and distinguish offline
 - [Kotlin shared mutable state](https://kotlinlang.org/docs/shared-mutable-state-and-concurrency.html) — Mutex coordination.
 - [OkHttp calls guide](https://lysine.dev/okhttp/features/calls/) — 401 authenticator follow-up.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

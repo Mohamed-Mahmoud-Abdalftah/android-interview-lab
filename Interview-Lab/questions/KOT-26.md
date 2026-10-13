@@ -22,7 +22,41 @@ Model payload-bearing state and transitions, distinguish UI display from server-
 
 ## Explanation in Arabic
 
-`enum PaymentState { PROCESSING, SUCCESS, FAILURE }` بسيط، بس لو `SUCCESS` لازم receipt و`FAILURE` لازم reason، هتضطر تحط nullable fields جنب enum وده يسمح بحالات غير منطقية. sealed hierarchy تخلي كل حالة شايلة بياناتها المطلوبة: `Processing(requestId)`, `Succeeded(receipt)`, `Failed(code)`. `when` exhaustive يلفت النظر لما تزود حالة. لكن لو الحالات مجرد constants ثابتة بلا payload، enum أبسط. وفي المدفوعات الـUI state مش مصدر الحقيقة؛ حالة السيرفر والـwebhook/reconciliation هي المرجع بعد timeouts أو process death.
+المقارنة بين `enum` و `sealed class` / `sealed interface` في نمذجة الحالات (UI & Payment States) هي محور أساسي في تصميم الأنظمة الحديثة:
+
+1. متى يكون الـ Enum كافياً (When Enum is enough)?
+   - الـ Enum مناسب فقط لما تكون الحالات **مجموعة ثابتة من الثوابت المجردة (Simple Fixed Constants)** بدون بيانات متغيرة خاصة بكل حالة.
+   - مثال: اتجاهات الشاشة (`LANDSCAPE`, `PORTRAIT`) أو أيام الأسبوع (`MONDAY`, `TUESDAY`).
+   - عيب الـ Enum: كل القيم لازم تشترك في نفس الـ Properties المحددة في الـ Constructor، ولا يمكن لحالة واحدة تحمل Payload مختلف عن باقي الحالات.
+
+2. متى تكون الـ Sealed Hierarchy متفوقة وضرورية (Why Sealed Hierarchies Win)?
+   - في الـ UI States والـ Payment States، كل حالة بتحتاج **بيانات مختلفة تماماً (State-Specific Payloads)**:
+     * حالة `Idle`: لا بيانات.
+     * حالة `Loading`: رسالة تحميل اختيارية ونسبة مئوية `progress: Float`.
+     * حالة `Success`: بيانات الإيصال `receipt: PaymentReceipt` ومعرف المعاملة.
+     * حالة `Failure`: نوع الخطأ `error: PaymentError` ورقم هاتف الدعم ورابط إعادة المحاولة.
+   - الـ `sealed interface` بتسمح بتعريف `data object` للحالات المجردة (لتوفير الذاكرة)، و `data class` للحالات اللي فيها بيانات.
+   - الـ Compiler في `when` بيضمن معالجة كل الحالات (Exhaustive Checking) ويقوم بعمل Smart Cast تلقائياً للبيانات الخاصة بكل حالة.
+
+## Practical walkthrough
+
+في شاشة إتمام عملية الدفع (Checkout Payment Flow):
+- **النهج الفاشل باستخدام Enum و God Data Class:**
+  data class CheckoutState(
+      val status: PaymentStatus, // Enum: IDLE, PROCESSING, SUCCESS, ERROR
+      val receipt: Receipt? = null,
+      val errorMessage: String? = null,
+      val retryCount: Int = 0
+  )
+  هذا التصميم يخلق حالات غير شرعية (Illegal States): ممكن يكون الـ Status = SUCCESS لكن الـ receipt = null! المطور مضطر يكتب `receipt!!` أو `receipt?.let` في كل حتة.
+- **النهج الصحيح باستخدام Sealed Interface (Make Illegal States Unrepresentable):**
+  sealed interface PaymentUiState {
+      data object Idle : PaymentUiState
+      data class Processing(val step: String) : PaymentUiState
+      data class Success(val receipt: Receipt) : PaymentUiState
+      data class Failed(val reason: PaymentError, val canRetry: Boolean) : PaymentUiState
+  }
+  الآن مستحيل تقنياً تمثيل حالة نجاح بدون إيصال!
 
 ## Why it matters and how it works
 
@@ -44,10 +78,6 @@ fun terminal(s: CheckoutState) = when (s) {
 }
 ```
 
-## Practical walkthrough
-
-في checkout، `Processing(requestId)` و`Succeeded(receiptId)` عندهم data مختلفة، و`Failed(code, retryable)` فيها قرار UI. sealed hierarchy بتخلي payload مطلوب في الحالة الصح بدل enum واحد فيه nullable fields كتير ممكن تنتج `Succeeded(receiptId=null)`. لكن sealed type ما تمنعش transition غلط من `Succeeded` لـ`Processing`؛ reducer أو state machine وtests لازم يحددوا legal transitions. مهم كمان timeout في دفع: `PendingVerification` أحسن من `Failed` لو server outcome مجهول؛ ما تعيدش الخصم عشوائيًا. enum تفضل مناسبة لثوابت مستقلة من payload زي payment method category.
-
 ## Trade-offs and decision criteria
 
 Sealed cases are more verbose and adding a case affects exhaustive clients. That is useful within a controlled app; a public extensible API may need an interface. Enum remains best for simple fixed choices such as payment method display category. Persisted wire values need explicit mapping, not implicit class names.
@@ -62,17 +92,23 @@ Checkout ViewModel renders sealed local states while repository persists request
 
 ## Interview answer — short
 
-A sealed hierarchy is better when states carry different required data, such as a receipt only on success. An enum is simpler for fixed constants without per-instance payloads. I still validate legal transitions separately; exhaustiveness does not make the state machine correct.
+Enums are strictly for static constants that share identical attributes across all instances. Sealed hierarchies are superior for UI and payment states because they allow individual states to hold distinct payloads (e.g., Success holds a Receipt, while Failed holds an ErrorReason), eliminating invalid states and enabling compiler-enforced smart casting in when expressions.
 
 ## Interview answer — structured
 
-I choose the representation from the shape of the state. For a payment flow, Processing needs a request ID, Succeeded needs a receipt, and an uncertain timeout may need PendingVerification. A sealed hierarchy makes those payloads specific to each case and lets a `when` renderer be exhaustive. An enum with several nullable fields admits impossible combinations such as success without a receipt. I would still implement transition rules in a reducer or coordinator, because a sealed type only limits shapes, not history. For a fixed choice with no distinct payload, an enum is smaller and clearer. In production, uncertain network outcomes must be reconciled using server idempotency rather than treated as definite failure.
+I choose sealed hierarchies over enums whenever different states require different payloads. Enums represent fixed sets of uniform constants; every enum entry must share the exact same constructor properties, and every entry is a singleton instantiated when the class is loaded.
+
+In real-world UI and payment flows, states are inherently heterogeneous. An Idle state carries no data, a Loading state might carry a progress percentage, a Success state carries a PaymentReceipt object, and a Failed state carries an error domain model and a retry policy. Modeling this with an enum forces you into a bloated 'God state' with dozens of nullable properties, creating invalid states like being in Success status with a null receipt.
+
+With a sealed interface, illegal states become unrepresentable in the type system. In the UI or ViewModel, Kotlin's when expression guarantees exhaustive branch coverage and smart-casts each branch to its concrete type, giving safe, direct access to that state's payload without null assertions.
 
 ## Interview answer — deep senior
 
-I would start by listing legal states and transitions. If cases need different fields, sealed types encode those invariants, and exhaustiveness makes UI rendering and tests more robust. But a closed class hierarchy does not solve distributed uncertainty: a request can time out after server success. The client persists an idempotency/request key and checks server status, including after process death. Serialization uses stable explicit codes, and sensitive payment decisions remain server-side. If the domain truly has simple uniform constants, an enum avoids unnecessary hierarchy.
+From an architectural domain-modeling perspective, sealed hierarchies embody Algebraic Data Types (specifically Sum Types with Product Type variants). Using `sealed interface` combined with `data object` (introduced in Kotlin 1.9) gives the best of both worlds: parameterless states like `Idle` compile to singletons with clean toString() logging, while parameterized states like `Success(val receipt: Receipt)` allocate new instances holding distinct payloads.
 
-For checkout UI, I would define Processing with an attempt ID, Succeeded with a receipt ID, Rejected with a code, and PendingVerification when a response is lost. That avoids an enum plus several nullable fields which can represent success without a receipt. Still, the sealed type only constrains shapes; a reducer must prevent illegal transitions, and the server is authoritative for the payment outcome. I would persist the attempt ID before submission and reconcile after process death, using the same server idempotency key for any allowed retry. If cases carry no distinct data, an enum is less ceremony.
+In contrast, forcing an enum to represent dynamic states leads to architectural rot: developers often resort to mutable companion objects, global singletons, or nullable fields in a single giant class. If a new business requirement emerges—such as adding a `TwoFactorRequired(val challengeToken: String)` state to a payment flow—with a sealed interface, the Kotlin compiler will fail compilation at every single `when` expression across the entire project that doesn't handle the new variant, acting as an automated refactoring guide.
+
+In Jetpack Compose, sealed states are especially critical for recomposition stability. Distinct state classes allow Compose to skip recomposition when only unrelated properties in sibling states change, boosting rendering performance.
 
 ## How to answer in the interview
 
@@ -88,8 +124,14 @@ Discuss case-specific payloads, exhaustive rendering, transition tests, process 
 
 ## Follow-up questions
 
-- [KOT-06](../kot-06/): How does sealed differ from enum? **Answer:** sealed cases can be distinct subclasses with different payloads.
-- [PAY-02](../pay-02/): What does idempotency guarantee? **Answer:** duplicate requests can map to one effect if server rules support it; it does not ensure one network execution.
+- **Interviewer:** "Can a sealed class have subclasses outside the module?"
+  **Answer:** "No. All direct subclasses of a sealed class or interface must be defined in the same package and the same compilation module. This restriction is precisely what allows the Kotlin compiler to guarantee exhaustive when expressions without requiring an else branch."
+
+- **Interviewer:** "Why prefer `sealed interface` over `sealed class` in modern Kotlin?"
+  **Answer:** "`sealed interface` allows multiple inheritance (a state can implement multiple domain marker interfaces, like `NavigableState` and `CacheableState`), and it does not consume a class inheritance slot on the JVM. It also generates cleaner bytecode with less hierarchy overhead."
+
+- **Interviewer:** "How do you serialize a sealed state hierarchy to JSON with kotlinx.serialization?"
+  **Answer:** "By annotating the sealed interface with `@Serializable`. Kotlinx.serialization automatically attaches a polymorphic class discriminator (by default `type: "Success"`) to the JSON output and decodes incoming payloads into the exact concrete subclass at runtime without reflection."
 
 ## Self-check rubric
 
@@ -100,4 +142,4 @@ Model success/failure payloads, justify enum alternative, and explain timeout un
 - [Kotlin sealed classes and interfaces](https://kotlinlang.org/docs/sealed-classes.html) — closed cases and exhaustive `when`.
 - [Android app architecture](https://developer.android.com/topic/architecture) — separation of UI and data sources.
 
-Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets unless explicitly labeled conceptual; no Android device claim is made.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -22,7 +22,56 @@ Explain extension of stable policy and the strategic nature of “closed,” wit
 
 ## Explanation in Arabic
 
-OCP تقول stable module يكون قابل لإضافة variation من غير ما تعدّل كل core policy في كل مرة. في Android لو payment routing عندك `when(provider)` متكرر في 10 أماكن، Strategy contract أو registry يخلي provider جديد implementation جديدة مع wiring واختبارات، مش edits موزعة. بس لازم تفضل تعدّل composition root/config عند إضافة provider؛ OCP مش “ممنوع تلمس أي ملف”. وما تعملش plugin interface قبل وجود variation حقيقي. الحماية تكون حول محور تغيير متوقع ومهم.
+شرح مبدأ الفتح والإغلاق (Open/Closed Principle - OCP) مع مثال عملي واقعي في Android:
+
+1. تعريف مبدأ الـ OCP:
+   - ينص المبدأ على: **"يجب أن تكون الكيانات البرمجية مفتوحة للتوسيع (Open for Extension) ومغلقة للتعديل (Closed for Modification)"**.
+   - **مفتوحة للتوسيع**: يمكنك إضافة ميزات وسلوكيات جديدة للتطبيق بسهولة.
+   - **مغلقة للتعديل**: إضافة الميزة الجديدة لا تتطلب تعديل الأكواد القديمة المكتوبة والمختبرة مسبقاً في الإنتاج!
+
+2. ما الذي ينتهك OCP في Android؟
+   - استخدام كتل `when` أو `if-else` الضخمة المعتمدة على Enums أو String types لمعالجة أنواع مختلفة (مثل طرق الدفع: Visa, PayPal, ApplePay).
+   - كلما طلبت الشركة إضافة طريقة دفع جديدة (مثل Google Pay أو Fawry)، يضطر المطور لفتح الكلاس القديم وتعديل الـ when block، مما قد يكسر طرق الدفع القديمة!
+
+3. كيف نطبق OCP في Android؟
+   - باستخدام **نمط الاستراتيجية (Strategy Pattern)** أو **Polymorphism** عبر Interface مجرد (`PaymentProcessor`).
+   - إضافة طريقة دفع جديدة تعني ببساطة إنشاء كلاس جديد `GooglePayProcessor : PaymentProcessor` وحقنه في النظام دون لمس سطر واحد في كود الدفع الأصلي!
+
+## Practical walkthrough
+
+تطبيق نمط Strategy لتحقيق OCP في نظام معالجة المدفوعات:
+```kotlin
+// ❌ انتهاك صارخ لـ OCP: إضافة طريقة دفع جديدة تجبرنا على تعديل الكود القديم المعتمد:
+class BadPaymentService {
+    fun process(type: String, amount: Long) {
+        if (type == "CREDIT_CARD") { /* كود قديم */ }
+        else if (type == "PAYPAL") { /* كود قديم */ }
+        else if (type == "APPLE_PAY") { /* كود جديد تم حشره هنا! */ }
+        // 💥 أي خطأ هنا سيكسر الدفع بالبطاقات القديمة!
+    }
+}
+
+// ✅ تطبيق OCP: مفتوح لإضافة طرق دفع جديدة دون تعديل الكود القائم إطلاقاً:
+interface PaymentProcessor {
+    val paymentMethod: PaymentMethod
+    suspend fun pay(amountCents: Long): PaymentResult
+}
+
+class CreditCardProcessor : PaymentProcessor { ... }
+class PayPalProcessor : PaymentProcessor { ... }
+// إضافة طريقة دفع جديدة لا تتطلب سوى كلاس جديد مستقل:
+class GooglePayProcessor : PaymentProcessor { ... }
+
+// الكلاس المنسق مغلق للتعديل ويعتمد على خريطة الموزعين:
+class PaymentRouter @Inject constructor(
+    private val processors: Set<PaymentProcessor>
+) {
+    suspend fun executePayment(method: PaymentMethod, amount: Long): PaymentResult {
+        val handler = processors.firstOrNull { it.paymentMethod == method } ?: error("Unsupported method")
+        return handler.pay(amount)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -38,10 +87,6 @@ sealed interface ChargeResult { data class Accepted(val id: String): ChargeResul
 ```
 A router selects a registered route; each provider adapter implements the same contract. Server authorization remains authoritative.
 
-## Practical walkthrough
-
-في checkout عندك provider واحد وبعدين دخل provider تاني. لو كل إضافة بتحتاج `when` جديد في ViewModel وrepository والanalytics، يبقى نقطة الاختلاف مش معزولة. اعمل `PaymentRoute` بعقد واحد، وخلي registry أو composition root يختار implementation. اختبر كل route بنفس contract suite: pending، rejection، cancellation، ونتيجة غير مؤكدة. OCP مش معناها إن مفيش أي ملف بيتعدل؛ غالبًا registration هيتغير. ولا تخلي extension seam تخفي قواعد قانونية أو أمنية مختلفة بين providers. لو التباين غير ثابت، branch واضح قد يكون أسهل من hierarchy مبكر.
-
 ## Trade-offs and decision criteria
 
 Strategy indirection helps when providers vary often and behavior is stable. A simple `when` may be clearer for two fixed cases. New variations still require wiring, policy review and tests. Do not use reflection registries solely to avoid one explicit binding edit.
@@ -56,15 +101,28 @@ A fintech checkout integrates card and wallet providers. A narrow route contract
 
 ## Interview answer — short
 
-OCP means a stable policy can gain a new variation through an extension seam rather than repeated edits throughout existing code. For Android payment providers, a strategy adapter can localize each integration.
+Open/Closed Principle states that code should be open for extension but closed for modification. In Android, rather than using massive `when` statements checking payment or notification types, we use polymorphism and the Strategy pattern (`PaymentProcessor` interface), allowing new providers to be added without editing existing, tested classes.
 
 ## Interview answer — structured
 
-I look for a change axis that is both likely and costly. If adding a payment provider means editing many branches across the app, I define a narrow provider contract and let each adapter implement it. The core checkout policy depends on that contract, while app wiring chooses implementations. This does not mean no file is ever edited; registration and tests still change. For a fixed two-case feature, an explicit `when` can be simpler than a plugin architecture. When adding a provider, I still expect to edit the DI binding or registry and add tests. OCP aims to avoid changing the stable checkout rule and every screen, not to make integration invisible.
+The Open/Closed Principle (OCP) requires that software entities (classes, modules, functions) should be **open for extension, but closed for modification**.
+
+- **Open for extension**: The system's behavior can be enhanced as business requirements evolve.
+- **Closed for modification**: Adding new behaviors does not require modifying, recompiling, or risking regressions in existing, production-tested code.
+
+The primary violator of OCP in Android is type branching via long `when (type)` or `if-else` chains. For instance, an analytics engine or payment router that inspects string types: adding 'Google Pay' requires opening `PaymentManager.kt`, editing the conditional statements, and re-testing every existing payment method.
+
+We adhere to OCP using **Polymorphic Abstraction (The Strategy Pattern)**:
+1. Declare a common interface: `PaymentStrategy`.
+2. Implement distinct classes: `CreditCardStrategy`, `PayPalStrategy`, `GooglePayStrategy`.
+3. Inject a set of strategies via Dagger/Hilt Multibindings (`@IntoSet`).
+To introduce a new payment method, developers simply create a new class and bind it in a Dagger module; zero existing payment code is touched.
 
 ## Interview answer — deep senior
 
-OCP is about strategic closure against a class of change, not universal immutability of source code. I first identify what varies—provider SDK calls, notification channel, or pricing strategy—and what should remain stable—business validation and UI state contract. A narrow abstraction makes new implementations possible without modifying the stable policy. But it has costs: a contract can be too broad, and adding a provider still requires DI wiring, compatibility tests, and sometimes a new business rule. In a payment flow I test that each provider honors timeout and cancellation semantics; a new adapter cannot claim success on an uncertain network result. I avoid introducing a registry before variation exists, and I prefer one clear conditional when it is easier to understand and unlikely to change. I would first prove that provider variation is a real axis by examining past changes. The stable part is the checkout policy, not the list of providers. I would move provider SDK calls behind a strategy contract and select the implementation at an edge of the system. Adding a provider should add an adapter and a binding, while core eligibility and UI state rules remain unchanged. I would test the shared contract against all adapters, then test each adapter's SDK mapping separately. The trade-off is that a registry and interface make navigation harder when there is only one provider. I would introduce that seam after evidence of variation, and I would still review new provider security and business semantics explicitly rather than assuming extension is automatically safe.
+In modern Kotlin, **Sealed Hierarchies** offer an intentional balance with OCP. When using `sealed interface UiState`, the compiler enforces exhaustive `when` expressions, which intentionally requires modifying the UI when a new state is added. This is desirable when the set of states is closed and known at compile time.
+
+However, for **domain extensibility** (plugins, analytics trackers, payment gateways, validation rules), open interfaces and DI multibindings are strictly preferred over sealed classes. This allows feature modules to register new plugins dynamically without touching core orchestration modules.
 
 ## How to answer in the interview
 
@@ -80,8 +138,11 @@ Distinguish strategic closure from no-edit dogma; compare strategy seam with a s
 
 ## Follow-up questions
 
-- [SOL-18](../sol-18/): What if a provider changes ten classes? **Answer:** centralize variation behind a narrow route/adapter contract.
-- [PAT-09](../pat-09/): Strategy versus State? **Answer:** strategy selects an algorithm; state models behavior based on current lifecycle state.
+- **Interviewer:** "How do Dagger Multibindings (`@IntoSet`, `@IntoMap`) enable OCP?"
+  **Answer:** "Multibindings allow feature modules to contribute implementations to a central collection without the consuming class knowing about concrete implementations at compile time."
+
+- **Interviewer:** "Does OCP mean you should never modify existing code?"
+  **Answer:** "No. Bug fixes, performance tuning, and refactoring inherently require modifying existing code. OCP specifically targets behavioral feature additions."
 
 ## Self-check rubric
 
@@ -92,4 +153,4 @@ Describe a likely variation, stable policy, extension seam and one reason not to
 - [Robert C. Martin, Open Closed Principle](https://blog.cleancoder.com/uncle-bob/2014/05/12/TheOpenClosedPrinciple.html) — strategic extension.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — separation of concerns.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

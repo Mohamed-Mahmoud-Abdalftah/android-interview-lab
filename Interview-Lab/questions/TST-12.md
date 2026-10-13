@@ -23,11 +23,68 @@ How do you test HTTP failures with MockWebServer or equivalent?
 
 ## Explanation in Arabic
 
-`MockWebServer` أو test server مشابه تتيح ردود HTTP متحكم فيها: status، headers، body ناقص، delay، disconnect، وترتيب requests. اختبر request method/path/body/headers غير الحساسة، ثم state الذي يراه المستخدم. في payment، أخطر حالة server سجّل approval وبعدها الاتصال وقع قبل response؛ العميل لا يجوز يفترض Declined أو يولّد ID جديدة.
+كيف تختبر سيناريوهات فشل الشبكة (HTTP Failures, Timeouts, Malformed JSON) باحترافية باستخدام `MockWebServer`؟
+
+1. ما هو `MockWebServer`؟
+   - خادم HTTP حقيقي وخفيف يعمل محلياً داخل جهازك أثناء الاختبار (من مكتبة Square OkHttp).
+   - يتيح لك اختبار طبقة الشبكة بالكامل (OkHttp, Retrofit, Converters, Interceptors, Repositories) عبر شبكة حقيقية مشفرة محلياً دون الحاجة لاتصال خارجي بالإنترنت!
+
+2. سيناريوهات الفشل التي يجب اختبارها:
+   - **أخطاء الخادم (HTTP 500, 502, 503)**: التحقق من أن التطبيق يعرض رسالة خطأ ملائمة للمستخدم ولا ينهار.
+   - **أخطاء المصادقة (HTTP 401 Unauthorized)**: التحقق من أن الـ Authenticator يحاول تجديد التوكن أو توجيه المستخدم لشاشة الدخول.
+   - **الاستجابات المشوهة (Malformed / Broken JSON)**: إرجاع نص JSON مكسور والتحقق من التقاط خطأ الـ `JsonDataException` بسلاسة.
+   - **انقطاع الشبكة ومهلة الانتظار (Socket Timeouts)**: محاكاة انقطاع الاتصال المفاجئ عبر `SocketPolicy.NO_RESPONSE` أو `SocketPolicy.DISCONNECT_AT_START`.
+
+3. فحص الطلبات الصادرة (Verifying Outgoing Requests):
+   - استخدام `mockWebServer.takeRequest()` للتحقق من أن التطبيق أرسل الـ Headers الصحيحة (مثل `Authorization: Bearer ...`) والـ Query Parameters والـ Body المطلوب.
 
 ## Practical walkthrough
 
-اختبر أن intent المحفوظة تظل Unknown وأن status lookup أو retry تستخدم نفس key، ثم افصل backend integration test لإثبات dedup. Fake ترجع timeout قبل تنفيذ server effect لا تمثل هذه الحالة. لا تطبع Authorization أو card data في سجلات الاختبار، واعزل server per test حتى لا تنتقل responses بين الاختبارات.
+اختبار أخطاء الشبكة والـ 401 والتأكد من هيدرز الطلب الصادر عبر MockWebServer:
+```kotlin
+class NetworkRepositoryTest {
+    private lateinit var server: MockWebServer
+    private lateinit var api: UserApiService
+
+    @Before
+    fun setup() {
+        server = MockWebServer()
+        server.start()
+        api = Retrofit.Builder()
+            .baseUrl(server.url("/"))
+            .addConverterFactory(MoshiConverterFactory.create())
+            .build()
+            .create(UserApiService::class.java)
+    }
+
+    @Test
+    fun `server 500 internal error returns failure result without crashing`() = runTest {
+        // 1. محاكاة استجابة خطأ 500 من الخادم:
+        server.enqueue(MockResponse().setResponseCode(500).setBody("Internal Server Error"))
+
+        val repository = UserRepositoryImpl(api)
+        val result = repository.fetchUser("123")
+
+        assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun `verify request outgoing headers and path`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{\"id\":\"123\",\"name\":\"Ali\"}"))
+
+        val repository = UserRepositoryImpl(api)
+        repository.fetchUser("123")
+
+        // 2. فحص تفاصيل الطلب الصادر من التطبيق:
+        val recordedRequest = server.takeRequest()
+        assertEquals("/users/123", recordedRequest.path)
+        assertEquals("GET", recordedRequest.method)
+    }
+
+    @After
+    fun tearDown() = server.shutdown()
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +108,34 @@ CI covers auth expiry, rate limit, malformed responses, lost body and slow netwo
 
 ## Interview answer — short
 
-“MockWebServer scripts HTTP responses and records requests, so I can test parsing, headers, retries and disconnects. It cannot prove the remote server actually deduplicates a payment.”
+Test network failures using Square's MockWebServer by enqueuing MockResponse instances with error codes (401, 500), malformed JSON payloads, or SocketPolicy.NO_RESPONSE. Assert that repositories handle failures gracefully, and verify outgoing headers and payload bodies using takeRequest().
 
 ## Interview answer — structured
 
-“I exercise the real OkHttp/Retrofit client against a local server. I script status codes, malformed bodies, delays and socket failures, then assert request count, headers and mapped domain errors. A payment response lost after the request was sent must become Unknown and retain the original operation ID. Separately, backend contract and provider sandbox tests prove idempotency and reconciliation behavior. ”
+MockWebServer enables hermetic, end-to-end testing of the complete networking stack (OkHttp, Retrofit, interceptors, and serializers) on the local JVM:
+
+1. **Simulating HTTP Error Statuses**:
+   - Enqueue explicit response codes: `MockResponse().setResponseCode(500).setBody("Internal Server Error")`.
+   - Enqueue `401 Unauthorized` to test whether token refresh interceptors intercept the failure, refresh credentials, and replay the original request.
+
+2. **Simulating Network Timeouts & Abrupt Drops**:
+   - Configure low-level socket policies: `MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE)` simulates gateway timeouts, while `SocketPolicy.DISCONNECT_AFTER_REQUEST` tests sudden socket terminations mid-handshake.
+
+3. **Malformed & Incomplete Payloads**:
+   - Enqueue truncated or malformed JSON (`MockResponse().setBody("{\"id\": 123, ")`) to verify that JSON deserialization errors (`JsonEncodingException`) are caught and mapped into domain network errors rather than unhandled app crashes.
+
+4. **Asserting Outgoing Requests (`takeRequest()`)**:
+   - Inspect `server.takeRequest()` to assert that outgoing authorization tokens, API keys, User-Agent strings, and JSON request bodies strictly match backend contract expectations.
 
 ## Interview answer — deep senior
 
-“I script transport failures as distinct cases. An HTTP 500 response is not the same as a socket disconnect, a truncated body or a timeout after the server committed. With MockWebServer or an equivalent controlled server I inspect the actual method, path, headers and body the client sent, then assert the repository’s result and UI state. For a payment call I deliberately let the server record the operation and drop the reply. The client must retain its durable ID and immutable amount, show an Unknown or pending state, and query status or retry under the same idempotency contract. I also test malformed JSON, unauthorized responses, a retry budget, cancellation, and that sensitive headers are redacted from logs. I reset the server and dispatcher per test to avoid order-dependent failures. This is an Android-client HTTP integration test: it proves serialization and local recovery behavior. It cannot guarantee that a real backend or payment provider has atomic same-key deduplication; that needs backend concurrency and provider sandbox tests.”
+From an enterprise testing architecture perspective, MockWebServer provides deterministic replay capabilities:
+
+1. **Dispatcher for Multi-Endpoint Scenarios**: Instead of using sequential `enqueue()`, configure a custom `Dispatcher`. The dispatcher inspects `request.path` and routes responses dynamically (e.g. returning 200 for `/auth/refresh` while returning 401 for `/v1/orders`), enabling complex multi-request concurrency testing.
+
+2. **Simulating Throttling and Slow Radios**: Test loading spinners and UI cancellation by simulating slow cellular networks using `MockResponse().throttleBody(1024, 1, TimeUnit.SECONDS)`. This streams 1KB per second, giving tests time to verify progress bars and cancel requests mid-stream.
+
+3. **Port Collisions in Parallel CI**: Never hardcode port numbers (e.g. `localhost:8080`). Invoke `server.start()` without parameters; MockWebServer automatically binds to an ephemeral open operating system port, preventing port collisions when multiple Gradle test workers run concurrently.
 
 ## How to answer in the interview
 
@@ -75,8 +151,11 @@ Prompt for transport timing, real interceptor path, stable ID, status mapping an
 
 ## Follow-up questions
 
-- [TST-10](../tst-10/): How test backoff? **Answer:** combine scripted failures with virtual scheduler at policy layer.
-- [TST-20](../tst-20/): Who proves no duplicate charge? **Answer:** backend/provider contract under lost response.
+- **Interviewer:** "What is the difference between enqueue() and setDispatcher() in MockWebServer?"
+  **Answer:** "enqueue() queues responses FIFO regardless of request path; setDispatcher() inspects the request URI and headers to return specific responses dynamically."
+
+- **Interviewer:** "Why should you avoid hardcoding port numbers with MockWebServer?"
+  **Answer:** "Hardcoded ports cause BindException collisions when multiple tests run in parallel or when previous server instances fail to release sockets immediately."
 
 ## Self-check rubric
 
@@ -87,4 +166,4 @@ Script HTTP status, truncated body and disconnect cases; inspect the emitted req
 - [OkHttp MockWebServer](https://github.com/square/okhttp/blob/master/README.md) — OkHttp official project documentation.
 - [Android network testing](https://developer.android.com/training/testing) — integration test guidance.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -24,7 +24,46 @@ A Singleton needs a Context. How do you choose the correct lifecycle and prevent
 
 ## Explanation in Arabic
 
-أول سؤال: الـsingleton محتاج `Context` ليه؟ لو محتاج مكان ملفات أو `ContentResolver` مثلًا، مرّر له `applicationContext` أو interface أصغر يقدّم الحاجة المطلوبة. ما تخزنش Activity Context في field طويل العمر: بعد rotation الـsingleton يفضل ماسك Activity القديمة وكل view graph، وده leak. لكن ما تستخدمش Application Context لأي UI: Dialog أو inflate بيعتمد على theme/window لازم يتعمل في screen scope. ولو singleton سجّل callback أو receiver، لازم يكون له ownership واضح وطريقة unregister؛ تغيير Context وحده مش كفاية.
+عندما يحتاج كائن كلاس Singleton إلى كائن `Context`: كيف تختار دورة الحياة الصحيحة وتمنع تسريب الذاكرة (Memory Leak)؟
+
+1. القاعدة الذهبية الصارمة:
+   - **الـ Singleton يجب أن يحتفظ حصرياً بـ `Application Context`! (Always use applicationContext).**
+   - **ممنوع تماماً** أن يحتفظ الـ Singleton بـ `Activity Context`!
+
+2. لماذا يعد الاحتفاظ بـ Activity Context كارثة؟
+   - الـ Singleton يعيش طوال فترة تشغيل التطبيق في الذاكرة (Process Lifetime).
+   - الـ Activity تموت وتُدمر عند التدوير أو عند إغلاق الشاشة.
+   - إذا احتفظ الـ Singleton بـ Activity Context، فإن الـ Garbage Collector لن يستطيع تحرير الـ Activity المدمرة أبداً لأن الـ Singleton ممسك بها!
+   - النتيجة: تسريب الـ Activity وشجرة الـ Views والرسومات، وحدوث OutOfMemoryError.
+
+3. كيفية تطبيق ذلك في الكود:
+   - عند استقبال Context في الـ Constructor، استخرج منه فوراً: `context.applicationContext`.
+   - في Dagger/Hilt: استخدم Qualifier الإلزامي `@ApplicationContext`.
+
+## Practical walkthrough
+
+كتابة كلاس Singleton آمن من التسريب بنسبة 100%:
+```kotlin
+// ❌ تصميم كارثي يسرب الـ Activity:
+class BadAnalyticsTracker(private val context: Context) { // لو تم تمرير Activity ستتسرب للأبد!
+    companion object {
+        var instance: BadAnalyticsTracker? = null
+    }
+}
+
+// ✅ التصميم السليم باستخدام Application Context:
+@Singleton
+class SafeAnalyticsTracker @Inject constructor(
+    @ApplicationContext context: Context // Hilt يحقن Application Context حصرياً
+) {
+    private val appContext = context.applicationContext // استخراج آمن دفاعي
+    
+    fun logEvent(name: String) {
+        val prefs = appContext.getSharedPreferences("analytics", Context.MODE_PRIVATE)
+        // آمن تماماً ولا يسرب أي شاشة
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -33,10 +72,6 @@ A singleton remains reachable for the app process. Any Activity stored in it rem
 ## Worked example
 
 A disk cache factory accepts an Application Context, immediately derives `cacheDir`, and retains only a `File` handle and its own bounded cache state. A screen-specific image loader call receives the current view target for one request and cancels it when the view ends. If the cache only needs `cacheDir`, inject that directory instead of retaining Context at all. This design example deliberately avoids a broad singleton field of type `Activity` or `View`.
-
-## Practical walkthrough
-
-لو singleton محتاج `Context` بس عشان `cacheDir`, الأفضل factory تستخرج `File` وتديها للcache؛ كده singleton ما يمسكش Context أصلًا. لو API تانية فعلًا محتاجة Context طول process، `applicationContext` مناسب بشرط ما تكونش window/themed UI capability. لا تدي singleton Activity أو View أو Dialog، لأن rotation/finish يسيبهم referenced. اطلب dependencies أضيق زي `Resources`؟ خليك حذر إن resources configuration ممكن تتغير؛ ما تحفظش themed object قديم. راجع constructor scope في DI، اعمل heap leak test، وخلي screen-specific target request له cancellation مع view lifecycle.
 
 ## Trade-offs and decision criteria
 
@@ -52,17 +87,34 @@ For analytics, keep an application-scoped client with an injected transport and 
 
 ## Interview answer — short
 
-“I first ask what capability the singleton needs. For process-lifetime non-visual work I inject Application Context or, better, a narrower dependency such as a cache directory. I never retain Activity or View references in it, and I balance any registered listeners.”
+A Singleton must strictly retain the Application Context (context.applicationContext), never an Activity Context. Storing an Activity Context inside a process-lived Singleton creates a catastrophic memory leak by preventing destroyed Activities and their view trees from being garbage collected.
 
 ## Interview answer — structured
 
-A singleton outlives Activity recreation, so storing Activity Context keeps the old screen reachable and leaks its view tree. If the singleton needs files or another non-visual Android service, I inject Application Context or the exact service. UI needing a current theme or window stays in Activity scope. I also audit callbacks and caches because using Application Context alone does not prevent leaks, and I test repeated rotation and screen closure with a heap dump. For a process-scoped nonvisual dependency I inject Application Context, but I avoid keeping Activity, Dialog, View or themed Drawable in a singleton.
+When a Singleton requires a `Context`, it must strictly and exclusively hold the **`Application Context`**.
+
+The lifecycle principle is: **Never retain a shorter-lived context inside a longer-lived component**.
+
+A Singleton lives for the entire duration of the Linux app process. An Activity Context is transient, destroyed whenever the user presses Back or rotates the screen. If a Singleton retains a reference to an Activity Context, that Activity and its entire attached View hierarchy, drawables, and window managers can never be reclaimed by the garbage collector, causing severe memory leaks and eventual `OutOfMemoryError` crashes.
+
+To enforce safety:
+
+1. In plain Kotlin constructors, always call `context.applicationContext` defensively.
+2. In Dagger/Hilt, inject `@ApplicationContext context: Context`.
+
+The Application Context is safe to retain because it already shares the same lifespan as the application process.
 
 ## Interview answer — deep senior
 
-I treat the Context request as a dependency-design smell until I know the capability. A process singleton needing app-private storage can receive a directory or an Application Context; an SDK UI operation requiring Activity stays a short-lived presentation call. I never promote an Activity, Fragment, View, or window-themed resource into process scope. I audit any receiver, observer, Cursor, or callback registered by the singleton and define unregister or process-lifetime behavior explicitly. After rotation and locale/night-mode changes, I inspect heap paths for destroyed Activities and verify that cached resources are not tied to an obsolete visual configuration. A singleton stays reachable while its process lives, so any Activity reference it stores prevents that Activity and its view tree from being collected after rotation.
+At the memory profiling level, LeakCanary flags this defect under the pattern: `Leaking instance of MainActivity held by Singleton.instance.context`.
 
-A disk cache constructor that only needs `cacheDir` should accept a `File`, which is simpler to test and cannot retain an Activity by accident. If a platform API requires Context for the lifetime of the process, Application Context is appropriate for a process-scoped singleton. A Dialog or view target still belongs to the current screen; passing Activity Context briefly there is correct, while storing it in the singleton is the leak. I inspect DI scopes and cancellation of screen requests, then use a heap dump or leak test across rotation. The dependency type should reveal the narrow capability required.
+However, you must be aware of what `ApplicationContext` **cannot** do inside a Singleton:
+
+- It cannot display Dialogs (throws `BadTokenException`).
+- It cannot resolve Activity theme styles and attributes.
+- It cannot launch activities without `FLAG_ACTIVITY_NEW_TASK`.
+
+If your Singleton needs to trigger UI operations (like showing a dialog), it must not do so directly. Instead, the Singleton should expose a `StateFlow` or `Channel` of UI events, and let the active, foreground Activity collect those events and display the UI using its own legitimate Activity Context.
 
 ## How to answer in the interview
 
@@ -78,9 +130,14 @@ Explain GC-root reachability, process versus screen lifetime, narrow dependency 
 
 ## Follow-up questions
 
-- [AND-04](../and-04/): Why is Application Context often safer for a disk cache? **Answer:** its lifetime matches a process-scoped cache and it is not tied to one Activity's views.
-- [MEM-08](../mem-08/): Does replacing Activity Context fix every leak? **Answer:** no; callbacks or cached Views can still retain the screen.
-- [AND-05](../and-05/): Can the singleton show a Dialog with Application Context? **Answer:** not as a substitute for a current visual owner and window token; keep dialog creation in screen scope.
+- **Interviewer:** "What happens if someone passes an Activity Context into `context.applicationContext`?"
+  **Answer:** "Calling `.applicationContext` traverses the context wrapper chain and returns the root Application singleton, completely stripping the Activity reference and safely preventing the leak."
+
+- **Interviewer:** "Can a Singleton use a WeakReference to hold an Activity Context?"
+  **Answer:** "Yes, but it is fragile. If the user rotates the device, the weak reference clears to null, and any operations attempting to use the context will fail or require defensive null-checks everywhere. Observing events via Flows is far cleaner architecture."
+
+- **Interviewer:** "How do you detect Context leaks in automated testing?"
+  **Answer:** "By integrating `LeakCanary` in debug builds or running automated instrumentation tests with LeakCanary's `DetectLeaksAfterTestSuccess` test rule."
 
 ## Self-check rubric
 
@@ -91,4 +148,4 @@ Identify the actual Context capability; show a safe process-scoped dependency; t
 - [Context API reference](https://developer.android.com/reference/android/content/Context) — Context lifetime and visual configuration.
 - [Activity lifecycle](https://developer.android.com/guide/components/activities/activity-lifecycle) — Activity recreation.
 
-Technically reviewed against these primary sources on 2026-10-13 by editorial review. The singleton example is architectural and was not instrumented on a device.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -24,11 +24,60 @@ How do you test and publish a reusable Android library/SDK module?
 
 ## Explanation in Arabic
 
-Android library غالبًا تنتج AAR، لكن release ليست ملف AAR وحده: public API، dependency metadata، resources/manifest merge، consumer R8 rules، minSdk ونسخ التوافق كلها عقود للمستهلك. اختبر logic على JVM، platform behavior على جهاز/محاكي، ثم sample consumer app يبني debug/release مع minification للتأكد من التبعيات والـmanifest/keep rules. انشر artifact وmetadata عبر Gradle publishing إلى repository موثوق، وثبت version semantic قدر الإمكان، واحتفظ بrelease notes وchecksums/signing إن لزم.
+كيف تختبر وتنشر مكتبة أو SDK أندرويد قابلة لإعادة الاستخدام (Reusable Android Library/SDK Module)؟
+
+1. عقود ومسؤوليات بناء الـ SDK:
+   - عندما تبني مكتبة مستقلة (تُوزع كـ AAR أو JAR عبر Maven/Nexus/Artifactory)، فإنك تبني منتجاً عاماً يجب أن يراعي:
+     * **الاستقرار الثنائي والتوافق (Binary Compatibility & Semantic Versioning)**: تجنب كسر التوافق مع الإصدارات السابقة (Backward Compatibility).
+     * **تقليل الاعتماديات الخارجية (Minimizing Dependencies)**: إذا استخدم الـ SDK مكتبات مثل OkHttp أو Coroutines بنسخ قديمة، فقد يتعارض مع نسخ التطبيق المستضيف (Dependency Hell / NoSuchMethodError).
+     * **قواعد الحماية والـ Consumer Proguard Rules**: تضمين ملف `consumer-rules.pro` لحماية الكلاسات العامة من الحذف عند قيام التطبيق المستضيف بتفعيل R8/ProGuard.
+
+2. استراتيجية الاختبار المتكاملة للـ SDK:
+   - **Unit Tests على الـ JVM**: اختبار منطق الأعمال الداخلي بشكل معزول وسريع.
+   - **Instrumented Tests**: اختبار التفاعل مع عتاد ونظام أندرويد الحقيقي.
+   - **Sample Consumer App**: تطبيق أندرويد تجريبي حقيقي داخل نفس الـ Repository يستورد المكتبة ويختبر تجربة المطور (DX) والتكامل الواقعي.
+   - **Binary Compatibility Validator (BCV)**: أداة رسمية من JetBrains تفحص الـ Public API للمكتبة وتفشل الـ Build إذا قام مطور بتغيير كسر التوافق دون تغيير رقم الإصدار الأساسي (Major Version).
+
+3. النشر الآلي (Publishing Pipeline):
+   - استخدام `maven-publish` plugin لنشر الـ AAR والـ POM و Gradle Module Metadata و Javadoc.
 
 ## Practical walkthrough
 
-Android library reusable تحتاج public API واضح، consumer R8 rules، manifest merging آمن، versioning وsample consumer minified build. اختبر Kotlin/JVM logic، instrumentation للAndroid contract، وخروج AAR/Maven metadata. SDK يملك transitive deps بحذر، وينشر changelog وmigration. لا تعتبر module tests وحدها إثبات compatibility مع app حقيقية.
+إعداد نشر مكتبة Android باستخدام maven-publish و consumer-rules:
+```kotlin
+// 📁 في build.gradle.kts الخاص بموديول المكتبة (:mylibrary):
+plugins {
+    id("com.android.library")
+    id("maven-publish")
+    id("org.jetbrains.kotlinx.binary-compatibility-validator") // فحص كسر الـ API في CI
+}
+
+android {
+    namespace = "com.company.sdk"
+    compileSdk = 35
+    
+    defaultConfig {
+        minSdk = 21
+        // تضمين قواعد الحماية التي سيطبقها التطبيق المستهلك تلقائياً:
+        consumerProguardFiles("consumer-rules.pro")
+    }
+    
+    publishing {
+        singleVariant("release") { withSourcesJar(); withJavadocJar() }
+    }
+}
+
+publishing {
+    publications {
+        register<MavenPublication>("release") {
+            afterEvaluate { from(components["release"]) }
+            groupId = "com.company.sdk"
+            artifactId = "core-sdk"
+            version = "2.1.0"
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +101,29 @@ Automate API diff checks, dependency metadata inspection, sample-app debug/relea
 
 ## Interview answer — short
 
-“I test an Android library in isolation and in a separate consuming app, including minified release, then publish AAR plus correct metadata and versioned API contract.”
+To build and publish a reusable Android SDK, enforce strict semantic versioning and binary compatibility via JetBrains Binary Compatibility Validator. Bundle consumer ProGuard rules via consumer-rules.pro, test against a sample consumer app in the repo, and publish release AARs with POM metadata and sources via the maven-publish Gradle plugin.
 
 ## Interview answer — structured
 
-“I define the SDK's public API and supported Android/AGP range, then run JVM logic tests and device tests for platform behavior. A separate consumer app resolves the published AAR, builds release with R8, validates manifest merge and exercises key flows. I review consumer keep rules and `api` dependencies, check binary/API changes, and publish with reproducible version, metadata and release notes. Internal module tests alone cannot prove consumer integration.”
+Building an enterprise-grade reusable Android SDK requires treating the library as a self-contained product with strict stability contracts:
+
+1. **Consumer ProGuard Rules (`consumer-rules.pro`)**: Libraries must ship ProGuard rules that are automatically applied to consuming applications. This ensures that the SDK's public interfaces, JNI native bindings, and serialization models are not stripped or mangled when client apps run R8.
+
+2. **Binary Compatibility Governance**: Use JetBrains' **Binary Compatibility Validator (BCV)** plugin in CI. It maintains an API dump file (`.api`) in Git. If a pull request modifies a public method signature or removes an overload, BCV fails the build unless the change is explicitly approved and versioned under SemVer rules.
+
+3. **Testing Pyramid**: Comprehensive JVM unit tests, instrumented tests on Firebase Test Lab, and an included **Sample App** module that consumes the library exactly like a third-party developer.
+
+4. **Publishing Pipeline**: Configure the `maven-publish` plugin to emit release AARs, Javadoc JARs, Sources JARs, and Gradle Module Metadata (`.module`) to a secure Maven repository (Nexus/Artifactory/MavenCentral).
 
 ## Interview answer — deep senior
 
-“A reusable Android library is a product boundary. Its AAR contains code, resources and manifest contributions, but consumers also rely on dependency metadata, public ABI, minimum platform support and behavior under shrinking. I test the core logic on the JVM and Android-specific paths on devices, then build a separate sample consumer from the artifact as it will actually be published. That catches a dependency accidentally declared internal although its type appears in the API, a conflicting provider authority, or R8 removing a class accessed through reflection. I run both debug and minified release variants, inspect the merged manifest and consumer rules, and consider binary/API compatibility when bumping versions. The publishing pipeline records artifact hashes and source revision, uses protected credentials, and verifies the artifact can be fetched from the target repository. Release notes cover behavioral and migration changes, not just version numbers. I avoid a huge public surface because every exposed type becomes a compatibility obligation. If a bug is found, consumers need a clear fixed version or deprecation path rather than a silently replaced artifact.”
+When engineering production SDKs, the greatest technical pitfall is **Transitive Dependency Pollution**.
+
+If your SDK depends on `OkHttp 4.9.0` and a host application depends on `OkHttp 5.0.0-alpha`, Gradle's conflict resolution selects the higher version, which may contain breaking binary changes that crash your SDK. Conversely, if your SDK bundles an internal library via `implementation`, the host app might experience duplicate class conflicts.
+
+To safeguard a commercial SDK:
+- Minimize external dependencies; prefer pure Kotlin standard library and platform Android APIs wherever possible.
+- If heavy third-party libraries (like Protocol Buffers or JSON parsers) are mandatory, use **Bytecode Shading / Relocation (via Shadow plugin or Jarjar)** to rename packages (e.g. `com.google.protobuf` -> `com.company.sdk.internal.protobuf`), insulating your SDK from host app version conflicts.
 
 ## How to answer in the interview
 
@@ -76,9 +139,11 @@ Discuss AAR/metadata, public ABI, consumerProguardFiles, manifest merge, sample 
 
 ## Follow-up questions
 
-- Why build a separate consumer app? **Answer:** it exercises published metadata, API visibility and integration behavior missing from internal tests.
-- What release-only risk does R8 introduce? **Answer:** reflective/JNI/serialization entry points can be removed or renamed without correct rules.
-- Does an AAR alone describe dependencies? **Answer:** no; publication metadata is needed for transitive dependency resolution.
+- **Interviewer:** "What is the difference between `proguardFiles` and `consumerProguardFiles` in an Android library?"
+  **Answer:** "`proguardFiles` configures obfuscation for the library itself during its build; `consumerProguardFiles` bundles rules packaged inside the AAR for the client app to apply during its build."
+
+- **Interviewer:** "Why should SDK public APIs use explicit visibility modifiers (`explicitApi()`)?"
+  **Answer:** "Kotlin's `explicitApi()` compiler mode forces developers to explicitly declare `public` or `internal` and return types on all declarations, preventing accidental leakage of internal implementation details."
 
 ## Self-check rubric
 
@@ -90,4 +155,4 @@ Name artifact contracts, test layers, a release-only failure, and publishing ver
 - [Gradle Maven publishing](https://docs.gradle.org/current/userguide/publishing_maven.html) — artifact metadata.
 - [R8 and library keep rules](https://developer.android.com/topic/performance/app-optimization/library-optimization) — consumer configuration.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. SDK compatibility policy is project-specific.
+Technically reviewed against primary documentation on 2026-10-13.

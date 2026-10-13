@@ -23,11 +23,53 @@ How do you configure PR checks for lint, static analysis, and tests?
 
 ## Explanation in Arabic
 
-نضبط branch protection إن PR ما يندمجش إلا بعد compile، Android Lint، static analysis المختارة، JVM tests وcontract tests. Device tests حسب affected area أو release gate. كل check يطلع report واضح ويفشل عند threshold متفق عليه. مش نخلط warning جديد مع baseline debt؛ baseline مؤقتة لها owner وخطة تقليل.
+كيف تقوم بإعداد وتأمين بوابات فحص الـ PRs (Pull Request Checks) للـ Lint والتحليل الساكن واختبارات الوحدة؟
+
+1. استراتيجية بوابة الجودة للـ PR (PR Quality Gate):
+   - الهدف الأساسي هو مبدأ **Fail-Fast**: إيقاف الكود المعيب في أسرع وقت ممكن (خلال دقيقة إلى 3 دقائق) قبل إهدار موارد السيرفر في بناء كامل أو اختبارات بطيئة.
+
+2. المكونات الأساسية للبوابة:
+   - **1. تنسيق الكود (Code Formatting)**: استخدام Spotless أو ktlint للتحقق من التزام الكود بمعايير Kotlin الرسمية (المسافات، الترتيب، الـ imports غير المستخدمة).
+   - **2. التحليل الساكن (Static Analysis)**: تشغيل Detekt لكشف مشاكل تعقيد الكود (Cyclomatic Complexity)، والـ Code Smells، والـ Magic Numbers.
+   - **3. أندرويد لنت (Android Lint)**: تشغيل `./gradlew lintDebug` للتحقق من مشاكل الـ Android SDK وموارد التطبيق والذاكرة واستخدام الـ APIs غير المتوافقة.
+   - **4. اختبارات الوحدة السريعة**: تشغيل `./gradlew testDebugUnitTest` للتأكد من خلو منطق العمل من أي انحدار (Regressions).
+
+3. إدارة الديون التقنية عبر الـ Baselines:
+   - في المشاريع الكبيرة ذات الكود القديم، تشغيل Lint قد يُظهر 500 خطأ قديم! الحل ليس تجاهل Lint، بل توليد **Lint Baseline (`lint-baseline.xml`)** و **Detekt Baseline**؛ بحيث تتجاهل البوابة الأخطاء القديمة مؤقتاً، ولكن **ترفض الـ PR فوراً إذا أضاف المطور خطأً جديداً واحداً**.
 
 ## Practical walkthrough
 
-PR checks لازم ترتبط بمخاطر التغيير: compile للـvariants الأساسية، Android Lint، static analysis، unit tests، contract tests، ومع feature حساس نفّذ release-like test أو emulator. Branch protection يمنع الدمج قبل required checks ومراجعة مستقلة. لا تجعل PR من fork يستخدم signing secrets. فرّق بين test فشل بسبب code وemulator تعطل؛ أظهر artifacts والlogs وخلي owner واضح. التغطية المئوية وحدها مش بوابة جودة.
+إعداد Gradle وملف عمل GitHub Actions لتشغيل الفحوصات وإظهار التقارير مباشرة في الـ PR:
+```yaml
+# .github/workflows/pr_checks.yml
+name: PR Static & Unit Checks
+on:
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  quality_gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v3
+
+      # تشغيل الفحوصات مع استمرار التنفيذ لتجميع كل الأخطاء وتقديم تقرير موحد (--continue)
+      - name: Run Linters and Tests
+        run: ./gradlew spotlessCheck detekt lintDebug testDebugUnitTest --continue
+
+      # رفع تقارير الفحص كـ Artifacts في حال فشل أي فحص لتسهيل الفحص
+      - name: Upload Test and Lint Reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-check-reports
+          path: |
+            **/build/reports/lint-results-debug.html
+            **/build/reports/tests/testDebugUnitTest/
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +93,33 @@ CI publishes lint SARIF/report, test failures and changed-file context. Owners r
 
 ## Interview answer — short
 
-“I require compile, lint/static checks, unit and contract tests on the current PR SHA, with targeted device checks for risky changes. Secrets stay out of untrusted PR jobs.”
+Configure PR checks by chaining Spotless/ktlint for formatting, Detekt for static analysis, Android Lint with baseline files for framework checks, and testDebugUnitTest for local JVM unit tests. Run with the --continue flag in parallel jobs to fail fast while aggregating all errors into PR comments or build summaries.
 
 ## Interview answer — structured
 
-“I configure branch protection around named, reliable status checks. Fast Gradle compile, Android Lint, static analysis, JVM and contract tests run on PRs; targeted instrumentation runs when platform behavior changes. Reports show actionable findings, and baselines for old debt do not excuse new issues. Untrusted fork code gets read-only permissions and no signing material. Broader device/hardware suites gate release. ”
+A production PR quality gate is designed to enforce strict code standards without crippling developer velocity:
+
+1. **Fail-Fast Pipeline Structure**:
+   - Separate lightweight checks into parallel jobs: (a) formatting and static analysis (Spotless/ktlint, Detekt), and (b) local JVM unit tests (`testDebugUnitTest`). This provides feedback within 2–3 minutes.
+
+2. **Baseline Management for Legacy Projects**:
+   - Enforce zero-tolerance for new issues in legacy codebases by generating Lint and Detekt baselines (`lintOptions { baseline = file("lint-baseline.xml") }`). Existing issues are recorded and grandfathered in, while newly introduced violations fail the PR build immediately.
+
+3. **Inline PR Feedback & Actionable Reporting**:
+   - Integrate tools like Danger or reviewdog to parse Lint XML reports and publish inline GitHub PR comments directly on offending lines, eliminating the need for engineers to download raw CI log files.
+
+4. **Execution Resilience**:
+   - Use the `--continue` Gradle flag so the runner executes all static checks in a single pass, reporting formatting, lint, and unit test failures simultaneously rather than forcing repeated CI runs for sequential errors.
 
 ## Interview answer — deep senior
 
-“I make PR checks a contract rather than a list of green badges. The baseline compiles relevant variants, runs Android Lint/static analysis and fast JVM tests, and validates content or API contracts that can break other modules. I add targeted emulator tests when the change touches lifecycle, Room or UI semantics, and a minified release-like check for manifest, R8 or SDK integration risk. Branch protection requires those checks on the exact head or merge commit and prevents bypass except through an auditable process. A fork PR runs untrusted code with minimal token permissions and no signing secrets. To keep feedback useful, I parallelize independent checks, publish test reports and identify a check owner when flakes appear. A failure is not automatically waived because a retry passes; I investigate the race or environment and time-box quarantine. For payment logic, a low line coverage number is less important than an explicit duplicate-charge and unknown-outcome test that truly exercises the contract.”
+From an engineering governance and CI infrastructure standpoint, PR checks require careful caching and branch protection rules:
+
+1. **Branch Protection Enforcement**: In GitHub or GitLab settings, mandate 'Require status checks to pass before merging' and 'Require branches to be up to date before merging'. This prevents race conditions where two PRs pass CI independently but break when merged together.
+
+2. **Targeted Subproject Execution**: In a multi-module architecture of 80+ modules, running `./gradlew check` across the entire project on every 3-line PR wastes massive compute. Teams configure path filters or tools like Gradle's configuration-cache and affected-module-detector to run tests only on modules impacted by the PR's git diff.
+
+3. **Remote Build Cache**: Enable Gradle's remote build cache (`org.gradle.caching=true`) backed by an S3/GCS or Develocity instance. If an engineer refactors a leaf module, upstream modules are retrieved from cache with `FROM-CACHE` status in seconds.
 
 ## How to answer in the interview
 
@@ -75,8 +135,11 @@ Prompt for head SHA, branch protection, baseline debt, affected tests and untrus
 
 ## Follow-up questions
 
-- [CIC-18](../cic-18/): Why separate PR/release workflows? **Answer:** PR code must not read signing secrets.
-- [TST-24](../tst-24/): How keep gate fast? **Answer:** cheap high-signal checks early and targeted slow tests.
+- **Interviewer:** "What is the purpose of the `--continue` flag in Gradle CI commands?"
+  **Answer:** "It instructs Gradle to execute every scheduled task even if an earlier task fails, aggregating all errors in a single CI run."
+
+- **Interviewer:** "How do baseline files help manage tech debt in Android Lint?"
+  **Answer:** "They record existing violations so CI only fails if a developer introduces new violations or modifies lines containing old ones."
 
 ## Self-check rubric
 
@@ -87,4 +150,4 @@ Specify required PR checks, branch protection and artifact identity; run lint/st
 - [Android Lint](https://developer.android.com/studio/write/lint) — static checks.
 - [Gradle command-line builds](https://docs.gradle.org/current/userguide/command_line_interface.html) — task execution.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

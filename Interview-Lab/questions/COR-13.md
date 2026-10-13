@@ -22,11 +22,31 @@ Can the candidate predict ordinary child failure, sibling cancellation, parent f
 
 ## Explanation in Arabic
 
-في شجرة `Job` عادية، child يرمي exception غير `CancellationException` غالبًا يلغي الـparent وباقي الـsiblings. الأب يستنى الأطفال يخلصوا cleanup قبل ما يكتمل بالفشل. ده مناسب لو النتائج لازم تبقى متسقة؛ لكنه غلط لو كل widget مستقل. `SupervisorJob` أو `supervisorScope` تغيّر علاقة فشل الإخوة، مع استمرار إلغاء الـparent لكل الأطفال.
+سلوك الأب والإخوة عند فشل أحد الأبناء (Child Coroutine Failure) بيعتمد بنسبة 100% على **نوع الـ Parent Job**:
+
+1. في حالة الـ Standard Job (أو داخل `coroutineScope`):
+   - **تسلسل الانهيار (Cascading Teardown):**
+     1. الابن بيرمي Uncaught Exception.
+     2. الابن يرسل إشعار إلغاء للأب (`parent.childCancelled(cause)`).
+     3. الأب يلغي نفسه فوراً.
+     4. الأب يرسل إشارات إلغاء لجميع الأبناء الآخرين (Siblings)، ويتم إلغاؤهم بـ `CancellationException`.
+     5. الأب يجمع أي Exceptions حدثت في الإخوة كـ Suppressed Exceptions ويرمي الاستثناء الأصلي للأعلى.
+   - الهدف: الحفاظ على اتساق البيانات (Consistency)؛ لا نترك عمليات نصف مكتملة في الخلفية.
+
+2. في حالة الـ `SupervisorJob` (أو داخل `supervisorScope`):
+   - **عزل الفشل (Failure Isolation):**
+     1. الابن يرمي Exception.
+     2. الأب (Supervisor) يتجاهل الإلغاء ويظل حياً ونشطاً (`isActive = true`).
+     3. باقي الإخوة (Siblings) يستمرون في العمل بدون أي تأثر.
+     4. الابن الفاشل فقط هو الذي ينتهي، واستثناؤه يتم توجيهه للـ `CoroutineExceptionHandler` الخاص به أو إلى الـ Thread Uncaught Exception Handler.
 
 ## Practical walkthrough
 
-لو `async` واحد فشل قبل ما تعمل `await` للتاني، parent العادي يبدأ cancel للإخوة فورًا؛ `await` مش الزر اللي يبدأ انتشار الفشل. ده مهم في تجميع بيانات checkout: لا تعرض جزء ناجح وكأنه نتيجة كاملة. أما `CancellationException` الناتجة من إلغاء طلب بسبب خروج المستخدم فهي إلغاء طبيعي، مش business error تكرر بسببه الطلب.
+في شاشة عرض تفاصيل الطلب (Order Details):
+- بنطلب 3 خدمات: 1. معلومات الشحن، 2. معلومات الفاتورة، 3. توصيات منتجات إضافية.
+- **تحليل السيناريو المعماري:**
+  * الشحن والفاتورة: عمليتان حرجتان؛ لو فشل الشحن، لا فائدة من الفاتورة. هنا نستخدم `coroutineScope` العادي لكي يلغي العملية الأخرى فوراً عند الفشل (Fail-Fast).
+  * توصيات المنتجات: خدمة غير حرجة؛ لو فشلت لا نريد إلغاء الشحن والفاتورة. هنا نضعها داخل `supervisorScope` أو نفصلها لكي لا يؤثر فشلها على العمليات الحيوية.
 
 ## Why it matters and how it works
 
@@ -64,15 +84,23 @@ A checkout screen needs price and tax from one calculation version. Failure of e
 
 ## Interview answer — short
 
-“In a normal structured scope, an uncaught child failure cancels the parent and siblings. Parent cancellation also cancels children. A `CancellationException` is cancellation, not a domain failure. Supervision changes sibling failure propagation but still requires explicit handling.”
+In a standard Job hierarchy, if a child coroutine fails with an uncaught exception, it cancels its parent, which immediately cancels all other siblings (fail-fast). In a SupervisorJob or supervisorScope, the failure is isolated: the parent remains active and siblings continue executing undisturbed.
 
 ## Interview answer — structured
 
-“I predict the Job tree rather than reason about each coroutine in isolation. Under an ordinary Job, one child’s non-cancellation exception cancels the parent, which cancels its other children; the scope waits for cleanup and exposes the failure. That is useful for all-or-nothing aggregates. Under supervision, direct sibling jobs can continue, but their failures must be converted into outcomes or reported. Parent cancellation still reaches all children. I also separate cancelling client work from rolling back external side effects.”
+What happens to the parent and siblings depends entirely on whether the parent is a standard Job or a SupervisorJob.
+
+In a standard Job hierarchy—such as inside a standard `coroutineScope`—the behavior is 'fail-fast'. When a child coroutine encounters an uncaught exception (other than CancellationException), it notifies its parent. The parent cancels itself, and that cancellation cascades downwards to immediately cancel all sibling coroutines. This prevents partial state corruption, ensuring that if one critical step in an operation fails, related parallel tasks are cleaned up.
+
+In contrast, under a `SupervisorJob` or `supervisorScope`, child failure is strictly isolated. The supervisor parent does not cancel itself when a child fails, and active sibling coroutines continue running to completion. The failed child terminates independently, and its exception must be handled locally or by a CoroutineExceptionHandler attached to that child.
 
 ## Interview answer — deep senior
 
-“The exact outcome depends on the boundary. In `coroutineScope`, a child failure is propagated to the scope; siblings receive cancellation and the scope waits for them to finish before throwing. Catching around `await` after the failure may not save the parent because failure propagation already happened. A `CancellationException` usually marks normal cancellation and should be rethrown rather than logged as a defect. `supervisorScope` isolates direct child failure, yet an exception from its own block cancels children. For a production aggregate, I decide whether partial success is valid, design API idempotency and reconciliation separately, and test slow sibling cancellation so the UI does not hang indefinitely. I would draw the Job tree in the interview and mark two different events: explicit cancellation of a child versus failure with an ordinary exception. A child cancelled on purpose does not normally fail the parent, while an ordinary failure does, and siblings are cancelled. The first exception is primary; cleanup failures may be suppressed. For a checkout aggregate I would verify no partial quote is published and that all sibling requests have finished or cancelled before returning.”
+At the internal implementation level, when a child throws an unhandled exception, it calls `parent.childCancelled(e)`. A standard `JobSupport` parent returns `true` to acknowledge the cancellation, transitions its state to Cancelling, and iterates through its `NodeList` of child handles, calling `child.cancel(CancellationException(cause))` on every active child.
+
+If another sibling also throws an exception while being cancelled, the parent attaches that second exception as a suppressed exception (`Throwable.addSuppressed()`) to the root cause, ensuring that no diagnostic failure information is lost in stack traces.
+
+In Android architecture, recognizing this distinction determines whether you use `coroutineScope` or `supervisorScope`. If parallel sub-tasks are interdependent (e.g., merging two API responses into a single combined UI entity), use `coroutineScope`. If the sub-tasks are independent UI components (e.g., separate dashboard cards), use `supervisorScope` so one failed widget doesn't blank out the entire screen.
 
 ## How to answer in the interview
 
@@ -88,8 +116,14 @@ Draw failure arrows for normal and supervised trees, then account for side effec
 
 ## Follow-up questions
 
-- [COR-11](../cor-11/): When do siblings survive? **Answer:** direct siblings under a supervisor can continue after one child fails.
-- [COR-15](../cor-15/): Does `async` hide failure? **Answer:** it stores it for `await`, but normal child failure can still cancel the parent.
+- **Interviewer:** "Does a child failing with `CancellationException` cancel its parent or siblings?"
+  **Answer:** "No! `CancellationException` is special. It signifies normal, cooperative task termination. When a child throws `CancellationException`, it terminates itself without notifying the parent as an error, so the parent and sibling coroutines continue running normally."
+
+- **Interviewer:** "If an `async` child fails inside `coroutineScope`, does it cancel siblings before `await()` is called?"
+  **Answer:** "Yes! Even if you never call `await()`, an uncaught exception in an `async` child inside a standard `coroutineScope` immediately cancels the parent scope and all sibling coroutines."
+
+- **Interviewer:** "How do you inspect suppressed exceptions from cancelled siblings?"
+  **Answer:** "When catching the parent's exception, you can inspect `exception.suppressed` or `exception.suppressedExceptions` array, which contains any secondary exceptions thrown by siblings during their cancellation unwinding."
 
 ## Self-check rubric
 
@@ -100,4 +134,4 @@ Can I predict normal and supervised sibling fate, explain cleanup waiting, and s
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — parent and child failure semantics.
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — structured completion.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -22,11 +22,46 @@ Compare lifecycle-aware View collection with Compose state collection and restar
 
 ## Explanation in Arabic
 
-في Views، `repeatOnLifecycle(STARTED)` يشغّل block لما LifecycleOwner يوصل STARTED ويلغيه لما ينزل STOPPED، وبيرجع يشغّله عند الرجوع. في Compose، `collectAsStateWithLifecycle()` يحوّل Flow/StateFlow إلى Compose State ويراعي lifecycle تحت الغطاء. لازم نستخدم `viewLifecycleOwner` في Fragment view، ونفهم إن restart ممكن يعيد cold upstream أو replay آخر StateFlow value.
+المقارنة بين `repeatOnLifecycle` و `collectAsStateWithLifecycle` هي جوهر استهلاك البيانات الآمن دورياً (Lifecycle-Safe Collection) في أندرويد:
+
+1. المشكلة في الجمع التقليدي (`collect` العادي في `lifecycleScope`):
+   - لو كتبت `lifecycleScope.launch { flow.collect { } }`، الـ Coroutine ستظل تجمع وتستقبل بيانات حتى لو التطبيق في الخلفية (Background) والشاشة غير مرئية!
+   - هذا يستهلك المعالج والبطارية ويرسل طلبات شبكة ويحدث Views غير مرئية في الخلفية.
+
+2. دالة `repeatOnLifecycle(Lifecycle.State)` (في XML / Views):
+   - دالة Suspending تعيد تشغيل الـ Coroutine عندما يصل الـ Lifecycle لحالة معينة (عادة `STARTED`).
+   - **وتلغي الـ Coroutine تلقائياً فوراً** عندما ينزل الـ Lifecycle تحت تلك الحالة (مثل `STOPPED` عند وضع التطبيق في الخلفية)!
+   - عند عودة المستخدم للتطبيق، يعاد تشغيل الـ Collection من جديد بنظافة.
+
+3. دالة `collectAsStateWithLifecycle()` (في Jetpack Compose):
+   - هي التوأم المخصص لـ Jetpack Compose.
+   - تستمع للـ Flow بطريقة Lifecycle-aware وتنتج Compose `State<T>`.
+   - تتوقف عن جمع البيانات تلقائياً عندما تكون الشاشة في الخلفية، وتستأنف عند العودة.
 
 ## Practical walkthrough
 
-في Fragment View، `repeatOnLifecycle(STARTED)` تشغّل collection لما view owner يبدأ وتلغيها لما يقف، ثم ترجعها. في Compose Android، `collectAsStateWithLifecycle()` تختصر Flow→Compose State بنفس lifecycle owner المناسب. لو collect من Activity lifecycle بدل `viewLifecycleOwner` في Fragment، ممكن تحدث View مدمرة؛ ولو جمعت hot flow خارج lifecycle، شغلها يستمر وهي مخفية.
+مقارنة عملية في الكود:
+```kotlin
+// 1. في XML Activity / Fragment:
+override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+    super.onViewCreated(view, savedInstanceState)
+    viewLifecycleOwner.lifecycleScope.launch {
+        viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            viewModel.uiState.collect { state ->
+                renderUi(state)
+            }
+        }
+    }
+}
+
+// 2. في Jetpack Compose Composable:
+@Composable
+fun ProfileScreen(viewModel: ProfileViewModel) {
+    // توأم repeatOnLifecycle المخصص لـ Compose:
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    ProfileContent(state)
+}
+```
 
 ## Why it matters and how it works
 
@@ -79,15 +114,30 @@ A Fragment collects screen StateFlow under repeatOnLifecycle, while a Compose sc
 
 ## Interview answer — short
 
-“repeatOnLifecycle is an explicit Views collection block that starts and stops with lifecycle state. collectAsStateWithLifecycle is a Compose helper that converts a stream to lifecycle-aware State. I use viewLifecycleOwner in Fragments and expect cold upstream to restart unless shared.”
+repeatOnLifecycle pauses and restarts coroutine collection when an Android Lifecycle enters and exits a specified target state (e.g. STARTED) in View-based code; collectAsStateWithLifecycle is its Jetpack Compose equivalent, converting a Flow into Compose State with automatic background collection pausing.
 
 ## Interview answer — structured
 
-“For Views I launch from the view lifecycle and call `repeatOnLifecycle(STARTED)`, which cancels the inner collection at STOP and restarts it at START. In Compose, `collectAsStateWithLifecycle` gives a State value for rendering while respecting lifecycle. Both avoid collecting UI state continuously while the screen is invisible. A StateFlow replays its current value on restart, while a cold Flow may rerun source work, so I share expensive upstream in the ViewModel when appropriate. I test rotation and STOP/START separately.”
+Both APIs solve the critical problem of **Lifecycle-Safe Flow Collection**, ensuring that backgrounded Android screens stop observing data streams to conserve battery and CPU.
+
+**`repeatOnLifecycle(Lifecycle.State.STARTED)`** is designed for the View/XML layer (Activities and Fragments). It is a suspending function that launches a collection block when the lifecycle enters `STARTED`. When the user minimizes the app and the lifecycle drops to `STOPPED`, it **cancels the coroutine immediately**. When the user returns to the app, it relaunches the block fresh.
+
+**`collectAsStateWithLifecycle()`** is the specialized Jetpack Compose equivalent from `androidx.lifecycle.compose`. It collects a Flow in a lifecycle-aware manner (defaulting to `Lifecycle.State.STARTED`) and emits a Compose `State<T>`. When the app goes into the background, it suspends collection, preventing recompositions and stopping upstream cold flows until the screen is visible again.
 
 ## Interview answer — deep senior
 
-“Lifecycle-aware collection is a consumer policy, not the source-of-truth design. `repeatOnLifecycle` relaunches its block as the owner crosses the chosen state; if I have multiple endless flows, I launch each as a child within that block. In a Fragment I use `viewLifecycleOwner` so destroyed views do not retain collectors. Compose’s `collectAsStateWithLifecycle` is well suited to renderable state, but one-shot effects still need an explicit delivery contract. Re-collection of a cold Flow can repeat HTTP or listener registration, while a StateFlow gives the latest snapshot. I verify startup, STOP, restart and process recreation, and keep durable business state outside the UI stream. I would choose based on UI framework and required operation. In Views, `repeatOnLifecycle` runs a block while the chosen LifecycleOwner is at least STARTED and cancels/restarts the block around visibility; in a Fragment I use the view lifecycle owner for view-bound work. In Android Compose, `collectAsStateWithLifecycle` converts a Flow or StateFlow into Compose State under a lifecycle minimum, usually STARTED, so recomposition sees the current value while active. Both manage collection, not necessarily the upstream producer: a ViewModel job or eagerly shared source may continue. I test stop/start and rotation, then check the repository sharing policy if background work persists. For multiple flows in a repeat block I launch child collectors so one infinite collection does not block another.”
+Historically, developers used `flowWithLifecycle()`. However, `repeatOnLifecycle` is vastly superior because it can host multiple parallel flow collections inside a single block, avoiding multiple observer allocations:
+
+```kotlin
+viewLifecycleOwner.lifecycleScope.launch {
+    viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+        launch { viewModel.feed.collect { ... } }
+        launch { viewModel.notifications.collect { ... } }
+    }
+}
+```
+
+In Jetpack Compose, using plain `collectAsState()` is an antipattern because it keeps the flow collection active as long as the composable is part of the composition tree, even when the Activity is paused or stopped in the background. `collectAsStateWithLifecycle()` internally uses `repeatOnLifecycle` under the hood to unsubscribe from the Flow during backgrounding, which in turn triggers `WhileSubscribed(5000)` in the ViewModel to shut down upstream network and database sensors.
 
 ## How to answer in the interview
 
@@ -103,8 +153,14 @@ Trace START/STOP cycles, cold restart, StateFlow replay and Fragment view destru
 
 ## Follow-up questions
 
-- [FLO-23](../flo-23/): What if collection never stops? **Answer:** offscreen work continues and may retain a destroyed view.
-- [FLO-08](../flo-08/): How avoid repeated upstream work? **Answer:** share in a ViewModel/session scope with deliberate start policy.
+- **Interviewer:** "Why must you use `viewLifecycleOwner` instead of `this` in Fragments?"
+  **Answer:** "Because a Fragment's view lifecycle is destroyed and recreated separately from the Fragment instance itself (e.g., when placed on the backstack). Using `viewLifecycleOwner` ensures flow collection cancels when the view is destroyed, preventing view memory leaks."
+
+- **Interviewer:** "Why is `Lifecycle.State.STARTED` the recommended state instead of `RESUMED`?"
+  **Answer:** "`STARTED` ensures that the UI updates even when partially visible in multi-window or picture-in-picture mode. `RESUMED` only runs when the window has full user touch focus, which pauses updates in split-screen mode."
+
+- **Interviewer:** "What dependency is required for `collectAsStateWithLifecycle`?"
+  **Answer:** "It requires the `androidx.lifecycle:lifecycle-runtime-compose` dependency."
 
 ## Self-check rubric
 
@@ -115,4 +171,4 @@ Can I use both APIs correctly, choose Fragment view owner and predict restart be
 - [Android lifecycle coroutines](https://developer.android.com/topic/libraries/architecture/coroutines) — repeatOnLifecycle.
 - [Android Compose lifecycle state](https://developer.android.com/reference/kotlin/androidx/lifecycle/compose/package-summary) — collectAsStateWithLifecycle.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

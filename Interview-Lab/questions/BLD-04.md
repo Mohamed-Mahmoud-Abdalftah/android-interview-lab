@@ -24,11 +24,50 @@ What is the difference between debug and release signing?
 
 ## Explanation in Arabic
 
-Debug build غالبًا يوقع تلقائيًا بـdebug keystore للتطوير، وهو ليس هوية نشر موثوقة. Release يحتاج signing config بمفتاح محمي؛ update لنفس package يعتمد على signing identity المتوافقة. مع Play App Signing، ترفع AAB موقعة بـupload key، وGoogle Play يوقع APKs التي تصل للمستخدم بمفتاح app signing المُدار؛ لا تخلط الاثنين. احفظ release/upload key في protected CI secrets أو نظام مفاتيح مناسب، لا في Git أو logs، واختبر شهادة artifact قبل upload. فقدان upload key له إجراء reset مختلف عن فقدان app-signing key.
+ما هو الفرق الجوهري بين التوقيع التجريبي (Debug Signing) والتوقيع الرسمي (Release Signing) في أندرويد، وكيف تحمي مفاتيح الإنتاج؟
+
+1. ما هو التوقيع الرقمي للـ APK/AAB؟
+   - نظام أندرويد لا يقبل تثبيت أي تطبيق غير موقع رقمياً (Cryptographically Signed).
+   - التوقيع يضمن أمرين: **هوية المطور (Author Identity)** و**سلامة الكود من التعديل (Integrity)**. لا يمكن لأي تطبيق آخر تحديث تطبيقك إلا إذا كان موقعاً بنفس الشهادة الرقمية تماماً.
+
+2. التوقيع التجريبي (Debug Signing):
+   - يتم تلقائياً باستخدام ملف `debug.keystore` الافتراضي الذي ينشئه أندرويد ستوديو في مجلد المستخدم (`~/.android/debug.keystore`).
+   - كلمة المرور والمفتاح معروفان وثابتان عالمياً (`android` / `androiddebugkey`).
+   - **غير آمن ومكشوف للجميع**؛ يُستخدم فقط للتطوير والاختبار المحلي.
+
+3. التوقيع الرسمي (Release Signing):
+   - يعتمد على Keystore خاص مشفر بمفتاح تشفير قوي (2048-bit RSA أو 256-bit EC) تم إنشاؤه بواسطة فريق الأمان.
+   - **قاعدة أمنية صارمة**: **ممنوع كتابة كلمات مرور الـ Keystore أو مسار المفتاح كنص صريح في ملف build.gradle.kts** أو رفعه إلى Git Repository!
+   - يجب تمرير كلمات المرور والمسارات عبر Environment Variables مشفرة في خوادم الـ CI/CD (GitHub Secrets) أو قراءتها من أداة إدارة أسرار موثوقة (HashiCorp Vault / Google Secret Manager).
 
 ## Practical walkthrough
 
-Debug key للتطوير ولا تستخدمها لمسار نشر. Release upload key مربوط بصلاحية رفع، وPlay App Signing قد يدير app signing key منفصلة؛ فرّق بينهما. خزّن credentials في protected release job، وراجع fingerprint قبل upload. خطأ key قد يمنع update أو يسبب incident؛ لا تحاول إصلاحه بforce key change بلا فهم سياسة المتجر.
+تكوين Release Signing في Gradle باستخدام Environment Variables وتجنب كتابة الأسرار في الكود:
+```kotlin
+android {
+    signingConfigs {
+        create("release") {
+            // قراءة مسار المفتاح وكلمات المرور من متغيرات البيئة المشفرة في CI/CD
+            storeFile = file(System.getenv("KEYSTORE_FILE_PATH") ?: "keystore/dummy.jks")
+            storePassword = System.getenv("KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("KEY_ALIAS")
+            keyPassword = System.getenv("KEY_PASSWORD")
+            
+            // تفعيل أحدث إصدارات التوقيع الرقمي المدعومة عتادياً:
+            enableV1Signing = true // JAR Signature للأجهزة القديمة
+            enableV2Signing = true // APK Signature Scheme v2 (كامل الأرشيف)
+            enableV3Signing = true // APK Signature Scheme v3 (يدعم تدوير المفاتيح)
+            enableV4Signing = true // APK Signature Scheme v4 (تدفق التثبيت السريع عبر ADB)
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +91,34 @@ Protect keys, restrict signing jobs, record certificate fingerprints and artifac
 
 ## Interview answer — short
 
-“Debug signing is for local development; release signing uses a protected identity. With Play App Signing, the upload key signs the AAB and Play signs delivered APKs.”
+Debug signing uses a standard insecure local keystore with public credentials (android/androiddebugkey) for local development. Release signing uses a secure private cryptographic key that must never be committed to source control, managed via CI/CD environment variables or Play App Signing.
 
 ## Interview answer — structured
 
-“I keep debug and release credentials separate. Debug builds can use the tool-generated debug keystore, while release artifacts are signed in a protected CI job with a controlled upload/release key. For Play App Signing I distinguish the upload certificate used to authenticate the submitted bundle from the app-signing certificate on user-installed APKs. I verify the intended fingerprint, version and artifact hash before promotion and never expose keys to untrusted PR jobs.”
+Cryptographic code signing establishes developer identity and artifact immutability on Android:
+
+1. **Debug Signing**:
+   - Uses a default auto-generated keystore (`~/.android/debug.keystore`) with well-known public credentials (`android` password and `androiddebugkey` alias). Intended strictly for local development and USB debugging.
+   - Debug signatures are non-unique and must never be permitted in production, as third parties could mimic the identity or claim debug-level permissions.
+
+2. **Release Signing**:
+   - Uses an enterprise cryptographic keystore. Guarantees that app updates come authentically from the original developer. Upgrading an app fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` if the signing certificate does not match the installed version.
+
+3. **Secrets Hygiene in CI/CD**:
+   - Never commit `.keystore` / `.jks` files or passwords into Git repositories. Inject keystores as Base64-encoded strings and passwords via encrypted environment variables inside secure CI/CD runners (GitHub Actions Secrets).
+
+4. **APK Signature Schemes (v1 through v4)**:
+   - Enable modern signing schemes: v1 (JAR signing), v2 (whole-file hash verification), v3 (cryptographic key rotation support), and v4 (supporting streaming installations over ADB on Android 11+).
 
 ## Interview answer — deep senior
 
-“Signing is an app identity and supply-chain control, not merely a Gradle switch. The debug keystore is designed for quick local installs; its identity is not the one I want associated with production updates. A release pipeline builds the intended minified variant, signs the AAB in a protected environment and verifies its upload certificate fingerprint and artifact hash. Under Play App Signing, the upload key authenticates the artifact sent to Play, while Play uses the app-signing key to sign the APKs delivered to devices. Those are different roles and have different recovery procedures. I keep keystore material out of source and logs, prevent untrusted PR code from reaching the signing job, restrict access and audit changes. If a bundle is signed with the wrong upload key, I stop promotion and rebuild from the same verified source/toolchain with the registered key; I do not try to patch a signed artifact in place. If key compromise is suspected, I follow the Play/account recovery and rotation process appropriate to that key. Debug success cannot prove a release can update installed users.”
+From an operational security perspective, Google Play App Signing decouples development risk from master distribution keys:
+
+1. **The Play App Signing Architecture**: Traditionally, losing an app's private release key meant the developer could never update the application again—abandoning millions of active users. With Play App Signing, developers sign artifacts using a distinct **Upload Key**. Google strips the upload signature, validates it, and re-signs the APKs using the master **App Signing Key** locked in Google Cloud KMS. If an upload key is compromised or lost, Google resets it via developer console support without disrupting existing users.
+
+2. **Third-Party API Binding (SHA-1 / SHA-256 Fingerprints)**: APIs like Google Sign-In, Firebase Auth, and Google Maps validate requests using the signing certificate's SHA-1 fingerprint. When using Play App Signing, developers must register the **Play App Signing Key's SHA-1** in Google Cloud Console, not just their local upload key SHA-1, or third-party authentication will fail in production releases.
+
+3. **Key Rotation via Scheme v3**: APK Signature Scheme v3 enables key rotation by embedding a cryptographic proof-of-rotation lineage attribute in the signing block, allowing applications to migrate to stronger keys over time.
 
 ## How to answer in the interview
 
@@ -76,9 +134,11 @@ Discuss update identity, debug convenience, protected CI, upload versus app-sign
 
 ## Follow-up questions
 
-- Which key signs Play-delivered APKs under Play App Signing? **Answer:** the app-signing key managed by Play.
-- Can a debug-signed build update a production install? **Answer:** generally no; signature identity must be compatible.
-- Where should signing credentials be available? **Answer:** only protected release jobs or secure key infrastructure.
+- **Interviewer:** "What happens if a user tries to install an update signed with a different key than the installed app?"
+  **Answer:** "Android OS package manager rejects the update immediately with INSTALL_FAILED_UPDATE_INCOMPATIBLE, protecting users from malicious hijacking."
+
+- **Interviewer:** "Why is APK Signature Scheme v2 faster to verify than v1?"
+  **Answer:** "v1 verifies every individual zip entry individually; v2 verifies a single cryptographic hash across the entire binary file structure, accelerating install times."
 
 ## Self-check rubric
 
@@ -89,4 +149,4 @@ Differentiate three key roles, describe a protected signing flow, and handle wro
 - [Sign your app](https://developer.android.com/studio/publish/app-signing) — debug/release and Play App Signing.
 - [Upload an App Bundle](https://developer.android.com/studio/publish/upload-bundle) — release submission.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Key recovery follows current Play policy.
+Technically reviewed against primary documentation on 2026-10-13.

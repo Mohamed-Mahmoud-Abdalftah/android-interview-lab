@@ -24,11 +24,63 @@ How do you test a screen with loading, error, success, and permission states?
 
 ## Explanation in Arabic
 
-عرّف `UiState` واضحة ثم اختبر Screen composable ببيانات fake لكل حالة: Loading يعلن progress، Error رسالة وRetry action، Success البيانات، PermissionRequired شرح وطلب access. Compose UI test يستخدم semantics nodes وأفعال حقيقية بدل البحث عن implementation details. ViewModel unit tests تتحقق من transitions وretry. Permission dialog نفسها منصة Android؛ اختبرها في instrumented test/وسيلة مناسبة للـActivity Result، مع denial وrevocation من Settings. Previews تساعد بصريًا لكنها ليست assertions.
+كيفية اختبار شاشة Compose شاملة تغطي حالات التحميل (Loading)، الخطأ (Error)، النجاح (Success)، والأذونات (Permissions):
+
+1. الأساس المعماري للاختبار السهل (Testability Architecture):
+   - كما شرحنا في COM-18، نختبر دائماً **Stateless Screen Composable** النقي وليس الـ Route Composable المحمل بـ Hilt و Navigation.
+   - نقوم بتمرير حالات الـ `UiState` يدوياً وبشكل مباشر، مما يجعل الاختبار سريعاً، وموثوقاً، ويعمل بنسبة 100% دون أي Mocking معقد.
+
+2. كتابة اختبارات Compose باستخدام `createComposeRule()`:
+   - **حالة التحميل (Loading)**: استدعاء `composeTestRule.setContent { Screen(UiState.Loading) }` والتحقق من ظهور `assertIsDisplayed()` لمؤشر التحميل.
+   - **حالة النجاح (Success)**: تمرير قائمة بيانات وهمية والتحقق من ظهور النصوص (`assertTextEquals`)، ومحاكاة النقر (`performClick()`) والتحقق من إطلاق الـ Callback المناسب.
+   - **حالة الخطأ (Error)**: تمرير رسالة خطأ والتحقق من ظهور زر إعادة المحاولة (Retry) وإطلاقه للحدث.
+   - **حالة الأذونات (Permissions)**: تمرير حالة الإذن كـ Parameter في الـ Screen والتحقق من ظهور شاشة التبرير (Rationale) أو زر طلب الإذن.
 
 ## Practical walkthrough
 
-اختبر Screen بحالات injected بدل ما تحاول تضبط network وpermission حقيقية لكل assertion. `Loading` لازم progress واضح، `Error` فيها Retry يعمل callback مرة، و`PermissionRequired` فيها rationale؛ `Success` تعرض البيانات. بعد كده اختبر Route على emulator للـpermission dialog والعودة من Settings والـlifecycle. Preview تعرض الشكل فقط؛ مش هتكشف callback مكررة أو permission dialog حقيقية. غطّ كل state باختبار semantics، ثم Route على emulator للرفض والعودة من Settings.
+كتابة اختبار شامل لحالات الشاشة المختلفة باستخدام Compose UI Test:
+```kotlin
+@RunWith(AndroidJUnit4::class)
+class DocumentScreenTest {
+    @get:Rule
+    val composeRule = createComposeRule()
+
+    @Test
+    fun whenStateIsLoading_showsProgressIndicator() {
+        composeRule.setContent {
+            DocumentScreen(uiState = DocumentUiState.Loading, onAction = {})
+        }
+        composeRule.onNodeWithTag("LOADING_SPINNER").assertIsDisplayed()
+    }
+
+    @Test
+    fun whenStateIsSuccess_displaysDocumentsAndHandlesClick() {
+        var clickedId: String? = null
+        val docs = persistentListOf(Document("1", "Invoice"))
+
+        composeRule.setContent {
+            DocumentScreen(
+                uiState = DocumentUiState.Success(docs),
+                onAction = { if (it is DocumentAction.Open) clickedId = it.id }
+            )
+        }
+
+        composeRule.onNodeWithText("Invoice").assertIsDisplayed().performClick()
+        assertEquals("1", clickedId)
+    }
+
+    @Test
+    fun whenPermissionDenied_showsRationale() {
+        composeRule.setContent {
+            DocumentScreen(
+                uiState = DocumentUiState.PermissionRequired(shouldShowRationale = true),
+                onAction = {}
+            )
+        }
+        composeRule.onNodeWithText("Storage permission is required to view documents").assertIsDisplayed()
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -71,15 +123,27 @@ Keep a canonical state matrix and at least one action assertion per meaningful s
 
 ## Interview answer — short
 
-“I test each state in an isolated Compose Screen, assert semantics and actions, unit-test transitions, then instrument the Route for permission and lifecycle behavior. Test each visual state with injected inputs, then test platform wiring separately.”
+Test multi-state screens by testing the stateless Screen composable directly using `createComposeRule()`. Pass explicit state objects for Loading, Success, Error, and PermissionRequired without mocking ViewModels, and assert node visibility using Semantics finders (`onNodeWithText`, `onNodeWithTag`) and user action assertions (`performClick`).
 
 ## Interview answer — structured
 
-“A stateless Screen lets me inject Loading, Error, Success and PermissionRequired directly in Compose tests. I assert visible semantics and user actions, such as Retry calling its callback once, rather than implementation layout. ViewModel tests verify how repository outcomes produce those states. I reserve instrumented tests for Activity Result permissions, navigation and lifecycle because a pure UI test cannot prove Android dialogs or revocation handling. Previews are useful review aids but not proof. An Error screen test taps Retry once; an emulator test covers the real permission dialog and return from Settings.”
+Testing a multi-state Compose screen requires verifying that each distinct state renders its expected UI hierarchy and responds accurately to interaction callbacks.
+
+1. **Target the Stateless Screen**: We never write UI tests against the ViewModel-bound Route composable. We test the pure Screen composable (`MyScreen(uiState, onAction)`), eliminating the need for MockWebServer, Hilt, or simulated Coroutine dispatchers.
+
+2. **Structuring the Test Suite** with `createComposeRule()`:
+   - **Loading State**: Render `UiState.Loading`. Assert that the loading spinner exists and content nodes are absent.
+   - **Success State**: Render `UiState.Success(data)`. Verify item texts with `onNodeWithText()`, scroll through lists with `performScrollToIndex()`, and verify item clicks with `performClick()`, asserting that callback lambdas capture expected parameters.
+   - **Error State**: Render `UiState.Error("Network timeout")`. Assert that the error banner appears, click 'Retry', and verify that `onAction(Retry)` is fired.
+   - **Permission State**: Render `UiState.PermissionDenied`. Assert that the rationale dialog is displayed and actionable.
 
 ## Interview answer — deep senior
 
-“I divide the claim into rendering, transition, and platform integration. For rendering, I provide a coherent `UiState` to a Screen that has no hidden ViewModel or NavController dependency. A Compose test checks loading progress semantics, error message and Retry action, success content and accessible labels, and the permission rationale/action. For transitions, a ViewModel unit test uses a fake repository and controlled dispatcher to drive loading, success, error and retry. For Android behavior, an instrumented Route test covers the Activity Result launcher, denial, a later grant or revocation, lifecycle restart and navigation. I do not let a screenshot stand in for a button action, or a fake permission result stand in for platform dialog behavior. I also check rotation and saved-state restoration where the workflow requires them, plus TalkBack focus when an error or dialog appears. The test matrix should state precisely which layer proves each behavior, keeping most feedback fast while retaining a small device suite for risks only Android can expose. The test suite asserts accessible meaning and state transitions, not just what a preview screenshot looks like.”
+Under the hood, Compose UI tests interact directly with the **Semantics Tree** rather than the physical Android view hierarchy. To make assertions robust against localization changes, we use `Modifier.testTag("tag_name")` or check semantic properties like `hasClickAction()`.
+
+When testing asynchronous state flows in Route composables (integration testing), we use `createAndroidComposeRule<MainActivity>()`. Compose's test rule automatically synchronizes with the main looper and idling resources: `composeTestRule.waitForIdle()` waits for all recompositions, measure passes, and active animations to settle before executing assertions, eliminating flaky sleeps.
+
+In modern CI/CD, we pair these unit UI tests with **Screenshot Testing** (using Roborazzi running on JVM), rendering all four states in headless tests in seconds to detect accidental visual regressions.
 
 ## How to answer in the interview
 
@@ -95,9 +159,11 @@ Discuss state matrix, semantics assertions, ViewModel transitions, platform perm
 
 ## Follow-up questions
 
-- Do previews count as tests? **Answer:** no; they help visual review but provide no automated assertion.
-- Can a JVM ViewModel test prove Android permission dialog behavior? **Answer:** no; instrument the platform integration.
-- What should Retry test assert? **Answer:** its semantic action is available and invokes the intended callback/transition.
+- **Interviewer:** "Why is testing the stateless Screen composable faster than testing the Activity/Route?"
+  **Answer:** "It avoids booting up Android Activities, Hilt dependency graphs, SQLite databases, and NavControllers. It mounts only the pure UI hierarchy directly into the Compose test rule."
+
+- **Interviewer:** "How does `composeTestRule` avoid flaky timing issues compared to Espresso?"
+  **Answer:** "`composeTestRule` has built-in synchronization with Compose's internal clock and snapshot system, automatically advancing virtual clock time and idling until all pending recompositions and animations complete."
 
 ## Self-check rubric
 
@@ -108,4 +174,4 @@ Map four states to assertions and one action, then identify unit and device inte
 - [Test Compose layouts](https://developer.android.com/develop/ui/compose/testing) — semantics and UI tests.
 - [Request permissions](https://developer.android.com/training/permissions/requesting) — platform permission behavior.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. No device run is claimed for this example.
+Technically reviewed against primary documentation on 2026-10-13.

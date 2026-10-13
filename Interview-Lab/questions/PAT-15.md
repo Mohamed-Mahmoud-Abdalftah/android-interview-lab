@@ -22,7 +22,61 @@ Design multi-provider selection without centralizing every provider behavior in 
 
 ## Explanation in Arabic
 
-لو عندك card/wallet/bank providers، Strategy contract ضيقة تمثل common submission/status semantics. Factory أو DI multibinding يختار adapter المناسب من registered implementations؛ ما تحطش callbacks، retries، UI strings، fraud rules كلها في `PaymentFactory` عملاقة. Shared checkout policy تراجع amount/request ID؛ adapter يترجم SDK، repository يحفظ pending/reconcile مع server. provider جديد يضيف adapter وbinding واختبارات. لو provider مش قادر يحقق نفس contract، افصل capability بدل `if(provider)` جوّه كل method.
+تصميم نظام دفع يدعم مزودي خدمة متعددين (Stripe, PayPal, Google Pay) باستخدام Strategy أو Factory، وكيفية تجنب الـ God Factory:
+
+1. المشكلة مع الـ God Factory:
+   - وضع جميع تفاصيل المزودين في كلاس واحد `PaymentFactory`: الكلاس يعرف تفاصيل كل SDK، وينشئ الـ UI الخاص بكل مزود، ويعالج الـ Callbacks والـ Retries الخاصة بكل بنك.
+   - النتيجة: كلاس ضخم ينتهك مبدأ Single Responsibility و Open/Closed Principle. كلما أردت إضافة مزود دفع جديد، تضطر لتعديل واختبار `PaymentFactory` من جديد.
+
+2. الحل المعماري النظيف (Strategy + Factory / DI Multibindings):
+   - **Strategy Interface**: واجهة موحدة ونقية (`PaymentGateway` أو `PaymentStrategy`) تعرف عقداً عاماً لمعالجة الدفع: `suspend fun processPayment(request: PaymentRequest): PaymentResult`.
+   - **Adapters مستقلة لكل مزود**: كلاس مستقل لكل مزود (`StripePaymentAdapter`, `GooglePayAdapter`, `PayPalAdapter`) يغلف الـ SDK الخاص به ويعزل تفاصيله تماماً.
+   - **تجنب الـ God Factory عبر DI Multibindings (Dagger/Hilt)**: بدلاً من كتابة `when(type) { STRIPE -> StripeAdapter(...) }`، نستخدم خريطة محقونة تلقائياً `Map<PaymentType, @JvmSuppressWildcards PaymentStrategy>`. إضافة مزود جديد تتطلب فقط كتابة كلاس جديد وتزويد الـ Module برابط له دون لمس سطر واحد في الكود القائم.
+
+## Practical walkthrough
+
+تنفيذ Strategy Pattern مع DI Multibindings لتفادي الـ God Factory:
+```kotlin
+// 1. العقد الموحد (Strategy Interface):
+interface PaymentStrategy {
+    val supportedType: PaymentType
+    suspend fun pay(orderId: String, amount: Money): PaymentResult
+}
+
+// 2. تطبيق مستقل لكل مزود يعزل الـ SDK تماماً (Concrete Strategies):
+class StripeStrategy @Inject constructor(
+    private val stripeClient: StripeSdkClient
+) : PaymentStrategy {
+    override val supportedType = PaymentType.STRIPE
+    override suspend fun pay(orderId: String, amount: Money): PaymentResult {
+        return stripeClient.confirmPayment(orderId, amount.toCents()).toDomain()
+    }
+}
+
+class GooglePayStrategy @Inject constructor(
+    private val paymentsClient: PaymentsClient
+) : PaymentStrategy {
+    override val supportedType = PaymentType.GOOGLE_PAY
+    override suspend fun pay(orderId: String, amount: Money): PaymentResult {
+        return paymentsClient.requestPayment(orderId, amount).toDomain()
+    }
+}
+
+// 3. مدير الدفع النظيف الخالي من الـ God Factory عبر Map Injection:
+class PaymentProcessor @Inject constructor(
+    private val strategies: Set<@JvmSuppressWildcards PaymentStrategy>
+) {
+    private val strategyMap: Map<PaymentType, PaymentStrategy> by lazy {
+        strategies.associateBy { it.supportedType }
+    }
+
+    suspend fun executePayment(type: PaymentType, orderId: String, amount: Money): PaymentResult {
+        val strategy = strategyMap[type] 
+            ?: throw IllegalArgumentException("Unsupported payment provider: $type")
+        return strategy.pay(orderId, amount)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,10 +106,6 @@ class PaymentRouter(strategies: Set<PaymentStrategy>) {
 ```
 The router only selects; authentication, idempotency, redacted telemetry and reconciliation belong to the shared data boundary, with final authority on the server.
 
-## Practical walkthrough
-
-multiple payment providers: UI تبعت `PaymentMethod` وattempt، router صغير يختار `PaymentStrategy` من map محقون؛ كل strategy تنفذ نفس domain contract وتحوّل provider errors لـtyped outcome. Factory لو لازم تنشئ strategy حسب environment/session، لكن ما تخليش factory تعرف auth، UI، analytics، DB، وكل provider details مرة واحدة. shared policies زي idempotency/log redaction/reconciliation في coordinator أو repository boundary، مش copied في كل strategy ولا hidden في router. server يفضل authority. أضف provider جديد باختبار contract مشتركة وtest route unsupported؛ لا تستخدم default provider silently.
-
 ## Trade-offs and decision criteria
 
 A simple `when` is enough for a stable two-provider app. A registry scales when providers change, but dynamic registration can hide duplicate keys or missing bindings; validate graph at startup/tests. Avoid reflection discovery without a real need.
@@ -70,17 +120,25 @@ A commerce app adds a bank transfer provider through one adapter and DI binding,
 
 ## Interview answer — short
 
-I separate provider behavior as Strategies from a small Factory or registry that selects one. A god-factory is avoided by keeping SDK translation in adapters and shared payment policy in a separate owner.
+To support multiple payment providers without creating a God Factory, define a clean Strategy interface (PaymentStrategy) representing unified payment contracts. Implement isolated Adapters for each provider SDK. Instead of hardcoding all initializations in a massive factory switch-statement, use Dagger/Hilt multibindings to inject a map or set of strategies, adhering strictly to the Open/Closed Principle.
 
 ## Interview answer — structured
 
-I define a narrow `PaymentStrategy` with common result and cancellation semantics. A router chooses a registered implementation based on an approved method, but it does not contain each provider’s SDK logic. Card, wallet and bank adapters translate their own callbacks. Checkout policy validates amount and request ID, while repository/server reconciliation handles uncertainty. I would test every strategy against the same contract and test the router for unknown or duplicate registrations. A small fixed app might use an explicit switch instead.
+When designing a multi-payment architecture, the common failure is building a monolithic 'God Factory' that imports every vendor SDK, configures their credentials, handles their distinct callback listeners, and manages UI presentation logic in a giant `when` statement.
+
+A clean production architecture decouples this into three distinct layers:
+1. **Unified Strategy Contract**: We declare a high-level `PaymentStrategy` interface exposing common transaction semantics: `suspend fun pay(orderId: String, amount: Money): PaymentResult`.
+2. **Isolated Vendor Adapters**: Each provider (Stripe, PayPal, Google Pay) lives in its own class—or even its own Gradle module. The adapter handles SDK initialization, maps vendor exceptions into typed domain results, and keeps third-party imports quarantined.
+3. **Registry via DI Multibindings**: Instead of a monolithic factory class, we use Dagger/Hilt multibindings (`@IntoSet` or `@IntoMap`). The `PaymentProcessor` receives an injected `Map<PaymentMethod, PaymentStrategy>`. Adding a new payment provider requires writing one new adapter class and one binding module; existing code is completely untouched, honoring the Open/Closed Principle.
 
 ## Interview answer — deep senior
 
-The design has three distinct responsibilities: deciding which provider is allowed, selecting an implementation, and executing provider-specific behavior. I keep the factory or registry limited to selection, with strategies handling SDK details and a repository coordinating durable request status. That prevents a giant class with a branch for every method and provider. I define semantic outcomes carefully: timeout means pending verification if the server may have committed; it is not a confirmed decline. Contract tests run across adapters, and server-side idempotency/reconciliation protects business effects. Adding a provider still needs wiring, security review and integration tests. If one provider cannot honor the common contract, I split capabilities or revise policy rather than hiding special cases in the factory.
+The subtle architectural challenge in multi-payment systems is that payment providers rarely share identical lifecycle and UI capabilities. For example, Google Pay presents a native Android BottomSheet sheet, Stripe requires a 3D Secure Webview/Activity redirect, while direct card entry requires PCI-DSS compliant tokenization fields.
 
-I would separate selection from execution. A small router or factory maps a supported payment method to an injected Strategy, and each provider implementation returns the same domain outcomes. Shared rules such as stable operation IDs, server-side idempotency, redacted telemetry and reconciliation belong in a coordinator or repository boundary, not copied across provider classes. A god-factory appears when one object knows every SDK, UI flow, token rule and database detail; I keep it limited to choosing a registered implementation. I fail explicitly for an unsupported method rather than silently falling back to a provider. Contract tests run the same success, rejection and uncertain-outcome cases for each strategy, and the server remains authoritative.
+If you force all these divergent requirements into a single synchronous `pay()` method, your Strategy abstraction leaks. To address this in enterprise systems:
+1. **Capability Interfaces**: We break the strategy into capabilities: `DirectCheckoutStrategy` for headless API payments, and `InteractiveCheckoutStrategy` for providers requiring an Activity result launcher (`ActivityResultLauncher`).
+2. **Idempotency and Reconciliation**: The payment processor must be backed by an idempotency key generated prior to engaging the strategy. If the user completes 3DS verification and the app process dies while returning, the app queries the backend status rather than retrying through the strategy.
+3. **Feature Flagging & Remote Fallbacks**: Strategies can be decorated with a `CircuitBreakerDecorator` or remote configuration flag. If Stripe experiences an outage in a specific region, the processor dynamically removes Stripe from the UI and falls back to PayPal without deploying a new app binary.
 
 ## How to answer in the interview
 
@@ -96,8 +154,11 @@ Separate selection, strategy execution, shared policy and server status; test un
 
 ## Follow-up questions
 
-- [PAT-09](../pat-09/): Strategy versus State? **Answer:** provider choice varies execution; checkout state tracks lifecycle.
-- [SOL-12](../sol-12/): How does this support OCP? **Answer:** new provider behavior is added behind a stable seam.
+- **Interviewer:** "How do Dagger/Hilt multibindings eliminate factory modification?"
+  **Answer:** "By using `@IntoSet` or `@IntoMap`, each provider module declares its own strategy binding independently. Dagger assembles them into an injected collection automatically without modifying any central factory class."
+
+- **Interviewer:** "How do you handle providers that require an ActivityResultLauncher?"
+  **Answer:** "Define a capability interface like `ActivityLauncherPaymentStrategy` where the UI provides a registered launcher contract before executing the payment."
 
 ## Self-check rubric
 
@@ -108,4 +169,4 @@ Sketch a router and one adapter, then name two responsibilities forbidden in the
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — Strategy and Factory patterns.
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — repository coordination.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

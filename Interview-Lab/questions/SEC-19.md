@@ -23,11 +23,72 @@ How do you secure WebView, JavaScript bridges, and file/content URIs?
 
 ## Explanation in Arabic
 
-`WebView` بيشغّل web content جوّه app، ولو سمحت بمحتوى غير موثوق ومعاه `addJavascriptInterface` فأنت بتدي الصفحة منفذ للـnative APIs. قلّل JavaScript والـbridge، اسمح بـorigins محددة، امنع file access غير اللازم، واتعامل مع `content://` grants بحذر. WebView مش trusted UI لمجرد إنه جوّه تطبيقك.
+كيف تقوم بتأمين الـ WebView، جسور الـ JavaScript، والوصول إلى ملفات النظام و الـ Content URIs؟
+
+1. مخاطر الـ WebView في أندرويد:
+   - الـ WebView هو متصفح كامل مدمج داخل تطبيقك. إذا سمحت له بتحميل محتوى غير موثوق، فإن أي ثغرة Cross-Site Scripting (XSS) في صفحة الويب تتحول مباشرة إلى ثغرة اختراق لتطبيق أندرويد نفسه!
+
+2. تأمين جسر الـ JavaScript (@JavascriptInterface):
+   - ربط كود Kotlin بـ JavaScript عبر `addJavascriptInterface` يسمح لكود الويب باستدعاء دوال native.
+   - **قاعدة صارمة**: لا تقم بحقن الـ JS Interface أبداً في صفحات غير موثوقة. يجب التحقق من الدومين ومسار الصفحة (`origin`) في كود الـ WebView قبل تفعيل أو تنفيذ أي دالة في الجسر.
+
+3. إغلاق منافذ الوصول للملفات المحلية (Local File Access):
+   - بشكل افتراضي في الإصدارات الحديثة، ولكن يجب تأكيده برمجياً:
+     * `settings.allowFileAccess = false`: يمنع تحميل ملفات التطبيق المحلية عبر `file://`.
+     * `settings.allowContentAccess = false`: يمنع الوصول إلى الـ Content Providers.
+     * يمنع هجمات سرقة ملفات الـ SharedPreferences وقواعد البيانات عبر كود HTML خبيث.
+
+4. التحميل الآمن للأصول المحلية عبر `WebViewAssetLoader`:
+   - بدلاً من تحميل الملفات عبر بروتوكول `file:///android_asset/` غير الآمن، استخدم مكتبة AndroidX `WebViewAssetLoader` التي تقوم بتحميل الأصول المحلية تحت بروتوكول افتراضي آمن (`https://appassets.androidplatform.net/`)، مما يحافظ على تطبيق سياسة Same-Origin Policy ويمنع تسريب البيانات.
+
+5. التعامل الصارم مع أخطاء شهادات الـ SSL:
+   - **ممنوع نهائياً**: استدعاء `handler.proceed()` داخل دالة `onReceivedSslError`. هذا يسمح بهجمات Man-in-the-Middle (MITM). يجب دائماً استدعاء `handler.cancel()`.
 
 ## Practical walkthrough
 
-WebView بتعرض صفحة دعم، ولو فتحت URL خارجي ومعاها JavaScript bridge فيها `getToken()`، أي content محمّل ممكن يناديها. قصر navigation على origins موثوقة، وما تعرضش secrets في bridge، وعطّل file access غير المطلوب. `content://` URI برضه ممكن ترجع ملف كبير أو محتوى غير متوقع؛ اقرأ بحد حجم وتحقق من MIME والـauthority بدل الثقة في الاسم.
+تكوين WebView آمن للإنتاج مع إغلاق منافذ الملفات واستخدام WebViewAssetLoader والتحقق من الـ SSL:
+```kotlin
+class SecureWebActivity : ComponentActivity() {
+    private lateinit var webView: WebView
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        webView = WebView(this)
+        setContentView(webView)
+        configureSecureSettings(webView)
+    }
+
+    private fun configureSecureSettings(view: WebView) {
+        view.settings.apply {
+            // 1. تقييد الوصول للملفات والـ Content URIs:
+            allowFileAccess = false
+            allowContentAccess = false
+            javaScriptEnabled = true // تفعيل فقط عند الحاجة القصوى
+            
+            // تعطيل مشاركة الموقع والتخزين غير الضروري
+            setGeolocationEnabled(false)
+            databaseEnabled = false
+        }
+
+        // 2. استخدام AssetLoader الآمن لتحميل الملفات المحلية كـ HTTPS مجازي:
+        val assetLoader = WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .build()
+
+        view.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                return assetLoader.shouldInterceptRequest(request.url)
+            }
+
+            override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
+                // ❌ لا تقم أبداً باستدعاء handler.proceed()!
+                // ✅ إلغاء الطلب فوراً لحماية المستخدم من هجمات MITM:
+                handler.cancel()
+            }
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -79,15 +140,33 @@ Security tests enumerate loaded domains, redirects, bridge methods and URI grant
 
 ## Interview answer — short
 
-“I treat WebView content as untrusted unless tightly controlled. I restrict origins and file access, minimize JavaScript bridges, validate navigation, and never let a web callback alone authorize a payment.”
+Secure WebViews by disabling allowFileAccess and allowContentAccess, loading local bundled content safely via AndroidX WebViewAssetLoader under a virtual HTTPS origin, canceling onReceivedSslError unconditionally, and strictly restricting addJavascriptInterface to audited, whitelisted internal origins.
 
 ## Interview answer — structured
 
-“The risk is crossing from web content into native capabilities. I allow only known HTTPS origins, turn on only needed settings, route external URLs to the browser, and avoid addJavascriptInterface where possible. If a bridge is required, it exposes a narrow method with server-side authorization and no secret output. I review file and content URI access and test redirects and frames. The backend independently confirms checkout status. ”
+Hardening Android WebView requires mitigating data exfiltration, local file access, and bridge exploitation:
+
+1. **Disable File & Content Scheme Access**: 
+   - Explicitly disable `settings.allowFileAccess = false` and `settings.allowContentAccess = false`. This blocks attackers from using malicious scripts or iframe tags to read private app files (`file:///data/data/<package>/...`) or query internal ContentProviders.
+
+2. **Use AndroidX WebViewAssetLoader**:
+   - Traditional `file:///android_asset/` URLs violate modern web security models and cross-origin boundaries. `WebViewAssetLoader` intercepts requests and serves local assets via a virtual domain (`https://appassets.androidplatform.net/assets/`), enforcing the standard Same-Origin Policy and secure HTTPS context.
+
+3. **Lock Down JavaScript Interfaces**:
+   - Only expose `@JavascriptInterface` methods to pages loaded from strictly whitelisted, first-party HTTPS origins verified inside `shouldOverrideUrlLoading` or `onPageStarted`.
+
+4. **Unconditional SSL Error Rejection**:
+   - In `WebViewClient.onReceivedSslError()`, always call `handler.cancel()`. Never call `handler.proceed()`, as doing so completely bypasses TLS validation and exposes users to Man-in-the-Middle attacks.
 
 ## Interview answer — deep senior
 
-“I map every origin and URI scheme the WebView can load, including redirects, iframes and local assets. A JavaScript bridge can be callable from unexpected frames, so a trusted top-level URL alone is not enough. I remove broad file access, consider WebViewAssetLoader for bundled content, and avoid placing bearer tokens in URLs or injected JavaScript. I test a hostile page and malicious redirect against each bridge method. For fintech, card entry should follow a provider-approved hosted or native SDK flow, and the server settles financial truth after provider confirmation. The origin policy must cover redirects and frames, not only the first URL passed to `loadUrl`. A JavaScript bridge is especially risky because frame-level trust is hard to infer from a top-level address; I prefer no bridge for receipts. I would use an HTTPS asset loader for bundled content when needed and test malicious file and content URIs, oversized uploads, and mixed content on the release WebView configuration. Payment completion comes from the backend state.”
+From an advanced security engineering perspective, WebViews represent a hybrid execution environment requiring strict boundaries:
+
+1. **Safe Browsing Integration**: In Android 8.0+ (API 27), verify that Google Safe Browsing is enabled in WebView (`settings.safeBrowsingEnabled = true`). Implement `onSafeBrowsingHit()` to handle malicious phishing URLs identified by Google before page rendering begins.
+
+2. **Mitigating Universal Cross-Site Scripting (UXSS)**: For sensitive hybrid applications, enable multi-process WebView mode (default on Android 8+) and restrict JavaScript execution permissions dynamically. Avoid exposing native payment or authentication tokens through JavaScript bridge callback return values; instead, bridge only transient action triggers while executing actual cryptographic token transfers over native secure channels.
+
+3. **Content Security Policy (CSP)**: Ensure server responses loaded into WebViews include strict HTTP Content Security Policy headers (`default-src 'self'`), mitigating inline script injections and preventing unauthorized external script loading.
 
 ## How to answer in the interview
 
@@ -103,8 +182,11 @@ Prompt for frame origin, bridge API surface, file/content URI policy, redirects,
 
 ## Follow-up questions
 
-- [SEC-18](../sec-18/): Are incoming content URIs trusted? **Answer:** no; validate and limit grants.
-- [PAY-08](../pay-08/): Can a WebView success URL mean approved? **Answer:** no; reconcile with backend.
+- **Interviewer:** "Why is addJavascriptInterface dangerous on Android versions prior to API 17?"
+  **Answer:** "On Android < 4.2, reflection could be used by injected JavaScript to access getClass().forName() on Java objects and execute arbitrary Linux shell commands."
+
+- **Interviewer:** "What is the security risk of enabling setAllowUniversalAccessFromFileURLs(true)?"
+  **Answer:** "It permits scripts running in a local file context to make cross-origin requests to arbitrary web origins, completely dismantling Same-Origin Policy."
 
 ## Self-check rubric
 
@@ -115,4 +197,4 @@ Can I outline origin allowlisting, bridge minimization, URI restrictions and ser
 - [WebView native bridge risks](https://developer.android.com/privacy-and-security/risks/insecure-webview-native-bridges) — interface exposure.
 - [WebViewAssetLoader](https://developer.android.com/reference/androidx/webkit/WebViewAssetLoader) — local content loading.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

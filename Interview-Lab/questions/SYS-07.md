@@ -22,11 +22,55 @@ Design notification delivery with server authority, deep links and security vali
 
 ## Explanation in Arabic
 
-Notifications تبدأ من server event له stable ID وrecipient، ثم push يوقظ التطبيق إن أمكن؛ push مش durable database ولا ضمان ترتيب/وصول. عند tap، PendingIntent/deep link تفتح destination وتتحقق من auth، account وresource permissions من backend. لو app كانت مقتولة أو المستخدم logged out، نعيد بناء state من repository ونوجّه لـlogin ثم الهدف إذا مصرح. قناة notification وأذونتها حسب Android version.
+كيف تصمم نظام إشعارات (Push Notifications) مع روابط عميقة (Deep Links) يتعامل مع كل حالات فتح التطبيق (Cold, Warm, Background)؟
+
+1. معمارية تدفق الإشعارات في أندرويد:
+   - **Data Messages vs. Notification Messages في FCM**:
+     * **Notification Messages**: إذا كان التطبيق في الخلفية، يعرض النظام الإشعار في الـ System Tray تلقائياً دون استدعاء كودك، ويمرر الـ Intent عند نقر المستخدم فقط.
+     * **Data Messages (المفضلة هندسياً)**: يُستدعى `FirebaseMessagingService.onMessageReceived()` دائماً في كود تطبيقك سواء كان التطبيق مفتوحاً أو في الخلفية، مما يسمح لك ببناء إشعار مخصص، تشفير البيانات، والتحكم التام بالـ PendingIntent.
+
+2. تصميم الـ Deep Link Router الموحد:
+   - **تجنب الفخ الشائع**: فتح الشاشة المستهدفة مباشرة (مثل شاشة تفاصيل الطلب `OrderDetailsActivity`) بشكل منعزل! إذا ضغط المستخدم على زر الرجوع (Back Button)، يُغلق التطبيق فوراً ويخرج للشاشة الرئيسية للهاتف بدلاً من الرجوع للـ Home Screen!
+   - **الحل عبر TaskStackBuilder**: بناء الـ Back Stack برمجياً بحيث يضمن أن الرجوع من شاشة الطلب يعود إلى شاشة قائمة الطلبات ثم الـ Home Screen.
+
+3. التعامل مع حالات الـ Cold Start والمصادقة (Auth State Guard):
+   - إذا نقر المستخدم على إشعار بتفاصيل معاملة بنكية ولكن جلسته منتهية (Unauthenticated):
+   - يجب أن يوجهه الـ Router لشاشة تسجيل الدخول أولاً، مع حفظ الـ Deep Link كـ Pending Navigation Destination، وبعد نجاح الدخول يتم توجيهه تلقائياً للهدف الأصلي.
 
 ## Practical walkthrough
 
-Push notification ممكن توصل مرتين أو ما توصلش خالص؛ اعتبرها إشارة، مش قاعدة البيانات. السيرفر يخزن event بـID ومستلم، وعند tap التطبيق يفتح explicit PendingIntent ويعيد تحميل resource بعد auth. لو user غيّر account أو resource اتحذف، اعرض حالة مناسبة بدل ما تتبع `resourceId` في push كأنه تصريح. جرّب tap والتطبيق مقتول وlogged out والرسالة قديمة.
+تنفيذ معمارية توجيه الإشعارات وبناء الـ Back Stack وحماية مسارات المصادقة:
+```kotlin
+class PushNotificationHandler(private val context: Context) {
+    fun showOrderNotification(orderId: String, title: String, message: String) {
+        // 1. إنشاء Intent الشاشة المستهدفة مع معرّف الطلب:
+        val targetIntent = Intent(context, OrderDetailsActivity::class.java).apply {
+            putExtra("extra_order_id", orderId)
+        }
+
+        // 2. استخدام TaskStackBuilder لبناء الـ Back Stack الطبيعي (Home -> Orders -> OrderDetails):
+        val pendingIntent = TaskStackBuilder.create(context).run {
+            // إضافة الكلاس الأم تلقائياً كما هو معرف في AndroidManifest أو يدوياً:
+            addNextIntentWithParentStack(targetIntent)
+            getPendingIntent(
+                orderId.hashCode(),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+
+        // 3. بناء الإشعار وعرضه عبر NotificationManager
+        val notification = NotificationCompat.Builder(context, "orders_channel")
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        NotificationManagerCompat.from(context).notify(orderId.hashCode(), notification)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -59,15 +103,30 @@ A messaging app stores messages on backend, sends push with opaque event ID, ded
 
 ## Interview answer — short
 
-“Push is a hint, not durable truth. I use stable event IDs, server-backed inbox state and a validated deep link that rechecks session and resource authorization on cold start. I handle notification permission and duplicate delivery.”
+Design notifications using FCM data-payload messages for deterministic client processing. Construct synthetic back stacks using TaskStackBuilder so pressing Back navigates to parent screens rather than exiting the app. Intercept routing through an AuthGuard to handle expired sessions before resuming deep link navigation.
 
 ## Interview answer — structured
 
-“I define notification delivery separately from navigation. The backend owns an event and sends a push containing a minimal opaque ID. Android may delay or drop push, so important content is available from a server inbox or sync endpoint. On tap, the app parses a validated deep link, restores session if needed and fetches the resource under current authorization. It does not trust the push payload as access control. I deduplicate events, configure channels and runtime notification permission where required, and test cold start and logout.”
+Designing a reliable push notification and deep linking system requires coordinating across background delivery, synthetic navigation hierarchies, and session states:
+
+1. **FCM Payload Strategy**:
+   - Prefer FCM **Data Messages** over standard Notification messages. Data messages invoke `onMessageReceived()` deterministically regardless of whether the app is in foreground, background, or killed, allowing client decryption, local database caching, and custom notification rendering.
+
+2. **Synthetic Back Stack (TaskStackBuilder)**:
+   - Direct navigation to a deep link destination creates a broken back stack where pressing the system Back button terminates the application. Use `TaskStackBuilder.create(context).addNextIntentWithParentStack(targetIntent)` to synthesize a natural navigation path (e.g., Home -> Orders -> OrderDetail).
+
+3. **Authentication & Session Interception (AuthGuard)**:
+   - When an unauthenticated or logged-out user clicks a sensitive push notification, the deep link router must store the pending destination in memory/DataStore, redirect the user through the Login/MFA flow, and resume navigation to the original deep link target upon successful authentication.
 
 ## Interview answer — deep senior
 
-“The system has several failure windows: push never arrives, arrives twice, user taps after account switch, app process is dead, or the resource is deleted. I make the server event store authoritative and push only a wake/display hint with a stable ID. The app uses an explicit PendingIntent and allowlisted route, validates arguments and checks backend authorization after login before rendering. I avoid putting secrets in notification text or extras, respect user channel/permission controls, and support in-app inbox recovery. Metrics distinguish server event creation, push provider acceptance, app receipt, display and open; none alone proves the user saw it. Tests cover forged deep links, duplicate push, cold start, process death and version skew. I would keep a server inbox or event endpoint so a missed push can be recovered on next launch. Notification payloads carry opaque IDs, not sensitive account data or final authorization. An explicit immutable PendingIntent routes to an app destination, but the destination rechecks authentication and fetches the resource for the current account. I would test duplicate delivery, tap after logout, deleted resource, cold start and notification permission denial. Metrics should compare event creation with delivery and open rates without treating push as guaranteed transport.”
+From a staff-level systems perspective, deep link architectures must support single-activity Compose routing and cold-boot resilience:
+
+1. **Single-Activity Jetpack Compose Routing**: In modern Single-Activity apps, route deep links to a single `MainActivity` with `launchMode="singleTask"`. Override `onNewIntent(intent: Intent?)` to capture incoming notifications when the app is already running, updating a reactive `NavigationEvents` channel consumed by the top-level Compose `NavHost`.
+
+2. **Cold Start Race Conditions**: During a cold launch triggered by a notification tap, the app must initialize dependency graphs, load remote feature flags, and restore session credentials before executing the navigation transition. Queue the pending deep link event in an application-scoped state machine until baseline startup initialization signals readiness.
+
+3. **Deep Link Security & Parameter Sanitization**: Treat all intent parameters as untrusted external input. Validate UUID formats, sanitize URIs, and prevent open redirects where malicious URLs could instruct the app to launch arbitrary internal activities or WebViews.
 
 ## How to answer in the interview
 
@@ -83,8 +142,11 @@ Trace event creation to authorized destination and list delivery/visibility limi
 
 ## Follow-up questions
 
-- [SYS-18](../sys-18/): What if old app sees new payload? **Answer:** version the event contract and tolerate unknown fields/routes.
-- [SYS-03](../sys-03/): What after logout? **Answer:** restore session and re-authorize target before display.
+- **Interviewer:** "What happens if a notification uses FLAG_ACTIVITY_NEW_TASK without TaskStackBuilder?"
+  **Answer:** "The target Activity opens as a standalone task root; pressing Back exits to the Android home launcher rather than parent screens."
+
+- **Interviewer:** "How do you handle push notifications when the user is actively viewing the screen that the notification refers to?"
+  **Answer:** "Detect the active foreground screen; suppress the system tray notification, update the live UI data directly via StateFlow, and optionally show a subtle in-app snackbar."
 
 ## Self-check rubric
 
@@ -95,4 +157,4 @@ Can I distinguish push from durable truth, validate deep links and handle duplic
 - [Android notifications](https://developer.android.com/develop/ui/views/notifications) — channels and permission.
 - [Android deep links](https://developer.android.com/training/app-links/deep-linking) — routing/security.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

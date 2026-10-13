@@ -22,7 +22,47 @@ Communicate practical trade-offs to a team and propose a small, evidence-based d
 
 ## Explanation in Arabic
 
-لما فريق صغير feature بيعمل خمس interfaces، ثلاث layers، وfactory لكل button، اشرح تكلفة التنقل والـwiring والاختبارات الوهمية. SOLID أسئلة مراجعة: إيه سبب التغيير؟ مين client؟ هل في implementation تانية؟ هل substitution contract واضح؟ اقترح minimal design: ViewModel للحالة، Repository للداتا، domain/use case فقط لو rule معقدة أو reused. احتفظ بتجربة صغيرة واختبر behavior. لو requirement جديد بدأ يلمس 10 ملفات أو fakes فيها unimplemented throwing stubs, استخرج abstraction وقتها. ما تستخدمش “clean” كحجة ضد تسليم feature صحيح.
+كيف تشرح توازنات ومقايضات SOLID (SOLID Trade-offs) لفريق يقوم بهندسة مفرطة (Overengineering) لميزة صغيرة وبسيطة؟
+
+1. الفهم السليم لمبادئ SOLID (Principles, not Dogma):
+   - مبادئ SOLID هي **أدوات إرشادية لحل مشاكل التعقيد والاقتران**، وليست قوانين دينية مقدسة يجب تطبيقها بحذافيرها على كل سطر كود!
+   - التجريد (Abstraction) له تكلفة حقيقية: زيادة عدد الملفات، تعقيد التصفح، زيادة وقت الـ Build، وبطء وتيرة الإنجاز (Velocity Loss).
+
+2. خطة الحوار والإقناع في الفريق (Engineering Coaching):
+   - **البدء بالقيمة التجارية (Business Value & Time-to-Market)**: تذكير الفريق أن الهدف الأساسي هو تقديم قيمة للمستخدم وليس إرضاء الـ Design Patterns. تطبيق 5 طبقات لميزة قراءة نص بسيط يؤخر طرح الميزة أسبوعين بلا أي مبرر!
+   - **التذكير بمبدأ YAGNI و KISS**:
+     * **YAGNI (You Aren't Gonna Need It)**: لا تبنِ نظام استراتيجيات معقد لاحتمال نظري قد يحدث بعد سنتين.
+     * **KISS (Keep It Simple, Stupid)**: أبسط كود يعمل ويفي بالشروط هو الكود الأفضل.
+   - **إيضاح سهولة التعديل المستقبلي (Evolutionary Architecture)**:
+     * الكود البسيط سهل القراءة يمكن إعادة هيكلته (Refactored) في ساعتين عندما يظهر التعقيد الحقيقي، بينما الكود المفرط في التجريد (Over-abstracted) يستحيل فك تشابكه!
+
+3. وضع معيار عملي متفق عليه (Team Rule):
+   - ابدأ بـ Simple MVVM مباشرة: ViewModel + Repository.
+   - استخرج UseCase أو Interface فقط عندما يتكرر الكود في مكانين مختلفين، أو تظهر قواعد بيزنس معقدة تتطلب اختبارات خاصة.
+
+## Practical walkthrough
+
+توجيه الفريق لتبسيط ميزة بسيطة تم الإفراط في هندستها:
+```kotlin
+// ❌ ما كتبه الفريق (Overengineered): 6 ملفات لعرض جملة ترحيبية:
+// GreetingDto -> GreetingEntity -> GreetingDomain -> GreetingUiModel
+// interface IGreetingRepository -> GreetingRepositoryImpl
+// interface IFetchGreetingUseCase -> FetchGreetingUseCaseImpl
+// GreetingViewModel -> GreetingScreen
+
+// ✅ ما يجب التوجيه إليه (Pragmatic & Clean): ملفان يؤديان الغرض بامتياز:
+class GreetingRepository(private val api: GreetingApi) {
+    suspend fun getGreeting(): String = api.fetch().message
+}
+
+@HiltViewModel
+class GreetingViewModel @Inject constructor(
+    private val repository: GreetingRepository
+) : ViewModel() {
+    val greeting = flow { emit(repository.getGreeting()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Hello!")
+}
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +71,6 @@ Principles help when they lower change and defect cost. Overengineering spends c
 ## Worked example
 
 Team discussion: show two diagrams for a small settings screen. Option A has `SettingsViewModel -> SettingsRepository` with a concrete formatter; option B adds one use case and interface per getter. Ask which independent change B protects. Keep A if no answer, and add a test for save/error behavior.
-
-## Practical walkthrough
-
-في feature إعدادات صغيرة، لو الفريق عامل interface وuse case وrepository لكل getter، اسأل أي change مستقل الطبقات دي بتحميه. ارسم مسار save/error الحقيقي، وحدد أين I/O أو policy محتاجة seam. خلي `SettingsViewModel` تتعامل مع repository واضح وformatter concrete لو مفيش variation. اختبر save failure وUI state بدل قياس عدد الطبقات. لو ظهر storage provider بديل أو rule reusable، وقتها أضف boundary. اشرح إن SOLID هدفه تقليل تكلفة التغيير، وممكن طبقات زيادة تزود تكلفة الفهم والصيانة من غير عائد.
 
 ## Trade-offs and decision criteria
 
@@ -50,15 +86,32 @@ A team agrees on a review checklist and revisits architecture after two iteratio
 
 ## Interview answer — short
 
-I present SOLID as change-control heuristics, then ask which real variation each abstraction protects. For a small feature I keep clear UI/data ownership and concrete helpers; I add contracts when change or test evidence justifies them.
+Coach the team that SOLID principles are heuristics to manage complexity, not dogma. Every abstraction carries real costs: cognitive overhead, build time, and delayed delivery. Reframe architecture around YAGNI, KISS, and economic trade-offs: start with simple pragmatic code, because clean simple code is easy to refactor when genuine complexity emerges.
 
 ## Interview answer — structured
 
-I would avoid framing the discussion as “clean versus messy.” I would show the actual cost: files, DI bindings, navigation and test fakes for a small settings screen. Then ask what changes independently and whether an interface protects a consumer from that change. A ViewModel plus repository may be enough. I would still keep network details out of UI and handle lifecycle correctly. If duplicated business rules or provider variation appear, we can extract a focused use case or strategy with tests. I would propose a concrete review question for each new interface: which caller needs to stay independent of which implementation? If nobody can answer, keep the helper concrete for now.
+Coaching an engineering team suffering from premature abstraction requires reframing architecture as an economic balance between maintainability and delivery velocity.
+
+1. **Principles are Heuristics, Not Dogma**:
+   - SOLID principles exist to solve concrete software pain points (high coupling, fragile changes, untestable code). Applying heavy solutions when those pain points do not exist is architectural waste.
+   - Every abstraction introduces real overhead: doubled file counts, IDE navigation friction, Dagger binding ceremony, and longer Gradle build times.
+
+2. **Anchor on Pragmatic Engineering Principles (YAGNI & KISS)**:
+   - **YAGNI (You Aren't Gonna Need It)**: Speculative extensibility (e.g. building a strategy engine because 'marketing might want 4 alternative providers next year') wastes sprint capacity on hypothetical futures that rarely materialize.
+   - **KISS (Keep It Simple, Stupid)**: The simplest code that fulfills current requirements, handles errors, and passes unit tests is the superior engineering choice.
+
+3. **Evolutionary Architecture Assurance**:
+   - Assure the team that simple code is not low-quality code. Plain, decoupled Kotlin code without gratuitous interfaces can be refactored into Use Cases and Strategies in under two hours when requirements genuinely expand.
+   - Conversely, untangling a premature, multi-layered generic abstraction is notoriously painful.
 
 ## Interview answer — deep senior
 
-I explain each principle as a way to reduce a specific cost, not a checklist that every class must satisfy visibly. SRP helps when different stakeholders change one module; ISP helps when clients depend on unused methods; DIP/OCP help when volatile adapters repeatedly force policy edits; LSP protects substitutions. For a small feature, adding all possible interfaces can increase the very coupling we hoped to avoid. I propose the smallest clear architecture, document the likely extension point, and add behavior tests. Then I revisit with evidence from real changes: how many unrelated files are touched, how many mocks have empty methods, how difficult is it to replace a provider? I also keep non-negotiable correctness boundaries—main safety, lifecycle, source of truth and server authority—regardless of abstraction count. The discussion should be about cost and risk, not taste. I would frame SOLID as a way to keep likely changes local and contracts honest. For a small settings screen, I would ask which independent change is protected by each interface and use case. A clear ViewModel, repository for data access, and concrete pure formatter may be enough. The team can test save success, failure, and screen state without manufacturing an interface per getter. The trade-off is that adding a boundary later has a refactor cost, but premature layers impose an immediate navigation and wiring cost on every reader. I would set a concrete trigger, such as a second storage implementation or shared business rule, and revisit the design when evidence appears.
+In engineering leadership, a senior architect guides the team to establish **Complexity Thresholds**:
+- *Tier 1 (Display / Simple CRUD)*: Direct ViewModel-to-Repository communication. Zero interfaces, zero Use Cases. Priority: Time to market.
+- *Tier 2 (Interactive Features with Logic)*: ViewModel consumes Use Cases for reusable business operations. Repositories manage offline caching.
+- *Tier 3 (Core Domain / Multi-Entry / Fintech)*: Full Clean Architecture with strict DIP interfaces, Strategy routers, and FSM state machines.
+
+This empowers teams to modulate architectural ceremony proportionally to feature risk, eliminating overengineering while maintaining excellence in mission-critical domains.
 
 ## How to answer in the interview
 
@@ -74,8 +127,11 @@ Present a concrete two-option design review, count protected change axes and ide
 
 ## Follow-up questions
 
-- [SOL-13](../sol-13/): Why not an interface for every class? **Answer:** it adds cost without necessarily protecting a consumer.
-- [ARC-23](../arc-23/): When is layered architecture too much? **Answer:** when added ceremony exceeds isolation benefit for the actual app.
+- **Interviewer:** "What is the difference between junior, mid-level, and senior engineering perspectives on SOLID?"
+  **Answer:** "Junior engineers write spaghetti code unaware of SOLID. Mid-level engineers apply SOLID dogmatically to every class regardless of context. Senior engineers understand the economic trade-offs of abstractions and apply SOLID pragmatically where complexity demands it."
+
+- **Interviewer:** "How do you challenge an overengineered PR without demotivating a developer?"
+  **Answer:** "Praise their architectural understanding, explain the maintenance and compilation costs of the abstractions, highlight YAGNI, and collaborate on simplifying the PR while agreeing on future refactoring triggers."
 
 ## Self-check rubric
 
@@ -86,4 +142,4 @@ Explain a minimal settings design, one risk of overengineering, one risk of unde
 - [Android architecture recommendations](https://developer.android.com/topic/architecture/recommendations) — adaptable guidance.
 - [Robert C. Martin, SRP](https://blog.cleancoder.com/uncle-bob/2014/05/08/SingleReponsibilityPrinciple.html) — change ownership.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

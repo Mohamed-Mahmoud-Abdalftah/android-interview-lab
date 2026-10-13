@@ -23,11 +23,54 @@ Compare unit, integration, instrumentation, UI, and end-to-end tests.
 
 ## Explanation in Arabic
 
-الفرق مش اسم الـtool، لكن الـboundary اللي الاختبار بيثبتها. Unit test تشغّل policy أو UseCase في JVM بعزل واضح وتدّي feedback سريع. Integration test توصل أجزاء حقيقية ببعض، زي Repository مع Room أو client مع test server. Instrumented test تحتاج Android runtime لما السلوك متعلق بـLifecycle أو permissions أو قاعدة بيانات Android.
+قارن بين اختبارات الوحدة (Unit)، والتكامل (Integration)، والأجهزة (Instrumentation)، والواجهة (UI)، والنهاية للنهاية (End-to-End)؟
+
+1. طيف الاختبارات في أندرويد (The Android Testing Spectrum):
+   - **Unit Tests (Local JVM Tests)**: تُنفذ على الـ JVM المحلي داخل الحاسوب دون الحاجة لمشغل أو محاكي أندرويد (`src/test/`). سريعة جداً (بضعة أجزاء من الثانية لكل اختبار)، وتختبر دالة أو كلاس واحد بمعزل عن النظام (ViewModels, UseCases, Mappers).
+   - **Integration Tests**: تختبر تفاعل مكونين أو أكثر معاً للتأكد من صحة الاتصال (مثل اختبار Repository يتصل بـ Room Database محلية أو MockWebServer).
+   - **Instrumentation Tests (On-Device Tests)**: تتطلب تشغيل جهاز أندرويد حقيقي أو محاكي (`src/androidTest/`). تختبر كوداً يعتمد على Android Framework الحقيقي (SQLite، SharedPreferences، الخدمات، ومدير الحزم).
+   - **UI Tests (Compose / Espresso)**: تختبر الشاشات وتفاعل المستخدم (الضغط على الأزرار، التمرير، وظهور النصوص وقراءة Semantics شجرة الـ Compose).
+   - **End-to-End Tests (E2E)**: تختبر تدفق المستخدم الكامل من البداية للنهاية (تسجيل دخول -> إضافة للسلة -> إتمام الدفع عبر بيئة Staging حقيقية).
+
+2. المفاضلات الهندسية (Trade-offs):
+   - كلما صعدت لأعلى (من Unit إلى E2E): تزداد الموثوقية وواقعية الاختبار، ولكن **تزداد التكلفة والبطء واحتمالية الاختبارات المتقلبة (Flakiness)**.
 
 ## Practical walkthrough
 
-UI test تتعامل مع الشاشة كما يراها المستخدم، وend-to-end تعدّي على المسار كله مع backend أو sandbox مناسب. لو عملت mock للـDAO ثم قلت migration سليمة، أنت اختبرت توقعات الـmock فقط. صمّم test matrix حسب خطر الفشل: حساب الرسوم يحتاج حالات حدودية كثيرة وسريعة؛ استرجاع payment بعد process death يحتاج persistence/platform؛ والتكامل المالي النهائي يحتاج authority خارج التطبيق. اختبارات كثيرة في طبقة واحدة لا تعوّض boundary غير مختبرة.
+المقارنة بين Unit Test سريع على JVM و Instrumented Test يتطلب جهازاً حقيقياً في Room:
+```kotlin
+// 1. Unit Test سريع في src/test/ (ينفذ في 10ms على JVM بدون أندرويد):
+class PriceCalculatorTest {
+    @Test
+    fun `calculateDiscount applies percentage correctly`() {
+        val calculator = PriceCalculator()
+        val finalPrice = calculator.applyDiscount(originalPrice = 100.0, discountPercent = 20)
+        assertEquals(80.0, finalPrice, 0.001)
+    }
+}
+
+// 2. Instrumented Integration Test في src/androidTest/ (يتطلب محاكي لفحص SQLite الحقيقي):
+@RunWith(AndroidJUnit4::class)
+class UserDaoTest {
+    private lateinit var db: AppDatabase
+    private lateinit var userDao: UserDao
+
+    @Before
+    fun createDb() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+        userDao = db.userDao()
+    }
+
+    @Test
+    fun insertAndReadUser() = runTest {
+        val user = UserEntity(id = "1", name = "Ahmed")
+        userDao.insert(user)
+        val byId = userDao.getUserById("1")
+        assertEquals("Ahmed", byId?.name)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +94,36 @@ CI runs JVM tests and static checks early, device tests on supported API/device 
 
 ## Interview answer — short
 
-“Unit tests cover isolated logic; integration tests cover collaborating components; instrumentation runs on Android; UI tests exercise interactions; E2E validates a user journey across systems. I choose by risk and environment fidelity.”
+Unit tests run on the local JVM in milliseconds testing isolated logic. Integration tests verify interactions between components like repositories and databases. Instrumentation tests run on Android devices/emulators testing framework code. UI tests verify user interactions, and E2E tests validate complete user journeys across real backends.
 
 ## Interview answer — structured
 
-“I do not equate more E2E tests with better coverage. A pure use case belongs in fast JVM tests, repository plus database in integration tests, permission and lifecycle behavior on an emulator, and a few critical purchase journeys in E2E. UI tests may be instrumentation tests, so these labels overlap. The test plan states what each layer proves and what it cannot.”
+The Android testing spectrum balances execution speed, maintenance costs, and production confidence:
+
+1. **Local Unit Tests (`src/test/`)**:
+   - Execute on the host machine's JVM without an emulator. Run in milliseconds. Ideal for ViewModels, pure domain UseCases, business algorithms, and data mappers.
+
+2. **Integration Tests**:
+   - Verify that multiple collaborating units interact correctly across module boundaries (e.g. testing Room DAOs against SQLite, or network parsers against OkHttp MockWebServer).
+
+3. **Instrumentation Tests (`src/androidTest/`)**:
+   - Execute inside an Android OS process on physical hardware or emulators. Used whenever real Android OS runtime primitives (ART, Binder IPC, Keystore, real SQLite drivers) must be validated.
+
+4. **UI Tests (Compose Test / Espresso)**:
+   - Programmatically interact with UI nodes: asserting text presence, triggering clicks, verifying recomposition stability and accessibility semantics.
+
+5. **End-to-End (E2E) Tests**:
+   - Exercise complete end-to-end user journeys (e.g., login, onboarding, checkout) against staging server infrastructure. Provide highest confidence, but carry highest execution duration and flake risks.
 
 ## Interview answer — deep senior
 
-“I define tests by the claim they prove. A JVM unit test is ideal for deterministic fee rules, mapping and state reducers: it runs quickly, covers boundary cases and avoids Android setup. An integration test keeps a real boundary in place, such as a Repository with Room or an HTTP client with a controlled server, so it can expose schema or serialization mistakes that mocks hide. Instrumented tests use Android when the platform contract matters: lifecycle recreation, permissions, actual Room behavior or Compose UI semantics. A small end-to-end suite checks that the signed app, backend and provider sandbox agree on a critical journey. I do not put every scenario at the slowest layer. For checkout, I would unit-test amount and state policy extensively, integration-test durable intent storage and lost HTTP replies, run targeted device tests for recreation, and keep a limited sandbox path for authorization and reconciliation. Each layer has a blind spot: a fake cannot prove persistence, a UI test cannot prove server idempotency, and a happy-path end-to-end test rarely isolates an edge case. I map each release risk to the lowest layer that can actually observe it, then retain a few cross-boundary checks.”
+From an engineering management and CI governance perspective, test tiering dictates pipeline velocity:
+
+1. **The Cost-Velocity Ratio**: 1,000 local unit tests run in 5 seconds on developer machines and cost zero cloud infrastructure. 20 UI instrumentation tests require booting an emulator, waiting for system initialization, and running for 5 minutes. High-performing engineering teams push 70–80% of test coverage into fast local JVM unit tests.
+
+2. **Robolectric vs. Instrumentation**: Robolectric allows running Android framework tests (like inspecting Android Intent extras, Context resources, or Fragment lifecycles) directly on the local JVM by shadowing Android bytecode. It bridges the gap between speed and framework verification, though it does not replace real device verification for hardware-accelerated rendering or SQLite edge cases.
+
+3. **Hermetic Test Environments**: Reliable CI pipelines mandate hermetic test boundaries. E2E tests that communicate with live external third-party services (e.g. live payment gateways) flake due to network latency; mock external boundaries using WireMock or controlled test stubs.
 
 ## How to answer in the interview
 
@@ -75,8 +139,11 @@ Prompt for overlap of labels, fidelity limits, payment invariants and CI runtime
 
 ## Follow-up questions
 
-- [TST-07](../tst-07/): Where do contract tests sit? **Answer:** they check interface assumptions between components without full E2E.
-- [TST-16](../tst-16/): What requires a device? **Answer:** actual Android framework behavior such as permissions and migrations.
+- **Interviewer:** "What is Robolectric and when should you use it?"
+  **Answer:** "A framework that provides simulated Android bytecode on the local JVM, allowing Android framework-dependent tests to run in seconds without an emulator."
+
+- **Interviewer:** "Why are E2E tests often flaky in continuous integration pipelines?"
+  **Answer:** "Due to external dependencies: network timeouts, test database state contamination, asynchronous UI animation delays, and backend server restarts."
 
 ## Self-check rubric
 
@@ -87,4 +154,4 @@ Score one point each for choosing a JVM unit test for pure policy, an integratio
 - [Android testing fundamentals](https://developer.android.com/training/testing/fundamentals) — test types and environment.
 - [Android test strategy](https://developer.android.com/training/testing) — official test guidance.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

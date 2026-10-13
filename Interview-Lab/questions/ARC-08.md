@@ -22,11 +22,60 @@ Compare responsibility for state and events across patterns without asserting on
 
 ## Explanation in Arabic
 
-MVC بيفصل model/view/controller لكن في Android القديم Activity كتير بقت controller ضخمة. MVP يخلي Presenter يتعامل مع View interface، يسهل بعض tests لكن wiring lifecycle يدوي. MVVM يستخدم ViewModel يعرض observable UI state والـView ترندر؛ Android lifecycle integration مناسب. MVI عادة intents/actions تدخل reducer لتولّد state موحدة وeffects واضحة، وUDF principle أوسع: events لأعلى وstate لأسفل. المصطلحات بتختلف بين الفرق؛ قيّم data flow، ownership، testability، وcomplexity بدل اختيار acronym.
+المقارنة التاريخية والمعمارية بين أنماط العرض: MVC و MVP و MVVM و MVI وتدفق البيانات أحادي الاتجاه (UDF):
+
+1. نمط MVC (Model-View-Controller - البدايات القديمة):
+   - في بدايات أندرويد، كان كلاس `Activity` يلعب دور الـ View والـ Controller معاً!
+   - نتج عن ذلك ظاهرة God Activity (آلاف الأسطر تجمع بين الرسم، والشبكة، وقواعد البيانات)، مع ارتباط مباشر بين الـ View والـ Model مما جعل الـ Unit Testing مستحيلاً تقريباً.
+
+2. نمط MVP (Model-View-Presenter):
+   - فصل الـ Presenter عن الـ Activity عبر `Interface` مخصص للـ View (`interface MainView`).
+   - الاتصال كان ثنائي الاتجاه (Bi-directional) ومتزامناً: الـ View ينادي الـ Presenter، والـ Presenter ينادي دوال الـ View (`view.showLoading()`).
+   - المشكلة: تسريب الذاكرة عند تدوير الشاشة إذا لم يتم تصفير مرجع الـ View يدوياً في `onDestroy`، وكثرة الـ Interfaces.
+
+3. نمط MVVM (Model-View-ViewModel):
+   - كسر الارتباط الثنائي! الـ ViewModel لا يعرف أي شيء عن الـ View ولا يمتلك أي مرجع له.
+   - يعتمد على الـ Data Binding أو المراقبة التفاعلية (`LiveData` / `StateFlow`).
+   - الـ ViewModel ينشر البيانات، والـ View يراقبها بنفسه.
+   - ينجو تلقائياً من تغييرات اتجاه الشاشة (Configuration Changes).
+
+4. نمط MVI (Model-View-Intent) و UDF:
+   - التطور الأحدث والأنسب لـ Jetpack Compose.
+   - حلقة أحادية الاتجاه صارمة: **Intent / User Action** يرسل للـ ViewModel، والـ ViewModel ينتج كائن **Single Immutable State** واحد يصف الشاشة بالكامل، وتأثيرات جانبية وحيدة الاتجاه (**Single-shot Effects**).
+   - يمنع تماماً تناقض وتضارب الحالات (State Desync).
 
 ## Practical walkthrough
 
-MVC/MVP/MVVM/MVI/UDF أسماء لتنظيم ownership. في شاشة payment، الأهم state transitions وside effects وrecreation: هل Button tap ينتج event؟ هل Unknown محفوظ؟ هل UI تعمل request مباشرة؟ اختبر representative flow بدل تفضيل pattern بالاسم. MVVM مع immutable UiState قد يكفي، وreducer MVI يفيد transitions المعقدة بتكلفة ceremony.
+مقارنة عملية بين أسلوب MVP الثنائي وأسلوب MVI التفاعلي أحادي الاتجاه:
+```kotlin
+// ❌ نمط MVP القديم: ارتباط ثنائي بالواجهة عبر Interface وكولباكس متزامنة:
+class LoginPresenter(private var view: LoginView?) {
+    fun onLoginClicked(user: String, pass: String) {
+        view?.showLoading() // الـ Presenter يوجه الـ View أمرياً
+        authApi.login(user, pass) { success ->
+            if (success) view?.navigateToHome() else view?.showError()
+        }
+    }
+    fun detachView() { view = null } // ضروري لتجنب تسريب الذاكرة!
+}
+
+// ✅ نمط MVI الحديث: تدفق أحادي الاتجاه وحالة غير قابلة للتعديل (Compose-Friendly):
+sealed interface LoginIntent {
+    data class Submit(val user: String, val pass: String) : LoginIntent
+}
+data class LoginUiState(val isLoading: Boolean = false, val error: String? = null)
+
+class LoginViewModel : ViewModel() {
+    private val _state = MutableStateFlow(LoginUiState())
+    val state: StateFlow<LoginUiState> = _state.asStateFlow()
+
+    fun processIntent(intent: LoginIntent) {
+        when (intent) {
+            is LoginIntent.Submit -> executeLogin(intent.user, intent.pass)
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -50,15 +99,27 @@ A content feed may use MVVM with one immutable `FeedUiState`; checkout may use a
 
 ## Interview answer — short
 
-MVC, MVP, MVVM, and MVI organize presentation responsibilities differently. UDF is the flow principle: events go toward the state holder and state returns to UI. I choose by state complexity and team cost, not acronym alone.
+MVC coupled Views and Controllers inside Activities. MVP separated Presenters via interfaces but required manual lifecycle cleanup. MVVM decoupled View from ViewModel using observable state. MVI formalizes strict Unidirectional Data Flow (UDF) with immutable single-state containers and explicit User Intents, making it the ideal partner for Jetpack Compose.
 
 ## Interview answer — structured
 
-MVC often puts coordination in a controller, MVP uses a presenter and view contract, MVVM exposes observable state from a ViewModel, and MVI emphasizes intents, a reducer, and a single state model. UDF is broader and can exist in MVVM or MVI. On Android, ViewModel and lifecycle-aware state collection make MVVM practical. For a complex payment flow I may use an explicit reducer; for a simple feed a small ViewModel is enough. The key is predictable state ownership. For example, a feed with simple loading and content may need only one ViewModel and immutable state. A checkout with validation, submission, timeout and verification may benefit from reducer-style transitions. I would still keep data and business effects outside the reducer.
+The evolution of Android presentation patterns reflects the industry's shift toward lifecycle safety, testability, and reactive declarative UI.
+
+1. **MVC**: In early Android, `Activity` served as both View and Controller. This produced tight coupling, bloated 'God Activities', and near-zero unit testability because UI and lifecycle were inseparable.
+
+2. **MVP**: Introduced a `Presenter` communicating with the Activity via a `View` interface. While testable, it was tightly coupled bi-directionally: the Presenter held a direct reference to the View, requiring meticulous manual lifecycle nullification (`detachView()`) to prevent memory leaks during configuration changes.
+
+3. **MVVM**: Broke bi-directional coupling. The `ViewModel` has zero references to the UI. Instead, it exposes observable streams (`LiveData` or `StateFlow`). The View observes the ViewModel; when data changes, the View updates. ViewModels natively survive configuration changes via `ViewModelStore`.
+
+4. **MVI / UDF**: The modern standard tailored for declarative UI (Compose). It enforces a closed reactive loop: User interactions emit typed **Intents**, processed by a state machine that outputs a single **Immutable UiState** snapshot. This guarantees deterministic state transitions and eradicates state desynchronization bugs.
 
 ## Interview answer — deep senior
 
-I compare these approaches by tracing one event through the system. Who receives it? Who applies business rules? Who owns current state? How does the UI render it after recreation? MVP makes View abstraction explicit but can require careful attach/detach behavior. MVVM gives a lifecycle-aware state holder but needs discipline to avoid scattered LiveData booleans. MVI or reducer-based UDF centralizes transitions and can make impossible states easier to detect, at the cost of more ceremony and effect handling. UDF itself simply asks for one-way event and state flow. I avoid claiming that a pattern name guarantees testability or correctness; I test actual transitions and separate durable business status from UI state. The names often overlap in practice, so I review the actual event and state flow. Does the UI render one source of state? Can a new event arrive while work is in flight? Is state restored after process death? MVP tests may fake a View contract, while MVVM tests can assert StateFlow and MVI tests can assert reducer transitions. None of these patterns automatically fixes stale cache, server authority or lifecycle leaks; those need explicit owners and tests.
+The philosophical difference between MVVM and MVI in modern Android is state modeling discipline. In classic MVVM, a ViewModel often exposes multiple independent streams: `val isLoading: LiveData<Boolean>`, `val data: LiveData<List<T>>`, `val error: LiveData<String?>`. This creates an *inconsistent state vulnerability*: a race condition can cause `isLoading` to emit `true` while an old `error` is still active, causing the UI to briefly show both a spinner and an error banner simultaneously.
+
+MVI resolves this through **Single Source of Truth state modeling**: the entire screen is governed by a single `sealed interface ScreenState` or consolidated `data class ScreenUiState`. Invalid combinations are made structurally unrepresentable at compile time.
+
+In production testing, MVI makes ViewModels trivially verifiable via turbine or `runTest`: tests dispatch an Intent and assert the exact deterministic sequence of resulting state emissions.
 
 ## How to answer in the interview
 
@@ -74,8 +135,11 @@ Trace a Search event through MVC, MVP, MVVM and reducer-style MVI. Separate UDF 
 
 ## Follow-up questions
 
-- [ARC-09](../arc-09/): Is UI state the domain state? **Answer:** no; UI state includes rendering and interaction details.
-- [ARC-25](../arc-25/): When might MVI help payment flow? **Answer:** explicit transitions and exhaustive states can reduce scattered booleans.
+- **Interviewer:** "What is the primary drawback of classic MVI?"
+  **Answer:** "Boilerplate overhead: defining distinct Intents, Reducers, and single-shot Effect channels for simple CRUD screens can be overkill compared to pragmatic MVVM."
+
+- **Interviewer:** "Why is MVI particularly suited for Jetpack Compose?"
+  **Answer:** "Compose is a declarative function of state (`UI = f(State)`). MVI provides exactly what Compose expects: a single immutable state object that drives recomposition deterministically."
 
 ## Self-check rubric
 
@@ -86,4 +150,4 @@ Explain who owns state in MVVM and MVI, how UDF flows, and why neither acronym a
 - [Android UI layer](https://developer.android.com/topic/architecture/ui-layer) — UDF and ViewModel.
 - [Android state holders](https://developer.android.com/topic/architecture/ui-layer/stateholders) — UI state ownership.
 
-Technically reviewed against the linked official Android architecture guidance on 2026-10-11. Conceptual flows and snippets are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

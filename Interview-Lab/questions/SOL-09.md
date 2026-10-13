@@ -22,7 +22,50 @@ Explain flexible behavior assembly without fragile base-class coupling, while re
 
 ## Explanation in Arabic
 
-Composition over inheritance يعني تبني behavior من objects صغيرة متعاونة بدل BaseActivity أو BaseFragment ضخمة تورّثها لكل screen. في Kotlin، constructor injection وdelegation يخلّوا logging، permission handling، navigation helpers عقود واضحة؛ كل screen تختار اللي تحتاجه. inheritance تربط subclass بprotected lifecycle hooks وفرضيات base، وتعديل base ممكن يكسر كل الشاشات. لكنها مفيدة لو عندك true is-a contract ثابت مثل specialized View أو framework base مطلوب. المهم ما تورّثش عشان تشارك helper function فقط.
+ما هو مبدأ تفضيل التركيب على الوراثة (Composition over Inheritance) ولماذا هو أساسي في Android الحديث؟
+
+1. ما هو الفرق بين التركيب (Composition) والوراثة (Inheritance)؟
+   - **الوراثة (Inheritance - "is-a")**: كلاس فرعي يرث كل شيء من كلاس أب (`class ProfileActivity : BaseActivity()`).
+     * المشاكل القاتلة: **الاقتران الشديد (Tight Coupling)** و **هشاشة الكلاس الأساسي (Fragile Base Class)**؛ أي تعديل في الكلاس الأساسي قد يكسر عشرات الشاشات الفرعية بصمت، ولا يمكن وراثة أكثر من كلاس واحد في Kotlin/Java!
+   - **التركيب (Composition - "has-a")**: تجميع كائنات صغيرة مستقلة تؤدي وظائف محددة بداخل الكلاس (`class ProfileScreen(val toolbarHandler: ToolbarHandler, val analytics: AnalyticsTracker)`).
+     * المزايا: مرونة تامة، إمكانية تبديل السلوكيات في وقت التشغيل، سهولة الاختبار الفردي لكل مكون، وتجنب شجرة الوراثة المعقدة.
+
+2. كيف يظهر هذا المبدأ في Jetpack Compose؟
+   - Jetpack Compose مبني بنسبة **100% على التركيب (Composition)**!
+   - لا يوجد في Compose كلاس يرث من كلاس؛ بل شاشة `Scaffold` تركّب بداخلها `TopAppBar` و `FloatingActionButton` و `Content` كدوال مستقلة تماماً.
+
+## Practical walkthrough
+
+استبدال الوراثة الهشة بكائنات مركبة عبر تفويض كوتلن (Kotlin Delegation):
+```kotlin
+// ❌ وراثة هشة: شجرة كلاسات Base عميقة يصعب تعديلها واختبارها:
+open class BaseActivity : AppCompatActivity() { /* 500 سطر للتحليلات وشريط الأدوات */ }
+open class AuthenticatedBaseActivity : BaseActivity() { /* 300 سطر للتحقق من الجلسة */ }
+class OrdersActivity : AuthenticatedBaseActivity() { /* مقيدة بشجرة وراثة صلبة! */ }
+
+// ✅ التركيب (Composition): سلوكيات مستقلة تُركب حسب الحاجة عبر Kotlin by:
+interface SessionObserver {
+    fun registerSessionTimeout(activity: Activity)
+}
+class SessionObserverImpl : SessionObserver { ... }
+
+interface AnalyticsLogger {
+    fun logScreen(name: String)
+}
+class FirebaseAnalyticsLogger : AnalyticsLogger { ... }
+
+// تركيب السلوكيات في الشاشة دون وراثة هشة:
+class OrdersActivity(
+    private val session: SessionObserver = SessionObserverImpl(),
+    private val analytics: AnalyticsLogger = FirebaseAnalyticsLogger()
+) : AppCompatActivity(), SessionObserver by session, AnalyticsLogger by analytics {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate()
+        registerSessionTimeout(this)
+        logScreen("OrdersScreen")
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +74,6 @@ Composition localizes optional behavior and makes dependencies visible. Inherita
 ## Worked example
 
 Conceptual design: `class CheckoutCoordinator(private val analytics: Analytics, private val navigator: Navigator)` composes two services. A screen with no toolbar simply omits `ToolbarController`; it does not inherit `BaseFragment.setupToolbar()` and throw.
-
-## Practical walkthrough
-
-لو كل شاشة بتورث `BaseFragment` فيها toolbar وanalytics وpermission helper، شاشة camera هتضطر تعمل override فاضي أو ترمي exception. بدل ده ركّب السلوك المطلوب: `AnalyticsObserver` للشاشات المحتاجة tracking، و`ToolbarController` فقط للشاشات اللي عندها toolbar. composition بتخليك تغيّر جزء بدون كسر باقي الشاشات وتختبره منفصل. وراثة Android framework نفسها طبيعية؛ المشكلة في inheritance بتاع التطبيق لما يفرض capability غير مشتركة. راقب lifecycle: أي observer يتسجل ويتفك في التوقيت الصح وإلا هيعمل leak أو event مكرر.
 
 ## Trade-offs and decision criteria
 
@@ -50,15 +89,29 @@ An app uses small injected collaborators for analytics and navigation, with life
 
 ## Interview answer — short
 
-Composition builds behavior from collaborators, while inheritance binds a subtype to a base contract and implementation. I favor composition for optional Android behaviors so screens do not inherit methods they cannot honor.
+Composition over inheritance favors assembling components with 'has-a' relationships over rigid 'is-a' inheritance trees. In Android, it eliminates bloated `BaseActivity` anti-patterns, enables runtime behavioral flexibility, avoids the fragile base class problem, and is the foundational architecture of Jetpack Compose.
 
 ## Interview answer — structured
 
-A `BaseFragment` that forces every screen to have a toolbar creates a brittle hierarchy. With composition, a screen receives a toolbar controller only if it has one, and analytics or navigation can be separate collaborators. That reduces hidden lifecycle coupling and makes tests replace dependencies independently. Inheritance still makes sense when the subtype truly satisfies the base contract and shared behavior is stable. I choose by substitutability and ownership, not a rule that inheritance is always wrong. A concrete example is a screen without a toolbar. It should not inherit a base hook that it must override to do nothing or throw.
+The principle of 'Composition over Inheritance' advocates that classes should achieve polymorphic reuse by containing instances of other classes ('has-a') rather than inheriting state and behavior from a superclass ('is-a').
+
+1. **The Fragility of Inheritance**:
+   - Inheritance creates the tightest possible compile-time coupling: changes to private or protected implementations in a superclass ripple unpredictably across derived subclasses (the *Fragile Base Class problem*).
+   - Subclasses inherit irrelevant or unwanted behaviors (violating LSP).
+   - Single inheritance in Kotlin/Java prevents combining multiple orthogonal features (e.g. an Activity cannot inherit from both `BaseCameraActivity` and `BaseBillingActivity`).
+
+2. **The Power of Composition**:
+   - Components encapsulate isolated concerns (`AnalyticsHelper`, `SessionTracker`, `ToolbarCoordinator`).
+   - Components can be dynamically plugged in, swapped, or mocked in unit tests.
+   - Promotes high cohesion and clean unit testability.
+
+Jetpack Compose is the ultimate manifestation of this principle: Compose completely abandons the 15-year-old `android.view.View` inheritance tree in favor of pure, composable function graphs.
 
 ## Interview answer — deep senior
 
-The risk in inheritance is that subclasses depend on implementation details and lifecycle assumptions of the base class. A change to `BaseActivity` may affect many screens, and children may add no-op or throwing overrides for behavior they do not support—an LSP smell. Composition lets each screen assemble only needed capabilities with explicit constructors or delegation. It also clarifies scopes: a navigation helper may be Activity-scoped while a payment SDK adapter belongs elsewhere. The cost is some wiring and interfaces where variation is real. I would keep framework inheritance where required and small true subtype hierarchies where contracts hold, but avoid using inheritance solely to share utility methods or global mutable state. I would check whether the base class provides a real is-a relationship or merely a bag of convenience methods. Composition lets a screen receive only the behaviors it needs, rather than inherit a large application base class. I would keep the framework superclass where Android requires it, but move analytics, toolbar configuration, and navigation into focused collaborators or lifecycle-aware components. A camera screen can omit toolbar behavior entirely, so it never implements a meaningless override. The cost is more wiring and sometimes forwarding calls; inheritance may remain appropriate when the subtype truly preserves a stable base contract. Production risk shifts to lifecycle ownership: observers must register and clean up at the right owner, and tests should cover recreation so composition does not become leaked or duplicated behavior.
+Kotlin offers first-class language support for composition via **Class Delegation (`by`)**. By declaring `class MyActivity : AppCompatActivity(), AnalyticsManager by analyticsManager`, Kotlin generates forwarding bytecode calls under the hood. This delivers the syntactic convenience of inheritance while preserving the architectural purity and loose coupling of composition.
+
+In Android Jetpack, `LifecycleObserver` and `LifecycleEventObserver` represent the official migration from inheritance to composition: instead of overriding `onStart()` in a `BaseActivity`, self-contained components observe `lifecycle.addObserver(myComponent)`, managing their own cleanup automatically.
 
 ## How to answer in the interview
 
@@ -74,8 +127,11 @@ Compare BaseFragment hooks with injected capabilities; discuss LSP, lifecycle ow
 
 ## Follow-up questions
 
-- [SOL-10](../sol-10/): Why is a mandatory toolbar hook risky? **Answer:** some child screens cannot honor the base behavior.
-- [KOT-15](../kot-15/): What Kotlin feature helps composition? **Answer:** interface delegation can forward behavior to a collaborator.
+- **Interviewer:** "When is inheritance still acceptable?"
+  **Answer:** "When there is a genuine, immutable 'is-a' relationship where the subclass is a true specialized extension of the parent and obeys LSP without exception, or when extending third-party framework classes like `ViewModel` or `Fragment`."
+
+- **Interviewer:** "How does `LifecycleObserver` replace BaseActivity callbacks?"
+  **Answer:** "Instead of subclasses calling `super.onStart()`, a component implements `DefaultLifecycleObserver` and registers itself with the Activity's lifecycle, executing setup and teardown independently."
 
 ## Self-check rubric
 
@@ -86,4 +142,4 @@ Redesign one bloated base class with two collaborators and state one valid inher
 - [Kotlin inheritance](https://kotlinlang.org/docs/inheritance.html) — explicit inheritance mechanics.
 - [Kotlin delegation](https://kotlinlang.org/docs/delegation.html) — composition through forwarding.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

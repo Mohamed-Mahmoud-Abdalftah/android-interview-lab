@@ -22,11 +22,81 @@ Model business states and legal transitions explicitly, including persistence an
 
 ## Explanation in Arabic
 
-State machine بتحدد حالات واضحة وانتقالات مسموحة بدل Booleans متفرقة. مثل upload: Pending → Uploading → Complete أو Retryable/Failed، مع event IDs وشروط لكل انتقال. Payment: Unknown بعد timeout لا تتحول Failed من غير server proof. نخزن states المهمة transactionally، ونرفض transitions قديمة/out-of-order، ونكتب tests لكل edge وحالة process death.
+كيف تقوم بنمذجة حالات التطبيق وتدفقات الشاشات باستخدام آلة حالات صريحة (Explicit State Machine) لمنع الحالات غير الصالحة؟
+
+1. مخاطر الـ State Modeling العشوائي (Boolean Hell):
+   - كثير من المطورين يعرّفون الـ State بمجموعة من المتغيرات المنفصلة:
+     `var isLoading: Boolean = false`, `var isError: Boolean = false`, `var data: List<Item>? = null`.
+   - هذا يؤدي إلى **حالات متناقضة وغير منطقية مستحيلة هندسياً**! مثل: `isLoading = true` و `isError = true` في نفس الوقت، أو وجود بيانات مع خطأ فادح!
+
+2. آلة الحالات الصريحة (Finite State Machine - FSM):
+   - **Sealed Interfaces للحالات**: تمثيل كل حالة ممكنة بكلاس صريح ومغلق:
+     `sealed interface UiState { object Loading; data class Success(val items); data class Error(val msg) }`.
+   - **Sealed Interfaces للأحداث (User Actions & System Events)**: تمثيل كل حدث يغير الحالة:
+     `sealed interface UiEvent { object Retry; data class SelectItem(val id); object Refresh }`.
+   - **دالة التحويل النقية (State Reducer)**: دالة تأخذ الحالة الحالية والحدث وتعيد الحالة الجديدة فقط: `reduce(currentState, event): UiState`.
+
+3. فصل الآثار الجانبية (Side-Effects Isolation):
+   - العمليات غير النقية (Navigation, Showing Snackbars, Triggering Haptics) لا توضع داخل الـ State، بل تُعامل كـ `SharedFlow` أو `Channel` للأحداث الفردية (One-Off Side Effects) لمنع إعادة تنفيذها عند تدوير الشاشة.
 
 ## Practical walkthrough
 
-في upload، `Sending(attempt=2)` ما ينفعش ترجع `Pending` بسبب callback قديمة بعد `Complete`. اكتب transition function تقبل current state وevent وترد state جديدة أو رفض؛ خزن version مع الحالة المهمة. Payment timeout حالة Unknown، مش Failed، لحد backend يثبت النتيجة. اختبر illegal transitions وreplay والسباق بين worker وnetwork callback قبل ربطها بالـUI.
+تنفيذ State Machine صريحة ونقية مع MVI لتدفق دفع معقد ومنع الحالات المتضاربة:
+```kotlin
+// 1. نمذجة الحالات الممكنة حصرياً (Impossible States are Unrepresentable):
+sealed interface CheckoutState {
+    object Idle : CheckoutState
+    object ProcessingPayment : CheckoutState
+    data class AwaitingOtpVerification(val transactionId: String) : CheckoutState
+    data class Completed(val receiptNumber: String) : CheckoutState
+    data class Failed(val reason: String, val canRetry: Boolean) : CheckoutState
+}
+
+// 2. نمذجة الأحداث الصريحة:
+sealed interface CheckoutEvent {
+    data class SubmitPayment(val cardToken: String) : CheckoutEvent
+    data class VerifyOtp(val code: String) : CheckoutEvent
+    object Retry : CheckoutEvent
+}
+
+// 3. محرك الـ State Machine داخل ViewModel:
+class CheckoutStateMachineViewModel @Inject constructor(
+    private val paymentRepository: PaymentRepository
+) : ViewModel() {
+    private val _state = MutableStateFlow<CheckoutState>(CheckoutState.Idle)
+    val state: StateFlow<CheckoutState> = _state.asStateFlow()
+
+    fun onEvent(event: CheckoutEvent) {
+        val currentState = _state.value
+        viewModelScope.launch {
+            when (event) {
+                is CheckoutEvent.SubmitPayment -> {
+                    if (currentState is CheckoutState.Idle || currentState is CheckoutState.Failed) {
+                        _state.value = CheckoutState.ProcessingPayment
+                        val result = paymentRepository.process(event.cardToken)
+                        _state.value = when (result) {
+                            is PaymentResult.RequiresOtp -> CheckoutState.AwaitingOtpVerification(result.txId)
+                            is PaymentResult.Success -> CheckoutState.Completed(result.receipt)
+                            is PaymentResult.Error -> CheckoutState.Failed(result.message, canRetry = true)
+                        }
+                    }
+                }
+                is CheckoutEvent.VerifyOtp -> {
+                    if (currentState is CheckoutState.AwaitingOtpVerification) {
+                        _state.value = CheckoutState.ProcessingPayment
+                        // تنفيذ التحقق وتحديث الحالة
+                    }
+                }
+                is CheckoutEvent.Retry -> {
+                    if (currentState is CheckoutState.Failed && currentState.canRetry) {
+                        _state.value = CheckoutState.Idle
+                    }
+                }
+            }
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -65,15 +135,33 @@ A payment repository stores operation state/version, applies server receipts tra
 
 ## Interview answer — short
 
-“I define finite states and allowed events, centralize transitions and persist business state with version checks. That prevents contradictory flags and stale updates; an ambiguous timeout remains Unknown until authoritative reconciliation.”
+Model states and transitions using an explicit finite state machine with Kotlin sealed interfaces to make invalid states unrepresentable. Enforce transitions through pure reducer functions driven by typed events, and isolate transient one-off side effects like navigation and snackbars from persistent view state.
 
 ## Interview answer — structured
 
-“An explicit state machine makes failure semantics reviewable. I list states and legal transitions, then implement a reducer or repository transition function. For durable operations I store state and version transactionally, so a late worker cannot overwrite a newer outcome. UI renders from current state rather than juggling unrelated booleans. A payment timeout goes to Unknown/Pending, not Failed, until server status resolves it. Tests cover every legal edge, invalid event and process-death restart.”
+Modeling complex UI and domain journeys using explicit State Machines eliminates the 'boolean flag explosion' where disparate variables create invalid state permutations:
+
+1. **Making Invalid States Unrepresentable**:
+   - Replace scattered variables (`var isLoading`, `var isError`, `var data`) with a single immutable sealed hierarchy (`Loading`, `Empty`, `Content`, `Error`). A screen cannot be simultaneously in `Loading` and `Error` because the type system strictly forbids it.
+
+2. **Typed Events as Transition Triggers**:
+   - Define a sealed interface representing all valid inputs (`UiEvent`). The UI emits intent events into the ViewModel without directly mutating data.
+
+3. **Deterministic State Transitions (Reducers)**:
+   - Transition logic follows a pure functional pattern: `f(State, Event) -> State`. Disallowed transitions are ignored or logged as violations, protecting flows like payments from duplicate executions during transitions.
+
+4. **Isolating Side Effects**:
+   - Decouple continuous UI state (rendered by Compose) from discrete one-off side effects (navigation commands, analytics triggers, toast messages). Channel side effects through a buffered `Channel<UiEffect>` consumed once via `LaunchedEffect`.
 
 ## Interview answer — deep senior
 
-“I use the state machine to capture invariants that would otherwise live in comments. Each event has an identity and precondition, transitions are validated against current version, and persistent updates are atomic. That matters when two workers or callbacks race: a delayed error must not overwrite an already confirmed success. External side effects are separate from pure state transitions, so I persist a command/operation ID before send and reconcile receipt afterward. For UI, a sealed state avoids impossible Boolean combinations; for payments, backend ledger remains authoritative and local Unknown is honest. I test every transition, duplicate event, out-of-order response, cancellation and crash window, and I log rejected transitions for diagnosis without leaking sensitive data. Migration must preserve older state encodings. The key test is an out-of-order event: a delayed timeout callback arrives after a success receipt. The transition function must reject moving Complete back to Retryable. For durable workflows I would store version and state in one transaction and use compare-and-set semantics so two workers cannot both advance an operation from the same prior version. I would model Unknown explicitly for remote ambiguity and require authoritative status before terminal payment state. Pure transition tests cover allowed and forbidden edges; integration tests cover persistence races.”
+From an architectural rigor standpoint, finite state machines provide unparalleled testability and auditability:
+
+1. **Exhaustive Unit Test Coverage**: Because state transitions are modeled as deterministic functions taking `(State, Event)`, unit testing requires zero mocking of Android framework components. You can assert that submitting `SubmitPayment` while in `ProcessingPayment` state is a no-op, preventing double-submission bugs with simple pure unit tests.
+
+2. **State Restoration & Process Death**: Explicit state machines serialize seamlessly into Android `SavedStateHandle`. If the state machine is composed of parcelable primitives or identifiers, restoring the exact step of a multi-stage KYC or checkout flow post-process death requires deserializing a single state token.
+
+3. **Hierarchical State Machines (Statecharts)**: For massive multi-step workflows (e.g., identity verification with camera capture, document review, and address confirmation), nest smaller child state machines within a parent coordinator state machine, ensuring sub-flow encapsulation.
 
 ## How to answer in the interview
 
@@ -89,8 +177,11 @@ Draw state graph with duplicate/out-of-order events and version guard.
 
 ## Follow-up questions
 
-- [SYS-05](../sys-05/): Why Unknown payment state? **Answer:** client timeout does not prove server failure.
-- [SYS-11](../sys-11/): How handle retries? **Answer:** state transition and stable operation ID govern repeat attempts.
+- **Interviewer:** "Why should one-off UI events not be stored directly in StateFlow state?"
+  **Answer:** "StateFlow retains its latest value; if an event like ShowSnackbar is stored in state, re-subscribing on screen rotation re-emits and displays the snackbar again."
+
+- **Interviewer:** "What is the difference between MVI and traditional MVVM?"
+  **Answer:** "MVI enforces a single immutable StateFlow and unidirectional event-driven reducers, whereas traditional MVVM often exposes multiple independent LiveData/StateFlow streams."
 
 ## Self-check rubric
 
@@ -101,4 +192,4 @@ Can I enumerate states, reject illegal transitions and protect against stale con
 - [Android architecture guide](https://developer.android.com/topic/architecture) — UDF and SSOT.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — durable operation states.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

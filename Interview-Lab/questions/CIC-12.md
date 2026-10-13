@@ -23,11 +23,47 @@ How do you reduce Gradle cold-build and CI execution times?
 
 ## Explanation in Arabic
 
-Cold build مفيش cache دافئة، فقياسه مختلف عن incremental build. نعمل Gradle build scan/profile ونقسم الوقت: dependency download، configuration، Kotlin/Java compilation، KSP/KAPT، Android resources، tests. بعد القياس: configuration cache لو compatible، build cache، parallel modules، تقليل annotation processors، وdependencies محلية/locked. مش نفعّل flags عشوائي.
+كيف تقوم بتقليل وقت التجميع الأولي البارد (Cold-Build) وتسريع تنفيذ خط أنابيب الـ CI في أندرويد؟
+
+1. أسباب بطء بناء الـ CI (Bottlenecks):
+   - سيرفرات الـ CI (مثل GitHub Actions runners) غالباً ما تكون بيئات عابرة (Ephemeral VMs) تبدأ من الصفر بدون أي كاش للمكتبات أو الـ Gradle Daemon.
+   - إعادة تجميع كل الـ Modules والمكتبات مع كل PR تستهلك من 15 إلى 40 دقيقة.
+
+2. استراتيجيات التسريع الجوهرية (Optimization Tactics):
+   - **1. Remote Build Cache (كاش التجميع البعيد)**: أهم خطوة على الإطلاق! إعداد كاش سحابي (عبر Gradle Enterprise / Develocity أو سيرفر HTTP/S3) يسمح لسيرفرات الـ CI بمشاركة مخرجات المهام (Task Outputs). أي مهمة تم بناؤها مسبقاً بنفس المدخلات يتم تنزيل نتيجتها في أجزاء من الثانية (`FROM-CACHE`).
+   - **2. استعادة كاش الـ Gradle والـ Dependencies**: استخدام `gradle/actions/setup-gradle` الذي يقوم بحفظ واستعادة مجلدات `~/.gradle/caches` ومجلد الـ wrapper تلقائياً.
+   - **3. تفعيل خصائص Gradle المتقدمة**: تفعيل `org.gradle.parallel=true` لتجميع الوحدات المستقلة بالتوازي، وتفعيل `org.gradle.configuration-cache=true` لتخطي مرحلة التكوين (Configuration Phase).
+   - **4. فحص الـ Modules المتأثرة فقط (Affected Module Detection)**: تشغيل الاختبارات والفحوصات فقط على الموديولات التي تغيرت في الـ Git Diff وما يعتمد عليها، بدلاً من فحص 100 موديول بالكامل.
+   - **5. ضبط ذاكرة الـ JVM بدقة**: تخصيص ذاكرة كافية لـ Gradle في الـ CI (`-Xmx4g -XX:+UseParallelGC`) لتفادي توقف الـ Garbage Collector المتكرر.
 
 ## Practical walkthrough
 
-لو CI بطيئة، قس أولًا وقت queue وconfiguration وdependency resolution وcompile وtests والإيموليتر؛ ما تفترضش إن cache هي العلاج. اعمل Build Scan أو profile ومقارنة cold/warm على runner مماثل. configuration cache يقلل configuration إذا plugins متوافقة، build cache يعيد task outputs عندما inputs مطابقة، وincremental compilation يعتمد على scope التغيير. cache خاطئة ممكن تخفي missing input؛ راجع reproducibility. وزّع tests حسب تكلفة وخطر، ولا تنقل اختبارات payment الحرجة لnightly بس عشان رقم الـPR يتحسن.
+إعداد ملف `gradle.properties` وتخصيص الـ CI لسرعة قياسية:
+```properties
+# gradle.properties مخصص لبيئة الـ CI:
+org.gradle.jvmargs=-Xmx4096m -XX:+UseParallelGC -XX:MaxMetaspaceSize=1024m
+org.gradle.parallel=true
+org.gradle.caching=true
+org.gradle.configuration-cache=true
+kapt.incremental.apt=true
+kotlin.incremental=false # Incremental compilation غير مجدية في الـ cold builds النظيفة بدون كاش محلي
+```
+وفي ملف `settings.gradle.kts` لتفعيل الـ Remote Build Cache:
+```kotlin
+buildCache {
+    local {
+        isEnabled = true
+    }
+    remote<HttpBuildCache> {
+        url = uri("https://gradle-cache.company.internal/cache/")
+        credentials {
+            username = System.getenv("CACHE_USER")
+            password = System.getenv("CACHE_PASSWORD")
+        }
+        isPush = System.getenv("IS_CI_MAIN_BRANCH") == "true" // سيرفر الـ main فقط يرفع للكاش
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +87,35 @@ Track cold and warm p50/p95, cache hit rate, configuration time and affected-mod
 
 ## Interview answer — short
 
-“I profile a true cold build, identify the critical task/dependency path, then apply compatible configuration/build caches, dependency and processor improvements with measured before/after results.”
+Slash Android CI build times by configuring Gradle Remote Build Cache (Develocity/HTTP cache) for task reuse, enabling Gradle configuration cache and parallel execution, caching Gradle dependencies via setup-gradle actions, using affected module detection to test only modified modules, and tuning JVM heap memory.
 
 ## Interview answer — structured
 
-“I start with build scans on clean CI agents to distinguish download, configuration, compilation, resource processing and test time. Configuration cache and build cache address different phases; remote cache only helps with correct inputs and trusted access. I inspect KAPT/KSP, unnecessary `api` dependencies and module parallelism. I compare p50/p95 cold and incremental builds after each change, not assume a flag improved performance.”
+Accelerating cold and warm CI builds requires addressing Gradle's configuration and execution phases systematically:
+
+1. **Remote Build Cache Infrastructure**:
+   - Ephemeral CI containers start without local cache. Enabling a remote HTTP build cache (e.g. Gradle Enterprise/Develocity or self-hosted HTTP cache) allows tasks that match input hashes to pull pre-compiled bytecode with `FROM-CACHE`, cutting build times by 50–70%.
+
+2. **Gradle Execution Flags**:
+   - Enable `org.gradle.parallel=true` to process independent Gradle subprojects concurrently.
+   - Enable `org.gradle.configuration-cache=true` to skip the configuration phase on subsequent invocations.
+   - Enable `org.gradle.caching=true`.
+
+3. **Affected Module Detection**:
+   - In large multi-module repositories, use tools like Dropbox's `AffectedModuleDetector` or custom Git diff inspection. Run tests and static analysis exclusively on changed modules and their transitive downstream dependents rather than the entire project.
+
+4. **JVM & Memory Tuning for CI Runners**:
+   - Ephemeral runners typically suffer from memory thrashing. Configure `-Xmx4g` to `-Xmx6g` with `-XX:+UseParallelGC` to minimize garbage collection pauses during intensive compilation.
 
 ## Interview answer — deep senior
 
-“I optimize the critical path after measuring it. A 40-minute CI run may spend half its time waiting for an emulator, downloading dependencies or configuring Gradle; faster Kotlin compilation will not solve every case. I capture a baseline with build scans and CI job timing, separate cold from warm builds, and inspect cache hits, misses and task invalidation reasons. Configuration cache can avoid repeated configuration where plugins support it; build cache reuses outputs for matching inputs; incremental compilation narrows compile work. They solve different costs and must not hide undeclared inputs or nonreproducible tasks. I parallelize independent checks and shard device tests only when diagnostics and isolation stay sound. For a low-risk UI copy change, a narrower fast PR gate may be acceptable; for payment or migration code, targeted integration checks remain required. I compare before/after medians over multiple runs, not one lucky build, and track failure rate alongside speed.”
+From an architectural systems engineering angle, cache hygiene and task avoidability drive performance:
+
+1. **Task Cache Miss Hunting**: If a single task includes absolute file paths or system timestamps in its `@Input`, Gradle invalidates the task's cache key on every runner, turning `FROM-CACHE` into expensive recompilations. Teams run Gradle Build Scans regularly to audit task inputs and enforce path sensitivity (`PathSensitivity.RELATIVE`).
+
+2. **Push vs. Pull Cache Access Control**: Never allow every unverified PR to push to the remote build cache; a corrupted or poisoned cache entry on a feature branch can infect other builds. The main branch CI should be the only agent configured with `isPush = true` permissions, while PR builds have read-only (`isPush = false`) pull access.
+
+3. **KSP vs. KAPT Migration**: KAPT relies on Java stub generation which severely hampers build parallelization and cache performance. Migrating annotation processors to Kotlin Symbol Processing (KSP) delivers up to 2x faster compilation speed and native incremental processing.
 
 ## How to answer in the interview
 
@@ -75,8 +131,11 @@ Prompt for cold/warm distinction, configuration versus task cache, processor cos
 
 ## Follow-up questions
 
-- [CIC-20](../cic-20/): What if tests dominate? **Answer:** optimize/shard tests, not Gradle compilation flags.
-- [CIC-02](../cic-02/): Why profile pipeline graph? **Answer:** parallel stages change wall-clock critical path.
+- **Interviewer:** "Why should feature PR builds have read-only access to the remote Gradle build cache?"
+  **Answer:** "To prevent cache poisoning, ensuring that only trusted, validated builds from the main branch populate cache entries."
+
+- **Interviewer:** "How does KSP improve build performance over KAPT in CI?"
+  **Answer:** "KSP interacts directly with the Kotlin compiler AST without generating expensive intermediate Java stub files, reducing compilation time by up to 50%."
 
 ## Self-check rubric
 
@@ -87,4 +146,4 @@ Measure configuration, dependency resolution, compilation, tests and cache misse
 - [Gradle performance guide](https://docs.gradle.org/current/userguide/performance.html) — profiling and optimization.
 - [Gradle configuration cache](https://docs.gradle.org/current/userguide/configuration_cache.html) — compatibility and reuse.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

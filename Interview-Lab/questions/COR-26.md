@@ -25,18 +25,51 @@ Call 3 independent APIs concurrently. How do you preserve partial success withou
 
 ## Explanation in Arabic
 
-تخيل إن الـHome Dashboard عندك بيعرض 3 كروت: بيانات الحساب، العروض المتاحة، والتنبيهات. لو أول API رجعت بنجاح، والتانية واجهت timeout أو 503، والتالتة رجعت بنجاح، الـBusiness Requirement الطبيعي إننا نعرض الكارتين السليمين بدل ما نقفل الشاشة كلها بـError Screen كاملة. ده اسمه **Partial Success**، وهو قرار منتج ومعماري قبل ما يكون اختيار Coroutine Builder.
+استدعاء 3 APIs مستقلة بالتوازي مع الحفاظ على النجاح الجزئي (Partial Success) وعدم ابتلاع الإلغاء هو عكس السؤال السابق تماماً:
 
-لو استعملنا `coroutineScope` عادية وطلقنا الـ3 Calls بـ`async`، أي exception في child واحد هتلغي الـparent فتلغي الأخوات فوراً وتضيع البيانات السليمة. الحل الهندسي إننا نستخدم `supervisorScope`، ونعزل كل child بحيث يمسك فقط **الـDomain/Network Exceptions المتوقعة** ويحولها لـTyped Outcome (`Section.Ready` أو `Section.Unavailable`). في نفس الوقت، لو المستخدم خرج من الشاشة والـViewModel اتلغى، `CancellationException` لازم يُعاد رميها وما تتبلعش جوه الـcatch؛ لأن الإلغاء إشارة توقف مش عطل شبكة.
+1. المعمارية المطلوبة:
+   - الشاشة بتعرض: الأخبار، الطقس، والإعلانات.
+   - لو فشل جلب الطقس، نريد عرض الأخبار والإعلانات بنجاح بدلاً من تدمير الشاشة بالكامل (Graceful Degradation).
+   - **لكن انتبه للشرط الحرج:** 'دون ابتلاع الإلغاء' (Without swallowing cancellation). لو المستخدم قفل الشاشة، نريد إلغاء كل العمليات فوراً!
+
+2. الأداة المناسبة: `supervisorScope { }`:
+   - `supervisorScope` يعزل فشل الأبناء عن بعضهم؛ فشل طلب لا يلغي الإخوة.
+   - ولكنه ما زال خاضعاً لـ Structured Concurrency: لو الأب نفسه تم إلغاؤه (المستخدم غادر الشاشة)، يلغي جميع الأبناء فوراً!
+
+3. نمط الكود الصحيح:
+   - نستخدم `runCatching` أو `try-catch` حول كل استدعاء `await()` **مع إعادة رمي `CancellationException` صراحة**:
+     `if (e is CancellationException) throw e`
 
 ## Practical walkthrough
 
-في dashboard حقيقي، الـSupervisor بيعزل فشل الـSiblings عن بعض، لكن مش بيحوّل الفشل تلقائياً لـSuccess/Failure Values؛ المطور هو اللي بيعمل ده عبر الـResult Type. لو جمعت الثلاثة بـ`supervisorScope`:
-1. عند `t=0`: الطلبات الثلاثة تبدأ بالتوازي عبر `async`.
-2. عند `t=150ms`: الحساب يرجع بنجاح فيبقى `Ready(profile)`.
-3. عند `t=250ms`: العروض تفشل بـ`IOException` فتتحول لـ`Unavailable("Offers unavailable")` بينما الطلبات التانية مستمرة.
-4. عند `t=400ms`: التنبيهات ترجع بنجاح، فنطلع Snapshot فيه 2 كروت جاهزة وكارت فيه زرار Retry.
-5. لو المستخدم رجع للخلف أثناء التحميل: الـ`viewModelScope` يتلغي، وتمر `CancellationException` فتوقف أي عملية معلقة فوراً.
+تنفيذ عملي لشاشة لوحة التحكم (Home Dashboard):
+```kotlin
+data class DashboardState(
+    val news: List<NewsItem>?,
+    val weather: WeatherInfo?,
+    val ads: List<AdBanner>?
+)
+
+suspend fun fetchDashboard(): DashboardState = supervisorScope {
+    val newsDeferred = async { safeApiCall { api.getNews() } }
+    val weatherDeferred = async { safeApiCall { api.getWeather() } }
+    val adsDeferred = async { safeApiCall { api.getAds() } }
+    
+    DashboardState(
+        news = newsDeferred.await(),
+        weather = weatherDeferred.await(),
+        ads = adsDeferred.await()
+    )
+}
+
+suspend fun <T> safeApiCall(block: suspend () -> T): T? = try {
+    block()
+} catch (e: CancellationException) {
+    throw e // لا نبلع الإلغاء أبداً!
+} catch (e: Exception) {
+    null // فشل جزئي آمن
+}
+```
 
 ## Why it matters and how it works
 
@@ -116,17 +149,30 @@ In a production banking or commerce app, load each card with explicit cache and 
 
 ## Interview answer — short
 
-“If three APIs are independent, I avoid an all-or-nothing scope so one network failure does not cancel useful sibling data. I wrap concurrent calls in `supervisorScope` using `async`, catch expected service exceptions inside each child into a typed outcome like `Section.Unavailable`, and explicitly rethrow `CancellationException`. The UI then displays available cards with a targeted retry option.”
+Use 'supervisorScope' with parallel 'async' tasks and handle child exceptions locally using try-catch that explicitly rethrows CancellationException. This isolates failures so successful sibling results are preserved while ensuring top-level lifecycle cancellation still terminates all work.
 
 ## Interview answer — structured
 
-“First, I verify the product invariant: if the three endpoints power independent UI sections, partial success is desirable. I launch the calls concurrently in `supervisorScope` to isolate sibling failures. Inside each `async` block, I catch only expected network or domain exceptions and map them to a sealed `Section` state, while letting `CancellationException` escape so screen teardown stops all work. Awaiting the deferred values produces a composite snapshot. If the three endpoints instead represented a financial transaction or payment quote where every value is mandatory, I would intentionally use standard `coroutineScope` to fail fast and preserve strict atomicity.”
+To preserve partial success across independent concurrent API calls without breaking cancellation, use `supervisorScope` combined with selective local error handling.
+
+Inside `supervisorScope`, each `async` coroutine is supervised. If one child throws an exception, the failure is isolated: the supervisor scope does not cancel, and sibling tasks continue running. This allows the UI to render whatever data succeeded (e.g., displaying news articles even if the weather widget fails).
+
+To satisfy the critical requirement of **not swallowing cancellation**, wrap each individual call in a try-catch block that inspects the exception: if `e is CancellationException`, rethrow it immediately. If the user navigates away and the parent ViewModel cancels the scope, the `CancellationException` propagates cleanly down and aborts all network connections.
 
 ## Interview answer — deep senior
 
-“I separate failure isolation at the coroutine level from error modeling at the product level. `supervisorScope` stops child failures from propagating upwards to siblings, but it does not magically handle exceptions: unhandled exceptions in a supervised child still crash unless awaited or caught inside the child block. Inside each child, I catch domain exceptions and map them into an explicit result type, but rethrow `CancellationException` to preserve structured concurrency when the user navigates away. 
+Under the hood, `supervisorScope` installs a `SupervisorJob` as the parent context. When a child coroutine fails with a non-cancellation exception, `childCancelled` on the supervisor returns `false`. This prevents the scope from entering the `CANCELLING` state.
 
-For observability, I log latency and error rates per dependency rather than as a single composite metric. For the UI layer, if progressive rendering is required, I expose individual flows instead of awaiting a composite snapshot. When caching is involved, each card carries its own freshness timestamp. Most importantly, I never apply partial success blindly: independent cards benefit from it, but transactional operations like checkout calculations must remain fail-fast.”
+A dangerous antipattern is writing:
+
+```kotlin
+// ❌ ANTI-PATTERN:
+supervisorScope {
+    val news = async { runCatching { api.getNews() }.getOrNull() }
+}
+```
+
+Standard `runCatching` catches `Throwable`, which intercepts `CancellationException` and converts it to a null result! When the user exits the screen, the coroutines keep running on background threads, ignoring cancellation. In production, we define a dedicated `runSuspendCatching` extension that rethrows `CancellationException`, guaranteeing both partial fault tolerance and responsive lifecycle cancellation.
 
 ## How to answer in the interview
 
@@ -142,8 +188,14 @@ Contrast `coroutineScope` vs `supervisorScope` exception propagation, explain `J
 
 ## Follow-up questions
 
-- [COR-25](../cor-25/): Why shouldn't a payment quote accept partial success? **Answer:** A quote requires consistent item totals, taxes, and discounts; missing any part corrupts the total.
-- [COR-16](../cor-16/): Why must `CancellationException` never be swallowed in a catch block? **Answer:** It signals that the parent scope was cancelled; swallowing it breaks cooperative cancellation and leaks resources.
+- **Interviewer:** "What is the difference between failure isolation in `supervisorScope` and passing `SupervisorJob()` to a regular scope?"
+  **Answer:** "Passing `SupervisorJob()` to `launch` creates an unattached parent Job, breaking structured concurrency and preventing automatic child cancellation on scope exit. `supervisorScope` preserves structured concurrency: it is a suspending function that waits for all active children and cancels them if the parent scope cancels."
+
+- **Interviewer:** "How do you represent partial failure in the UI layer?"
+  **Answer:** "Using a sealed UI model or a data class where independent section models hold sealed states (e.g., `news: SectionState<List<News>>`, which can be `Success(data)` or `Error(reason)` with a localized retry action)."
+
+- **Interviewer:** "Can you use Kotlin Flow `merge` or `zip` for this instead?"
+  **Answer:** "Yes. You can emit each API call as a separate Flow, use `catch { emit(null) }` on individual streams, and combine them using `combine(flow1, flow2, flow3)` for reactive UI rendering."
 
 ## Self-check rubric
 
@@ -155,4 +207,4 @@ Can I draw the difference between `coroutineScope` and `supervisorScope` failure
 - [Kotlin cancellation and timeouts](https://kotlinlang.org/docs/cancellation-and-timeouts.html) — handling CancellationException properly.
 - [Android Coroutines best practices](https://developer.android.com/kotlin/coroutines/coroutines-best-practices) — lifecycle and structured concurrency.
 
-Technically reviewed against primary documentation on 2026-10-13. Illustrative Kotlin examples tested against standard coroutines semantics.
+Technically reviewed against primary documentation on 2026-10-13.

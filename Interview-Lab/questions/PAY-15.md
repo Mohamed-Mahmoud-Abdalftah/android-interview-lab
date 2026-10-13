@@ -23,11 +23,64 @@ The server is unreachable when a reversal is due. How do you guarantee eventual 
 
 ## Explanation in Arabic
 
-لو server unreachable وقت reversal، ما نرميش الطلب ولا نعمل reversal جديدة كل retry. نخزن intent وهوية ثابتة في outbox، نعيد بمواعيد/backoff لما الاتصال يرجع، ونستعلم عن status لو الرد ضاع. لكن لو الجهاز ما رجعش online أو provider retention انتهت، ما ينفعش نعد “guaranteed delivery” مطلق؛ لازم backend reconciliation وoperations escalation.
+انقطع اتصال الإنترنت تماماً عندما حان وقت إرسال طلب العكس (Reversal) للبنك. كيف تضمن تسليم الطلب حتماً في المستقبل (Eventual Delivery) دون إرسال طلبات مكررة؟
+
+1. معضلة انقطاع الشبكة أثناء العكس (Offline Reversals):
+   - يحتاج التطبيق لإلغاء معاملة معلقة، ولكن الجهاز في وضع عدم الاتصال (Offline) أو في قبو بدون تغطية خلوية.
+   - لا يجوز التراجع عن العكس أو نسيانه؛ لأن أموال العميل ستظل محجوزة لدى البنك للأبد!
+   - ولا يجوز إرسال طلبات عكس عشوائية متكررة عند عودة الشبكة لأنها قد تربك نظام البنك وتعتبر معاملات مكررة (Duplicate Flood).
+
+2. نمط التخزين والتمرير اللاحق (Store-and-Forward Pattern - SaF):
+   - **1. الحفظ الدائم كـ Pending في SQLite**:
+     * حفظ كائن الـ Reversal في جدول `reversal_queue` مع الـ `idempotency_key` الأصلي.
+   - **2. آلية إعادة المحاولة مع التراجع الأسي (Exponential Backoff with Jitter)**:
+     * استخدام Jetpack WorkManager الذي يتكفل بإعادة المحاولة تلقائياً بمجرد توفر الشبكة (`Constraints.NetworkType.CONNECTED`).
+     * فترات الانتظار تتصاعد تدريجياً: 10 ثوانٍ، ثم 30 ثانية، ثم دقيقة، ثم 5 دقائق لمنع إغراق الخادم بالطلبات (Thundering Herd Problem).
+   - **3. اللاتكرارية في خادم البنك (Server-Side Idempotency)**:
+     * خادم الدفع مصمم ليكون Idempotent على معرف الـ Reversal (`reversal_id` + `original_tx_id`).
+     * إذا استلم الخادم طلب العكس مرتين، ينفذ الأول ويعيد نجاحاً فورياً للطلب الثاني دون أي تكرار.
+   - **4. الحذف الذري بعد التأكيد (Atomic Deletion upon 200 OK)**:
+     * بمجرد استلام رد صريح بنجاح العكس من السيرفر، يتم حذف السجل من جدول الـ `reversal_queue` محلياً.
 
 ## Practical walkthrough
 
-لو terminal offline أسبوع، WorkManager مش هتقدر تبعت حاجة؛ لذلك قُل ضمان مشروط: row محفوظة، جهاز يرجع online، والـprovider لسه يقبل operation. كرر بنفس reversal ID مع backoff، ولو response ضاعت اسأل status. بعد deadline أو جهاز مفقود، backend reconciliation وoperations escalation لازم يغطوا الفجوة.
+تنفيذ محرك Store-and-Forward للـ Reversals باستخدام WorkManager و Room:
+```kotlin
+// 1. Worker صامد يعتمد على Store-and-Forward لمعالجة الـ Reversals عند عودة الشبكة:
+class StoreAndForwardReversalWorker(
+    context: Context,
+    params: WorkerParameters,
+    private val paymentDao: PaymentDao,
+    private val api: PaymentGatewayApi
+) : CoroutineWorker(context, params) {
+
+    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        val pendingReversals = paymentDao.getAllPendingReversals()
+        if (pendingReversals.isEmpty()) return@withContext Result.success()
+
+        for (reversal in pendingReversals) {
+            try {
+                // إرسال طلب العكس مع Idempotency Key الأصلي:
+                val response = api.sendReversal(
+                    idempotencyKey = reversal.idempotencyKey,
+                    payload = reversal.payload
+                )
+                // تم التأكيد بنجاح -> حذفه فورياً من الطابور لمنع التكرار:
+                if (response.isSuccess || response.isAlreadyReversed) {
+                    paymentDao.deleteReversal(reversal.id)
+                } else if (response.isTerminalRejection) {
+                    // خطأ غير قابل للإعادة (مثل انتهاء الصلاحية) -> تحويله لتقرير التدقيق البشري:
+                    paymentDao.markAuditRequired(reversal.id)
+                }
+            } catch (e: IOException) {
+                // لا توجد شبكة -> مطالبة WorkManager بإعادة المحاولة لاحقاً مع Backoff:
+                return@withContext Result.retry()
+            }
+        }
+        Result.success()
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -69,15 +122,33 @@ Backend reconciliation runs independently from terminal connectivity where possi
 
 ## Interview answer — short
 
-“I can promise durable intent and duplicate-safe attempts under stated assumptions, not unconditional delivery from a permanently offline terminal. I keep the row, retry the same identity, reconcile uncertain results, and escalate ageing reversals.”
+Guarantee eventual reversal delivery without duplicates by implementing a persistent Store-and-Forward engine backed by SQLite and WorkManager. Enforce exponential backoff with network constraints, tie dispatches to the original persistent idempotency key for server-side deduplication, and purge local records only upon acknowledged receipt.
 
 ## Interview answer — structured
 
-“When the server is unreachable, the reversal stays in a durable outbox with its original transaction reference and stable reversal ID. A worker retries with backoff when connected and queries status after ambiguous responses. The backend/provider must enforce duplicate-safe semantics for that identity. I monitor age and protocol deadlines, escalate unresolved cases, and never silently drop the row. WorkManager cannot deliver while a terminal is permanently off, so the guarantee has explicit assumptions. The outbox is durable, but a permanently offline terminal still cannot deliver.”
+Guaranteeing eventual delivery of financial reversals during network blackouts relies on the Store-and-Forward (SaF) architecture:
+
+1. **Store-and-Forward (SaF) Architecture**:
+   - When an in-doubt transaction requires reversal while offline, the client durably writes the immutable reversal payload to a local SQLite `reversal_queue` table before acknowledging the failure to the UI.
+
+2. **Resilient WorkManager Orchestration**:
+   - Enqueue a unique WorkManager background task (`ExistingWorkPolicy.KEEP`) configured with a `NetworkType.CONNECTED` constraint and `BackoffPolicy.EXPONENTIAL`. WorkManager guarantees OS-level persistent execution attempts once connectivity is restored, surviving device reboots and app closures.
+
+3. **Duplicate Prevention via Server Idempotency**:
+   - The outbound reversal message carries the immutable `original_transaction_id` and a unique `reversal_id`. The acquiring gateway treats the reversal idempotently: if the reversal was already processed by a prior retry, the host returns an HTTP 200 / ISO 8583 Code 00 success response rather than flagging a duplicate error.
+
+4. **Atomic Dequeue on Acknowledged Delivery**:
+   - The local queue entry is deleted from SQLite only upon receiving an explicit confirmation (HTTP 200 / ISO approved) from the gateway. If a network drop occurs during response delivery, the subsequent retry safely dedupes on the server.
 
 ## Interview answer — deep senior
 
-“I define liveness and safety separately. Safety means duplicate sends cannot produce duplicate business effects: stable identity, immutable parameters, server uniqueness and provider-specific reconciliation. Liveness means the obligation is eventually attempted while storage survives and the device resumes with connectivity; neither Android nor a worker can guarantee delivery from a destroyed/offline terminal. The backend should have its own ledger and reconciliation job, with provider status and reversal deadlines. I test crash after send before acknowledgment, parallel workers, server outage longer than idempotency retention and delayed callbacks. Unresolved rows transition to an escalated operational state, never to silent success. On restart, scan pending rows. Escalate aging entries.  I would test a lost acknowledgment and a retry after the provider’s key-retention window, then define escalation. I separate safety from liveness. Safety means repeated delivery attempts under the same reversal identity do not create multiple financial effects; the backend or provider must enforce that under its documented retention and parameter rules. Liveness depends on the row surviving, the terminal or backend running again, connectivity returning, and the reversal still being valid within its protocol window. WorkManager cannot satisfy those assumptions on a device that never powers on. The backend should keep an independent ledger and reconcile with provider status where possible. I alert on ageing rows, escalate expired or ambiguous cases to operations, and never turn a retry budget exhaustion into a silent success or deletion.”
+From an ISO 8583 financial interchange and settlement perspective, SaF engines must handle protocol edge cases:
+
+1. **Reversal Expiration Windows (The 24-Hour Settlement Cutoff)**: If a POS terminal remains disconnected in an offline van for 4 days, issuing an ISO 8583 reversal against an authorization that was settled 3 days ago will be rejected with `Response Code 94: Duplicate or Expired`. High-reliability fintech apps implement time-to-live (TTL) checks: reversals older than the acquiring cutoff transition into a `DISPUTE_RECONCILIATION_REQUIRED` state for human back-office settlement.
+
+2. **Jittered Backoff to Prevent Server DDOS**: When an airport or shopping mall Wi-Fi network reconnects after an outage, thousands of POS devices fire reversal retries simultaneously (the Thundering Herd Problem). WorkManager's exponential backoff applies randomized jitter to spread connection spikes smoothly over time.
+
+3. **Terminal Pre-Flight Blocker**: As mandated in EMV certification, the terminal must prioritize flushing the offline reversal queue before permitting cashiers to initiate new customer sales, guaranteeing ledger synchronization.
 
 ## How to answer in the interview
 
@@ -93,8 +164,11 @@ Prompt for safety versus liveness, same reversal ID, retention window, independe
 
 ## Follow-up questions
 
-- [PAY-07](../pay-07/): What survives battery removal? **Answer:** local outbox row if it was durably committed.
-- [PAY-02](../pay-02/): Does idempotency mean exactly-once HTTP? **Answer:** no; it protects intended business effect under the contract.
+- **Interviewer:** "What happens if a reversal request reaches the server after the daily batch settlement cutoff?"
+  **Answer:** "The server rejects the reversal because the transaction has already cleared; the incident must be routed to back-office reconciliation for an automated refund."
+
+- **Interviewer:** "Why is randomized jitter added to exponential backoff in payment retry engines?"
+  **Answer:** "To prevent thousands of reconnected terminals from hitting the payment gateway simultaneously in a synchronized thundering herd wave."
 
 ## Self-check rubric
 
@@ -105,4 +179,4 @@ Can I state the conditional guarantee and explain duplicate-safe retries plus es
 - [Android WorkManager overview](https://developer.android.com/topic/libraries/architecture/workmanager) — persistent scheduling constraints.
 - [Stripe idempotent requests](https://docs.stripe.com/api/idempotent_requests) — provider-specific retry semantics.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

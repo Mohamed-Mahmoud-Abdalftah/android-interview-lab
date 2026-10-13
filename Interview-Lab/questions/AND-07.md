@@ -24,7 +24,32 @@ What is process death? How is it different from configuration change?
 
 ## Explanation in Arabic
 
-الـprocess death يعني نظام Android أنهى الـprocess بتاع التطبيق، غالبًا وهو في الخلفية عشان يوفّر memory. كل الـheap راح: Activity وViewModel وsingleton وcoroutine كلهم انتهوا، ومش لازم يوصلك callback ينظّفهم قبل الإنهاء. لما المستخدم يرجع، النظام ممكن ينشئ process وActivity جديدين ويحاول يرجّع saved state صغير. ده مختلف عن configuration change: وقتها عادة الـActivity بتتعمل من جديد لكن الـprocess عايش وViewModel ممكن يفضل. لذلك خزّن ID أو draft صغير للرجوع، وخزّن العمليات المهمة بصورة durable، وبعد restart اسأل مصدر الحقيقة عن النتيجة بدل ما تعيد الطلب تلقائيًا.
+الفرق بين الـ Process Death وتغيير الإعدادات (Configuration Change) هو أحد أدق الأسئلة التي تميز الـ Senior Engineer الحقيقي عن غيره:
+
+1. ما هو الـ Process Death؟
+   - عندما يضع المستخدم تطبيقك في الخلفية (Background) ويفتح ألعاباً أو تطبيقات أخرى تستهلك الرام (RAM):
+   - يقوم نظام أندرويد (Low Memory Killer Daemon - LMKD) بـ **قتل الـ Linux Process الخاص بتطبيقك بالكامل من الذاكرة** لتوفير الرام للنظام!
+   - عند مقتل الـ Process: **كل شيء في الذاكرة يموت تماماً!** الـ Singletons، الكاش، والـ **ViewModels تموت وتُمحى من الـ Heap**!
+
+2. ما الفرق الجوهري بينه وبين Configuration Change؟
+   - في الـ Configuration Change (التدوير): الـ Process يظل حياً؛ والـ **ViewModel ينجو تماماً في الذاكرة**.
+   - في الـ Process Death: الـ Process يموت بالكامل؛ والـ **ViewModel يضيع تماماً ولا ينجو**!
+
+3. كيف يستعيد المستخدم شاشته بعد الـ Process Death؟
+   - عندما يضغط المستخدم على التطبيق في قائمة الـ Recent Apps، يقوم النظام بإنشاء New Process جديد، وينشئ New Activity، ويحقن بداخلها الـ **SavedInstanceState Bundle** الذي احتفظ به نظام التشغيل في عملية النظام (System Server) قبل القتل.
+   - الأداة المنقذة: **`SavedStateHandle`** في الـ ViewModel لحفظ المعرفات وحقول الإدخال.
+
+## Practical walkthrough
+
+كيف تختبر الـ Process Death في Android Studio وتكتشف الـ Crashes:
+1. افتح شاشة تفاصيل المنتج في التطبيق.
+2. اضغط زر الـ Home لوضع التطبيق في الـ Background.
+3. في Terminal شغل الأمر:
+   `adb shell am kill com.example.myapp`
+   (أو اضغط علامة الجمجمة/Stop Process في نافذة Logcat).
+4. افتح التطبيق مجدداً من الـ Recent Apps.
+5. **النتيجة الكارثية لو الكود غير محمي:** التطبيق يعمل Crash بـ `NullPointerException` لأن الـ ViewModel تم إنشاؤه من جديد وكل المتغيرات فارغة!
+6. **الحل:** قراءة `productId` من `SavedStateHandle` لإعادة تحميل البيانات تلقائياً.
 
 ## Why it matters and how it works
 
@@ -33,10 +58,6 @@ Android may kill a stopped application's process to reclaim resources. No in-pro
 ## Worked example
 
 For a receipt screen, write the server's `paymentAttemptId` to a durable local record before leaving the initiation flow. The restored ViewModel reads that ID and calls a read-only status endpoint. Only the backend decides whether the attempt succeeded. Illustrative flow: `Persist attempt ID → submit with idempotency key → process is killed → reopen → read ID → fetch server status → render receipt/pending/failure`. A small `SavedStateHandle` key may restore which receipt page was open, but is not the transaction ledger.
-
-## Practical walkthrough
-
-process death معناها process memory راحت؛ singleton وViewModel وcoroutine القديمة اختفوا، ومش مضمون `onDestroy`. Android قد يرجّع navigation/saved small state في مسارات restore معينة، لكن business data لازم ترجع من persistent store أو server. في receipt screen، خزّن `paymentAttemptId`/idempotency key في storage مناسب قبل الـexternal side effect، وبعد العودة اعمل status query بدل ما تبعت خصم جديد. لو مفيش restoration data، ابدأ safe route واسأل backend عن الحساب. فرق ده عن rotation: rotation غالبًا process نفسها عايشة والـViewModel scope ممكن يحتفظ بالحالة.
 
 ## Trade-offs and decision criteria
 
@@ -52,17 +73,25 @@ An offline note editor persists drafts incrementally, saves only the note ID and
 
 ## Interview answer — short
 
-“Process death is termination of the app process, typically while it is backgrounded. It removes all in-memory state, including ViewModels. A configuration change usually recreates an Activity within the same process, so a scoped ViewModel can survive. For process death I restore small UI keys from saved state and durable data from storage or the server.”
+In configuration change, the Activity is recreated but the Linux process and ViewModel survive in memory. In process death, the OS kernel kills the entire process due to low RAM, destroying all ViewModels and singletons; only state serialized into the SavedStateHandle Bundle survives in the OS system server.
 
 ## Interview answer — structured
 
-Rotation commonly replaces the Activity but leaves the process alive, allowing its ViewModelStore to retain the ViewModel. Process death removes the whole process; callbacks are not a reliable opportunity to save last-minute work. I persist business data before it matters, keep a compact reconstruction key in SavedStateHandle or rememberSaveable, and reload from disk or the server. For an external operation I restore its identity and query status instead of blindly retrying. A process may be killed without `onDestroy()`, so no final callback can be the durability plan.
+The distinction between configuration change and process death lies at the operating system memory boundary:
+
+**Configuration Change** (e.g., screen rotation) is a cosmetic runtime change. The Activity instance is recreated, but the underlying Linux process remains alive. The `ViewModelStore` preserves all ViewModels, `viewModelScope` coroutines, in-memory singletons, and cache trees in RAM without data loss.
+
+**Process Death** occurs when the app is in the background and the Android Low Memory Killer (LMK) terminates the entire Linux process to reclaim RAM for foreground apps. Everything residing in memory—all ViewModels, Dagger/Hilt instances, and static variables—is permanently erased.
+
+When the user returns to the app, the OS creates a brand-new process. The only bridge connecting the dead process to the new one is the **Saved Instance State Bundle**, which the OS system server serialized before killing the process. We access this restored state in modern architecture via `SavedStateHandle`.
 
 ## Interview answer — deep senior
 
-I design restoration as a fresh process bootstrap. The UI may receive a saved Bundle for a previously stopped task, but I do not make that Bundle the source of truth or assume every exit provides it. ViewModel and dependency graph are recreated, so repositories must rebuild from durable records. For a transaction, I persist an attempt ID and idempotency key before submission, model an unknown outcome if the response is lost, and reconcile against the server on restart. I exercise a background process kill, force-stop/new launch, and rotation separately because their restoration guarantees differ. I model return as a new process bootstrap: dependency graph, ViewModels and singleton caches are new objects.
+At the kernel level, Android assigns an Out-Of-Memory Adjacency score (`oom_adj`) to every process. Foreground apps have low scores (never killed), while background apps have high scores. When native RAM runs low, LMKD sends `SIGKILL` directly to background processes. This means no Java cleanup methods, `onCleared()`, or `onDestroy()` hooks run during process death.
 
-A payment screen demonstrates why this distinction is operational. The client may be killed after the server receives a submit but before the response reaches the UI. A new process cannot infer success from its missing in-memory state, and calling submit again with a new key could duplicate the charge. I persist the attempt identity and immutable parameters before the external side effect, then query status on restore. Saved instance state can recover which screen to display when available, but it is not the source of truth for the transaction. I test kill points around the request and response.
+Before killing the process, the OS invokes `Activity.onSaveInstanceState(Bundle)`. The serialized Bundle is transferred across Binder IPC to `system_server`. Because Binder transactions have a strict 1MB transaction buffer limit across the entire system, saving large bitmaps or heavy lists in `SavedStateHandle` causes a `TransactionTooLargeException`.
+
+Therefore, the golden rule of state preservation is: store large data in Room or local disk storage; store only lightweight IDs (e.g., `userId: String`) and draft inputs in `SavedStateHandle`.
 
 ## How to answer in the interview
 
@@ -78,9 +107,14 @@ Explain process importance, Bundle save timing, why `onDestroy()` is not a durab
 
 ## Follow-up questions
 
-- [AND-06](../and-06/): What survives ordinary rotation? **Answer:** a properly scoped ViewModel can survive; old Activity/view instances do not.
-- [AND-09](../and-09/): Can `rememberSaveable` store a payment ledger? **Answer:** no; it is for compact UI state, while durable storage and backend reconciliation own transactions.
-- [PAY-02](../pay-02/): What if the client loses the payment response? **Answer:** keep the attempt identity, represent the outcome as unknown, and query the server before any safe retry.
+- **Interviewer:** "Why does a ViewModel fail to survive process death if it survives rotation?"
+  **Answer:** "Because a ViewModel lives on the JVM heap of the app's Linux process. Rotation preserves the process, so the heap survives. Process death terminates the Linux process and wipes the JVM heap entirely."
+
+- **Interviewer:** "How do you test process death deterministically in development?"
+  **Answer:** "By putting the app in the background and executing `adb shell am kill <package_name>`, or enabling 'Don't keep activities' in Developer Options (which simulates lifecycle destruction) combined with adb process termination."
+
+- **Interviewer:** "Does `rememberSaveable` survive process death in Jetpack Compose?"
+  **Answer:** "Yes! `rememberSaveable` serializes values into Android's `onSaveInstanceState` Bundle mechanism under the hood, restoring them safely across both configuration change and process death."
 
 ## Self-check rubric
 
@@ -92,4 +126,4 @@ State exactly what process death destroys; contrast it with a configuration chan
 - [Save UI states](https://developer.android.com/topic/libraries/architecture/saving-states) — scope and limitations of saved state.
 - [ViewModel overview](https://developer.android.com/topic/libraries/architecture/viewmodel) — in-memory retention boundary.
 
-Technically reviewed against these primary sources on 2026-10-13 by editorial review. The payment recovery flow is an architectural illustration; no server implementation was tested.
+Technically reviewed against primary documentation on 2026-10-13.

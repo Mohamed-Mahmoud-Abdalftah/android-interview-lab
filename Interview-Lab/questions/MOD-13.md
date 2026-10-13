@@ -24,11 +24,43 @@ When should a module depend on an interface versus a concrete type?
 
 ## Explanation in Arabic
 
-اعتمد على interface عندما consumer يحتاج قدرة مستقرة وimplementation تختلف أو تعيش في module لا ينبغي استيرادها: `CheckoutRepository` عقد يراه checkout وتطبقه data module. هكذا app يختار implementation، والاختبار يمرر fake. لكن لو class محلية داخل feature، لا توجد بدائل ولا boundary، فـinterface لها طريقة واحدة وimplementation واحدة قد تكون عبئًا بلا قيمة. القرار عن ملكية العقد: من يحتاجه يحدد السلوك، ولا تجعل implementation تفرض تفاصيل Retrofit/Room في API.
+متى يجب أن يعتمد الموديول على واجهة مجردة (Interface) ومتى يكون اعتماده على كلاس ملموس (Concrete Type) أفضل وأكثر عملية؟
+
+1. متى يجب الاعتماد على واجهة مجردة (Interface):
+   - **عبر حدود الموديولات (Cross-Module Boundaries)**: عندما يعتمد موديول Presentation على موديول Data، الاعتماد على `UserRepository` كـ Interface يسمح بتطوير واختبار الـ UI بشكل مستقل تماماً.
+   - **تعدد التطبيقات الحقيقية (Multiple Implementations)**: عندما يكون هناك تطبيقان فعليان للكلاس (مثل `StripePaymentGateway` و `PayPalPaymentGateway`).
+   - **عزل المكتبات الخارجية المتقلبة (Volatile 3rd Party SDKs)**: عزل كود التحقق من الهوية أو التتبع بواجهة نقية.
+   - **فصل وقت التجميع (Decoupling Compile Classpaths)**: التغيير في تنفيذ الـ Class لا يجبر الموديول المستهلك على إعادة التجميع طالما أن الـ Interface لم تتغير.
+
+2. متى يكون الاعتماد على كلاس ملموس (Concrete Type) أفضل وأكثر واقعية:
+   - **نماذج البيانات غير القابلة للتغيير (Immutable Data Classes / Value Objects)**: كلاسات مثل `User`, `Money`, `Address` يجب أن تكون Concrete Data Classes، ولا داعي لعمل `interface IUser` إطلاقاً!
+   - **الكلاسات المساعدة النقية الخالية من الحالة (Stateless Utility Classes)**: دوال الرياضيات وتنسيق النصوص.
+   - **الاستخدام الداخلي المحصور داخل الموديول الواحد (Same Module Internals)**: إذا كان الكلاس خاصاً بالـ Feature ولا يتم استخدامه خارجها، فالاعتماد المباشر يوفر طبقات وهمية غير مفيدة.
 
 ## Practical walkthrough
 
-Module تعتمد interface عند boundary متغيرة، مثل `PaymentGateway` يستبدل vendor، أو network client عبر data implementation. لو class بسيطة داخل feature ولا بديل واقعي، concrete dependency أوضح وأسهل. لا تنشئ `IUserMapper` لكل mapper. حدد لماذا interface موجودة، من يملكها، وهل test fake يثبت behavior أم يخفي adapter broken.
+المقارنة بين التجريد الصحيح والتجريد المتكلف غير المبرر:
+```kotlin
+// ❌ تجريد متكلف لا داعي له (Over-abstraction on Data Models):
+interface IUser { val id: String; val name: String }
+class UserImpl(override val id: String, override val name: String) : IUser
+// هذا هراء معماري يضاعف حجم الكود بدون أي فائدة حقيقية!
+
+// ✅ استخدام Concrete Data Class لنماذج البيانات النظيفة:
+data class User(val id: String, val name: String, val email: String)
+
+// ✅ استخدام Interface فقط للحدود المعمارية ومصادر البيانات:
+interface UserRepository {
+    val currentUser: Flow<User>
+    suspend fun updateProfile(name: String): Result<Unit>
+}
+
+// في الـ Feature ViewModel: الاعتماد على Interface يتيح اختبار الـ ViewModel بـ Fake في ثوانٍ:
+@HiltViewModel
+class ProfileViewModel @Inject constructor(
+    private val repository: UserRepository // Interface: سهولة خارقة في الاختبار والعزل
+) : ViewModel()
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +84,28 @@ Review dependency direction and contract change frequency. Keep public interface
 
 ## Interview answer — short
 
-“Depend on an interface when it is a genuine stable boundary with independent implementation or substitution; use a concrete type for cohesive local code.”
+Depend on interfaces across module boundaries where independent substitution, test seams, and compile-time decoupling are required (e.g. repositories, payment gateways). Depend on concrete types for immutable data models, value objects, and internal same-module utilities where multiple implementations will never exist.
 
 ## Interview answer — structured
 
-“I ask who owns the policy and whether the implementation must vary independently. A feature repository contract lets its ViewModel avoid importing Room or network code, while app composition selects the data implementation and tests pass a fake. A local formatter with one owner may not need an interface. An abstraction helps only if it expresses domain behavior rather than exposing transport types or mirroring every implementation method.”
+The decision to depend on an interface versus a concrete type is an architectural choice balancing flexibility against ceremony:
+
+1. **Depend on an Interface**:
+   - **Architectural Seams**: Between domain layers and data layers (Repositories, Gateways). This allows UI and Domain logic to be tested on the JVM with fast Fakes without compiling Room or Retrofit.
+   - **Cross-Module API Contracts**: When splitting modules into `:feature:api` and `:feature:impl` to break rebuild cascades and circular dependencies.
+   - **Polymorphism**: When multiple implementations exist (e.g., debug mock data source vs. production network data source).
+
+2. **Depend on a Concrete Type**:
+   - **Data Models and Value Objects**: Immutable data classes (`User`, `TransactionDetails`) should never be wrapped in interfaces. They carry data, not behavior.
+   - **Same-Module Collaborators**: Internal helpers within a single feature module that will never need polymorphic variation or independent substitution.
 
 ## Interview answer — deep senior
 
-“An interface is useful when it changes the dependency direction in a meaningful way. The Checkout feature may need ‘submit an order and observe status,’ while data infrastructure decides how to use Room and a provider API. A contract in a feature-visible API lets Checkout compile without those implementation modules; the app graph binds the concrete class, and a fake supports focused tests. I design the methods around capability and domain outcomes, not around Retrofit Response or DAO entities, or I have merely disguised the coupling. Conversely, a small helper that is created and changed inside one feature may be clearer as a concrete constructor dependency. Creating an interface for every class adds DI bindings and navigation cost without independent ownership or a plausible alternative. I review the contract's stability and change history: if it changes on every implementation edit, the boundary is not buying much. I still add an integration test for the real implementation because a fake can satisfy the interface while missing transactional or network semantics.”
+From a build system perspective, an interface serves as an **ABI firewall**.
+
+If module `A` depends on concrete class `DatabaseUserRepository` in module `B`, any private change inside `DatabaseUserRepository` (even changing a private helper method or adding a local variable) alters `B`'s bytecode. Depending on Gradle caching granularity, this can trigger recompilations.
+
+If module `A` instead depends on `interface UserRepository` in `:domain:user-api`, module `A`'s compile classpath references **only the interface's ABI**. You can rewrite the entire SQL query, add caching, or refactor private methods inside `DatabaseUserRepository` in `:data:user`, and Gradle will **never recompile module `A`**. This compile-time insulation is one of the primary drivers of developer velocity in 100+ module repositories.
 
 ## How to answer in the interview
 
@@ -76,9 +121,11 @@ Discuss inversion, contract owner, implementation leakage, test fake drift, and 
 
 ## Follow-up questions
 
-- Does an interface automatically decouple modules? **Answer:** no; transport types and volatile methods can still leak implementation details.
-- Can a concrete class be testable? **Answer:** yes, especially with constructor-injected collaborators and local ownership.
-- Who binds the implementation? **Answer:** a composition root or DI module visible in the final app graph.
+- **Interviewer:** "What is the 'Interface per Class' anti-pattern?"
+  **Answer:** "Blindly creating an interface for every single class in a project, even when there is only one implementation and no architectural boundary, creating unnecessary indirection."
+
+- **Interviewer:** "Can a Kotlin `interface` contain concrete method implementations?"
+  **Answer:** "Yes, default interface methods allow providing default behavior without forcing consumers to override them."
 
 ## Self-check rubric
 
@@ -89,4 +136,4 @@ Choose one interface and one concrete dependency, justify ownership, and identif
 - [Android modularization guide](https://developer.android.com/topic/modularization) — boundaries and encapsulation.
 - [Dependency injection on Android](https://developer.android.com/training/dependency-injection) — substitution and graph design.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Interface selection is a design judgment.
+Technically reviewed against primary documentation on 2026-10-13.

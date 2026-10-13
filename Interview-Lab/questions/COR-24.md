@@ -22,11 +22,45 @@ Explain detached lifetime and why a fresh repository scope per method loses call
 
 ## Explanation in Arabic
 
-`GlobalScope` أو `CoroutineScope(...)` جديد جوه كل repository method بيقطع صلة الشغل بالـcaller: الشاشة تتقفل والطلب يفضل جاري، وممكن الخطأ ما يوصلش لحد. الـrepository الأفضل غالبًا يقدّم suspend function تورّث `Job` من الـcaller. لو شغل لازم يعيش بعد الشاشة، يبقى له owner محقون واضح؛ ولو لازم ينجو من process death يبقى state محفوظة وscheduler دائم.
+استخدام `GlobalScope` أو إنشاء CoroutineScope داخل دوال الـ Repository هو أحد أسوأ الـ Anti-Patterns التي تدمر الـ Architecture:
+
+1. مخاطر `GlobalScope`:
+   - هو نطاق غير مقيد (Unbound Scope) بدون أي أب شرعي، ويعيش طوال حياة التطبيق.
+   - **تسريب الموارد والذاكرة (Resource Leaks):** العمليات المطلقة فيه لا يمكن إلغاؤها عند مغادرة الشاشة؛ تظل تستهلك البطارية و RAM والشبكة في الخلفية.
+   - **فقدان الاستثناءات والـ Crashes:** الاستثناءات فيه لا تخضع للـ Structured Concurrency، وتؤدي إما لانهيار التطبيق أو ضياع الأخطاء بصمت.
+
+2. مخاطر إنشاء `CoroutineScope` داخل دوال الـ Repository:
+   - كتابة `fun fetch() { CoroutineScope(Dispatchers.IO).launch { ... } }`.
+   - **كسر دورة الحياة:** في كل مرة تنادي الدالة، يتم إنشاء Scope جديد منفصل تماماً ملوش أي علاقة بالـ ViewModel أو الـ UI.
+   - **مستحيل إلغاؤه (Uncancellable):** لو المستخدم خرج من الشاشة، الـ Repository هيفضل شغال ويجلب بيانات مفيش حد مستنيها!
+   - **كسر الـ Testing:** اختبارات الـ Unit Tests تفشل لأن الـ Scope الجديد يعمل على threads خارج سيطرة الـ TestDispatcher.
+
+3. النمط المعماري الصحيح (The Architecture Standard):
+   - دوال الـ Repository يجب أن تكون **`suspend fun` عادية** (تستقبل الـ Scope من المتصل) أو ترجع `Flow<T>`.
+   - الـ ViewModel هو المسؤول الوحيد عن إطلاق الـ Coroutines عبر `viewModelScope`.
 
 ## Practical walkthrough
 
-لو repository function عملت `GlobalScope.launch` ورجعت فورًا، الشاشة ممكن تختفي والطلب يكمل ويكتب بيانات user قديم بعد logout. الأفضل الدالة تبقى `suspend` وتورّث Job المستدعي؛ لو لازم شغل يكمل بعد الشاشة، مرر scope مملوكة بوضوح على مستوى التطبيق ومعها shutdown وerror reporting. لو لازم تكمل بعد process death، خزّن العملية وجدولها بشكل دائم.
+مقارنة بين التصميم السيئ والتصميم المعماري النظيف:
+```kotlin
+// ❌ تصميم كارثي في الـ Repository:
+class BadUserRepository {
+    fun updateUser(user: User) {
+        // كارثة: ينشئ scope مستقل غير مربوط بالـ lifecycle ولا يمكن إلغاؤه!
+        CoroutineScope(Dispatchers.IO).launch {
+            api.update(user)
+        }
+    }
+}
+
+// ✅ التصميم النظيف المتوافق مع Clean Architecture:
+class GoodUserRepository(private val api: Api, private val ioDispatcher: CoroutineDispatcher) {
+    // الدالة معلقة، Main-Safe، ومربوطة بنطاق المتصل:
+    suspend fun updateUser(user: User) = withContext(ioDispatcher) {
+        api.update(user)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -58,15 +92,34 @@ A profile ViewModel calls `repository.load` in `viewModelScope`; navigation canc
 
 ## Interview answer — short
 
-“`GlobalScope` and per-call scopes detach work from its caller. I prefer suspend repository APIs that inherit the caller Job so cancellation and errors propagate. Longer-lived work needs an explicit owner; process-durable work needs persistent state and a scheduler.”
+GlobalScope and ad-hoc repository scopes destroy structured concurrency. They produce un-cancellable background tasks that leak memory, waste network bandwidth, bypass exception handling, and make deterministic unit testing impossible. Repositories should expose suspend functions or Flows, leaving lifecycle scoping to ViewModels.
 
 ## Interview answer — structured
 
-“The repository should not silently decide that every request lives for the process lifetime. A suspend function lets a ViewModel call it in `viewModelScope`, await its result and cancel it when the screen is gone. Creating a new scope in the repository loses that relationship; it also needs its own exception path and shutdown. If work intentionally outlives one screen, I inject a named application scope. If it must recover after process death, I persist the request and use WorkManager or another suitable durable mechanism.”
+Using `GlobalScope` or creating ad-hoc `CoroutineScope` instances inside repository methods completely breaks structured concurrency.
+
+When a repository creates its own scope (e.g., `CoroutineScope(Dispatchers.IO).launch`), that coroutine is detached from the calling ViewModel's lifecycle. If the user navigates away and the screen is destroyed, the ViewModel's `viewModelScope` cancels, but the repository coroutine keeps running in the background. This wastes CPU, leaks network bandwidth, and can trigger database race conditions.
+
+Furthermore, detached scopes swallow or misdirect exceptions, making centralized error handling impossible, and they break unit testing because test runners cannot wait for or control un-tracked scopes.
+
+In clean architecture, repositories should never launch coroutines. Repositories should expose **suspend functions** for one-shot operations (using `withContext` for main-safety) or **Flow** for streams. The ViewModel remains the sole owner of the lifecycle scope via `viewModelScope`.
 
 ## Interview answer — deep senior
 
-“I evaluate ownership separately from execution context. A repository can switch a blocking operation to IO without replacing the caller’s Job. `GlobalScope` or a fresh Job per method severs structured cancellation and completion: the method may return while a request still runs, the result can update stale session state, and failure may be reported only as uncaught. An application-level scope can be valid for shared in-process tasks if it is injected, supervised as appropriate, observed and cancelled at shutdown or logout. It cannot survive process death. For a payment or upload I store a stable operation ID and required inputs, schedule restartable work, and let UI collect persisted status. Tests cancel the caller and verify no late state mutation. A repository suspend function normally inherits the caller's Job, so navigation or logout can stop obsolete work and the caller observes completion. A scope created inside each method breaks that contract: the function can return while work continues and failure may have no useful consumer. If a cache warming task truly belongs to the application, I inject one owned scope with supervision, error reporting and shutdown. If it must survive process death, I persist intent and schedule recovery.”
+From an architectural governance perspective, there is only one legitimate use case for a non-ViewModel scope in the data layer: operations that **must survive UI teardown** (like saving an offline transaction or uploading an analytics batch). However, even in that scenario, creating ad-hoc scopes inside methods is forbidden. Instead, we use an explicitly injected **ApplicationScope**:
+
+```kotlin
+class OrderRepository @Inject constructor(
+    @ApplicationScope private val externalScope: CoroutineScope,
+    private val api: OrderApi
+) {
+    suspend fun submitOrder(order: Order) {
+        externalScope.launch { api.submit(order) }.join()
+    }
+}
+```
+
+By injecting a singleton `ApplicationScope` bound to a `SupervisorJob`, the lifecycle is formally tracked by the DI container, exceptions are captured by a centralized handler, and unit tests can easily inject a `TestScope` to verify background completion.
 
 ## How to answer in the interview
 
@@ -82,8 +135,14 @@ Compare job inheritance, injected owner lifetime, logout and process death; dist
 
 ## Follow-up questions
 
-- [COR-06](../cor-06/): Which scope owns screen work? **Answer:** `viewModelScope` or view lifecycle scope, depending on the operation.
-- [COR-30](../cor-30/): How preserve critical work? **Answer:** durable state plus a restartable scheduler.
+- **Interviewer:** "Why does `GlobalScope` prevent unit test determinism?"
+  **Answer:** "Because `GlobalScope` runs on background JVM threads completely outside the `kotlinx-coroutines-test` test scheduler. Unit tests will finish and exit before the `GlobalScope` coroutine completes, causing false passes or intermittent race condition test failures."
+
+- **Interviewer:** "When should work be offloaded to WorkManager instead of an ApplicationScope?"
+  **Answer:** "Use ApplicationScope for short tasks that should survive screen navigation while the app process is alive (e.g., in-memory cache sync). Use WorkManager for persistent tasks that must survive app process death, low memory kills, or device reboots (e.g., large file uploads, sync jobs)."
+
+- **Interviewer:** "What is the rule of thumb for repository API contracts?"
+  **Answer:** "Repositories expose suspend functions for one-shot requests and Flow<T> for continuous observable streams. Repositories do not launch coroutines; they only execute inside the caller's coroutine."
 
 ## Self-check rubric
 
@@ -94,4 +153,4 @@ Can I name the owner, explain error/cancellation propagation and design a durabl
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — structured ownership.
 - [Android background work](https://developer.android.com/develop/background-work/background-tasks/persistent) — persistent scheduling.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

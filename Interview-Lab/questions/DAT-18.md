@@ -22,7 +22,45 @@ Investigate release-only disappearance of saved transaction across persistence, 
 
 ## Explanation in Arabic
 
-لو transaction اتسجلت واختفت بعد restart في release بس، نثبت أولًا هل write commit حصل فعلًا ولا UI عرضت optimistic state فقط. نقارن debug/release database path, user/account, migrations, destructive fallback, R8 serialization/reflective model rules, encryption key availability وbackup/restore. ما نفترضش R8 السبب؛ نجمع logs, DB evidence وreproduction من signed release artifact.
+المعاملة تُحفظ في قاعدة البيانات وتعمل بنجاح في Debug، لكنها تختفي تماماً بعد إعادة تشغيل التطبيق في Release Builds فقط! كيف تشخص وتصلح هذه المشكلة الغامضة؟
+
+1. تشريح أسباب الاختلاف بين Debug و Release (Root Cause Analysis):
+   - المشكلة لا تحدث في Debug ولكنها تحدث في Release دائماً ترتبط بأحد العوامل التالية:
+     * **قواعد R8/ProGuard وتحسينات الـ Bytecode**: قام R8 بحذف الـ No-Arg Constructor أو تغيير أسماء الحقول عبر الـ Obfuscation، مما جعل Room أو مكتبة التشفير تعجز عن قراءة البيانات بعد إعادة التشغيل.
+     * **ميزة النسخ الاحتياطي التلقائي (Android Auto Backup & GMS Restore)**: في ملف `AndroidManifest.xml`، إعداد `android:allowBackup="true"` يقوم باستعادة قاعدة بيانات قديمة فارغة من Google Cloud عند إعادة تثبيت نسخة Release!
+     * **فقدان مفاتيح التشفير في Android Keystore (SQLCipher / EncryptedSharedPreferences)**: يتم توليد مفتاح التشفير في الذاكرة ولكن يفشل حفظه أو استعادته من الـ Keystore بسبب عدم توفر قواعد حماية R8 للكلاسات المشفرة.
+     * **استدعاء `fallbackToDestructiveMigration()` بالخطأ في Release**: اختلاف في رقم الإصدار بين ملفات الـ Schema أدى لمسح قاعدة البيانات بهدوء عند الإقلاع.
+
+2. خطة التحقيق التشخيصية المنظمة:
+   - فحص هل البيانات كُتبت فعلياً في ملف SQLite أم كانت معروضة كـ Optimistic UI State فقط في الـ ViewModel.
+   - فحص سجلات Logcat في نسخة Release موقّعة (`release` build مع `debuggable = true` مؤقتاً لتتبع الـ Crash).
+   - مراجعة ملف `proguard-rules.pro` وإضافة قواعد الحماية لكلاسات الـ Entity والـ Room.
+
+## Practical walkthrough
+
+خطوات إصلاح وتأمين كلاسات Room ونظام التخزين ضد مشاكل R8 والـ Backup:
+```kotlin
+// 1. تأمين كلاسات Entity ضد R8 Obfuscation في proguard-rules.pro:
+// لو قام R8 بتغيير أسماء الحقول، تعجز SQLite عن مطابقة الأعمدة:
+-keepclassmembers class * extends androidx.room.RoomDatabase {
+    public void clearAllTables();
+}
+-keep class * extends androidx.room.RoomDatabase
+-keep @androidx.room.Entity class * { *; }
+-keep class * implements androidx.room.migration.Migration { *; }
+
+// 2. منع استعادة النسخ الاحتياطية القديمة من السحابة في AndroidManifest.xml:
+// <application
+//     android:allowBackup="false"
+//     android:fullBackupContent="false" ... />
+
+// 3. التحقق البرمجي من أن fallbackToDestructiveMigration غير مفعل:
+Room.databaseBuilder(context, AppDatabase::class.java, "app.db")
+    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+    // ❌ احذر تماماً من كتابة هذا السطر في Release:
+    // .fallbackToDestructiveMigration() // هذا يمسح قاعدة البيانات إذا لم يجد مسار ترحيل!
+    .build()
+```
 
 ## Why it matters and how it works
 
@@ -41,10 +79,6 @@ suspend fun verifyAfterSave(dao: TransactionDao, id: String) {
 // Repeat read after force-stop/relaunch with the signed release variant.
 ```
 
-## Practical walkthrough
-
-release-only disappearing transaction ما تفترضش إنه Room bug. اعمل timeline: UI قالت Saved قبل DB commit؟ DB path أو account namespace اتغير؟ migration destructive؟ sync worker حذف row لأنها افتكرها ack؟ backup رجعت encrypted file بدون key؟ R8 reflection serializer فشل في release؟ سجّل attempt ID/status/schema version/file identity بدون PII، وقارن debug vs minified build. اقرأ row بعد commit وبعدين after process restart، وجرّب kill في كل window. لو المشكلة migration أو key invalidation، صمّم recovery ما تمسحش data بصمت؛ حافظ على نسخة/diagnostic consent حسب privacy policy.
-
 ## Trade-offs and decision criteria
 
 Instrumented release tests with minification catch variant-only behavior but cost more CI time. A migration test catches schema/data loss, while R8 mapping/retrace helps diagnose reflective failures. Do not disable shrinking as a permanent unexplained workaround.
@@ -59,17 +93,29 @@ A payments app logs stable operation IDs and local state transitions, reproduces
 
 ## Interview answer — short
 
-“I trace commit versus display, then reopen the signed release database after process restart. I check variant config, migration, account filters, sync overwrite, R8/serialization and encryption/backup before claiming a cause.”
+Investigate R8 obfuscation stripping Entity properties or default constructors, unexpected Auto Backup restoring stale databases from Google Cloud, fallbackToDestructiveMigration wiping data on version mismatches, or Android Keystore master keys becoming invalidated between app launches in release builds.
 
 ## Interview answer — structured
 
-“I start with an exact reproduction: same transaction ID, signed release build, force-stop and reopen. I verify that the DAO transaction committed before UI said Saved and check the row directly after restart. Then I compare debug/release database names, schema versions, migrations, minification-sensitive serializers, account filtering, sync deletion and encryption key restoration. I use mapping files to read release stack traces and avoid disabling R8 blindly. For money, I reconcile server status so no user-facing balance is inferred from a possibly missing local row.”
+A release-only database disappearance that succeeds in debug points to production compilation transforms or platform backup mechanisms:
+
+1. **R8 / ProGuard Obfuscation**: R8 processes release builds aggressively. If Entity classes or TypeConverters lack keep rules (`@Keep` or `-keep @androidx.room.Entity class * { *; }`), R8 renames fields or strips reflective no-arg constructors. Room may fail to deserialize existing rows on subsequent launches, failing silently or catching an internal reflection error and returning empty datasets.
+
+2. **Android Auto Backup Collision**: If `android:allowBackup="true"` is enabled in `AndroidManifest.xml`, the OS can restore an older cloud backup over the SQLite database file during installation or app restoration, replacing the newly written database with a stale snapshot.
+
+3. **Silent Destructive Migration**: If the release build has an unversioned migration gap and `fallbackToDestructiveMigration()` is active, Room wipes the entire SQLite file on startup rather than crashing with an `IllegalStateException`.
+
+4. **Keystore Invalidation (SQLCipher / Encrypted DBs)**: If the database is encrypted, ensure the master key in Android Keystore wasn't flagged with `setUserAuthenticationRequired(true)` or invalidated by device lockscreen configuration changes.
 
 ## Interview answer — deep senior
 
-The symptom spans multiple boundaries, so I build an evidence timeline. Did the local transaction actually commit, or was the UI only optimistic? Did process death happen before fsync/acknowledgement? On reopen, is the same database file, schema and account selected? Could migration fallback clear data, a background sync delete it, or backup restore ciphertext without the original key? Release minification may break reflective serialization, so I inspect retraced exceptions and packaged keep rules. I reproduce with the exact signed release artifact and old database fixture, log only non-sensitive operation IDs, and query authoritative payment state. I add regression tests for the proven cause rather than accepting a broad `-keep` or disabling R8 without explanation. Preserve evidence and redact financial data.
+To diagnose this systematically in production:
 
-I would investigate in layers, starting with evidence of the local commit rather than the UI toast. I compare the database file and account namespace before and after restart, inspect migration and destructive-fallback paths, and check whether a sync worker deleted a row prematurely. Release-only failures also point to R8-sensitive reflection or different configuration, while backup can restore encrypted data without its old key. I reproduce with a minified build, insert a trace ID and status-only telemetry, then kill at each write/ack window. A verified fix needs a restart regression test and must not replace missing data with a silent empty database.
+1. **Inspect the Physical SQLite File**: Using Android Studio Device File Explorer or an internal debug menu on a signed release build, inspect `/data/data/<package>/databases/app.db`. Check file size and dump table contents via the `sqlite3` CLI tool to verify if rows were committed to disk.
+
+2. **Verify WAL (Write-Ahead Logging) Checkpoints**: SQLite WAL mode writes transactions into a separate `app.db-wal` file. If the process is killed abruptly before a WAL checkpoint completes and the app configuration disables WAL on restart, uncheckpointed transactions can disappear.
+
+3. **Rule Out Optimistic UI Illusions**: Ensure the repository actually committed the transaction to SQLite rather than only updating a MutableStateFlow in memory.
 
 ## How to answer in the interview
 
@@ -85,8 +131,11 @@ Trace write/commit/reopen/filter/sync steps and distinguish release variant caus
 
 ## Follow-up questions
 
-- [DAT-11](../dat-11/): Could migration erase data? **Answer:** yes if destructive fallback or faulty path is used.
-- [BLD-08](../bld-08/): How inspect release-only crash? **Answer:** use signed release reproduction and retrace mapping.
+- **Interviewer:** "How do you verify whether R8 caused the bug?"
+  **Answer:** "Enable R8 mapping tracing or build a release APK with `minifyEnabled false` and test whether the bug disappears."
+
+- **Interviewer:** "How do you disable automatic cloud backup of your SQLite database specifically?"
+  **Answer:** "Specify an XML backup rules file (`android:fullBackupContent="@xml/backup_rules"`) and add `<exclude domain="database" path="app.db"/>`."
 
 ## Self-check rubric
 
@@ -97,4 +146,4 @@ Can I prove commit, inspect exact release artifact and rule causes in/out withou
 - [Android Room migrations](https://developer.android.com/training/data-storage/room/migrating-db-versions) — migration data preservation.
 - [Android R8 overview](https://developer.android.com/build/shrink-code) — release shrinking behavior.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

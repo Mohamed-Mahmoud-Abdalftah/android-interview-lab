@@ -22,7 +22,32 @@ Explain stage ordering, terminal execution, intermediate allocations, and one-sh
 
 ## Explanation in Arabic
 
-Collection operators المعتادة eager: كل مرحلة زي `filter` تنتج نتيجة قبل `map` التالية. `Sequence` lazy: العناصر تعدي على مراحل pipeline واحد واحد لما تطلب terminal operation زي `toList` أو `first`. ده ممكن يوفر intermediate lists ويوقف بدري عند `first`، لكن overhead الـiterator والـlambdas ممكن يخليه أبطأ مع قوائم صغيرة. `sorted` حتى داخل Sequence محتاج يجمع العناصر، وside effects جوه `map` مش هتشتغل إلا وقت الاستهلاك وقد تتكرر لو استهلكت sequence تاني.
+الفرق بين الـ Eager Collection Processing والـ Lazy Sequences بيمس استهلاك الذاكرة والـ Performance بشكل مباشر:
+
+1. الـ Eager Processing (الافتراضي مع `Iterable`):
+   - كل دالة (زي `filter`, `map`, `sorted`) بتلف على كل عناصر الـ List فوراً، وتنشئ قائمة جديدة في الـ Heap للنتيجة (Horizontal Evaluation).
+   - لو عندك Pipeline من 3 خطوات على 10,000 عنصر، هيتعمل 3 مصفوفات مؤقتة في الـ Heap، وكل خطوة لازم تخلص 10,000 عنصر قبل ما الخطوة اللي بعدها تبدأ.
+
+2. الـ Lazy Evaluation (مع `Sequence`):
+   - العمليات بتتقسم لـ نوعين:
+     * **Intermediate Operations:** (زي `filter`, `map`, `take`) دي مش بتنفذ أي كود؛ هي مجرد بتغلف الـ Iterator في كائن Decorator جديد.
+     * **Terminal Operations:** (زي `toList`, `first`, `reduce`, `forEach`) هي دي اللي بتبدأ سحب العناصر.
+   - التنفيذ بيتم **Element-by-Element (Vertical Evaluation)**: العنصر الأول يدخل في الـ filter، لو نجح يروح للـ map فوراً، ثم للـ take. بعدين يجي العنصر التاني وهكذا.
+
+3. الـ Short-circuiting Benefit:
+   - لو بتدور على أول عنصر يطابق شرط (`find`) أو بتاخد أول 10 عناصر (`take(10)`)، الـ Sequence بيوقف المعالجة فوراً، بدون ما يكمل باقي عناصر الـ Collection!
+
+## Practical walkthrough
+
+في شاشة بحث عن مستخدمين:
+- بنقرأ قائمة من 50,000 جهة اتصال من الـ SQLite Database.
+- محتاجين نعرض أول 10 جهات اتصال يبدأ اسمهم بـ 'Mohamed' ولديهم صورة شخصية.
+- **النهج السيئ (Eager):**
+  `contacts.filter { it.name.startsWith("Mohamed") }.filter { it.hasAvatar }.take(10)`
+  ده هيفحص الـ 50,000 جهة اتصال مرتين وينشئ قائمتين وسيطتين كبيرتين في الـ Heap قبل ما ياخد 10 عناصر!
+- **النهج الاحترافي (Lazy Sequence):**
+  `contacts.asSequence().filter { it.name.startsWith("Mohamed") }.filter { it.hasAvatar }.take(10).toList()`
+  بمجرد العثور على 10 جهات اتصال مطابقة، الـ Terminal Operation `take(10)` بتوقف الـ Iterator فوراً. بقية الـ 49,900 جهة اتصال لم يتم فحصهم إطلاقاً، وتوفير الـ CPU والـ Memory بيكون هائل.
 
 ## Why it matters and how it works
 
@@ -40,10 +65,6 @@ fun main() {
 }
 ```
 
-## Practical walkthrough
-
-في `(1..1_000_000).asSequence().map(...).firstOrNull { ... }`، الـpipeline بتتحرك عنصر عنصر وتتوقف أول ما تلاقي match؛ eager `map` على List كانت هتبني intermediate collection كلها. بس لو هتحتاج نفس النتائج 3 مرات، Sequence هتعيد الحساب عند كل terminal operation إلا لو materialize بـ`toList()`. ولو source mutable واتغيّر قبل الاستهلاك، هتشوف قيم جديدة أو behavior غير متوقع حسب المصدر. للـsmall list، overhead بتاع iterator/lambdas ممكن يبقى أعلى من allocations اللي وفرتها؛ profile workload الحقيقي.
-
 ## Trade-offs and decision criteria
 
 Eager lists are simple, reusable snapshots and often faster for small inputs. Sequence helps long chains with large data or early stop. A stateful operator like `sorted` materializes internally; a terminal `toList` allocates the final list regardless.
@@ -58,17 +79,17 @@ An import screen filters a large local stream and stops at the first matching re
 
 ## Interview answer — short
 
-Collection operations are eager and often create intermediate lists. `Sequence` composes lazy stages and can stop early, which helps a large filter-map-first search. It may repeat work on each consumption, so I benchmark with the real input size.
+Eager collection operations process the entire dataset horizontally at each step, creating intermediate heap allocations. Lazy sequences evaluate elements vertically one at a time on demand, executing transformations only when a terminal operation is called, which enables short-circuiting and avoids intermediate collections.
 
 ## Interview answer — structured
 
-The important question is when each element is processed. With eager collections, `map` builds its result before `firstOrNull` starts. With a sequence, each item moves through the pipeline until the first match ends the search, avoiding the rest of a large source. The trade-off is per-element iteration overhead, deferred side effects, and recomputation if I consume the sequence again. For a UI list with a few dozen items I favor readability unless profiling shows a need; for a large short-circuit search I consider `Sequence` and materialize only at the boundary that needs a stable result.
+The primary difference lies in how elements flow through transformation pipelines: eagerly horizontally versus lazily vertically. With standard Kotlin collections, operations like filter and map are eager. Each step iterates across the entire list, creates a brand-new intermediate list on the heap, and passes that to the next step. Sequences evaluate lazily. Intermediate operations merely chain iterator decorators without executing any work. When a terminal operation like toList() or first() is invoked, elements flow vertically one-by-one through the entire pipeline: element zero passes through filter, then map, then destination, before element one is even touched. This gives two massive benefits: zero intermediate collection allocations and short-circuiting. If you call take(5) or find, the sequence halts as soon as five matching items are found, ignoring the rest of the dataset.
 
 ## Interview answer — deep senior
 
-I would trace execution rather than just count chained calls. A lazy pipeline reads source data at consumption time, so mutation between construction and consumption matters. Each traversal can repeat expensive work and side effects. Some operators must buffer, and materializing the final result still allocates. A good candidate is a large source with multiple stateless stages and early termination. I benchmark both approaches and ensure heavy processing is off the UI thread when necessary.
+In Android development, deciding between Sequences and Collections comes down to allocation profiling versus CPU cycle overhead. Eager collections compile down to straightforward for-loops operating over primitive arrays. Because there are no intermediate abstraction layers, the JVM and ART can optimize loop bounds and capitalize on hardware CPU cache lines (L1/L2 cache locality). For small collections—typically under 100 to 200 items—eager processing is almost always faster in wall-clock time, even with a small temporary array allocation.
 
-For example, a million-record in-memory search can use `asSequence().map(...).firstOrNull(...)` to stop as soon as it finds a match, avoiding a full intermediate mapped list. But if the UI needs the entire sorted result twice, a sequence may defer and repeat work, and sorting still has to buffer. Side effects inside `map` become timing-dependent and should be avoided. I would document the source’s mutability, materialize at a stable boundary when needed, and benchmark memory plus latency on representative input. Laziness helps a particular access pattern; it is not a universal faster collection.
+Sequences introduce indirection. Each intermediate step instantiates a Sequence and an Iterator wrapper (such as FilteringSequence and TransformingSequence). Every element access requires a virtual method call to hasNext() and next(). If your pipeline has 5 steps, every single item makes 5 virtual method calls per element. However, when dealing with thousands of records—like parsing large telemetry batches or heavy contact lists—the GC pressure of allocating 3 or 4 intermediate ArrayLists of thousands of objects will trigger ART garbage collection pauses, which can cause UI frame drops. In those scenarios, or whenever short-circuiting operations like firstOrNull or any are used, Sequences are unequivocally superior.
 
 ## How to answer in the interview
 
@@ -84,8 +105,14 @@ Compare horizontal versus vertical evaluation, terminal operators, stateful buff
 
 ## Follow-up questions
 
-- [KOT-16](../kot-16/): Is Sequence a stored collection? **Answer:** no; it describes deferred iteration over a source.
-- [KOT-07](../kot-07/): What about captured values in sequence lambdas? **Answer:** they are read when the sequence executes, not necessarily when declared.
+- **Interviewer:** "Can a sequence be iterated multiple times?"
+  **Answer:** "It depends. A sequence generated from a standard collection via asSequence() can be iterated multiple times. But sequences generated from generators or single-use streams (like generateSequence or stream.asSequence()) might throw an IllegalStateException if traversed a second time. If you need multiple passes over a sequence result, convert it to a List via toList() first."
+
+- **Interviewer:** "How does `Sequence.sorted()` behave? Is it still lazy?"
+  **Answer:** "sorted() is a stateful intermediate operation. While it defers execution until a terminal operation is called, it cannot sort elements vertically one-by-one. When triggered, it must consume the entire sequence into an internal list, sort it in memory, and then yield elements lazily downstream. So sorted() breaks true streaming pipelining and requires O(N) memory."
+
+- **Interviewer:** "How do Java Streams compare to Kotlin Sequences on Android?"
+  **Answer:** "Kotlin Sequences are lightweight language constructs that run on all Android API levels without requiring Java 8 desugaring. Java Streams require API level 24 or R8 desugaring. Additionally, Java Streams support parallel processing via parallelStream(), which Kotlin Sequences do not support natively (Kotlin uses Coroutines and Flow for concurrency instead)."
 
 ## Self-check rubric
 
@@ -95,4 +122,4 @@ Predict when `map` runs, name a terminal operation, and give one win and one los
 
 - [Kotlin sequences](https://kotlinlang.org/docs/sequences.html) — evaluation order and examples.
 
-Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against primary documentation on 2026-10-13.

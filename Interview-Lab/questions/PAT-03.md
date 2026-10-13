@@ -22,7 +22,53 @@ Contrast one shared instance, object selection, related-family construction, and
 
 ## Explanation in Arabic
 
-Singleton تتحكم في instance واحدة (في Kotlin `object` per process/classloader)، لكنها مش durable storage ولا تلقائيًا thread-safe لmutable fields. Factory تنشئ/تختار implementation واحد حسب inputs، Abstract Factory تنشئ عائلة related objects متوافقة مثل network + serializer variants، وBuilder تبني object مع options وخطوات validation قبل `build()`. Android/Hilt ممكن تتولى construction من غير GoF classes صريحة. فرق مهم: `@Singleton` في Hilt scope لعمر graph/application component، مش وعد global عبر process death. اختار أبسط حاجة تكفي، ولا تخبّي Activity في singleton.
+شرح الأنماط الإنشائية الأساسية: Singleton و Factory و Abstract Factory و Builder، ومتى نستخدم كلاً منها في Android:
+
+1. نمط الكائن الأحادي (Singleton Pattern):
+   - **الهدف**: ضمان وجود **نسخة واحدة فقط** من الكائن في الذاكرة طوال حياة التطبيق وتوفير نقطة وصول عامة له.
+   - **في Kotlin**: يُبنى بكلمة `object` أو عبر `@Singleton` في Hilt.
+   - **الاستخدام**: قواعد بيانات Room، عميل Retrofit/OkHttp، ومدير الـ Analytics.
+
+2. نمط المصنع (Factory Method Pattern):
+   - **الهدف**: تفويض إنشاء الكائن إلى دالة أو كلاس مصنع بدلاً من استدعاء الـ Constructor المباشر.
+   - **في Android**: `ViewModelProvider.Factory` لإنشاء كائنات ViewModel تحتاج لمعاملات في الـ Constructor.
+
+3. نمط المصنع المجرد (Abstract Factory Pattern):
+   - **الهدف**: مصنع للمصانع! إنشاء **عائلات كاملة من الكائنات المرتبطة** دون تحديد كلاساتها الملموسة.
+   - **الاستخدام**: عائلة مكونات واجهة تختلف حسب الثيم (DarkUIFactory ينشئ DarkButton و DarkDialog، بينما LightUIFactory ينشئ LightButton و LightDialog).
+
+4. نمط الباني (Builder Pattern):
+   - **الهدف**: بناء كائنات معقدة تحتوي على العديد من المعاملات الاختيارية خطوة بخطوة وتأكيد بنائها في النهاية بـ `.build()`.
+   - **في Android**: `NotificationCompat.Builder`, `AlertDialog.Builder`, `OkHttpClient.Builder`.
+
+## Practical walkthrough
+
+أمثلة كود توضح الأنماط الإنشائية الأربعة في Android:
+```kotlin
+// 1. SINGLETON (عبر Hilt أو object):
+@Singleton
+class AppDatabaseManager @Inject constructor(@ApplicationContext context: Context) { ... }
+
+// 2. FACTORY METHOD: مصنع لإنشاء كائنات من نوع محدد بناءً على إدخال:
+interface PaymentGatewayFactory {
+    fun create(type: PaymentType): PaymentGateway
+}
+
+// 3. ABSTRACT FACTORY: مصنع لعائلات كائنات مرتبطة:
+interface UIThemeFactory {
+    fun createButton(): AppButton
+    fun createDialog(): AppDialog
+}
+class DarkThemeFactory : UIThemeFactory { ... }
+class LightThemeFactory : UIThemeFactory { ... }
+
+// 4. BUILDER: بناء كائن OkHttpClient بإعدادات متعددة:
+val client = OkHttpClient.Builder()
+    .connectTimeout(30, TimeUnit.SECONDS)
+    .readTimeout(30, TimeUnit.SECONDS)
+    .addInterceptor(AuthInterceptor())
+    .build()
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +77,6 @@ Each creational pattern addresses a different construction problem. Singleton co
 ## Worked example
 
 Example: `object CurrencyCodes` holds stateless constants; `PaymentRouteFactory` selects a provider adapter; an `EnvironmentFactory` could create matching API and serializer for sandbox/production; an OkHttp-style builder configures timeouts/interceptors before creation. These are conceptual roles, not an instruction to implement all four.
-
-## Practical walkthrough
-
-`object CurrencyCodes` لو stateless utility ممكن، لكن `object CurrentSession` اللي فيه user/token state خطر: process death يمسحه وaccount switch يعمل stale state. Factory function تنشئ provider adapter من config/runtime choice؛ Abstract Factory تنشئ مجموعة متوافقة مثل sandbox API + signer معًا، مش مجرد factory لكل class. Builder مفيدة لو options كتير وبعض combinations invalid وتحتاج `build()` يعمل validation؛ لconstructor صغير بتخفي المطلوب. في Android DI scope تحدد lifetime فعليًا، و`@Singleton` معناها one instance في graph/process تقريبًا، مش persistent data ولا مناسب لكل dependency. اشرح متى تختار كل واحدة وحالة فشلها.
 
 ## Trade-offs and decision criteria
 
@@ -50,17 +92,28 @@ A networking module uses DI-managed client construction with validated config, w
 
 ## Interview answer — short
 
-Singleton manages one instance within its scope; Factory creates or selects an implementation; Abstract Factory creates a compatible family; Builder assembles a configurable object. I choose by construction complexity and avoid global mutable state.
+Singleton ensures a single shared instance (Room DB, OkHttp). Factory creates single objects hiding instantiation logic (`ViewModelProvider.Factory`). Abstract Factory creates families of related objects (Theme components). Builder constructs complex multi-parameter objects step-by-step (`NotificationCompat.Builder`).
 
 ## Interview answer — structured
 
-I would use a constructor for a simple object. A factory becomes useful when selection or creation logic is nontrivial; an abstract factory when several related objects must be created consistently; a builder when there are many optional settings and validation before creation. A Kotlin `object` is a singleton-like instance in the process, but not durable storage. Hilt can manage instance scopes instead of a hand-written singleton. I test construction invariants and lifecycle ownership.
+These four creational patterns govern object creation boundaries in Android development:
+
+1. **Singleton**: Guarantees a class has only one instance per process lifecycle. In Kotlin, implemented natively via `object` or managed via `@Singleton` in Dagger/Hilt. Best for expensive, stateful shared resources (e.g. SQLite connection pools, OkHttp client engines).
+
+2. **Factory Method**: Defines an interface for creating an object, but lets subclasses or specialized providers decide which class to instantiate. In Android, `ViewModelProvider.Factory` creates ViewModels parameterized with dependencies that standard system reflection cannot resolve.
+
+3. **Abstract Factory**: Provides an interface for creating **families of related or dependent objects** without specifying their concrete classes. For instance, a `DesignSystemFactory` supplying matching typography, buttons, and dialogs tailored for distinct brand flavors (e.g. `ConsumerThemeFactory` vs `EnterpriseThemeFactory`).
+
+4. **Builder**: Separates the construction of a complex object from its representation, allowing step-by-step assembly and producing an immutable result via `.build()`. Ubiquitous across Android framework APIs (`NotificationCompat.Builder`, `AlertDialog.Builder`, `WorkRequest.Builder`).
 
 ## Interview answer — deep senior
 
-These four patterns are often confused because they all involve creation. A singleton is about instance cardinality and access, not complex configuration; Kotlin `object` makes it concise but mutable state inside it still needs synchronization and process-death recovery. A factory method or factory object chooses a product without forcing callers to know constructor details. An abstract factory coordinates a family—such as matching API and serializer implementations for an environment—so mismatched combinations are harder to create. A builder collects options, validates required fields, then creates an immutable client. DI can wire these constructions and scopes, but I still design the contract. In Android I never let an application-scoped instance retain Activity context, and I do not mistake a Hilt scope for server-authoritative session truth.
+The **Builder Pattern vs Kotlin Named Arguments** trade-off is a frequent design debate. For simple domain data classes, a builder is an anti-pattern in Kotlin: `data class UserConfig(val timeout: Long = 10, val retries: Int = 3)` provides built-in validation and optionality in a single line.
 
-I distinguish lifetime, variation, families, and construction complexity. A stateless Kotlin `object` can be a simple singleton, but a global current-session object is a bad source of truth because it can leak screen references and is lost after process death. A Factory chooses or creates one product under a rule; an Abstract Factory produces a compatible family, such as sandbox API and signer, so callers cannot mix environments. A Builder handles a configuration with many optional choices and a validated final object. In Android I do not apply an application-wide singleton scope by default: ownership follows the feature or session. I test invalid environment combinations and account switching, and I prefer a constructor when the object has only a few required inputs.
+However, the Builder pattern remains vital in SDK design when:
+- Construction requires cross-field validation invariants checked at commit time (`build()`).
+- Step order matters or certain combinations are mutably staged before creating an immutable thread-safe core (e.g. `OkHttpClient.Builder`).
+- Java interoperability is required, as Java cannot consume Kotlin default argument bytecode ergonomically without `@JvmOverloads`.
 
 ## How to answer in the interview
 
@@ -76,8 +129,11 @@ Compare construction intent, instance lifetime, related product families, valida
 
 ## Follow-up questions
 
-- [PAT-10](../pat-10/): Factory versus Abstract Factory? **Answer:** one product selection versus a family of compatible products.
-- [DI-07](../di-07/): Does `@Singleton` survive process death? **Answer:** no; it scopes within the running component graph.
+- **Interviewer:** "Why can global Singleton objects cause issues in unit tests?"
+  **Answer:** "Global singletons retain state across test runs, causing tests to become order-dependent and flaky. We mitigate this by scoping singletons via Hilt components that are recreated per test."
+
+- **Interviewer:** "What is the difference between Factory and Abstract Factory?"
+  **Answer:** "Factory Method creates a single product. Abstract Factory is a factory of factories, creating an entire suite of related products that belong to the same family or theme."
 
 ## Self-check rubric
 
@@ -88,4 +144,4 @@ Choose among constructor, factory, abstract factory and builder for four cases; 
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — creational patterns.
 - [Kotlin object declarations](https://kotlinlang.org/docs/object-declarations.html) — Kotlin singleton syntax.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

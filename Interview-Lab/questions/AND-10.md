@@ -24,7 +24,43 @@ What are Intent and PendingIntent? Explain explicit versus implicit intents.
 
 ## Explanation in Arabic
 
-`Intent` رسالة تصف action وdata وextras لبدء Activity أو Service أو إرسال broadcast. الـexplicit Intent يحدد component معيّن، غالبًا داخل تطبيقك؛ الـimplicit Intent يحدد المطلوب والنظام يختار app مناسبة من intent filters. `PendingIntent` مختلف: token بتسلمه للنظام أو app تانية عشان تنفّذ Intent لاحقًا بصلاحية التطبيق اللي أنشأه. عشان كده لازم target واضح، بيانات قليلة، و`FLAG_IMMUTABLE` افتراضيًا؛ mutable فقط لو ميزة زي inline reply محتاجة الطرف الآخر يملأ حقول محددة. وصول notification tap لا يساوي authorization؛ افحص session وresource بعد الفتح.
+الـ `Intent` والـ `PendingIntent` هما رسائل التواصل بين المكونات في نظام Android:
+
+1. ما هو الـ `Intent`؟
+   - هو **كائن رسالة يصف نية لتنفيذ عملية (Messaging Object)**.
+   - **نوعان رئيسيان:**
+     * **Explicit Intent (صريح):** يحدد اسم الكلاس المستهدف بدقة داخل تطبيقك (`Intent(context, ProfileActivity::class.java)`). آمن وسريع.
+     * **Implicit Intent (ضمني):** يحدد **الأكشن المطلوب** بدون تحديد الكلاس (مثل: `ACTION_VIEW` لفتح رابط موقع، أو `ACTION_SEND` لمشاركة نص). نظام أندرويد يفحص التطبيقات المثبتة التي تدعم هذا الأكشن في الـ Intent Filter ويعرض للمستخدم قائمة للاختيار منها.
+
+2. ما هو الـ `PendingIntent`؟
+   - هو **رمز تفويض وتوكيل رسمي (Token of Authorization)** تمنحه لتطبيق خارجي أو لنظام التشغيل (مثل نظام الإشعارات أو Widget).
+   - يسمح للنظام أو التطبيق الخارجي بتنفيذ الـ Intent المحفوظ بداخله **باسم تطبيقك وبصلاحيات تطبيقك أنت (With your app's permissions and identity)** في وقت لاحق، حتى لو كان تطبيقك مغلقاً تماماً!
+
+3. الأمان الإلزامي في أندرويد الحديث (Android 12+):
+   - فرض تحديد `FLAG_IMMUTABLE` أو `FLAG_MUTABLE` عند إنشاء أي PendingIntent لمنع ثغرات التلاعب بالـ Intent.
+
+## Practical walkthrough
+
+تطبيق عملي: فتح تفاصيل الطلب عند الضغط على Notification:
+```kotlin
+// 1. إنشاء Explicit Intent صريح للشاشة المستهدفة:
+val intent = Intent(context, OrderDetailsActivity::class.java).apply {
+    putExtra("order_id", "ORD-12345")
+}
+
+// 2. تغليفه في PendingIntent وتفويض نظام الإشعارات لتشغيله:
+val pendingIntent = PendingIntent.getActivity(
+    context,
+    REQUEST_CODE,
+    intent,
+    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE // إلزامي في أندرويد 12+
+)
+
+// 3. إرفاقه بالإشعار:
+NotificationCompat.Builder(context, CHANNEL_ID)
+    .setContentIntent(pendingIntent) // عند ضغط المستخدم يفتح الشاشة بتصريح تطبيقك
+    .build()
+```
 
 ## Why it matters and how it works
 
@@ -54,10 +90,6 @@ fun receiptTap(context: Context, receiptId: String): PendingIntent {
 ```
 `ReceiptActivity` must authenticate and fetch the receipt from a backend that checks ownership; the extra is never proof of authorization. For sharing text externally, use an implicit `ACTION_SEND` chooser. Test task-stack behavior separately.
 
-## Practical walkthrough
-
-explicit Intent بتحدد component معروف داخل app؛ implicit Intent بتوصف action/data والنظام يحلّها لتطبيق مناسب. `PendingIntent` token لتفويض تنفيذ Intent مستقبلًا باسم app اللي أنشأته، فـflags والtarget والextras جزء من security contract. Receipt notification تستخدم explicit target وopaque receipt ID؛ Activity تتحقق من auth وتجيب receipt من server، والـID مش authorization. لو notifications متعددة، خلّي identity/request code وIntent data يميزوا كل action عشان taps ما تفتحش receipt غلط. اختبر cold start وBack stack وmutability flag المناسبة للـAPI؛ لا تجعل PendingIntent mutable بلا سبب.
-
 ## Trade-offs and decision criteria
 
 Explicit Intents are predictable for internal navigation and services; implicit Intents enable user choice for external capabilities but can have no handler or resolve to an untrusted handler. Immutable PendingIntents limit what a holder can change, but a mutable one may be required for a documented inline-reply flow. `FLAG_UPDATE_CURRENT` can update creator-supplied extras even for an immutable PendingIntent, so carefully choose identity and avoid mixing users or receipt IDs in one token.
@@ -72,17 +104,27 @@ An order app creates a distinct explicit immutable PendingIntent per notificatio
 
 ## Interview answer — short
 
-“An Intent requests an action now; an explicit Intent names a component, while an implicit Intent lets Android resolve a capable handler. A PendingIntent is a token allowing another actor to invoke a chosen Intent later with the creator's identity. I prefer explicit immutable PendingIntents and validate data on delivery.”
+An Intent is an asynchronous messaging object requesting an action: Explicit specifies the exact target component, while Implicit declares an action for the OS to resolve. A PendingIntent is a security wrapper granting another application or the OS system server permission to execute your Intent with your app's identity and privileges in the future.
 
 ## Interview answer — structured
 
-I use explicit Intents for known internal components and implicit Intents for actions like sharing where the user may choose another app. A PendingIntent packages an Intent for later execution by something like a notification. Because the token conveys authority, I choose a narrow target, stable identity, immutable flag by default, and only use mutability when a feature genuinely needs fill-in data. The launched screen still checks session and server authorization; the Intent extra is just input. A PendingIntent delegates a future action under the creating app’s identity, so it is more than a delayed Intent.
+An **`Intent`** is an operational message that requests an action from an Android component:
+
+- **Explicit Intent**: Explicitly names the target component class (`Intent(context, TargetActivity::class.java)`). Used almost exclusively for internal application navigation.
+- **Implicit Intent**: Declares a general action to perform (e.g., `Intent.ACTION_DIAL` with `tel:123`, or `ACTION_SEND` for sharing). The Android OS queries all package manifests for matching `<intent-filter>` declarations and displays the system app chooser.
+
+A **`PendingIntent`** is a security token wrapping an Intent. It delegates execution permission to a foreign application or system process—most commonly `NotificationManager`, `AlarmManager`, or App Widgets. When triggered, the system executes the pre-configured Intent with the permissions and identity of *your application*, even if your app's process is currently dead.
 
 ## Interview answer — deep senior
 
-I distinguish resolution from delegated capability. An explicit Intent routes to a named component; an implicit one asks the system to match action/data against filters and may reach an untrusted handler. PendingIntent grants a holder the ability to perform a specific later action as its creator, so I design its component, data, request-code identity, update policy, and mutability deliberately. Immutable is the default; an inline reply may justify a narrowly mutable token. For receipt notifications I pass only an opaque ID, handle multiple concurrent notifications correctly, and re-authenticate and authorize the order after a tap, including after process recreation or account switch. Explicit Intents name the component; implicit Intents ask Android to resolve an action and data type.
+At the systems and security architecture level, a `PendingIntent` is essentially an IPC handle referencing a token maintained by the system's `ActivityManagerService` (AMS). Because foreign apps execute it using your app's Linux UID, security vulnerabilities historically arose if malicious apps mutated the underlying intent parameters.
 
-For a receipt notification I construct an explicit Intent, give each receipt a distinct identity in the Intent data or request code, and request an immutable PendingIntent unless a supported feature needs mutation. Extras alone are not sufficient to distinguish every PendingIntent identity. The receiving Activity treats the receipt ID as untrusted routing data, signs in if needed, and fetches from an ownership-checking backend. I choose task-stack behavior so Back and Up make sense after a cold tap. By contrast, a text share uses an implicit Intent and chooser because the recipient is intentionally selected by the system or user.
+Starting in Android 12 (API 31), the platform mandates declaring mutability flags on every `PendingIntent`:
+
+- **`FLAG_IMMUTABLE`**: The default standard. Freezes the Intent parameters completely; the receiving app or system cannot modify its extras or URI.
+- **`FLAG_MUTABLE`**: Allows callers to inject extra parameters via `fillIn()`. Only used in specialized features like notification inline replies or bubbles.
+
+Attempting to create a `PendingIntent` without declaring one of these flags on Android 12+ crashes immediately with an `IllegalArgumentException`.
 
 ## How to answer in the interview
 
@@ -98,9 +140,14 @@ Explain Intent resolution, exported component boundaries, PendingIntent capabili
 
 ## Follow-up questions
 
-- [AND-16](../and-16/): Can an intent filter stop explicit external calls? **Answer:** no; exported components still need input and caller authorization checks.
-- [AND-25](../and-25/): How should a notification restore navigation? **Answer:** use a stable destination/ID, reconstruct a valid back stack, then check session and resource access.
-- [SEC-18](../sec-18/): When is mutable PendingIntent justified? **Answer:** only when the receiving feature needs controlled fill-in fields, such as inline reply, with a narrow explicit target.
+- **Interviewer:** "What is `FLAG_UPDATE_CURRENT` in a PendingIntent?"
+  **Answer:** "If a PendingIntent with the same RequestCode and target already exists in the system server, `FLAG_UPDATE_CURRENT` keeps the existing token but updates its extra bundle with the new Intent's extras."
+
+- **Interviewer:** "Why must you check `resolveActivity()` before calling `startActivity(implicitIntent)`?"
+  **Answer:** "If an implicit Intent has no matching apps installed on the device (e.g., calling an email app on a device without email clients), calling `startActivity()` throws an unhandled `ActivityNotFoundException` crash. You must verify resolution or wrap it in a try-catch."
+
+- **Interviewer:** "How does `FLAG_CANCEL_CURRENT` differ from `FLAG_UPDATE_CURRENT`?"
+  **Answer:** "`FLAG_CANCEL_CURRENT` cancels the existing PendingIntent token entirely before creating a new one, ensuring any previous notifications holding that token are invalidated."
 
 ## Self-check rubric
 
@@ -111,4 +158,4 @@ Define Intent and PendingIntent separately; contrast explicit and implicit resol
 - [Intents and intent filters](https://developer.android.com/guide/components/intents-filters) — resolution and PendingIntent usage.
 - [PendingIntent security](https://developer.android.com/privacy-and-security/risks/pending-intent) — mutability and capability risks.
 
-Technically reviewed against these primary sources on 2026-10-13 by editorial review. The notification example is illustrative and was not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

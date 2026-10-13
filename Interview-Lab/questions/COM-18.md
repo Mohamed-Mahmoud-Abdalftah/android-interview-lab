@@ -24,11 +24,65 @@ What are Route Composable and Screen Composable?
 
 ## Explanation in Arabic
 
-Route composable هي boundary للتطبيق: تستخرج navigation arguments، تحصل على ViewModel بالـowner الصحيح، تجمع state مع lifecycle، وتوصل callbacks/navigation. Screen composable تأخذ `UiState` وevents/`Modifier` كمدخلات وتعرض UI بدون معرفة NavController أو Hilt. هذا pattern تنظيمي وليس API إلزامي من Compose. فائدته previews واختبارات UI أسهل وإعادة استخدام الشاشة؛ لو الشاشة بسيطة جدًا قد يكون فصلها إلى ملفين زائدًا، لكن لا تخلط load/network مباشرًا في body.
+الفرق المعماري بين الـ Route Composable والـ Screen Composable وكيف يعزز هذا الفصل جودة واختبار التطبيق:
+
+1. ما هو الـ Route Composable (المكون الموجّه)؟
+   - هو المكون المرتبط مباشرة بنظام التنقل (`NavGraphBuilder.composable("route")`).
+   - **مسؤولياته**:
+     * حقن الـ `ViewModel` (عبر `hiltViewModel()` أو `viewModel()`).
+     * جمع الـ UI State عبر `collectAsStateWithLifecycle()`.
+     * تمرير الأحداث والتنقل (`onNavigateBack`, `onNavigateToDetails`).
+     * لا يحتوي على أي عناصر تصميم أو كود Layout مباشر!
+
+2. ما هو الـ Screen Composable (المكون البصري للشاشة)؟
+   - هو المكون البصري النقي الذي يرسم عناصر الشاشة الفعلية (Scaffold, Column, Cards).
+   - **مسؤولياته**:
+     * استقبال الـ `UiState` المكتمل كـ Parameter.
+     * استقبال أحداث المستخدم كـ Lambdas مستقلة (`onItemClicked: (Id) -> Unit`).
+     * **عديم الحالة تماماً (Stateless)** ولا يعلم أي شيء عن وجود `ViewModel` أو `NavController`!
+
+3. لماذا يُعتبر هذا الفصل معياراً إجبارياً في الشركات الكبرى؟
+   - **إمكانية عمل Previews فورية في Android Studio**: الـ Screen Composable لا يعتمد على ViewModel أو DI، لذا يعمل الـ `@Preview` ببيانات وهمية فوراً!
+   - **سهولة كتابة اختبارات Screenshot و UI Tests**: يمكنك اختبار رسم حالات الخطأ والنجاح دون الحاجة لـ Mocking لمكتبات Hilt و Navigation.
 
 ## Practical walkthrough
 
-الـRoute تعرف nav argument وViewModel والـlifecycle، والـScreen تعرف `UiState` وcallbacks. ده يخليك تعمل preview للـloading والـerror من غير Hilt أو NavController. انتبه للـViewModel owner: لو scoped لوجهة غلط، ممكن تعيش أو تختفي في وقت مختلف من المطلوب. لو Route استخدمت ViewModel scoped للـgraph بدل destination دون قصد، state ممكن تعيش بعد خروج الشاشة. ثبّت owner المقصود واختبر back navigation وprocess recreation.
+الفصل المعماري القياسي بين Route Composable و Screen Composable:
+```kotlin
+// 1. Route Composable: يربط التنقل والـ ViewModel بالواجهة (Stateful Coordinator):
+@Composable
+fun OrderDetailsRoute(
+    onNavigateBack: () -> Unit,
+    viewModel: OrderDetailsViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    OrderDetailsScreen(
+        uiState = uiState,
+        onBackClicked = onNavigateBack,
+        onCancelOrder = viewModel::cancelOrder
+    )
+}
+
+// 2. Screen Composable: كود بصري نقي بدون أي ارتباط بـ ViewModel أو Navigation (Stateless UI):
+@Composable
+fun OrderDetailsScreen(
+    uiState: OrderDetailsUiState,
+    onBackClicked: () -> Unit,
+    onCancelOrder: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Scaffold(modifier = modifier) {
+        when (uiState) {
+            is OrderDetailsUiState.Loading -> LoadingView()
+            is OrderDetailsUiState.Success -> {
+                OrderContent(order = uiState.order, onCancel = onCancelOrder)
+            }
+            is OrderDetailsUiState.Error -> ErrorView(uiState.message)
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -74,15 +128,27 @@ Adopt consistent ownership in feature modules, provide previews for key states, 
 
 ## Interview answer — short
 
-“A Route wires navigation, ViewModel and lifecycle state; a Screen renders explicit state and reports events. It is an architectural convention for clear ownership and testability. Route connects owners and navigation; Screen renders explicit state and callbacks.”
+A Route Composable is stateful and navigation-aware: it injects the ViewModel, collects `StateFlow` via `collectAsStateWithLifecycle()`, and binds navigation lambdas. A Screen Composable is stateless and pure: it accepts plain `UiState` and event lambdas, enabling instant Android Studio Previews and isolated UI testing.
 
 ## Interview answer — structured
 
-“I use a Route at the destination boundary to obtain the ViewModel, collect its state, parse the route ID and connect navigation. The Screen gets only `UiState`, callbacks and a Modifier, so I can preview loading, error and success without a graph. The split also makes UI tests focused. I keep the ViewModel scoped to the intended back-stack owner and avoid passing large objects as route arguments. I can preview a ProductScreen error state without constructing its ViewModel or NavController.”
+Separating a feature screen into a **Route Composable** and a **Screen Composable** is the industry standard for scalable Jetpack Compose architecture.
+
+1. **The Route Composable (`...Route`)**: Acts as the orchestration boundary registered inside the `NavHost`. Its sole purpose is dependency resolution and lifecycle coordination: it retrieves the ViewModel (e.g. `hiltViewModel()`), collects UI state using `collectAsStateWithLifecycle()`, and bridges navigation callbacks (`onNavigateToDetail`). It contains zero layout logic.
+
+2. **The Screen Composable (`...Screen`)**: Acts as the pure declarative presentation layer. It takes only the resolved, immutable `UiState` and hoisted event callbacks (`onAction: (Action) -> Unit`). It knows nothing about `ViewModel`, Hilt, or `NavController`.
+
+This architectural separation delivers enormous benefits:
+- **Frictionless Previews**: The Screen composable can be rendered in Android Studio `@Preview` instantly with fake data without mocking complex ViewModel dependencies.
+- **Screenshot & UI Testing**: Screenshot tests (using Paparazzi or Roborazzi) and Compose UI tests can assert every visual permutation (`Loading`, `Error`, `Empty`) purely by passing fake states.
 
 ## Interview answer — deep senior
 
-“Route and Screen are names for an application design seam, not magic Compose components. The Route knows the destination and its owner: it reads a small navigation argument, obtains the correct ViewModel, collects state with lifecycle awareness, and maps callbacks to actions or navigation. The Screen knows how to render a supplied model and issue user intents through typed callbacks. That lets me preview and Compose-test loading, error, ready and permission states without creating a NavController, Hilt graph or network. It also makes it easier to keep effects out of rendering. I remain careful about the owner: using an Activity-scoped ViewModel accidentally can preserve data across destinations that should be independent, while obtaining a new instance on every recomposition would lose state. I test deep links and back-stack recreation at the Route level and state/semantics at the Screen level. For a small static leaf the split may not warrant extra files, but the same principle still applies: external wiring and UI description have distinct responsibilities. The back-stack entry that owns the ViewModel is part of the route contract and deserves an integration test.”
+Under the hood, passing a `ViewModel` directly into a leaf UI Composable creates tight architectural coupling. If a composable references `viewModel.someProperty` or `navController.navigate()`, testing that composable requires a simulated `ViewModelStoreOwner`, instantiated coroutine dispatchers, and mocked navigation graphs.
+
+Furthermore, passing `NavController` deep into composable trees violates encapsulation and modularization. In multi-module Android apps, feature modules should not depend on the global app navigation graph. By hoisting navigation callbacks out of the Screen composable up to the Route composable, each feature module remains completely isolated and independently compilable.
+
+In our enterprise design pattern, every screen file has the canonical structure: `OrderDetailsRoute` at the top, `OrderDetailsScreen` below it, and multiple preview functions demonstrating distinct UI states.
 
 ## How to answer in the interview
 
@@ -98,9 +164,11 @@ Explain app boundary, UI inputs, ViewModelStoreOwner, previews, typed events, an
 
 ## Follow-up questions
 
-- Is Route/Screen required by Compose? **Answer:** no; it is a useful architectural convention.
-- What can a Screen preview avoid? **Answer:** Hilt, network, and navigation setup by receiving explicit fake state.
-- Why does ViewModel owner choice matter? **Answer:** it determines state lifetime across destination and back-stack changes.
+- **Interviewer:** "Why shouldn't you pass `NavController` directly into a Screen Composable?"
+  **Answer:** "Passing `NavController` couples your UI to navigation implementation details, prevents previews in Android Studio, complicates UI unit testing, and breaks multi-module encapsulation boundaries."
+
+- **Interviewer:** "Can a Route Composable be previewed in Android Studio?"
+  **Answer:** "Typically no, because it requires active Hilt injection and navigation backstacks. We preview the pure Screen Composable instead."
 
 ## Self-check rubric
 
@@ -111,4 +179,4 @@ Assign wiring and rendering tasks, name the owner, and propose one Screen test a
 - [Compose architecture](https://developer.android.com/develop/ui/compose/architecture) — state/event separation.
 - [Navigation with Compose](https://developer.android.com/develop/ui/compose/navigation) — destination boundaries.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Route/Screen naming is a design convention.
+Technically reviewed against primary documentation on 2026-10-13.

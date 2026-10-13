@@ -23,11 +23,54 @@ How do you test process death, rotation, and offline transitions?
 
 ## Explanation in Arabic
 
-Rotation تغيّر Activity instance غالبًا، لكن مش مساوية لـprocess death. اختبر أثناء Loading إن ViewModel/state وoperation ID لا يتكرروا بعد rotation، والـscreen الجديدة ترجع تعرض state. لاختبار process death فعليًا لازم state المهمة تتخزن قبل الإرسال في Room أو `SavedStateHandle` حسب عمرها؛ اقتل العملية وأعد فتح التطبيق وتأكد إن intent تتقرأ من durable source، مش ذاكرة singleton.
+كيف تختبر سيناريوهات موت العملية (Process Death)، وتدوير الشاشة (Screen Rotation)، والانتقال لوضع عدم الاتصال (Offline Transitions)؟
+
+1. اختبار موت العملية (Process Death Testing):
+   - **المشكلة**: عند تشغيل التطبيق ووضعه في الخلفية، قد يقوم نظام أندرويد بقتل الـ Process لتوفير الذاكرة! عندما يعود المستخدم، يعاد بناء الـ Activity ولكن كل المتغيرات العادية في الذاكرة تصبح `null`.
+   - **طريقة الاختبار**: استخدام `SavedStateHandle` ومحاكاة موت العملية برمجياً في الاختبارات باستخدام `ActivityScenario.recreate()` أو أمر ADB:
+     `adb shell am kill <package_name>`.
+
+2. اختبار تدوير الشاشة (Configuration Changes / Rotation):
+   - التأكد من أن الـ ViewModel يحتفظ بالبيانات المحملة مسبقاً ولا يعيد طلبها من الشبكة عند تدوير الهاتف.
+   - التأكد من أن حالات واجهة Compose المحفوظة بـ `rememberSaveable` تستعيد قيمها بدقة.
+
+3. اختبار الانتقال لوضع عدم الاتصال (Offline Transition Testing):
+   - قطع الاتصال بالإنترنت أثناء استخدام المستخدم للتطبيق، والتأكد من ظهور رسالة تنبيهية للمستخدم دون انهيار، وتخزين العمليات في طابور الـ Outbox المحلي.
 
 ## Practical walkthrough
 
-Offline transition بعد approval أخطر من مجرد “network unavailable”: الرد ممكن يضيع بعد server commit، فالواجهة تظهر Unknown وتعمل status lookup/reconciliation بدل Declined أو charge جديدة. اختبر login/session وpermission restoration حسب workflow. UI test وحدها لا تثبت إن backend منع duplicate؛ محتاج backend contract/integration test.
+اختبار استعادة الحالة بعد موت العملية باستخدام SavedStateHandle في Unit Test محلي:
+```kotlin
+class RegistrationViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel() {
+    var email: String
+        get() = savedStateHandle.get<String>("key_email") ?: ""
+        set(value) = savedStateHandle.set("key_email", value)
+
+    var step: Int
+        get() = savedStateHandle.get<Int>("key_step") ?: 1
+        set(value) = savedStateHandle.set("key_step", value)
+}
+
+class ProcessDeathStateRestorationTest {
+    @Test
+    fun `state survives process death simulation via SavedStateHandle`() {
+        // 1. محاكاة الحالة قبل موت العملية:
+        val initialHandle = SavedStateHandle()
+        val viewModelBeforeDeath = RegistrationViewModel(initialHandle)
+        viewModelBeforeDeath.email = "user@example.com"
+        viewModelBeforeDeath.step = 2
+
+        // 2. محاكاة حفظ الحالة واستعادتها في Process جديدة تماماً:
+        val savedBundle = initialHandle.savedStateProvider().saveState()
+        val restoredHandle = SavedStateHandle.createHandle(savedBundle, null)
+
+        // 3. إنشاء ViewModel جديد في العملية المستعادة والتحقق من بقاء البيانات:
+        val viewModelAfterDeath = RegistrationViewModel(restoredHandle)
+        assertEquals("user@example.com", viewModelAfterDeath.email)
+        assertEquals(2, viewModelAfterDeath.step)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +94,31 @@ CI includes rotation/locale changes and background process recreation. Release d
 
 ## Interview answer — short
 
-“Rotation and process death are different: a ViewModel can survive the former but not the latter. I persist financial intent and test reopen, and I treat network loss after send as an unknown outcome.”
+Test process death by verifying SavedStateHandle state restoration in JVM unit tests, or by calling ActivityScenario.recreate() and adb shell am kill in instrumentation tests. Test rotation by verifying ViewModels retain data without re-fetching, and test offline transitions using reactive NetworkCallback fakes.
 
 ## Interview answer — structured
 
-“I test configuration recreation, actual process termination and connectivity transitions separately. A ViewModel survives ordinary rotation, but process death requires state reconstructed from SavedStateHandle for small UI details and durable storage/backend for important data. For payments, I persist operation ID before send and test offline after remote success; timeout becomes Unknown until status lookup resolves it. UI-only recreation tests cannot establish crash recovery.”
+Testing OS lifecycle edge cases verifies resilience against system memory pressure and hardware configuration shifts:
+
+1. **Testing Process Death**:
+   - **JVM Unit Testing (SavedStateHandle)**: Save a state snapshot via `savedStateHandle.savedStateProvider().saveState()`, feed the bundle into a fresh `SavedStateHandle.createHandle()`, instantiate a new ViewModel, and assert that form inputs, active step indexes, and navigation tokens survive.
+   - **On-Device Instrumentation Testing**: Use AndroidX `ActivityScenario`. Navigate through a flow, background the app, trigger process death via `adb shell am kill <package>`, bring the app foreground, and assert that the activity restores state without crashing.
+
+2. **Testing Configuration Changes (Rotation)**:
+   - In Compose tests or `ActivityScenario`, invoke `scenario.recreate()`. Assert that the screen rebinds to existing ViewModel state flows without re-triggering network fetches or resetting scroll offsets.
+
+3. **Testing Dynamic Offline Transitions**:
+   - Inject a `FakeNetworkMonitor` exposing a `Flow<Boolean>`. While collecting active UI flows, flip network availability to `false`. Assert that the UI renders an offline banner, falls back to cached Room records, and routes mutations to an internal pending outbox.
 
 ## Interview answer — deep senior
 
-“I separate three failure modes that are often collapsed into one UI test. Rotation recreates an Activity, so I trigger it while a request is pending and assert that the operation ID remains stable and the new screen observes the same state without submitting again. Process death is stronger: memory, ViewModel and ordinary coroutine scope disappear. I persist the intended operation before network send, kill and relaunch the process in an instrumented test, and assert the repository reconstructs pending or unknown state from durable storage. For offline transitions I test both before-send failure and after-server-commit lost response. The latter must not become Declined; the client should show Unknown, retain the original identity and reconcile with the authority. I also verify that a late callback from an old screen generation cannot overwrite newer state. A fake can drive the app’s state machine deterministically, but it does not prove the backend’s idempotency or real Android restoration by itself. I record exactly which layer and device environment supports each claim.”
+From an architectural systems perspective, handling process death exposes state boundaries:
+
+1. **Transient UI State vs. Heavy Domain State**: A frequent architectural anti-pattern is storing large domain objects (such as complete 5MB JSON lists) in `SavedStateHandle`. Android restricts the system `TransactionTooLargeException` buffer to 1MB across the entire process. Tests must assert that only lightweight restoration keys (e.g., `selectedUserId: String`, `scrollIndex: Int`) are saved to state bundles.
+
+2. **rememberSaveable Custom Savers**: In Jetpack Compose, test custom savers (`Saver<T, Any>`) by writing unit tests that serialize custom UI state objects to bundles and deserialize them, asserting object equivalence.
+
+3. **Network Flakiness Injection via OkHttp**: Rather than relying on physical airplane mode toggles in CI, inject an OkHttp interceptor into the test network client that programmatically drops connections after the 2nd request, asserting that retry queues and offline outboxes trigger reliably.
 
 ## How to answer in the interview
 
@@ -75,8 +134,11 @@ Prompt for lifetime table, actual process kill, same operation ID, offline-after
 
 ## Follow-up questions
 
-- [TST-20](../tst-20/): What if response is lost? **Answer:** same ID and authoritative lookup, never a new charge.
-- [TST-16](../tst-16/): Which environment tests process death? **Answer:** Android device/emulator with actual process recreation.
+- **Interviewer:** "What is TransactionTooLargeException in Android?"
+  **Answer:** "An exception thrown when data passed across Binder IPC (such as saved instance state or intent extras) exceeds the shared 1MB buffer limit."
+
+- **Interviewer:** "Why does ActivityScenario.recreate() not fully simulate process death?"
+  **Answer:** "recreate() destroys and recreates the Activity within the same process, keeping static and singleton memory intact; real process death destroys the entire OS Linux process."
 
 ## Self-check rubric
 
@@ -87,4 +149,4 @@ Rotate while loading and verify one stable operation ID, recreate after persiste
 - [Android saving UI state](https://developer.android.com/topic/libraries/architecture/saving-states) — state lifetimes.
 - [Android offline-first data layer](https://developer.android.com/topic/architecture/data-layer/offline-first) — durable data design.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -23,11 +23,52 @@ A team puts a private API key in BuildConfig from local.properties. Why is this 
 
 ## Explanation in Arabic
 
-`local.properties` يحمي private key من commit بالصدفة؛ لكن لما Gradle ينسخه إلى `BuildConfig` يبقى constant في APK. أي مستخدم يقدر يستخرجها بالـdecompile أو يراقب call اللي بتستخدمها. لو key بتدي صلاحية private API أو charge، اتعامل معها كـleaked: rotate، audit، وانقل العملية لـbackend.
+فريق برمجي يضع مفتاح الـ API الخاص (Private API Key) في ملف `local.properties` ويقرأه داخل `BuildConfig`. لماذا يُعد هذا غير كافٍ وثغرة أمنية فادحة؟
+
+1. ما الذي يفعله `local.properties` وما الذي لا يفعله؟
+   - وضع المفتاح في `local.properties` يمنع رفعه إلى مستودع الـ Git (GitHub/GitLab) إذا كان الملف مستثنى في `.gitignore`. هذا إجراء تنظيمي جيد لحماية الـ Git History فقط.
+   - **لكن**: عند قراءة المفتاح وتمريره إلى `buildConfigField`, يقوم Gradle بتوليد كلاس جافا اسمه `BuildConfig.java` يحتوي على سطر صريح:
+     `public static final String STRIPE_SECRET = "sk_live_1234567890";`.
+
+2. كيف يتم استخراج هذا المفتاح من الـ APK في 5 ثوانٍ؟
+   - عند تجميع الـ APK، يُترجم كلاس `BuildConfig` إلى Dalvik Bytecode داخل `classes.dex`.
+   - يستطيع أي شخص تنزيل الـ APK من المتجر وتنفيذ أمر سطر واحد في الـ Terminal:
+     `strings classes.dex | grep sk_live`
+     أو فتح الـ APK في `JADX-GUI` وقراءة المفتاح بنصه الصريح فوراً!
+
+3. الفرق بين المفاتيح العامة (Public Keys) والمفاتيح الخاصة (Private Secrets):
+   - **المفاتيح العامة (Allowed on Client)**: مفاتيح مثل Google Maps API Key أو Firebase Public Key. هذه المفاتيح مخصصة لتعريف التطبيق ومحمية من جهة Google Console بقيود الباكدج والبصمة الرقمية (Package Name + SHA-1 Restriction).
+   - **المفاتيح الخاصة (Strictly Forbidden on Client)**: مفاتيح مثل OpenAI Secret Key, Stripe Secret Key, AWS S3 Master Credentials. هذه المفاتيح **ممنوع تماماً وضعها في أي تطبيق موبايل**! يجب أن تظل حصرياً على خادم الـ Backend (BFF - Backend for Frontend)، ويقوم الموبايل بالاتصال بالسيرفر الخاص بك والسيرفر هو من يتصل بتلك الخدمات.
 
 ## Practical walkthrough
 
-لو `BuildConfig.PAYMENT_PRIVATE_KEY` اتبنت من `local.properties`, APK النهائي فيه القيمة حتى لو Git نظيف. افحص artifacts اللي اتوزعت، أبطل المفتاح من provider، راجع الاستخدام غير المتوقع، وانقل private call إلى backend. قيود package/signature نافعة فقط لو provider صمم key موبايل public؛ ما تعالجش secret بR8 أو JNI أو تقسيم string.
+المقارنة بين الطريقة الساذجة المكشوفة في الـ APK والمعمارية الصحيحة باستخدام Backend for Frontend:
+```groovy
+// ❌ ثغرة أمنية فادحة في build.gradle: توليد المفتاح الخاص في كود الـ APK:
+android {
+    defaultConfig {
+        // يتم تضمين هذا المفتاح كنص صريح في ملف DEX ويمكن استخراجه في ثوانٍ!
+        buildConfigField "String", "OPENAI_SECRET_KEY", "\"sk-proj-998877665544332211\""
+    }
+}
+```
+
+```kotlin
+// ✅ المعمارية الصحيحة: العميل لا يملك المفتاح السري، بل يتصل بـ Backend Proxy:
+class AiAssistantRepository(
+    private val companyBackendApi: CompanyBackendApi
+) {
+    suspend fun generateSummary(userPrompt: String): String {
+        // التطبيق يرسل الطلب لسيرفر شركتك موثقاً بـ User Session Token:
+        val response = companyBackendApi.requestAiSummary(
+            prompt = userPrompt
+        )
+        // سيرفر شركتك (الـ Backend) هو من يحتفظ بـ OPENAI_SECRET_KEY في بيئة آمنة
+        // ويتحقق من رصيد المستخدم وصلاحياته قبل استدعاء OpenAI API
+        return response.summary
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +92,30 @@ CI scans source and packaged artifacts, while secret-management controls restric
 
 ## Interview answer — short
 
-“local.properties is build hygiene, not runtime secrecy. BuildConfig ships the value in the APK. I rotate any exposed private key and move privileged API calls to a backend that authorizes them.”
+Putting keys in local.properties keeps them out of git, but defining them in BuildConfig bakes them into classes.dex as plaintext strings. Anyone can extract them in seconds via JADX or strings CLI. Private secrets must never exist on mobile clients; they belong exclusively on an authoritative backend proxy.
 
 ## Interview answer — structured
 
-“Gradle reads local.properties during the build; once the value becomes a BuildConfig constant, every installed APK carries it. Decompilation or runtime instrumentation can recover it, regardless of R8. If it is a private payment key, I treat it as compromised, rotate and audit it, then call the provider only from the backend. The mobile app sends a scoped request that the backend verifies against user identity, order price and state.”
+Using `local.properties` with `BuildConfig` addresses version control hygiene, but offers zero cryptographic confidentiality against reverse engineering:
+
+1. **Compilation into Plaintext DEX**: Gradle generates a Java constant in `BuildConfig.java` (`public static final String API_KEY = "...";`). During compilation, this string constant is placed directly into the `classes.dex` string pool. Anyone who downloads the APK can run `strings classes.dex` or inspect `BuildConfig` in JADX to extract the secret immediately.
+
+2. **Public vs. Private API Keys**:
+   - **Public Client Keys**: Identifiers like Google Maps keys or Firebase App IDs are designed to be public. They rely on server-side restrictions (e.g. Google Cloud package name + SHA-1 fingerprint whitelisting) rather than secrecy.
+   - **Private Secrets**: Keys providing privileged administrative access, billing capabilities, or third-party paid API quotas (OpenAI, Stripe Secret, AWS IAM credentials) must **never** be packaged into a mobile application.
+
+3. **Architectural Remedy (Backend-for-Frontend)**:
+   - Deploy a backend proxy / BFF. The mobile client authenticates against your backend using short-lived user session tokens. Your backend holds the private API secret securely in environment variables or an enterprise secret manager and proxies requests to third-party providers.
 
 ## Interview answer — deep senior
 
-“I separate prevention and remediation. For prevention, private provider credentials never enter mobile build inputs; CI scans artifacts as well as Git. For remediation, I revoke the distributed key at the provider, inspect abuse, roll backend credentials and release an app without it. Server endpoints enforce least privilege, rate limits, idempotency and audit trails. If a key is intentionally public for a mobile SDK, I apply documented package/signing restrictions and quotas, but I still assume extraction and do not grant financial authority through it. For incident response I would identify affected APK versions and provider credentials, revoke the old key, review transaction history for abuse, then ship a backend-mediated flow. I would keep only public identifiers in mobile artifacts and test provider restrictions where relevant. An artifact scanner catches accidental reintroduction, but no scanner changes the central fact that the mobile binary is attacker accessible. The backend must validate every requested operation.”
+From a threat modeling perspective, understanding client-side secret exposure reveals common misconceptions:
+
+1. **The Native C/C++ Illusion**: Some teams attempt to bypass this by moving the string into a C++ JNI library (`libkeys.so`) or breaking the string into byte arrays combined with XOR masks. These are merely obfuscation speed bumps. An analyst running Frida or Ghidra can locate the assembly instructions and extract the recombined string from memory during execution in minutes.
+
+2. **Credential Stuffing & Quota Exhaustion**: When third-party private secrets are leaked from an APK, attackers scrape them to make automated API requests on the developer's billing account or exfiltrate private database records, causing massive financial and reputational liability.
+
+3. **Rule of Thumb for Mobile Architects**: Treat any code and asset shipped inside an APK as publicly published on the internet. If exposing a key compromises customer data, financial balances, or cloud infrastructure, that key must never be compiled into the mobile build.
 
 ## How to answer in the interview
 
@@ -75,8 +131,11 @@ Prompt for APK artifact inspection, provider rotation, backend authority and dis
 
 ## Follow-up questions
 
-- [SEC-04](../sec-04/): What did local.properties protect? **Answer:** source-control hygiene only.
-- [SEC-05](../sec-05/): Can JNI or R8 fix it? **Answer:** no; the client must use the value.
+- **Interviewer:** "Why is Google Maps API key safe to keep in AndroidManifest.xml?"
+  **Answer:** "Because Google Maps APIs restrict usage by verifying the calling app's package name and SHA-1 signing certificate fingerprint on Google servers."
+
+- **Interviewer:** "Can R8 obfuscation hide BuildConfig strings?"
+  **Answer:** "No; R8 renames class and variable identifiers, but literal string constants remain completely unencrypted in the DEX string pool."
 
 ## Self-check rubric
 
@@ -87,4 +146,4 @@ Can I trace the secret into APK, describe full incident response and redesign pr
 - [Android build configuration](https://developer.android.com/build/gradle-tips) — build-time constants.
 - [OWASP MASVS resilience](https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/) — reverse-engineering limits.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

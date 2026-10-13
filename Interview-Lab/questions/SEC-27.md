@@ -23,11 +23,45 @@ An attacker modifies an APK and bypasses client-only checks. How should the back
 
 ## Explanation in Arabic
 
-لو attacker عدّل APK وعدّى client check، backend ما ينفعش يصدق `approved=true` أو amount جاي من الواجهة. يجيب price والـownership والـtransaction state من قواعده، يتحقق من session وحدود الحساب، ويربط request بـoperation ID ثابت عشان retries ما تعملش charge تاني. App attestation signal مفيد، بس مش بديل للقرار السيرفري.
+مهاجم قام بتعديل الـ APK وتجاوز جميع الفحوصات الأمنية المحلية (Client-Side Checks). كيف يجب على الـ Backend حماية نفسه؟
+
+1. وهم الأمان من جانب العميل (The Fallacy of Client-Only Validation):
+   - أي فحص محلي يتم داخل كود أندرويد (مثل فحص الأسعار، فحص الرصيد، فحص الكوبونات، أو فحص الـ Root) يمكن لمهاجم تجاوزه بسهولة بتعديل سطر Smali واحد أو استخدام Frida.
+   - **القاعدة الذهبية في هندسة الأمان**: **Never Trust the Client** (لا تثق في العميل أبداً؛ العميل هو بيئة معادية ومخترقة افتراضياً).
+
+2. كيف يدافع الـ Backend عن نفسه بشكل قطعي؟
+   - **إعادة حساب كل العمليات المنطقية على السيرفر**: السيرفر لا يستقبل "السعر النهائي" من التطبيق! يستقبل فقط معرّف المنتج (`productId`) والكمية، ويقوم السيرفر بجلب السعر من قاعدة البيانات وحساب الخصم والضرائب بنفسه.
+   - **التحقق من توقيع التطبيق وسلامته عبر Play Integrity API**: يرسل السيرفر Nonce عشوائي، ويطلب من التطبيق شهادة Play Integrity. السيرفر يتحقق من Google أن الطلب قادم من APK أصلي موقع بشهادة الإنتاج ولم يتم التلاعب بملف الـ DEX.
+   - **فحص الصلاحيات والـ RBAC على السيرفر**: كل API Endpoint تفحص هل الـ User ID المستخرج من الـ Token المصادق عليه يملك صلاحية الوصول لهذا المورد أم لا.
+   - **كشف الشذوذ السلوكي (Behavioral Anomaly Detection)**: مراقبة سرعة الطلبات (Rate Limiting)، وفحص الموقع الجغرافي المستحيل (Impossible Travel)، وحظر الحسابات التي ترسل طلبات غير متناسقة.
 
 ## Practical walkthrough
 
-APK معدّلة بعتت `amountMinor=1` لطلب ثمنه الحقيقي 10000. backend يجيب السعر والعملة وحالة order من DB بدل request، ويتحقق من session والownership، ثم ينفّذ transition واحدة مرتبطة بـoperation ID ثابت. حتى لو Play Integrity قال app سليمة، ده ما يعفيش server من تحقق amount والحدود؛ وأي timeout مع provider يحتاج reconciliation.
+المقارنة بين API معيب يثق في العميل و API مؤمن يفرض سلطة السيرفر المطلقة:
+```kotlin
+// ❌ تصميم كارثي: السيرفر يثق في حسابات العميل ومدخلاته الحساسة:
+// إذا عدل المهاجم الكود وجعل totalAmount = 0.01$، السيرفر سيقبل العملية!
+data class InsecureCheckoutRequest(
+    val productId: String,
+    val totalAmount: Double, // ثغرة: العميل يحدد المبلغ!
+    val isDiscountApplied: Boolean // ثغرة: العميل يحدد الخصم!
+)
+
+// ✅ المعمارية الاحترافية: السيرفر هو مصدر الحقيقة الأوحد ولا يثق في العميل:
+data class SecureCheckoutRequest(
+    val productId: String,
+    val quantity: Int,
+    val promoCode: String?,
+    val clientNonce: String
+)
+
+// منطق السيرفر (Backend Logic):
+// 1. استخراج userId من الـ Cryptographically Verified JWT Token
+// 2. جلب سعر المنتج الحقيقي من الـ Database
+// 3. التحقق من صلاحية الكوبون ومطابقته للشروط في السيرفر
+// 4. فحص الـ Nonce لمنع هجمات التكرار (Replay Attacks)
+// 5. التحقق من شهادة Play Integrity المرفقة في هيدر الطلب
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +85,33 @@ Backend tests include changed amount, foreign order ID, stale state, duplicate o
 
 ## Interview answer — short
 
-“A modified APK controls every client-only check. The backend must authenticate, authorize, derive price and state from trusted records, enforce idempotency, and confirm provider outcomes before changing financial state.”
+The backend must enforce a Zero-Trust architecture: never trust client-calculated prices, roles, or checks. Recalculate business invariants entirely on the server, validate Google-signed Play Integrity attestation tokens bound to server nonces, enforce strict rate limiting, and use cryptographic transaction signing.
 
 ## Interview answer — structured
 
-“I assume the attacker can change UI flags and request fields. The server validates the user’s ownership, canonical amount, order state and allowed transition, then uses a stable idempotency identity for the provider call. It verifies provider results independently and never accepts a client `approved` value. Play Integrity may inform risk scoring, but server business rules remain mandatory even for a recognized app. ”
+When an attacker tampers with an APK to bypass client validations, backend security controls form the true line of defense:
+
+1. **Server Authoritative Business Logic**: 
+   - Clients submit intentions (e.g. `productId`, `quantity`), never outcomes (e.g. `price`, `discountedTotal`). The server looks up product costs in authoritative databases, computes taxes and discounts, and initiates charges based solely on its own calculations.
+
+2. **Cryptographic Attestation Verification**:
+   - The backend validates the Google Play Integrity token provided with critical requests. The server verifies Google's cryptographic signature, checking that `appRecognitionVerdict` equals `PLAY_RECOGNIZED` and the signing certificate SHA-256 matches the official release keystore. Modified/repackaged APKs will return `UNRECOGNIZED_VERSION`.
+
+3. **Idempotency & Replay Protection**:
+   - Critical requests require a server-issued one-time cryptographically random nonce or UUID idempotency key stored in Redis with short TTL. Replayed requests are rejected.
+
+4. **Strict Server-Side Authorization (RBAC/ABAC)**:
+   - Every request verifies that the authenticated user identity extracted from the verified session token has explicit permission to access the target entity ID (preventing IDOR vulnerabilities).
 
 ## Interview answer — deep senior
 
-“For a payment endpoint I define an invariant: one order and operation identity can cause at most one intended financial effect under the provider contract. Within a server transaction I check the authenticated account, server-priced order, allowed state transition and uniqueness; I record an operation before external work and reconcile unknown outcomes. Concurrent requests with the same identity converge, while changed parameters are rejected. Provider webhooks or status lookups require verification. I test requests from a repackaged client that lie about price, success and device trust, plus retries after lost responses. No local control can confer authority. For payments I would make the server's state transition and provider idempotency contract explicit. The same operation ID must not cause a second intended charge during retries, and a timeout is Pending until the provider or ledger resolves it. I would fuzz the endpoint with altered amount, currency, account and `approved` flags from a modified client. Integrity signals can add context but never replace these server checks.”
+From an enterprise fraud and threat modeling perspective, backend defenses incorporate multi-signal behavioral analytics:
+
+1. **Behavioral Fraud Scoring**: Even if an attacker successfully patches an APK and mimics API payloads, machine learning fraud engines analyze request velocity, header entropy, TLS client fingerprinting (JA3/JA4 signatures), and impossible geographic travel intervals to score transaction risk.
+
+2. **Step-Up Authentication Challenges**: When risk signals indicate an anomalous client environment, the backend refuses to execute the requested action directly. Instead, it challenges the client with step-up verification (e.g., FIDO2 / Passkey biometric challenge or out-of-band push notification to a trusted secondary device).
+
+3. **Tarpitting and Honeypots**: Backend APIs can embed decoy parameters or obscure endpoints. Modified clients invoking hidden deprecated endpoints expose automated tampering tools, triggering silent shadow-banning without alerting the attacker.
 
 ## How to answer in the interview
 
@@ -75,8 +127,11 @@ Prompt for canonical server price, authorization, atomic uniqueness, provider co
 
 ## Follow-up questions
 
-- [PAY-02](../pay-02/): Why stable operation ID? **Answer:** retries must converge on one business intent.
-- [SEC-21](../sec-21/): What role for Integrity? **Answer:** a server-verified risk signal, not authorization.
+- **Interviewer:** "What is an IDOR vulnerability and how does server-side auth prevent it?"
+  **Answer:** "Insecure Direct Object Reference occurs when a client changes an ID parameter (e.g., /account/123 -> /account/124); server-side auth validates that the token's user owns that specific ID."
+
+- **Interviewer:** "What is TLS JA3 fingerprinting?"
+  **Answer:** "It analyzes the client's TLS ClientHello packet (ciphers, extensions, curves) to identify the underlying HTTP client library, detecting automated python/curl bots masquerading as official Android apps."
 
 ## Self-check rubric
 
@@ -87,4 +142,4 @@ Can I reject a forged amount/status and describe duplicate-request protection?
 - [Play Integrity overview](https://developer.android.com/google/play/integrity/overview) — server-side decisions.
 - [Stripe idempotent requests](https://docs.stripe.com/api/idempotent_requests) — one provider’s retry contract.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

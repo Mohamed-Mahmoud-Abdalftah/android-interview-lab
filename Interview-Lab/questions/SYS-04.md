@@ -26,11 +26,68 @@ Design an offline-first system with a local source of truth.
 
 ## Explanation in Arabic
 
-في تصميم نظام Offline-First، القاعدة الذهبية إن قاعدة البيانات المحلية (Room) هي الـSingle Source of Truth الوحيد للـUI. شاشات التطبيق بتعمل observe لـ `Flow<List<T>>` جاية من Room مباشرة، ومفيش أي شاشة بتستنى رد الـNetwork عشان تعرض بيانات للمستخدم. لما المستخدم يعدل أو ينشئ عنصر جديد وهو أوفلاين، التعديل بيتكتب في جدول البيانات المحلي، وفي نفس الـDatabase Transaction بالظبط بنكتب سجل في جدول الـOutbox (`OutboxRecord`) بيحتوي على معرف عملية فريد ثابت (Idempotency Key)، الـpayload كـJSON، ورقم الـbase version. كتابة الـentity والـoutbox داخل atomic transaction بتضمن إن مستحيل يحصل تعديل محلي يضيع أو يتنسى لو التطبيق اتقفل أو النظام طفى فورًا بعد الحفظ.
+كيف تصمم نظام Offline-First مع مصدر حقيقة محلي (Single Source of Truth) يضمن تجربة مستخدم سلسة بدون فقدان للبيانات؟
+
+1. المبدأ المعماري لـ Offline-First:
+   - **قاعدة البيانات المحلية (Local Room DB) هي مصدر الحقيقة الوحيد (Single Source of Truth - SSOT)**.
+   - واجهة المستخدم (UI) لا تطلب البيانات من الشبكة مباشرة أبداً؛ بل تستمع (Observe) لـ `Flow<List<Item>>` صادر من قاعدة البيانات المحلية دائماً.
+   - عمليات التحديث والإنشاء تُكتب أولاً في قاعدة البيانات المحلية، مما يجعل استجابة الـ UI فورية (Optimistic Updates).
+
+2. محرك المزامنة (Synchronization Engine & Outbox Pattern):
+   - **Outbox Pattern للعمليات المعلقة**: عند قيام المستخدم بإجراء (مثل كتابة تعليق أو إرسال رسالة) أثناء انقطاع الإنترنت:
+     * يُحفظ الكائن في جدول الـ DB المحلي مع حالة مزامنة: `SYNC_STATUS = PENDING` ومُعرّف محلي مؤقت (`client_id = UUID()`).
+     * يُعرض العنصر فوراً في الـ UI مع أيقونة ساعة صغيرة (Pending).
+     * تضاف المهمة إلى جدول طابور المزامنة `sync_actions_queue`.
+   - **المزامنة في الخلفية عبر WorkManager**: يقوم `WorkManager` بمراقبة اتصال الشبكة (`NetworkType.CONNECTED`) وتنفيذ المهام المعلقة بالترتيب، وإرسالها للسيرفر، ثم تحديث الـ ID المحلي بمعرف السيرفر وتغيير الحالة إلى `SYNC_STATUS = SYNCED`.
+
+3. فض النزاعات (Conflict Resolution Strategies):
+   - **Last-Write-Wins (LWW) عبر Timestamps**: الحل الأبسط ولكن قد يفقد بيانات إذا لم تكن الساعات متزامنة.
+   - **Vector Clocks / Version Numbers**: السيرفر يرفض التعديل إذا كان رقم الإصدار قديماً ويطلب من العميل دمج البيانات (Merge).
+   - **CRDTs (Conflict-free Replicated Data Types)**: للبيانات التشاركية المعقدة (مثل المستندات النصية المشتركة).
 
 ## Practical walkthrough
 
-بعد ما المعاملة تنجح محليًا، بنشغل WorkManager من خلال `ExistingWorkPolicy.KEEP` أو `APPEND_OR_REPLACE`. لما تتوفر شبكة مناسبة، الـ `SyncOutboxWorker` بيسحب العمليات المعلقة من جدول الـOutbox ويرسلها للسيرفر مصحوبة بـIdempotency-Key في الـheaders ورقم الإصدار. السيرفر لو استلم نفس الطلب مرتين بسبب ضعف الشبكة أو retry، مش هيكرر العملية لأنه مخزن الـkey. لو السيرفر اكتشف إن السجل اتعدل من جهاز تاني (Version Mismatch / HTTP 409 Conflict)، بيتم تطبيق سياسة فض النزاع المحددة للـdomain ده: إما دمج الحقول (3-way merge)، أو اعتبار السيرفر هو الفائز مع تنبيه المستخدم، أو حفظ نسخة conflicting copy. الـUI بتعرض بادج واضح "Pending Sync" أو "Conflict" عشان المستخدم يكون فاهم حالة بياناته بكل شفافية.
+تنفيذ نمط الـ Outbox المحلي مع Room وتحديثات الواجهة الفورية (Optimistic UI) وإعادة المحاولة:
+```kotlin
+// 1. كيان قاعدة البيانات يمثل مصدر الحقيقة مع حالة المزامنة:
+@Entity(tableName = "notes")
+data class NoteEntity(
+@PrimaryKey val localId: String = UUID.randomUUID().toString(),
+    val remoteId: String? = null,
+    val content: String,
+    val syncStatus: SyncStatus = SyncStatus.PENDING,
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+enum class SyncStatus { SYNCED, PENDING, FAILED }
+
+// 2. مستودع يضمن التحديث الفوري المحلي وتفويض المزامنة للـ WorkManager:
+class OfflineFirstNoteRepository @Inject constructor(
+    private val noteDao: NoteDao,
+    private val workManager: WorkManager
+) {
+    // الـ UI يستمع لقاعدة البيانات فقط
+    val allNotes: Flow<List<Note>> = noteDao.observeNotes().map { entities -> entities.map { it.toDomain() } }
+
+    suspend fun saveNote(content: String) {
+        // 1. حفظ فوري في قاعدة البيانات المحلية (Optimistic Write)
+        val newNote = NoteEntity(content = content, syncStatus = SyncStatus.PENDING)
+        noteDao.insert(newNote)
+
+        // 2. جدولة مزامنة عبر WorkManager بشرط توفر شبكة إنترنت
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
+        val syncRequest = OneTimeWorkRequestBuilder<SyncNotesWorker>()
+            .setConstraints(constraints)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS)
+            .build()
+
+        workManager.enqueueUniqueWork("sync_notes_work", ExistingWorkPolicy.APPEND_OR_REPLACE, syncRequest)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -196,28 +253,36 @@ In high-scale production apps (e.g., Salesforce, Notion, or field logistics apps
 
 ## Interview answer — short
 
-“I establish Room as the Single Source of Truth that UI observes via Flows. When the user makes an edit offline, I write the entity and an outbox mutation record containing a stable idempotency key within a single Room `@Transaction`. WorkManager then executes the sync with network constraints and exponential backoff. The backend reconciles versions to detect conflicts, and the UI displays pending or conflict states explicitly.”
+Design an offline-first system by treating the local database as the single source of truth that the UI observes reactively. Write user modifications immediately to local storage with pending status flags using an Outbox pattern, and schedule reliable background synchronization via WorkManager with network constraints and explicit conflict resolution rules.
 
 ## Interview answer — structured
 
-“To build a robust offline-first architecture:
-1. **Unidirectional Read Pipeline:** The UI strictly observes Room database entities mapped to UI models via Kotlin `StateFlow`. UI rendering never waits on network responses.
-2. **Transactional Outbox Writes:** Offline actions write to both the target entity and a dedicated `sync_outbox` table inside a single SQLite transaction. This guarantees that crash during save cannot orphan an edit.
-3. **Resilient Background Sync:** WorkManager schedules a `CoroutineWorker` requiring `NetworkType.CONNECTED`. It processes outbox records sequentially, applying exponential backoff on transient transport errors.
-4. **Idempotency & Versioning:** Every mutation carries a UUID `operationId` and a `baseServerVersion`. The server uses the idempotency key to prevent double application of retries and returns HTTP 409 if another client changed the record first.
-5. **Conflict Resolution & UX:** On conflict, the app either runs a deterministic field-merge or marks the record as `CONFLICT`, rendering an explicit resolution banner in the UI.”
+An offline-first mobile architecture treats network connectivity as an intermittent enhancement rather than a prerequisite:
+
+1. **Local Database as Single Source of Truth (SSOT)**:
+   - The UI observes Room database tables via reactive Coroutine `Flow`. The UI never awaits remote API responses to render content; it renders immediately from SQLite.
+
+2. **Optimistic Mutations & The Outbox Pattern**:
+   - When a user performs an action (create, update, delete), the app immediately writes the mutation to the local database flagged with `SYNC_PENDING` and a client-generated UUID.
+   - The UI reflects the change instantaneously without loading spinners.
+   - A corresponding record is added to an internal `outbox_mutations` queue table.
+
+3. **Resilient Synchronization via WorkManager**:
+   - Background workers trigger when network connectivity meets constraints (`NetworkType.CONNECTED`). The worker drains the outbox queue sequentially, dispatches requests to the server with idempotency keys, and updates local records to `SYNCED` with authoritative server IDs.
+
+4. **Conflict Resolution Policy**:
+   - In most business apps, implement **Server-Reconciliation with Version Vectors**: the client submits its last-known version. If the server detects a concurrent edit, it merges non-conflicting fields or returns a 409 Conflict, prompting client-side user reconciliation.
 
 ## Interview answer — deep senior
 
-“A senior architecture for offline-first systems solves three hard problems: write atomicity, duplicate prevention, and conflict semantics.
+From an advanced distributed systems viewpoint, offline-first mobile clients operate as distributed database nodes:
 
-First, I guarantee local durability using the Outbox pattern. If a user creates or edits a note while disconnected, writing only the note entity leaves the background engine with no reliable mutation log. In my design, Room executes a single `@Transaction` that updates the entity with `localSyncState = PENDING_SYNC` and inserts an `OutboxRecord` containing the entity ID, payload JSON, timestamp, base server version, and a client-generated UUID `operationId`. If the process is killed at that exact millisecond, SQLite either rolls back both or commits both.
+1. **Handling Deleted Items (Tombstones)**:
+   - Never delete rows directly in offline SQLite when a user deletes an item while offline. If deleted locally, subsequent sync pulls from the server will interpret the missing row as 'new' and re-insert it! Mark rows as deleted using **Tombstones** (`is_deleted = true`). The sync worker notifies the server to delete the entity remotely, and only removes the row locally once confirmed.
 
-Second, for synchronization, I schedule WorkManager with `ExistingWorkPolicy.KEEP` and network constraints. When connectivity returns, the `SyncOutboxWorker` drains the outbox. Crucially, every HTTP request includes `Idempotency-Key: operationId`. In unreliable mobile networks, dropped connections often occur on the response path after the server has already executed the SQL write. When WorkManager retries, the backend detects the duplicate operation ID in Redis or PostgreSQL, skips re-executing business logic, and re-emits the original HTTP 200 result with the new server version.
+2. **Two-Way Delta Synchronization**: Avoid downloading entire datasets. Implement delta sync endpoints accepting `last_sync_timestamp` or pagination cursors. The server returns only mutations (`created`, `updated`, `deleted`) that occurred since that timestamp, drastically reducing bandwidth and battery consumption.
 
-Third, for concurrency, the server enforces optimistic locking via the `baseServerVersion`. If another client updated the record while this device was offline, the server returns HTTP 409 Conflict. In my architecture, conflict policy is domain-specific: for simple field updates, I apply a 3-way merge algorithm comparing base, remote, and local values; for irreconcilable documents, I fork the document locally, retain the user's draft, and surface an actionable resolution screen.
-
-Finally, the UI models state explicitly: `NoteUiModel` exposes whether the item is `Synced`, `Syncing`, or `Conflicted`. This creates total user trust because the interface never misrepresents unacknowledged local state as confirmed remote truth.”
+3. **Queue Compaction & Deduplication**: If an offline user edits the same note 5 times, compact the outbox mutations locally before transmitting, collapsing intermediate updates into a single final payload.
 
 ## How to answer in the interview
 
@@ -236,8 +301,11 @@ Finally, the UI models state explicitly: `NoteUiModel` exposes whether the item 
 
 ## Follow-up questions
 
-- [DAT-07](../dat-07/): What distinguishes offline-first from simple caching? **Answer:** Offline-first treats local storage as the primary read/write source of truth and syncs asynchronously; caching reads from network first and merely buffers responses.
-- [SYS-06](../sys-06/): How do you combine Room with pagination and remote sync? **Answer:** Use Room `PagingSource` backed by `RemoteMediator` to coordinate remote page loading with local SQLite paging.
+- **Interviewer:** "What is a tombstone in database synchronization?"
+  **Answer:** "A record marked with a deletion flag rather than being physically dropped, allowing synchronization engines to propagate the delete operation to remote servers."
+
+- **Interviewer:** "Why should local database IDs be client-generated UUIDs rather than auto-incrementing integers?"
+  **Answer:** "Client-generated UUIDs prevent ID collisions across distributed offline devices before entities are assigned authoritative server IDs."
 
 ## Self-check rubric
 
@@ -253,4 +321,4 @@ Finally, the UI models state explicitly: `NoteUiModel` exposes whether the item 
 - [WorkManager background processing](https://developer.android.com/develop/background-work/background-tasks/persistent) — scheduled persistent jobs.
 - [Room database transactions](https://developer.android.com/training/data-storage/room) — data access objects and transactions.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

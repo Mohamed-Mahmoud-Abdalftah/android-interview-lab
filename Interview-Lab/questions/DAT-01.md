@@ -22,7 +22,56 @@ Place Retrofit API declarations over OkHttp transport and define repository/erro
 
 ## Explanation in Arabic
 
-`Retrofit` بتحوّل annotated Kotlin interface إلى HTTP calls وبتستخدم converters للـJSON؛ `OkHttp` هو الـHTTP client اللي يدير connection pooling, TLS, interceptors, timeouts, cache. الـrepository فوقهم يحوّل DTOs إلى domain models ويحدد error/retry contract. ما نحطش token refresh أو business logic داخل UI، وما نطبعش أسرار في HTTP logs.
+كيف تتكامل مكتبتا Retrofit و OkHttp داخل طبقة الشبكة (Networking Stack) في تطبيقات Android؟
+
+1. تقسيم المسؤوليات المعماري:
+   - **OkHttp (طبقة النقل والاتصال الفعلي - Transport & HTTP Engine)**:
+     * يعمل في المستوى المنخفض (Socket Level).
+     * يدير تجميع الاتصالات (Connection Pooling) لإعادة استخدام اتصالات TCP ومصافحات TLS وتجنب تكلفة إنشائها المتكررة.
+     * يدير الـ Interceptors (إضافة التوكنز، ضغط GZIP، الـ Logging، و Caching).
+     * يتعامل مع الـ Timeouts، وفشل الاتصال، وإعادة المحاولة على مستوى الشبكة.
+   - **Retrofit (طبقة التحويل والواجهة البرمجية - High-Level Declaration & Serialization Engine)**:
+     * يعمل فوق OkHttp.
+     * يحول واجهات Kotlin (`interface ApiService`) المعلمة بتعليقات مثل `@GET("users/{id}")` إلى طلبات HTTP فعلية عبر OkHttp.
+     * يدير المحولات (Converter Factories مثل Kotlinx Serialization أو Moshi) لتحويل نصوص الـ JSON إلى كائنات Kotlin، ومحولات الاستدعاء (Call Adapters مثل Coroutines `suspend` أو `Result<T>`).
+
+2. الحدود المعمارية الصارمة (Strict Architectural Boundaries):
+   - لا يجب أن تصل كائنات Retrofit أو OkHttp أو كلاسات الـ DTOs إلى طبقة الـ UI أو الـ ViewModels.
+   - طبقة الـ Repository تعزل الـ Network بالكامل: تستدعي Retrofit، وتعالج الأخطاء، وتحول الـ DTOs إلى Domain Models نقية ومستقرة.
+
+## Practical walkthrough
+
+المقارنة العملية لتوزيع الأدوار بين OkHttp و Retrofit وطبقة الـ Repository:
+```kotlin
+// 1. إعداد OkHttp (المسؤول عن النقل، الأمان، والتفاصيل الفيزيائية للشبكة):
+val okHttpClient = OkHttpClient.Builder()
+    .connectTimeout(15, TimeUnit.SECONDS)
+    .readTimeout(20, TimeUnit.SECONDS)
+    .addInterceptor(AuthHeaderInterceptor(tokenProvider))
+    .certificatePinner(CertificatePinner.Builder().add("api.example.com", "sha256/...").build())
+    .build()
+
+// 2. إعداد Retrofit (المسؤول عن تجريد الـ HTTP والـ Serialization):
+val retrofit = Retrofit.Builder()
+    .baseUrl("https://api.example.com/")
+    .client(okHttpClient) // OkHttp هو المحرك الحقيقي تحت الغطاء
+    .addConverterFactory(Json.asConverterFactory("application/json".toMediaType()))
+    .build()
+
+interface UserApiService {
+    @GET("v1/users/{id}")
+    suspend fun getUserProfile(@Path("id") userId: String): UserDto // تعبير نظيف عن العقد
+}
+
+// 3. طبقة الـ Repository: العازل الحامي للـ Domain والـ UI:
+class UserRepositoryImpl @Inject constructor(
+    private val api: UserApiService
+) : UserRepository {
+    override suspend fun getUser(id: String): Result<User> = runCatching {
+        api.getUserProfile(id).toDomain() // تحويل DTO إلى Domain Model
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -48,10 +97,6 @@ val api = Retrofit.Builder()
     .create(UserApi::class.java)
 ```
 
-## Practical walkthrough
-
-لو `UserApi.me()` رجعت 200 بس JSON ناقص `id`، transport نجح لكن mapping للدومين لازم يفشل بشكل واضح؛ ما تحوّلش ده لـ“network unavailable”. جهّز `OkHttpClient` واحد مناسب للbackend عشان connection pool/timeouts/interceptors، وRetrofit service للـendpoint والتَحويل. في repository اعمل validation للـDTO قبل `User` domain model، وارسم contract للأخطاء: I/O، HTTP status، malformed body، unauthorized. Auth header يتضاف في boundary آمنة، لكن refresh ما يدخلش loop في interceptor، وlogging ما تطبعش token أو PII. اختبر request headers وstatus/body بكود mock server وتأكد release variant مع converter/R8.
-
 ## Trade-offs and decision criteria
 
 Retrofit reduces API boilerplate; OkHttp remains responsible for transport behavior. A raw OkHttp client can be simpler for unusual protocols; WebSockets use an appropriate streaming contract. Converter and interceptor configuration affect error handling and release R8 behavior.
@@ -66,17 +111,25 @@ A bank app injects a configured OkHttp client with TLS policy and safe telemetry
 
 ## Interview answer — short
 
-“Retrofit defines typed HTTP endpoints and conversion; OkHttp performs transport, connections, interceptors and timeouts. I place domain mapping and retry policy in a repository, and keep authentication and logging safe.”
+OkHttp handles low-level transport: socket pooling, TLS handshakes, interceptors, and caching. Retrofit sits on top, abstracting HTTP requests into type-safe Kotlin interfaces and serializing JSON payloads via Moshi or Kotlinx Serialization. The Repository layer isolates both from the UI, converting DTOs into pure domain models.
 
 ## Interview answer — structured
 
-“In a common Android stack, Retrofit makes annotated service interfaces and handles conversion from wire payloads, while OkHttp executes HTTP with connection pooling, TLS, caching and interceptors. I configure a reusable client, not one per call. A repository sits above the service to map DTOs, HTTP failures and domain state. An auth interceptor can add a token, but refresh on 401 needs careful serialization and server rules. I test actual requests with a mock server and avoid logging credentials.”
+In a production Android networking stack, Retrofit and OkHttp divide responsibilities cleanly across presentation and transport layers:
+
+1. **OkHttp (Transport & Protocol Layer)**: Operates at the socket level. It manages TCP connection pooling, HTTP/2 multiplexing, TLS handshakes, certificate pinning, and caching. Its interceptor pipeline (`Application` and `Network` interceptors) centralizes cross-cutting concerns like OAuth authentication, telemetry logging, and gzip compression.
+
+2. **Retrofit (Type-Safe API Abstraction)**: Built directly on top of OkHttp. It translates annotated Kotlin interfaces (`@GET`, `@POST`) into concrete OkHttp HTTP calls using dynamic proxies and reflection. It leverages Converter Factories (Kotlinx Serialization, Moshi) to deserialize JSON into Data Transfer Objects (DTOs), and Call Adapters to support Kotlin coroutines (`suspend fun`).
+
+3. **Architectural Isolation**: Neither Retrofit nor OkHttp types should ever leak into ViewModels or UI composables. A Repository orchestrates network calls, intercepts HTTP exceptions, and maps network DTOs into stable, immutable Domain entities.
 
 ## Interview answer — deep senior
 
-I separate three concerns: transport, protocol and application meaning. OkHttp owns sockets, TLS, timeouts and interceptors; Retrofit turns a service interface into calls and delegates to OkHttp; the repository translates responses into stable domain contracts. A 200 response with invalid data is not the same as a transport timeout, and a 401 requires session-aware refresh logic rather than a generic retry. I reuse a configured client for pooling, inject dependencies for tests, and review logging and R8 behavior in release. For a financial write I do not let a generic interceptor replay requests without idempotency and reconciliation.
+A critical distinction senior engineers inspect under the hood is the difference between **OkHttp Application Interceptors and Network Interceptors**:
 
-For a profile endpoint, I would have Retrofit declare the HTTP shape, OkHttp execute it through one configured client, and the repository validate the DTO. A successful TCP exchange or 200 status does not prove the payload is a usable profile. I map transport loss, HTTP rejection, and malformed response into different domain outcomes because each asks for a different UI action. An authentication header can be added at the client boundary, but a 401 refresh path needs bounded attempts and session coordination. The failure cases are per-call clients losing pooling, logs exposing credentials, or an interceptor replaying a financial POST. I test those with a mock server and a minified build.
+- **Application Interceptors (`addInterceptor`)**: Executed once per high-level call at the very top of OkHttp's interceptor chain. They observe the request before redirects, retries, and caching. This is the only safe location for authentication token injection and high-level request tracing.
+
+- **Network Interceptors (`addNetworkInterceptor`)**: Executed at the wire level just before data is written to the socket. If an HTTP request encounters a 302 redirect or is served directly from OkHttp's local HTTP disk cache, network interceptors will not execute, or may execute multiple times for retried requests. They are meant strictly for monitoring wire traffic and modifying transport headers (e.g., inspecting transfer encoding or cache headers).
 
 ## How to answer in the interview
 
@@ -92,8 +145,11 @@ Trace one request from UI to repository/service/client and classify transport, H
 
 ## Follow-up questions
 
-- [DAT-03](../dat-03/): Where are network deadlines set? **Answer:** OkHttp call/connect/read/write timeout settings plus app-level deadline as needed.
-- [DAT-09](../dat-09/): Where does refresh belong? **Answer:** a coordinated auth boundary, not every UI caller.
+- **Interviewer:** "Why shouldn't you log authentication tokens in OkHttp Logging Interceptor in production?"
+  **Answer:** "Logging headers in production dumps sensitive JWTs or session credentials into Android Logcat, exposing user accounts to any app with log-reading permissions or crash reports."
+
+- **Interviewer:** "What happens if a Retrofit endpoint returns HTTP 404 in a suspending function?"
+  **Answer:** "Retrofit throws an `HttpException` with code 404, which must be caught via `runCatching` or a custom CallAdapter; it does not return null by default."
 
 ## Self-check rubric
 
@@ -105,4 +161,4 @@ Can I name each layer, classify failures, reuse transport and avoid credential l
 - [OkHttp documentation](https://lysine.dev/okhttp/) — transport features.
 - [Android network security](https://developer.android.com/privacy-and-security/security-config) — platform TLS configuration.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

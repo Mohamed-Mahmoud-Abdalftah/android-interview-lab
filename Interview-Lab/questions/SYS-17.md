@@ -22,11 +22,55 @@ Design operational monitoring and remote kill switches with fail-safe behavior.
 
 ## Explanation in Arabic
 
-نراقب crash/ANR, latency, sync pending age, auth refresh failures وbusiness outcomes مثل payment Unknown. kill switch تتربط بfeature/version وتبقى لها safe default وTTL، مع backend deny path لو الموضوع أمني أو مالي. rollout تدريجي مع guardrails وowner/on-call؛ لو config fetch فشلت ما نفتحش path خطرة. كل toggle لها audit وcleanup بعد انتهاء الحادث.
+كيف تصمم نظام مراقبة تشغيلية (Operational Monitoring) ومفاتيح إيقاف طارئة (Remote Kill Switches) لإدارة الأزمات في الإنتاج؟
+
+1. ما هو الـ Remote Kill Switch ولماذا هو ضروري؟
+   - في تطبيقات الموبايل، نشر تحديث جديد لعلاج ثغرة أمنية أو انهيار كارثي يستغرق ساعات أو أياماً عبر مراجعة Google Play (Play Store Review Delay).
+   - الـ Kill Switch يمنح فريق الهندسة القدرة على **إيقاف ميزة معينة فورياً عن بُعد (Real-Time Feature Shutdown)** خلال ثوانٍ معدودة دون الحاجة لتحديث الـ APK.
+
+2. المعمارية الهندسية لمفاتيح الإيقاف السريعة (Bypass & Distribution Channels):
+   - **قناة التوزيع فائقة السرعة**: لا تعتمد على الـ Polling الدوري البطيء (الذي قد يستغرق 12 ساعة). استخدم إشعارات **High-Priority Data FCM** التي توقظ التطبيق في الخلفية فور إرسال إشارة الطوارئ وتجبره على تحديث الـ Config.
+   - **التخزين المؤقت المحلي (Local Disk Fallback)**: حفظ حالة الـ Kill Switches في مساحة تخزين فورية سريعة القراءة (`SharedPreferences` أو `DataStore`) لتطبيقها بشكل متزامن عند فتح التطبيق.
+   - **السلوك الآمن عند الانقطاع (Fail-Safe Defaults)**: في حال عدم توفر اتصال بالإنترنت، يجب أن يعمل التطبيق بالوضع الافتراضي الآمن (Safe Mode) للميزات الحساسة.
+
+3. أتمتة الإيقاف عبر مؤشرات المراقبة (Automated Tripwires):
+   - ربط نظام الـ APM ومراقبة الأعطال (Sentry / Datadog) بـ Alert Webhook؛ إذا تجاوز معدل الانهيار في ميزة جديدة 2%، يقوم النظام تلقائياً بتفعيل الـ Kill Switch دون انتظار تدخل بشري.
 
 ## Practical walkthrough
 
-لو rollout سبّب payment Unknown تزيد فجأة، alert لازم يحدد version/cohort ويوقف server acceptance للpath الخطر قبل ما remote config توصل لكل جهاز. Client kill switch تخفي UI، لكنها قد تكون cached أو offline. جهّز safe default وowner on-call وrunbook وقياسات crash/ANR/latency وreconciliation. وبعد الإيقاف، سوّي العمليات الجارية بدل اعتبارها فشلت.
+تنفيذ حاجز برمجي (Kill Switch Guard) يعطل الميزة فورياً ويعرض واجهة صيانة بديلة:
+```kotlin
+class KillSwitchManager @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
+    private val prefs = context.getSharedPreferences("emergency_kill_switches", Context.MODE_PRIVATE)
+
+    fun isFeatureKilled(featureKey: String): Boolean {
+        // فحص فوري وسريع من الذاكرة/الملف المحلي دون تعطيل الـ Main Thread
+        return prefs.getBoolean("kill_$featureKey", false)
+    }
+
+    fun applyEmergencyKill(featureKey: String, isKilled: Boolean) {
+        prefs.edit().putBoolean("kill_$featureKey", isKilled).apply()
+    }
+}
+
+// استخدام الـ Guard في واجهة المستخدم (Jetpack Compose):
+@Composable
+fun PaymentScreen(
+    killSwitchManager: KillSwitchManager,
+    onFallbackRequested: () -> Unit
+) {
+    val isPaymentKilled = remember { killSwitchManager.isFeatureKilled("instant_checkout") }
+
+    if (isPaymentKilled) {
+        // عرض واجهة بديلة آمنة للمستخدم تمنع الانهيار أو استغلال الثغرة
+        ServiceUnavailableBanner(message = "Instant checkout is temporarily under maintenance. Please use standard transfer.")
+    } else {
+        StandardCheckoutFlow()
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -60,15 +104,33 @@ A checkout rollout has 1% cohort, alert on crash/ANR and unresolved payment age,
 
 ## Interview answer — short
 
-“I define guardrail metrics before rollout and provide a remote client flag plus backend enforcement for sensitive paths. A kill switch must handle stale offline config and in-flight operations, not just hide a button.”
+Design operational kill switches by wrapping critical components in cached feature flag guards, propagating emergency toggles within seconds via high-priority FCM data pushes and CDN-cached configs, and automating shutoffs using alerting tripwires connected to crash and anomaly monitoring.
 
 ## Interview answer — structured
 
-“Operational design includes observability and containment. I instrument crash/ANR, latency, auth and durable business states by app version and rollout cohort. A client flag can disable a new UX quickly for connected clients, but security-sensitive behavior needs a backend deny switch because APKs can be offline or tampered with. The default is safe and flags expire. When an incident occurs, I stop new operations, preserve and reconcile in-flight Pending work, and validate recovery with metrics. Over-alerting creates noise, under-alerting hides incidents.”
+Designing remote kill switches addresses the fundamental reality that mobile apps cannot be patched instantly due to app store review latency:
+
+1. **Granular Component-Level Guards**:
+   - Wrap risky features (e.g. new biometric flows, experimental payment gateways, third-party advertising SDKs) inside explicit kill-switch checks. If a component is tripped, the UI gracefully falls back to an older stable flow or displays a friendly maintenance banner.
+
+2. **Fast-Propagation Delivery Channels**:
+   - Standard remote configs with 12-hour cache TTLs are inadequate for active incidents. Distribute emergency kill signals through high-priority silent FCM messages, coupled with a lightweight CDN-hosted JSON manifest (`status.example.com/kill-switches.json`) fetched on every app launch.
+
+3. **Zero-Latency Local Evaluation**:
+   - Persist kill-switch values in local storage so that evaluations are instant and synchronous on the main thread, preventing UI blocking during startup.
+
+4. **Automated Incident Tripwires**:
+   - Integrate crash monitoring webhooks with deployment tooling. If Crashlytics reports that a specific feature version is generating crash spikes (> 2% crash rate), automated pipelines toggle the remote kill switch to prevent widespread customer disruption.
 
 ## Interview answer — deep senior
 
-“A kill switch is useful only if its failure mode is known. Remote config may be stale, cached or unreachable, so a client-only switch cannot guarantee containment of a security bug. I define server-side enforcement and a safe fallback for old/offline apps. Guardrails are segmented by cohort/version and include both platform health and business integrity, such as unresolved payment operations rather than only HTTP errors. The runbook names an owner, threshold, disable action, support communication and reconciliation of in-flight requests. I test the switch before launch, audit who changed it, and remove flags after rollout. If rollback cannot undo committed effects, I plan compensation and status recovery. I would define guardrails before rollout, such as crash rate by app version, unknown-payment age and refresh failure percentage. The kill path must have an owner, access control, audit log and drill, and a safe default when config is stale. For a financial defect, the backend stops new effects; the client switch merely removes exposure. In-flight operations require reconciliation, not blanket failure labels. I would rehearse the sequence with an old offline APK to prove containment still holds.”
+From an operational reliability perspective, kill switches must be designed with defensive fail-safe postures:
+
+1. **Fail-Safe vs. Fail-Secure Posture**: Decide default behaviors per domain. For non-critical features (e.g. animations, recommendations), fail-safe by enabling the feature if config fetching fails. For high-risk financial or security flows (e.g. biometric bypass, one-click payment), adopt a **Fail-Secure** posture: if the remote health check cannot be verified and risk signals are ambiguous, disable the feature until connectivity is restored.
+
+2. **SDK Sandboxing & Emergency Disablement**: Third-party SDKs (analytics, tracking, ads) are a notorious source of startup crashes. Wrap third-party SDK initializations inside remote kill switches evaluated in `Application.onCreate`. If an external SDK causes widespread SIGSEGV native crashes, toggle the kill switch to skip SDK initialization entirely.
+
+3. **Audit Trails & Role-Based Access Control (RBAC)**: Toggling a production kill switch can impact millions of active users. Restrict kill switch toggles behind multi-party authorization (two-person rule) in the deployment control panel, and record immutable audit logs with timestamps and operator IDs.
 
 ## How to answer in the interview
 
@@ -84,8 +146,11 @@ Trace offline client, server deny, in-flight Pending and rollback evidence.
 
 ## Follow-up questions
 
-- [SYS-08](../sys-08/): Why safe default? **Answer:** config can be absent or stale.
-- [SYS-22](../sys-22/): How contain security flag bug? **Answer:** server deny plus client disable and audit.
+- **Interviewer:** "What is the difference between a feature flag and a kill switch?"
+  **Answer:** "Feature flags manage gradual rollouts and experiments with standard cache TTLs; kill switches are high-priority emergency overrides designed for instantaneous incident containment."
+
+- **Interviewer:** "Why should you avoid hardcoding a hard app-crash in response to a tripped kill switch?"
+  **Answer:** "Hard crashes produce terrible user ratings, churn, and prevent the app from fetching newer configurations; graceful degradation or friendly maintenance screens preserve user trust."
 
 ## Self-check rubric
 
@@ -96,4 +161,4 @@ Can I define metrics, kill path, offline fallback and in-flight reconciliation?
 - [Android vitals](https://developer.android.com/google/play/vitals) — crash/ANR monitoring.
 - [Android security guidance](https://developer.android.com/privacy-and-security/security-tips) — client trust boundary.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

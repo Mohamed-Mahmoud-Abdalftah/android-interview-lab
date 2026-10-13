@@ -24,11 +24,54 @@ When should you avoid derivedStateOf because its overhead exceeds the benefit?
 
 ## Explanation in Arabic
 
-`derivedStateOf` مفيد عندما source state تتغير كثيرًا لكن القيمة المعروضة نادرًا ما تتغير، مثل `firstVisibleItemIndex > 0` أثناء scroll. لكنه يضيف state object وتتبع dependencies؛ إذا النتيجة تتغير مع كل input أو الحساب بسيط مثل `firstName + lastName`، فالكتابة المباشرة أو `remember` keyed حسب الحالة أوضح وأرخص غالبًا. لا تستخدمه كـcache عام لتحويل بيانات business كبيرة؛ انقل ذلك للـowner المناسب. قِس recomposition/frame cost قبل وبعد، ولا تنسَ صحة dependencies.
+متى يجب تجنب استخدام `derivedStateOf` لأن تكلفة استخدامه (Overhead) تتجاوز فائدته؟
+
+1. كيف يعمل `derivedStateOf` وما هي تكلفته الخفية؟
+   - دالة `derivedStateOf` تنشئ كائناً خاصاً في الذاكرة يُسجل نفسه في نظام الـ Snapshot System لمراقبة كل الحالات المقروءة بداخله.
+   - في كل تعديل لأي حالة، يتم حساب الدالة، ومقارنة الناتج عبر `equals()`، وتحديث الـ Snapshot Records.
+   - هذا يعني وجود **تكلفة حجز ذاكرة (Allocation Overhead)** وتكلفة معالجة مستمرة للمراقبة.
+
+2. متى يجب **تجنب** `derivedStateOf` تماماً؟
+   - **عندما تتغير الحالة المدخلة بنفس معدل تغير الناتج (1:1 Change Ratio)**:
+     * مثال: دمج اسمين `derivedStateOf { "$firstName $lastName" }`.
+     * هنا، كلما تغير الاسم سيتغير الناتج حتماً! لا يوجد أي تخميد (Dampening) للتردد! استخدام `remember(firstName, lastName) { "$firstName $lastName" }` أسرع وأخف بمراحل بدون أي Snapshot overhead.
+   - **عند العمليات الحسابية البسيطة جداً**: العمليات البدائية (مثل جمع رقمين) لا تستحق إنشاء كائن مراقبة كامل في الـ Heap.
+
+3. متى يكون `derivedStateOf` مفيداً وضرورياً فقط؟
+   - **فقط عندما تتغير المدخلات بمعدل أعلى بكثير من تغير الناتج (Many-to-One / Frequency Dampening)**:
+     * مثال: موضع التمرير `scrollOffset` يتغير 60 مرة في الثانية (آلاف البكسلات)، ولكن الناتج قيمة منطقية بسيطة: `derivedStateOf { scrollOffset > 100 }` (تتغير مرتين فقط: true أو false).
 
 ## Practical walkthrough
 
-`derivedStateOf` مش default لكل calculated value. لو `fullName` بتتغير تقريبًا مع كل edit، tracking إضافي ومفيش recomposition متوفرة. استخدمها لما source تتحرك كتير والنتيجة نادرًا، زي scroll index يفضل أكبر من صفر؛ وقِس قبل وبعد لأن تكلفة المراقبة نفسها حقيقية. لو حولت `fullName` إلى derived state، غالبًا هتزود overhead من غير أي updates متوفرة. خلّي التعبير مباشر، وقارن frame cost في حالة scroll threshold قبل ما تعتبر optimization ناجح.
+المقارنة بين الاستخدام الخاطئ لـ derivedStateOf والاستخدام السليم:
+```kotlin
+// ❌ استخدام خاطئ: هدر في الذاكرة والمعالج؛ المدخلات تتغير بنفس معدل الناتج:
+@Composable
+fun BadFullNameDisplay(firstName: String, lastName: String) {
+    // 💥 خطأ: derivedStateOf هنا يضيف حجز كائنات ومراقبة snapshots دون أي فائدة!
+    val fullName by remember { derivedStateOf { "$firstName $lastName" } }
+    Text(fullName)
+}
+
+// ✅ الاستخدام الأفضل والأخف لدمج النصوص العادية: استخدام remember العادي:
+@Composable
+fun GoodFullNameDisplay(firstName: String, lastName: String) {
+    val fullName = remember(firstName, lastName) { "$firstName $lastName" }
+    Text(fullName)
+}
+
+// ✅ الاستخدام المثالي والضروري لـ derivedStateOf: تخميد الترددات العالية (Frequency Dampening):
+@Composable
+fun ScrollToTopButton(listState: LazyListState) {
+    // listState.firstVisibleItemIndex يتغير باستمرار مع السكرول، ولكن النتيجة Boolean تتغير نادراً:
+    val showButton by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 }
+    }
+    if (showButton) {
+        FloatingActionButton(onClick = { /* سكرول للأعلى */ }) { Text("Top") }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -69,15 +112,29 @@ Use a representative trace and frame benchmark, count actual output transitions 
 
 ## Interview answer — short
 
-“Avoid `derivedStateOf` when the result changes on nearly every input or is cheap to calculate; its tracking cost only pays when it suppresses meaningful downstream updates. Use derivedStateOf when the result changes much less often than its inputs.”
+Avoid `derivedStateOf` when the inputs mutate at the exact same frequency as the output (e.g. concatenating first and last name), or for trivial calculations. In 1:1 change ratios, `derivedStateOf` adds snapshot tracking and object allocation overhead with zero optimization benefit; standard `remember(keys)` is much faster.
 
 ## Interview answer — structured
 
-“I reserve it for a fast-changing snapshot input with a slower-changing derived result, such as a scroll threshold. A full name updated on every keystroke does not benefit: output changes every time and the wrapper adds observation overhead. For expensive search or domain work I use an owned pipeline or correctly keyed cache rather than assuming derived state moves work off the main thread. I profile before and after. A scroll threshold can justify it; a full name that changes on every edit usually cannot.”
+The golden rule of `derivedStateOf` is: **Only use it when the inputs change more frequently than the output**.
+
+Under the hood, `derivedStateOf` creates a state observation wrapper in the Snapshot system. It records dependencies dynamically, re-evaluates the lambda on any dependency mutation, and performs equality comparisons to suppress downstream recomposition notifications.
+
+You should strictly avoid `derivedStateOf` in two scenarios:
+1. **1-to-1 Mutation Frequency**: Consider combining two states: `val fullName by remember { derivedStateOf { "$first $last" } }`. Whenever `first` or `last` changes, `fullName` *must* also change. There are zero recompositions dampened or saved. The developer has introduced unnecessary allocation overhead and snapshot observer registration. Standard `remember(first, last) { "$first $last" }` is significantly cheaper and faster.
+
+2. **Trivial Primitive Computations**: Wrapping simple arithmetic (e.g. `count + 1`) in `derivedStateOf` incurs more CPU and allocation cost than simply computing the value directly on every recomposition pass.
 
 ## Interview answer — deep senior
 
-“I ask how often the source changes, how often the derived value changes, and what downstream work is actually avoided. `derivedStateOf` tracks snapshot dependencies and gives observers a value that need not update for every source change. It is useful for a threshold: a list's pixel offset changes rapidly while `showScrollToTop` remains false until the first item boundary is crossed. If both first and last name are edited and the full-name Text changes for nearly every edit, the derived wrapper adds tracking but saves no recomposition. It is also not a background executor; wrapping an expensive sort inside it can still block the UI when inputs invalidate. I would move large search or aggregation to an appropriate ViewModel/data pipeline, or use explicit `remember` keys for a small pure calculation when caching is justified. I measure release frame cost and allocations, and test that changed inputs cannot leave a stale result. The right optimization may be no abstraction at all. A small direct expression is often clearer and faster when there is no mismatch between input and output frequency. I would measure whether downstream work actually fell before keeping the extra derived observation.”
+A technical edge case to be aware of: `derivedStateOf` requires at least one read of a Compose `State` object inside its lambda block to register dependencies. If developers pass standard Kotlin properties (`val first: String`) into a `derivedStateOf` block wrapped in `remember { derivedStateOf { ... } }` without keys, the `derivedStateOf` block **never recalculates**, producing a permanent stale state bug!
+
+Where `derivedStateOf` shines brilliantly is **high-frequency UI dampening**:
+- Determining whether a scroll offset has crossed a threshold: input changes 60 times/second, output changes twice (`true`/`false`).
+- Filtering a list based on an item count threshold.
+- Computing a progress percentage that maps continuous pixel scrolls into stepped discrete states.
+
+In code reviews, if the output changes every time the input changes, we immediately reject `derivedStateOf` in favor of keyed `remember(keys)`.
 
 ## How to answer in the interview
 
@@ -93,9 +150,11 @@ Discuss input/output change ratio, observation overhead, comparison to remember,
 
 ## Follow-up questions
 
-- Does `derivedStateOf` move calculation off the main thread? **Answer:** no; it controls state observation, not dispatching.
-- What is a good threshold example? **Answer:** showing a button only after the first list item is no longer visible.
-- Why can full-name concatenation be a bad use? **Answer:** output changes with nearly every edit, so little downstream work is avoided.
+- **Interviewer:** "What happens if no Compose `State` is read inside a `derivedStateOf` block?"
+  **Answer:** "It registers zero snapshot dependencies. If plain parameters change, the derived state will never invalidate or recalculate, producing a stale value indefinitely."
+
+- **Interviewer:** "How does `remember(keys)` differ from `derivedStateOf` in memory footprint?"
+  **Answer:** "`remember(keys)` stores only the computed value in the Slot Table and checks parameter equality. `derivedStateOf` allocates a `DerivedSnapshotState` object, dependency tracking sets, and registers a snapshot observer."
 
 ## Self-check rubric
 
@@ -105,4 +164,4 @@ Compare two examples, identify tracking cost, and choose a measured alternative.
 
 - [Side-effects in Compose](https://developer.android.com/develop/ui/compose/side-effects) — `derivedStateOf` cost and examples.
 
-Technically reviewed against this primary source on 2026-10-11 by automated editorial review. Performance depends on the concrete workload.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -22,11 +22,72 @@ Place UI state/lifecycle, reusable policy, and data-source coordination with the
 
 ## Explanation in Arabic
 
-ViewModel شاشة: تستقبل UI events، تنادي domain/data، وتطلع `UiState` مناسب للعرض؛ ما تمسكش View/Activity reference وما تعملش blocking I/O على Main. UseCase، لو موجودة، لقاعدة business أو workflow معاد استخدامها أو معقدة، من غير Android UI types. Repository لداتا التطبيق: local/remote، cache، merge، error mapping من transport. مثال: ViewModel يحوّل `Balance` لعملة معروضة؟ formatting المحلي للـUI عند presentation؛ التحقق من حد التحويل في domain؛ جلب balance وحفظه في data.
+ما الذي ينتمي إلى الـ ViewModel مقابل الـ UseCase مقابل الـ Repository؟ وكيف نقسم المسؤوليات بينهم؟
+
+1. ما ينتمي إلى الـ ViewModel:
+   - **إدارة دورة حياة الواجهة (UI Lifecycle Management)**: الصمود أثناء تدوير الشاشة (Configuration Changes).
+   - **تجهيز وإدارة الـ UI State**: استقبال البيانات وتحويلها إلى `StateFlow<UiState>` يسهل على Compose عرضه مباشرة.
+   - **معالجة مدخلات المستخدم (User Interactions)**: استقبال نقرات الأزرار، تبديل التبويبات، والتحقق من صحة الفورم البصرية (Form validation).
+   - **لا يحتوي أبداً على**: استدعاءات Retrofit مباشرة، منطق حسابات البزنس المعقدة، أو مراجع لـ Android Views و Context!
+
+2. ما ينتمي إلى الـ UseCase:
+   - **قواعد وسياسات العمل (Business Policies)**: حساب الضرائب، التأكد من شروط ترقية العضوية، فحص الصلاحيات.
+   - **التنسيق بين مستودعات متعددة (Cross-Repository Coordination)**: سحب بيانات من `UserRepository` والدفع عبر `PaymentRepository` وتحديث `AnalyticsRepository`.
+   - **إعادة استخدام المنطق عبر شاشات متعددة (Shared Business Logic)**.
+
+3. ما ينتمي إلى الـ Repository:
+   - **استراتيجية التخزين والكاش (Caching Strategy)**: متى نقرأ من الـ Database ومتى نسحب من الـ Network.
+   - **مزامنة البيانات (Offline Sync)**: حفظ البيانات محلياً وإرسالها عند توفر الإنترنت.
+   - **Mapping**: تحويل DTOs و SQLite Rows إلى Domain Models.
 
 ## Practical walkthrough
 
-ViewModel يحول events إلى UiState ويمسك scope للشاشة؛ UseCase ينفذ business decision قابل للاستخدام خارج الشاشة؛ Repository يتعامل مع cache/network/DB. لو ViewModel فيها JSON parsing وretry/payment rule، ابدأ بنقل rule مع test ثم adapter، لا rewrite كامل. UI state بعد process death يعاد من durable ID. راقب إن ViewModel لا تحتفظ بـActivity.
+مثال عملي يوضح الحدود الصارمة للمسؤوليات:
+```kotlin
+// 1. REPOSITORY: إدارة البيانات والكاش والشبكة فقط:
+class OrderRepositoryImpl(private val api: OrderApi, private val dao: OrderDao) : OrderRepository {
+    override suspend fun submitOrder(order: Order): Result<OrderConfirmation> = runCatching {
+        val response = api.postOrder(order.toDto())
+        dao.insertOrder(response.toEntity())
+        response.toDomain()
+    }
+}
+
+// 2. USE CASE: قواعد البيزنس والتحقق والتنسيق بين مستودعين:
+class PlaceOrderUseCase @Inject constructor(
+    private val orderRepo: OrderRepository,
+    private val inventoryRepo: InventoryRepository
+) {
+    suspend operator fun invoke(order: Order): OrderResult {
+        if (order.items.isEmpty()) return OrderResult.Error("Cart is empty")
+        val inStock = inventoryRepo.checkStock(order.items)
+        if (!inStock) return OrderResult.Error("Items out of stock")
+        return orderRepo.submitOrder(order).fold(
+            onSuccess = { OrderResult.Success(it) },
+            onFailure = { OrderResult.Error(it.message ?: "Submission failed") }
+        )
+    }
+}
+
+// 3. VIEWMODEL: إدارة حالة الواجهة والتفاعل فقط:
+@HiltViewModel
+class CheckoutViewModel @Inject constructor(
+    private val placeOrder: PlaceOrderUseCase
+) : ViewModel() {
+    private val _uiState = MutableStateFlow<CheckoutUiState>(CheckoutUiState.Idle)
+    val uiState: StateFlow<CheckoutUiState> = _uiState.asStateFlow()
+
+    fun onPlaceOrderClicked(order: Order) {
+        viewModelScope.launch {
+            _uiState.value = CheckoutUiState.Loading
+            when (val result = placeOrder(order)) {
+                is OrderResult.Success -> _uiState.value = CheckoutUiState.Success(result.confirmation)
+                is OrderResult.Error -> _uiState.value = CheckoutUiState.Error(result.message)
+            }
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -50,15 +111,35 @@ A checkout feature tests ViewModel state transitions with a fake use case, trans
 
 ## Interview answer — short
 
-ViewModel owns screen state and user-event handling; UseCase owns reusable or complex business behavior; Repository owns app data and source coordination. I place code by reason to change and keep boundaries typed.
+ViewModel manages UI lifecycle and exposes `StateFlow<UiState>` to the presentation layer. UseCase encapsulates business operations, validating policies and coordinating multiple repositories. Repository mediates between network, local database, and in-memory caches, abstracting storage mechanisms.
 
 ## Interview answer — structured
 
-I ask whether a line of code changes when the screen design changes, a business rule changes, or a storage/network mechanism changes. The ViewModel should handle the first, including loading and error UI state. A use case, when justified, handles the second. The repository handles the third and may own data consistency rules. That means a ViewModel should not call Retrofit directly, and a repository should not emit localized Snackbar text. A small feature may skip the use case layer. I also decide who owns timing. The ViewModel can cancel an obsolete search when the screen leaves, but a committed payment should have a persisted request identity and reconciliation path. That lifecycle distinction is as important as where a method lives.
+Clear boundary division among ViewModel, UseCase, and Repository prevents monolithic architectural bloat.
+
+1. **ViewModel (Presentation Layer)**:
+   - Owns UI state and survives configuration changes.
+   - Converts domain outputs into immutable `StateFlow<UiState>` tailored for rendering.
+   - Translates raw user actions into business commands.
+   - Never performs I/O directly, never references Android `Context`, and contains zero business calculations.
+
+2. **UseCase (Domain Layer)**:
+   - Encapsulates discrete, reusable business rules (e.g. eligibility criteria, tax calculations).
+   - Coordinates multiple repositories (e.g. querying user balance from `AccountRepository` and deducting inventory from `ProductRepository`).
+   - Operates strictly on pure Kotlin domain models without UI or database dependencies.
+
+3. **Repository (Data Layer)**:
+   - Single source of truth for a specific data aggregate.
+   - Decides whether to query local database, fetch from network, or return cached memory.
+   - Maps external schemas (DTOs, Room entities) to clean domain models.
 
 ## Interview answer — deep senior
 
-There are gray areas, so I use ownership questions rather than a rigid checklist. A repository can contain data-centric business logic such as conflict resolution because it owns the source of truth. A use case expresses product behavior across repositories or reused by multiple screens. A ViewModel produces UI state and calls those APIs in a lifecycle-aware scope, but should not be a durable transaction owner. For an uncertain transfer, repository and server track status through process death; ViewModel only renders the resulting state. I test each boundary with a fake for the next one down, and I review public types to ensure transport DTOs and Android Views do not cross into domain. If a use case merely forwards a call, it may not earn its maintenance cost. A difficult review case is a rule that mixes data and presentation. I ask whether the result is valid across screens and locales. Transfer limits are domain policy; a red warning label is UI. Repository owns the latest validated limit data and request status, while domain applies policy and ViewModel maps to screen state. Tests should prove that a timeout leads to pending verification rather than a false success or failure. A thin ViewModel is useful only if the lower layers have clear contracts.
+A frequent anti-pattern is **Fat ViewModel Syndrome**, where ViewModels perform data mapping, HTTP header configuration, and multiple repository joins directly. This makes ViewModels massive (1,000+ lines) and untestable without heavy mocking.
+
+Conversely, pushing business rules down into Repositories is an equal architectural mistake. A Repository should never know business policy (e.g. 'a gold member gets 15% discount'); the Repository simply stores and retrieves orders and user profiles. Calculating the discount is the strict domain responsibility of a Use Case.
+
+By strictly adhering to these boundaries, each component remains easily testable in isolation: Repositories are verified via Fake DataSources, UseCases are verified via Fake Repositories, and ViewModels are verified by asserting `uiState` emissions.
 
 ## How to answer in the interview
 
@@ -74,8 +155,11 @@ Walk a transfer submit from tap to server confirmation. Separate UI duplicate-ta
 
 ## Follow-up questions
 
-- [ARC-18](../arc-18/): Who ensures blocking work is main-safe? **Answer:** the data/domain boundary should provide main-safe suspend APIs; ViewModel calls them.
-- [ARC-13](../arc-13/): Must every screen have use cases? **Answer:** no; only when complexity/reuse justifies them.
+- **Interviewer:** "Can a UseCase call another UseCase?"
+  **Answer:** "Yes, when one complex business operation depends on a foundational business policy (e.g. `CheckoutCartUseCase` calling `ValidateCouponUseCase`). However, deep nesting should be avoided to prevent call stack confusion."
+
+- **Interviewer:** "Why shouldn't a Repository expose a `UiState`?"
+  **Answer:** "A Repository serves the domain, not the UI. Coupling a Repository to `UiState` makes it impossible to reuse across different screens or background workers with different presentation requirements."
 
 ## Self-check rubric
 
@@ -86,4 +170,4 @@ Place four lines of transfer code with ViewModel, UseCase, or Repository; explai
 - [Android UI layer](https://developer.android.com/topic/architecture/ui-layer) — ViewModel state-holder role.
 - [Android domain layer](https://developer.android.com/topic/architecture/domain-layer) — use-case scope.
 
-Technically reviewed against the linked official Android architecture guidance on 2026-10-11. Conceptual flows and snippets are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

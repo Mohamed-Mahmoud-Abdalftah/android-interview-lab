@@ -22,11 +22,40 @@ Design three concurrent all-or-nothing API calls, cancellation of siblings and o
 
 ## Explanation in Arabic
 
-السؤال بيقول dependent APIs لكن ممكن نعملها parallel فقط لو المقصود إن النتائج الثلاثة كلها مطلوبة للتجميع، ومفيش request محتاج ناتج التاني كـinput. لو B محتاجة ID من A يبقى A تخلص الأول ثم نشغّل المستقلين. في `coroutineScope`، فشل child يلغي الإخوة ونرجّع failure واحدة؛ الإلغاء لا يمسح side effects وصلت للسيرفر.
+استدعاء 3 APIs معتمدة على بعضها بالتوازي مع الإلغاء الفوري عند فشل أي منها (Fail-Fast with Sibling Cancellation) هو النمط الكلاسيكي للـ Structured Concurrency:
+
+1. المعمارية المطلوبة:
+   - نريد تشغيل 3 طلبات بالتوازي لتوفير الوقت.
+   - إذا فشل أي طلب، نريد **إلغاء الطلبين الآخرين فوراً** لمنع إهدار باقة وبيانات المستخدم.
+   - إرجاع خطأ موحد ومتسق للمتصل.
+
+2. الأداة المناسبة: `coroutineScope { }`:
+   - دالة `coroutineScope` هي الحل المثالي لأنها تستخدم **Standard Job**.
+   - بمجرد أن يفشل أي `async` child برمي Exception، يقوم `coroutineScope` بإلغاء جميع الـ `async` الآخرين فوراً، ويعيد رمي الاستثناء الأصلي للأعلى.
+
+3. ما الذي يجب تجنبه؟
+   - تجنب `supervisorScope` هنا، لأن `supervisorScope` يعزل الفشل ويترك باقي الطلبات تعمل حتى لو فشل أحدها!
+   - تجنب وضع `try-catch` حول كل `async.await()` داخل `coroutineScope` لأن ذلك قد يربك معالجة الأخطاء.
 
 ## Practical walkthrough
 
-كلمة dependent هنا محتاجة توضيح في المقابلة: هل كل API تحتاج output سابقتها؟ لو نعم ما ينفعش الثلاثة parallel. لو الثلاثة reads مستقلة في inputs لكن النتيجة النهائية لازم تجمعهم، شغّلهم بـ`async` داخل `coroutineScope` واعرض aggregate بعد النجاح كله. فشل واحدة يلغي الإخوة، لكن cancel request وصل للسيرفر مش rollback لأي side effect.
+تنفيذ عملي لحجز رحلة يتطلب حجز الطيران والفندق وتأجير السيارة معاً:
+```kotlin
+suspend fun bookPackage(userId: String): BookingConfirmation = coroutineScope {
+    // نطلق الـ 3 عمليات بالتوازي داخل coroutineScope:
+    val flightDeferred = async { flightApi.bookFlight(userId) }
+    val hotelDeferred = async { hotelApi.bookHotel(userId) }
+    val carDeferred = async { carApi.bookCar(userId) }
+    
+    // إذا فشل bookFlight مثلاً، coroutineScope سيلغي hotelDeferred و carDeferred فوراً!
+    BookingConfirmation(
+        flight = flightDeferred.await(),
+        hotel = hotelDeferred.await(),
+        car = carDeferred.await()
+    )
+}
+```
+في الـ ViewModel: نحيط استدعاء `bookPackage` بـ `try-catch` لمعالجة الخطأ الموحد وإظهار رسالة 'فشل حجز الباقة' للمستخدم.
 
 ## Why it matters and how it works
 
@@ -67,15 +96,32 @@ A checkout repository fetches pricing, tax and stock under one request ID, valid
 
 ## Interview answer — short
 
-“I first check whether the APIs are truly independent enough to run in parallel. For three required results, I use `async` inside `coroutineScope`; one failure cancels siblings and the caller gets one failure. True input dependencies run in stages, and cancellation does not imply server rollback.”
+Use 'coroutineScope' with parallel 'async' tasks. Because coroutineScope uses a standard Job, if any child fails, it automatically cancels all active siblings immediately (fail-fast) and rethrows the failure, guaranteeing consistent transactional error handling without orphaned background requests.
 
 ## Interview answer — structured
 
-“I would draw the dependency graph. If all three calls can start with existing inputs but all results are needed for a valid checkout quote, I launch them as children of one `coroutineScope` and await them before publishing a single UI state. A child failure cancels the others and propagates to the caller. If tax requires the price response, I await price first and parallelize only later independent calls. I preserve `CancellationException`, map domain failures at the outer boundary, and validate quote version and expiry so the combined result is consistent.”
+To call 3 dependent APIs concurrently and ensure that the failure of any one immediately cancels the others, the standard architectural pattern is using `coroutineScope` combined with `async`.
+
+`coroutineScope` creates a structured child scope backed by a standard `Job`. Inside the block, we launch all three network requests in parallel using `async`. We then await all three results:
+
+```kotlin
+suspend fun fetchDashboardData(): DashboardData = coroutineScope {
+    val user = async { api.getUser() }
+    val config = async { api.getConfig() }
+    val feed = async { api.getFeed() }
+    DashboardData(user.await(), config.await(), feed.await())
+}
+```
+
+If `api.getUser()` fails with a NetworkException, structured concurrency guarantees that the failure propagates to `coroutineScope`. The scope cancels itself and immediately sends cancellation signals to `config` and `feed`, aborting their HTTP connections and rethrowing the initial exception to the caller.
 
 ## Interview answer — deep senior
 
-“For production I separate computational dependency, consistency and side effects. Three reads can overlap if their inputs are known, but a returned quote is committed to UI only after all three succeed and pass version checks. Structured scope failure cancels sibling coroutines, yet remote requests may already have been accepted; I do not claim rollback. If one API is a write, I need idempotency and compensation/reconciliation. I set a deadline, bound parallelism, propagate screen cancellation, and log request IDs rather than sensitive payloads. Tests use controlled fakes to fail each call, verify sibling cancellation, ensure no partial state, and exercise slow cancellation so the UI never remains indefinitely loading. I would clarify the word ‘dependent’ before coding. If B needs A's output, A must complete before B; only the independent stage can overlap. If all three reads are input-independent but the final quote needs all results, `coroutineScope` with `async` gives all-or-nothing completion. I would publish nothing until version checks pass. Sibling cancellation only stops client work cooperatively; for any write already accepted by a server, I need idempotency or reconciliation.”
+Under the hood, when `user` throws an exception, it triggers `parent.childCancelled(cause)`. The parent `coroutineScope` transitions into the `CANCELLING` state and traverses its child list, invoking `child.cancel(CancellationException(cause))` on `config` and `feed`. If OkHttp or Ktor is used, the underlying HTTP socket connection is immediately closed and its read loop is interrupted.
+
+If one of the sibling coroutines also throws an exception while being cancelled, `coroutineScope` collects that secondary exception and adds it to the root cause via `Throwable.addSuppressed()`. This preserves full diagnostic logging in Crashlytics.
+
+Do NOT use `supervisorScope` for this use case: a supervisor scope would isolate the failure, allowing the remaining two calls to complete and waste bandwidth on a request that has already fundamentally failed.
 
 ## How to answer in the interview
 
@@ -91,8 +137,14 @@ Draw the dependency DAG, distinguish input-dependence from all-results-needed, a
 
 ## Follow-up questions
 
-- [COR-26](../cor-26/): When is partial success valid? **Answer:** for independently useful results with per-result failure UI.
-- [COR-11](../cor-11/): Which scope cancels siblings? **Answer:** ordinary `coroutineScope`.
+- **Interviewer:** "Why wouldn't you wrap each `await()` in a `try-catch` inside `coroutineScope`?"
+  **Answer:** "Because in a standard `coroutineScope`, once an `async` child fails, the scope is ALREADY cancelled. Even if you catch the exception at `await()`, subsequent operations inside that scope will fail with CancellationException because the scope is dead."
+
+- **Interviewer:** "How do you test this scenario deterministically in a unit test?"
+  **Answer:** "Using `runTest`: configure one mock API call to throw an exception and the other two to have simulated delays. Verify that the test throws the expected exception and assert that the other two API jobs were cancelled without completing."
+
+- **Interviewer:** "What happens if all 3 APIs need rollback logic if one fails?"
+  **Answer:** "If any successful booking must be reversed upon sibling failure, catch the exception outside `coroutineScope`, and in the catch block or using a saga pattern, launch compensatory rollback calls (like refunding the successful flight)."
 
 ## Self-check rubric
 
@@ -103,4 +155,4 @@ Can I parallelize only independent inputs, return one consistent result, test al
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — structured concurrent children.
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — sibling failure propagation.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

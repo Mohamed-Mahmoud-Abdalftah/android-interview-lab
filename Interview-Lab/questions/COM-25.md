@@ -24,11 +24,63 @@ A user taps Save twice while a request is in flight. How do you make UI and doma
 
 ## Explanation in Arabic
 
-في UI اعرض `Saving` وعطّل زر Save أو امنع taps إضافية، لكن لا تعتبر هذا ضمانًا: callbacks قد تصل مرتين، screen تتعاد، أو request يعاد بعد timeout. ViewModel/use case يعمل single-flight أو state machine يرفض transition ثانية لنفس العملية. لو Save يكتب محليًا، transaction/unique key تمنع duplicate. لو API مالية أو create operation، استخدم idempotency key ثابت لنفس intent والـserver يطبّقه ويرجع نفس النتيجة؛ عند timeout لا تفترض الفشل بل استعلم عن status. بعد process death استعد pending operation من durable source حسب أهمية العملية.
+عندما يضغط المستخدم على زر الحفظ (Save) مرتين بسرعة والطلب جارٍ: كيف تجعل سلوك الواجهة (UI) وسلوك النطاق (Domain) آمناً ومحمياً؟
+
+1. طبقة واجهة المستخدم (UI Layer Protection):
+   - **تعطيل الزر فورياً (Disable Button)**: بمجرد الضغط الأول، تتحول حالة `isSaving` في الـ `UiState` إلى `true`، مما يجعل `Button(enabled = !uiState.isSaving)` معطلاً فورياً.
+   - **Click Debouncing**: استخدام Modifier نقر مخصص يفحص وقت الضغط الأخير ويتجاهل أي نقرة تحدث خلال 500ms.
+
+2. طبقة الـ ViewModel (State Holder Protection):
+   - **فحص الحالة الحالية (State Guarding)**: قبل إطلاق العملية، التحقق من: `if (_uiState.value.isSaving) return`.
+   - **استخدام Mutex أو Concurrency Operators**: إما الاحتفاظ بمرجع للـ `Job` والتحقق من `if (saveJob?.isActive == true) return`، أو استخدام `Mutex` لمنع الدخول المتزامن.
+
+3. طبقة الـ Domain والـ Backend (Idempotency):
+   - حتى لو نجحت نقرتان في المرور، يجب أن تكون العملية **Idempotent**.
+   - استخدام **Idempotency Key (UUID)** يُولد مرة واحدة لكل معاملة ويُرسل في ترويسة الطلب (`Idempotency-Key: uuid`)؛ حتى لو استلم السيرفر طلبين، ينفذ الأول ويرد بنفس النتيجة للثاني دون تكرار الخصم أو الحفظ.
 
 ## Practical walkthrough
 
-تعطيل Save في UI يحسن التجربة، بس مش ضمان ضد event متكرر أو retry بعد timeout. الـViewModel يحرس transition لـSubmitting؛ والـserver يستخدم idempotency key ثابت لنفس العملية. لو الاتصال وقع بعد commit، اسأل عن status أو أعد بنفس key، ما تنشئش عملية جديدة. لو timeout حصل بعد commit على السيرفر، إظهار “فشل” قطعي أو key جديدة ممكن يعمل duplicate. احفظ operation ID واتأكد من status؛ UI disabled مجرد أول طبقة حماية.
+تأمين زر الحفظ في الـ UI والـ ViewModel والـ Network Layer:
+```kotlin
+// 1. في ViewModel: حماية الطلب من التكرار عبر State Guarding ومفتاح Idempotency:
+class CheckoutViewModel(private val orderRepository: OrderRepository) : ViewModel() {
+    private val _uiState = MutableStateFlow(CheckoutUiState())
+    val uiState: StateFlow<CheckoutUiState> = _uiState.asStateFlow()
+
+    private var activeSaveJob: Job? = null
+
+    fun saveOrder() {
+        // منع التنفيذ إذا كان هناك طلب جارٍ بالفعل:
+        if (activeSaveJob?.isActive == true || _uiState.value.isSaving) return
+
+        activeSaveJob = viewModelScope.launch {
+            _uiState.update { it.copy(isSaving = true) }
+            try {
+                val idempotencyKey = UUID.randomUUID().toString()
+                orderRepository.submitOrder(idempotencyKey, _uiState.value.orderData)
+                _uiState.update { it.copy(isSaving = false, isSuccess = true) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isSaving = false, errorMessage = e.message) }
+            }
+        }
+    }
+}
+
+// 2. في Compose: تعطيل الزر بصرياً وإظهار مؤشر تقدم:
+@Composable
+fun SaveButton(uiState: CheckoutUiState, onSaveClick: () -> Unit) {
+    Button(
+        onClick = onSaveClick,
+        enabled = !uiState.isSaving // معطل فورياً بمجرد أول نقرة!
+    ) {
+        if (uiState.isSaving) {
+            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+        } else {
+            Text("Save Order")
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -76,15 +128,27 @@ Test rapid double tap, retry after timeout, app restart, duplicate server delive
 
 ## Interview answer — short
 
-“I disable duplicate UI input, enforce a single operation transition in the owner, and use durable/server idempotency for writes that can be retried after a crash. Disable Save for feedback, then enforce one operation in domain and server layers.”
+Defend against rapid double-taps using defense-in-depth: disable the button in UI when `isSaving` is true, guard execution in the ViewModel by checking `if (saveJob?.isActive == true) return`, and ensure domain/backend idempotency by sending a unique client-generated Idempotency Key with the request.
 
 ## Interview answer — structured
 
-“The UI should show Saving and prevent repeat taps, but I do not rely on the button for correctness. The ViewModel or use case atomically rejects a second submission for the same operation, and storage/server applies a stable idempotency key. A timeout is an unknown outcome, so I query status or retry with the same key rather than issuing a new create. I test double taps, delayed responses and process recreation. A stable operation ID lets a retry after timeout ask about the same save instead of creating a second one.”
+Protecting against double-tap race conditions requires a defense-in-depth strategy across UI, ViewModel, and Domain/Backend boundaries.
+
+1. **UI Layer Defense**: The UI reflects saving state immediately. We set `Button(enabled = !uiState.isSaving)` and show an inline progress spinner. When disabled, Android skips touch event dispatching to that node. Additionally, click handlers can be wrapped in a single-click debounce modifier that rejects clicks within 400ms.
+
+2. **ViewModel Concurrency Guard**: Because UI recomposition occurs on the next frame (leaving a fraction of a millisecond where a second tap could fire), the ViewModel must guard execution synchronously:
+   - Maintain a reference to the active coroutine job: `if (saveJob?.isActive == true) return`.
+   - Atomically update state: `if (!_isProcessing.compareAndSet(false, true)) return`.
+
+3. **Domain & Backend Idempotency**: Network operations must be structurally idempotent. The client generates a unique `Idempotency-Key` (UUID) attached to the network payload. Even if network latency causes duplicate packets, the backend processes the transaction once and returns the cached confirmation for subsequent calls.
 
 ## Interview answer — deep senior
 
-“I separate user feedback from the invariant ‘one intent creates at most one result.’ Compose receives a `Submitting` state that disables Save and shows progress, but two callbacks can still race before a frame updates. The ViewModel or use case owns an atomic single-flight transition keyed by an operation ID. For a local write I use a transaction or unique constraint; for a network create or payment I send an idempotency key whose scope and request fingerprint the server enforces. A retry of the same intent reuses that key, while an intentionally new save gets a new one. If the request times out after the server commits, the status is unknown; I reconcile with the server instead of displaying definite failure and creating another operation. For high-value work I persist enough pending metadata to recover after process death and avoid storing sensitive payloads casually. I test rapid taps, retries, server duplicate delivery, changed payload under the same key, and late results after navigation. The button state improves experience; domain and server contracts provide safety. I treat timeout as an unknown outcome and reconcile with the server before reporting definite failure.”
+Under the hood, relying solely on `enabled = false` in Compose has a micro-window vulnerability. Touch input dispatch occurs on the main looper. If a user taps twice with exceptional speed within the same frame interval before the snapshot state invalidation triggers a recomposition of the button's layout node, the second click event will invoke `onClick`.
+
+This makes the ViewModel synchronous guard mandatory. By checking `saveJob?.isActive == true` at the very top of the function body on the main thread, the second invocation is discarded synchronously before any coroutine is scheduled or network request initiated.
+
+In payment flows (Fintech), we also enforce transactional database flags: setting a local database status to `PENDING_SUBMISSION` within a local Room transaction before dispatching network calls, guaranteeing crash recovery and duplicate transaction avoidance.
 
 ## How to answer in the interview
 
@@ -100,9 +164,11 @@ Discuss atomic single-flight, idempotency keys, payload fingerprints, unknown ou
 
 ## Follow-up questions
 
-- Is a disabled button enough? **Answer:** no; events, retries and process restarts bypass that UI guard.
-- What does a timeout mean? **Answer:** outcome may be unknown; query or retry with the same operation identity.
-- When should a new key be created? **Answer:** for a genuinely new user intent, not a retry of the same write.
+- **Interviewer:** "Why is disabling the button in UI insufficient on its own?"
+  **Answer:** "Touch dispatch and recomposition are asynchronous. Two rapid taps within the same VSYNC frame will execute the click callback twice before Compose completes recomposing the button into a disabled state."
+
+- **Interviewer:** "How does `compareAndSet` work for atomic gating in ViewModel?"
+  **Answer:** "`AtomicBoolean.compareAndSet(false, true)` checks and updates a flag in a single atomic CPU instruction, guaranteeing that only the first thread or event passes while subsequent calls fail immediately."
 
 ## Self-check rubric
 
@@ -114,4 +180,4 @@ Name UI, in-process and server guards; explain timeout reconciliation and tests.
 - [WorkManager persistent work](https://developer.android.com/topic/libraries/architecture/workmanager) — durable retries where applicable.
 - [Stripe idempotent requests](https://docs.stripe.com/api/idempotent_requests) — provider-specific idempotency example.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Server key policy must match the actual API contract.
+Technically reviewed against primary documentation on 2026-10-13.

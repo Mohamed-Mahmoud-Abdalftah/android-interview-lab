@@ -79,13 +79,62 @@ const attachCodeCopy = () => {
   });
 };
 
+const enhanceSpokenAnswersAndFollowups = () => {
+  const shortH = document.getElementById('interview-answer--short');
+  const structH = document.getElementById('interview-answer--structured');
+  const deepH = document.getElementById('interview-answer--deep-senior');
+  if (shortH && structH && deepH && !document.getElementById('lab-spoken-switcher')) {
+    const wrap = shortH.closest('.sl-heading-wrapper') || shortH;
+    const bar = el('div', '', 'lab-answer-switcher');
+    bar.id = 'lab-spoken-switcher';
+    bar.append(el('strong', '🎙️ Spoken Answer: ', 'lab-switcher-label'));
+    const bBest = button('Best Answer (60–90s) [Default]', () => {
+      structH.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      structH.classList.add('lab-target-highlight');
+      setTimeout(() => structH.classList.remove('lab-target-highlight'), 2000);
+    });
+    bBest.className = 'lab-pill lab-pill-active';
+    const bQuick = button('⚡ Quick (~30s)', () => {
+      shortH.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      shortH.classList.add('lab-target-highlight');
+      setTimeout(() => shortH.classList.remove('lab-target-highlight'), 2000);
+    });
+    bQuick.className = 'lab-pill';
+    const bDeep = button('🧠 Deep Senior (~2–3m)', () => {
+      deepH.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      deepH.classList.add('lab-target-highlight');
+      setTimeout(() => deepH.classList.remove('lab-target-highlight'), 2000);
+    });
+    bDeep.className = 'lab-pill';
+    bar.append(bBest, bQuick, bDeep);
+    wrap.parentNode.insertBefore(bar, wrap);
+  }
+
+  const fuH = document.getElementById('follow-up-questions');
+  if (fuH && !document.getElementById('lab-fu-practice-btn')) {
+    const fuWrap = fuH.closest('.sl-heading-wrapper') || fuH;
+    const fuBtn = button('🎙️ Practice Out Loud (Hide Answers)', () => {
+      const active = document.body.classList.toggle('lab-mask-followups');
+      fuBtn.textContent = active ? '👁️ Reveal Candidate Answers' : '🎙️ Practice Out Loud (Hide Answers)';
+      fuBtn.classList.toggle('lab-pill-active', active);
+    });
+    fuBtn.id = 'lab-fu-practice-btn';
+    fuBtn.className = 'lab-pill';
+    fuBtn.style.marginInlineStart = '0.75rem';
+    fuWrap.append(fuBtn);
+  }
+};
+
 class LabQuestion extends HTMLElement {
   connectedCallback() {
     this.id = this.getAttribute('question-id');
     this.revealed = false;
     this.render();
     window.addEventListener('lab-state-change', () => this.render());
-    setTimeout(attachCodeCopy, 100);
+    setTimeout(() => {
+      attachCodeCopy();
+      enhanceSpokenAnswersAndFollowups();
+    }, 100);
   }
   render() {
     const state = loadState();

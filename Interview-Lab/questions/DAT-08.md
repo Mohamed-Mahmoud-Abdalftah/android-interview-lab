@@ -22,7 +22,60 @@ Compare cache-first, network-first and stale-while-revalidate from freshness and
 
 ## Explanation in Arabic
 
-`cache-first` يعرض cache لو صالحة ويقلل latency/network، لكن ممكن يبقى stale. `network-first` يحاول network الأول ثم يرجع cache عند الفشل، مناسب لما freshness مهمة بس loading أبطأ. `stale-while-revalidate` يعرض cached snapshot فورًا ويعمل refresh في الخلفية ويحدثها؛ لازم UI تعرف هل البيانات stale أو pending. اختيار السياسة يختلف بين أخبار، أسعار، وpayment status.
+مقارنة استراتيجيات التخزين المؤقت في Android:
+Cache-First، و Network-First، و Stale-While-Revalidate، ومتى تختار كل استراتيجية؟
+
+1. Cache-First (قراءة الكاش أولاً):
+   - **كيف تعمل**: يبحث التطبيق في الكاش المحلي (Room / Disk Cache). إذا وُجدت البيانات ولم تنتهِ صلاحيتها، يتم عرضها فوراً ولا يتم الاتصال بالشبكة على الإطلاق. إذا لم تكن موجودة أو انتهت صلاحيتها، يتصل بالشبكة ويحفظ النتيجة في الكاش.
+   - **المميزات**: سرعة فائقة (0-5ms)، توفير كبير لبيانات الهاتف والبطارية، وتخفيف الحمل على السيرفر.
+   - **العيوب**: خطر عرض بيانات قديمة (Stale Data).
+   - **أفضل استخدام**: البيانات شبه الثابتة (قائمة الدول، إعدادات التطبيق، بيانات التصنيفات، الصور والـ Assets).
+
+2. Network-First (الاتصال بالشبكة أولاً والرجوع للكاش عند الفشل):
+   - **كيف تعمل**: يحاول التطبيق الاتصال بالسيرفر أولاً. إذا نجح، يعرض أحدث بيانات ويحدث الكاش. إذا انقطع الاتصال أو حدث Timeout، يرجع للكاش ويعرض آخر نسخة محفوظة مع تنبيه المستخدم.
+   - **المميزات**: حداثة البيانات دائماً (Fresh Data Guaranteed).
+   - **العيوب**: بطء العرض وظهور مؤشر التحميل (Loading Spinner) دائماً، واعتمادية كاملة على سرعة الشبكة.
+   - **أفضل استخدام**: البيانات الحساسة جداً التي لا تحتمل الخطأ (رصيد الحساب البنكي، أسعار الأسهم والعملات، حالة شحن الطلب المالي).
+
+3. Stale-While-Revalidate (عرض الكاش فوراً ثم التحديث في الخلفية):
+   - **كيف تعمل**: المعيار الذهبي في تطبيقات الموبايل الحديثة! يعرض التطبيق أحدث نسخة في الكاش فوراً في 5ms حتى يشاهد المستخدم المحتوى دون أي انتظار، وفي نفس اللحظة يطلق طلباً في الخلفية لجلب أحدث البيانات وتحديث الكاش والـ UI تلقائياً.
+   - **أفضل استخدام**: الـ Feeds الإخبارية، وسائل التواصل الاجتماعي (Twitter/Instagram feed)، وقوائم المنتجات في التجارة الإلكترونية.
+
+## Practical walkthrough
+
+تنفيذ استراتيجية Stale-While-Revalidate باستخدام Kotlin Flow و Room:
+```kotlin
+class ArticleRepositoryImpl @Inject constructor(
+    private val articleDao: ArticleDao,
+    private val apiService: ArticleApiService
+) : ArticleRepository {
+
+    // Stale-While-Revalidate: ينبعث الكاش فوراً ثم يتم التحديث في الخلفية:
+    override fun getArticles(): Flow<Resource<List<Article>>> = flow {
+        // 1. بث النسخة المخزنة في الكاش فوراً (Stale Data):
+        val cachedArticles = articleDao.getAllArticles().first()
+        if (cachedArticles.isNotEmpty()) {
+            emit(Resource.Success(data = cachedArticles.map { it.toDomain() }, isStale = true))
+        } else {
+            emit(Resource.Loading)
+        }
+
+        // 2. محاولة إعادة التحقق والتحديث من الشبكة في الخلفية (Revalidate):
+        try {
+            val freshArticles = apiService.fetchArticles()
+            // حفظ البيانات الحديثة في Room:
+            articleDao.updateAllArticles(freshArticles.map { it.toEntity() })
+            // بث النسخة الحديثة بعد التحديث:
+            emit(Resource.Success(data = freshArticles.map { it.toDomain() }, isStale = false))
+        } catch (e: Exception) {
+            // لو فشلت الشبكة، يظل المستخدم يشاهد بيانات الكاش مع تنبيه خفيف:
+            if (cachedArticles.isEmpty()) {
+                emit(Resource.Error(e.message ?: "Network error"))
+            }
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -42,10 +95,6 @@ interface FeedCache {
 // Remote refresh writes Room transactionally; UI does not merge two lists.
 ```
 
-## Practical walkthrough
-
-cache-first تعرض local data فورًا ثم refresh حسب freshness policy؛ network-first تحاول remote قبل fallback محلي، فممكن تقلل staleness لكن تزيد انتظار المستخدم؛ stale-while-revalidate تعرض cached snapshot مع تحديث في الخلفية. مش كل data ينفع لها stale: news cards ممكن، available balance أو authorization قبل action لا. خزّن `fetchedAt` وserver version/ETag، واضبط invalidation لما account يتبدل أو write تغير row. لو refresh فشل، سيب last-good rows واعرض stale indicator بدل تمسح الشاشة. استخدم clock injected للاختبار، وافتكر TTL وحده ما يمنع old response overwriting newer version.
-
 ## Trade-offs and decision criteria
 
 Cache-first is fast and economical; network-first favors freshness at latency cost; stale-while-revalidate improves perceived speed but can briefly show outdated data. For security-critical or financial status, verify current server authority before committing an action.
@@ -60,17 +109,27 @@ A news feed displays cached stories immediately with an updated-at label and ref
 
 ## Interview answer — short
 
-“Cache-first favors speed and bandwidth, network-first favors freshness with fallback, and stale-while-revalidate shows cached data immediately while refreshing. I choose from domain freshness requirements and expose staleness clearly.”
+Cache-First serves local data immediately and hits network only on misses/expiry, ideal for static data. Network-First attempts server calls first and falls back to cache on failure, ideal for financial balances. Stale-While-Revalidate displays cached data instantly while silently fetching fresh data in the background, offering the ideal UX for feeds and media.
 
 ## Interview answer — structured
 
-“I define what ‘fresh’ means for each screen. Cache-first serves valid local data and avoids network. Network-first attempts current server data but falls back to cache when offline. Stale-while-revalidate renders local content instantly and asynchronously updates the same database source. News content can tolerate labeled stale data; checkout pricing needs a fresh server quote. I use TTL plus server versions or validators, handle out-of-order refresh and keep error/stale state visible.”
+Choosing between caching strategies depends on the latency versus freshness tolerance of the data:
+
+1. **Cache-First**: Queries local storage first. If valid, returns immediately without network access; fetches from remote only on cache miss or expiration. Optimal for static, low-churn assets (country code lists, user avatar images, feature configurations).
+
+2. **Network-First**: Prioritizes server freshness by querying the API first; falls back to local cache only when offline or during socket timeouts. Mandatory for mission-critical, volatile state where serving stale information causes real-world harm (bank account balances, stock prices, payment settlement confirmations).
+
+3. **Stale-While-Revalidate (SWR)**: The gold standard for modern mobile user experience. Emits cached data from Room in single-digit milliseconds so the user sees content immediately, while concurrently firing a background network request. Once the remote response returns, Room is updated, seamlessly animating fresh items into view. Perfect for news feeds, social timelines, and product catalogs.
 
 ## Interview answer — deep senior
 
-A cache strategy is not just ordering two calls; it is a correctness contract. I specify maximum tolerated age, whether stale data may drive actions, and how invalidation works. Cache-first reduces startup and battery cost but risks hidden staleness. Network-first can block UX on a weak connection, so I set a deadline and explicit fallback. Stale-while-revalidate is excellent for browsable feeds if remote updates commit transactionally into Room, which remains the one UI source. I use server ETags/versions where available, suppress older refresh results, label stale/pending state and test offline startup and clock anomalies. Financial or security-sensitive state requires authoritative confirmation before irreversible action.
+When implementing Stale-While-Revalidate in production, senior engineers address the **List Jump UX Defect**.
 
-I would first define what “fresh enough” means for the feature. Cache-first prioritizes startup and battery, network-first prioritizes current data but needs a bounded fallback, and stale-while-revalidate renders the local snapshot while refreshing it. A news feed can tolerate a stale label; a payment balance or authorization decision usually needs a server check before action. I store freshness metadata and server versions, partition by account, and ensure an old response cannot overwrite newer data. If refresh fails, I keep last-good rows and surface their age. The production test covers offline launch, slow network, account switch, and out-of-order responses.
+If a user is actively reading item #3 in a cached list, and the background revalidation completes 2 seconds later, prepending 5 new items to the top of the list will cause the screen to jump violently, disorienting the user.
+
+To solve this in Jetpack Compose and RecyclerView:
+- Implement **DiffUtil / stable item keys** (`key(article.id)` in Compose).
+- For dynamic feeds, buffer new background arrivals behind a subtle UI pill: '5 new posts available - Tap to refresh', giving the user control over when the UI layout recalculates.
 
 ## How to answer in the interview
 
@@ -86,8 +145,11 @@ Define TTL/ETag/version, out-of-order refresh and stale-action safety.
 
 ## Follow-up questions
 
-- [DAT-17](../dat-17/): How invalidate cache? **Answer:** TTL, server validators/versions and explicit mutation/session events.
-- [DAT-21](../dat-21/): Which strategy fits news? **Answer:** show cached feed immediately, then revalidate.
+- **Interviewer:** "How does HTTP Cache-Control header support stale-while-revalidate natively?"
+  **Answer:** "Via the `stale-while-revalidate=<seconds>` directive in HTTP Cache-Control, supported natively by OkHttp Cache when configured with valid cache headers."
+
+- **Interviewer:** "What is the primary risk of Cache-First with an infinite TTL?"
+  **Answer:** "The user may never receive updates if the app fails to invalidate or delete the cached file."
 
 ## Self-check rubric
 
@@ -98,4 +160,4 @@ Can I choose all three by domain, label stale data and prevent old refresh overw
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — cached local reads and refresh.
 - [HTTP Semantics RFC 9110](https://httpwg.org/specs/rfc9110.html) — conditional request semantics.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

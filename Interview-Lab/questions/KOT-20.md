@@ -22,7 +22,41 @@ Distinguish `this` from `it`, receiver shadows, and the return-value axis of sco
 
 ## Explanation in Arabic
 
-في lambda with receiver زي `run`, `apply`, `with`، الـobject بيبقى `this` وتقدر تنادي members من غير اسم. في `let` و`also` الـobject بييجي argument اسمه الافتراضي `it` أو اسم تختاره. الـreceiver مريح في builder DSL، بس nested receivers ممكن يخبّوا بعض وتكتب property على object غلط. `it` أو اسم صريح مفيد لما في أكتر من object. ده غير محور return value: `apply/also` بيرجعوا الأصل، والباقي يرجعوا نتيجة lambda.
+الـ Scope Functions في Kotlin (`let`, `run`, `with`, `apply`, `also`) بتفرق بشكل أساسي في حاجتين: **سياق الوصول للكائن (Context Object)** و **القيمة المرجعة (Return Value)**:
+
+1. Context Object: Receiver (`this`) مقابل Argument (`it`):
+   - **Receiver (`this`):** زي `apply`, `run`, `with`.
+     * بتتعامل مع الكائن وكأنك جواه مباشرة: بتنادي الـ methods والـ properties بدون ما تكتب اسم المتغير.
+     * مناسبة جداً للـ Object Configuration والتهيئة.
+     * **العيب والتحذير:** لو بتستخدمها داخل كلاس، `this` ممكن يختلط عليك بين الكائن الخارجي والداخلي (Shadowing)، مما يسبب أخطاء خفية.
+   - **Argument (`it`):** زي `let`, `also`.
+     * الكائن بيمر كـ Lambda Parameter (`it` أو تقدر تديله اسم صريح زي `user ->`).
+     * مناسبة جداً للـ Null Checks (`user?.let { ... }`) والـ Side Effects والـ Parameter Passing.
+     * ميزة كبيرة: تقدر تسمي المتغير اسم واضح وتتجنب أي لبس في الـ Scope.
+
+2. Return Value:
+   - **بيرجع الكائن نفسه (Context Object):** `apply` و `also`.
+   - **بيرجع نتيجة الـ Lambda (Lambda Result):** `let`, `run`, `with`.
+
+## Practical walkthrough
+
+في شاشة بناء Intent وتجهيز بيانات المستخدم:
+- **الاستخدام الخاطئ والملتبس:**
+  استخدام `run` أو `apply` داخل Activity لتهيئة كائن تاني فيه نفس أسماء الدوال، زي `title = ...` أو `finish()`. الكود مش بيبقى واضح هو بيعدل الـ Activity ولا الكائن الجديد!
+- **الاستخدام النظيف الصحيح:**
+  // 1. تهيئة الكائن (Object Configuration) نستخدم apply:
+  val intent = Intent(context, ProfileActivity::class.java).apply {
+      putExtra(EXTRA_ID, user.id)
+      flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
+  }
+  // 2. التحقق من Null والتحويل نستخدم let مع تسمية صريحة:
+  user?.let { safeUser ->
+      analytics.logUserLogin(safeUser.id)
+  }
+  // 3. التدقيق و Side Effects نستخدم also:
+  val validatedOrder = createOrder(cart).also { order ->
+      logger.debug("Created order with id: ${order.id}")
+  }
 
 ## Why it matters and how it works
 
@@ -39,10 +73,6 @@ fun names(users: List<User>): List<String> = users.map { user ->
 fun main() = println(names(listOf(User(" Ada "))))
 ```
 
-## Practical walkthrough
-
-في `users.map { user -> user.name.let { raw -> raw.trim() } }`، `map` و`let` بيمرّروا argument فالأسماء الصريحة بتمنع اختلاط `it`. `run` و`apply` بيخلّوا object هو implicit receiver `this`؛ ده لطيف في config قصيرة لكن nested receivers تخلي `name` تبع مين مش واضح. كمان return type مهم: `apply` يرجع original object و`run` يرجع lambda result. لما chain فيها mutation أو logging، فكها لمتغيرات محلية؛ readability أهم من عدد السطور. Scope functions ما بتغيّرش thread ولا lifecycle ولا ownership.
-
 ## Trade-offs and decision criteria
 
 Use receiver style when configuring one object and member access dominates. Use argument style when the value participates alongside other values or nested scopes. Explicit names or ordinary statements beat clever chains when several receivers are active.
@@ -57,17 +87,23 @@ A request builder uses a short `apply` block to set fields. Mapping a response w
 
 ## Interview answer — short
 
-Receiver lambdas use implicit `this`; argument lambdas pass the value as `it` or a named parameter. I choose based on clarity in the surrounding scope, especially when lambdas are nested. Return value is a separate choice: `apply` returns the receiver, while `run` returns the computed result.
+Scope functions differ in how they expose the context object: receiver functions (apply, run, with) expose it as 'this' for direct property access, while argument functions (let, also) pass it as 'it' or a named parameter. Additionally, apply and also return the context object itself, whereas let, run, and with return the lambda result.
 
 ## Interview answer — structured
 
-I look at a scope function’s function signature, not its fashionable name. `let` and `also` give the lambda an argument, which I name explicitly in nested code. `run`, `apply`, and `with` give an implicit receiver, which is concise for a short configuration block but ambiguous with nested receivers. I separately check whether the function returns the original object or the lambda result. In a code review, if a chain hides which `name` or `this` is used, I split it into named locals. These functions organize expression scope; they do not change concurrency or lifecycle behavior.
+Kotlin scope functions provide temporary scopes to execute code blocks on an object, differing along two architectural axes: how the context object is referenced and what the block returns.
+
+First, for the context reference: receiver-based functions—apply, run, and with—bind the object to `this`. This allows concise member access without repetitive prefixes, making them ideal for object configuration and initialization. In contrast, argument-based functions—let and also—pass the object as a lambda parameter `it`. This is safer when you want to avoid `this` shadowing, need to pass the object to another method, or want to rename the parameter for clarity.
+
+Second, for return values: apply and also return the original context object itself, enabling fluent method chaining. Let, run, and with return whatever the last expression of the lambda evaluates to, making them suitable for mapping and transformation pipelines.
 
 ## Interview answer — deep senior
 
-These are ordinary higher-order functions with different function signatures. A receiver lambda creates an implicit receiver in the lexical context; nesting it inside another receiver can make unqualified member access surprising. An argument lambda is often easier to name explicitly, especially in mapping code with several values. Return semantics determine the type of a chain and can change null behavior: Elvis after `?.let` may trigger because the lambda returned null. I prefer local variables when the chain hides validation, ownership, or side effects. `this` in `apply`, `run`, or `with` is an implicit receiver, so member names can be concise but can also collide with outer receivers. The second axis is return value: `apply` and `also` preserve the receiver; `let`, `run`, and `with` return the lambda result.
+Under the hood, all five scope functions are inline functions in the Kotlin standard library (`inline fun <T, R> ...`). This means they compile directly to flat bytecode with zero lambda object allocations or virtual dispatch overhead, provided you do not capture local variables in non-inlined contexts.
 
-A nested builder block illustrates the ambiguity: inside `apply`, an unqualified `name` might belong to the builder; inside another receiver block it might refer to a different object. I name the argument in `let` or split the operations into locals when that matters. I also check null behavior: `source?.let { parse(it) } ?: fallback` uses fallback if either source or parse result is null. If those are distinct failures, I write explicit branches. These functions execute synchronously in their caller’s context; they neither dispatch work nor attach it to a lifecycle, so hidden I/O or mutation deserves ordinary statements.
+However, using receiver semantics (`this`) introduces cognitive and shadowing risks in complex classes. For instance, in an Android Activity or Composable, calling `binding.run { title = ... }` might inadvertently shadow the Activity's own `title` property. If a property name clashes, you must write `this@MainActivity.title`, which degrades readability. In contrast, argument semantics (`it`) force explicit naming, preventing subtle shadowing bugs.
+
+In professional code review, we enforce distinct roles: `apply` exclusively for configuring newly constructed objects; `also` exclusively for side-effects like logging or caching during builder chains without mutating the subject; `let` for null-safe operations (`?.let`) or transforming a scoped value; and `run` only when evaluating a multi-step block that returns a derived computation.
 
 ## How to answer in the interview
 
@@ -83,8 +119,14 @@ Map all five functions on receiver/argument and result/receiver axes; explain sh
 
 ## Follow-up questions
 
-- [KOT-08](../kot-08/): Which scope functions return their receiver? **Answer:** `apply` and `also`.
-- [KOT-09](../kot-09/): Is a lambda receiver dynamically dispatched? **Answer:** no; extension-style resolution remains governed by declared types.
+- **Interviewer:** "Why is chaining multiple scope functions considered an anti-pattern?"
+  **Answer:** "Chaining scopes (e.g., `user?.let { it.address }?.run { ... }?.also { ... }`) obscures the origin of values and context objects, drastically harming code readability and making debugging with breakpoints frustrating. Standard local variables with descriptive names are much clearer."
+
+- **Interviewer:** "What is the difference between `run` and `with`?"
+  **Answer:** "`with` is a non-extension function that takes the receiver as its first argument (`with(receiver) { ... }`), while `run` is an extension function called directly on the receiver (`receiver.run { ... }`). `run` also supports null-safe invocation (`receiver?.run { ... }`), which `with` does not."
+
+- **Interviewer:** "Does using `let` on a nullable variable prevent race conditions if the variable is a mutable var?"
+  **Answer:** "Yes! Because `let` passes the variable as a lambda parameter, the value is read once and copied into a local immutable reference (`it`). Even if another thread mutates the original `var` property concurrently, the code inside the lambda safely operates on the non-null captured local snapshot."
 
 ## Self-check rubric
 
@@ -94,4 +136,4 @@ Name the receiver functions and argument functions, trace a chain return type, a
 
 - [Kotlin scope functions](https://kotlinlang.org/docs/scope-functions.html) — receiver and return semantics.
 
-Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against primary documentation on 2026-10-13.

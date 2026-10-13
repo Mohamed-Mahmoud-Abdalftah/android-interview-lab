@@ -24,11 +24,45 @@ How do you find a rare ANR associated with database lock contention?
 
 ## Explanation in Arabic
 
-الـANR النادر قد يظهر Main thread واقفة في query أو `synchronized`، لكن السبب الحقيقي worker ماسك database lock أثناء transaction طويلة أو network call داخل transaction. ابدأ من ANR report: زمن ومكان الـMain، thread اللي ماسكة lock، وكل transaction شغالة. استخدم Perfetto/trace مع markers للاستعلامات، وحاول تعيد المشكلة بقراءات وكتابات متزامنة على جهاز بطيء. الحل غالبًا تقصير transaction، منع network داخلها، وتحويل UI لقراءة asynchronous/state بدل انتظار lock على Main. لا تخفِ المشكلة بزيادة timeout أو نقل نفس deadlock لthread أخرى. اختبر ordering والاتساق بعد التعديل.
+كيفية العثور على تشخيص الـ ANR النادر الناتج عن تزاحم الأقفال على قاعدة البيانات (Database Lock Contention):
+
+1. ما هو تزاحم أقفال قاعدة البيانات (Database Lock Contention)؟
+   - قواعد بيانات SQLite و Room تستخدم آليات حماية (Locking mechanisms) لضمان اتساق البيانات.
+   - أثناء كتابة بيانات ضخمة (Transaction) في Background Thread، تقوم SQLite بحجز قفل حصري (Exclusive Lock) على ملف قاعدة البيانات.
+   - إذا حاول الـ Main Thread تنفيذ استعلام قراءة (Query) أو حتى قراءة SharedPreferences متزامنة تشارك نفس الملف، يضطر الـ Main Thread للانتظار حتى ينتهي الـ Transaction بالكامل.
+   - إذا استغرقت المعاملة أكثر من 5 ثوانٍ، يطلق النظام تحذير ANR فوراً!
+
+2. كيفية العثور على هذا الـ ANR النادر وتشخيصه:
+   - فحص ملف **`/data/anr/traces.txt`**:
+     * النظر إلى حالة الـ `"main"` thread: ستجد حالته `BLOCKED` أو `WAITING` مع سطر يشير إلى انتظار قفل: `waiting to lock <0x...>`.
+     * البحث عن الـ Thread الآخر الذي يحمل القفل (Held by thread X): ستجد background thread ينفذ `sqlite3_step` أو `room.RoomDatabase.beginTransaction`.
+   - استخدام **Perfetto System Trace**: البحث عن شرائح SQLite والتحقق من Lock Contention.
+
+3. الحلول الهندسية لمنع التزاحم:
+   - **تفعيل WAL Mode (Write-Ahead Logging)**: في وضع WAL، القراءات والكتابات لا تحظر بعضها البعض! يستطيع قارئ القراءة في نفس اللحظة التي يكتب فيها كاتب.
+   - **عدم تنفيذ أي استعلام لقاعدة البيانات على الـ Main Thread**: حظر استدعاء `.allowMainThreadQueries()` في Room نهائياً والاعتماد على Kotlin Flow و Coroutines.
+   - تقليص حجم المعاملات (Batch transactions in smaller chunks) لتفادي احتجاز القفل لفترات طويلة.
 
 ## Practical walkthrough
 
-لو ANR نادر في checkout وMain stack واقفة على Room query، متفترضش إن query بطيئة بذاتها. بص على كل threads: worker ماسك transaction أثناء network request؟ استخدم trace markers للمعاملة والـquery وحاول concurrent read/write على جهاز بطيء. اقفل transaction بسرعة بعد تسجيل pending operation، اعمل network خارجها، وبعد الرد حدّث الحالة في transaction قصيرة. احتفظ بـoperation ID عشان retries ما تكررش الدفع.
+تفعيل وضع WAL والتأكد من تنفيذ المعاملات بشكل آمن في Room:
+```kotlin
+// 1. تفعيل Write-Ahead Logging (WAL) في بناء الـ Room Database:
+val db = Room.databaseBuilder(context, AppDatabase::class.java, "app_db")
+    .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING) // يسمح بالقراءة والكتابة المتزامنة!
+    // ❌ تجنب allowMainThreadQueries() تماماً لمنع أي ANR محتمل:
+    // .allowMainThreadQueries()
+    .build()
+
+// 2. تقسيم عمليات الإدخال الضخمة إلى دفعات صغيرة مع فترات راحة:
+suspend fun batchInsertSafely(items: List<RecordEntity>) = withContext(Dispatchers.IO) {
+    items.chunked(100).forEach { chunk ->
+        db.recordDao().insertChunk(chunk)
+        // إتاحة فرصة للمعاملات الأخرى للتنفيذ دون احتجاز قفل مستمر:
+        yield()
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +86,28 @@ Segment ANR clusters by release, device, and operation. Add privacy-safe timing 
 
 ## Interview answer — short
 
-“I inspect the ANR's Main stack and the lock-holder thread, then trace the transaction and UI wait. I shorten the critical section, keep network work outside transactions, and make UI reads asynchronous with a safe loading state.”
+To diagnose database lock contention ANRs, I inspect `/data/anr/traces.txt` to find the UI thread `BLOCKED` waiting on a database mutex held by a background writer thread. We fix this by enabling SQLite Write-Ahead Logging (WAL mode), eliminating any main-thread database access, and chunking large write transactions.
 
 ## Interview answer — structured
 
-“A rare lock ANR needs multi-thread evidence. I start with the ANR cluster, identify whether Main is doing a synchronous query or waiting on a result, and find the worker holding the database lock. I correlate that with transaction timing in a Perfetto trace and reproduce with concurrent reads/writes and injected latency. I move UI access to suspend/Flow DAO patterns and show loading, but I also shorten the transaction itself—especially removing network calls from it. For multi-step operations I use durable pending states and idempotency so the shorter transactions do not create duplicate side effects.”
+A rare ANR stemming from database lock contention occurs when the main thread attempts to execute a database query while a background worker holds an exclusive lock on the SQLite file during a large write transaction.
+
+1. **Isolation in ANR Traces**: I examine `/data/anr/traces.txt`. In lock contention scenarios, the `"main"` thread is not in `RUNNABLE` (which would imply heavy computation), but in **`BLOCKED`** or `WAITING` waiting to acquire a monitor lock (e.g. `android.database.sqlite.SQLiteConnectionPool`). The trace explicitly notes `waiting to lock <0x...> held by thread [pool-X-thread-Y]`. Following that thread ID reveals a background worker deep inside `sqlite3_step` executing a long-running batch insert or migration.
+
+2. **System Tracing via Perfetto**: Opening a Perfetto trace shows the main thread stalled in `SQLiteConnectionPool.waitForConnection` while disk I/O slices saturate the I/O queue.
+
+3. **Resolution**:
+   - Enable **Write-Ahead Logging (WAL)** via `RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING`. Under WAL mode, readers do not block writers, and writers do not block readers.
+   - Strictly audit code to eliminate `.allowMainThreadQueries()`, forcing all queries to return `Flow` or suspend.
+   - Chunk massive multi-record imports into smaller transactions.
 
 ## Interview answer — deep senior
 
-“I treat the Main thread as the victim until evidence shows otherwise. The ANR report may show it blocked on a Room query, a `Future.get`, or a monitor; I inspect the full thread dump to find the lock holder and any dependency chain. A Perfetto trace with transaction markers and a concurrent-load reproduction tells me whether a long write, database initialization, nested transaction, or network call inside a transaction owns the delay. Moving a query off Main prevents direct UI blocking but does not fix database throughput or a deadlock. I reduce transaction scope, separate external I/O from local atomic updates, and model pending/reconciliation state where correctness spans a server call. For a payment path I reuse an idempotency key and resolve unknown outcomes rather than blindly retrying. I test slow network, concurrent sync, cancellation, process death, and database consistency, then compare tail lock/query latency and production ANR cohorts. A checkout transaction must never hold a database lock through a network request. I persist a pending operation quickly, call the server outside the transaction with a stable idempotency key, then reconcile in another short transaction. The intermediate state must survive process death; I measure lock-hold tail and test duplicate callback or retry behavior.”
+Under traditional SQLite Rollback Journal mode, any write transaction locks the entire database file exclusively; no read connections can proceed until the transaction commits and writes to disk. Under WAL mode, SQLite appends changes to a separate `-wal` file, allowing readers to read from the unmodified main database while writing occurs concurrently.
+
+However, even with WAL mode, lock contention can still occur if multiple writers compete for the single write connection, or if SQLite triggers an automatic **WAL Checkpoint** on a thread executing a read. To prevent checkpoint stalls, high-volume apps configure custom connection pools or schedule explicit background checkpoints during device idle windows.
+
+In Room, we also configure a dedicated query executor (`setQueryExecutor`) distinct from general background dispatchers to guarantee that disk-heavy queries never starve high-priority background UI tasks.
 
 ## How to answer in the interview
 
@@ -76,9 +123,11 @@ Discuss waiter versus holder, transaction timing, Room async boundary, network o
 
 ## Follow-up questions
 
-- Does moving a query to `Dispatchers.IO` fix lock contention? **Answer:** it protects Main from direct blocking but the long lock and data latency remain to be resolved.
-- Why avoid network inside a database transaction? **Answer:** unpredictable network delay holds locks and increases contention; separate steps with durable state and idempotency.
-- Which trace evidence is most valuable? **Answer:** Main waiter stack, lock-holder thread, transaction duration, and concurrent operations around the ANR.
+- **Interviewer:** "Why does WAL (Write-Ahead Logging) mode allow concurrent readers and writers?"
+  **Answer:** "WAL writes modifications sequentially to an auxiliary `-wal` file without altering the primary database file immediately. Readers read consistent snapshots from the main DB and WAL index simultaneously without waiting for write transactions to finish."
+
+- **Interviewer:** "What is `yield()` doing in batch insertion loops?"
+  **Answer:** "`yield()` checks for coroutine cancellation and gives other dispatchable coroutines a chance to execute on the thread, preventing a tight loop from starving other cooperative background tasks."
 
 ## Self-check rubric
 
@@ -90,4 +139,4 @@ Find waiter and holder, reproduce with latency, shorten the transaction, preserv
 - [Room asynchronous queries](https://developer.android.com/training/data-storage/room/async-queries) — nonblocking DAO use.
 - [RoomDatabase.Builder](https://developer.android.com/reference/androidx/room/RoomDatabase.Builder) — transaction executor behavior.
 
-Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The checkout case was not device-reproduced.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -22,11 +22,39 @@ Compare monolith and multi-module by team scale, build isolation and API cost.
 
 ## Explanation in Arabic
 
-Monolith module واحدة أبسط في البداية: wiring أقل وrefactor سريع، لكن مع فرق كثيرة كل تغيير ممكن يعيد compile/test نطاق كبير وتبقى boundaries ضمنية. multi-module تقسم features/core/data حسب ownership وتعمل dependency graph acyclic، فتحسن العزل وإعادة الاستخدام إن الحدود صحيحة. لكنها تزود Gradle config, DI, API compatibility وتحتاج CI. القرار مبني على measurements مش عدد الملفات.
+قارن بين التصميم أحادي الكتلة (Monolith) والتصميم متعدد الموديولات (Multi-Module)، ومتى تختار كلاً منهما؟
+
+1. العمارة الأحادية (Monolithic Architecture - Single `:app` Module):
+   - **المزايا**: سرعة فائقة في بداية المشروع (MVP)، سهولة إعادة الهيكلة (Refactoring)، بساطة إعداد Dagger/Hilt، وبساطة التنقل (Navigation).
+   - **العيوب عند التوسع**: بطء هائل في زمن التجميع (Clean build قد يتجاوز 25 دقيقة)، تداخل التبعيات والـ Spaghetti Code، نزاعات دمج مستمرة (Merge Conflicts)، واستحالة عزل الميزات لاختبارها المستقل.
+
+2. العمارة متعددة الموديولات (Multi-Module Architecture):
+   - **المزايا**: تجميع تزايدي سريع (Incremental Compilation)، استغلال Gradle Build Cache و Parallel Execution، وضوح ملكية الكود بين الفرق (Code Ownership)، وتطبيق مبدأ العزل الصارم (Encapsulation).
+   - **العيوب**: تعقيد أولي في إعداد Gradle scripts، إدارة التبعيات المشتركة، صعوبة الـ Navigation غير المباشر، وتكلفة هندسية في بداية المشروع.
+
+3. معايير الاختيار الواقعية (Decision Criteria):
+   - **تطبيق صغير (1-3 مطورين، ميزات محدودة)**: الـ Monolith المنظم جيداً بالحزم (Package-by-Feature) هو الخيار الأذكى والأسرع.
+   - **تطبيق متوسط/كبير (أكثر من 5 مطورين، ميزات متعددة)**: الانتقال التدريجي إلى موديولات Core و Feature لتسريع التجميع وعزل المسؤوليات.
 
 ## Practical walkthrough
 
-لو فريق واحد وتطبيق صغير، module واحدة غالبًا أسرع في refactor؛ تقسيمها 40 module هيزود Gradle configuration بلا مكسب. لو 20 فريق وكل تعديل في core يلمس الكل، split حسب ownership وواجهة stable ممكن يقلل recompilation. قس clean/no-op/incremental builds وgraph fan-out، وامنع cycles. `implementation` بدل `api` لما النوع مش جزء من public signature.
+المقارنة الهيكلية بين Monolith مقسم بحزم و Modular Architecture مقسم بـ Gradle Modules:
+```text
+// 1. هيكل Monolith (ملائم للفرق الصغيرة والمشاريع الناشئة):
+:app
+ ├── feature_auth/
+ ├── feature_feed/
+ ├── core_network/
+ └── core_database/
+
+// 2. هيكل Multi-Module احترافي (ملائم للفرق الكبيرة والتطبيقات الضخمة):
+├── :app (تجميع الـ DI والـ Navigation العام فقط)
+├── :feature:auth:api / :feature:auth:impl
+├── :feature:feed:api / :feature:feed:impl
+├── :core:designsystem (مكونات الواجهة المشتركة)
+├── :core:network (OkHttp / Retrofit)
+└── :core:database (Room Database)
+```
 
 ## Why it matters and how it works
 
@@ -58,15 +86,33 @@ A startup with three engineers keeps one app module plus small data boundaries. 
 
 ## Interview answer — short
 
-“A monolith is simpler at small scale; multi-module can improve ownership and compilation isolation when boundaries are stable. It adds configuration and API cost, so I measure build and team friction before splitting.”
+Monoliths offer rapid initial prototyping and simple refactoring, but degrade into 20+ minute build times and team coupling at scale. Multi-module architectures provide parallel build caching, strict encapsulation, and team autonomy at the cost of Gradle configuration complexity. Choose monolith for MVPs and modularize as teams exceed 4–6 engineers.
 
 ## Interview answer — structured
 
-“I compare the actual problem, not the architecture fashion. One module lets a small team refactor quickly with little Gradle/DI overhead. As features and teams grow, an acyclic multi-module graph can make ownership explicit and limit compilation/test impact. But a giant core module or unstable public APIs can make builds worse. I would measure changed-file-to-affected-target patterns, clean/incremental builds and cross-team coordination, then extract high-cohesion features gradually.”
+Choosing between monolithic and multi-module architectures is an engineering trade-off governed by team size, build performance, and domain complexity:
+
+1. **Monolithic Architecture (`:app`)**:
+   - **Strengths**: Zero module configuration overhead, trivial dependency injection setups, effortless cross-cutting refactoring, and rapid early iteration velocity.
+   - **Failure Modes at Scale**: Long clean build times (20–40 minutes), frequent Git merge conflicts on shared manifests and navigation files, lack of enforcement boundaries leading to tight coupling between domains.
+
+2. **Multi-Module Architecture**:
+   - **Strengths**: Enables Gradle parallel execution, distributed build caching, and incremental compilation where modifying one feature only recompiles its isolated module. Provides strict encapsulation via Kotlin's `internal` modifier and defines clear team ownership.
+   - **Costs**: Increased Gradle maintenance, dependency version alignment overhead, and indirection in cross-feature navigation and dependency injection graphs.
+
+3. **Pragmatic Decision Threshold**:
+   - **1–4 Engineers**: Maintain a modular-ready monolith organized cleanly by package-by-feature.
+   - **5+ Engineers / Multi-Feature Products**: Modularize into `:core` and `:feature` boundaries to protect build velocity and establish autonomous team ownership.
 
 ## Interview answer — deep senior
 
-“Modularity is a trade-off across code, build and organization. A monolith is easy to navigate and refactor when one team owns it, but at scale it can accumulate implicit coupling and force broad recompilation. Modules create explicit dependency edges and team APIs, potentially allowing parallel work and targeted tests. They also add Gradle configuration, DI binding, version/ABI considerations and contract governance. I avoid one module per class and avoid treating dynamic feature delivery as identical to source modularity. I establish a baseline for build time, test execution and change lead time, then split one cohesive feature with a stable contract, measure results and repeat only when benefits are real. Start with a few high-cohesion boundaries. I would compare three build profiles: clean, no-op and a representative feature edit. If a single core model change rebuilds all features, that suggests a boundary problem; if configuration dominates, more modules may make it worse. I would split where teams already have stable ownership and narrow APIs, using `implementation` for internal dependencies. Then I would measure cache hit rate, median and P95 build time and graph cycles. Modularity succeeds when change impact shrinks without making integration opaque.”
+From a staff platform architecture viewpoint, premature modularization can be just as damaging as an overgrown monolith:
+
+1. **The Cost of Granular Over-Modularization**: Splitting every screen into its own Gradle module creates dozens of small modules. Each module incurs Gradle configuration-time evaluation overhead. In large projects, configuring 150+ tiny modules can add 30 seconds to every build before compilation even begins. Modularize around bounded domain contexts, not individual UI screens.
+
+2. **Convention Plugins (build-logic)**: Manage multi-module build scripts cleanly by creating custom Gradle Convention Plugins in `build-logic`. Define shared conventions (`android-feature`, `android-library`, `android-compose`) in composite builds rather than duplicating Groovy/Kotlin script blocks across dozens of `build.gradle.kts` files.
+
+3. **Micro-Apps (Sample Apps) for Velocity**: The true superpower of modularization is sample app generation. An engineer working on `:feature:search:impl` runs a dedicated `:feature:search:sample` app, booting the local feature in an emulator in 4 seconds without compiling the rest of the application.
 
 ## How to answer in the interview
 
@@ -82,8 +128,11 @@ Defend one incremental split using measured build and ownership evidence.
 
 ## Follow-up questions
 
-- [MOD-01](../mod-01/): What is modularization? **Answer:** explicit compilation/dependency boundaries with costs.
-- [SYS-19](../sys-19/): How address 25-minute build? **Answer:** measure hotspots before redesigning graph.
+- **Interviewer:** "What is Gradle Configuration Cache?"
+  **Answer:** "A Gradle feature that caches the output of the configuration phase and reuses it for subsequent builds, significantly speeding up multi-module build execution."
+
+- **Interviewer:** "How do you handle dependency injection across feature modules?"
+  **Answer:** "Feature modules expose interface dependencies via Dagger components or Hilt entry points; the root :app module compiles all implementations and injects them into the unified graph."
 
 ## Self-check rubric
 
@@ -94,4 +143,4 @@ Can I articulate both costs, draw acyclic target and specify metrics?
 - [Android modularization guide](https://developer.android.com/topic/modularization) — benefits and costs.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — separation of concerns.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

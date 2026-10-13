@@ -24,11 +24,41 @@ Two feature teams need the same business logic. Where should it live?
 
 ## Explanation in Arabic
 
-لو logic هي rule حقيقية مثل حساب أهلية خصم أو رسوم، اجعل لها owner واحد في domain/use-case module أو capability service يرى الفريقان عقدها؛ لا تنسخها فتختلف النتائج. لكن “نفس” تنسيق text أو UI behavior قد لا يكون نفس semantics، فلا ترفع كل تشابه إلى core. اكتب invariants والأمثلة وحدد inputs/outputs بعيدًا عن Android UI، ثم اختبار مشترك وconsumer integration. الفريقان يتفقان على ownership وAPI evolution، والتطبيق يربط implementation. لو اختلاف المتطلبات قريب، صمم extension واضح بدل `if (featureA)` داخل common.
+فريقان لميزتين مختلفتين (Feature Teams) يحتاجان إلى نفس منطق الأعمال (Same Business Logic). أين يجب أن يعيش هذا المنطق معمارياً؟
+
+1. الحلول الخاطئة الشائعة:
+   - **الخطأ الأول**: جعل موديول Feature A يعتمد على موديول Feature B (`:feature:cart -> :feature:catalog`). هذا يكسر العزل، ويخلق اقتراناً شديداً، وقد يسبب تبعية دائرية مستحيلة.
+   - **الخطأ الثاني**: رمي الكود في موديول عشوائي `:core:common` أو `:core:utils`، مما يجعله مزبلة للمنطق التجاري غير المترابط.
+
+2. الحل المعماري النظيف (Single Authoritative Owner in Domain Layer):
+   - **إنشاء موديول Domain مخصص**: استخراج منطق الأعمال إلى موديول نقي في طبقة الـ Domain، مثل `:domain:pricing` أو `:domain:tax`.
+   - يحتوي هذا الموديول على الكيان النقي (Entity)، وقواعد الحساب، و UseCase محدد (مثل `CalculateOrderDiscountUseCase`).
+   - **يعتمد كلا الفريقين على موديول الـ Domain للأسفل**: يعتمد كل من `:feature:cart` و `:feature:checkout` على `:domain:pricing`.
+   - **وضوح الملكية (Code Ownership)**: يتم تعيين فريق محدد كمالك للموديول في ملف `CODEOWNERS` لضمان عدم إجراء أي تعديل دون مراجعة وتدقيق معتمدين.
 
 ## Practical walkthrough
 
-Logic مشتركة بين ميزتين: إن كانت invariant business واحدة مثل eligibility، ضعها في domain/core feature-neutral module مع owner واختبارات. إن التشابه سطحي والقرارين قد يختلفان، التكرار الصغير أفضل من abstraction قسرية. لا تجعل Feature A تعتمد Feature B فقط لتستعير helper. اكتب contract والاختلافات قبل استخراجها، وراقب changes القادمة.
+استخراج منطق أعمال مشترك إلى موديول Domain مستقل:
+```text
+❌ قبل: اقتران غير مسموح بين موديولين ميزات:
+:feature:cart ─────(illegal direct dependency)─────► :feature:catalog
+
+✅ بعد: استخراج المنطق المشترك إلى موديول Domain مستقل يملكه مالك محدد:
+      :feature:cart                   :feature:checkout
+            │                                │
+            │ (depends on)                   │ (depends on)
+            ▼                                ▼
+      ┌──────────────────────────────────────────────┐
+      │             :domain:pricing                  │
+      │ (DiscountCalculator, TaxPolicy, PricingRules)│
+      └──────────────────────────────────────────────┘
+
+// في :domain:pricing (Pure Kotlin JVM):
+class CalculatePromotionalDiscountUseCase @Inject constructor() {
+    fun execute(items: List<CartItem>, promoCode: String?): DiscountResult = ...
+}
+// كلا الفريقين يستوردان هذا الـ UseCase بأمان واستقرار تام!
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +82,25 @@ Assign codeowners and versioned contract review, build a boundary test matrix, a
 
 ## Interview answer — short
 
-“One owner should hold a genuinely shared business rule behind a small domain contract; each feature renders the result, and backend authority stays explicit.”
+When two feature teams share business logic, never couple the features directly or dump code into :core:common. Extract the logic into a focused, single-responsibility domain module (e.g. :domain:pricing) containing pure Use Cases and business rules, with clear CODEOWNERS governance.
 
 ## Interview answer — structured
 
-“I first verify the two teams mean the same business rule. If Cart and Checkout both calculate discount eligibility, I put the policy in an owned domain capability with clear inputs, outputs and boundary tests, then let each feature present it differently. I keep the final server decision authoritative if applicable. I would not extract two coincidentally similar formatting functions into common before their semantics are shared.”
+When two feature teams require identical business logic, resolving placement demands strict architectural governance:
+
+1. **Never Create Feature-to-Feature Dependencies**: Permitting `:feature:cart` to depend on `:feature:checkout` violates the fundamental acyclic boundary rule and entangles two distinct user journeys.
+
+2. **Extract to a Focused Domain Module**: Create a dedicated JVM module representing the specific business capability: e.g. `:domain:pricing` or `:domain:identity`. This module houses pure Kotlin business entities, invariants, and Use Cases (`CalculateTaxUseCase`). Both feature modules depend downward on this domain module.
+
+3. **Establish Clear Code Ownership**: Designate a single team as the primary owner in `CODEOWNERS` (e.g. Payments team owns `:domain:pricing`). If the other team needs enhancements, they submit pull requests subject to the owning team's review and automated test suites.
 
 ## Interview answer — deep senior
 
-“I classify the shared code by semantics. If two teams need one financial eligibility rule, duplicating it invites drift, so I give the policy one owner and expose a small contract independent of either screen. Cart and Checkout can both call `DiscountPolicy.evaluate`, get an eligibility result with reason, and render it in their own UI. The policy tests cover rounding, currency, expiry, account tier and concurrency or stale input as relevant. I also state whether the client calculation is a preview while a server makes the final decision; otherwise the two features may present certainty they cannot guarantee. Shared ownership has a cost: policy changes affect both teams, so codeowners, API review and a rollout plan matter. If the common code is only a short date label with subtly different product meaning, premature extraction can be worse than local duplication. I avoid a core module that imports both feature implementations or contains switches for team names. The shared layer should represent a stable business concept, with integration tests proving both consumers handle its outcomes.”
+Before extracting shared business logic into a common module, senior engineers evaluate **Semantic Equivalence vs. Accidental Coincidence**.
+
+Often, two features appear to need the 'same' logic, but their underlying domain invariants are actually diverging. For example, calculating price in a product catalog may tolerate cached approximate tax estimations, whereas calculating price in final checkout requires strict real-time fiscal compliance.
+
+If you force divergent requirements into a single shared function with boolean flags (`calculatePrice(isCheckout: Boolean)`), you introduce toxic coupling. If the business rules have fundamentally different lifecycles or reasons to change, it is better to maintain separate use cases. Only extract shared code when the underlying business invariant is mathematically or legally identical.
 
 ## How to answer in the interview
 
@@ -76,9 +116,11 @@ Discuss semantic sharing, one policy owner, backend authority, API governance an
 
 ## Follow-up questions
 
-- Is every duplicate function a shared domain rule? **Answer:** no; similar code may have different semantics.
-- Who owns the final discount decision? **Answer:** often the backend; client logic should state whether it is only a preview.
-- Why test both consumers? **Answer:** they may render or handle the shared result differently.
+- **Interviewer:** "What happens if a shared domain module requires network data?"
+  **Answer:** "The domain module declares an abstract repository interface; the corresponding `:data:*` module implements it and handles networking."
+
+- **Interviewer:** "Should shared business logic include UI formatting strings?"
+  **Answer:** "No. Business logic returns raw domain types (e.g. `Money(amount = 12.50, currency = USD)`); UI formatting belongs in presentation layers."
 
 ## Self-check rubric
 
@@ -89,4 +131,4 @@ Identify the invariant, owner and authority, then test rule boundaries and featu
 - [Android modularization guide](https://developer.android.com/topic/modularization) — reusable modules.
 - [Domain layer guidance](https://developer.android.com/topic/architecture/domain-layer) — shared business logic.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Discount authority is product-specific.
+Technically reviewed against primary documentation on 2026-10-13.

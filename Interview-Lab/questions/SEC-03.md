@@ -23,11 +23,46 @@ Compare cryptographic keys, access tokens, refresh tokens, API keys, and passwor
 
 ## Explanation in Arabic
 
-Cryptographic key بتستخدم في encrypt/sign؛ password سرّ المستخدم للتحقق ومينفعش يتخزن plaintext؛ access token غالبًا bearer قصير العمر للـAPI؛ refresh token أطول عمرًا ويجيب tokens جديدة؛ API key بتعرّف تطبيق أو مشروع حسب سياسة الـprovider، ومش لازم تثبت هوية مستخدم. خلطهم يخلّي team يخزن token في logs أو يفترض إن API key داخل APK سرّ مستحيل يتسرب.
+مقارنة شاملة بين 5 أنواع من بيانات الاعتماد الحساسة في Android:
+المفاتيح التشفيرية، و Access Tokens، و Refresh Tokens، و API Keys، وكلمات المرور:
+
+1. Cryptographic Keys (المفاتيح التشفيرية - مثل AES / RSA / ECC):
+   - **طبيعتها**: أرقام باينري عشوائية تُستخدم للعمليات الرياضية (تشفير، فك تشفير، توقيع رقمي HMAC أو RSA).
+   - **مكان حفظها**: حصرياً داخل `AndroidKeyStore` المدعوم عتادياً.
+   - **فترة البقاء**: طويلة جداً (أشهر أو سنوات) حتى إعادة تثبيت التطبيق أو إبطالها.
+
+2. Access Tokens (توكنز الوصول المؤقتة - مثل JWT Bearer Tokens):
+   - **طبيعتها**: تصريح دخول قصير المدى يحمله العميل في كل طلب شبكة (`Authorization: Bearer <token>`).
+   - **مكان حفظها**: في الذاكرة (RAM) أو في تخزين مشفر بمفتاح Keystore (Encrypted DataStore).
+   - **فترة البقاء**: قصيرة جداً (15 دقيقة إلى ساعة واحدة) لتقليل ضرر التسريب.
+
+3. Refresh Tokens (توكنز التجديد طويلة المدى):
+   - **طبيعتها**: بيانات اعتماد سرية تُستخدم فقط لاستدعاء سيرفر المصادقة لإصدار Access Token جديد.
+   - **مكان حفظها**: مخزن مشفر عالي الحماية (Android Keystore + Encrypted Storage).
+   - **فترة البقاء**: طويلة (أيام أو أسابيع)، ويتم تجديدها مع كل استخدام (Refresh Token Rotation).
+
+4. API Keys (مفاتيح واجهات الطرف الثالث - مثل Google Maps API Key):
+   - **طبيعتها**: معرفات عامة للمشروع (Public Identifiers) لتتبع الاستهلاك وإصدار الفواتير لدى Google أو Firebase.
+   - **تحذير خطير**: **ليست أسراراً (Not Secrets)**! أي مفتاح مدمج في ملف الـ APK يمكن استخراجه في 3 ثوانٍ بواسطة `apktool`! يجب تقييدها عبر لوحة تحكم Google Cloud بقيود الحزمة وبصمة التوقيع (Package Name + SHA-1 Restriction).
+
+5. Passwords / PINs (كلمات المرور والرموز السرية للمستخدم):
+   - **طبيعتها**: بيانات اعتماد يدخلها المستخدم لإثبات هويته.
+   - **قاعدة ذهبية**: لا تحفظ كلمات المرور كـ Plaintext في التخزين المحلي أبداً! استبدلها بـ Session Tokens فور تسجيل الدخول، ومسح الـ CharArray من الذاكرة فوراً.
 
 ## Practical walkthrough
 
-في checkout، password يثبت هوية المستخدم وقت login، access token يحمل صلاحية محدودة للـAPI، refresh token يبدله، وAPI key عامة ممكن تعرّف تطبيق خرائط. مفتاح التشفير يحمي بيانات أو يوقّع challenge. كل واحد له دورة حياة مختلفة: logout يبطل refresh token من السيرفر، لكن تدوير encryption key محتاج migration للبيانات المشفّرة.
+جدول المقارنة المعمارية بين أنواع بيانات الاعتماد الخمسة في Android:
+```text
+┌────────────────────┬──────────────────────┬──────────────────────┬──────────────────────┬─────────────────────────┐
+│ نوع الاعتماد       │ الغرض المعماري       │ فترة الحياة (TTL)    │ مكان التخزين الآمن   │ الإجراء عند التسريب     │
+├────────────────────┼──────────────────────┼──────────────────────┼──────────────────────┼─────────────────────────┤
+│ Cryptographic Key  │ تشفير وتوقيع رقمي    │ دائمة (حتى الإلغاء)  │ Android Keystore (HW)│ إبطال وإعادة توليد محلي │
+│ Access Token       │ مصادقة طلبات الشبكة  │ قصيرة (15-60 دقيقة)  │ Encrypted DataStore  │ انتهاء الصلاحية التلقائي│
+│ Refresh Token      │ تجديد Access Token   │ متوسطة (14-30 يوماً) │ Encrypted DataStore  │ إبطال الجلسة في السيرفر │
+│ API Key (APK)      │ تتبع الاستهلاك والفوترة│ دائمة                │ BuildConfig/Manifest │ قيود SHA-1 + PackageName│
+│ Password / PIN     │ إثبات هوية المستخدم  │ عابرة في الذاكرة     │ لا تُخزن أبداً محلياً│ تغيير كلمة المرور فوراً │
+└────────────────────┴──────────────────────┴──────────────────────┴──────────────────────┴─────────────────────────┘
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +86,30 @@ Document a credential inventory: owner, storage location, scope, lifetime, rotat
 
 ## Interview answer — short
 
-“Keys perform cryptographic operations; passwords authenticate users; access and refresh tokens represent delegated sessions; API keys identify a client or project under a provider contract. I give each a separate storage, scope and rotation policy.”
+Cryptographic keys perform local crypto inside Keystore. Access tokens authenticate API requests with short lifespans (15-60m). Refresh tokens obtain new access tokens and require rotation and secure storage. APK API keys are public client identifiers (not secrets) secured via Google Cloud SHA-1 restrictions. Passwords authenticate users and must never be stored locally.
 
 ## Interview answer — structured
 
-“I separate secrets by purpose and authority. A password authenticates the user and should never be stored plaintext. Access tokens are scoped, short-lived session credentials; refresh tokens need tighter storage and server revocation. API keys may be public mobile identifiers or privileged provider credentials, depending on the provider contract. Cryptographic keys encrypt or sign and have a different rotation problem. In a fintech app I keep high-authority provider keys on the backend and document expiry, storage and recovery for each credential.”
+A senior engineer establishes strict threat models and retention boundaries across these five distinct credential types:
+
+1. **Cryptographic Keys (AES/RSA/ECC)**: Mathematical keys used to encrypt data or sign tokens. Protected exclusively inside hardware-backed `AndroidKeyStore`. They never leave secure hardware and cannot be inspected over the network.
+
+2. **Access Tokens (JWT / Bearer Tokens)**: Ephemeral proofs of authorization granted to an authenticated client. They have short lifespans (15 to 60 minutes) to minimize damage if intercepted in memory. Kept in memory or encrypted persistent storage.
+
+3. **Refresh Tokens**: Long-lived credentials (days to months) used solely to issue fresh access tokens. Held in encrypted storage and rotated on every use (Refresh Token Rotation). Revocable server-side.
+
+4. **API Keys (Embedded in APK)**: Client identifiers (Google Maps, Mixpanel, Firebase). **These are never secrets**. Anyone who downloads the APK can decompile it and read the string. They must be protected on the cloud provider side via IP, Package Name, and SHA-1 signing certificate restrictions.
+
+5. **Passwords / PINs**: User-provided secrets used to establish identity. Never store raw passwords on the device. Transmit over TLS to exchange for session tokens, wiping password buffers from RAM immediately.
 
 ## Interview answer — deep senior
 
-“I classify credentials by who issues them, what authority they carry, and how they are revoked. A password proves user knowledge at login and is never stored as plaintext. A short-lived access token carries delegated API access; a refresh token extends the session and needs server rotation and revocation. An API key may only identify a mobile project, or it may be a privileged provider secret that must stay on the backend. Cryptographic keys encrypt or sign data and need their own rotation plan. For a payment app I would document these lifecycles separately, because rotating a session token is very different from migrating ciphertext under a new key. An interview answer should also cover incident response. If a refresh token leaks, revoke its session and rotate tokens; if an embedded provider secret leaks, rotate it at the provider and inspect abuse; if an encryption key is lost, migrate or recover ciphertext rather than merely issuing a new token. A credential inventory with owner, privileges, expiry and recovery path makes these actions executable instead of theoretical.”
+The Architectural Fallacy of 'Hiding' Third-Party Backend Secrets in an APK:
+
+Teams frequently ask: 'Where should I store our Stripe Secret Key or OpenAI Private API Key in our Android app? In NDK C++? Obfuscated with XOR? In local.properties?'
+
+**The Senior Answer: Nowhere in the APK!**
+A distributed Android APK is entirely in the hands of the client (attacker). No amount of ProGuard, NDK C++ compilation, or XOR encoding will prevent an attacker with Frida, Ghidra, or Wireshark from extracting the private key. Private API keys must reside **exclusively on your backend server**. The Android client authenticates to your backend with a user session token, and your backend proxies requests to Stripe or OpenAI using the private key.
 
 ## How to answer in the interview
 
@@ -75,8 +125,11 @@ Classify each credential by issuer, holder, scope, revocation and lifetime; expl
 
 ## Follow-up questions
 
-- [SEC-05](../sec-05/): Can an embedded API key be confidential? **Answer:** no; assume extraction and restrict or proxy it.
-- [SEC-14](../sec-14/): How is a refresh token revoked? **Answer:** invalidate its server-side session/grant and clear local copies.
+- **Interviewer:** "Why is an APK API key like Google Maps safe to ship in an APK?"
+  **Answer:** "Because Google Maps verifies requests by checking the client's HTTP Referer or Android Package Name and SHA-1 certificate fingerprint against the Google Cloud Console allowlist."
+
+- **Interviewer:** "What is the difference between an Access Token and an API Key?"
+  **Answer:** "An API key identifies the client application or project; an Access token identifies a specific authenticated user session with specific scopes."
 
 ## Self-check rubric
 
@@ -87,4 +140,4 @@ Can I name issuer, verifier, lifetime, storage, and revocation for each of the f
 - [Android Keystore system](https://developer.android.com/privacy-and-security/keystore) — key operations.
 - [OWASP MASVS authentication](https://mas.owasp.org/MASVS/controls/MASVS-AUTH-1/) — authentication controls.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -22,7 +22,53 @@ Differentiate interface conversion, simplified subsystem API, behavior wrapping 
 
 ## Explanation in Arabic
 
-Adapter تغيّر interface vendor SDK عشان تناسب contract داخلي؛ Facade تقدم API أبسط فوق subsystem معقد؛ Decorator يلف object بنفس contract ويضيف behavior زي metrics؛ Proxy يقف مكان object للتحكم في الوصول/التأخير/caching. الأربعة structural لكن الهدف مختلف. مثال Android: callback SDK adapter إلى suspend/domain result، payments facade تجمع 3 calls، logging decorator حول repository، caching proxy يقرر هل ينادي remote. ما تعملش wrapper واحد ينفّذ كل ده بلا وضوح، ولا تعتبر proxy security boundary لو client غير موثوق.
+شرح الأنماط الهيكلية الأساسية: Adapter و Facade و Decorator و Proxy، وأين تظهر في Android:
+
+1. نمط المحول (Adapter Pattern):
+   - **الهدف**: التوفيق والربط بين واجهتين غير متوافقتين بحيث تعملان معاً بسلاسة.
+   - **في Android**: `RecyclerView.Adapter` يحول قائمة بيانات من الـ Domain (`List<Product>`) إلى `ViewHolders` و `Views` يفهمها نظام Android UI.
+
+2. نمط الواجهة البسيطة (Facade Pattern):
+   - **الهدف**: توفير واجهة موحدة وبسيطة لإخفاء تعقيد نظام فرعي ضخم (Subsystem) أو SDK خارجي فوضوي.
+   - **في Android**: بناء `LocationTrackerFacade` يخفي تفاصيل `FusedLocationProviderClient`، و `SettingsClient`، وأذونات النظام، مقدماً دالة واحدة بسيطة: `suspend fun getCurrentLocation(): Location`.
+
+3. نمط الزخرفة (Decorator Pattern):
+   - **الهدف**: إضافة وظائف وسلوكيات جديدة لكائن موجود ديناميكياً في وقت التشغيل دون اللجوء للوراثة (Subclassing).
+   - **في Android**: `OkHttp Interceptors`؛ كل اعتراض يغلف الـ Request ويضيف عليه Headers أو Logging ويعيد تمريره للـ Chain.
+
+4. نمط الوكيل (Proxy Pattern):
+   - **الهدف**: توفير كائن بديل أو وكيل يتحكم في الوصول للكائن الأصلي (لأسباب أمنية، كاش، أو استدعاءات عبر العمليات IPC).
+   - **في Android**: كائنات الـ **AIDL / Binder Proxies**؛ عند طلب نظام أندرويد لـ `LocationManager`، يحصل التطبيق على Binder Proxy يتولى استدعاء نظام التشغيل عبر الـ IPC.
+
+## Practical walkthrough
+
+أمثلة تمثل الأنماط الهيكلية الأربعة في كود Android:
+```kotlin
+// 1. ADAPTER: تحويل بيانات النطاق إلى Views:
+class ProductAdapter(private val items: List<Product>) : RecyclerView.Adapter<ProductViewHolder>() { ... }
+
+// 2. FACADE: تبسيط SDK معقد خلف دالة واحدة نقية:
+class SimpleAudioPlayerFacade(private val exoPlayer: ExoPlayer) {
+    fun playStream(url: String) {
+        exoPlayer.setMediaItem(MediaItem.fromUri(url))
+        exoPlayer.prepare()
+        exoPlayer.play()
+    }
+}
+
+// 3. DECORATOR: تزيين استجابات الشبكة بإضافة ترويسة أمان عبر OkHttp Interceptor:
+class AuthHeaderDecorator : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val decoratedRequest = chain.request().newBuilder()
+            .addHeader("Authorization", "Bearer token")
+            .build()
+        return chain.proceed(decoratedRequest)
+    }
+}
+
+// 4. PROXY: حماية كائن ثقيل وتأجيل تحميله حتى أول استخدام (Virtual Proxy):
+val heavyAnalyticsService by lazy { HeavyAnalyticsService() } // كائن Proxy يوفر Lazy Initialization
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +77,6 @@ Structural patterns control how objects are composed and presented. Selection de
 ## Worked example
 
 Conceptual flow: `VendorCallbackAdapter` maps success/error callbacks to `PaymentOutcome`; `CheckoutFacade` exposes `submitAndVerify`; `MetricsGateway` delegates the same `Gateway` API while timing calls; `CachedGatewayProxy` may return fresh cached data. Each needs its own failure and cancellation contract.
-
-## Practical walkthrough
-
-Adapter يغيّر interface: SDK بيرجع `onSuccess(code)` و`onError(Throwable)` وانت تطلع `VerificationOutcome`. Facade تجمع steps معقدة في API سهلة مثل `submitAndVerify` لكن ما تخفيش uncertain outcome. Decorator يضيف metrics/retry policy حول interface مع الحفاظ على نفس contract، وProxy يتحكم في الوصول لobject بعيد أو lazy، غالبًا مع lifecycle/network failure خاص به. مثال `MetricsGateway` لا يجوز يسجل PIN أو يعيد POST دون idempotency. لو wrapper بيغيّر semantics خفية، الاسم “Decorator” مش مبرر. في Kotlin delegation تقلل forwarding boilerplate لكن راجع internal calls وownership.
 
 ## Trade-offs and decision criteria
 
@@ -50,17 +92,36 @@ A checkout integration isolates vendor SDK callbacks in an adapter, provides a s
 
 ## Interview answer — short
 
-Adapter translates an interface, Facade simplifies a subsystem, Decorator adds behavior while preserving a contract, and Proxy controls access or defers work. I choose the wrapper by its specific responsibility.
+Adapter bridges incompatible interfaces (`RecyclerView.Adapter`). Facade provides a simplified unified API over complex subsystems (wrapping ExoPlayer or location APIs). Decorator dynamically wraps objects to add behaviors (`OkHttp Interceptors`). Proxy controls access to another object (Android Binder IPC, Lazy initialization).
 
 ## Interview answer — structured
 
-If a third-party SDK exposes callbacks but my domain expects a suspend result, I use an Adapter. If several SDK steps should be one application operation, a Facade can hide their coordination. A Decorator can add metrics without changing the gateway contract; a Proxy can mediate caching or remote access. They may be composed, but I keep each responsibility clear and test that wrappers preserve error, cancellation and security semantics.
+Structural patterns organize relationships and boundaries between collaborating objects:
+
+1. **Adapter (Interface Conversion)**:
+   - Converts the interface of a class into another interface clients expect, allowing incompatible classes to work together.
+   - *Android Example*: `RecyclerView.Adapter` bridges arbitrary application domain datasets into Android layout `ViewHolders`.
+
+2. **Facade (Unified Simplicity)**:
+   - Exposes a simplified, cohesive high-level interface that masks the complexity of an intricate subsystem or convoluted third-party library.
+   - *Android Example*: A custom `BillingFacade` wrapping Google Play Billing SDK. The facade encapsulates connection lifecycles, purchase tokens, and acknowledging flows behind simple suspending calls: `suspend fun buy(sku: String): PurchaseResult`.
+
+3. **Decorator (Dynamic Behavioral Augmentation)**:
+   - Attaches additional responsibilities to an object dynamically without subclassing, wrapping the original instance.
+   - *Android Example*: `OkHttp Interceptors`. Each interceptor wraps HTTP requests and responses, adding caching headers, Gzip compression, or authentication tokens sequentially.
+
+4. **Proxy (Surrogate Access Control)**:
+   - Provides a placeholder or surrogate for another object to control access to it (e.g. Remote Proxy, Virtual Proxy for lazy loading, Protection Proxy).
+   - *Android Example*: Android's **Binder IPC mechanism**. When an app invokes `LocationManager`, it communicates with an AIDL-generated local client Proxy that serializes calls across process boundaries into system server daemons.
 
 ## Interview answer — deep senior
 
-The patterns look similar because each can contain another object, so intent is the discriminator. An Adapter makes incompatible APIs work together. A Facade offers a deliberately smaller entry point to a subsystem. A Decorator preserves the same contract while layering behavior; a Proxy also presents the same contract but controls access, location or laziness. In Android, a vendor callback adapter must handle duplicate callbacks and cancellation. A metrics decorator must not log PII, and a cache proxy must not present stale financial status as final server truth. I use contract tests across the wrapped and unwrapped implementations to ensure behavior does not shift unexpectedly. If one wrapper begins doing selection, retry, UI navigation and logging, I split it before the name of a pattern masks the mixed ownership.
+Comparing **Adapter vs Facade vs Decorator**:
+- *Adapter* changes an interface to match an existing specification without altering behavior.
+- *Facade* defines a *new, simpler* interface to reduce complexity across multiple classes.
+- *Decorator* preserves the *same* interface while dynamically enhancing behavior.
 
-I compare these by what the wrapper changes. An Adapter translates a mismatched SDK interface into the domain contract. A Facade offers a simpler entry to several steps while keeping meaningful outcomes visible. A Decorator preserves the interface but adds behavior such as metrics, and a Proxy controls access to another object, perhaps remote or lazy. In a payment integration, I would adapt vendor callbacks once, expose a facade that returns Confirmed, Rejected, or PendingVerification, and decorate that boundary with redacted metrics. I would not hide a timeout by returning success or let a retry decorator replay a POST without server idempotency. Kotlin delegation can reduce forwarding code, but I still test which calls pass through the wrapper.
+In modern Kotlin, the **Decorator pattern** is elegantly built via Class Delegation: `class LoggingRepository(private val delegate: UserRepository) : UserRepository by delegate`. You only override the methods you wish to decorate with logging, while Kotlin delegates all other method calls automatically, cutting boilerplate to near zero.
 
 ## How to answer in the interview
 
@@ -76,8 +137,11 @@ Distinguish intent for four wrappers; test outcome preservation, cancellation an
 
 ## Follow-up questions
 
-- [PAT-12](../pat-12/): Which pattern simplifies an unreliable SDK? **Answer:** a Facade over carefully designed adapters and recovery logic.
-- [KOT-15](../kot-15/): How can Kotlin reduce decorator forwarding? **Answer:** interface delegation with explicit overrides.
+- **Interviewer:** "What is the difference between Facade and Adapter?"
+  **Answer:** "An Adapter matches an existing specific interface required by a client. A Facade defines a completely new, simplified interface to make a complex subsystem easier to consume."
+
+- **Interviewer:** "How does Kotlin's `by` keyword implement the Decorator pattern?"
+  **Answer:** "By delegating interface methods to an internal wrapped instance (`by delegate`), allowing developers to override only the specific methods they want to decorate."
 
 ## Self-check rubric
 
@@ -88,4 +152,4 @@ Given a vendor callback, metrics requirement and cache, select wrapper roles and
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — structural patterns.
 - [Kotlin delegation](https://kotlinlang.org/docs/delegation.html) — forwarding mechanics.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

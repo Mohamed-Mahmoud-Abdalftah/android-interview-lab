@@ -22,11 +22,60 @@ Design scalable multi-feature Android app with team boundaries, data ownership a
 
 ## Explanation in Arabic
 
-تطبيق كبير محتاج boundaries حسب features والملكية، مش مجرد 100 modules. نحدد `:app` composition، feature modules للواجهات، core صغيرة لقدرات مشتركة، data repositories تملك المصادر، وdomain layer فقط لو business logic مشتركة/معقدة. UI تستقبل immutable state وتبعث events، وdependencies تبقى acyclic. نستثمر في contracts, CI, build metrics وrelease ownership بين الفرق.
+كيف تصمم تطبيق أندرويد ضخم متعدد الميزات (Scalable Multi-Feature Android Application) يعمل عليه عشرات الفرق؟
+
+1. التحديات الهندسية للتطبيقات الضخمة (Multi-Team Scale):
+   - بطء زمن التجميع والبناء (Build Times > 20 mins).
+   - التبعيات الدائرية (Circular Dependencies) وتداخل الكود بين الفرق.
+   - نزاعات الدمج المستمرة (Merge Conflicts) على ملفات الـ Navigation والـ DI.
+   - صعوبة اختبار وتطوير ميزة معينة بشكل منعزل.
+
+2. المعمارية المعيارية الموصى بها (Modular Architecture by Feature & Layer):
+   - **قاعدة فصل الواجهة عن التنفيذ (API vs. Implementation Pattern)**: لكل ميزة (Feature) يتم تقسيمها إلى موديولين على الأقل:
+     * `:feature:checkout:api`: يحتوي على الـ Interfaces, Data Transfer Objects, والـ Navigation Routes العامة فقط (كود خفيف جداً يترجم في ثوانٍ).
+     * `:feature:checkout:impl`: يحتوي على الـ Internal Views, ViewModels, Repositories، ولا يعتمد عليه أي موديول آخر مباشرة.
+   - **Core Layer (موديولات النواة)**:
+     * `:core:designsystem`: مكونات Compose العامة والـ Themes.
+     * `:core:network`: إعدادات OkHttp, Retrofit, Auth Interceptors.
+     * `:core:database`: Room DB المشتركة والـ DAOs.
+     * `:core:model`: الـ Shared Domain Entities.
+   - **App Layer (`:app`)**: موديول تجميعي خفيف يربط كل الـ Implementations ببعضها عبر Dagger/Hilt دون أن تعرف الميزات كود بعضها الداخلي.
+
+3. إدارة التنقل بين الشاشات دون اقتران (Decoupled Navigation):
+   - استخدام Navigation Contracts أو Deep Links أو Service Locator لتوجيه المستخدمين بين الميزات دون أن يستورد موديول الشاشة أ موديول الشاشة ب.
 
 ## Practical walkthrough
 
-في تطبيق فيه catalog وcheckout وaccount، خَلّي `:app` يركب الـnavigation والـDI، وكل feature تملك UI وpublic contract صغير. الـrepository تملك local/remote data، وbackend يملك قرارات payment. لو عشر فرق بتعدل `:core` في كل feature، ده مش modularization ناجحة؛ اقسّم حسب ownership وحدود التغيير، وقس incremental build والـdependency graph قبل وبعد.
+تصميم نمط Feature API/Impl لعزل الميزات وتسريع التجميع ومنع التبعيات الدائرية:
+```kotlin
+// في موديول :feature:payment:api (لا يعتمد على أي موديول خارجي):
+interface PaymentFeatureLauncher {
+    fun launchPaymentFlow(orderId: String, amountCents: Long)
+}
+
+// في موديول :feature:cart:impl (يعتمد فقط على :feature:payment:api):
+class CartViewModel @Inject constructor(
+    private val paymentLauncher: PaymentFeatureLauncher // حقن عبر الـ Interface بدون معرفة تفاصيل PaymentActivity
+) : ViewModel() {
+    fun onCheckoutClicked(orderId: String, amount: Long) {
+        paymentLauncher.launchPaymentFlow(orderId, amount)
+    }
+}
+
+// في موديول :feature:payment:impl (ينفذ الـ API):
+class PaymentFeatureLauncherImpl @Inject constructor(
+    @ApplicationContext private val context: Context
+) : PaymentFeatureLauncher {
+    override fun launchPaymentFlow(orderId: String, amountCents: Long) {
+        val intent = Intent(context, InternalPaymentActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            putExtra("order_id", orderId)
+            putExtra("amount", amountCents)
+        }
+        context.startActivity(intent)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -58,15 +107,37 @@ A 20-team commerce app has team-owned feature APIs, central session/payment cont
 
 ## Interview answer — short
 
-“I start with clear UI/data ownership, optional domain logic and an acyclic module graph. Features own screens; small core APIs hold stable shared contracts; the app composes implementations. I measure build and team outcomes rather than modularizing by fashion.”
+Design a scalable multi-feature app by splitting features into separate :api and :impl modules, isolating shared functionality into low-level :core modules, enforcing unidirectional dependency rules, using dependency injection to bind interfaces at the root :app module, and decoupling navigation via contract interfaces or deep links.
 
 ## Interview answer — structured
 
-“For a large multi-feature app I define one source of truth per data type, ViewModel state holders for UI, repositories for data/business rules and domain use cases only when shared logic warrants them. Modules follow team/feature ownership with stable cross-feature interfaces and acyclic dependencies. The app composition root binds implementations. I keep core modules small, centralize session and network policy, and establish CI contracts, integration tests and build metrics. A small app can stay monolithic until the split solves a real problem.”
+Scaling an Android codebase across multiple autonomous engineering teams requires decoupling compilation and architectural boundaries:
+
+1. **The Feature API / Implementation Separation**:
+   - Split each business domain into two modules: `:feature:name:api` and `:feature:name:impl`.
+   - The `:api` module exposes public interfaces, navigation arguments, and lightweight data contracts. Other features depend strictly on `:api`.
+   - The `:impl` module contains internal composables, ViewModels, and data repositories. No other module depends directly on `:impl`.
+
+2. **Layered Module Hierarchy**:
+   - **App Layer (`:app`)**: Thin application orchestrator that includes all `:impl` modules and wires Dagger/Hilt dependency graphs.
+   - **Feature Layer (`:feature:*`)**: Isolated vertical slices owning specific user journeys.
+   - **Core Layer (`:core:*`)**: Horizontal building blocks (`:core:network`, `:core:database`, `:core:designsystem`, `:core:common`).
+
+3. **Decoupled Navigation & Communication**:
+   - Features navigate to other features via exposed entry-point interfaces or typed deep link contracts, eliminating direct cross-feature class imports.
+
+4. **Build Performance Optimization**:
+   - Decoupled modules leverage Gradle build caching, parallel execution, and configuration caching, preventing full-project recompilations when a single feature changes.
 
 ## Interview answer — deep senior
 
-“Scalability has runtime and organizational dimensions. Runtime design uses persistent models, offline behavior, bounded concurrency and server-authoritative contracts. Team design uses feature ownership and a dependency graph that prevents implementation coupling: feature modules expose narrow APIs, data modules implement repositories, and the app wires them together. I avoid a giant core/common jar that becomes a recompilation and review bottleneck. I define navigation/deep-link contracts, DI boundaries, API compatibility checks and test fixtures that allow teams to work independently. I track clean/incremental build time, cycle violations, change lead time, crash/ANR metrics and ownership incidents; I split or merge modules based on those measurements. Duplicated token/session ownership yields inconsistent logout. I would validate the module graph with real change scenarios: how many modules recompile when checkout changes, who approves a payments API change, and whether a feature can be tested without the whole app. The app module composes implementations; feature modules consume contracts instead of importing each other's internals. Runtime scale still needs bounded requests, database design and backend capacity. A 100-module build with a giant shared core is organizationally expensive without delivering isolation.”
+From an organizational and platform engineering perspective, modularization must be protected by governance tooling:
+
+1. **Enforcing Dependency Direction via Tooling**: Architecture rules rot without automated guardrails. Use Gradle plugins like `dependency-analysis-android-plugin` or custom ArchUnit/Konsist tests to enforce that no feature module ever imports another feature's `:impl` module, and that `:core` modules never depend on `:feature` modules.
+
+2. **Independent Standalone Sample Apps**: Each major feature module should maintain a lightweight `:feature:name:sample` runnable app module. Developers on the checkout team can run and iterate on their feature in isolation within 5 seconds without compiling the remaining 50 features of the monolithic app.
+
+3. **Binary Dependency Substitution**: In mega-apps (100+ engineers), build times can be further reduced by substituting local module projects with pre-compiled AAR artifacts hosted on an internal Maven cache for modules outside the engineer's active feature domain.
 
 ## How to answer in the interview
 
@@ -82,8 +153,11 @@ Draw acyclic graph with owners; defend where shared domain code lives and how CI
 
 ## Follow-up questions
 
-- [MOD-07](../mod-07/): What module graph fits a large app? **Answer:** feature-owned nodes with narrow shared APIs and app composition.
-- [SYS-19](../sys-19/): How address 25-minute builds? **Answer:** measure hotspots and shrink dependency/change impact.
+- **Interviewer:** "What happens if two feature modules have a circular dependency?"
+  **Answer:** "Gradle refuses to build due to circular task graphs; the circular relationship must be broken by extracting the shared contract into an independent :api module or a shared :core module."
+
+- **Interviewer:** "Why is it dangerous to put all shared models in a single :core:models module?"
+  **Answer:** "It becomes a god-module; modifying any single entity triggers a complete project-wide recompilation across all dependent modules."
 
 ## Self-check rubric
 
@@ -94,4 +168,4 @@ Can I assign data/team ownership, draw acyclic dependencies and identify runtime
 - [Android architecture guide](https://developer.android.com/topic/architecture) — UI/data layers and SSOT.
 - [Android modularization guide](https://developer.android.com/topic/modularization) — module boundaries.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

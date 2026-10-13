@@ -24,11 +24,56 @@ Your main thread is blocked even though you launched a coroutine. Why?
 
 ## Explanation in Arabic
 
-`launch` بيبدأ coroutine، لكنه مش أمر “انقل الشغل لخلفية”. لو استدعيت `viewModelScope.launch` فغالبًا البداية على Main؛ `Thread.sleep` أو SDK synchronous أو loop CPU جواه هيحجز Main ويعمل jank أو ANR. الـsuspend function كمان مش ضمان إنها non-blocking: ممكن حد كتبها وبتنادي driver blocking. الحل إنك تحدد السطر اللي واقف عليه Main من trace، وتخلي طبقة البيانات main-safe بـ`withContext` على dispatcher مناسب للشغل blocking، أو تستخدم API asynchronous فعلًا. وخلي بالك إن إلغاء coroutine مش هيوقف driver blocking غصبًا عنه.
+لماذا قد يتعرض الـ Main Thread للحظر والتجمد بالرغم من أنك أطلقت كودك داخل Coroutine (`launch`)؟
+
+1. الفهم الخاطئ لـ Coroutines والـ Dispatcher الافتراضي:
+   - الـ Coroutines لا تعني سحراً ينقل الكود إلى خلفية النظام تلقائياً!
+   - إطلاق الكوروتين عبر `lifecycleScope.launch` أو `viewModelScope.launch` ينفذ الكود افتراضياً على **`Dispatchers.Main`** (أي على الـ UI Thread نفسه).
+   - إذا وضعت كوداً يحظر المعالج (Blocking Code) داخل هذا الـ Coroutine، فإنك تحظر الـ Main Thread مباشرة وتتسبب في سقوط فريمات أو ANR!
+
+2. ما الذي يُعتبر حظراً للـ Thread (Thread-Blocking Call)؟
+   - استدعاء `Thread.sleep()` بدلاً من الدالة المعلقة `delay()`.
+   - تنفيذ قراءات ديسك متزامنة (`File.readBytes()`, `SharedPreferences.getString()`, `Room/SQLite raw queries`).
+   - استدعاءات شبكة متزامنة عبر `OkHttpClient.newCall().execute()` بدلاً من `await()`.
+   - معالجات حسابية ثقيلة (CPU-intensive مثل تشفير، ضغط صور، فك ضغط ملفات).
+
+3. الحل السليم:
+   - نقل العمليات الثقيلة صراحة إلى الموزع المناسب:
+     * `Dispatchers.IO`: لعمليات الديسك والشبكة (I/O operations).
+     * `Dispatchers.Default`: للعمليات الحسابية الثقيلة ومعالجة البيانات (CPU-bound work).
+   - تطبيق مبدأ **Main-Safety**: يجب أن تكون كل دالة `suspend` آمنة للاستدعاء من الـ Main Thread باستخدام `withContext` داخل الدالة نفسها.
 
 ## Practical walkthrough
 
-في `viewModelScope.launch` استدعاء `client.blockingLoad()` هيشتغل على Main لو مفيش context switch حقيقي. في ANR trace شوف هل Main بتنفذ SDK، ولا مستنية lock أو Binder. `withContext(ioDispatcher)` يحمي Main من blocking I/O لكن driver ممكن يفضل شغال بعد cancellation، ومئات طلبات متزامنة تستهلك threads. اعمل limit للconcurrency، timeout حقيقي حسب client، واختبر خروج المستخدم بسرعة من الشاشة.
+تطبيق مبدأ Main-Safety لتجنب حظر الـ Main Thread في Coroutines:
+```kotlin
+// ❌ كود خاطئ: إطلاق كوروتين على Main ولكن مع كود يحظر الـ Thread:
+fun loadConfigBad() {
+    viewModelScope.launch { // يعمل على Dispatchers.Main.immediate!
+        // 💥 قراءة ملف متزامنة تحظر الـ Main Looper وتسبب ANR:
+        val data = File(context.filesDir, "config.json").readText()
+        _uiState.value = parse(data)
+    }
+}
+
+// ✅ كود احترافي: تطبيق Main-Safety باستخدام withContext:
+class ConfigRepository(private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO) {
+    // الدالة آمنة للاستدعاء من أي ثريد بما فيه Main:
+    suspend fun loadConfig(): Config = withContext(ioDispatcher) {
+        val raw = File(context.filesDir, "config.json").readText() // ينفذ على IO Thread بأمان
+        parseConfig(raw)
+    }
+}
+
+// في الـ ViewModel:
+fun loadConfigGood() {
+    viewModelScope.launch {
+        // الاستدعاء آمن تماماً، والـ Main thread لا يتم حظره أثناء القراءة:
+        val config = repository.loadConfig()
+        _uiState.value = config
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -68,15 +113,23 @@ For a receipt screen with rare ANRs, correlate ANR traces with network and datab
 
 ## Interview answer — short
 
-“A coroutine still runs on a thread. `viewModelScope.launch` starts on Main by default, and a blocking call inside it blocks Main until it returns. I inspect the trace, make the blocking repository boundary main-safe with an appropriate dispatcher or async API, and verify cancellation behavior.”
+Launching a coroutine with `viewModelScope.launch` or `lifecycleScope.launch` runs on `Dispatchers.Main` by default. If the coroutine executes blocking operations like `Thread.sleep()`, synchronous file/DB I/O, or heavy CPU parsing without switching via `withContext(Dispatchers.IO)` or `Dispatchers.Default`, it blocks the Android main looper directly, triggering jank or an ANR.
 
 ## Interview answer — structured
 
-“`launch` creates a coroutine, not a background thread. A real suspension such as an asynchronous wait frees Main, but `Thread.sleep`, a synchronous SDK, CPU loop, or lock wait does not. I inspect the ANR main-thread stack and its blockers, then move the blocking call to an injected dispatcher at the data boundary or replace it with a non-blocking API. I choose IO versus CPU execution deliberately and test cancellation, because a blocking driver may keep running after its coroutine is cancelled.”
+The common misconception is that simply wrapping code inside a coroutine makes it asynchronous and backgrounded. In reality, coroutines are cooperatively scheduled tasks, and their execution thread is dictated strictly by their assigned `CoroutineDispatcher`.
+
+`viewModelScope` and `lifecycleScope` are explicitly configured to launch on **`Dispatchers.Main.immediate`** by design, allowing developers to manipulate UI state directly. If code inside that coroutine executes a thread-blocking call—such as `Thread.sleep()`, synchronous database queries, large JSON deserialization, or file reads—it blocks the underlying Java thread. Because that thread is the Android main thread, the Choreographer and MessageQueue freeze, causing dropped frames and ANRs.
+
+The architectural solution is adhering to the **Main-Safety convention**: every suspending function must be safe to invoke from the main thread. Data and domain layer functions should encapsulate their thread switching internally using `withContext(Dispatchers.IO)` for I/O and `withContext(Dispatchers.Default)` for CPU-intensive computations.
 
 ## Interview answer — deep senior
 
-“I separate execution context, suspension, and driver behavior. A ViewModel coroutine inherits Main, and `suspend` does not imply a thread switch. If the main thread is blocked I first gather ANR traces and, ideally, Perfetto scheduling evidence to identify whether it is CPU work, synchronous I/O, Binder, or lock contention. I make the responsible layer main-safe: an injected IO context for unavoidable blocking I/O, a CPU-limited context for computation, or a genuinely async API. I bound concurrency, preserve `CancellationException`, and verify how the driver handles cancellation. If the call is a payment operation, dispatcher choice solves responsiveness only; idempotent recovery and durable identity remain separate requirements. In a concrete failure, `viewModelScope.launch` invokes a synchronous legacy client and blocks Main until the call returns. I move that boundary behind an injected dispatcher or async API, then cap parallel requests so a worker pool cannot be exhausted. A driver that ignores cancellation needs its own timeout and ownership policy; `withContext` alone cannot interrupt it.”
+Under the hood, a coroutine suspends without blocking a thread only when calling cooperative suspending functions (like `delay()` or `suspendCancellableCoroutine`). If standard synchronous JVM blocking code is invoked, the thread's execution loop is monopolized at the OS thread level; the coroutine runtime has no power to preempt synchronous bytecode execution.
+
+Another subtle trap is **Dispatcher saturation** or using `runBlocking` on the main thread to wait for a coroutine launched on `Dispatchers.Main`. This causes an immediate, unrecoverable deadlock: the main thread blocks waiting for the coroutine to complete, while the coroutine is queued on the main looper waiting for the main thread to unblock.
+
+In unit testing and architecture enforcement, we inject `CoroutineDispatcher` instances via constructor injection (e.g. `@IoDispatcher ioDispatcher: CoroutineDispatcher`), enabling replacement with `StandardTestDispatcher` in tests and avoiding hardcoded dispatcher bugs.
 
 ## How to answer in the interview
 
@@ -92,9 +145,11 @@ Explain dispatcher inheritance, real suspension, noncooperative blocking APIs, M
 
 ## Follow-up questions
 
-- [COR-02](../cor-02/): Does `suspend` mean background execution? **Answer:** no; caller context applies until code explicitly changes it.
-- [COR-16](../cor-16/): Why rethrow `CancellationException`? **Answer:** swallowing it breaks cooperative cancellation and can let obsolete work continue.
-- [MEM-25](../mem-25/): What if Main waits for a database lock? **Answer:** inspect the lock holder and transaction scope, then remove long contention rather than just changing the caller's dispatcher.
+- **Interviewer:** "What is the difference between `delay(1000)` and `Thread.sleep(1000)` inside a coroutine?"
+  **Answer:** "`delay(1000)` suspends the coroutine, freeing the underlying thread to process other messages or UI events in the meantime. `Thread.sleep(1000)` blocks the entire physical thread, freezing everything running on that thread for one full second."
+
+- **Interviewer:** "What happens if you invoke `runBlocking` from the Android main thread?"
+  **Answer:** "`runBlocking` halts the calling thread until the inner coroutine finishes. If the inner coroutine depends on main thread dispatching or takes longer than 5 seconds, it causes severe UI freezes or an instant ANR."
 
 ## Self-check rubric
 
@@ -106,4 +161,4 @@ State the default ViewModel coroutine context; name three blocking operations; u
 - [Coroutines best practices](https://developer.android.com/kotlin/coroutines/coroutines-best-practices) — repository responsibility for blocking calls.
 - [Diagnose and fix ANRs](https://developer.android.com/topic/performance/anrs/diagnose-and-fix-anrs) — trace-led diagnosis.
 
-Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The snippet is illustrative; the legacy client and Android integration were not compiled here.
+Technically reviewed against primary documentation on 2026-10-13.

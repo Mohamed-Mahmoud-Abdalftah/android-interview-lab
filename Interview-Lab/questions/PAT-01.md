@@ -22,7 +22,41 @@ Define pattern as reusable local design idea and distinguish it from system-leve
 
 ## Explanation in Arabic
 
-Design pattern وصف متكرر لحل مشكلة design داخل context معين مع trade-offs، مش library أو كود جاهز تنسخه. Strategy مثلًا تنظّم variation في algorithm، بينما architecture تحدد حدود system ومسؤوليات modules وتدفّق data؛ Repository أقرب architectural/data-access pattern من GoF class pattern. نفس app تقدر تستخدم MVVM كتنظيم presentation وAdapter عند SDK boundary وObserver لstate. اسم pattern يساعد الفريق يتفاهم، لكن مايثبتش إن الحل صحيح أو مناسب؛ ابدأ بالمشكلة وبالمتطلبات.
+ما هو نمط التصميم (Design Pattern) وكيف يختلف جوهرياً عن المعمارية (Architecture)؟
+
+1. ما هي المعمارية (Architecture - النظرة الشاملة من أعلى Macro)؟
+   - المعمارية هي **المخطط الهيكلي العام للبرنامج (System Blueprint)**.
+   - تحدد: كيفية تقسيم النظام ككل إلى طبقات (Presentation, Domain, Data)، اتجاه تدفق البيانات والتبعيات (Clean Architecture / MVI)، وكيف تتواصل الموديولات الكبيرة مع بعضها.
+   - قرارات المعمارية صعبة ومكلفة التغيير بعد اتخاذها؛ تغيير المعمارية يشبه تغيير أساسات المبنى بالكامل.
+
+2. ما هو نمط التصميم (Design Pattern - النظرة الدقيقة الموضعية Micro)؟
+   - نمط التصميم هو **حل نموذجي قابل لإعادة الاستخدام لمشكلة برمجية شائعة ومحددة تظهر داخل كود كلاس أو كلاسين**.
+   - أمثلة: كيفية إنشاء كائن معقد (Builder / Factory)، كيفية مطابقة واجهة غير متوافقة (Adapter)، أو كيفية إشعار عدة كائنات بحدث ما (Observer).
+   - أنماط التصميم تقع *داخل* المعمارية ويمكن استبدالها أو تعديلها موضعياً بسهولة.
+
+3. الخلاصة:
+   - المعمارية تجيب على: *"كيف يتدفق النظام ككل وتتوزع الطبقات؟"*
+   - نمط التصميم يجيب على: *"كيف تحل كلاسات هذه الميزة مشكلة محددة في الكود؟"*
+
+## Practical walkthrough
+
+المقارنة العملية بين القرار المعماري ونمط التصميم في تطبيق Android:
+```kotlin
+// 1. قرار معماري (Architecture): اختيار Clean Architecture و UDF:
+// الطبقات مقسمة إلى Presentation و Domain و Data مع تدفق أحادي الاتجاه:
+class CheckoutViewModel(private val checkoutUseCase: CheckoutUseCase) : ViewModel() {
+    val uiState: StateFlow<CheckoutUiState> = ...
+}
+
+// 2. نمط تصميم موضعي (Design Pattern - Strategy Pattern):
+// داخل طبقة Data، يتم استخدام نمط Strategy لاختيار وسيلة الدفع المناسبة:
+interface PaymentStrategy {
+    suspend fun pay(amount: Long): PaymentResult
+}
+class StripeStrategy : PaymentStrategy { ... }
+class PayPalStrategy : PaymentStrategy { ... }
+// هذا النمط يعيش داخل تفاصيل طبقة Data ولا يؤثر على هيكل المعمارية العام للنظام!
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +65,6 @@ Patterns provide shared vocabulary for object collaboration; architecture sets l
 ## Worked example
 
 Example: a checkout app uses a repository boundary to coordinate Room/network, a Strategy for multiple payment providers, and Adapter wrappers for SDK callback differences. Its architecture also defines UI/data modules, server authority and process-death recovery. These are different scales of decision.
-
-## Practical walkthrough
-
-لو checkout app عندها SDKين للدفع، architecture تقرر إن UI تتعامل مع domain operation واحدة وإن server هو صاحب قرار الدفع وإن Room تحفظ pending attempts. جوه boundary دي Adapter يحوّل callbacks لكل SDK لشكل موحد، وStrategy تختار طريقة تنفيذ حسب payment method. ده يوضح الفرق: architecture تحدد ownership/data flow/trust boundaries على مستوى system؛ pattern تحل variation موضعية. لو vendor واحد وAPI واضح، ثلاث layers من factories لمجرد الاسم هتزود صعوبة التتبع. في review ابدأ بسؤال: “أي تغيير متوقع؟ وأي failure لازم يتعزل؟” وبعدين سمّي pattern إن كانت بتختصر الفكرة.
 
 ## Trade-offs and decision criteria
 
@@ -50,17 +80,29 @@ A finance app uses an SDK adapter at data boundary while the app architecture ke
 
 ## Interview answer — short
 
-A design pattern is a reusable solution shape for a recurring local design problem. Architecture describes the larger system boundaries and data flow. I use patterns as vocabulary only when they clarify a real problem and trade-off.
+Architecture is the macro-level system blueprint defining global layers, module boundaries, and dependency directions (e.g. Clean Architecture, MVI). Design patterns are micro-level, localized templates solving specific recurring object-oriented problems within classes (e.g. Builder, Strategy, Adapter).
 
 ## Interview answer — structured
 
-I start with the problem: do I need to vary an algorithm, adapt an API, or notify observers? A pattern names a tested collaboration shape for that context, but it is not a drop-in implementation. Architecture is broader: it decides layers, modules, source of truth, lifecycle and deployment boundaries. A checkout system can have MVVM and repository architecture while using Strategy and Adapter inside it. I would evaluate behavior and maintenance cost rather than reward a diagram for containing pattern names.
+The distinction between Architecture and Design Patterns is fundamentally a matter of scope and structural impact.
+
+1. **Architecture (Macro-Level / System Blueprint)**:
+   - Defines the high-level organization of the entire software system.
+   - Establishes foundational layers (Presentation, Domain, Data), dependency boundaries, data flow rules (Unidirectional Data Flow), and modularization strategy.
+   - Architectural decisions are costly and difficult to change once implemented (e.g. migrating from Monolithic MVC to Multi-Module Clean Architecture).
+   - Answers: *'Where do responsibilities live and in which direction does information flow across the app?'*
+
+2. **Design Patterns (Micro-Level / Tactical Solutions)**:
+   - Localized, reusable idioms solving specific recurring design challenges between collaborating classes.
+   - Examples: Using the Builder pattern for complex notification construction, the Adapter pattern for converting third-party analytics APIs, or the Strategy pattern for dynamic fee calculations.
+   - Tactical decisions that can be refactored within a single package without destabilizing the broader system.
+   - Answers: *'How should these specific objects collaborate to solve a localized problem?'*
 
 ## Interview answer — deep senior
 
-The useful difference is scale and responsibility. A GoF pattern such as Adapter explains a collaboration among objects; application architecture decides which module owns transport, how state reaches UI, and where server authority resides. Some patterns like Repository sit closer to an architectural/data boundary and are not one of the original GoF catalog entries. Kotlin may implement a pattern without formal class hierarchies: lambdas can stand in for simple strategies, `object` can express a singleton, and delegation can forward behavior. None of those syntactic conveniences solves lifecycle or thread safety. I would show the team the problem, proposed seam, failure behavior and tests before choosing a pattern. A named pattern is valuable when it makes change local and expectations clear, not when it creates ceremonial classes.
+A helpful mental model is urban planning: Architecture is the zoning laws, highway networks, and utility grids of a city. Design patterns are the architectural blueprints for individual houses, doorways, and interior plumbing.
 
-I would use a checkout system to show the scale difference. The architecture decides that the UI talks to a data boundary, that the server is authoritative for payment outcomes, and that pending attempts survive process death. Within that design, an Adapter can normalize two vendor SDK callback contracts, and a Strategy can select between supported payment methods. Neither pattern decides where financial trust lives or makes retries safe. I would draw the expected change and failure boundary first, then choose the smallest collaboration that contains it. If there is only one stable provider, a hierarchy of factories and strategies may add cost without benefit; I would keep the simpler implementation and revisit it when variation is real.
+Architecture dictates the constraints within which design patterns operate. For example, inside a Clean Architecture system, you might employ the **Repository pattern** to mediate data access, the **Factory pattern** to instantiate network decoders, and the **Observer pattern** (`Flow`) to project UI state. The design patterns live harmoniously within the architectural boundaries established by the system.
 
 ## How to answer in the interview
 
@@ -76,8 +118,11 @@ Compare object collaboration with module boundaries, and identify Kotlin shortha
 
 ## Follow-up questions
 
-- [PAT-02](../pat-02/): What kinds of GoF patterns exist? **Answer:** creational, structural, and behavioral.
-- [PAT-06](../pat-06/): Is Repository a GoF pattern? **Answer:** no; it is a data-access/architectural boundary pattern.
+- **Interviewer:** "Can a bad design pattern ruin good architecture?"
+  **Answer:** "Yes. If an anti-pattern like a monolithic God-Singleton is introduced, it creates hidden shared mutable state across architectural boundaries, corrupting the Clean Architecture dependency rule."
+
+- **Interviewer:** "Is the Repository pattern an architectural pattern or a design pattern?"
+  **Answer:** "It functions at both levels: tactically as a mediator design pattern abstracting data access, and architecturally as the foundational boundary between Data and Domain layers."
 
 ## Self-check rubric
 
@@ -88,4 +133,4 @@ Define pattern and architecture at different scales and give one Android example
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — original pattern catalog and categories.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — app-level boundaries.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

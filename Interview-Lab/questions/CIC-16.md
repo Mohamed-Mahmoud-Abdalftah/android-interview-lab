@@ -23,11 +23,57 @@ How do you handle multiple environments and flavors?
 
 ## Explanation in Arabic
 
-Product flavors بتحدد variants زي dev/staging/prod، وbuild types زي debug/release بتحدد debuggability/minification/signing. مش كل combination لازم ينشر. نخلي `applicationId`، backend URL، Play app وsigning policy صريحة ومتحققة في CI؛ لا نحط private secrets في `BuildConfig` لأن APK قابل للفحص.
+كيف تدير البيئات المتعددة (Environments) والنكهات (Product Flavors) في أندرويد بشكل احترافي؟
+
+1. مفهوم أبعاد النكهات (Flavor Dimensions) وأنواع البناء (Build Types):
+   - **Build Types**: تحدد خصائص البناء (مثل `debug` للبرمجة مع تمكين التصحيح، و `release` للمستخدمين مع تمكين R8 والتوقيع).
+   - **Product Flavors**: تحدد إصدارات المنتج المختلفة (مثل بيئات السيرفر: `dev`, `staging`, `prod` أو طريقة التوزيع: `playStore`, `fdroid`).
+   - **Build Variant = Flavor + Build Type** (مثلاً: `devDebug`, `prodRelease`).
+
+2. أفضل الممارسات الهندسية لإدارة البيئات:
+   - **لاحقة معرف التطبيق (`applicationIdSuffix`)**: إضافة `.dev` و `.staging` لتوليد حزم فريدة، مما يتيح للمطورين وفريق الـ QA **تثبيت نسختي الـ Dev والـ Prod معاً على نفس الهاتف جنباً إلى جنب** دون أن تحذف إحداهما الأخرى.
+   - **عزل الموارد وملفات الإعدادات عبر مجلدات المصادر (Source Sets)**:
+     * وضع `google-services.json` الخاص بـ Firebase Dev في `app/src/dev/`، وملف Prod في `app/src/prod/`.
+   - **حقن الإعدادات في `BuildConfig` أو `resValue`**: تمرير عناوين الـ Base URL ومفاتيح البيئة عبر Gradle دون كتابتها داخل كود التطبيق مباشرة.
+   - **عزل المكتبات حسب البيئة**: استخدام `debugImplementation` لأدوات مثل Chucker و LeakCanary مع `releaseImplementation` لمكتبات الـ no-op المقابلة لمنع تسريب أدوات التصحيح للإنتاج.
 
 ## Practical walkthrough
 
-Flavors مفيدة لبيئات backend أو branding، لكن لا تخلي `debug` يروح production endpoint أو `release` يحتفظ staging key. عرّف endpoint وapplication ID وfeature gates في source set/config واضح، واعمل assertions على كل variant حرج. Secrets الحقيقية لا تدخل `BuildConfig` في client على إنها سر؛ أي قيمة في APK قابلة للاستخراج. اختبر minified release flavor للـproduction، وCI تمنع نشر package/endpoint غلط. كثرة flavors تضرب build time واحتمال combinations غير مختبرة.
+إعداد Gradle احترافي يدعم بيئات Dev و Staging و Prod بالتفصيل:
+```kotlin
+// app/build.gradle.kts
+android {
+    flavorDimensions += listOf("environment")
+
+    productFlavors {
+        create("dev") {
+            dimension = "environment"
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            buildConfigField("String", "BASE_URL", "\"https://api-dev.company.com/\"")
+            resValue("string", "app_name", "App (DEV)")
+        }
+        create("staging") {
+            dimension = "environment"
+            applicationIdSuffix = ".staging"
+            versionNameSuffix = "-staging"
+            buildConfigField("String", "BASE_URL", "\"https://api-staging.company.com/\"")
+            resValue("string", "app_name", "App (STG)")
+        }
+        create("prod") {
+            dimension = "environment"
+            buildConfigField("String", "BASE_URL", "\"https://api.company.com/\"")
+            resValue("string", "app_name", "App")
+        }
+    }
+}
+
+dependencies {
+    // تفعيل فاحص الشبكة Chucker فقط في بيئات التطوير والتصحيح:
+    debugImplementation("com.github.chuckerteam.chucker:library:4.0.0")
+    releaseImplementation("com.github.chuckerteam.chucker:library-no-op:4.0.0")
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +97,33 @@ Release checklist records variant, applicationId, signing identity, backend host
 
 ## Interview answer — short
 
-“I use flavors for environment identity and build types for build behavior, then assert the built applicationId, host, signing and target track before publishing. BuildConfig is not a secret store.”
+Manage environments using Gradle flavorDimensions and productFlavors combined with buildTypes. Use applicationIdSuffix to allow side-by-side installations on the same device, isolate environment-specific backend URLs via BuildConfig fields, manage distinct Google Services configs using flavor-specific source sets, and inject debug tooling using variant-aware dependencies.
 
 ## Interview answer — structured
 
-“Gradle variants combine flavors and build types, so I define a supported matrix instead of testing every theoretical combination. Staging and production use distinct application IDs and backend/provider accounts. CI checks the merged manifest and actual artifact metadata before upload, and release smoke tests use a minified variant. Private credentials stay server-side; a flavor constant in the APK is public.”
+Managing multiple environments in modern Android applications relies on structured Gradle architecture:
+
+1. **Flavor Dimensions and Build Variants**:
+   - Define dimensions (e.g. `environment`: `dev`, `staging`, `prod`). Gradle multiplies flavors by build types (`debug`, `release`) to produce concrete build variants like `devDebug` and `prodRelease`.
+
+2. **Side-by-Side Coexistence (`applicationIdSuffix`)**:
+   - Assign `applicationIdSuffix = ".dev"` and `applicationIdSuffix = ".staging"`. This allows developers and QA to install production, staging, and development builds concurrently on a single physical device without overwriting app sandboxes.
+
+3. **Configuration Injection via BuildConfig and ResValue**:
+   - Expose backend endpoints, feature toggles, and app display names dynamically via `buildConfigField` and `resValue("string", "app_name", ...)`, keeping source code agnostic of underlying environment URLs.
+
+4. **Source Sets & Third-Party Isolation**:
+   - Use directory-based source sets (`src/dev/`, `src/prod/`) to supply distinct configuration assets (e.g. separate Firebase `google-services.json` files for dev and prod GCP projects), and isolate profiling tools using `debugImplementation` vs `releaseImplementation` no-op stubs.
 
 ## Interview answer — deep senior
 
-“I model environments as explicit variant configuration, not manual edits before release. Build types express properties such as debuggability and shrinking; product flavors can express environment or brand dimensions, producing variants whose application ID, endpoint, signing and feature policy I can inspect. I keep backend URLs and safe public configuration in versioned configuration, while server secrets remain server-side because anything packaged in an APK can be extracted. CI compiles representative variants and checks the exact production release variant for package ID, endpoint, manifest and signing identity before upload. I make internal builds visually distinct when useful so testers do not mistake staging for production. The trade-off is a larger variant matrix and build cost, so I avoid creating flavor dimensions for every flag and target the combinations with real distribution value. A wrong-flavor incident should be caught by an artifact-level assertion, not by someone noticing after installation.”
+From an architectural modularity and build performance perspective, multi-flavor setups require governance:
+
+1. **Combinatorial Explosion Hazard**: Having 3 flavor dimensions with 3 flavors each creates $3 \times 3 \times 2 = 18$ build variants. This drastically degrades Gradle configuration times, IDE indexing, and CI matrix execution. Keep flavor dimensions minimal (ideally a single dimension for environment), and handle sub-variations via runtime feature flags or build properties.
+
+2. **Multi-Module Flavor Propagation**: In an 80-module app, declaring flavors in every library module creates tight coupling and configuration failures (`missingDimensionStrategy`). Follow modern Android architecture guidelines: keep library modules flavor-agnostic, and declare flavors exclusively in the top-level `:app` application module.
+
+3. **Secrets Isolation in CI**: The release pipeline for `prodRelease` must never execute with `dev` keys, nor should `dev` builds touch production databases or Stripe credentials. CI pipelines must validate and restrict secret injection based on the specific variant being compiled.
 
 ## How to answer in the interview
 
@@ -75,8 +139,11 @@ Prompt for variant tuple, merged manifest, test/prod account separation and flav
 
 ## Follow-up questions
 
-- [CIC-19](../cic-19/): How catch wrong flavor? **Answer:** assert artifact metadata against target track.
-- [SEC-31](../sec-31/): Is BuildConfig secret? **Answer:** no, compiled values ship in APK.
+- **Interviewer:** "Why should library modules avoid declaring product flavors in multi-module apps?"
+  **Answer:** "To prevent combinatorial variant explosion and complex variant-matching configuration issues; flavors should be declared primarily in the root application module."
+
+- **Interviewer:** "How does `applicationIdSuffix` enable side-by-side app installations on Android?"
+  **Answer:** "It modifies the unique Android OS package identifier, allowing the PackageManager to treat dev and prod builds as completely independent apps."
 
 ## Self-check rubric
 
@@ -87,4 +154,4 @@ Map each environment/flavor to app ID, endpoint and signing boundary; prevent pr
 - [Android build variants](https://developer.android.com/build/build-variants) — flavors and build types.
 - [Android app signing](https://developer.android.com/studio/publish/app-signing) — signing identity.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

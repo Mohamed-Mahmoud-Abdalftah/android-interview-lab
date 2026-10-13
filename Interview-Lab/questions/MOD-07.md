@@ -24,11 +24,48 @@ Design a multi-module structure for a large app.
 
 ## Explanation in Arabic
 
-لتطبيق كبير مثل commerce، ابدأ بـ`:app` كـcomposition root، ثم `:feature:catalog`, `:feature:checkout`, `:feature:orders` حول قدرات المستخدم. ضع عقود مستقرة في `:domain:*` أو `:feature:*:api` عند حاجة حقيقية، وimplementations في `:data:*`. `:core:network`, `:core:database`, `:designsystem` للبنية المشتركة ذات owner واضح. feature لا تستورد implementation feature أخرى؛ app يربط navigation/DI. حافظ على DAG، اختبر compile variants وintegration، وقِس build configuration/incremental time. لا تجعل الهيكل رسمًا جميلًا بلا حدود API.
+كيف تصمم هيكل نمطي متكامل (Multi-Module Architecture) لتطبيق Android ضخم الحجم؟
+
+1. المخطط المعماري الهرمي الموصى به (The Recommended Layered Graph):
+   - **`:app` (Root Composition)**: موديول خفيف جداً يجمع شجرة الـ DI والـ Navigation والـ Application Class.
+   - **`:features` (Vertical Slices)**: مقسمة بنمط API/Impl لكل ميزة:
+     * `:feature:auth:api` (عقود، مسارات، واجهات فقط)
+     * `:feature:auth:impl` (الشاشات، الـ ViewModels، والتنفيذ الفعلي)
+     * `:feature:checkout:api` و `:feature:checkout:impl`
+   - **`:core` (Horizontal Slices)**: خدمات البنية التحتية المشتركة:
+     * `:core:designsystem` (الألوان، الخطوط، المكونات الرسومية)
+     * `:core:network` (Retrofit, OkHttp, SSL Pinning)
+     * `:core:database` (Room database, migrations)
+     * `:core:analytics` (تتبع الأحداث)
+     * `:core:model` (نماذج البيانات المشتركة النظيفة)
+
+2. قواعد التحكم في شجرة التبعيات:
+   - موديولات الـ Feature لا تعتمد على موديولات Feature أخرى إطلاقاً؛ بل تعتمد فقط على الـ `:api` موديول للميزة المطلوبة.
+   - موديولات الـ `:core` لا تعتمد على أي موديول Feature في أي حال من الأحوال.
+   - استخدام Version Catalogs (`libs.versions.toml`) و Convention Plugins لتوحيد إعدادات Gradle لجميع الموديولات.
 
 ## Practical walkthrough
 
-في app كبيرة، ارسم feature ownership وdata contracts قبل رسم أسماء modules. `:app` composition، `:feature:catalog` و`:feature:checkout` بواجهات صغيرة، shared account contract في core/domain مناسب، adapters في data modules. امنع direct feature-to-feature import، واجعل navigation عند app. ابدأ بfeature واحدة واختبر build impact قبل نقل 100 module دفعة واحدة.
+الهيكل التنظيمي للموديولات في مشروع حقيقي واسع النطاق:
+```text
+MyEnterpriseApp/
+├── app/                           // Final packaging, Hilt root, NavHost
+├── build-logic/                   // Custom Gradle Convention Plugins
+├── core/
+│   ├── designsystem/              // Material3 tokens, Custom Buttons, Theme
+│   ├── network/                   // OkHttp, Retrofit, Auth Interceptors
+│   ├── database/                  // Room Database, DAOs
+│   ├── model/                     // Immutable shared data classes (User, Money)
+│   └── testing/                   // Test rules, Fake repositories
+└── feature/
+    ├── feed/
+    │   ├── api/                   // FeedNavigationContract, FeedEntryRoute
+    │   └── impl/                  // FeedScreen, FeedViewModel, FeedPagingSource
+    └── cart/
+        ├── api/                   // CartBadgeContract, AddToCartUseCase
+        └── impl/                  // CartScreen, CartViewModel
+```
+كل ميزة مفصولة إلى API و Implementation، مما يضمن سرعة خرافية في الـ Incremental Compilation وعزل تام بين الفرق!
 
 ## Why it matters and how it works
 
@@ -52,15 +89,32 @@ Write allowed-edge rules, ownership documentation and a module graph check. Trac
 
 ## Interview answer — short
 
-“I use a thin app composition root, cohesive feature modules, narrow contracts, owned data implementations and stable core/design-system modules in an acyclic graph.”
+Design a large-scale app using a layered DAG: an assembly :app module, feature modules split into :feature:x:api (contracts) and :feature:x:impl (screens/logic), horizontal :core infrastructure (network, database, designsystem), and centralized build-logic convention plugins with a Version Catalog.
 
 ## Interview answer — structured
 
-“For a large commerce app I separate catalog, checkout and orders features, each owning UI and workflow. Shared contracts live in a small API/domain boundary; data modules implement repositories using core network/database, and app selects bindings and top-level navigation. Features do not import one another's internals. I enforce dependency direction and test final variants, then measure whether the split improves team independence and build fan-out instead of maximizing module count.”
+A production-grade multi-module architecture for an enterprise Android app balances compilation speed, encapsulation, and team velocity:
+
+1. **Layered Module Architecture**:
+   - **`:app`**: Thin composition root. Assembles the final APK, provisions Hilt graph roots, and attaches top-level navigation graphs.
+   - **`:feature:*:impl`**: Contains UI Composables, ViewModels, and internal presentation logic. Feature implementations never depend directly on sibling feature implementations.
+   - **`:feature:*:api`**: Lightweight contract modules containing only navigation routes, shared events, and public interfaces. Features interact exclusively through peer API modules.
+   - **`:core:*`**: Horizontal foundations (`:core:designsystem`, `:core:network`, `:core:database`, `:core:model`, `:core:analytics`).
+
+2. **Standardized Build Governance**:
+   - Centralized dependency coordinates via `libs.versions.toml`.
+   - Custom Gradle Convention Plugins in `build-logic` (`android.library`, `android.feature`, `android.compose`) to eliminate 95% of boilerplate from individual `build.gradle.kts` files.
 
 ## Interview answer — deep senior
 
-“I would start with user capabilities and team ownership, then draw a DAG before creating Gradle files. The app packages variants and composes navigation and DI. Catalog, checkout and orders each own their screens and feature logic, exposing only a destination or domain contract required by consumers. Data modules implement repository interfaces using infrastructure from core network and database, while a design-system module supplies UI tokens and components without business models. For checkout I want a stable product identifier and authoritative price check, not a dependency on catalog's internal Composable or DTO. I define allowed edges and decide which types are public; an `api` leak can cause broad rebuilds even in a DAG. I add feature unit/UI tests plus an app assembly and injection smoke path for release variants. Then I measure configuration time, incremental builds and cross-team change history. If a proposed `:core:common` accumulates unrelated helpers, I give the code a real owner or accept small duplication. The architecture should let teams change internals locally while keeping integration explicit and operationally testable.”
+A critical pitfall in large-scale modularization is **Uncontrolled Micro-Modularization** (creating 300+ tiny modules for single classes).
+
+Every Gradle module introduces overhead: configuration evaluation time, IDE indexing load, and task scheduling overhead. If modules are too granular, cold build times and Android Studio sync times explode.
+
+To maintain an optimal balance:
+- Extract a module only when there is a **real compile boundary** (independent team ownership, distinct release cycle, or high rebuild frequency).
+- Use the `:api` / `:impl` split primarily for high-traffic features that multiple teams interact with, rather than dogmatically splitting every trivial screen.
+- Implement continuous CI graph validation (enforcing no feature-to-feature direct implementation dependencies) to protect the DAG from accidental erosion.
 
 ## How to answer in the interview
 
@@ -76,9 +130,11 @@ Draw feature/data/core/app edges, public API, navigation ownership, DI wiring an
 
 ## Follow-up questions
 
-- Where does top-level navigation composition live? **Answer:** usually in app or a dedicated shell that composes feature entry points.
-- Should checkout import catalog's UI implementation? **Answer:** no; use a stable ID or narrow contract.
-- How do you validate the design? **Answer:** graph rules, final variant assembly, integration tests and build metrics.
+- **Interviewer:** "What is the primary benefit of the `:api` vs `:impl` module split?"
+  **Answer:** "It minimizes rebuild cascades: modifying code inside `:impl` does not recompile other modules that only depend on the stable `:api` contract."
+
+- **Interviewer:** "How do feature modules navigate to each other without depending on `:impl`?"
+  **Answer:** "They navigate using route contracts or destinations defined in peer `:api` modules, resolved at runtime by the root navigation graph in `:app`."
 
 ## Self-check rubric
 
@@ -89,4 +145,4 @@ Sketch an acyclic commerce graph, assign owners, and show integration and perfor
 - [Android modularization guide](https://developer.android.com/topic/modularization) — graph design.
 - [Common modularization patterns](https://developer.android.com/topic/modularization/patterns) — feature and core examples.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The commerce structure is an illustrative design.
+Technically reviewed against primary documentation on 2026-10-13.

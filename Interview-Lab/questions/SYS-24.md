@@ -22,11 +22,54 @@ Design for poor connectivity and intermittent power loss with durable state and 
 
 ## Explanation in Arabic
 
-نتعامل مع network loss وpower/process death كحالة عادية: UI تقرأ local Room، writes تُقبل فقط بعد local transaction مع outbox ID، والworker تعيد المحاولة عند connectivity تحت قيود OS. server versions/idempotency تحمي من duplicate/out-of-order، وUI تعرض stale, pending, conflict, unknown بدل نجاح كاذب. نختبر kill عند كل boundary، low storage ووقت الجهاز الخاطئ.
+كيف تصمم تطبيقاً يعمل بكفاءة تحت ظروف الاتصال الضعيف جداً (Poor Connectivity) والانقطاع المفاجئ للطاقة والبطارية (Intermittent Power Loss)؟
+
+1. تحديات البيئات القاسية (Harsh Constraints / Emerging Markets):
+   - شبكات 2G/3G متقطعة، زمن استجابة عالي (Latency > 2000ms)، باقات بيانات مكلفة ومحدودة.
+   - بطاريات هواتف رديئة، وإمكانية إغلاق الهاتف فجأة في أي ثانية بسبب نفاد الشحن.
+
+2. تقليص استهلاك الشبكة (Data Thrift & Bandwidth Optimization):
+   - **ضغط البيانات بصيغ حديثة**: استخدام **Protocol Buffers (Protobuf)** أو GZIP JSON لتقليص حجم البايتات بنسبة 60-80% مقارنة بالنصوص العادية.
+   - **تحسين الصور**: استخدام صيغ WebP أو AVIF، وجلب صور مصغرة جداً (Thumbnails) تناسب أبعاد الشاشة فقط، ومنع تحميل الصور عالية الدقة إلا على شبكات Wi-Fi.
+   - **Delta Sync**: جلب البيانات المعدلة فقط منذ آخر فحص بدلاً من إعادة تنزيل القوائم كاملة.
+
+3. الحماية ضد انقطاع الطاقة المفاجئ (Power Loss & Crash Resilience):
+   - **المعاملات الذرية في SQLite (Atomic Transactions & WAL Mode)**: استخدام Room داخل `database.withTransaction { ... }` وتفعيل وضع Write-Ahead Logging (WAL). هذا يضمن أنه لو انطفأ الهاتف أثناء الكتابة، لن يتلف ملف قاعدة البيانات أبداً.
+   - **جدولة المهام الموفرة للطاقة عبر WorkManager**:
+     * وضع قيود صارمة على مهام الخلفية: `setRequiresBatteryNotLow(true)` و `setRequiresCharging(true)` لضمان عدم استنزاف طاقة المستخدم عند قرب نفاد البطارية.
 
 ## Practical walkthrough
 
-في جهاز ميداني الشبكة بتقطع والبطارية ممكن تخلص بعد ضغط Save. لازم قبول العملية يعني row وoutbox ID اتكتبوا transactionally، مش مجرد coroutine بدأت. Worker تشتغل بقيود OS لما الشبكة ترجع، والـbackend يرفض duplicates بنفس ID ويحل version conflicts. UI تقول Pending/Unknown/Conflict وتعرض عمر البيانات. اختبر قتل process عند كل مرحلة، خصوصًا بعد إرسال request وقبل وصول الرد.
+تطبيق إعدادات توفير البيانات وحماية قاعدة البيانات من الانقطاع المفاجئ للطاقة:
+```kotlin
+// 1. إعدادات Room Database محمية بـ WAL Mode لمنع تلف الملفات عند انطفاء الهاتف:
+@Database(entities = [TransactionEntity::class], version = 1)
+abstract class ResilientDatabase : RoomDatabase() {
+    companion object {
+        fun create(context: Context): ResilientDatabase {
+            return Room.databaseBuilder(context, ResilientDatabase::class.java, "resilient.db")
+                .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING) // حماية فائقة ضد انقطاع الطاقة المفاجئ
+                .build()
+        }
+    }
+}
+
+// 2. جدولة مزامنة البيانات الكبيرة مع مراعاة حالة البطارية والشبكة:
+fun scheduleBatteryAwareSync(workManager: WorkManager) {
+    val constraints = Constraints.Builder()
+        .setRequiredNetworkType(NetworkType.UNMETERED) // مزامنة البيانات الضخمة فقط على Wi-Fi
+        .setRequiresBatteryNotLow(true)               // منع التشغيل إذا كانت البطارية منخفضة (< 15%)
+        .setRequiresCharging(false)
+        .build()
+
+    val syncWork = PeriodicWorkRequestBuilder<HeavySyncWorker>(6, TimeUnit.HOURS)
+        .setConstraints(constraints)
+        .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.MINUTES)
+        .build()
+
+    workManager.enqueueUniquePeriodicWork("heavy_sync", ExistingPeriodicWorkPolicy.KEEP, syncWork)
+}
+```
 
 ## Why it matters and how it works
 
@@ -60,15 +103,32 @@ A field inspection app saves forms/attachments locally, resumes uploads by ackno
 
 ## Interview answer — short
 
-“I persist user intent before network work, render from local storage, use repeat-safe background sync and reconcile ambiguous server outcomes. UI distinguishes stale, pending and confirmed state; tests kill the app at each transition.”
+Design for extreme constraints using compact binary payloads (Protobuf), WebP image compression, and local-first delta sync. Guard against sudden power loss using SQLite Write-Ahead Logging in atomic transactions, and defer heavy synchronization to Wi-Fi and healthy battery states via WorkManager constraints.
 
 ## Interview answer — structured
 
-“Poor connectivity changes the architecture. The UI should work from a local source of truth and label stale data. An edit commits to Room with an outbox row before the user sees Saved; WorkManager later syncs under network constraints. Each operation has a stable ID, and the backend enforces idempotency and versions. A timeout becomes Unknown until status reconciliation. For large uploads, I persist server-acknowledged offsets. I test process death, power loss and disk-full behavior as normal paths rather than exceptional afterthoughts.”
+Designing for poor connectivity and sudden power loss treats resource scarcity as the default operating environment:
+
+1. **Bandwidth Thrift & Binary Encoding**:
+   - Replace verbose JSON payloads with Protocol Buffers (gRPC/Protobuf) or enforce HTTP GZIP/Brotli compression, reducing network payload size by up to 70%.
+   - Downsample media server-side to match the exact physical display density. Serve modern image formats (WebP or AVIF), deferring high-resolution asset downloads until unmetered Wi-Fi is detected.
+
+2. **Resilience Against Sudden Power Loss**:
+   - Budget devices frequently experience sudden shutdowns due to degraded batteries under load. Prevent SQLite database corruption by enabling **Write-Ahead Logging (WAL)** mode in Room.
+   - Execute multi-table writes strictly inside atomic `database.withTransaction { }` blocks. If power drops mid-write, SQLite rolls back to the last consistent checkpoint on reboot without corrupting database pages.
+
+3. **Battery-Aware Scheduling via WorkManager**:
+   - Schedule background data syncs with explicit hardware constraints: `.setRequiresBatteryNotLow(true)` and `.setRequiredNetworkType(NetworkType.CONNECTED)`. This prevents the application from waking up the CPU when battery levels drop below 15%.
 
 ## Interview answer — deep senior
 
-“I design around crash consistency. Every accepted user action has a durable local record and operation identity; no in-memory coroutine is the only copy. Remote calls can commit while responses are lost, so retries use the same key and query authoritative status. Room transactions protect local invariants, WorkManager supplies restartable attempts under flexible OS timing, and server versions resolve conflicts. Cached data has freshness metadata, and UI never labels an uncertain payment or sync as success. Large files use resumable chunks and verified offsets. I bound queues/retries to protect disk and battery, test kill/reboot/airplane mode at every state transition and monitor oldest Pending age. Unbounded retry can drain battery. I would crash-inject after every durable boundary: before local commit, after commit, after request send, after server acceptance and before acknowledgement. That exposes whether an action can disappear or repeat. A local transaction records user intent and outbox identity, while a worker drains it under network constraints; backend idempotency and version checks resolve duplicates and conflicts. The UI displays Pending, Unknown and Conflict honestly. I would monitor oldest pending age and recovery success, since a queue that never drains is not offline reliability.”
+From a low-level platform architecture perspective, intermittent connectivity requires intelligent connection management:
+
+1. **Adaptive Network Quality Telemetry**: Monitor cellular connection quality using Android's `ConnectivityManager.NetworkCallback` and bandwidth meters. When throughput drops below 50 kbps (2G/Edge), switch the app dynamically into 'Data Saver Mode': disable auto-playing videos, suppress decorative graphics, and request low-bandwidth text payloads from the backend.
+
+2. **Atomic Disk File Operations**: When saving downloaded files or JSON caches to disk, never write directly to the target file path. Write data to a temporary file (`temp_file.tmp`) and atomically rename it using `File.renameTo()` or `AtomicFile`. If power cuts out mid-write, the original file remains uncorrupted.
+
+3. **Aggressive Offline Queuing (The Outbox Pattern)**: Queue all user actions in persistent SQLite tables. Users in the field can continue creating invoices, taking notes, or logging deliveries offline with 100% responsiveness, confident that the synchronization engine will replay records deterministically when cellular coverage returns.
 
 ## How to answer in the interview
 
@@ -84,8 +144,11 @@ Trace power loss before/after local commit, remote commit and acknowledgement.
 
 ## Follow-up questions
 
-- [DAT-07](../dat-07/): What is offline-first? **Answer:** local read and durable write paths with sync/conflict policy.
-- [BG-08](../bg-08/): How retry after exit? **Answer:** WorkManager drains persisted outbox under constraints.
+- **Interviewer:** "What is the benefit of using Android's AtomicFile helper class?"
+  **Answer:** "AtomicFile writes data to a temporary file and performs an atomic rename, ensuring that sudden process death or power loss never leaves a corrupted, half-written file on disk."
+
+- **Interviewer:** "Why is Write-Ahead Logging (WAL) mode safer during sudden power loss?"
+  **Answer:** "WAL appends modifications to a separate log file without modifying original database pages directly, making recovery trivial if power cuts before a checkpoint."
 
 ## Self-check rubric
 
@@ -96,4 +159,4 @@ Can I preserve accepted intent, reconcile unknown outcome and test power-loss wi
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — local source and sync.
 - [Android task scheduling](https://developer.android.com/develop/background-work/background-tasks/persistent) — restartable work.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

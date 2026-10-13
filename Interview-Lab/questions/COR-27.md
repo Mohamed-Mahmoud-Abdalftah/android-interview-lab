@@ -22,11 +22,44 @@ Handle payment timeout as an ambiguous server outcome using durable keys and rec
 
 ## Explanation in Arabic
 
-لو payment request وصلت السيرفر والعميل عمل timeout، النتيجة **unknown** مش failed. إعادة الإرسال بـidempotency key جديد ممكن تعمل charge مرتين. نسجل operation ID ثابت قبل الإرسال، نستخدم نفس key عند retry حسب عقد الـbackend، ونسأل السيرفر عن حالة العملية أو نعمل reconciliation مع webhook/ledger. UI تفضل Pending لحد الحالة الموثوقة.
+حدوث Timeout في عملية الدفع بعد وصول الطلب للسيرفر وكيفية تجنب الخصم المزدوج (Duplicate Charges) هو سؤال معماري كلاسيكي في تطبيقات الـ Fintech والتجارة الإلكترونية:
+
+1. المشكلة (The Two Generals Problem in Payments):
+   - العميل ضغط 'تأكيد الدفع' بمبلغ 1,000 جنيه.
+   - التطبيق أرسل الطلب للسيرفر، والسيرفر خصم المبلغ بالفعل.
+   - ولكن قبل أن تصل رسالة الـ Response للموبايل، شبكة الهاتف قطعت أو حدث Socket Timeout على الموبايل!
+   - الموبايل يظن أن الطلب فشل! لو أعاد المحاولة ببساطة، سيتم خصم 1,000 جنيه إضافية من حساب العميل (Double Charge)!
+
+2. الحل المعماري الإلزامي: مفتاح التكرار الفريد (Idempotency Key):
+   - قبل إرسال أول طلب، التطبيق يولد **UUID فريد خاص بهذه المعاملة** (`idempotencyKey = UUID.randomUUID().toString()`).
+   - يحفظ هذا المفتاح فوراً في قاعدة البيانات المحلية (Room DB) مع حالة المعاملة `PENDING`.
+   - يرسل الـ Header في طلب الـ HTTP: `X-Idempotency-Key: <UUID>`.
+   - السيرفر وبوابة الدفع (مثل Stripe) يحتفظان بالمفتاح في الـ Cache/Database. لو وصلهم نفس الـ Key مرة ثانية أثناء الـ Retry، **لن يقوموا بخصم المبلغ مرة أخرى**؛ بل سيعيدون نتيجة المعاملة الأولى فوراً!
 
 ## Practical walkthrough
 
-لو request الدفع وصلت السيرفر ثم client عمل timeout، رسالة `failed` للمستخدم ممكن تكون كدب؛ العملية قد تكون اتسجلت. خزّن `operationId` و`idempotencyKey` وpayload hash قبل الإرسال. عند retry استخدم نفس key حسب عقد backend، واسأل status أو اعمل reconciliation. لو key انتهت صلاحيتها، لا تعمل charge جديد بشكل أعمى؛ اعتمد على ledger أو دعم backend.
+تنفيذ دورة حياة عملية دفع آمنة ضد التكرار (Idempotent Payment):
+```kotlin
+suspend fun executePayment(orderId: String, amount: BigDecimal): PaymentResult {
+    // 1. توليد أو استرجاع مفتاح التكرار المخزن محلياً لهذه المعاملة:
+    val transaction = paymentDao.getOrCreateTransaction(orderId) {
+        PaymentEntity(orderId = orderId, idempotencyKey = UUID.randomUUID().toString())
+    }
+    
+    // 2. إرسال الطلب مع المفتاح وإعادة المحاولة بأمان:
+    return try {
+        val response = paymentApi.charge(
+            idempotencyKey = transaction.idempotencyKey,
+            request = ChargeRequest(orderId, amount)
+        )
+        paymentDao.markSuccess(transaction.id, response.receiptId)
+        PaymentResult.Success(response.receiptId)
+    } catch (e: SocketTimeoutException) {
+        // 3. عند حدوث Timeout، لا نكرر الخصم عشوائياً؛ نستعلم عن حالة المعاملة أولاً:
+        reconcilePaymentStatus(transaction.idempotencyKey)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -80,15 +113,26 @@ A checkout creates a unique operation, stores it as Pending, submits with a stab
 
 ## Interview answer — short
 
-“A timeout means the client stopped waiting; the server may have charged. I persist one operation ID and idempotency key, query authoritative status, and retry only under the backend’s deduplication contract with the same key. The UI shows Pending until reconciled.”
+Generate a unique client-side Idempotency Key (UUID) persisted locally before making the payment request, and pass it in the HTTP header (e.g., X-Idempotency-Key). On network timeout, retrying with the same idempotency key instructs the server and payment gateway to deduplicate the transaction and return the original receipt rather than charging twice.
 
 ## Interview answer — structured
 
-“I never treat a payment timeout as a definite failure. Before sending, I persist an operation record and stable idempotency key. The server must enforce a documented deduplication rule for retries, and I use a status endpoint or reconciliation feed to resolve uncertainty. If the app dies after the request, a durable worker resumes from Pending rather than creating a new operation. The UI does not offer an unsafe fresh charge button; it shows Pending and later the authoritative result.”
+A payment timeout is the classic distributed systems challenge: the client cannot distinguish whether the request timed out before reaching the server, while being processed, or while the response was returning over the air. Retrying blindly risks catastrophic duplicate charges.
+
+The industry-standard solution is **Idempotency Keys** paired with local persistence:
+
+1. Before dispatching the payment request, the Android app generates a cryptographically unique UUID as an idempotency key and persists it locally in Room alongside the order ID.
+2. The app sends this key in the request header (e.g., `X-Idempotency-Key: <uuid>`).
+3. The backend and payment gateway (like Stripe or Adyen) check their distributed transaction store. If a request with that key was already executed, they return the original processed receipt without re-executing the charge.
+4. If a timeout occurs, the app doesn't immediately prompt the user to re-pay. It performs a status reconciliation query (`GET /payments/status?key=<uuid>`) to check if the transaction succeeded before triggering any retries.
 
 ## Interview answer — deep senior
 
-“There are two independent facts: the coroutine or HTTP client timed out, and the payment server may already have committed. Cancellation cannot roll back the second fact. My design records a stable operation ID, amount and key before transmission, and the server maps that key to one logical payment under an explicit retention and payload contract. After ambiguous timeout or process death, the client queries transaction status or awaits a backend reconciliation signal. A retry, if allowed, reuses the same key and is safe only within the server’s contract; I never claim exactly-once network delivery. I instrument state transitions, suppress sensitive logging, and test crash points before send, after server commit and before local acknowledgement. A human-readable Pending state prevents the user from triggering a duplicate. The tricky case is a timeout after the provider accepted the request. The local HTTP exception describes client observation, not the financial result. I would persist one operation identity and payload before the send, reuse its idempotency key only within the provider's documented contract, and query authoritative status after uncertainty. A worker can reconcile Pending after process death. Support tooling needs an audit trail, while the UI must avoid offering a fresh charge before the old operation is resolved.”
+From an architectural resiliency standpoint, payment flows must never rely solely on transient UI state or a simple `viewModelScope.launch` retry loop. If the user loses network connectivity or kills the application during a payment timeout, an in-memory retry mechanism is lost forever.
+
+To make payments robust: 1. We model payments as a local state machine in Room: `CREATED -> SUBMITTED -> SETTLED | FAILED`. 2. Upon a timeout, we dispatch an idempotent status check using WorkManager with exponential backoff constraints. Even if the process dies or the device is rebooted, WorkManager queries the backend to determine if the charge succeeded, updating the local database when connectivity is restored.
+
+Finally, UI UX must guard against double-clicks by immediately disabling the 'Pay' button and enforcing a single submission token, preventing the user from triggering two parallel payment coroutines.
 
 ## How to answer in the interview
 
@@ -104,8 +148,14 @@ Walk through crash points and distinguish idempotent logical operation from exac
 
 ## Follow-up questions
 
-- [COR-17](../cor-17/): Does coroutine timeout mean server failure? **Answer:** no; commit status can be unknown.
-- [COR-18](../cor-18/): Which key on retry? **Answer:** the same durable operation key under the backend contract.
+- **Interviewer:** "What if the backend does not support idempotency keys?"
+  **Answer:** "You must implement a two-phase check: first, call a payment intent or reservation endpoint that issues a server-side transaction ID with an expiration window. All subsequent charge or query requests reference this reservation ID."
+
+- **Interviewer:** "How does WorkManager help in payment recovery?"
+  **Answer:** "WorkManager guarantees execution across process death and device reboots. If a payment request times out and the user closes the app, a periodic or one-time WorkManager task reconciles payment status with the server in the background and posts a notification when confirmed."
+
+- **Interviewer:** "Why shouldn't you generate the Idempotency Key in-memory in the ViewModel?"
+  **Answer:** "Because if the Android OS kills the process due to low memory while the request is in flight, recreating the ViewModel will generate a brand-new UUID. Retrying with a new UUID would defeat idempotency and charge the customer twice."
 
 ## Self-check rubric
 
@@ -116,4 +166,4 @@ Can I name every crash window, use a stable key, reconcile status and avoid decl
 - [Kotlin withTimeout API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout.html) — local deadline semantics.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — durable queued writes/reconciliation patterns.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

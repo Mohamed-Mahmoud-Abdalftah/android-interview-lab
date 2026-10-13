@@ -23,11 +23,57 @@ What are JUnit, MockK/Mockito, Espresso, and Compose UI Testing?
 
 ## Explanation in Arabic
 
-`JUnit` يوفّر test runner وassertions/lifecycle للـtests؛ `MockK` و`Mockito` يعملوا doubles لما نحتاج نعزل dependency أو نراقب تفاعل. `Espresso` تختبر View hierarchy في Android، وCompose UI Testing تستعلم من semantics tree وتنفّذ actions. الأدوات دي مش بدائل متساوية: pure validation function تتختبر بـJUnit في JVM، لكن permission dialog أو lifecycle محتاجان Android test، وزر Compose يحتاج semantics assertion.
+ما هي الأدوار المحددة لكل من JUnit 4/5، و MockK/Mockito، و Espresso، و Compose UI Testing في منظومة الاختبار؟
+
+1. إطار عمل الاختبارات الأساسي (JUnit 4 vs. JUnit 5):
+   - **JUnit (Test Runner & Lifecycle)**: هو الإطار الأساسي الذي ينظم الاختبارات (`@Test`, `@Before`, `@After`) ويدير دورة حياة التشغيل وفحص التوكيدات (`assertEquals`).
+   - JUnit 5 يوفر ميزات متقدمة: Nested Tests (`@Nested`), Parameterized Tests (`@ParameterizedTest`), و Display Names.
+
+2. مكتبات المحاكاة (MockK vs. Mockito):
+   - **Mockito**: مكتبة Java الشهيرة؛ كانت تواجه صعوبات مع كلاسات Kotlin المغلقة (final classes) ودوال الـ Coroutines المعلقة (Suspend functions).
+   - **MockK**: مكتبة بنيت من الصفر بلغة كوتلن! تدعم Coroutines بشكل طبيعي (`coEvery`, `coVerify`), وتدعم الـ Extension functions, والـ Object singletons, والـ Sealed classes.
+
+3. اختبارات الواجهة التقليدية (Espresso):
+   - مخصصة للـ View System القديم (XML). تعتمد على معادلة: `onView(withId(...)).perform(click()).check(matches(isDisplayed()))`.
+   - مشكلتها التاريخية: عدم استقرار المزامنة مع العمليات غير المتزامنة والحاجة لـ IdlingResources.
+
+4. اختبارات واجهات Compose (Compose UI Testing):
+   - تعتمد على شجرة المعاني (Semantics Tree) بدلاً من معرّفات الـ IDs: `composeTestRule.onNodeWithText("Submit").performClick()`.
+   - **مزامنة تلقائية مدمجة (Auto-Synchronization)**: تنتظر اكتمال الـ Recomposition والـ Animations تلقائياً قبل فحص النتائج.
 
 ## Practical walkthrough
 
-مثال login: اختبر validation كدالة، ViewModel state بـfake repository، ثم UI test يكتب input ويضغط ويتأكد من رسالة الخطأ والـfocus. تجنّب assertion على implementation tags لو label/role كفاية؛ اختبر ما يراه المستخدم. ولا تخلط نجاح UI test مع نجاح backend auth الحقيقي.
+المقارنة بين اختبار Espresso القديم واختبار Compose الحديث المعتمد على Semantics:
+```kotlin
+// 1. اختبار واجهة قديم بـ Espresso في XML (يعتمد على ViewMatcher و R.id):
+@Test
+fun legacyEspressoTest() {
+    onView(withId(R.id.login_button))
+        .check(matches(isDisplayed()))
+        .perform(click())
+    onView(withId(R.id.error_text))
+        .check(matches(withText("Invalid password")))
+}
+
+// 2. اختبار واجهة حديث بـ Compose Testing (يعتمد على Semantics Tree والمزامنة التلقائية):
+@get:Rule
+val composeTestRule = createComposeRule()
+
+@Test
+fun modernComposeUiTest() {
+    composeTestRule.setContent {
+        LoginScreen(onLoginSubmitted = { /* ... */ })
+    }
+
+    // البحث عن العقد في شجرة الـ Semantics والتفاعل معها بسلاسة:
+    composeTestRule.onNodeWithText("Log In")
+        .assertIsDisplayed()
+        .performClick()
+
+    composeTestRule.onNodeWithText("Invalid password")
+        .assertIsDisplayed()
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +97,33 @@ Choose libraries per UI technology and run release-critical flows on an emulator
 
 ## Interview answer — short
 
-“JUnit runs tests; MockK/Mockito create doubles; Espresso tests Views; Compose UI testing exercises semantics and interactions in Compose. I combine them based on the layer under test.”
+JUnit manages test lifecycles and execution assertions. MockK provides Kotlin-idiomatic mocking with first-class coroutine suspend support. Espresso automates legacy XML View hierarchies, while Compose UI Testing inspects the Semantics Tree with built-in auto-synchronization for compositions and animations.
 
 ## Interview answer — structured
 
-“For pure Kotlin logic I use JUnit with minimal doubles. For Android Views I use Espresso and its synchronization model; for Compose I query semantics nodes through a Compose test rule and control its clock. MockK or Mockito are useful when a collaborator must be controlled, but they do not replace real integration coverage. I avoid fixed sleeps and brittle pixel selectors, then add a device test for the interaction that matters to users.”
+The modern Android testing stack divides responsibilities across runner, mocking, and UI automation layers:
+
+1. **JUnit (Test Execution Framework)**:
+   - Provides test suite runners, lifecycle hooks (`@BeforeEach`, `@AfterEach`), assertions, and dynamic test execution. JUnit 4 remains default in many AGP setups, while JUnit 5 provides parameterized tests and nested hierarchy structures.
+
+2. **MockK vs. Mockito (Mocking Engines)**:
+   - While Mockito originated in Java, **MockK** was engineered specifically for Kotlin. It natively handles Kotlin language constructs without configuration hacks: coroutine suspend functions (`coEvery`, `coVerify`), extension functions, private methods, and Kotlin object singletons.
+
+3. **Espresso (View Hierarchy Automation)**:
+   - Interacts with traditional Android View trees via Matcher/Action/Assertion chains (`onView().perform().check()`). Requires custom `IdlingResource` implementations to coordinate background async operations.
+
+4. **Compose UI Testing**:
+   - Driven via `createComposeRule()`. Rather than querying layout IDs, it inspects the **Semantics Tree** (`onNodeWithText`, `onNodeWithContentDescription`). Features native automatic clock synchronization that waits for recomposition passes and animations to settle before evaluating assertions.
 
 ## Interview answer — deep senior
 
-“I start with what must be observed, then pick the tool. JUnit supplies execution and assertions for JVM or Android tests. MockK and Mockito create doubles when replacing an external dependency is useful, but they do not define a test layer. Espresso targets traditional Android Views; Compose UI testing queries the semantics tree of composables and performs user actions. For a login feature I would put password policy in fast JVM tests, drive ViewModel states with a controlled repository fake and test the visible validation and submit action in the relevant UI framework. I keep a smaller Android integration test for lifecycle, Activity Result permissions or navigation because a JVM test cannot claim those platform behaviors. A Compose test should prefer accessible text, role or content description over brittle layout structure; tags are useful when localization or duplicated semantics make them necessary. I also separate presentation proof from system proof: tapping Sign In and seeing a spinner does not prove the backend accepted credentials. Finally, I run the release-like build variant where shrinker, manifest or dependency differences could alter behavior.”
+From an architectural quality perspective, Compose UI tests solve the long-standing synchronization problem in Android testing:
+
+1. **Idling & Clock Synchronization**: In Espresso, tests frequently flaked because animations or background threads caused race conditions unless engineers manually registered `IdlingResource` instances. In Compose, the test framework hooks directly into the Compose frame clock (`mainClock`). It pauses virtual time, advances frame-by-frame, and automatically synchronizes with coroutines launched within the composition.
+
+2. **Isolated Screen / Component Unit Tests**: Compose UI tests do not require launching a heavy full-screen Activity. Using `createComposeRule()`, you can mount a single composable button or card in isolation (`composeTestRule.setContent { MyCustomCard() }`), testing UI rendering and click callbacks in under 1 second without full screen navigation.
+
+3. **Semantics for Accessibility & Testing**: Compose testing forces accessibility best practices. Because nodes are selected via semantics (`contentDescription`, `onClick`, `text`), designing a testable Compose UI inherently produces accessible software for Screen Readers (TalkBack).
 
 ## How to answer in the interview
 
@@ -75,8 +139,11 @@ Prompt for tool roles, UI technology selection, synchronization and mocks versus
 
 ## Follow-up questions
 
-- [TST-14](../tst-14/): What does Compose testing query? **Answer:** semantics nodes and interactions.
-- [TST-15](../tst-15/): Why avoid sleeps? **Answer:** scheduler/environment timing varies across CI.
+- **Interviewer:** "How do you control animations in Compose UI tests?"
+  **Answer:** "Use composeTestRule.mainClock.autoAdvance = false and manually call mainClock.advanceTimeBy(millis) to assert UI states at specific animation frames."
+
+- **Interviewer:** "Can MockK mock final classes and methods in Kotlin by default?"
+  **Answer:** "Yes, MockK uses dynamic bytecode generation (Byte Buddy) to mock final classes and methods natively without requiring special plugin configurations."
 
 ## Self-check rubric
 
@@ -87,4 +154,4 @@ Map JUnit to test execution/assertions, MockK or Mockito to test doubles, Espres
 - [Android testing overview](https://developer.android.com/training/testing) — framework choices.
 - [Compose testing](https://developer.android.com/develop/ui/compose/testing) — semantics and test APIs.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

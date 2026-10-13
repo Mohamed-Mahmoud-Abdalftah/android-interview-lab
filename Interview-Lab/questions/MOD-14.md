@@ -24,11 +24,41 @@ How do you avoid circular dependencies and giant core/common modules?
 
 ## Explanation in Arabic
 
-ارسم DAG مسموحة وامنع reverse imports في CI. إذا ميزتان تحتاجان بعضهما، افصل العقد المشترك الأصغر في owner مناسب أو اجعل app تنسق، وأحيانًا ادمجهما لو هما قدرة واحدة. لا ترمِ code داخل `:core:common` لمجرد إزالة cycle؛ common تصبح high-fan-out، وكل تعديل API يعيد بناء نصف التطبيق. ضع criteria لقبول code مشتركة: استخدام حقيقي متعدد، semantics مستقرة، owner واضح. راجع dependencies والشيفرة العامة دورياً.
+كيف تتجنب التبعيات الدائرية (Circular Dependencies) وتمنع تضخم الموديولات العامة العملاقة (`:core:common` / `:core:base`)؟
+
+1. أزمة موديول الـ Common العملاق (The 'God Module' Anti-pattern):
+   - يبدأ المطورون بموديول `:core:common` لوضع دالة بسيطة لتنسيق التاريخ. بعد عام، يتحول إلى مستودع فوضوي يحتوي على: Retrofit DTOs، كلاسات Room، مكونات UI، ودوال تعامل مع الـ Bluetooth!
+   - **الكارثة**: كل موديول في التطبيق يعتمد على `:core:common`. أي تعديل في سطر واحد فيه يعيد تجميع التطبيق بالكامل (High Build Fan-out)، وتضيع كل فوائد الـ Modularization.
+
+2. استراتيجيات الوقاية وتفكيك الـ God Module:
+   - **التفكيك إلى موديولات متخصصة عالية التماسك (High-Cohesion Slices)**: استبدال `:core:common` بـ:
+     * `:core:model` (نماذج البيانات المشتركة النظيفة فقط).
+     * `:core:network` (إعدادات الشبكة فقط).
+     * `:core:designsystem` (مكونات الواجهة فقط).
+   - **السماح بتكرار الكود البسيط (Accepting Benign Duplication)**: كتابة دالة مساعدة من سطرين (`fun String.isValidEmail()`) في موديولين مختلفين أفضل بمليون مرة من ربط الموديولين بموديول عام ضخم.
+
+3. حل التبعيات الدائرية ومنعها آلياً:
+   - فرض مسارات التبعيات باتجاه واحد (Unidirectional Flow) للأسفل دائماً.
+   - استخدام أدوات التحقق التلقائي في الـ CI (مثل Dependency Analysis Plugin أو Lint Rules) لمنع أي موديول Core من الاعتماد على Feature، وحظر أي تبعية دائرية قبل الدمج.
 
 ## Practical walkthrough
 
-Circular dependency تعني ownership مختلطة. اسحب contract صغير لطبقة أقل أو خلي `:app` ينسق، لا تنقل كل شيء إلى `:core:common`. Giant core يعيد compile الجميع عند كل تغيير ويصبح بلا owner. افحص `api` surface وdependency graph دوريًا، وضع rule يمنع feature-to-feature import إن التصميم يتطلب. أعد تسمية ownership قبل نقل الملفات.
+تفكيك موديول :core:common الفوضوي إلى موديولات محددة المسؤولية:
+```text
+❌ قبل التفكيك (God Module :core:common): موديول ضخم يكسر الـ Build Cache ويعيد بناء كل شيء:
+:feature:cart ──┐
+:feature:feed ──┼──► ┌──────────────────────────────────────────────┐
+:feature:auth ──┘    │               :core:common                   │
+                     │ (DateUtils, DTOs, RoomDAOs, Compose Theme)   │
+                     └──────────────────────────────────────────────┘
+
+✅ بعد التفكيك إلى موديولات مركزة عالية التماسك:
+:feature:cart ──────► :core:designsystem (Compose tokens only)
+:feature:feed ──────► :core:model (Immutable data classes only)
+:feature:auth ──────► :core:network (Network clients only)
+
+كل موديول يعتمد فقط على ما يحتاجه بدقة! تعديل كود الشبكة لا يعيد تجميع Compose Theme أو :feature:cart إطلاقاً.
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +82,46 @@ Automate graph and allowed-edge checks, track core public API churn and incremen
 
 ## Interview answer — short
 
-“I enforce an acyclic dependency direction, extract only genuinely stable contracts or coordinate in app, and keep core modules narrow with explicit ownership.”
+Avoid giant common modules by decomposing them into highly focused, single-responsibility modules (:core:model, :core:network, :core:ui). Prefer benign duplication of trivial 2-line helpers over introducing heavy shared dependencies. Enforce acyclic graphs using CI architecture lint rules and API contract extractions.
 
 ## Interview answer — structured
 
-“A cycle tells me two modules are crossing responsibility lines. I examine the relationship, move a small shared contract to the right owner, coordinate at app level, or merge pieces that truly form one feature. I do not dump code into common just to silence Gradle: a huge core creates high fan-out and rebuilds. CI checks allowed edges and I review shared API growth and change history.”
+The emergence of a giant `:core:common` module and circular dependency loops are the two primary symptoms of an unmaintained multi-module architecture:
+
+1. **Eradicating the `:core:common` God Module**:
+   - A monolithic common module has near-infinite fan-out; every feature imports it, meaning any single edit invalidates the build cache for the entire application.
+   - Dismantle it into focused, cohesive modules based on stability and responsibility: `:core:model` (pure data entities), `:core:designsystem` (UI tokens), `:core:network` (networking), and `:core:analytics`.
+   - Tolerate **benign duplication**: It is far better to duplicate a 3-line string formatting extension across two feature modules than to create a shared build dependency between them.
+
+2. **Eliminating Circular Dependencies**:
+   - Cycles (`A -> B -> A`) occur when feature boundaries are blurred. Resolve them by extracting the shared data models or route contracts into an independent `:feature:x:api` module that both modules depend on downward.
+   - Enforce unidirectional graph rules in CI using Gradle architecture validation plugins.
 
 ## Interview answer — deep senior
 
-“I want a graph whose arrows explain ownership. When Profile and Rewards depend on each other, I look at the actual information exchanged. A stable `UserSummary` might belong in a lower-level contract, while the app shell can compose navigation between the two. If both modules always change together, the original split may be artificial and merging may be simpler. I resist the familiar shortcut of moving whatever causes a cycle to `:core:common`. That can produce an acyclic graph on paper while creating a high-fan-out module that every team edits, every feature sees and every build recompiles after an API change. Shared code should have clear semantics, more than one genuine consumer and an owner responsible for compatibility. A tiny duplicate helper may be acceptable until that is true. I enforce direct and transitive graph rules in CI, inspect public API and rebuild impact of core changes, and review new cross-feature edges. A static service locator does not solve the design; it only hides the dependency from Gradle.”
+In large engineering organizations, preventing architectural entropy requires **Automated Guardrails rather than developer vigilance**.
+
+Teams implement **Gradle Module Graph Rules** via custom Gradle tasks or plugins like `dependency-guard` or `ArchUnit`:
+
+```kotlin
+// Example Gradle constraint verification in build-logic:
+tasks.register("assertModularizationRules") {
+    doLast {
+        project.subprojects.forEach { subproject ->
+            if (subproject.path.startsWith(":core")) {
+                subproject.configurations.all { config ->
+                    config.dependencies.forEach { dep ->
+                        if (dep.name.startsWith("feature")) {
+                            throw GradleException("ILLEGAL DEPENDENCY: Core module ${subproject.path} cannot depend on feature ${dep.name}!")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+Running this verification on pull request CI guarantees that forbidden edges (Core depending on Feature, or Feature-to-Feature direct implementation coupling) fail the build automatically.
 
 ## How to answer in the interview
 
@@ -76,9 +137,11 @@ Explain topological order, API extraction, app shell, justified merge, common-mo
 
 ## Follow-up questions
 
-- Is an acyclic graph always well designed? **Answer:** no; a giant core can be acyclic and still tightly couple all features.
-- When might duplication be better? **Answer:** when a tiny helper has no stable shared semantics and extraction adds coordination cost.
-- What is an alternative to contract extraction? **Answer:** app orchestration or merging code with one cohesive owner.
+- **Interviewer:** "What is the 'Rule of Three' for extracting shared code into a module?"
+  **Answer:** "Do not extract shared code when you see the second usage. Wait until a third distinct consumer requires it, ensuring the abstraction is genuinely stable and necessary."
+
+- **Interviewer:** "Can Gradle enforce module boundary visibility automatically?"
+  **Answer:** "Yes, by configuring dependency constraints or using Gradle's Experimental Isolated Projects feature to validate cross-module access."
 
 ## Self-check rubric
 
@@ -89,4 +152,4 @@ Resolve a feature cycle, explain a common-module smell, and name a preventive gr
 - [Android modularization guide](https://developer.android.com/topic/modularization) — dependency graph and ownership.
 - [Common modularization patterns](https://developer.android.com/topic/modularization/patterns) — API boundaries.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Boundary selection remains context-specific.
+Technically reviewed against primary documentation on 2026-10-13.

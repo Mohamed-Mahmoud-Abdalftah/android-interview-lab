@@ -24,11 +24,49 @@ What triggers recomposition, and what can be skipped?
 
 ## Explanation in Arabic
 
-Compose يعيد composition عندما state مقروءة في scope تتغير، أو parent يعيد الاستدعاء بمدخلات مختلفة، أو عوامل أخرى تتطلب تحديث الـcomposition. لكنه يستطيع تجاوز child calls إذا parameters ومعايير الـcompiler تسمح. `mutableStateOf` مرصود؛ تغيير property داخل plain mutable object دون observable wrapper قد لا يظهر. ونقل قراءة state إلى child ضيق يحدّ invalidation، لكن قراءة value في parent الكبير توسع العمل. عدد recompositions وحده ليس دليل بطء؛ قياس frame time مهم.
+ما الذي يطلق الـ Recomposition (Triggers) وما الذي يمكن للـ Runtime تخطيه (Skipping)؟
+
+1. ما الذي يُطلق الـ Recomposition؟
+   - **قراءة Snapshot State معدلة**: إذا قرأت دالة Composable قيمة `State<T>` (مثل `mutableStateOf` أو `StateFlow.collectAsStateWithLifecycle`) ثم تغيرت هذه القيمة.
+   - **تغير البارامترات الممررة (Parameter Changes)**: إذا تم استدعاء الـ Composable بقيم بارامترات جديدة تختلف عن القيم السابقة.
+
+2. ما هو التخطي الذكي (Smart Skipping)؟
+   - عندما يُعاد تركيب دالة أب (Parent Composable)، يفحص Compose كل الدوال الفرعية (Children).
+   - إذا كانت جميع بارامترات الدالة الفرعية **مستقرة (Stable)** ولم تتغير قيمتها (حسب مقارنة `equals()`)، ولم تقرأ الدالة أي State معدلة، يقوم محرك Compose بـ **تخطي (Skip)** استدعاء الدالة الفرعية تماماً!
+
+3. لماذا تفشل بعض الدوال في التخطي وتُعاد بدون داعٍ؟
+   - **أنواع غير مستقرة (Unstable Types)**: مثل مجموعات كوتلن القياسية `List<T>`, `Set<T>`, `Map<T>` (لأن المترجم لا يضمن أنها غير قابلة للتعديل `MutableList`).
+   - **كائنات عادية بدون `@Immutable` أو `@Stable`**: إذا كان الكلاس يحتوي على `var` أو كان معرفاً في مكتبة خارجية غير مجمعة بواسطة Compose Compiler.
+   - **Lambdas تلتقط متغيرات غير مستقرة**.
 
 ## Practical walkthrough
 
-لو `query` مقروءة في root كبيرة، كل حرف ممكن يرجّع scope واسع؛ لو القراءة داخل جزء البحث، أثرها أضيق. لكن child ممكن يتعمله skip حسب inputs وcompiler configuration، فمتقولش إن كل parent recomposition تعني كل child اشتغل. جرّب تغيّر `query` وراقب trace قبل أي refactor. لو النتيجة بطّيئة، ابدأ بـtrace للـframe وشوف القراءة حصلت فين بدل ما تقسّم كل Text. لو السبب image decode أو layout، نقل state read وحده مش هيحل المشكلة.
+كود يوضح الفرق بين دالة يمكن تخطيها ودالة يُعاد تركيبها دائماً بسبب `List` غير مستقرة:
+```kotlin
+// ❌ دالة تفشل في الـ Skipping بسبب استخدام List<String> القياسية:
+@Composable
+fun UnskippableUserList(users: List<String>, onUserClick: (String) -> Unit) {
+    // Compose Compiler يعتبر List نوعاً Unstable، لذا يُعاد تنفيذ هذه الدالة في كل recomposition للأب!
+    LazyColumn {
+        items(users) { user ->
+            Text(text = user, modifier = Modifier.clickable { onUserClick(user) })
+        }
+    }
+}
+
+// ✅ دالة مستقرة تقبل التخطي (Skippable) باستخدام ImmutableList:
+import kotlinx.collections.immutable.ImmutableList
+
+@Composable
+fun SkippableUserList(users: ImmutableList<String>, onUserClick: (String) -> Unit) {
+    // هنا يعلم المترجم أن users مستقرة تماماً، فإذا لم تتغير القائمة، يتم تخطي الدالة 100%:
+    LazyColumn {
+        items(users) { user ->
+            Text(text = user, modifier = Modifier.clickable { onUserClick(user) })
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -70,15 +108,28 @@ Use compiler metrics, Layout Inspector or trace tools appropriate to the install
 
 ## Interview answer — short
 
-“Changed observable state invalidates scopes that read it, and changed inputs can propagate through parents. Compose can skip eligible child calls when its parameter stability and change checks allow. A changed state read invalidates its scope; eligible children may still be skipped.”
+Recomposition is triggered when a composable reads a `State` object whose value changes, or when its parent recomposes with updated parameters. A composable can be skipped if all its arguments are `Stable` and structurally equal to their previous values, and no observed internal states have changed.
 
 ## Interview answer — structured
 
-“I locate where state is read. A write to snapshot state can invalidate those composition scopes; a parent may also re-execute because its inputs changed. Children with suitable unchanged parameters may be skipped, but I would not promise that for every composable or every compiler version. I isolate rapidly changing reads, keep data truly observable, and profile the frame. A high count alone is less useful than knowing whether composition, layout or draw is expensive. For search, I would locate where query is read before assuming the entire catalog is doing work.”
+Recomposition triggers strictly through state reads and parameter mutations.
+
+1. **The Trigger**: The Compose snapshot system observes which `State<T>` objects are read within each `RecomposeScope`. When an assignment occurs on a state property, all scopes that registered a read for that property are scheduled for recomposition.
+
+2. **Smart Skipping**: During a recomposition pass of a parent composable, Compose inspects child composables. A child composable is **skipped** if and only if:
+   - The composable is marked **restartable** and **skippable** by the Compose Compiler.
+   - All parameters passed to the function are **Stable**.
+   - None of the parameter values have changed according to their `equals()` implementation.
+
+If a single parameter is inferred as **Unstable** (such as standard Kotlin `List<T>`, collections, or classes containing `var` properties), Compose cannot guarantee that the object's contents haven't changed behind its back. Consequently, the compiler forces the child to recompose every single time the parent recomposes, degrading performance.
 
 ## Interview answer — deep senior
 
-“Recomposition is driven by the dependency between observable state reads and composition scopes, plus input changes flowing through callers. When a snapshot value changes, Compose schedules readers that depend on it. It can avoid repeating eligible calls with unchanged inputs, subject to the compiler's stability model and the actual version. I do not treat it as a simple ‘the whole screen rerenders’ rule. If typing is slow, I first trace the state read: perhaps a root composable reads every character and performs filtering, formatting and expensive subtree construction. I can move the read closer to the search results, pass stable values to unrelated children, and shift heavy work to an appropriate layer. I confirm that the data is observable; mutating an ordinary collection in place is a correctness bug, not a clever way to avoid recomposition. I then measure composition, layout and draw separately on a release build. Stability annotations are contracts about change visibility, so falsely marking a mutable model stable to raise skip counts risks stale UI. My success measure is correct behavior with improved frame timing. If a field inside a plain mutable object changes without an observable write, no skip tuning will make the UI correct.”
+The Compose Compiler classifies types into three stability categories: **Immutable** (all public properties are `val` of primitive or immutable types; will never change), **Stable** (may mutate, but notifies the composition when mutations occur via snapshot state), and **Unstable** (may mutate without notifying Compose).
+
+With the introduction of the **Strong Skipping Mode** in recent Compose compiler releases (enabled by default in Kotlin 2.0+), Compose became significantly smarter: composables with unstable parameters can now be skipped if the instance reference has not changed (`===`), and lambdas with captures are automatically memoized using `remember`.
+
+To audit stability in production apps, we enable Compose Compiler Metrics (`reportsDestination`). The generated reports categorize every composable as `skippable` or `restartable only`, and pinpoint exact unstable parameters (e.g. `unstable users: List<User>`), guiding us to wrap them in Kotlinx `ImmutableList` or annotate models with `@Immutable`.
 
 ## How to answer in the interview
 
@@ -94,9 +145,11 @@ Discuss snapshot reads, mutation policy, parent invocation, skippability, compil
 
 ## Follow-up questions
 
-- Does changing a normal mutable list trigger UI updates? **Answer:** not reliably unless changes are exposed through observable Compose state.
-- Can a parent recompose while a child is skipped? **Answer:** yes, when the child satisfies the runtime/compiler skip conditions.
-- What should performance work optimize? **Answer:** measured user-visible frame cost, not recomposition counts in isolation.
+- **Interviewer:** "What is the difference between restartable and skippable in Compose Compiler metrics?"
+  **Answer:** "A restartable composable can act as a RecomposeScope boundary to re-execute when its internal states change. A skippable composable can be completely bypassed when called by a recomposing parent if its parameters haven't changed."
+
+- **Interviewer:** "How did Strong Skipping Mode change Compose behavior for lambdas?"
+  **Answer:** "Before Strong Skipping, lambdas capturing variables were re-instantiated on every composition pass, causing child composables to receive a new instance and fail skipping. Strong Skipping wraps these lambdas in `remember`, stabilizing their references across recompositions."
 
 ## Self-check rubric
 
@@ -107,4 +160,4 @@ Trace one state read and write, explain a skip caveat, identify a correctness tr
 - [Compose phases](https://developer.android.com/develop/ui/compose/phases) — phase-specific state reads.
 - [Stability in Compose](https://developer.android.com/develop/ui/compose/performance/stability) — skipping and contracts.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Compiler behavior is version-sensitive.
+Technically reviewed against primary documentation on 2026-10-13.

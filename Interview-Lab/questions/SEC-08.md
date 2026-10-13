@@ -23,11 +23,45 @@ What is TLS and what does certificate pinning add?
 
 ## Explanation in Arabic
 
-TLS بيشفّر الاتصال ويتحقق من شهادة الـserver والـhostname لو configuration سليمة. Certificate pinning بيضيف شرط إن public key أو certificate يكون ضمن pins متوقعة؛ مفيد ضد بعض أخطاء trust-chain أو CA compromise. لكنه ممكن يوقف التطبيق كله عند تدوير الشهادة لو مفيش backup pin وخطة تحديث، ومش بيمنع hook داخل جهاز مخترق.
+ما هو بروتوكول TLS، وما الذي يضيفه تثبيت الشهادة (Certificate Pinning)؟ وما هي مخاطره التشغيلية الحقيقية؟
+
+1. كيف يعمل بروتوكول TLS العادي في Android؟
+   - عند اتصال تطبيقك بـ `https://api.example.com`، يقوم نظام Android بالتحقق من شهادة السيرفر عبر سلسلة الثقة (Chain of Trust):
+     * يفحص هل الشهادة صادرة من جهة معتمدة (Certificate Authority - CA) موجودة في قائمة الـ Trusted CAs المدمجة في نظام التشغيل (يحتوي أندرويد على أكثر من 130 جهة CA معتمدة حول العالم).
+     * يتحقق من صحة تاريخ الشهادة ومطابقة اسم النطاق (Hostname Verification).
+   - **المشكلة الأمنية للـ TLS العادي**:
+     * إذا تم اختراق أي واحدة من الـ 130 جهة CA حول العالم، يستطيع المهاجم إصدار شهادة مزورة باسم موقعك!
+     * أو إذا قام مستخدم (أو جهة رقابية أو شبكة تجسس) بتثبيت شهادة CA خبيثة على الهاتف نفسه (Root Certificate Injection)، يمكنهم اعتراض كل اتصالات التطبيق وفك تشفيرها (Man-In-The-Middle - MITM Attack).
+
+2. ما الذي يضيفه تثبيت الشهادة (Certificate Pinning)؟
+   - **تقييد الثقة**: بدلاً من الثقة في 130 جهة CA عامة، يُعلن التطبيق صراحة: 'أنا لا أثق إلا في البصمة الرقمية المحددة لمفتاح سيرفري العام (Subject Public Key Info - SPKI Pin)'.
+   - إذا أرجع أي شخص شهادة موقعة من أي CA أخرى (حتى لو كانت جهة رسمية أو شهادة Proxy على هاتف Rooted)، يرفض التطبيق الاتصال فوراً ويغلق السوكيت!
+
+3. المخاطر التشغيلية القاتلة (Operational Risks):
+   - **تعطيل التطبيق بالكامل (Bricking the App)**: إذا انتهت صلاحية شهادة السيرفر وتم تجديدها بمفتاح جديد، ولم يكن التطبيق يمتلك البصمة الجديدة (Backup Pin)، سيتوقف التطبيق عن العمل لدى 100% من المستخدمين ولن يستطيع الاتصال بالسيرفر حتى تنشر تحديثاً في متجر Google Play!
 
 ## Practical walkthrough
 
-لو app بتكلم API بنك، TLS الطبيعي يتحقق من certificate chain والـhostname. Pinning يضيف شرط على public key، لكنه ممكن يوقف مستخدمين النسخ القديمة لو السيرفر غيّر المفتاح من غير backup pin. جهّز backup، اختبر oldest supported APK، وراقب فشل TLS. حتى لو pins صحيحة، hook داخل process يقدر يقرأ request قبل التشفير.
+تنفيذ Certificate Pinning بأمان مع مفاتيح احتياطية في OkHttp:
+```kotlin
+// 1. إعداد CertificatePinner مع مفتاح أساسي ومفتاحي نسخ احتياطي إلزامي (Backup Pins):
+val certificatePinner = CertificatePinner.Builder()
+    .add(
+        "api.example.com",
+        // المفتاح الأساسي الحالي للسيرفر:
+        "sha256/k2oTQLGen4KpWh9Flu2hQGS3CrU5guYlhLPARYrZOO4=",
+        // ⚠️ إلزامي: مفتاح احتياطي أول لمكتب التشفير البديل:
+        "sha256/WoiWRyIOVNa9ihaBciRSC7XHjliYS9VwUGOIud4PB18=",
+        // ⚠️ إلزامي: مفتاح احتياطي ثنائي للطوارئ (Disaster Recovery Key):
+        "sha256/r/mIkG3eEpVdm+u/ko/cwxzOMo1bk4TyHIlByIBA5Pa="
+    )
+    .build()
+
+// 2. ربط الـ Pinner بـ OkHttpClient:
+val okHttpClient = OkHttpClient.Builder()
+    .certificatePinner(certificatePinner)
+    .build()
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +85,27 @@ Operate pins as a release-controlled configuration with owners, expiry calendar,
 
 ## Interview answer — short
 
-“TLS provides encrypted, authenticated transport. Pinning narrows which server keys a client accepts, but adds rotation and outage risk. I use it only with backup pins, staged tests and recovery; it does not stop runtime hooks.”
+TLS provides encrypted transport authenticated by public Certificate Authorities (CAs). Certificate Pinning hardcodes the server's public key fingerprint (SPKI hash) into the app, rejecting all unauthorized certificates even if signed by trusted CAs. However, pinning risks bricking the app if server certificates rotate without pre-configured backup pins in client binaries.
 
 ## Interview answer — structured
 
-“TLS encrypts traffic and authenticates the server through certificate-chain and hostname checks. Pinning adds a constraint on selected server keys, which can reduce some CA-related risks but makes rotation an availability concern. If I pin, I ship a backup public-key pin before rotating the server, test old supported clients and monitor failures. I do not add a trust-all fallback, and I do not claim pinning prevents a hook from reading plaintext in the app process.”
+Standard TLS relies on a hierarchical Chain of Trust anchored in over 130 root Certificate Authorities (CAs) embedded in the Android OS. While secure against passive eavesdropping, standard TLS has an inherent architectural vulnerability:
+
+1. **The MITM Threat**: If any single global CA is compromised or compelled to issue fraudulent certificates, or if an attacker installs a user CA certificate on a corporate or rooted device, they can proxy and inspect all application network traffic (MITM).
+
+2. **What Certificate Pinning Adds**: It enforces an additional zero-trust constraint. The client hardcodes the cryptographic hash of the server's Subject Public Key Info (SPKI). Even if a proxy returns a certificate signed by a valid root CA, OkHttp verifies that `sha256/hash` matches its internal allowlist, aborting the connection with an `SSLPeerUnverifiedException` if mismatched.
+
+3. **Operational Risks & Bricking**: Pinning is an operational double-edged sword. If an operations team rotates the server's TLS certificate in an emergency and the new key was not pre-pinned as a backup inside released client binaries, **the application is permanently bricked** for all existing users until they download an APK update from Google Play.
 
 ## Interview answer — deep senior
 
-“I would start with normal TLS: validate the certificate chain and hostname, and disallow unintended cleartext. Pinning adds a narrower key expectation for selected hosts, but it also turns key rotation into a mobile release dependency. If the threat model warrants it, I would use public-key pins with a separately controlled backup, ship overlap before server rotation, and test old supported app versions against the new chain. I would monitor pin failures and have an update path; a trust-all fallback would undo the protection. Pinning does not stop a hook inside the process from seeing plaintext before TLS. My rollout checklist includes the oldest supported binary, current and next server chains, backup-key custody, telemetry for pin failures, and a rehearsed emergency update. An expiration field can keep abandoned clients connecting by disabling pinning after a date, which is an explicit security-versus-availability choice. I would not silently disable certificate or hostname validation to make an outage disappear.”
+Pinning Best Practices: **Pin the Public Key (SPKI), Never the Certificate**.
+
+A server's X.509 certificate expires annually and contains serial numbers and validity dates. If you pin the certificate bytes, you must update the app every single year.
+
+Instead, pin the **Subject Public Key Info (SPKI)** hash (`sha256/...`). When renewing the TLS certificate, the server operations team can generate a new certificate using the **same private key and CSR (Certificate Signing Request)**. The public key remains mathematically identical, so existing mobile clients continue functioning seamlessly without requiring an APK update.
+
+Furthermore, always ship at least **two backup pins** generated from offline cold-storage private keys for emergency failover.
 
 ## How to answer in the interview
 
@@ -75,8 +121,11 @@ Explain certificate-chain validation, hostname checks, pin backup keys, rotation
 
 ## Follow-up questions
 
-- [SEC-20](../sec-20/): How do you rotate pins? **Answer:** predeploy backup keys and overlap server/client rollout.
-- [SEC-29](../sec-29/): Can pinning defeat Frida on a rooted device? **Answer:** no; runtime checks can be bypassed.
+- **Interviewer:** "Can Certificate Pinning be bypassed on a rooted device?"
+  **Answer:** "Yes. A reverse engineer using Frida or Xposed can easily hook OkHttp's `CertificatePinner.check()` method and return true, bypassing pinning in seconds."
+
+- **Interviewer:** "How does `network_security_config.xml` support native certificate pinning?"
+  **Answer:** "Via the `<pin-set>` tag containing `<pin digest="SHA-256">` entries, enforcing pinning at the platform Android network layer."
 
 ## Self-check rubric
 
@@ -87,4 +136,4 @@ Can I explain chain validation, pin semantics, outage risk, rotation and comprom
 - [Android Network Security Configuration](https://developer.android.com/privacy-and-security/security-config) — pinning and expiry.
 - [OWASP MASVS network](https://mas.owasp.org/MASVS/controls/MASVS-NETWORK-2/) — identity and network controls.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -24,11 +24,53 @@ What are rememberUpdatedState, derivedStateOf, and snapshotFlow?
 
 ## Explanation in Arabic
 
-`rememberUpdatedState` تعطي effect طويلة أحدث value/callback بدون إعادة تشغيلها لمجرد أن المرجع تغير. `derivedStateOf` ينتج State مشتقة ويمنع updates عندما المدخلات تتغير كثيرًا لكن النتيجة المهمة لم تتغير؛ له تكلفة، فلا تستخدمه لأي string concatenation بسيطة. `snapshotFlow { ... }` يقرأ snapshot state ويصدرها كـFlow عند التغير، مناسب لتحويل scroll threshold إلى pipeline تحليل أو operators مثل `distinctUntilChanged`. الثلاثة ليست بدائل عامة للـViewModel ولا تخزين دائم؛ افهم أولًا من يقرأ ومن يملك collection.
+شرح أدوات التعامل المتقدم مع الحالة: `rememberUpdatedState` و `derivedStateOf` و `snapshotFlow`:
+
+1. دالة `rememberUpdatedState`:
+   - **المشكلة**: لديك دالة كولباك أو قيمة تتغير مع كل Recomposition، لكن لديك `LaunchedEffect(Unit)` طويل الأجل لا تريد إعادة تشغيله كلما تغيرت القيمة!
+   - **الحل**: `rememberUpdatedState(newValue)` تحتفظ بمرجع للحالة الأحدث دون التسبب في إعادة تشغيل الـ Effect.
+   - مفيدة جداً مع الـ Timers والـ Splash Screens ومستمعي الأحداث.
+
+2. دالة `derivedStateOf { ... }`:
+   - **المشكلة**: لديك حالة سريعة التغير جداً (مثل موضع السكرول `scrollState.value` الذي يتغير في كل بكسل)، ولكن الواجهة تحتاج فقط لمعرفة نتيجة حسابية بسيطة (مثل `isScrolledPastHero = scrollOffset > 200.dp`).
+   - **الحل**: `derivedStateOf` تعمل كـ **ممتص صدمات (Buffer / Dampener)**؛ فهي تراقب التغيرات السريعة ولكنها لا تطلق Recomposition إلا عندما تتغير **القيمة الناتجة** (من `false` إلى `true` أو العكس)، مما يوفر آلاف عمليات الـ Recomposition غير الضرورية!
+
+3. دالة `snapshotFlow { ... }`:
+   - **الهدف**: الجسر بين عالم Compose وعالم Kotlin Coroutines Flow.
+   - تحول أي قراءة لـ Compose State إلى `Flow<T>` بارد (Cold Flow) ينبعث منه عنصر كلما تغيرت قيمة الـ State.
+   - تمكنك من استخدام عوامل تشغيل الـ Flow القوية مثل `debounce()`, `filter()`, `distinctUntilChanged()` داخل Compose.
 
 ## Practical walkthrough
 
-في splash timer، callback ممكن تتغير لكن الـtimer مش لازم يبدأ من الأول؛ `rememberUpdatedState` تحافظ على أحدث callback. في scroll، `derivedStateOf` مناسبة لو القيمة `showTop` بتتغير أقل بكتير من offset. ولو محتاج analytics كـFlow، `snapshotFlow` داخل effect مع `distinctUntilChanged`، والـcollector يتلغي مع الشاشة. `snapshotFlow` مش تخزين دائم؛ لو collector اتلغى، analytics اللحظية ممكن تفوت حسب contract. اختبر threshold وlatest callback وخروج الشاشة، وقِس تكلفة derived state قبل الاحتفاظ بها.
+أمثلة عملية واقعية توضح استخدام كل أداة من الأدوات الثلاث:
+```kotlin
+@Composable
+fun AdvancedComposeScreen(
+    onTimeout: () -> Unit,
+    listState: LazyListState = rememberLazyListState()
+) {
+    // 1. rememberUpdatedState: قراءة أحدث نسخة من onTimeout دون إعادة تشغيل الـ timer:
+    val currentOnTimeout by rememberUpdatedState(onTimeout)
+    LaunchedEffect(Unit) {
+        delay(5000)
+        currentOnTimeout() // يستدعي أحدث دالة مررتها الواجهة بأمان
+    }
+
+    // 2. derivedStateOf: منع Recomposition في كل بكسل سكرول؛ يُعاد التركيب فقط عند تغير النتيجة:
+    val showScrollToTopButton by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 }
+    }
+
+    // 3. snapshotFlow: تحويل حالة السكرول إلى Flow واستخدام debounce للتحليلات:
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .distinctUntilChanged()
+            .collect { index ->
+                AnalyticsTracker.logScrollIndex(index)
+            }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -71,15 +113,25 @@ Use keyed effects with accurate owners, measure the derived-state benefit in a r
 
 ## Interview answer — short
 
-“`rememberUpdatedState` gives long-running effects fresh values; `derivedStateOf` tracks a derived Compose result; `snapshotFlow` exposes snapshot reads as a Flow. Use the latest callback wrapper, derived state, and snapshotFlow for three different needs.”
+`rememberUpdatedState` captures the latest value of a parameter inside long-running effects without restarting them. `derivedStateOf` creates a calculated state that dampens high-frequency state updates, recomposing only when the computed output actually changes. `snapshotFlow` bridges Compose state to Kotlin Flow, allowing operators like `debounce` and `filter`.
 
 ## Interview answer — structured
 
-“I use `rememberUpdatedState` when a registered effect should keep its lifecycle but call a new callback. I use `derivedStateOf` when fast-changing input produces a slower-changing result that the UI reads, such as whether scroll passed the first item. I use `snapshotFlow` when I want Flow operators over Compose state, often for scroll analytics. These choices have costs: derived state is not a free memoization wrapper, and a snapshotFlow collector still needs an owner and cancellation. I would use a scroll threshold to explain derivedStateOf and a Flow of scroll state for analytics.”
+These three APIs represent advanced Compose state coordination tools:
+
+1. **`rememberUpdatedState(value)`**: Solves the *stale closure* problem in long-running effects. When a `LaunchedEffect(Unit)` or `DisposableEffect` must access a changing parameter or lambda without restarting the effect, `rememberUpdatedState` updates an internal state reference synchronously. The effect reads the newest value upon execution without dropping or re-triggering its lifecycle.
+
+2. **`derivedStateOf { ... }`**: Functions as a **state dampener**. When an input state mutates rapidly (such as `listState.firstVisibleItemScrollOffset` changing every single frame), reading that raw state directly in UI triggers hundreds of recompositions. Wrapping the calculation in `derivedStateOf { offset > 100 }` ensures observers only recompose when the *calculated result* transitions (e.g. from `false` to `true`).
+
+3. **`snapshotFlow { ... }`**: Bridges Compose's snapshot state into a cold Kotlin `Flow`. It runs the lambda whenever a read snapshot state mutates, emitting the result downstream. This unlocks reactive coroutine operators like `debounce()`, `sample()`, or `filter()` directly on UI state.
 
 ## Interview answer — deep senior
 
-“I decide based on the boundary I am crossing. If a `DisposableEffect` registers a lifecycle observer, changing an `onStart` callback should not necessarily tear down the observer. `rememberUpdatedState` lets that listener invoke the latest callback while the observer's actual owner remains a key; if the owner changes, I still restart registration. `derivedStateOf` helps when an input changes frequently but a derived value changes rarely enough that avoiding downstream recomposition pays for dependency tracking. A boolean scroll threshold is a good example; concatenating two names on every edit is not. `snapshotFlow` turns reads of Compose snapshot state into a cold Flow, useful when I need `distinctUntilChanged`, debounce, or other Flow processing before analytics or side effects. I collect it in a keyed `LaunchedEffect` or another owned scope and consider re-subscription effects. None of these APIs solves persistence or business-state ownership. I test key changes, latest callback delivery, threshold crossings, and cancellation on screen exit, then profile if `derivedStateOf` was introduced for performance. The intent should remain obvious to the next engineer. I would not derive a full name just because the API exists; the output changes on each relevant edit.”
+Under the hood, `derivedStateOf` registers a dynamic dependency set in the Snapshot system. It records every snapshot state read during the calculation block. When any dependent state mutates, `derivedStateOf` re-evaluates the block inside a snapshot; if the result is structurally equal (`equals()`) to the cached result, it silently ignores the update and suppresses recomposition notifications down the tree.
+
+A critical misuse to avoid is wrapping simple static computations inside `derivedStateOf`. For instance, `val fullName = remember(first, last) { derivedStateOf { "$first $last" } }` is an anti-pattern. `derivedStateOf` has allocation and tracking overhead; it is only beneficial when the **input state changes much more frequently than the output state**.
+
+`snapshotFlow` relies on `Snapshot.registerApplyObserver`. When global snapshots commit, it compares emissions using structural equality, guaranteeing that downstream flow collectors only receive changes that actually alter data.
 
 ## How to answer in the interview
 
@@ -95,9 +147,11 @@ Discuss stale closures, identity keys, derived-state cost, snapshot-to-Flow brid
 
 ## Follow-up questions
 
-- Should callback changes always restart a registered observer? **Answer:** no; `rememberUpdatedState` can supply the latest callback while owner identity remains stable.
-- When is `derivedStateOf` wasteful? **Answer:** when direct computation is cheap and output changes as often as inputs.
-- Is `snapshotFlow` durable storage? **Answer:** no; it is a Flow view of observed Compose snapshot values.
+- **Interviewer:** "When should you NOT use `derivedStateOf`?"
+  **Answer:** "When the input state changes at the exact same frequency as the output (e.g. formatting a name from two text states). Standard `remember(key1, key2) { ... }` is faster and avoids snapshot observer overhead."
+
+- **Interviewer:** "Can `snapshotFlow` emit duplicate values?"
+  **Answer:** "No. `snapshotFlow` internally applies `distinctUntilChanged()`, so consecutive identical values evaluated from the snapshot read block are discarded automatically."
 
 ## Self-check rubric
 
@@ -107,4 +161,4 @@ Match three examples to APIs, name one overhead trap, and explain lifecycle clea
 
 - [Side-effects in Compose](https://developer.android.com/develop/ui/compose/side-effects) — all three APIs and examples.
 
-Technically reviewed against this primary source on 2026-10-11 by automated editorial review. Analytics usage is illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -24,11 +24,53 @@ What are Dynamic Feature Modules / Play Feature Delivery?
 
 ## Explanation in Arabic
 
-Dynamic Feature Module جزء من Android App Bundle يمكن لـGoogle Play يوصله عند التثبيت أو عند الطلب حسب إعداد delivery. الهدف تقليل initial install أو توصيل قدرة قليلة الاستخدام لاحقًا، لكن runtime الآن يجب يتحمل download/progress/failure/cancel/offline. ليست مجرد Gradle module جديدة: اتجاه dependencies مختلف والـbase app لا يرى كود feature أثناء compilation بنفس الطريقة، وDI/navigation تحتاج bridge. لو ميزة حرجة يجب تعمل offline فورًا، on-demand غالبًا قرار سيئ؛ install-time أو base قد يناسب أكثر. اختبر على مسار توزيع حقيقي وليس IDE فقط.
+ما هي موديولات الميزات الديناميكية (Dynamic Feature Modules - DFMs) و Play Feature Delivery في Android؟
+
+1. المفهوم والهدف الأساسي:
+   - في الوضع الطبيعي، يتم تنزيل التطبيق ككتلة واحدة بجميع شاشاته وميزاته عند تثبيته من Google Play.
+   - **Dynamic Feature Modules (DFMs)**: تتيح تجزئة التطبيق إلى أجزاء منفصلة يتم تنزيلها عند الطلب (On-Demand Delivery) أو تنزيلها بشروط معينة (Conditional Delivery بناءً على الدولة أو العتاد).
+   - **أمثلة واقعية**: ميزة الواقع المعزز (AR Mode) في تطبيق تجارة إلكترونية، أو ميزة مسح المستندات بـ OCR، أو ميزة دعم العملاء عبر الفيديو.
+
+2. أنواع تسليم الميزات في Play Feature Delivery:
+   - **Install-time**: يتم تنزيله تلقائياً مع التطبيق الأساسي ولكنه مقسم في APK Split مستقل.
+   - **On-demand**: لا يُنزل مع التطبيق! عند ضغط المستخدم على زر 'تجربة الواقع المعزز'، يقوم التطبيق بطلب التنزيل من Google Play عبر `SplitInstallManager` وعرض شريط تقدم للمستخدم.
+   - **Conditional**: يتم تنزيله فقط للأجهزة التي تدعم إمكانيات عتادية محددة (مثل توافر مستشعر معين أو في بلدان محددة).
+
+3. التحديات والمخاطر الهندسية:
+   - **انعكاس التبعية (Inverted Dependency)**: الـ DFM يعتمد على `:app`، بينما `:app` لا يعتمد عليه، مما يعقد الـ DI والـ Navigation.
+   - **فشل التنزيل في وضع عدم الاتصال (Offline & Network Failures)**: ماذا لو انقطع النت أثناء تنزيل الميزة؟ يجب تصميم تجربة مستخدم تعالج الفشل وإعادة المحاولة بأمان.
 
 ## Practical walkthrough
 
-Dynamic Feature Module تنزل عند الطلب من Play، فتقلل initial download لبعض features، لكن availability offline وزمن install والDI/navigation أصعب. لو شاشة checkout لازمة في محطة POS بدون اتصال، on-demand delivery اختيار خطر. عرّف fallback عند module missing، اختبار install/failure/process recreation، وتحقق Play delivery support. لا تستخدم dynamic لمجرد تقليل source module count.
+كيفية طلب تنزيل ميزة ديناميكية عند الطلب باستخدام SplitInstallManager:
+```kotlin
+class DynamicFeatureLauncher(private val context: Context) {
+    private val splitInstallManager = SplitInstallManagerFactory.create(context)
+
+    fun launchAugmentedRealityFeature(onReady: () -> Unit, onError: (String) -> Unit) {
+        val moduleName = "feature_augmented_reality"
+
+        // 1. التحقق مما إذا كانت الميزة مثبتة مسبقاً:
+        if (splitInstallManager.installedModules.contains(moduleName)) {
+            onReady()
+            return
+        }
+
+        // 2. طلب التنزيل من Google Play عند الطلب (On-Demand Request):
+        val request = SplitInstallRequest.newBuilder()
+            .addModule(moduleName)
+            .build()
+
+        splitInstallManager.startInstall(request)
+            .addOnSuccessListener { sessionId ->
+                // الاستماع لحالة التنزيل والتثبيت عبر SplitInstallStateUpdatedListener
+            }
+            .addOnFailureListener { exception ->
+                onError(exception.localizedMessage ?: "Download failed")
+            }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +94,25 @@ Measure feature usage, package size and install success/latency. Test Play deliv
 
 ## Interview answer — short
 
-“Dynamic features are App Bundle modules Play can deliver at install time or on demand. They trade initial size for runtime install states and integration complexity.”
+Dynamic Feature Modules enable modular delivery via Android App Bundles, downloading non-critical features on-demand after initial app install. They reduce initial APK download size, support conditional delivery by country or hardware, but introduce inverted dependencies, runtime download failure handling, and classloader complexity.
 
 ## Interview answer — structured
 
-“I use Play Feature Delivery for a capability whose usage and size justify separate delivery. For on-demand mode the app must request the split, show progress, handle failure/offline and navigate only after installation. Dynamic features also have a different compile dependency direction, so DI and navigation contracts need planning. I keep an essential offline workflow installed and test through real distribution paths.”
+Dynamic Feature Modules (DFMs) leverage Google Play Feature Delivery to modularize app distribution rather than just code compilation.
+
+Key mechanisms:
+1. **Delivery Modes**: Modules can be configured as **Install-time** (packaged as separate splits), **On-demand** (downloaded in the background only when the user triggers that specific flow), or **Conditional** (installed based on user country, minimum SDK, or hardware device features like camera sensors).
+2. **Initial Download Reduction**: Heavy, infrequently used features—such as KYC facial scanning, AR viewers, or complex PDF report generators—are removed from the base APK, significantly boosting Play Store install conversion rates by reducing initial download size.
+
+However, DFMs introduce serious engineering complexity: Gradle dependencies are inverted (`:dfm` depends on `:app`), feature access requires asynchronous download UI states via `SplitInstallManager`, and features cannot be accessed offline if they haven't been downloaded yet.
 
 ## Interview answer — deep senior
 
-“A dynamic feature is a packaging and delivery decision, not merely a code-organization technique. The feature is part of an App Bundle and may be installed with the app or downloaded on demand according to configured Play delivery. An on-demand choice can reduce initial bytes for an infrequent, large capability, but it introduces a new runtime state machine: not installed, requesting, downloading, installed, failed or canceled. The app cannot navigate into unloaded code and must offer an offline/error path. It also changes integration: the feature's dependency direction relative to the base affects Hilt aggregation and requires a documented entry-point or explicit factory boundary. I would keep login, payment recovery or other must-work-offline paths in base or install-time delivery unless product constraints say otherwise. To decide, I measure feature usage, size, install latency and failure rate, then test with bundle delivery, process recreation and updates, not only a debug installation where all modules happen to be present. I also make sure analytics distinguishes a user declining the feature from an installation failure.”
+Under the hood, dynamic delivery relies on **Android APK Splits and SplitCompat**.
+
+When Google Play installs a base APK on Android 5.0+ (API 21+), the OS mounts additional split APKs directly into the application process. However, when a split is installed dynamically while the app process is **already running**, Android cannot automatically update the running app's classloader and asset path. Developers must call `SplitCompat.installActivity(context)` inside the Activity's `attachBaseContext()` to merge the newly downloaded split's Dex files and native `.so` libraries into the live ClassLoader.
+
+Furthermore, navigation to DFMs cannot use direct Kotlin class references (`Intent(this, DfmActivity::class.java)`), because `:app` does not have compile-time visibility of `:dfm`. Instead, you must navigate via explicit class reflection, string deep links, or Android Jetpack Navigation dynamic feature artifacts.
 
 ## How to answer in the interview
 
@@ -76,9 +128,11 @@ Discuss bundle splits, delivery modes, install state machine, offline requiremen
 
 ## Follow-up questions
 
-- Is a dynamic feature the same as a regular library module? **Answer:** no; it changes packaging, delivery and dependency direction.
-- When can on-demand be harmful? **Answer:** when a required workflow must work immediately offline.
-- What must happen before navigation? **Answer:** confirm that installation succeeded and code/resources are available.
+- **Interviewer:** "What happens if a user is offline when attempting to open an on-demand dynamic feature?"
+  **Answer:** "The installation request will fail immediately; the UI must gracefully display an offline warning and prevent the flow from crashing."
+
+- **Interviewer:** "Can Dynamic Feature Modules contain native C/C++ libraries?"
+  **Answer:** "Yes, native `.so` libraries in DFMs are packaged inside the split APK and dynamically linked when SplitCompat installs the module."
 
 ## Self-check rubric
 
@@ -89,4 +143,4 @@ Choose a candidate feature, justify delivery, model install failure, and name in
 - [Play Feature Delivery overview](https://developer.android.com/guide/playcore/feature-delivery) — delivery modes.
 - [Hilt in multi-module apps](https://developer.android.com/training/dependency-injection/hilt-multi-module) — dynamic feature caveat.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Play delivery behavior must be tested in the chosen channel.
+Technically reviewed against primary documentation on 2026-10-13.

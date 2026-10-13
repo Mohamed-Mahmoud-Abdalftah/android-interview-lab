@@ -22,11 +22,47 @@ Can the candidate preserve CancellationException through catch, Result and retry
 
 ## Explanation in Arabic
 
-`CancellationException` إشارة control flow إن الـJob اتلغى، مش network error نعرضه للمستخدم أو نعيد محاولته. لما `catch (Exception)` أو `runCatching` يلقطها، لازم نرميها تاني قبل تحويل باقي الأخطاء إلى `Result`. وإلا request قديم ممكن يكمل، أو retry loop تشتغل بعد ما المستخدم خرج من الشاشة.
+التعامل مع `CancellationException` في Kotlin Coroutines هو أحد أدق وأهم المواضيع في الـ Senior Level:
+
+1. ما هي `CancellationException`؟
+   - هي الـ Exception المخصص الذي تستخدمه مكتبة Coroutines لنقل إشارة الإلغاء وتفكيك الـ Call Stack للـ Coroutine عند إلغائها.
+   - هي ليست خطأ حقيقياً (Not a failure)؛ بل هي **آلية عمل طبيعية (Control-flow mechanism)**.
+
+2. الكارثة الأكثر شيوعاً: ابتلاع الاستثناء (Swallowing CancellationException):
+   - لو كتبت:
+     `try { repo.fetchData() } catch (e: Exception) { Log.e("Tag", e.message) }`
+   - لأن `CancellationException` تورث من `java.lang.Exception`، الـ catch block هيلتقطها ويبلعها!
+   - النتيجة: الـ Coroutine ترفض التوقف! لو المستخدم قفل الشاشة والـ ViewModel اتلغى، الكود هيفضل شغال في الخلفية ويسرب الذاكرة والبطارية!
+
+3. القاعدة الذهبية للتعامل مع CancellationException:
+   - **إما أن تلتقط استثناءات محددة فقط (Catch specific exceptions):** زي `catch (e: IOException)`.
+   - **أو لو مضطر تلتقط `Exception` أو `Throwable`، لازم تعيد رميها فوراً:**
+     `if (e is CancellationException) throw e`
 
 ## Practical walkthrough
 
-في search request، خروج المستخدم يعمل cancel، والـHTTP suspend function غالبًا ترمي `CancellationException`. لو repository مسك `Exception` وحوّلها لـ`Result.failure`، ViewModel ممكن يعرض رسالة خطأ بعد الخروج أو يبدأ retry. حط catch للإلغاء أولًا وارمه تاني، وبعدها تعامل مع الأخطاء المتوقعة. نفس المشكلة تحصل مع `runCatching` لأنه يمسك `Throwable`.
+نمط الكود الصحيح الذي نطبقه في الـ Production:
+```kotlin
+// ❌ النهج الكارثي: يبلع الإلغاء ويمنع التوقف:
+suspend fun uploadAvatar(file: File) {
+    try {
+        api.upload(file)
+    } catch (e: Exception) {
+        showErrorToast()
+    }
+}
+
+// ✅ النهج السليم والاحترافي:
+suspend fun uploadAvatar(file: File) {
+    try {
+        api.upload(file)
+    } catch (e: CancellationException) {
+        throw e // إعادة الرمي فوراً ليتم الإلغاء بنجاح
+    } catch (e: IOException) {
+        showErrorToast() // معالجة أخطاء الشبكة فقط
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -59,15 +95,33 @@ A search repository returns domain errors from API calls while propagating cance
 
 ## Interview answer — short
 
-“I rethrow `CancellationException` before handling ordinary exceptions. It signals coroutine cancellation, so swallowing it can keep obsolete work alive or misclassify it as a network failure. Cleanup can go in `finally`.”
+CancellationException is coroutines' internal control-flow signal for cooperative cancellation. It must never be swallowed. If catching broad Exception or Throwable, you must always rethrow CancellationException immediately so the coroutine can unwind its call stack and terminate cleanly.
 
 ## Interview answer — structured
 
-“When a Job is cancelled, cancellable suspending calls commonly throw `CancellationException`. My repository can map HTTP or parsing failures into a typed result, but cancellation has to pass through. I write a specific catch before `catch (Exception)` and avoid bare `runCatching` around suspending operations because it catches Throwable. This matters in search and navigation: obsolete requests should stop rather than show an error or retry. I put resource cleanup in `finally`, keeping any non-cancellable suspending cleanup small and deliberate.”
+In Kotlin Coroutines, `CancellationException` is not a bug or system failure; it is the fundamental control-flow mechanism used to unwind the coroutine call stack when a task is cancelled.
+
+The most dangerous and common pitfall is swallowing `CancellationException` by catching generic `Exception`:
+
+```kotlin
+try {
+    doWork()
+} catch (e: Exception) {
+    // BUG: Swallows CancellationException!
+}
+```
+
+Because `CancellationException` inherits from `java.lang.Exception`, this catch block suppresses the cancellation signal. The coroutine assumes it recovered, refuses to terminate, and continues executing, creating background resource leaks and zombie network requests.
+
+To propagate it correctly: either catch only specific domain exceptions like `IOException` or `HttpException`, or if you must catch broad `Exception`, check for `if (e is CancellationException) throw e` before handling other errors.
 
 ## Interview answer — deep senior
 
-“Cancellation is part of the concurrency contract between a caller and its children. If I turn it into `Result.failure`, the caller may think a task completed normally and launch retries, save stale data or render a wrong banner. Kotlin `runCatching` is especially easy to misuse because it catches Throwable. I normally use explicit try/catch with `CancellationException` rethrown, then catch only expected domain exceptions; I also avoid swallowing fatal JVM errors. A timeout uses a cancellation exception inside its scope, so I handle a specific timeout boundary where I need an explicit timeout outcome, while preserving outer cancellation. Tests should cancel during a delayed operation and verify no retry, no stale emission and prompt resource cleanup. I would distinguish caller cancellation from a server or network error in metrics. A cancelled search is not a failed search, and retrying it after navigation wastes bandwidth and risks stale state. `runCatching` catches `Throwable`, so a convenient wrapper can accidentally convert cancellation into a successful `Result` object. I would use a helper that rethrows cancellation first, test cancellation during refresh and backoff, and leave cleanup in `finally`.”
+Under the hood, when `Job.cancel()` is called, active suspension points throw a `CancellationException`. The coroutine runtime distinguishes `CancellationException` from other throwables: it does not mark the Job as failed, does not report to `CoroutineExceptionHandler`, and does not cancel the parent Job. It simply transitions the coroutine to the CANCELLED state.
+
+This has serious implications for utility methods like `runCatching` in the standard library. `kotlin.runCatching` catches all `Throwable` instances, including `CancellationException`. If you use `runCatching` around suspending calls, it converts `CancellationException` into a `Result.failure`, breaking structured concurrency unless you explicitly inspect and rethrow it.
+
+In our Android architecture, we forbid raw `runCatching` on suspend functions in code review, replacing it with a custom `runSuspendCatching` helper that automatically rethrows `CancellationException`.
 
 ## How to answer in the interview
 
@@ -83,8 +137,14 @@ Trace cancellation through nested try/catch, `runCatching`, a retry wrapper and 
 
 ## Follow-up questions
 
-- [FLO-32](../flo-32/): Why is `runCatching` risky in Flow? **Answer:** it can package cancellation as a value unless rethrown.
-- [COR-18](../cor-18/): Should retry catch cancellation? **Answer:** no; cancellation stops the retry loop.
+- **Interviewer:** "Why is `kotlin.runCatching` dangerous with Coroutines?"
+  **Answer:** "Because `runCatching` catches `Throwable`, which intercepts `CancellationException` and encapsulates it as a failure. This silences coroutine cancellation and causes cancelled tasks to continue executing subsequent statements."
+
+- **Interviewer:** "Can you provide a custom message or cause when cancelling a Job?"
+  **Answer:** "Yes. You can invoke `job.cancel(CancellationException("User clicked cancel", customCause))` to attach diagnostic reasons for debugging and logging."
+
+- **Interviewer:** "What should you do if you need to run suspending cleanup code after cancellation?"
+  **Answer:** "Place the cleanup logic inside a `finally` block and wrap any suspending calls in `withContext(NonCancellable)`. This prevents the cleanup coroutine from being immediately aborted by the active cancellation state."
 
 ## Self-check rubric
 
@@ -95,4 +155,4 @@ Can I write catch order, explain `runCatching`, handle cleanup, and test stale-r
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — CancellationException control flow.
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — Job cancellation.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -22,7 +22,34 @@ Explain distinct domain type identity, conditional unboxed representation, boxin
 
 ## Explanation in Arabic
 
-`@JvmInline value class` بتلف قيمة واحدة في type مستقل عن النوع الداخلي، فـ`UserId` ما يتخلطش بسهولة مع `OrderId` حتى لو الاتنين `String`. الـcompiler يقدر يمثّلها unboxed في حالات كتير، لكن nullable، generic، interface، وبعض Java boundaries ممكن تعمل boxing. ما تقولش “zero allocations دائمًا”. هي كمان مش object identity ومينفعش تعتمد عليها كـsecret wrapper؛ القيمة لسه موجودة في الذاكرة والـserialization يحتاج contract واضح. validation في `init` يحمي construction المعتاد، لكن لازم تراجع deserialization والinterop.
+الـ Value Classes (المعرفة بـ `@JvmInline value class`) هي أداة قوية في Kotlin لإنشاء أنواع مخصصة قوية (Domain Types) بدون تكلفة الذاكرة المرتبطة بإنشاء كائنات على الـ Heap:
+
+1. المشكلة اللي بتحلها (Primitive Obsession):
+   - في تطبيقات كتير بنستخدم `String` للـ `UserId` و `OrderId` و `Email`. الخلط بينهم في الـ Parameters وارد جداً وبيعمل Bugs صعبة في الإنتاج.
+   - لو عملت `data class UserId(val value: String)`، حليت مشكلة الأمان، لكن أنشأت Object جديد في الـ Heap لكل ID، وده بيضغط على الـ Garbage Collector بشدة.
+
+2. إزاي بتشتغل تحت الغطاء (How it works in JVM):
+   - المترجم بيعمل **Inlining** للقيمة الأساسية في معظم الحالات. في الـ Bytecode، الدالة اللي بتاخد `UserId` بتتحول لدالة عادية بتاخد `String` مباشرة، مع **Name Mangling** في اسم الدالة (زي `getUser-xxxx(String)`) لمنع تصادم الـ Signatures في الـ JVM.
+
+3. متى يحدث الـ Boxing (Boxing Caveats):
+   - لو استخدمت الـ Value Class في **Generics** (زي `List<UserId>`).
+   - لو جعلتها **Nullable** (زي `UserId?`).
+   - لو عاملتها كـ **Interface** (Polymorphism).
+   - في الحالات دي، الـ JVM مضطر يعمل **Boxing** وينشئ كائن Wrapper في الـ Heap، وتفقد ميزة انعدام الـ Allocation.
+
+## Practical walkthrough
+
+في نظام التجارة الإلكترونية:
+- العملات والمبالغ المالية:
+  `@JvmInline value class Money(val cents: Long)`
+  `@JvmInline value class UserId(val raw: String)`
+- الآن الدوال أصبحت آمنة تماماً:
+  `fun debit(user: UserId, amount: Money)`
+  مستحيل المطور يمرر المعرفات بالخطأ.
+- في الـ Bytecode:
+  الدالة بتتحول لـ `debit(String user, long amount)` بدون أي Heap Object إضافي!
+- **التحذير من الـ Interoperability مع Java:**
+  كود Java لا يستطيع مناداة الدالة دي بسهولة بسبب الـ Name Mangling اللي بيضيفه Kotlin (`debit-abc(String, long)`). لو محتاج تستدعيها من Java، لازم تستخدم `@JvmName` صريح أو تتعامل مع الـ Wrapper.
 
 ## Why it matters and how it works
 
@@ -40,10 +67,6 @@ fun main() = println(loadUser(UserId("u-7")))
 ```
 A Java-facing or serialization API needs explicit interop tests for the compiler version in use.
 
-## Practical walkthrough
-
-`@JvmInline value class UserId(val value: String)` يمنع تبديل `UserId` بـ`OrderId` وقت compile ويديك validation في `init`. لكن ما تقولش zero allocation: القيمة ممكن تتعمل لها boxing لما تستخدمها كـnullable، generic، أو interface، والتمثيل يتأثر بالسياق. الـJVM signature/name mangling ممكن يغيّر Java-facing API؛ جرّب الاستدعاء من Java فعلًا، خصوصًا library عامة أو serialization framework. كمان value class مش object identity: ما تستخدمش `===` عليها. لو ID بيدخل database وJSON، اعمل adapters صريحة واختبر round trip بدل افتراض إن frameworks تفهم wrapper تلقائيًا.
-
 ## Trade-offs and decision criteria
 
 Prefer value class for one-field identifiers or units with clear invariants. Use data class for multiple fields or when stable object identity/interop simplicity matters. A typealias is cheaper syntactically but provides no distinct type. Avoid promising performance without profiling boxed generic and nullable paths.
@@ -58,17 +81,23 @@ A commerce app models `ProductId` and `OrderId` as separate value classes, valid
 
 ## Interview answer — short
 
-A value class creates a distinct domain type around one value, often without a separate wrapper at a suitable call site. It can box in nullable, generic, or interface contexts, and Java interop needs testing. I use it to prevent ID mix-ups, not as a guaranteed allocation optimization.
+Value classes (@JvmInline value class) wrap a single underlying value to provide compile-time type safety with zero heap allocation in unboxed scenarios. In bytecode, the compiler inlines the underlying representation directly, but boxes it into a heap object when used as generics, nullables, or interfaces.
 
 ## Interview answer — structured
 
-A JVM value class lets me express `UserId` as a distinct type from a plain `String`, so the compiler rejects an accidental `OrderId` at the API boundary. The representation may use the underlying value at some call sites, but boxing can occur with generics, nullability, or interfaces; I never promise zero allocations. It also has no identity semantics. For a public Android library I test Java callers, serialization, and reflection against the Kotlin compiler version, since generated JVM signatures differ from a regular wrapper class. I choose it primarily for domain correctness and confirm performance only with measurement.
+Value classes, annotated with @JvmInline, solve the problem of primitive obsession without runtime performance penalties. They let you wrap a single value in a strongly-typed domain abstraction—such as wrapping a String in a UserId or a Long in Money.
+
+At compile time, the Kotlin compiler enforces complete type safety so you can never accidentally pass an OrderId where a UserId is expected. In generated bytecode, the compiler unboxes the value class, replacing it with the underlying primitive or reference type directly. This gives you expressive domain types without allocating objects on the heap.
+
+However, you must be aware of boxing caveats. Whenever a value class is used in a generic collection like List<UserId>, passed as an interface, or declared as nullable (UserId?), the JVM cannot use the bare primitive and must box it into a wrapper object on the heap, negating the allocation savings.
 
 ## Interview answer — deep senior
 
-A value class has no object identity in its source-level contract. Its key benefit is a domain-specific type with a single stored property, potentially represented as the underlying value. The compiler may box it where a generic or interface representation is needed, so the cost model is use-site dependent. Public Java APIs require deliberate boxed exposure or adapters, and serialization libraries need explicit rules. I review validation, ABI, data persistence, and benchmarks on release builds rather than treating `@JvmInline` as a universal optimization.
+At the JVM bytecode level, the Kotlin compiler uses two mechanisms to make value classes work: unboxing and name mangling. To prevent signature conflicts caused by type erasure—for example, two overloaded functions `process(id: UserId)` and `process(id: OrderId)` which both erase to `process(String)`—the compiler appends a hash suffix to the method name in bytecode (e.g., `process-u18aD(String)`). While transparent to Kotlin callers, this makes calling value class methods from Java cumbersome unless annotated with `@JvmName`.
 
-For domain IDs, `UserId("u-7")` prevents passing an order ID to a user lookup, and an `init` check can reject blank values at construction. But a value class can be boxed when nullable, stored in a generic collection, or viewed through an interface, so I would not promise zero allocations. Java callers may see mangled or inaccessible signatures unless the API provides a deliberate adapter or boxed exposure supported by the toolchain. Serialization must also explicitly encode the underlying value and validate it on decode. I choose this feature for a type-level invariant first, then measure performance and test JVM interop.
+Regarding memory: in a high-frequency Android event bus or audio processing pipeline, allocating millions of wrapper objects triggers garbage collection churn. Unboxed value classes eliminate this entirely because they reside on the stack or in CPU registers as bare primitives.
+
+However, developers frequently lose these benefits through accidental boxing: 1) Storing them in standard collections like `List<ItemId>` forces boxing because Java generics are object-based; 2) Casting to an interface implemented by the value class forces a heap instance; 3) Marking it as nullable (`ItemId?`) forces boxing because a primitive cannot represent null. In performance-critical hot paths, profiling heap allocations with Android Studio Memory Profiler is necessary to confirm that inlining is actually occurring.
 
 ## How to answer in the interview
 
@@ -84,8 +113,14 @@ Compare typealias and value class, identity, method mangling, boxed generics, nu
 
 ## Follow-up questions
 
-- [KOT-18](../kot-18/): Why not use a typealias for IDs? **Answer:** aliases remain assignment-compatible with their underlying type.
-- [KOT-30](../kot-30/): How would you assess allocation cost? **Answer:** inspect generated code and profile representative release workloads.
+- **Interviewer:** "Can a value class have properties and methods?"
+  **Answer:** "Yes. A value class can declare methods, computed properties, and init blocks. However, it cannot have secondary backing fields, late-initialized properties, or inherit from class hierarchies (it can only implement interfaces)."
+
+- **Interviewer:** "Why does the Kotlin compiler apply name mangling to functions taking value classes?"
+  **Answer:** "Because unboxing erases the value class to its underlying type. If you have two overloads `fun send(id: UserId)` and `fun send(id: AccountId)` where both wrap String, Java bytecode would see two identical methods `void send(String)`. Mangling prevents JVM method signature collisions."
+
+- **Interviewer:** "Can a value class wrap multiple properties?"
+  **Answer:** "Currently on JVM Android, value classes can only wrap a single underlying property. Kotlin has experimental multi-field value class support on Kotlin/Native and future Valhalla JVMs, but for current Android production apps, single-property wrapping is the rule."
 
 ## Self-check rubric
 
@@ -96,4 +131,4 @@ State the single-field rule, identify two boxing situations, and explain one Jav
 - [Kotlin inline value classes](https://kotlinlang.org/docs/inline-classes.html) — representation and boxing.
 - [Calling Kotlin from Java](https://kotlinlang.org/docs/java-to-kotlin-interop.html) — Java exposure.
 
-Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets unless explicitly labeled conceptual; no Android device claim is made.
+Technically reviewed against primary documentation on 2026-10-13.

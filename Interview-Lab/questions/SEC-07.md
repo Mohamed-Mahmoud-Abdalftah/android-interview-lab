@@ -23,11 +23,54 @@ Compare encryption, hashing, HMAC, and digital signatures.
 
 ## Explanation in Arabic
 
-Encryption بتخفي الرسالة ويمكن فكّها بمفتاح؛ hash digest من غير مفتاح ومش بديل لتشفير سر؛ HMAC بتثبت integrity/authenticity بين أطراف شايلة نفس المفتاح؛ digital signature بمفتاح private وتتحقق بـpublic key. Passwords تحتاج password hashing متخصص ومملّح، مش SHA-256 خام. وفي كل الحالات لازم تعرف مين ماسك المفتاح وإيه حدود الثقة.
+مقارنة رياضية ومعمارية بين 4 مفاهيم أساسية في أمن المعلومات:
+التشفير (Encryption)، والتجزئة (Hashing)، و HMAC، والتوقيع الرقمي (Digital Signatures):
+
+1. التشفير (Encryption - السرية القابلة للعكس):
+   - **الهدف**: تحقيق السرية والخصوصية (Confidentiality). تحويل النص الصريح إلى نص غير مفهوم، مع **إمكانية فك التشفير واستعادة النص الأصلي** باستخدام مفتاح سري.
+   - **الأنواع**: متماثل (Symmetric مثل AES-256) بمفتاح واحد، أو غير متماثل (Asymmetric مثل RSA/ECC) بمفتاح عام وخاص.
+   - **أفضل استخدام**: تشفير قاعدة البيانات المحلية، وتشفير رسائل المحادثة.
+
+2. التجزئة (Hashing - البصمة الرقمية أحادية الاتجاه):
+   - **الهدف**: التحقق من سلامة البيانات (Integrity). تحويل نص بأي طول إلى بصمة ثابتة الطول (Digest) مثل SHA-256.
+   - **خاصية حتمية**: **أحادية الاتجاه رياضياً (One-Way)**؛ من المستحيل رياضياً استعادة النص الأصلي من الـ Hash.
+   - **أفضل استخدام**: التحقق من سلامة تنزيل ملف APK (Checksum)، وحفظ كلمات المرور على السيرفر مع Salt (عبر bcrypt/Argon2).
+
+3. HMAC (Hash-based Message Authentication Code - التجزئة بالمفتاح السري):
+   - **الهدف**: التحقق من سلامة البيانات ومصدرها الموثوق (Integrity + Authenticity) باستخدام مفتاح سري مشترك متماثل.
+   - **كيف يعمل**: دمج النص مع مفتاح سري مشترك قبل التجزئة: `HMAC = Hash(Key + Message)`.
+   - **أفضل استخدام**: توقيع طلبات الـ Webhooks والـ API لمنع التلاعب بالبيانات أثناء النقل بين طرفين يعرفان نفس المفتاح.
+
+4. التوقيع الرقمي (Digital Signatures - إثبات المصدر وعدم الإنكار):
+   - **الهدف**: التحقق من المصدر، وسلامة المحتوى، **وعدم القدرة على الإنكار (Non-Repudiation)**.
+   - **كيف يعمل**: تشفير الـ Hash الخاص بالرسالة باستخدام **المفتاح الخاص (Private Key)** للراسل. يستطيع أي شخص في العالم التحقق من التوقيع باستخدام **المفتاح العام (Public Key)**.
+   - **أفضل استخدام**: توقيع ملفات الـ APK (APK Signature Scheme v2/v3)، وتوقيع المعاملات المالية في البنوك عبر مفاتيح Keystore الخاصة.
 
 ## Practical walkthrough
 
-لو backend يبعت إعدادات دفع لازم app تتحقق من مصدرها، يوقّعها private key على السيرفر وapp تتحقق بـpublic key. Plain SHA-256 للرسالة مش كفاية لو المهاجم يقدر يبدّل الرسالة والـhash سوا. HMAC يتطلب secret مشترك، فلا تحطّ مفتاح server HMAC في APK. تشفير AES-GCM يحمي السرية وintegrity، لكن مش إثبات قرار دفع من backend.
+المقارنة البرمجية بين التشفير التوثيقي (AES-GCM)، والتجزئة، والتوقيع الرقمي في Kotlin:
+```kotlin
+// 1. Hashing: بصمة أحادية الاتجاه للتحقق من سلامة ملف:
+fun calculateSha256(data: ByteArray): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest(data)
+    return digest.joinToString("") { "%02x".format(it) }
+}
+
+// 2. HMAC: توقيع رسالة بمفتاح سري مشترك للتحقق من عدم التلاعب:
+fun generateHmac(key: ByteArray, message: ByteArray): ByteArray {
+    val mac = Mac.getInstance("HmacSHA256")
+    mac.init(SecretKeySpec(key, "HmacSHA256"))
+    return mac.doFinal(message)
+}
+
+// 3. التوقيع الرقمي (Digital Signature): توقيع بمفتاح خاص داخل Keystore لا يمكن إنكاره:
+fun signTransaction(privateKey: PrivateKey, transactionBytes: ByteArray): ByteArray {
+    val signature = Signature.getInstance("SHA256withECDSA")
+    signature.initSign(privateKey)
+    signature.update(transactionBytes)
+    return signature.sign() // يرسل للسيرفر مع المعاملة ليتحقق منه بالمفتاح العام
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +94,27 @@ For each security requirement, document the property needed: secrecy, tamper det
 
 ## Interview answer — short
 
-“Encryption protects confidentiality, hashes summarize data, HMAC authenticates with a shared secret, and signatures authenticate with a private/public key pair. Passwords need a dedicated salted password-hashing scheme.”
+Encryption provides reversible confidentiality using keys (AES/RSA). Hashing produces an irreversible one-way digest to verify data integrity (SHA-256). HMAC adds a shared secret key to hashing to verify both integrity and authenticity. Digital signatures use asymmetric cryptography (Private/Public key) to provide integrity, authenticity, and non-repudiation.
 
 ## Interview answer — structured
 
-“I choose a primitive by the property I need. Encryption protects confidentiality; a plain hash is a digest, not proof of who wrote a message. HMAC authenticates between parties sharing a secret, while a digital signature lets the app verify a server message with a public key without carrying the private key. Passwords need dedicated salted password hashing on the server. For local secrets I use authenticated encryption and vetted platform APIs, not a custom combination of primitives.”
+Selecting the correct cryptographic primitive depends on whether the security goal is confidentiality, integrity, authenticity, or non-repudiation:
+
+1. **Encryption (Confidentiality - Reversible)**: Transforms plaintext into ciphertext. Requires a key to decrypt back to plaintext. Symmetric encryption (AES-256 GCM) is fast for local data storage and payload encryption. Asymmetric encryption (RSA/ECC) encrypts data with a public key that only the matching private key can decrypt.
+
+2. **Hashing (Integrity - Irreversible)**: A deterministic, one-way mathematical function mapping arbitrary-length inputs to a fixed-length digest (e.g. SHA-256). Changing a single bit completely changes the hash. Used for APK checksum verification and password hashing (with salt and slow KDFs like Argon2).
+
+3. **HMAC (Keyed Integrity & Authenticity - Symmetric)**: Computes a hash combined with a shared secret key (`HmacSHA256`). Confirms that the message was not modified in transit AND that it was created by an entity possessing the shared secret.
+
+4. **Digital Signatures (Authenticity & Non-Repudiation - Asymmetric)**: Signs a message hash with a private key; verifiable by anyone using the corresponding public key (e.g. ECDSA, RSA). Guarantees **non-repudiation**: the signer cannot claim they didn't author the message, making it mandatory for financial payment authorizations and APK code signing.
 
 ## Interview answer — deep senior
 
-“I first name the property I need. Encryption gives confidentiality, while authenticated encryption such as AES-GCM also detects modification. A plain hash is a digest, not proof of origin when an attacker can replace both data and hash. HMAC authenticates between parties that share a secret; putting the same HMAC key in every APK defeats that trust model. A server can sign a configuration with a private key and let the app verify with a public key. Passwords need a salted password-hashing scheme on the server, not a fast general-purpose hash. I would use vetted APIs and keep all private payment authority off device. A useful design exercise is to ask whether the app must read the message, verify its origin, or both. A public signature can verify server-issued configuration without giving every mobile installation the signing secret. By contrast, encrypting a payload under an app-wide symmetric key shipped in the APK would not establish a private boundary. I would include algorithm, key ownership, and replay handling in the protocol review.”
+Cryptographic Failure Modes in Android Applications:
+
+1. **Using Unauthenticated Encryption (AES-CBC without HMAC)**: Susceptible to **Padding Oracle Attacks** and bit-flipping attacks. Always use **Authenticated Encryption with Associated Data (AEAD)**, specifically **AES-GCM (Galois/Counter Mode)**, which generates a cryptographic authentication tag validating both ciphertext integrity and payload confidentiality.
+
+2. **Hashing Passwords with Fast Hashes**: Using SHA-256 or MD5 for passwords is an immediate security vulnerability because modern GPUs compute billions of SHA-256 hashes per second via rainbow tables. Password hashing must use slow, memory-hard Key Derivation Functions (PBKDF2 with 100,000+ iterations, bcrypt, or Argon2id).
 
 ## How to answer in the interview
 
@@ -75,8 +130,11 @@ Compare confidentiality, one-way digest, keyed integrity and asymmetric authenti
 
 ## Follow-up questions
 
-- [SEC-11](../sec-11/): Why AES-GCM rather than encryption alone? **Answer:** the authentication tag rejects modified ciphertext.
-- [SEC-05](../sec-05/): Can an app hold a shared HMAC signing secret securely? **Answer:** not if it must be extracted from a distributed client.
+- **Interviewer:** "What is Non-Repudiation in digital signatures?"
+  **Answer:** "The inability of the sender to deny having sent the message, because only their hardware-held private key could have generated the valid signature."
+
+- **Interviewer:** "Why does AES-GCM require a unique IV (Initialization Vector) for every encryption?"
+  **Answer:** "Reusing an IV with the same AES key completely destroys GCM security, allowing an attacker to recover both plaintext and the authentication subkey."
 
 ## Self-check rubric
 
@@ -87,4 +145,4 @@ Can I pick a primitive for confidentiality, shared-key authentication, public ve
 - [Android cryptography guidance](https://developer.android.com/privacy-and-security/cryptography) — platform cryptographic practices.
 - [OWASP MASVS cryptography](https://mas.owasp.org/MASVS/controls/MASVS-CRYPTO-1/) — algorithm and key controls.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -22,7 +22,58 @@ Split a fat interface by consumer capabilities while preserving migration compat
 
 ## Explanation in Arabic
 
-ابدأ بـcall-site matrix: كل client بيستخدم methods إيه؟ جمع methods اللي لها نفس consumer contract في `SessionReader`, `ProfileEditor`, `ExportRunner` بدل giant `AccountService`. ممكن implementation واحدة تنفّذ interfaces كلها، لكن clients تعتمد على أصغر capability. اعمل adapters مؤقتة للمهاجرة، غيّر callers تدريجيًا، واختبر contract لكل capability. ما تقسمش حسب method واحدة لكل interface تلقائيًا؛ المجموعة المتماسكة أفضل. راجع scopes/security: UI لا تحتاج token-refresh method لو هي بس تعرض اسم المستخدم.
+كيف تقوم بتقسيم واجهة ضخمة (Fat Interface) تحتوي على دوال كثيرة غير مستخدمة؟ وما هي الخطوات العملية؟
+
+1. تشخيص الواجهة المتضخمة (Fat Interface Diagnosis):
+   - واجهة مثل `interface MediaPlaybackListener` فيها 12 دالة (play, pause, stop, seek, buffer, volumeChanged, trackChanged, error, metadataLoaded, subtitleAvailable, bitrateChanged, qualityDropped).
+   - معظم الشاشات المستهلكة (Clients) تحتاج فقط لمعرفة `onPlaybackStateChanged` و `onError`، وتضطر لتنفيذ باقي الدوال كـ No-op فارغة!
+
+2. استراتيجية التقسيم بناءً على أدوار العملاء (Role-Based Segregation):
+   - تطبيق مبدأ **ISP (Interface Segregation Principle)**: تجميع الدوال بناءً على من يستخدمها وكيف تتغير معاً:
+     * `interface PlaybackStateListener` (للتشغيل والإيقاف المؤقت).
+     * `interface MediaTrackListener` (للترجمات والمسارات الصوتية).
+     * `interface PlaybackMetricsListener` (للتحليلات والـ Bitrate).
+
+3. استخدام ميزات Kotlin الحديثة:
+   - توفير **Default Implementations** في الـ Interface: `fun onBuffering() {}` بحيث لا يجبر المستدعي على كتابتها.
+   - استخدام **SAM / Functional Interfaces** (`fun interface`) والـ Extension functions مع Lambdas (مثل `player.onPlayStateChange { ... }`).
+
+## Practical walkthrough
+
+تقسيم واجهة تشغيل وسائط ضخمة إلى واجهات متخصصة:
+```kotlin
+// ❌ واجهة ضخمة تجبر كل الشاشات على تنفيذ 6 دوال معظمها غير مستخدم:
+interface FatAudioListener {
+    fun onPlay()
+    fun onPause()
+    fun onTrackChanged(track: String)
+    fun onVolumeChanged(volume: Float)
+    fun onBitrateDrop(bitrate: Int)
+    fun onError(error: String)
+}
+
+// ✅ تقسيمها حسب الأدوار وحاجة العملاء (ISP):
+fun interface PlaybackStateListener {
+    fun onStateChanged(isPlaying: Boolean)
+}
+
+fun interface TrackChangeListener {
+    fun onTrackChanged(track: String)
+}
+
+fun interface MediaErrorListener {
+    fun onError(error: String)
+}
+
+// في المشغل: دعم تسجيل المستمعين المتخصصين بشكل منفصل وبسيط عبر Lambdas:
+class AudioPlayer {
+    fun addStateListener(listener: PlaybackStateListener) { ... }
+    fun addErrorListener(listener: MediaErrorListener) { ... }
+}
+
+// شاشة العرض البسيطة تسجل فقط ما تحتاجه بضغطة واحدة:
+player.addStateListener { isPlaying -> updatePlayButtonIcon(isPlaying) }
+```
 
 ## Why it matters and how it works
 
@@ -38,10 +89,6 @@ class AccountMenu(private val signOut: SignOut)
 ```
 The menu cannot accidentally call token-refresh internals just because they share an implementation.
 
-## Practical walkthrough
-
-لو interface اسمها `AccountOperations` فيها 20 method، ابدأ بجدول callers: `AccountMenu` تستعمل signOut، profile header تستعمل observeUserId، وخدمة sync تستعمل refreshToken. استخرج roles حسب الاستعمال الحقيقي: `SignOut` و`SessionReader` مثلاً. implementation واحدة ممكن تدعمهم كلهم. انقل caller واحد في كل مرة، وشغّل tests بدل big-bang refactor. ما تخليش كل method interface مستقلة؛ العمليات اللي بتتغير مع بعض وبتستخدم مع بعض ممكن تفضل مجموعة. الفشل المعتاد إن fake في test يضطر ينفذ 19 method فارغين.
-
 ## Trade-offs and decision criteria
 
 Many tiny interfaces cost wiring and navigation. Choose cohesive capability groups. For a private one-consumer class, a concrete API may be simpler; ISP becomes important when consumers use disjoint subsets or modules rebuild together.
@@ -56,15 +103,30 @@ A large app gradually migrates account features to session-read, profile-edit an
 
 ## Interview answer — short
 
-I map consumers to the methods they use, then split a large interface into cohesive capabilities. One implementation may implement several; callers depend only on their needed view. I migrate gradually and test behavior.
+Split a large interface by analyzing client call sites, grouping methods by cohesion and consumer role into smaller functional interfaces (`PlaybackStateListener`, `MediaErrorListener`), providing interface default method implementations, and utilizing Kotlin SAM lambdas.
 
 ## Interview answer — structured
 
-A large interface with many unused methods forces every client and fake to know too much. I list call sites and group operations by meaningful capabilities, such as reading session state versus signing out. Then I introduce narrow contracts, let the current implementation implement them, and migrate one client at a time. I do not make one interface per method unless that truly matches a consumer boundary. Contract tests and build checks verify that behavior and dependencies improve. During migration, I can let the old implementation implement the new interfaces and change callers one feature at a time. That avoids a synchronized rewrite of every module.
+Splitting a bloated 'Fat Interface' requires role-based refactoring governed by the Interface Segregation Principle (ISP).
+
+1. **Audit Call Sites and Consumer Personas**: Analyze every client implementing the interface. Identify distinct clusters of methods that are invoked together by specific consumers. For example, in a massive `MediaController` interface, the UI widget only cares about play/pause, the metadata notification only cares about track titles, and the analytics telemetry service only cares about buffer underruns and bitrates.
+
+2. **Extract Role Interfaces**: Deconstruct the interface into cohesive, fine-grained contracts:
+   - `PlaybackStateListener`: `onPlay()`, `onPause()`
+   - `TrackMetadataListener`: `onTrackChanged()`
+   - `StreamingQualityListener`: `onBitrateDrop()`, `onBufferStall()`
+
+3. **Leverage Kotlin SAM & Default Implementations**:
+   - Convert single-method contracts into `fun interface` (Single Abstract Method), allowing callers to pass simple trailing lambdas.
+   - Provide default no-op method bodies (`fun onBuffering() {}`) in interfaces for truly optional callbacks, preventing implementers from writing redundant stub methods.
 
 ## Interview answer — deep senior
 
-I would first measure the problem: which modules recompile for unrelated changes, which fakes have empty or throwing methods, and which clients import sensitive capabilities they never need. A call-site matrix usually reveals clusters. I define small but cohesive interfaces for those clusters and keep one underlying implementation if its state ownership remains coherent. During migration I can use an adapter so existing callers remain functional, then remove the fat contract when no longer used. I test each capability’s behavior and lifecycle, especially session logout or token refresh races. Over-segregation creates its own navigation and binding cost, so I stop where client coupling is meaningfully reduced. ISP is about what a client must see, not a fixed method count. I would start with a client-method matrix and change history, not arbitrary splitting. If account menu uses only sign-out and a header only observes user ID, expose those as role contracts; one class may implement both. Migrate callers gradually so the public API change is reviewable. A warning sign is a test fake with many unused methods or production implementations throwing for operations they cannot support. The trade-off is more small types, so I group operations that belong to a stable client workflow rather than one interface per method. After migration, I would remove the broad contract and verify that client modules no longer import unrelated token or account-management APIs.
+To migrate safely without breaking existing production consumers, apply the **Adapter or Composite Interface pattern** during refactoring. Declare the new segregated interfaces first. Then, define the legacy interface as a composite that inherits the new interfaces: `interface LegacyMediaListener : PlaybackStateListener, TrackMetadataListener`. Mark the legacy interface `@Deprecated(message = "Use specific segregated listeners")`.
+
+Existing legacy code continues compiling without modification, while all new feature developments adopt the fine-grained role interfaces.
+
+In unit testing, this reduces mocking boilerplate exponentially: testing a play button requires passing a 1-line lambda rather than a 15-method mock instance.
 
 ## How to answer in the interview
 
@@ -80,8 +142,11 @@ Construct a consumer-method matrix, capability split, migration adapter and cont
 
 ## Follow-up questions
 
-- [SOL-05](../sol-05/): What does ISP require? **Answer:** clients do not depend on unused capabilities.
-- [SOL-08](../sol-08/): Does splitting an interface also split implementation? **Answer:** not necessarily; one implementation can expose multiple narrow views.
+- **Interviewer:** "What is a SAM (Single Abstract Method) interface in Kotlin?"
+  **Answer:** "An interface declared as `fun interface` containing exactly one abstract method. In Kotlin, callers can implement it concisely using a standard lambda expression without anonymous class boilerplate."
+
+- **Interviewer:** "How do interface default methods prevent breaking changes?"
+  **Answer:** "In Kotlin and Java 8+, adding a method with a default implementation to an existing interface does not force existing implementers to override it, preventing compile-time breakages."
 
 ## Self-check rubric
 
@@ -92,4 +157,4 @@ Group six methods into two or three client capabilities and explain migration wi
 - [Robert C. Martin, A Little Architecture](https://blog.cleancoder.com/uncle-bob/2016/01/04/ALittleArchitecture.html) — interface segregation.
 - [Android modularization guide](https://developer.android.com/topic/modularization) — client module boundaries.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

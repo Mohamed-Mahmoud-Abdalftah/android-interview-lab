@@ -24,11 +24,45 @@ What is a @Composable function? What is recomposition?
 
 ## Explanation in Arabic
 
-`@Composable` يعلّم function تشارك في Composition؛ compiler/runtime يتتبع مكان استدعائها والـstate التي تقرأها. عندما تتغير observable state، Compose يحدد scopes تحتاج إعادة تنفيذ؛ هذه recomposition وليست بالضرورة إعادة بناء الشاشة كلها. ممكن يستدعي function ثانية أو يتجاوزها إذا inputs مناسبة للـskip. لذلك composable يجب يكون تقريبًا وصفًا للـUI، وليس مكانًا لإرسال API request أو تعديل repository في كل استدعاء.
+ما هي دالة `@Composable` وما هو مفهوم الـ Recomposition؟
+
+1. طبيعة الـ `@Composable Annotation`:
+   - الـ `@Composable` ليس مجرد وسم شكلي (Annotation)، بل هو **مغير نوع للغة كوتلن (Type modifier)** يفهمه الـ Compose Compiler Plugin.
+   - تماماً كما أن كلمة `suspend` تغير توقيع الدالة وتمرر `Continuation`، فإن `@Composable` تجبر المترجم على حقن بارامتر خفي اسمه `$composer` داخل الدالة وتغيير نوعها لتصبح صالحة للاستدعاء فقط من داخل دوال `@Composable` أخرى.
+
+2. ما هي الـ Recomposition (إعادة التركيب)؟
+   - هي العملية التي يقوم فيها محرك Compose بإعادة تشغيل (Re-executing) دوال الـ Composable عندما تتغير البيانات أو الحالات (`State`) التي تقرأها تلك الدوال.
+   - الهدف: تحديث شجرة العرض بما يتطابق مع الحالة الجديدة.
+
+3. القواعد الذهبية للـ Recomposition التي يجب أن يعيها مهندس الـ Senior:
+   - **Recomposition is Optimistic**: قد يبدأ Compose إعادة التركيب، وإذا تغيرت الحالة مجدداً قبل اكتمال الفريم، يلغي العملية ويعيدها بالحالة الأحدث.
+   - **Executes in Any Order**: لا تضمن ترتيب تنفيذ دوال الـ Composable؛ قد تعمل بالتوازي.
+   - **Side-Effect Free**: يجب ألا تحتوي دالة الـ Composable على أي Side Effects (مثل استدعاء شبكة، أو تعديل متغير عام، أو تشغيل صوت) خارج الـ Effect APIs المخصصة (`LaunchedEffect` / `SideEffect`).
 
 ## Practical walkthrough
 
-خد counter بسيط: الـcomposable تقرأ `count` وتعرضه، والضغط يبعت event. تغيير الرقم يخلي الجزء اللي قرأه محتاج recomposition؛ ده مش معناه إن Android View hierarchy كلها اتبنت تاني ولا إن كل frame اتعمل لها draw. لو عندك حساب مكلف، قِس تكلفته بدل ما تحكم من عدد الاستدعاءات. المثال ده يبان تافه، لكنه يكشف bug شائع: تعديل state أثناء الرسم ممكن يعمل loop. اختبر نفس الشاشة مع تغيير سريع للقيمة وتأكد مفيش request أو listener بيتكرر.
+كيف يؤدي كود يحتوي على Side-Effect داخل دالة Composable إلى كوارث أداء وكيفية علاجه:
+```kotlin
+// ❌ كود كارثي: تشغيل Side-Effect مباشرة داخل جسم الـ Composable:
+@Composable
+fun BadUserCounter(count: Int) {
+    // 💥 كارثة: في كل مرة يعاد فيها رسم الشاشة (Recomposition)، يتم إرسال طلب تحليلات جديد!
+    AnalyticsTracker.logEvent("screen_viewed")
+
+    Text(text = "Count: $count")
+}
+
+// ✅ كود سليم: عزل الـ Side-Effects داخل Effect Handlers المخصصة:
+@Composable
+fun GoodUserCounter(count: Int) {
+    // يتم استدعاؤه مرة واحدة فقط عند دخول الـ Composable لأول مرة:
+    LaunchedEffect(Unit) {
+        AnalyticsTracker.logEvent("screen_viewed")
+    }
+
+    Text(text = "Count: $count")
+}
+```
 
 ## Why it matters and how it works
 
@@ -67,15 +101,26 @@ Use state/event boundaries and effects for controlled work. Profile with Compose
 
 ## Interview answer — short
 
-“A `@Composable` function describes UI inside a composition. Recomposition re-executes affected scopes when their observed state or inputs change. A counter click changes owner state; rendering itself does not increment it.”
+A `@Composable` function is a Kotlin function transformed by the Compose compiler to emit UI nodes into the composition tree. Recomposition is the process where Compose re-executes composables whose observed `State` has changed to produce updated UI, skipping unchanged composables intelligently.
 
 ## Interview answer — structured
 
-“The annotation lets the Compose compiler and runtime track a UI call, its place in the tree, and remembered state. If the scope reads a state value that changes, Compose can schedule that scope for recomposition. It may skip child calls when inputs permit; it does not automatically rerun the whole screen or equate to a redraw. I keep the function safe to call again and move one-time or lifecycle work into the appropriate effect or owner. I use a counter to show that the callback changes state and a state read triggers the next UI description.”
+A `@Composable` annotation transforms a Kotlin function at compile time. Much like the `suspend` keyword modifies a function's calling convention to inject a `Continuation`, `@Composable` modifies the function type to inject a `$composer` parameter and runtime control structures.
+
+**Recomposition** is the core reactive mechanism of Jetpack Compose. When a snapshot `State` object read within a composable changes its value, the Compose runtime invalidates that specific scope in the **Slot Table** and re-executes the composable function to produce updated UI nodes.
+
+Three critical operational rules govern recomposition:
+1. **Idempotency & Purity**: Composables must be free of side-effects because recomposition can execute on every single frame during animations.
+2. **Parallel & Arbitrary Order**: Composables may run concurrently on background thread pools or in arbitrary order.
+3. **Optimistic Cancellation**: If state updates again while recomposition is underway, Compose discards the pending pass and restarts with the fresh state.
 
 ## Interview answer — deep senior
 
-“A composable is a function participating in Compose's managed UI description, not just a function that returns a View. The compiler adds machinery that lets the runtime identify call sites and preserve remembered values in a composition. When a scope reads snapshot state, a later change can invalidate that scope and schedule recomposition. The runtime runs the necessary calls to describe the new UI and may skip eligible descendants; subsequent measure and draw work are separate concerns. That distinction matters when diagnosing performance: many harmless recompositions can coexist with smooth frames, while one expensive layout or draw can cause jank. I design the composable to tolerate re-execution, with immutable inputs and event callbacks. I avoid performing network requests, registering listeners, or mutating state unguarded in its body. For a counter, the button sends an event; the owner changes the value; rendering then reflects it. I use effect APIs when composition must coordinate external work and test that repeated recomposition does not duplicate it. I would check a frame trace before treating the number of recompositions as a performance problem.”
+Under the hood, the Compose Compiler generates synthetic bytecode called **Restartable and Replaceable Groups**. A composable marked with `@Composable` is wrapped in `$composer.startRestartGroup()` and `$composer.endRestartGroup()`. The returned scope implements `RecomposeScopeImpl`, which registers itself as an observer of snapshot state reads.
+
+When you read `state.value` inside a composable, the `Snapshot` system records that read against the active `RecomposeScope`. When `state.value = newValue` is assigned, the snapshot system marks that `RecomposeScope` as dirty and dispatches an invalidation to the Choreographer frame loop.
+
+If all parameters passed to a composable are known to be **Stable** and have not changed by `equals()` comparison, Compose skips executing the function body entirely (`Skipping`), which is why understanding Compose compiler stability is fundamental to fluid 120fps performance.
 
 ## How to answer in the interview
 
@@ -91,9 +136,11 @@ Explain compiler transformation, call identity, observable reads, invalidation, 
 
 ## Follow-up questions
 
-- Is every recomposition a redraw? **Answer:** no; composition, layout and drawing have distinct work and triggers.
-- Can a child composable be skipped? **Answer:** under eligible parameter and compiler/runtime conditions, yes.
-- Why avoid a network call in the body? **Answer:** the body may execute again whenever the scope recomposes.
+- **Interviewer:** "Can a composable function run on a background thread during recomposition?"
+  **Answer:** "Yes. While Compose dispatches UI node mutations on the main thread, the actual execution and calculation of composable function logic can be executed across thread pools, meaning composable bodies must never read or write non-thread-safe state."
+
+- **Interviewer:** "What happens if a composable is recomposed 60 times per second during an animation?"
+  **Answer:** "If the function is pure, it recalculates UI values smoothly. But if it performs allocations, IO, or side-effects, it triggers immediate memory churn, GC pauses, and dropped frames."
 
 ## Self-check rubric
 
@@ -104,4 +151,4 @@ Define composable context, trace state change to recomposition, distinguish rend
 - [Compose phases](https://developer.android.com/develop/ui/compose/phases) — composition, layout and drawing.
 - [Compose mental model](https://developer.android.com/develop/ui/compose/mental-model) — composable invocation and recomposition.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The counter is illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

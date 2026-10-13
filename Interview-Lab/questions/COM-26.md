@@ -24,11 +24,58 @@ A LazyColumn scroll position resets after data refresh. What should you inspect?
 
 ## Explanation in Arabic
 
-أولًا اسأل: هل المطلوب البقاء عند نفس item أم العودة للأول بعد query جديدة؟ افحص `rememberLazyListState()` هل موجود في call site ثابت أم Screen تُزال/تتغير key فيُنشأ state جديد. ثم keys للعناصر: IDs ثابتة وفريدة تساعد Compose يتتبع item بعد insertion/reorder؛ index keys تجعل الصفوف تتبدل هويتها. راجع هل refresh تستبدل list بنفس IDs أم تولد IDs جديدة، وهل code يستدعي `scrollToItem(0)` في effect بكل emission. `LazyListState` له saveable behavior، لكن restoration تعتمد على owner وبقاء saved state.
+عندما يعود موضع التمرير (Scroll Position) في `LazyColumn` إلى البداية بعد تحديث البيانات (Data Refresh): ما الذي يجب فحصه؟
+
+1. الأسباب الجذرية لإعادة ضبط موضع السكرول (Scroll Reset):
+   - **غياب المفاتيح الثابتة (`key` Parameter)**: إذا لم توفر مفتاحاً ثابتاً، يعتمد Compose على الـ Index. إذا استبدلت القائمة بالكامل بكائنات جديدة، يعتقد Compose أن كل شيء جديد ويعيد التعيين للصفر.
+   - **توليد كائنات IDs جديدة في كل Refresh**: إذا كانت الـ Data Classes تولد معرفات مؤقتة (مثل `UUID.randomUUID()` أو `System.currentTimeMillis()`) في كل مرة يتم فيها عمل Refresh، تتغير كل الـ Keys فيفقد الـ Scroll موقعه تماماً!
+   - **إفراغ القائمة المؤقت (Transient Empty List)**: أثناء عملية الـ Refresh، يقوم الكود بنشر `emptyList()` أو الانتقال لحالة `UiState.Loading` التي تمحو الـ `LazyColumn` من الشاشة لحظياً! عند زوال الـ LazyColumn تتدمر الـ `LazyListState` ويعود السكرول للصفر عند ظهور القائمة الجديدة!
+
+2. ما الذي يجب فحصه وإصلاحه؟
+   - **فحص استقرار الـ Keys**: التأكد من استخدام معرفات ثابتة من قاعدة البيانات/السيرفر (`key = { it.serverId }`).
+   - **الحفاظ على القائمة أثناء التحميل (Retain List During Refresh)**: عدم إخفاء الـ LazyColumn أثناء التحديث؛ بل إظهار مؤشر سحب (`PullRefreshIndicator` أو شريط علوي) مع إبقاء القائمة السابقة معروضة في مكانها.
+   - **الاحتفاظ بالـ `LazyListState` في الـ ViewModel أو عبر `rememberSaveable`**.
 
 ## Practical walkthrough
 
-اسأل الأول: refresh المفروض يحافظ على نفس post ولا يرجع لأول القائمة؟ بعدين افحص `rememberLazyListState` هل في call site ثابت، وkeys هل IDs حقيقية ولا index، وهل effect بتعمل `scrollToItem(0)` مع كل data emission. عالج السبب المناسب؛ تغيير refreshToken في root key ممكن يمسح state كلها. لو query جديدة، الرجوع لأول القائمة ممكن يكون صحيح، لكن refresh لنفس query لازم غالبًا يحافظ على post الحالي. اختبر الحالتين منفصلتين مع insert/reorder ومع restoration.
+حل مشكلة فقدان موضع السكرول عبر الحفاظ على القائمة والمفاتيح المستقرة أثناء التحديث:
+```kotlin
+// ❌ كود سيء: يفرغ القائمة أثناء التحميل ويستخدم مفاتيح غير مستقرة فيعيد السكرول للصفر:
+@Composable
+fun BadFeed(uiState: FeedUiState) {
+    if (uiState.isLoading) {
+        // 💥 إخفاء LazyColumn تماماً يدمر موضع السكرول فوراً!
+        CircularProgressIndicator()
+    } else {
+        LazyColumn {
+            items(uiState.items) { item -> /* بدون key! */ }
+        }
+    }
+}
+
+// ✅ كود سليم: إبقاء القائمة ظاهرة أثناء التحديث مع مفاتيح مستقرة:
+@Composable
+fun GoodFeed(
+    items: ImmutableList<FeedItem>,
+    isRefreshing: Boolean,
+    listState: LazyListState = rememberLazyListState()
+) {
+    Box {
+        // تظل القائمة موجودة في الـ Composition فلا يفقد listState موضعه إطلاقاً:
+        LazyColumn(state = listState) {
+            items(
+                items = items,
+                key = { it.stableId } // مفتاح دائم من قاعدة البيانات
+            ) {
+                FeedCard(it)
+            }
+        }
+        if (isRefreshing) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter))
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -72,15 +119,26 @@ Test refresh insertions above viewport, deletion of current item, query/account 
 
 ## Interview answer — short
 
-“I inspect list-state ownership, stable item IDs, any scroll effect triggered by refresh, and the product's desired policy for data changes. Inspect list-state ownership, stable item keys, and any scroll-to-top effect.”
+If scroll resets on refresh, inspect three culprits: missing or unstable `key` parameters (e.g. random UUIDs), temporary emissions of an empty list during refresh that resets `firstVisibleItemIndex` to 0, or replacing the `LazyColumn` with a full-screen loading spinner that unbinds `LazyListState` from composition.
 
 ## Interview answer — structured
 
-“First I ask whether refresh should retain the same item or reset for a new query. I check that `LazyListState` is remembered at a stable call site and not recreated by a loading branch or root key. Then I verify unique stable item keys and whether the backend preserves IDs. Finally I look for `scrollToItem(0)` effects keyed to every list emission. I test inserts above the viewport and account/filter changes separately. For a feed insertion, I expect the same post ID to remain anchored; a new query can intentionally reset.”
+A scroll position resetting to index 0 after a data refresh stems from state lifecycle disconnections or unstable identity mapping.
+
+1. **Transient Empty List Emission**: The most frequent architectural flaw is emitting `emptyList()` or an empty state when a refresh begins. If `LazyColumn` receives an empty list, its viewport collapses to 0 items, instantly resetting `LazyListState.firstVisibleItemIndex` to 0. When the refreshed data arrives a moment later, the list remains at the top.
+
+2. **Unmounting the LazyColumn (Screen-level Loading)**: If the UI replaces the `LazyColumn` with a full-screen `CircularProgressIndicator()` while `isRefreshing` is true, the `LazyColumn` is completely unmounted from the composition tree. Its underlying `LazyListState` loses its layout connection, resetting upon re-entry.
+
+3. **Unstable or Ephemeral Keys**: If items lack keys or use transient generators (like generating new IDs during DTO mapping), Compose treats incoming items as completely novel instances, discarding prior scroll offsets.
 
 ## Interview answer — deep senior
 
-“A jump to top can come from three different causes, so I instrument the first visible item ID, index and offset before and after refresh. One cause is owner recreation: the list may leave composition during Loading or sit under a changing `key(refreshToken)`, so `rememberLazyListState()` is new. Another is item identity: if rows use positions as keys, inserting records above the viewport changes which item an index refers to and can move remembered row state. The third is explicit code, such as a `LaunchedEffect(items)` that scrolls to zero after every emission. I fix the actual cause rather than forcing an offset restore blindly. Stable IDs and a persistent destination-owned list state fit incremental updates, while a genuinely new search query may intentionally reset to top. I keep account and filter identity in that policy so an old feed offset does not leak into another dataset. I test insert, delete, reorder, navigation return and eligible process recreation, including the case where the formerly visible item is removed. I would remove a refresh-token key that recreates the list and separately test an explicit query change.”
+Under the hood, `LazyListState` tracks two core integers: `firstVisibleItemIndex` and `firstVisibleItemScrollOffset`. When a new list is bound, Compose's `LazyLayoutItemAnimator` attempts to match existing viewport items to the new list using their `key`. If the key of the top-visible item is found anywhere in the new list, Compose adjusts the scroll offset to keep that exact item pinned to the screen.
+
+To properly implement pull-to-refresh without scroll resets:
+- Never clear the existing data list in the ViewModel during a refresh; set an auxiliary boolean `isRefreshing = true`.
+- Keep the `LazyColumn` persistently composed and wrap it with `PullToRefreshBox` (Material 3) or place an overlay loading indicator at the top.
+- Always declare `key = { it.id }` using immutable persistent database IDs.
 
 ## How to answer in the interview
 
@@ -96,9 +154,11 @@ Cover LazyListState ownership, item keys, refresh semantics, explicit scroll com
 
 ## Follow-up questions
 
-- Can stable item keys repair a newly created LazyListState? **Answer:** no; owner recreation is a separate problem.
-- Should every refresh preserve exact index? **Answer:** no; preserve logical item or reset based on product semantics.
-- Why inspect `LaunchedEffect(items)`? **Answer:** it may execute a scroll command for every data emission.
+- **Interviewer:** "How does `LazyListState` keep the viewport pinned when items are added above the visible item?"
+  **Answer:** "When stable keys are provided, `LazyListState` tracks the key of the top visible item. If new items are inserted above it, Compose automatically adjusts `firstVisibleItemIndex` so the currently viewed item remains stationary on screen."
+
+- **Interviewer:** "Can you preserve scroll position across process death?"
+  **Answer:** "Yes. `rememberLazyListState()` uses `rememberSaveable` internally, saving `firstVisibleItemIndex` and scroll offset into the saved instance bundle automatically."
 
 ## Self-check rubric
 
@@ -109,4 +169,4 @@ Distinguish three causes, propose one measurement, and define refresh versus new
 - [Lazy lists and grids](https://developer.android.com/develop/ui/compose/lists) — keys and list state.
 - [Save UI state in Compose](https://developer.android.com/develop/ui/compose/state-saving) — saveable state.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Exact scroll policy is a product decision.
+Technically reviewed against primary documentation on 2026-10-13.

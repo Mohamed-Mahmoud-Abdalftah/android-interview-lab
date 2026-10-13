@@ -22,7 +22,20 @@ Distinguish structural equality from referential identity and know how equality 
 
 ## Explanation in Arabic
 
-`==` في Kotlin بيقارن structural equality عبر `equals` بشكل null-safe؛ `===` بيتأكد إن الاتنين نفس object reference. `data class` بتولّد `equals` من properties في الـprimary constructor، فنسختين بنفس القيم ممكن يكونوا `==` true و`===` false. للـUI state غالبًا يهمنا تساوي المحتوى. للـidentity-sensitive caching أحيانًا يهم reference، لكن لازم سبب صريح. Arrays لها خصوصية: `==` لا يقارن العناصر عنصر بعنصر؛ استخدم `contentEquals` أو `contentDeepEquals` حسب البنية.
+الفرق بين == و === في Kotlin هو الفرق بين المحتوى (Structural Equality) و الهوية في الذاكرة (Referential Identity).
+
+المساواة الهيكلية (==) بتتحول مباشرة لاستدعاء دالة equals() مع فحص null آمن تحت الغطاء (a?.equals(b) ?: (b === null)). ده معناه إنه مستحيل يضرب NullPointerException لو الطرف الشمال null. في data class، الـ equals() بتتولد تلقائياً لتقارن كل القيم الموجودة في الـ Primary Constructor.
+
+المساواة المرجعية (===) بتقارن هل المتغيرين بيشاوروا على نفس الـ Address تماماً في الـ Heap، وده بيترجم لـ acmp instruction في الـ JVM bytecode.
+
+انتبه لفخ الـ Integer Caching: الأرقام من -128 لـ 127 بتتعمل لها Cache في الـ JVM، فلو قارنت 100 مع 100 بـ === هترجع true، لكن لو قارنت 1000 مع 1000 بـ === هترجع false لأن كل واحد اتعمل له Box في كائن مستقل في الـ Heap!
+
+## Practical walkthrough
+
+في DiffUtil في RecyclerView:
+- areItemsTheSame بتستخدم == لمقارنة الـ unique ID (oldItem.id == newItem.id) لتحديد هوية العنصر.
+- areContentsTheSame بتستخدم == لمقارنة محتويات الـ data class بالكامل (oldItem == newItem).
+- لو استخدمت === بالغلط في areContentsTheSame، كل ما الـ Repository يرجع New Immutable Instance لنفس البيانات، DiffUtil هيفتكر إن البيانات اتغيرت وهيعيد رسم العنصر بالكامل بدون داعي.
 
 ## Why it matters and how it works
 
@@ -41,10 +54,6 @@ fun main() {
 }
 ```
 
-## Practical walkthrough
-
-لما تقارن `UserId("42")` من cache مع نسخة جاية من network، `==` بتسأل هل القيمة متساوية حسب `equals`؛ الـdata class بيولّدها من constructor properties. `===` بتسأل هل الاتنين نفس object في الذاكرة. في deduplication وstate comparison غالبًا المطلوب value equality، لكن راجع `equals`: regular class افتراضيًا reference equality، وarray جوه data class مساواتها مش content equality تلقائيًا. ما تبنيش business rule على identity إلا لو هي نفسها المطلوب زي tracking لنفس instance.
-
 ## Trade-offs and decision criteria
 
 Value comparison is correct for domain values and immutable UI snapshots. Identity checks can be useful for a specific cache or lifecycle object but should not stand in for business equality. Deep array comparisons are explicit and may cost proportional time.
@@ -59,17 +68,25 @@ An offline cache keys records by immutable `UserId(value)`, so equivalent IDs ma
 
 ## Interview answer — short
 
-`==` checks structural equality through `equals`, with null-safe behavior. `===` checks reference identity. For domain IDs I want value equality, so I check the type’s `equals` contract rather than assuming two equal-looking objects compare equal.
+In Kotlin, == checks structural equality by calling equals() with safe null checks under the hood, whereas === checks referential identity, determining whether two references point to the exact same object in heap memory. For data classes, == compares primary constructor properties, while === compares memory addresses.
 
 ## Interview answer — structured
 
-In Kotlin, `a == b` is the null-safe way to call the equality contract; `a === b` asks whether the references identify the same object. A data class generates equality from its primary constructor properties, while a regular class inherits identity-based equality unless it overrides `equals`. In a cache I compare stable IDs by value, not by whether network and database returned the same instance. I also review nested arrays or mutable fields, because their equality and mutation can surprise state diffing. I use `===` only when instance identity itself is the requirement.
+In Kotlin, == represents structural equality, while === represents referential identity.
+
+When you write a == b, the compiler translates this into a safe call to equals(): it checks if either operand is null first, preventing NullPointerExceptions automatically. In data classes, equals() is generated for you to compare all primary constructor properties.
+
+On the other hand, === checks whether two references point to the exact same instance in heap memory, compiling down to an acmp bytecode instruction on the JVM.
+
+In Android, we rely on this distinction heavily in places like DiffUtil or Compose recomposition. For example, in DiffUtil, areItemsTheSame checks if unique IDs match, while areContentsTheSame uses == to check if property values changed. Using === for content comparison would trigger unnecessary UI redraws whenever new immutable instances are emitted from a repository.
 
 ## Interview answer — deep senior
 
-I would inspect the type’s equality contract before choosing an operator. A regular class inherits reference-based `equals` unless overridden; a data class generates value equality for primary-constructor properties. A mutable property participating in equality is risky for hash collections. `===` bypasses that semantic contract and can be appropriate for a specific singleton or cache identity check. On Android, equality in state streams can suppress updates, so mutable nested models and array properties need special care. I usually start by asking what the domain considers the same value. Kotlin's `==` calls `equals` safely around nulls, so it reflects that type's semantic equality.
+Structural equality (==) and referential identity (===) differ in both intent and bytecode compilation. When compiling ==, Kotlin emits a call to Intrinsics.areEqual(a, b), which handles null checks before invoking equals(). For primitives, == maps directly to JVM primitive comparison instructions unless they are boxed into nullable types or generics.
 
-A concrete failure is using a data class containing a mutable array as a key in a hash map. The generated equality delegates to the property equality contract, and mutation or array reference equality may surprise the caller. In UI state, equality can also determine whether an update is emitted or rendered; mutating a nested model in place may leave an apparently equal state. I would define stable value objects, avoid mutable equality fields, and test two independently loaded instances. I use identity checks when I truly need to know whether a cache returned the exact same object, never as a substitute for domain equality.
+A subtle pitfall arises with boxed primitives due to JVM Integer caching. Integers between -128 and 127 are cached by the JVM runtime. Comparing two boxed Int? values like 100 with === returns true because they share the cached instance. But comparing two boxed Int? values of 1000 with === evaluates to false because they are distinct heap allocations. This is why you must never rely on === for value types.
+
+Another nuance is floating-point equality. IEEE 754 states that Float.NaN == Float.NaN is false. However, Kotlin adheres to total order equality when floats are statically typed as Any, boxed in collections, or compared in equals(): in that context, NaN equals NaN, and -0.0 is considered less than 0.0. In production, we override equals() and hashCode() carefully in custom classes, ensure consistency with data classes, and avoid === outside of performance caches or identity maps.
 
 ## How to answer in the interview
 
@@ -85,8 +102,14 @@ Discuss generated data-class equality, `hashCode` consistency, arrays, mutable k
 
 ## Follow-up questions
 
-- [KOT-05](../kot-05/): Which data-class fields contribute to generated equality? **Answer:** primary-constructor properties, not body-only properties.
-- [FLO-06](../flo-06/): Why can equality suppress a state emission? **Answer:** `StateFlow` conflates updates using `equals`.
+- **Interviewer:** "How does Kotlin's == prevent a NullPointerException if the left-hand variable is null?"
+  **Answer:** "The compiler translates a == b into a?.equals(b) ?: (b === null). If a is null, it checks whether b is also null. If both are null, it evaluates to true; if only one is null, it evaluates to false. Neither path can trigger a NullPointerException."
+
+- [KOT-05](../kot-05/): **Interviewer:** "If two data class instances have different values in properties declared in the class body, does == evaluate to true?"
+  **Answer:** "Yes! Kotlin only generates equals(), hashCode(), and toString() using properties declared in the primary constructor. Properties declared in the class body are completely ignored by generated equality. If two instances have identical constructor fields but different body fields, == will still return true."
+
+- **Interviewer:** "Why is Float.NaN == Float.NaN false, but in a Set<Float> it's treated as equal?"
+  **Answer:** "When evaluated directly as primitive floats, Kotlin follows IEEE 754 specifications where NaN is not equal to anything, including itself. But when floats are boxed into a collection like a Set or compared through equals(), Kotlin applies total ordering so that hash tables and sets work deterministically. Under total ordering, NaN equals NaN."
 
 ## Self-check rubric
 
@@ -97,4 +120,4 @@ Predict both operators for two equal data-class instances, explain array compari
 - [Kotlin equality](https://kotlinlang.org/docs/equality.html) — structural and referential equality.
 - [Kotlin data classes](https://kotlinlang.org/docs/data-classes.html) — generated equality.
 
-Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against primary documentation on 2026-10-13.

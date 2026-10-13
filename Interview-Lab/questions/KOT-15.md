@@ -22,7 +22,25 @@ Separate interface implementation forwarding from property access delegation and
 
 ## Explanation in Arabic
 
-Kotlin delegation ليها صورتين مختلفتين. `class X(service: Service) : Service by service` تخلي compiler يولّد forwarding لعضو interface ناحية object تاني؛ لو عملت override لعضو في X، ده العضو اللي العميل يشوفه. Delegated property زي `val x by lazy { ... }` بتسند `getValue`/`setValue` لـdelegate. الاتنين يقللوا boilerplate لكن ماينقلوش lifecycle أو thread-safety تلقائيًا. انتبه إن delegate object اللي اتاخد وقت construction هو اللي بيستقبل forwarding، ومش لازم يشوف overrides من wrapper كأنها virtual call داخلية.
+الـ Delegation (التفويض) في Kotlin بيمثل تطبيق أصيل لمبدأ "Composition over Inheritance"، وعندنا نوعين رئيسيين:
+
+1. تفويض الواجهات (Interface Delegation بـ `by`):
+   - بيسمح لك تعمل Decorator Pattern بسطر واحد بدون كتابة Boilerplate تفويض لكل دالة يدوياً.
+   - `class LoggingRepository(private val inner: Repository) : Repository by inner`
+   - المترجم بيولد تلقائياً كل دوال `Repository` وبيخليها تنادي `inner.method()`. وأي دالة محتاج تغير سلوكها بتعمل لها `override` فقط!
+
+2. تفويض الخصائص (Property Delegation بـ `by`):
+   - بيسمح بتفويض قراءة (`getValue`) أو كتابة (`setValue`) المتغير لكائن خارجي (Delegate Object).
+   - أمثلة شهيرة: `by lazy`، و `by Delegates.observable` (للرد على تغير القيمة)، و `by viewModels()` في أندرويد، و `by remember { mutableStateOf() }` في Jetpack Compose.
+
+في الـ Bytecode، المترجم بيولد حقل مخفي (Synthetic Field) اسمه `prop$delegate`، وكل قراءة بتتحول لاستدعاء `delegate.getValue(this, ::prop)`.
+
+## Practical walkthrough
+
+في شاشات أندرويد:
+- تفويض الـ ViewModels: `val viewModel: UserViewModel by viewModels()` بيفوض إنشاء وإدارة دورة حياة الـ ViewModel لـ Android Jetpack `ViewModelLazy`.
+- تفويض المراقبة: `var count: Int by Delegates.observable(0) { prop, old, new -> updateBadge(new) }` بيحدث الـ UI تلقائياً كل ما القيمة تتغير.
+- تفويض الـ SharedPreferences: نقدر نعمل Custom Delegate يخزن ويقرأ من الـ DataStore أو الشيرد بريفرنسز تلقائياً بدون تكرار كود الحفظ والقراءة في كل مكان.
 
 ## Why it matters and how it works
 
@@ -43,10 +61,6 @@ class LoggingStore(private val delegate: Store) : Store by delegate {
 fun main() = println(LoggingStore(MemoryStore()).label())
 ```
 
-## Practical walkthrough
-
-لو `LoggingStore : Store by delegate`، compiler بيولّد forwarding للـStore methods للـdelegate المحدد. الـwrapper يقدر يعمل override لـ`read` عشان metrics، بس لو implementation جوه delegate نادت method من نفسها، مش هتعدّي على override بتاع الـwrapper؛ راجع call path. property delegation زي `val config by lazy { load() }` آلية مختلفة: delegate بيتحكم في `getValue`/`setValue`، مش بيطبّق interface بالكامل. في production استخدم interface delegation للـdecorator صغير، لكن لو السياسة فيها state وانتقالات معقدة اكتب forwarding واضح عشان ما تختفيش side effects.
-
 ## Trade-offs and decision criteria
 
 Use interface delegation when most methods should forward unchanged; write explicit forwarding when behavior must be audited per method. Use property delegates for consistent access semantics such as lazy initialization or observable state, but avoid magic that hides expensive I/O in a getter.
@@ -61,17 +75,25 @@ A metrics wrapper delegates a storage interface and overrides selected methods t
 
 ## Interview answer — short
 
-Interface delegation forwards an implemented interface to another object, while delegated properties hand property access to a delegate such as `lazy`. I use the first for small wrappers and the second for a specific storage or initialization rule. I still inspect forwarding behavior.
+Delegation implements composition over inheritance natively. Interface delegation allows a class to implement an interface by delegating all method calls to an internal instance. Property delegation delegates getter and setter logic to a separate object implementing getValue and setValue, powering features like by lazy, by viewModels, and Compose state.
 
 ## Interview answer — structured
 
-With `class LoggingStore(private val base: Store) : Store by base`, Kotlin generates forwarding members for the interface, and I can override selected methods in the wrapper. That is useful for a lightweight decorator. It is not the same as `val parser by lazy { ... }`, where a property delegate controls access to one property through the delegate protocol. A subtle wrapper issue is that calls made inside `base` stay inside `base`; they do not automatically dispatch through the wrapper override. In production I would test the observed call path and prefer explicit composition when instrumentation or policy is complex.
+Kotlin natively supports the delegation pattern for both interfaces and properties using the by keyword.
+
+Interface delegation enables clean decorators without boilerplate: by writing class AnalyticsRepo(inner: Repo) : Repo by inner, the compiler automatically forwards all interface methods to inner, letting me override only the methods I want to intercept.
+
+Property delegation delegates a property's getter and setter to a delegate object implementing getValue and setValue. This powers fundamental Android utilities like by lazy for deferred initialization, by viewModels() for lifecycle-scoped ViewModel acquisition, and Jetpack Compose's mutableStateOf delegates.
+
+It promotes separation of concerns by encapsulating repetitive state or storage logic in reusable delegate classes.
 
 ## Interview answer — deep senior
 
-Interface delegation is compile-time generated forwarding to a specific object. Wrapper overrides affect calls through the wrapper, but calls internal to the delegate remain on the delegate. Property delegation is a getter/setter protocol and can represent lazy, observable, or map-backed state. Both can conceal work behind syntax, so I keep expensive or blocking behavior visible in names and contracts. In Android I check that delegates do not retain Activity or View references beyond their owner.
+Under the hood, property delegation relies on operator conventions. For a read-only val, the delegate class must implement an operator function: operator fun getValue(thisRef: Any?, property: KProperty<*>): T. For a var, it must also provide operator fun setValue(thisRef: Any?, property: KProperty<*>, value: T).
 
-A logging decorator built with `Store by delegate` is useful when only one or two methods need interception, but I would test whether the call is made through the wrapper or internally by the delegate. Internal delegate calls do not re-enter wrapper overrides, which can silently omit metrics or policy. A property delegate such as `lazy` solves a different problem: it owns access to one property through `getValue`, not every method of an interface. In production I would make blocking storage work obvious in names, avoid delegates retaining a screen Context, and switch to explicit composition if behavior becomes complex.
+The compiler generates a private backing field for the delegate named property$delegate and replaces all property reads with delegate.getValue(this, KProperty). Starting in modern Kotlin versions, if the delegate does not utilize the KProperty metadata, the compiler optimizes away the KProperty allocation to eliminate reflection overhead.
+
+Interface delegation compiles by generating forwarding methods for every interface member in the implementing class. However, an important caveat is that delegated methods do not have polymorphic access to the outer decorator class: inside the delegate, this refers to the delegate instance, not the wrapper. In production Android codebases, we use custom property delegates for DataStore persistence and Fragment lifecycle binding cleanup.
 
 ## How to answer in the interview
 
@@ -87,8 +109,14 @@ Explain generated forwarding, wrapper override behavior, `getValue`/`setValue`, 
 
 ## Follow-up questions
 
-- [KOT-10](../kot-10/): What is `lazy`? **Answer:** a property delegate that computes and caches on first access.
-- [KOT-05](../kot-05/): Why prefer a delegated wrapper over inheritance? **Answer:** it composes behavior without requiring the wrapped class to be open.
+- **Interviewer:** "How does `by Delegates.observable` work, and when would you use it?"
+  **Answer:** "`Delegates.observable` takes an initial value and a lambda callback `(property, oldValue, newValue) -> Unit`. Every time the property is assigned a new value, the delegate executes the callback. It is useful for lightweight internal state changes or updating a UI badge when an in-memory counter changes."
+
+- **Interviewer:** "Does using property delegates impact memory and performance?"
+  **Answer:** "Yes, slightly. Each delegated property allocates an additional backing delegate object on the heap, and accessing the property involves a method call indirection (`getValue`). For typical UI components or ViewModels, the overhead is negligible, but inside hot rendering loops or tight mathematical routines, plain primitive fields are preferred."
+
+- **Interviewer:** "What happens if a class overrides a method that is also delegated via interface delegation `by inner`?"
+  **Answer:** "The explicit class override takes precedence. The compiler generates the overriding implementation in the class body, and external calls execute your overridden method instead of forwarding to the `inner` delegate."
 
 ## Self-check rubric
 
@@ -99,4 +127,4 @@ Give an example of each delegation form, predict an override/internal-call resul
 - [Kotlin delegation](https://kotlinlang.org/docs/delegation.html) — interface forwarding.
 - [Kotlin delegated properties](https://kotlinlang.org/docs/delegated-properties.html) — property delegate protocol.
 
-Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against primary documentation on 2026-10-13.

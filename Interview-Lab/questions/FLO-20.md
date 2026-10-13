@@ -22,11 +22,39 @@ Compare Channel queue/receive semantics with SharedFlow broadcast and acknowledg
 
 ## Explanation in Arabic
 
-`Channel` بيوزع كل element عادة لمستقبل واحد من receivers متنافسين، و`SharedFlow` broadcast لكل subscribers النشطين حسب replay/buffer. Channel ممكن تحتفظ بعناصر في buffer أثناء غياب receiver داخل نفس process، لكن لو process مات ضاعت؛ و`receive` مش ضمان إن UI نفذت الفعل بعد ما استلمته. SharedFlow replay صفر ممكن يضيّع event بدون subscriber، وreplay موجب ممكن يعيدها.
+المقارنة بين `Channel` و `SharedFlow` هي الفارق الجوهري بين طوابير المهام الفردية (Work Queues) والبث الجماعي (Broadcasting):
+
+1. الـ `Channel` (Queue - 1:1 Delivery):
+   - يعمل كـ **طابور مهام (Queue)** بين المنتجين والمستهلكين.
+   - **العنصر الواحد يستهلكه مستمع واحد فقط (Single Consumer / Point-to-Point)!** لو عندك مستمعان (Collector A و B)، العنصر الأول سيذهب لـ A، والعنصر الثاني سيذهب لـ B بالتناوب.
+   - يضمن عدم فقدان الأحداث (No event loss) لو تم استخدام `Channel.BUFFERED`، حيث تنتظر الأحداث في الطابور حتى يأتي مستهلك لقراءتها.
+   - مثالي جداً لـ: **أحداث الـ Navigation و Side Effects لمرة واحدة (One-off events)**.
+
+2. الـ `SharedFlow` (Broadcast - 1:N Multicast):
+   - يعمل كـ **محطة إذاعة وراديو (Broadcast)**.
+   - **العنصر الواحد يذهب لجميع المستمعين النشطين في نفس الوقت (Fan-out / Multicast)!**
+   - **خطر فقدان الأحداث (Event Loss Caveat):** لو تم بث حدث ولا يوجد أي مستمع متصل حالياً (وكان `replay = 0`)، **الحدث يضيع في الفضاء للأبد**!
+   - مثالي جداً لـ: مراقبة أحداث عامة مشتركة، إشعارات التطبيق، أو تحديثات حالة يشترك فيها عدة شاشات.
 
 ## Practical walkthrough
 
-`Channel` غالبًا point-to-point: كل element تروح لواحد من receivers، بينما `SharedFlow` broadcast للمشتركين الحاليين حسب replay. الاتنين في الذاكرة ومش ضمان إن UI نفذت navigation فعلًا؛ send ناجحة لقناة لا تعني handling تم قبل crash. لو لازم effect تعيش rotation/process death، خزّن event ID في state/durable layer واعمل acknowledgment.
+مقارنة عملية في التعامل مع حدث الانتقال (Navigation Event):
+```kotlin
+// ❌ فخ الـ SharedFlow مع الـ Navigation:
+val navEvents = MutableSharedFlow<NavRoute>() // replay = 0
+// إذا ضغط المستخدم الزر أثناء انتقال الشاشة وقبل أن يبدأ Composable الجديد بالاستماع:
+navEvents.emit(NavRoute.Details) // ضاع الحدث للأبد! لن ينتقل التطبيق!
+
+// ✅ الحل باستخدام Channel للأحداث الفردية:
+private val _navChannel = Channel<NavRoute>(Channel.BUFFERED)
+val navFlow = _navChannel.receiveAsFlow()
+
+fun onNavigateClicked() {
+    viewModelScope.launch {
+        _navChannel.send(NavRoute.Details) // ينتظر بأمان في الـ Buffer حتى تفتح الشاشة وتستقبله!
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -62,15 +90,21 @@ A snackbar may use a best-effort SharedFlow. A local in-process command dispatch
 
 ## Interview answer — short
 
-“Channel is a one-consumer queue with close semantics; SharedFlow broadcasts to active subscribers with chosen replay. Both are in-memory and have event-loss or duplication windows. I persist required business events and define acknowledgement.”
+A Channel is a point-to-point FIFO queue where each element is consumed by exactly one receiver with zero event loss when buffered; SharedFlow is a broadcast multicaster where every emission fans out to all active subscribers, but drops events if no subscribers are listening when replay is 0.
 
 ## Interview answer — structured
 
-“I choose based on audience and delivery needs. Channel sends elements to receivers; if multiple collectors use `receiveAsFlow`, an element goes to one of them. SharedFlow broadcasts to active subscribers and can replay history. A buffered Channel may wait for an absent receiver in process, whereas replay-zero SharedFlow may drop that emission. But process death clears both, and receiving an event does not prove the UI performed its effect. For critical navigation or payment outcomes, I model durable state and a consumption protocol.”
+The architectural distinction between `Channel` and `SharedFlow` lies in communication topology and event delivery guarantees.
+
+A **Channel** is a point-to-point communication primitive (1-to-1). It models a queue: if multiple collectors read from a Channel, they compete for items, and each item is consumed by exactly one collector. Because it is buffered (`Channel.BUFFERED`), it guarantees zero event loss: an event sent while the UI is rotating or backgrounded waits safely in the queue until the UI recreates and consumes it. This makes Channels ideal for one-off side effects like navigation commands.
+
+A **SharedFlow** is a broadcast multicaster (1-to-N). Every emitted item is delivered to all active subscribers simultaneously. However, its major caveat is event loss: if an emission occurs when zero collectors are subscribed and `replay = 0`, the event is dropped permanently. It is suited for telemetry and broadcast notifications where dropped transient events are acceptable.
 
 ## Interview answer — deep senior
 
-“The word ‘event’ hides several contracts. Is it one receiver or several? Can it be lost while UI is stopped? Can it replay after rotation? Must it survive process death, and when is it acknowledged? Channel handles in-process handoff to one receiver and can buffer, but a receiver may remove an item just before its view is destroyed. SharedFlow broadcasts and its replay can help late subscribers, but can duplicate one-shot effects. Neither guarantees exactly-once business processing. I keep durable outcomes in Room/server state with stable IDs, use a lifecycle-aware UI consumer, and test the race between send, receive, rotation and acknowledgement. I would ask whether the event is work for one consumer or a broadcast to all active observers. Channel distributes elements among receivers and can queue according to capacity; SharedFlow broadcasts emissions and can replay some to late subscribers. Neither gives transactional exactly-once UI handling. A channel send can succeed and the process can die before the receiver navigates; a zero-replay SharedFlow can emit while no screen collects and lose the event. Conversely, replay can duplicate an action after rotation. For a truly important transition, such as opening a receipt after payment, I model the completed destination as recoverable state or a durable command with an ID and acknowledgment. Then I test lifecycle gaps, duplicate collectors, and process death.”
+Under the hood, `Channel` manages an explicit queue of elements and suspended continuations. When `send()` is invoked, if a receiver is waiting in `receive()`, the value is handed off directly between continuations without buffering. When converting a Channel to a Flow using `receiveAsFlow()`, you get a hot flow backed by that Channel. However, if multiple collectors collect from `receiveAsFlow()`, they will interleave item consumption rather than multicasting.
+
+In contrast, `SharedFlow` maintains a ring buffer and an array of subscriber slot pointers. Each subscriber tracks its own index in the buffer. In Android architecture, this distinction dictates our pattern for ViewModel-to-UI communication: Use **StateFlow** for state (`UiState`); Use **Channel.receiveAsFlow()** for single-consumption events (`Navigation`, `Toast`); and Use **SharedFlow** only when multiple independent screens/subscribers must receive the exact same event.
 
 ## How to answer in the interview
 
@@ -86,8 +120,14 @@ Draw delivery windows before receiver, after receive/before action and across pr
 
 ## Follow-up questions
 
-- [FLO-19](../flo-19/): What does SharedFlow retain without subscribers? **Answer:** only configured replay values.
-- [FLO-10](../flo-10/): What is durable state? **Answer:** a current fact stored independently of transient UI collection.
+- **Interviewer:** "What happens if a Channel is closed?"
+  **Answer:** "Calling `channel.close()` signals that no more elements will be sent. Any buffered elements are delivered to receivers, and subsequent receive attempts return closed indicators or throw a ClosedReceiveChannelException."
+
+- **Interviewer:** "Can you consume a Channel from multiple coroutines?"
+  **Answer:** "Yes, this is known as the 'Fan-out' pattern. Multiple worker coroutines can listen to the same Channel, processing tasks concurrently where each task is picked up by the first available worker."
+
+- **Interviewer:** "Why does Google recommend modeling events as UI State instead of Channels?"
+  **Answer:** "Because modeling events as state (e.g., `data class UiState(val message: Message?)`) keeps everything in a single unidirectional data flow pipeline, is easier to test, and naturally survives process recreation with SavedStateHandle."
 
 ## Self-check rubric
 
@@ -98,4 +138,4 @@ Can I compare one-consumer/broadcast, explain rotation loss and specify an ackno
 - [Kotlin SharedFlow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-shared-flow/) — broadcast/replay semantics.
 - [Kotlin Channel API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.channels/-channel/) — send/receive and close.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

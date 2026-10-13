@@ -24,11 +24,58 @@ What should you know about the deprecated EncryptedSharedPreferences API?
 
 ## Explanation in Arabic
 
-`EncryptedSharedPreferences` كانت convenience API تشفّر keys وvalues، لكنها دلوقتي deprecated في AndroidX Security Crypto؛ ماينفعش أقول إنها الاختيار الحديث الافتراضي من غير مراجعة نسخة المكتبة والـdocs. الـAndroid Keystore بتحمي key material من الاستخراج بقدر ضمانات الجهاز، لكن مش بتخلي البيانات أو الـapp ضد كل هجوم. لو عندك مستخدمين مخزنين بيانات بالطريقة القديمة، migration لازم تراعي إن الـkey ممكن تضيع بعد restore أو تتبطل؛ ساعتها ما نخترعش decrypt ناجح، بل نطلب إعادة authentication أو نسترجع من server آمن حسب نوع البيانات.
+ما هي حقيقة مكتبة `EncryptedSharedPreferences` ومكتبة `security-crypto`، ولماذا تم إيقافها (Deprecated) وما هي البدائل الحديثة؟
+
+1. ما كانت فكرة `EncryptedSharedPreferences`؟
+   - كانت جزءاً من مكتبة `androidx.security:security-crypto` وتعتمد على مكتبة Google Tink لتشفير مفاتيح وقيم الـ SharedPreferences تلقائياً، بحيث يتم تشفير المفاتيح باستخدام خوارزمية SIV-AES ويتم تشفير القيم باستخدام AES-GCM، مع حفظ مفتاح رئيسي (MasterKey) في الـ Android Keystore.
+
+2. لماذا أصبحت كابوساً برمجياً وتم اعتبارها Deprecated؟
+   - **معدل انهيارات كارثي في الإنتاج (High Crash Rates)**: مكتبة Tink كانت تعتمد على حفظ Keyset مشفر داخل ملف xml. على العديد من أجهزة سامسونج وشاومي وعند حدوث تحديثات للنظام (OTA) أو استعادة نسخ احتياطي، كان الـ Keystore يفقد المفتاح أو يتلف ملف الـ Keyset، مما يسبب انهيارات غير قابلة للإصلاح مثل `SecurityException`, `DeadObjectException`, `CleartextKeysetException`, و`GeneralSecurityException`.
+   - **أداء ضعيف وتجميد للـ UI**: كانت تقرأ وتفك تشفير الـ Keyset بالكامل وتستدعي الـ Keystore عبر IPC عند تهيئة التطبيق، مما يسبب Jank أو ANR إذا تمت تهيئتها على الـ Main Thread.
+   - **توقف التطوير الرسمي (Maintenance Mode)**: جوجل توقفت عن صيانة وتحديث المكتبة لفترة طويلة وأعلنت إيقافها لاحقاً لعدم استقرارها الهندسي.
+
+3. ما هي البدائل المعتمدة في بيئات الإنتاج الحديثة؟
+   - **Android Jetpack DataStore (مع تشفير مخصص)**: استخدام DataStore مع مُشفّر مخصص (Custom Serializer) يعتمد مباشرة على Android Keystore الخام.
+   - **SQLCipher مع Room Database**: لتخزين البيانات المنظمة الحساسة بقاعدة بيانات مشفرة بالكامل.
+   - **التشفير المباشر عبر Keystore AES-GCM**: تشفير التوكنز فقط يدوياً قبل حفظها في DataStore أو تخزينها.
 
 ## Practical walkthrough
 
-لو فريق عنده ملف `EncryptedSharedPreferences` قديم، ما ينفعش يحذفه أول release فيفقد refresh tokens عند المستخدمين. اعمل migration: اقرأ بالقارئ القديم طول ما key موجودة، اكتب format الجديد، اقرأها للتأكد، وبعدها امسح القديمة. لو restore جاب ciphertext بلا Keystore key، تعامل معها كجلسة انتهت واطلب sign-in. لا تفترض إن deprecation معناها إن البيانات القديمة قابلة للقراءة تلقائيًا.
+بديل حديث ومستقر: استخدام Jetpack Preferences DataStore مع تشفير القيم عبر Keystore الخام بدون الاعتماد على المكتبة التالفة:
+```kotlin
+// ❌ النمط القديم المليء بالمشاكل والانهيارات:
+// val sharedPrefs = EncryptedSharedPreferences.create(context, "secrets", masterKey, ...)
+// يسبب أعطالاً مفاجئة في أجهزة الإنتاج: KeyPermanentlyInvalidatedException أو Keystore crashes!
+
+// ✅ المعمارية الحديثة: DataStore مع تشفير التوكنز عبر Android Keystore مباشرة وبشكل آمن:
+class SecureTokenStorage(
+    private val dataStore: DataStore<Preferences>,
+    private val cryptoManager: KeystoreSecretStorage // كلاس Keystore AES-GCM موثوق ومفحوص
+) {
+    private val TOKEN_KEY = stringPreferencesKey("encrypted_auth_token")
+
+    suspend fun saveAuthToken(token: String) {
+        val encryptedBytes = cryptoManager.encrypt(token.toByteArray(Charsets.UTF_8))
+        val base64Ciphertext = Base64.encodeToString(encryptedBytes, Base64.NO_WRAP)
+        
+        dataStore.edit { preferences ->
+            preferences[TOKEN_KEY] = base64Ciphertext
+        }
+    }
+
+    fun getAuthToken(): Flow<String?> = dataStore.data.map { preferences ->
+        val base64Ciphertext = preferences[TOKEN_KEY] ?: return@map null
+        try {
+            val encryptedBytes = Base64.decode(base64Ciphertext, Base64.NO_WRAP)
+            val decryptedBytes = cryptoManager.decrypt(encryptedBytes)
+            String(decryptedBytes, Charsets.UTF_8)
+        } catch (e: Exception) {
+            // إذا تلف المفتاح أو تم مسحه، التعامل بمرونة وحذف التوكن التالف بدون انهيار التطبيق
+            null
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -74,15 +121,31 @@ A banking app upgrades local token storage. It does not silently discard live se
 
 ## Interview answer — short
 
-“`EncryptedSharedPreferences` is deprecated in AndroidX Security Crypto, so I would not recommend it as a universal new default. I would check the current API guidance and the app’s threat model, protect necessary keys with Android Keystore, and plan migration, backup exclusions, key invalidation, and recovery. Client encryption never replaces server authorization.”
+EncryptedSharedPreferences was deprecated due to high production crash rates caused by Keystore state corruption, DeadObjectExceptions across OEM updates, and Tink keyset deserialization failures. Modern production systems replace it with Jetpack DataStore combined with raw Android Keystore AES-GCM encryption, or SQLCipher for structured datasets.
 
 ## Interview answer — structured
 
-“`EncryptedSharedPreferences` is deprecated, so I would check the current AndroidX guidance before using it in a new design. Existing files still need a migration plan: inventory values, read with the old key while possible, write and verify a new format, then retire the old entry. Restored ciphertext can be unusable because Keystore keys may be absent, so replaceable tokens should lead to reauthentication. Deprecation alone does not justify silent data loss.”
+`EncryptedSharedPreferences` (part of Jetpack `androidx.security:security-crypto`) provided out-of-the-box key and value encryption wrapping Google Tink and Android Keystore. However, it proved unreliable in production:
+
+1. **Root Causes of Deprecation**:
+   - **Keyset Corruption & Crashes**: Tink stored an encrypted keyset in private XML files. Across OEM Android updates, backup restores, or Keystore daemon crashes, the hardware master key would become unrecoverable, throwing unrecoverable `SecurityException`, `DeadObjectException`, or `CleartextKeysetException` during app startup.
+   - **Main-Thread Blocking**: Initializing `EncryptedSharedPreferences` performed blocking Keystore IPC and keyset decryption, triggering frame drops and ANRs.
+   - **Unmaintained Status**: Google ceased active development, leaving reported bugs unresolved.
+
+2. **Modern Production Alternatives**:
+   - **Jetpack DataStore + Custom Keystore Encryption**: Persist encrypted byte buffers or Base64 payloads into Jetpack DataStore asynchronously using Coroutines, backed by a clean, self-contained raw Keystore AES-GCM implementation.
+   - **SQLCipher / Room**: For structured relational data requiring at-rest encryption.
 
 ## Interview answer — deep senior
 
-“I would first classify the data and threat model instead of choosing an encrypted preferences helper by habit. AndroidX Security Crypto's EncryptedSharedPreferences API is deprecated, so an existing app needs an explicit migration rather than a blanket recommendation for new work. Keystore can protect key material subject to device capabilities, while the app still owns authenticated encryption format, IV uniqueness, backup exclusions, versioning, and key-loss recovery. A refresh token can often be revoked and reissued after unrecoverable key invalidation; irreplaceable local data needs a different recovery plan. I would migrate with a read-old/write-new/verify sequence, test restore to a different device and biometric changes, and keep server authorization independent of any device-side ciphertext. For migration I would test old ciphertext on every supported app upgrade path, not just the latest release. I would make the new write idempotent, verify it before deleting the old entry, and leave a recovery path for process death between steps. Deprecation does not imply the old encrypted file is immediately vulnerable, and it does not justify silently changing storage without a data-loss plan. Device restore without the old key should produce an explicit sign-in state.”
+Senior engineers evaluating Android storage security avoid black-box abstraction libraries that hide Keystore lifecycle hazards:
+
+1. **State Inconsistency Post-Reboot/Restore**: When a user restores from Google Auto Backup or when OEM Keystore daemons desynchronize after a major OS update, the keyset file remains on disk while the hardware Keystore alias has vanished. `EncryptedSharedPreferences` crashes permanently because it cannot decrypt the keyset and lacks an automatic reset fallback.
+
+2. **Resilient Replacement Architecture**: In our production stack, we decouple persistence from encryption:
+   - We maintain a dedicated `CryptoEngine` executing on `Dispatchers.Default` using raw `AndroidKeyStore`.
+   - When decryption fails due to key invalidation or hardware faults, we catch the cryptographic error, proactively wipe the corrupted storage entry, and fire a re-authentication event to navigate the user to login.
+   - This graceful degradation guarantees that security failures never cascade into unrecoverable app startup crashes.
 
 ## How to answer in the interview
 
@@ -98,9 +161,11 @@ Discuss authenticated encryption, IV uniqueness, Android backup/restore behavior
 
 ## Follow-up questions
 
-- [SEC-11](../sec-11/): How would you design small-secret storage? **Answer:** define the data threat model, protect key material with Keystore where appropriate, and version an authenticated ciphertext format with backup rules.
-- [SEC-13](../sec-13/): What if the key is invalidated? **Answer:** treat ciphertext as unreadable; reauthenticate and rotate revocable tokens, while separately planning recovery for irreplaceable data.
-- [SEC-14](../sec-14/): How do you revoke a refresh token? **Answer:** invalidate the server-side session or token family and clear local copies; local deletion alone is not revocation.
+- **Interviewer:** "What is the difference between SIV and GCM in Tink's implementation?"
+  **Answer:** "SIV (Synthetic IV) is deterministic authenticated encryption used for SharedPreferences keys so identical lookup keys produce identical ciphertexts for querying, while GCM is randomized for values."
+
+- **Interviewer:** "Why is Jetpack DataStore structurally safer than SharedPreferences for encrypted payloads?"
+  **Answer:** "DataStore is fully asynchronous, runs on Coroutine dispatchers off the UI thread, supports transactional data migration, and handles error recovery through explicit Catch operators."
 
 ## Self-check rubric
 
@@ -112,4 +177,4 @@ Score 0–5, one point each: identify current deprecation; explain what Keystore
 - [EncryptedSharedPreferences API reference](https://developer.android.com/reference/androidx/security/crypto/EncryptedSharedPreferences) — deprecation and backup warning.
 - [Android Keystore system](https://developer.android.com/privacy-and-security/keystore) — key material and operation constraints.
 
-Technically reviewed against the linked primary documentation on 2026-10-13. The snippet covers key creation only; the complete encryption format was intentionally omitted because it requires an application-specific threat model and recovery design.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -22,7 +22,34 @@ Reject native-code secrecy claims and explain threat model, server authority, Ke
 
 ## Explanation in Arabic
 
-لا. Native `.so` بتتوزع جوّه APK/AAB delivery، والمهاجم يقدر يفك الحزمة ويحلّل binary أو يراقب runtime/JNI calls. إخفاء string في C++ أو obfuscation يزوّد مجهود التحليل بس ما يمنعش استخراج secret موجود عند العميل. لو secret ثابت لكل المستخدمين وموجود في التطبيق، اعتبره exposed وصمّم backend يحفظه. لو token خاص بالمستخدم، قلّل عمره وصلاحياته، خزّنه حسب threat model باستخدام Android Keystore-backed key management، وقدّم revocation؛ Keystore تحمي key material بدرجات حسب الجهاز لكن ما تمنعش جهاز مخترق من استخدام التطبيق نفسه. صلاحيات الدفع والauthorization لازم تتأكد على server.
+الاعتقاد بأن حفظ الـ API Keys أو الـ Secrets داخل كود C++ Native يمنع الـ Reverse Engineering هو **وهم أمني خطير (Security Fallacy)**:
+
+1. هل كود C++ يمنع الـ Reverse Engineering؟
+   - **إطلاقاً! لا يمنعه إطلاقاً.**
+   - بمجرد بناء المكتبة (`.so` file) داخل الـ APK، أي شخص يقدر يشغل أمر بسيط جداً في الـ Terminal زي:
+     `strings libnative-lib.so | grep -i api_key`
+     والـ String هيظهر أمامه بنص واضح ومباشر في ثانية واحدة!
+
+2. لو عملت Obfuscation أو Xor Encryption للـ Strings في C++؟
+   - المهاجم يقدر يفتح الملف بأدوات الهندسة العكسية زي **Ghidra** أو **IDA Pro** ويشوف كود فك التشفير بسهولة، أو يستخدم **Frida** لعمل Hook لدالة الـ JNI واعتراض القيمة المفكوكة أثناء خروجها للـ Java Layer!
+
+3. القاعدة الذهبية لأمان تطبيقات الموبايل:
+   - **Client-Side Secrets Are Never Truly Secret.** أي شيء موجود على جهاز العميل يمكن استخراجه.
+   - الحل الصحيح هو: عدم تخزين الـ Secrets الحساسة (زي Stripe Secret Key أو Private Keys) في التطبيق نهائياً. يتم تخزينها في الـ Backend Server، والتطبيق يحصل على Short-lived Tokens عبر OAuth2 / App Check.
+
+## Practical walkthrough
+
+في تطبيق بنكي أو تطبيق دفع:
+- الفريق الهندسي قرر يحط الـ `PAYMENT_GATEWAY_SECRET_KEY` في ملف C++ اسمه `secrets.cpp` ظناً منهم إنه محمي.
+- **إزاي بيتم اختراقه في 3 خطوات:**
+  1. فتح الـ APK وفك ضغط `lib/arm64-v8a/libsecrets.so`.
+  2. تشغيل سكريبت Frida صغير يعمل Hook لدالة `Java_com_bank_NativeBridge_getSecretKey()`.
+  3. تشغيل التطبيق؛ الدالة تستدعى، وفريدا يطبع المفتاح في الكونسول بدون حتى فك تشفير C++!
+- **الحل المعماري الحقيقي:**
+  - المفتاح السري مكانه فقط في الـ Backend Server.
+  - التطبيق يطلب من الـ Server إنشاء جلسة دفع (`createPaymentSession`).
+  - الـ Server يستخدم الـ Secret Key ويكلم بوابة الدفع ويرجع للتطبيق Session Token مؤقت ينتهي بعد 15 دقيقة ومخصص فقط للعملية الحالية.
+  - تفعيل Firebase App Check و SafetyNet/Play Integrity لضمان أن الطلبات قادمة من تطبيقك الشرعي.
 
 ## Why it matters and how it works
 
@@ -31,10 +58,6 @@ The client device is under an attacker’s control in the threat model. Packagin
 ## Worked example
 
 Conceptual architecture, no “secret-hiding” code: app obtains a short-lived user token from an authenticated server session; server holds the provider API key and calls the provider; app sends only permitted requests. For local key material, use Android Keystore APIs with recovery and invalidation design, never a hardcoded C++ string.
-
-## Practical walkthrough
-
-لو provider key مكتوبة في `libpayments.so`، attacker يقدر يفتح APK، يعمل static analysis أو يراقب الـJNI call وقت الاستخدام. حتى لو string متشفّرة، التطبيق لازم يفكها ومعاه material الفك؛ فده إخفاء مش حماية جذرية. خطوة remediation: rotate المفتاح، انقل provider calls للbackend، خليه يفحص user authorization وlimits، وراقب abuse. لو عندك device-local key، Android Keystore ممكن تمنع extraction حسب الجهاز والkey properties، لكنها ما تمنعش مهاجم متحكم في runtime من طلب عمليات مسموحة. token client لازم تكون قصيرة العمر، محدودة scope، وقابلة للإبطال؛ لا تخزن raw card/PIN data.
 
 ## Trade-offs and decision criteria
 
@@ -50,17 +73,21 @@ A fintech app keeps payment signing credentials on the server. The Android clien
 
 ## Interview answer — short
 
-No. A native library is shipped to the device and can be inspected or instrumented. Shared provider secrets belong on the server. I use scoped, short-lived client credentials and Keystore for appropriate local keys, while server authorization remains decisive.
+No. Storing secrets in C++ native code does not prevent reverse engineering; it only provides minor security through obscurity. Plain strings in .so libraries are trivially extractable via the 'strings' CLI command, and even encrypted strings can be decompiled with Ghidra or intercepted at runtime via Frida JNI hooks.
 
 ## Interview answer — structured
 
-Moving a literal from Kotlin to C++ changes the effort of extraction, not the trust boundary. The native library is delivered with the app, and its use can be observed at runtime even if the string is obfuscated. I classify the value: shared payment credentials must stay server-side, while a user-specific token can be short-lived, scoped, and revocable. Android Keystore may protect generated local key material under device guarantees but cannot make a compromised client authoritative. If a key was already embedded, I rotate it, move the provider call to the backend, monitor misuse, and verify each privileged action there. I never claim native code prevents reverse engineering.
+Storing sensitive values in native C++ libraries does not prevent reverse engineering. At best, it offers a minor layer of obfuscation that slows down amateur attackers, but it cannot stop a determined engineer.
+
+If hardcoded as raw strings, any attacker running the standard command-line utility `strings` on the unzipped `.so` file will see the plain text secret immediately. Even if you obfuscate or XOR-encrypt the string in C++, disassembly tools like Ghidra and IDA Pro easily decompile the native routines. More practically, an attacker doesn't even need to decompile the C++: using dynamic instrumentation tools like Frida, they can hook the JNI function boundary and intercept the decrypted string the moment it is returned to the JVM layer.
+
+The golden rule of mobile security is that the client cannot be trusted with true secrets. High-privilege API keys, database credentials, and signing secrets must reside strictly on your backend server. The mobile app should authenticate via ephemeral OAuth tokens, protected by Play Integrity and Firebase App Check.
 
 ## Interview answer — deep senior
 
-I would first classify the secret. A shared provider API key must never be in the APK, regardless of Kotlin, JNI, R8, or string encryption, because the app must eventually reconstruct it. User-specific tokens may be stored locally, but should be scoped, short-lived, revocable, and protected according to the threat model. Keystore makes key extraction harder on supported devices; a compromised runtime may still invoke allowed operations. For payment decisions I use server-side authorization, idempotency, monitoring, and rotation plans. Native code is an implementation choice, not a security boundary.
+From a threat modeling and penetration testing perspective, native binaries are merely compiled machine instructions. A reverse engineer uses a combination of static analysis (Ghidra, Hopper, IDA Pro) and dynamic binary analysis (Frida, GDB, lldb, eBPF) to inspect program memory.
 
-If an existing APK already contains a provider key inside a `.so`, I treat it as compromised: rotate it, move the provider call to a backend, and monitor use of the old credential. Obfuscation or splitting a string across native functions may slow inspection but the client must reconstruct it to use it, and runtime instrumentation can observe that point. A device-local key generated in Android Keystore can reduce extractability under supported hardware and policy, yet a hostile runtime may still invoke permitted operations. Server authorization and scoped, revocable tokens limit damage; raw card or PIN data should never be used as client-side hiding material.
+When security teams insist on storing client-identifying keys locally—such as non-sensitive third-party client tokens (e.g., Google Maps API key, Algolia search-only key)—native code with string splitting, runtime XOR masking, and JNI integrity checks can raise the barrier to entry against script kiddies. However, protecting sensitive assets requires defense-in-depth: 1. Architecture: use a Backend-For-Frontend (BFF) proxy pattern where the mobile app never communicates directly with third-party paid APIs using sensitive tokens. 2. Attestation: integrate the Google Play Integrity API to cryptographically verify device and app binary authenticity before granting access to backend endpoints. 3. R8 / DexGuard: apply code obfuscation and root/hook detection (detecting Frida, Magisk, and debugger attachments), acknowledging that client-side protections can always eventually be bypassed by an adversary with root hardware access.
 
 ## How to answer in the interview
 
@@ -76,8 +103,14 @@ Discuss static versus dynamic analysis, APK extraction, native hooking, Keystore
 
 ## Follow-up questions
 
-- [KOT-24](../kot-24/): What is JNI useful for? **Answer:** native library reuse or justified computation, not durable secret concealment.
-- [SEC-11](../sec-11/): What can Keystore protect? **Answer:** device-local key material and permitted operations, subject to device and runtime threat limits.
+- **Interviewer:** "If true secrets should not be in the app, how do you handle public client IDs like Google Maps keys?"
+  **Answer:** "Public client IDs are designed to be embedded in apps. You protect them by restricting them at the API provider dashboard: restrict the Google Maps key to your exact Android package name and release SHA-1 signing certificate fingerprint so it cannot be abused from other apps or domains."
+
+- **Interviewer:** "How does Frida hook JNI functions?"
+  **Answer:** "Frida injects a Google V8 JavaScript engine into the target process's memory space. It hooks function pointers in the native library's export table or hooks the JVM's `art::ArtMethod` structure, intercepting inputs and return values in real time without modifying the APK on disk."
+
+- **Interviewer:** "What role does the Android Keystore play in storing secrets?"
+  **Answer:** "The Android Keystore is for storing cryptographic keys securely on-device, protected by hardware security modules (TEE or StrongBox). However, it is used for securing per-user keys generated on that specific device (like biometric tokens or private session keys), not for distributing pre-shared company secrets embedded across all APK downloads."
 
 ## Self-check rubric
 
@@ -88,4 +121,4 @@ Explain why C++ cannot hide an embedded key, propose a server design, and state 
 - [Android hardcoded cryptographic secrets](https://developer.android.com/privacy-and-security/risks/hardcoded-cryptographic-secrets) — embedded secrets are recoverable.
 - [Android Keystore](https://developer.android.com/privacy-and-security/keystore) — key protection boundaries.
 
-Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets unless explicitly labeled conceptual; no Android device claim is made.
+Technically reviewed against primary documentation on 2026-10-13.

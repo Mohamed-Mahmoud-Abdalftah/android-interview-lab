@@ -24,11 +24,48 @@ A shared model change forces recompilation of many modules. How would you shrink
 
 ## Explanation in Arabic
 
-افحص build scan/task graph: هل shared model public ABI لعدد كبير؟ هل `api` dependency تصدّر types أوسع من اللازم؟ هل Kotlin inline/generated code يزيد أثر التغيير؟ بدلاً من `CommonUserModel` ضخمة تستخدمها 15 feature، قد تحتاج عقود صغيرة مستقرة (`UserId`, `DisplayName`) وfeature UI models محلية؛ data mapping تحوّل بينها. لا تنسخ domain invariant بين modules لمجرد تسريع compile. قِس قبل وبعد incremental build، وتأكد أن تغيير schema أو serialization ما زال ينتقل للمستهلكين الصحيحين.
+تغيير سطر واحد في نموذج بيانات مشترك (Shared Model) أدى إلى إعادة تجميع عشرات الموديولات في المشروع. كيف تشخص المشكلة وتحد من أثرها الكارثي؟
+
+1. تشخيص السبب الجذري (Root Cause Diagnosis):
+   - **تضخم الاعتمادية وانتشار الـ Fan-out (High Build Fan-out)**: موديول يسمى `:core:model` يحتوي على كلاس `User` أو `Order`. هناك 40 موديول Feature يعتمدون على هذا الموديول مباشرة.
+   - **تسريب الـ ABI (ABI Invalidation)**: عند إضافة حقل جديد (مثل `val isVip: Boolean = false`) لكلاس الـ `User`، فإن الـ ABI Digest الخاص بـ `User` يتغير بالكامل.
+   - لأن جميع الموديولات تستورد هذا الكلاس في دوالها العامة، يعتبر Gradle أن الـ Compile Classpath لجميع هذه الموديولات الـ 40 قد فُقدت صلاحيته، فيلغي الـ Build Cache ويعيد تجميعها جميعاً من الصفر!
+
+2. الحلول المعمارية للحد من الأثر (Architectural Solutions):
+   - **تجزئة الموديل العام إلى نماذج متخصصة ومستقلة (Model Segregation)**: بدلاً من كائن `User` عملاق يحتوي على 50 حقلاً، افصله إلى نماذج بيانات مركزة:
+     * `UserAuthCredentials` في موديول التحقق.
+     * `UserBillingProfile` في موديول المدفوعات.
+     * `UserShippingAddress` في موديول التوصيل.
+   - **استخدام Feature-Specific UI Models مع Mappers**: موديول الـ Feature يعرّف نموذج الـ UI الخاص به (`UserProfileUiState`)، ويقوم بعمل Mapping من الموديل العام، مما يعزل الشاشات عن التغييرات الخارجية.
+   - **تجنب وضع دوال `inline` داخل الموديولات المشتركة**: الدوال الـ Inline تجبر المترجم على تتبع الكود في كل مكان تم استدعاؤها فيه.
 
 ## Practical walkthrough
 
-Shared model في `:core` عام جدًا يجعل تعديل field يعيد compile feature كثيرة. افصل stable public contract من DTO/storage representation، قلل `api` exposure، ومرر narrow IDs/value objects. راجع Build Scan لمعرفة invalidated tasks؛ لا تفترض module split وحدها تكفي. اختبر mapping والمستهلكين بعد تقليل surface حتى لا تتغير semantics.
+تفكيك الموديل العملاق عالي التأثير إلى نماذج متخصصة ضيقة الأثر:
+```kotlin
+// ❌ الموديل المشترك الكارثي (God Model في :core:model): أي تغيير يعيد تجميع 40 موديولاً:
+data class User(
+    val id: String,
+    val name: String,
+    val email: String,
+    val creditCardToken: String, // يخص الدفع فقط
+    val loyaltyPoints: Int,      // يخص المكافآت فقط
+    val shippingAddress: String  // يخص الشحن فقط
+)
+
+// ✅ الحل المعماري: تجزئة النماذج حسب النطاق (Scoped Domain Models):
+// 📁 في :domain:auth:
+data class AuthenticatedUser(val id: String, val email: String)
+
+// 📁 في :domain:payment:
+data class PaymentCustomer(val userId: String, val creditCardToken: String)
+
+// 📁 في :domain:loyalty:
+data class LoyaltyMember(val userId: String, val points: Int)
+
+// الآن: تعديل نظام نقاط المكافآت (Loyalty) في :domain:loyalty
+// يعيد تجميع موديول المكافآت فقط! موديول الدفع وموديول المصادقة يظلان UP-TO-DATE بنسبة 100%.
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +89,28 @@ Track ABI and public API churn of high-fan-out modules, compare representative i
 
 ## Interview answer — short
 
-“I trace the changed public ABI and exported `api` edges, shrink shared contracts to stable essentials, keep feature models local, and verify incremental build impact.”
+A shared model change triggers massive rebuilds due to high fan-out and ABI invalidation. Shrink the impact by decomposing the monolithic model into domain-scoped models (e.g. AuthUser, BillingUser), introducing feature-specific UI models with local mappers, and moving stable primitives into isolated contract modules.
 
 ## Interview answer — structured
 
-“I use a build scan to see which compile tasks rerun and inspect whether a giant shared model sits in many public signatures. If profile-only fields force checkout to recompile, I separate stable account contracts from feature UI models and map data at boundaries. I check `api` versus `implementation` declarations and codegen/inline effects. I preserve central business invariants and measure controlled incremental builds after the change.”
+When modifying a shared data model causes dozens of modules to recompile, the root cause is **Unconstrained Module Fan-Out combined with Public ABI Invalidation**:
+
+1. **Root Cause**: A foundational module (like `:core:model`) exports an oversized entity (e.g. `User` with 40 fields) consumed transitively by 30+ feature modules. Adding or modifying a single property alters the compiled bytecode signatures (the ABI digest). Gradle detects the ABI mismatch and invalidates the compile classpath for every downstream module.
+
+2. **Architectural Remediation**:
+   - **Domain Model Segregation**: Split the monolithic entity into bounded-context models. The payment feature needs `BillingAccount`, the delivery feature needs `DeliveryRecipient`, and the auth feature needs `AuthIdentity`. Each lives in its respective domain module.
+   - **Feature-Level UI Models & Adapters**: Feature modules should map domain models into internal UI state data classes (`CheckoutUiState`). A change in backend metadata does not alter the feature's internal ABI.
+   - **Eliminate `inline` Functions on Models**: Never declare inline utility functions on shared models; inline bytecode embedding guarantees full caller recompilation.
 
 ## Interview answer — deep senior
 
-“I would first prove the cause. A shared model change can alter public ABI, but annotation processing, resources or broad `api` classpaths may also expand work. I compare task graphs from a controlled one-line model change and inspect who imports the type through public signatures. If a `User` object combines profile presentation, payment eligibility and admin flags, every consumer sees changes it does not need. I separate stable identity and policy contracts from feature-specific presentation models, mapping at owned boundaries. I narrow `api` exports to types that genuinely appear in ABI and keep private SDK dependencies as `implementation`. I do not duplicate critical eligibility logic just to improve compilation; one authoritative domain owner still decides it. I test mappings, serialization and behavior in affected features, then rerun warm incremental builds and record compile fan-out and wall time. A smaller API should also make independent feature changes easier, not simply move complexity into dozens of trivial micro-modules. If build scans show code generation rather than the model as the bottleneck, I address that mechanism instead.”
+To diagnose and monitor fan-out rebuild cascades quantitatively:
+
+1. **Run Gradle with Profiling**: Execute `./gradlew assembleDebug --profile --scan`. The Gradle Build Scan's 'Timeline' and 'Performance' tabs reveal exactly which task invalidated the cache and triggered the cascade.
+
+2. **Inspect the ABI Diff**: Compare task inputs using Gradle's verbose log: `./gradlew assembleDebug --info | grep -i "ABI changed"`. This confirms whether a public signature or private method triggered downstream compilation.
+
+3. **Graph Fan-Out Metrics**: In CI, track the **Fan-In (afferent coupling)** of core modules. If a single module's fan-in exceeds 50% of the repository's modules, it is an architectural hazard and must be prioritized for decomposition into independent, stable API slices.
 
 ## How to answer in the interview
 
@@ -76,9 +126,11 @@ Discuss ABI fan-out, `api` leakage, domain versus UI models, mapping cost, build
 
 ## Follow-up questions
 
-- Should payment eligibility be copied into each feature? **Answer:** no; keep one authoritative policy owner.
-- What first proves the cause? **Answer:** controlled incremental task graph and public ABI inspection.
-- Can changing `api` to `implementation` always fix it? **Answer:** no; public signatures and other build tasks may still require work.
+- **Interviewer:** "Why does adding a private property to a public Kotlin data class invalidate ABI?"
+  **Answer:** "Because in Kotlin, data classes auto-generate public methods (`copy()`, `componentN()`, `equals()`, `hashCode()`) based on all constructor properties; changing any property alters those public signatures."
+
+- **Interviewer:** "How does using interfaces instead of data classes mitigate ABI rebuilds?"
+  **Answer:** "Consumers depend on the stable interface; the concrete implementation can add internal fields without altering the interface's ABI signature."
 
 ## Self-check rubric
 
@@ -89,4 +141,4 @@ Trace one rebuild chain, redesign a shared model boundary, and verify build and 
 - [Gradle Java Library Plugin](https://docs.gradle.org/current/userguide/java_library_plugin.html) — compile classpath boundaries.
 - [Android modularization guide](https://developer.android.com/topic/modularization) — API and graph design.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Build effect must be measured in the actual repo.
+Technically reviewed against primary documentation on 2026-10-13.

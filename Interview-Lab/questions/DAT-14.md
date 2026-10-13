@@ -22,7 +22,63 @@ Design retries from HTTP semantics, server throttling and operation identity.
 
 ## Explanation in Arabic
 
-الـretry لازم يفرق بين read وwrite، وبين transient failure وvalidation/auth error. نستخدم max attempts/total deadline، exponential backoff مع jitter، ونحترم `Retry-After` في `429`/`503` إذا السيرفر رجّعه. `GET` غالبًا قابل للإعادة؛ `POST` مالي يحتاج idempotency key ثابت وstatus reconciliation. الـcancellation توقف loop، وWorkManager retries لا تعني exactly-once.
+كيف تصمم استراتيجية إعادة المحاولة (Retry Strategy) مع احترام مبادئ الـ Idempotency وحدود معدل الطلبات (Rate Limits)؟
+
+1. القواعد الذهبية لإعادة المحاولة (Retry Rules):
+   - **فصل القراءة عن الكتابة (Read vs. Write)**:
+     * طلبات القراءة (`GET`) آمنة ويمكن إعادة محاولتها تلقائياً.
+     * طلبات الكتابة (`POST`) غير آمنة؛ لا تعيد محاولتها إلا إذا كانت تحتوي على **Idempotency Key** فريد وثابت.
+   - **التمييز بين الأخطاء العابرة والدائمة (Transient vs. Permanent Errors)**:
+     * أخطاء عابرة (Transient): انقطاع الشبكة المؤقت، مهلة الاتصال `ConnectTimeout`, أو أخطاء السيرفر `503 Service Unavailable`, `502 Bad Gateway` -> تستحق إعادة المحاولة.
+     * أخطاء دائمة (Permanent): أخطاء التحقق `400 Bad Request`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found` -> **ممنوع إعادة المحاولة** لأنها ستفشل دائماً وتضيع بطارية الهاتف والموارد.
+
+2. خوارزمية التراجع الأسي مع التشتت العشوائي (Exponential Backoff with Full Jitter):
+   - لا تعيد المحاولة في نفس الثانية! كل محاولة فاشلة تضاعف وقت الانتظار: 1s ثم 2s ثم 4s ثم 8s.
+   - **Full Jitter**: إضافة قيمة عشوائية (Random Offset) لوقت الانتظار. إذا انقطع السيرفر عن العمل، وعادت الشبكة لـ 100 ألف هاتف في نفس اللحظة، فإن الـ Jitter يمنع كل الهواتف من إعادة الطلب في نفس الثانية بالظبط، مما يحمي السيرفر من الانهيار (Thundering Herd Problem).
+
+3. احترام ترويسة `429 Too Many Requests` و `Retry-After`:
+   - إذا أرجع السيرفر كود `429` أو `503` مع ترويسة `Retry-After: 60`، يجب أن يعلق التطبيق جميع الطلبات لنفس الـ Endpoint لمدة 60 ثانية بالكامل.
+
+## Practical walkthrough
+
+تنفيذ خوارزمية Exponential Backoff with Jitter واحترام ترويسة Retry-After:
+```kotlin
+suspend fun <T> retryWithBackoff(
+    maxAttempts: Int = 3,
+    initialDelayMs: Long = 1000L,
+    maxDelayMs: Long = 16000L,
+    factor: Double = 2.0,
+    block: suspend () -> T
+): Result<T> {
+    var currentDelay = initialDelayMs
+    
+    repeat(maxAttempts - 1) { attempt ->
+        try {
+            return Result.success(block())
+        } catch (e: HttpException) {
+            // 1. فحص كود 429 أو 503 مع احترام Retry-After:
+            if (e.code() == 429 || e.code() == 503) {
+                val retryAfterSeconds = e.response()?.headers()?.get("Retry-After")?.toLongOrNull()
+                if (retryAfterSeconds != null) {
+                    delay(retryAfterSeconds * 1000L)
+                    return@repeat
+                }
+            }
+            // 2. إذا كان الخطأ غير عابر (4xx): توقف فوراً ولا تعد المحاولة!
+            if (e.code() in 400..499) return Result.failure(e)
+        } catch (e: IOException) {
+            // أخطاء اتصال عابرة (SocketTimeout / Network loss) -> مؤهلة لإعادة المحاولة
+        }
+
+        // 3. حساب Exponential Backoff مع Full Jitter لمنع الـ Thundering Herd:
+        val jitter = Random.nextLong(0, currentDelay)
+        delay(jitter)
+        currentDelay = (currentDelay * factor).toLong().coerceAtMost(maxDelayMs)
+    }
+    
+    return runCatching { block() } // المحاولة الأخيرة
+}
+```
 
 ## Why it matters and how it works
 
@@ -49,10 +105,6 @@ suspend fun <T> retryRead(call: suspend () -> T): T {
 }
 ```
 
-## Practical walkthrough
-
-retry policy تتحدد لكل endpoint. GET transient 503 ممكن تعيدها بـbounded exponential backoff + jitter، مع `Retry-After` لو server بعته؛ 400 validation عادة ما تتعادش. 401 مسار auth، 429 rate limiting، ومش كل 5xx آمن لو write. POST دفع timed out مش دليل إن server ما قبلش؛ خزّن idempotency key/operation ID، query status أو أعد نفس payload+key حسب server contract. ضع max attempts وdeadline عشان worker ما يفضلش للأبد، وراعِ cancellation. راقب retry count/latency وميز user-visible pending من failure مؤكد.
-
 ## Trade-offs and decision criteria
 
 Extra retries improve transient success but amplify load and latency. Jitter and server guidance reduce synchronized bursts. A durable worker is appropriate for pending offline writes, but must use stable IDs and server deduplication.
@@ -67,17 +119,35 @@ A feed refresh uses bounded retries for network I/O, records stale cache on fail
 
 ## Interview answer — short
 
-“I retry classified transient failures with bounded exponential backoff and jitter, honor server throttling, and stop on cancellation. Writes require stable idempotency and reconciliation; a timeout is not proof that nothing happened.”
+Design retries by distinguishing transient network/server errors (503, timeouts) from permanent client errors (400, 401, 404). Use exponential backoff with full jitter to prevent thundering herd spikes on the backend, respect server Retry-After headers on 429 status codes, and mandate client-side Idempotency Keys on all retried mutations.
 
 ## Interview answer — structured
 
-“Retry policy depends on operation semantics. For a read I may retry connection failures and selected server errors, with an attempt cap, overall deadline, backoff and jitter. I respect Retry-After for throttling and fail fast on validation or permanent authentication errors. For a write, especially payment, I persist a stable operation key and query authoritative status after an uncertain timeout before sending again. Cancellation must terminate the policy, and metrics should show attempts and final outcome.”
+A production-grade retry architecture balances user resilience against backend capacity:
+
+1. **Error Classification**:
+   - **Retryable (Transient)**: `SocketTimeoutException`, `UnknownHostException`, and HTTP `502`, `503`, `504`.
+   - **Non-Retryable (Permanent)**: Client errors (`400 Bad Request`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, `422 Unprocessable Entity`). Retrying permanent errors burns battery and cellular quota without any chance of success.
+
+2. **Exponential Backoff with Full Jitter**:
+   - Simple fixed delays (e.g. retrying every 2 seconds) cause the **Thundering Herd Problem**: if an outage resolves, millions of devices retry at synchronized intervals, knocking the server offline again.
+   - Exponential backoff ($1s, 2s, 4s, 8s$) paired with randomized Jitter (`delay = Random(0, currentBackoff)`) spreads retry distribution smoothly across the timeline.
+
+3. **Rate Limit Governance (`429 Too Many Requests`)**:
+   - Always parse the `Retry-After` header. If present, pause coroutines or queue execution for the server-requested duration rather than applying client backoff.
+
+4. **Write Idempotency**: Never retry a mutating `POST` request unless backed by a persistent client-generated `Idempotency-Key`.
 
 ## Interview answer — deep senior
 
-I would design a retry matrix per endpoint, not a global interceptor that repeats every request. Method semantics, server idempotency contract, error class and user deadline all matter. I cap retries and backoff, add jitter to prevent a fleet-wide surge, parse Retry-After where relevant, and apply circuit/rate limits if the backend is unhealthy. A lost response can follow a committed write, so the app records a durable operation ID and reconciles status; using the same key can make the logical operation idempotent only if the server enforces it. WorkManager may run a worker again after crash; that is why server-side deduplication and local state transitions are essential. Tests cover cancellation and duplicate execution. Log attempts without sensitive payloads. Retrying validation `400` wastes bandwidth.
+When designing background synchronization retries in Android, senior architects offload execution from in-memory coroutine loops to **`WorkManager`**.
 
-I build a retry matrix per operation. A read that fails transiently can use bounded exponential backoff with jitter, while a 400 validation error needs user correction, not another call. I honor documented `Retry-After` values for rate limiting or service unavailability and cap the total deadline. For a write, method name alone is insufficient: a timed-out payment POST may already have committed. I persist one operation ID, use the backend’s idempotency semantics for any replay, and query authoritative status when the result is uncertain. I keep cancellation responsive and log attempts without sensitive payloads. Tests simulate lost responses and verify there is only one logical operation.
+If an in-memory coroutine retry loop is executing with a 30-second delay, and the user swipes the app away from recents, Android kills the process and cancels the coroutine, dropping the pending retry permanently.
+
+By encapsulating offline retries inside WorkManager:
+- WorkManager persists the retry intent in its own SQLite database.
+- It supports native backoff policies: `setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)`.
+- It respects OS constraints (`NetworkType.CONNECTED`, battery not low), ensuring retries execute deterministically even after phone reboots.
 
 ## How to answer in the interview
 
@@ -93,8 +163,11 @@ Build retry matrix for GET versus financial POST; explain throttling and timeout
 
 ## Follow-up questions
 
-- [DAT-02](../dat-02/): Does POST retry safely by default? **Answer:** no; it needs an endpoint-specific idempotency contract.
-- [DAT-20](../dat-20/): What after lost payment response? **Answer:** reconcile server state before another send.
+- **Interviewer:** "What is the Thundering Herd Problem in mobile systems?"
+  **Answer:** "When a major service outage recovers and thousands of mobile clients retry simultaneously, overwhelming server CPU and causing immediate cascading failures."
+
+- **Interviewer:** "What does 'Full Jitter' mean mathematically?"
+  **Answer:** "`sleep = random_between(0, min(max_backoff, initial_backoff * 2^attempt))`, which maximizes randomness and flattens traffic spikes."
 
 ## Self-check rubric
 
@@ -105,4 +178,4 @@ Can I classify errors, bound retries, honor Retry-After and protect writes?
 - [HTTP Semantics RFC 9110](https://httpwg.org/specs/rfc9110.html) — method/status semantics.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — queued write retry.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

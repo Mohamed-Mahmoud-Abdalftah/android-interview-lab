@@ -23,11 +23,56 @@ A security SDK falsely flags legitimate devices. How would you handle risk and a
 
 ## Explanation in Arabic
 
-Security SDK لو false-flagged أجهزة سليمة، hard block للدفع ممكن يضر مستخدمين كتير. نتعامل مع signal كاحتمال: نجمع metrics بدون بيانات حساسة، نتحقق من SDK version/device cohorts، نجرب shadow mode أو step-up/limits بدل منع شامل، ونجهز rollback server-side. لا نلغي كل الحماية بسبب false positives؛ نحافظ على backend authorization.
+مكتبة أمان (Security / RASP SDK) تعطي إنذارات كاذبة (False Positives) وتحظر أجهزة مستخدمين شرعيين. كيف تدير المخاطر والتوافر (Availability) هندسياً؟
+
+1. معضلة الأمان مقابل التوافر (Security vs. Availability Trade-off):
+   - مكتبات كشف الـ Root والـ Emulators تعتمد غالباً على Heuristics استكشافية (مثل فحص أسماء ملفات معينة، أو فحص خصائص `Build.FINGERPRINT`).
+   - في عالم أندرويد المتشعب، تقوم بعض الشركات المصنعة للهواتف الرخيصة (OEMs) أو الرومات المخصصة الشرعية بتسمية ملفات النظام بأسماء تشبه الـ Root أو استخدام Build tags غير قياسية، مما يجعل الـ SDK يعتقد أن الجهاز مخترق!
+   - إذا كان التطبيق مبرمجاً ليغلق نفسه فوراً (Hard Fail / Crash)، ستفقد آلاف العملاء الحقيقيين وتتلقى تقييمات كارثية على متجر التطبيقات.
+
+2. الحلول الهندسية وإدارة المخاطر (Risk-Based Approach):
+   - **التدرج في رد الفعل (Graduated Risk Response)**: بدلاً من الحظر الكلي، يتم تصنيف الخطر:
+     * خطر منخفض/غير مؤكد: السماح باستخدام التطبيق مع تسجيل Telemetry وتكثيف المراقبة السيرفرية.
+     * خطر متوسط: طلب خطوة تحقق إضافية (Step-up Authentication مثل SMS OTP أو Email confirmation).
+     * خطر عالي مؤكد (Debuggers, Hooking نشط أثناء عملية دفع): تجميد العملية المالية فقط مع رسالة واضحة للمستخدم.
+   - **التحكم عن بُعد عبر الـ Feature Flags**: إمكانية تعطيل أو تخفيف قواعد الـ SDK فورياً من السيرفر بدون الحاجة لإطلاق تحديث جديد للتطبيق.
+   - **مراقبة معدل الإنذارات الكاذبة (False Positive Rate Alerting)**: تتبع نسبة الحظر؛ إذا تجاوزت النسبة 0.5% من المستخدمين، يتم إطلاق إنذار هندسي فوري للتحقيق في المشكلة.
 
 ## Practical walkthrough
 
-بعد تحديث SDK، جهاز OEM معيّن بقى يحصل له `tampered=true` رغم إن معدل fraud ما اتغيرش. قارن false positives حسب app version/device cohort، حوّل cohort دي مؤقتًا من deny إلى step-up/limit بسياسة server-side، وراقب النتائج. ما توقفش backend authorization أو AML limits علشان availability؛ غيّر وزن signal المعيوبة واعمل canary للإصلاح.
+تنفيذ نظام تقييم مخاطر متدرج ومدار عبر الـ Remote Config لمنع حظر المستخدمين الشرعيين:
+```kotlin
+enum class SecurityAction {
+    ALLOW,              // تشغيل طبيعي
+    STEP_UP_AUTH,       // طلب تأكيد إضافي (OTP / Biometric)
+    RESTRICT_PAYMENT,   // تعطيل المدفوعات فقط مع إتاحة باقي التطبيق
+    BLOCK_SESSION       // حظر كامل فقط للحالات القصوى المؤكدة
+}
+
+class RiskEngine(
+    private val remoteConfig: RemoteConfigRepository,
+    private val telemetryLogger: SecurityTelemetryLogger
+) {
+    fun evaluateRisk(securitySdkScore: Int, detectedSignals: List<String>): SecurityAction {
+        // 1. فحص هل تم تفعيل وضع الطوارئ لتجاوز الـ SDK بسبب إنذارات كاذبة؟
+        if (remoteConfig.isSecurityKillSwitchActive()) {
+            telemetryLogger.logWarning("Security SDK bypassed via remote kill-switch")
+            return SecurityAction.ALLOW
+        }
+
+        // 2. تسجيل الإشارات للتحليل دون إغلاق التطبيق فوراً:
+        telemetryLogger.logSignals(detectedSignals)
+
+        // 3. التدرج في اتخاذ القرار بناءً على مستوى الخطر:
+        return when {
+            detectedSignals.contains("FRIDA_HOOK_ACTIVE") -> SecurityAction.BLOCK_SESSION
+            detectedSignals.contains("CUSTOM_ROM_SUSPECTED") -> SecurityAction.STEP_UP_AUTH
+            securitySdkScore > remoteConfig.getRiskThreshold() -> SecurityAction.RESTRICT_PAYMENT
+            else -> SecurityAction.ALLOW
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +96,31 @@ Run canary rollout, cohort dashboards, support escalation and rollback drills. D
 
 ## Interview answer — short
 
-“I measure false positives, use the SDK as one risk signal, and apply reversible server-side tiers such as step-up or limits. Backend transaction rules remain enforced while availability is restored.”
+Manage security SDK false positives by implementing a graduated, risk-based response ladder rather than binary app termination. Use remote feature flags as emergency kill-switches to toggle aggressive rules, enforce step-up authentication instead of outright bans, and monitor false positive metrics continuously in production.
 
 ## Interview answer — structured
 
-“A security SDK is not ground truth. I would quantify impact by app version and device cohort, compare it with fraud outcomes, and use shadow mode before hard enforcement. If legitimate users are blocked, a server-controlled policy can move the affected signal to step-up authentication or lower limits while the SDK issue is fixed. I monitor abuse, provide a support path and preserve ordinary authorization, idempotency and provider confirmation.”
+Balancing application availability with security enforcement requires a risk-scoring architecture rather than hardcoded binary kill-switches:
+
+1. **The False Positive Dilemma**: Third-party RASP SDKs rely on heuristics like checking for test keys or custom build tags. Across fragmented Android OEM ecosystems (e.g. customized budget devices in emerging markets), legitimate vendor ROMs trigger false detections, causing widespread user lockouts.
+
+2. **Graduated Response Ladder**:
+   - **Informational**: Low-confidence anomalies (e.g. unknown device build) trigger client telemetry logging without disrupting user UX.
+   - **Step-Up Verification**: Suspicious environments (e.g. unlocked bootloader) require stepped-up authentication (e.g., SMS OTP, passkey verification, or email confirmation).
+   - **Scoped Feature Restriction**: Moderate risks restrict sensitive operations (e.g., initiating high-value transfers) while leaving non-sensitive areas (viewing transaction history, support chat) fully operational.
+   - **Session Termination**: Reserved exclusively for high-confidence active tampering (e.g. Frida memory hooks detected during transaction signing).
+
+3. **Dynamic Remote Governance**: Wrap security SDK evaluation inside server-driven feature flags (e.g., Firebase Remote Config). If an SDK update causes false-positive lockouts, ops can remotely dial back detection sensitivity in minutes without waiting for Play Store updates.
 
 ## Interview answer — deep senior
 
-“I would define a risk-policy state machine with monitor, challenge, limit and deny tiers. Each rule has evidence, owner, version and rollback. A sudden OEM-specific false-positive spike triggers a cohort-specific mitigation rather than disabling all detection; we retain server-side transaction invariants and may lower high-risk limits. I validate SDK error and timeout behavior, canary updates, and compare fraud loss against legitimate conversion. Client-side exit logic is avoided because it is both bypassable and operationally brittle. Users get a safe appeal or alternate verification path without exposing internal detection details. I would define measured thresholds for false-positive rate, fraud loss and abandonment before turning an SDK verdict into a hard block. A versioned server policy can move one affected cohort to step-up while leaving transaction ownership and limits untouched. I would canary a fixed SDK, compare outcomes, and record who approved the temporary policy. The rollback plan must be as fast as the rollout, because availability harm can exceed the benefit of a weak signal.”
+From an operational reliability perspective, senior architects treat security SDKs as untrusted third-party dependencies requiring observability SLAs:
+
+1. **False Positive Telemetry & Alerting**: Track the 'Security Block Rate' metric in real-time dashboards. If blocks spike above a statistical baseline (e.g., jumping from 0.05% to 2.0% post-app update), automated alerts fire immediately to investigate OEM-specific clusters.
+
+2. **Silent Shadow-Mode Deployment**: When evaluating or upgrading a security SDK, deploy it first in 'Observation / Shadow Mode' for 2–4 weeks. Log what the SDK *would* have blocked without executing the block action, allowing the team to measure actual false-positive rates across millions of production devices before enabling enforcement.
+
+3. **Customer Support Recovery Channels**: Provide clear, non-technical error codes (e.g. `ERR-SEC-402`) in the UI when restrictions occur, enabling tier-1 customer support agents to look up backend risk logs and grant temporary device exemptions if legitimate customers are affected.
 
 ## How to answer in the interview
 
@@ -75,8 +136,11 @@ Prompt for measured cohorts, shadow mode, reversible rules, SDK outages, user re
 
 ## Follow-up questions
 
-- [SEC-21](../sec-21/): Why verify SDK signal server-side? **Answer:** client output is patchable.
-- [SEC-29](../sec-29/): Can root detection guarantee security? **Answer:** no; preserve backend invariants.
+- **Interviewer:** "What is Shadow Mode in security SDK rollout?"
+  **Answer:** "Running the security SDK purely to log telemetry and flagged risk scores without executing any blocking actions, verifying false-positive rates before hard enforcement."
+
+- **Interviewer:** "Why should security error dialogs avoid exposing internal detection details to users?"
+  **Answer:** "Detailed error messages (e.g. 'su binary found in /system/xbin') guide attackers on exactly which file or hook triggered detection, simplifying evasion."
 
 ## Self-check rubric
 
@@ -87,4 +151,4 @@ Can I propose a measured, reversible response to false positives without abandon
 - [Play Integrity overview](https://developer.android.com/google/play/integrity/overview) — tiered enforcement guidance.
 - [OWASP MASVS resilience](https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/) — resilience as defense in depth.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

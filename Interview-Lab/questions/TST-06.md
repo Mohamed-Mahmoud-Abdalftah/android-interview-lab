@@ -23,11 +23,68 @@ Compare StandardTestDispatcher and UnconfinedTestDispatcher.
 
 ## Explanation in Arabic
 
-`StandardTestDispatcher` يصفّ coroutine جديدة على scheduler؛ غالبًا لازم `runCurrent()` أو تقدم الوقت عشان تبدأ، وده مفيد لما عايز تتأكد من Loading قبل Success. `UnconfinedTestDispatcher` يبدأ الشغل eagerly لحد أول suspension، فيسهّل بعض hot-flow collectors، لكنه ممكن يخلي state intermediate تختفي من الاختبار لو النتيجة اتنشرت بسرعة. الاتنين أدوات اختبار، مش بديل تلقائي للـproduction dispatcher.
+قارن بين `StandardTestDispatcher` و `UnconfinedTestDispatcher`، ومتى تختار كلاً منهما في اختبارات الـ Coroutines؟
+
+1. ما هو `StandardTestDispatcher`؟
+   - هو **الخيار الافتراضي الأكثر دقة وواقعية**.
+   - **السلوك**: لا ينفذ الكوروتين الجديد فوراً! بل يضعه في طابور مهام الـ Scheduler. يتطلب منك استدعاء `runCurrent()` أو `advanceUntilIdle()` صراحة لتقديم التنفيذ.
+   - **الميزة الكبرى**: يتيح لك محاكاة وتدقيق الحالات البينية (Intermediate States) بدقة متناهية (مثلاً: التحقق من أن حالة الـ `Loading` تظهر قبل أن تصل استجابة الشبكة).
+
+2. ما هو `UnconfinedTestDispatcher`؟
+   - **السلوك**: يبدأ بتنفيذ الكوروتين **فورياً وبشكل متزامن (Eager Execution)** على الخيط الحالي حتى يصل لأول نقطة تعليق (Suspension point).
+   - **الميزة**: كود اختبار أبسط وأقصر؛ لا يتطلب كتابة `runCurrent()` أو `advanceUntilIdle()` بعد كل استدعاء دالة.
+   - **العيب**: قد يتخطى الحالات البينية؛ لأنه يقفز فوراً إلى النتيجة النهائية، مما يجعله غير مناسب لاختبار خطوات مثل شاشات التحميل السريعة.
+
+3. قاعدة الاختيار الذهبية:
+   - استخدم `UnconfinedTestDispatcher` للاختبارات البسيطة وسريعة الكتابة التي تهتم فقط بالحالة النهائية.
+   - استخدم `StandardTestDispatcher` للاختبارات الدقيقة التي تفحص تسلسل الأحداث، شاشات التحميل، وتدفقات البيانات المعقدة.
 
 ## Practical walkthrough
 
-لما تخلطهم في اختبار واحد، استخدم نفس `TestCoroutineScheduler` واحسب ترتيب الإطلاق والاشتراك. في StateFlow مثلًا لا تفترض إن كل value سريعة ستُرى؛ اتحكم في fake repository أو gates قبل الانتقال للـSuccess. اختبر السلوك الذي يعتمد عليه المستخدم، مش مصادفة ترتيب scheduler.
+المقارنة العملية: اختبار حالة Loading باستخدام StandardTestDispatcher مقابل تخطيها بـ UnconfinedTestDispatcher:
+```kotlin
+class SearchViewModel(private val ioDispatcher: CoroutineDispatcher) : ViewModel() {
+    var isLoading = false
+    var results = emptyList<String>()
+
+    fun search(query: String) {
+        viewModelScope.launch(ioDispatcher) {
+            isLoading = true
+            delay(500) // محاكاة طلب شبكة
+            results = listOf("Result 1", "Result 2")
+            isLoading = false
+        }
+    }
+}
+
+class DispatcherComparisonTest {
+    @Test
+    fun `StandardTestDispatcher allows asserting intermediate loading state`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val viewModel = SearchViewModel(dispatcher)
+
+        viewModel.search("Android")
+        // مع StandardTestDispatcher: الكوروتين مجدول ولم ينفذ بعد
+        runCurrent() // تنفيذ الخطوة الأولى حتى أول تعليق
+        assertTrue(viewModel.isLoading) // نجح التحقق من ظهور الـ Loading!
+
+        advanceTimeBy(500)
+        runCurrent()
+        assertFalse(viewModel.isLoading) // انتهى الـ Loading وظهرت النتائج
+        assertEquals(2, viewModel.results.size)
+    }
+
+    @Test
+    fun `UnconfinedTestDispatcher executes eagerly without runCurrent`() = runTest {
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val viewModel = SearchViewModel(dispatcher)
+
+        viewModel.search("Android")
+        // بدأ فوراً وأصبح isLoading = true تلقائياً دون استدعاء runCurrent
+        assertTrue(viewModel.isLoading)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +108,38 @@ Team test conventions use Standard by default for state machines, with documente
 
 ## Interview answer — short
 
-“StandardTestDispatcher queues work until the scheduler runs; UnconfinedTestDispatcher enters coroutines eagerly. I prefer Standard for ordering-sensitive tests and use Unconfined only when eager collection is intentional.”
+StandardTestDispatcher queues coroutines without executing them immediately, giving full control over virtual time and intermediate states via advanceUntilIdle() and runCurrent(). UnconfinedTestDispatcher executes coroutines eagerly and synchronously until the first suspension point, offering simpler test code at the cost of skipping intermediate state verification.
 
 ## Interview answer — structured
 
-“Both belong to kotlinx-coroutines-test and can share one virtual scheduler. StandardTestDispatcher makes launch timing explicit, which helps inspect loading, retry and cancellation states. UnconfinedTestDispatcher enters launched work eagerly until suspension, simplifying some collectors but potentially hiding ordering bugs. I pick based on what the test needs to prove and avoid treating either as exact production scheduling.”
+Choosing between coroutine test dispatchers dictates how coroutine execution is scheduled relative to test assertions:
+
+1. **StandardTestDispatcher (Queued & Deterministic)**:
+   - **Behavior**: Does not execute newly launched coroutines eagerly. Instead, coroutines are queued on the `TestScheduler`.
+   - **Usage**: Requires explicit calls to `runCurrent()`, `advanceTimeBy()`, or `advanceUntilIdle()` to trigger execution.
+   - **Ideal For**: Testing sequential UI progression and intermediate states (e.g., verifying that `UiState.Loading` is emitted before network responses resolve to `UiState.Success`).
+
+2. **UnconfinedTestDispatcher (Eager & Immediate)**:
+   - **Behavior**: Newly launched coroutines begin execution immediately and eagerly on the calling thread until they hit their first suspension point (`delay()` or async I/O).
+   - **Usage**: Eliminates boilerplate calls to `runCurrent()` across simple unit tests.
+   - **Ideal For**: Testing simple StateFlow collections or direct state mappings where only the final outcome matters.
 
 ## Interview answer — deep senior
 
-“The choice is about when coroutines start relative to my assertions. `StandardTestDispatcher` queues newly launched work on a `TestCoroutineScheduler`; I explicitly run current tasks or advance virtual time. That is useful when I need to assert an initial Loading state before releasing a fake repository response. `UnconfinedTestDispatcher` enters a launched coroutine eagerly until suspension, which can simplify starting a hot-flow collector before an event, but it can also make the test observe only the final state if I do not control the producer. I do not infer production thread ordering from either dispatcher. If both are used, they should share the scheduler created by `runTest`, and the test should state why one collector starts eagerly. For a ViewModel, I would gate the fake result, assert Loading, release it, and assert Success or Error. For a replay-zero SharedFlow, I establish the subscription before emitting. When a test changes behavior just because the dispatcher changes, I first inspect whether the product relies on an unstated timing assumption, rather than switching dispatchers only to make a flaky assertion green.”
+From an architectural best-practices standpoint, standardizing test dispatchers across enterprise codebases avoids flakiness:
+
+1. **Turbine Flow Testing with StandardTestDispatcher**: When collecting Kotlin Flows using Turbine, `StandardTestDispatcher` provides rock-solid predictability. You can assert that an initial value is emitted, trigger a user action, advance time, and assert that the next emission arrives in order without timing races.
+
+2. **The MainDispatcherRule Pattern**: Rather than instantiating dispatchers manually in every test class, build a reusable JUnit TestRule:
+   ```kotlin
+   class MainDispatcherRule(val testDispatcher: TestDispatcher = StandardTestDispatcher()) : TestWatcher() {
+       override fun starting(d: Description) = Dispatchers.setMain(testDispatcher)
+       override fun finished(d: Description) = Dispatchers.resetMain()
+   }
+   ```
+   This ensures clean setup and teardown of `Dispatchers.Main` across all JVM unit tests.
+
+3. **Pragmatic Recommendation**: Default to `StandardTestDispatcher` across the entire codebase. It mimics real-world concurrency queues most faithfully and prevents false-positive test passes where eager execution masks async race conditions.
 
 ## How to answer in the interview
 
@@ -75,8 +155,11 @@ Prompt for eager entry, queue progress, shared scheduler and ordering-risk trade
 
 ## Follow-up questions
 
-- [TST-05](../tst-05/): Who controls virtual time? **Answer:** the shared TestCoroutineScheduler in TestScope.
-- [TST-09](../tst-09/): Why eager collector setup? **Answer:** avoid subscription timing races in event tests.
+- **Interviewer:** "Why is Dispatchers.setMain required when testing ViewModels?"
+  **Answer:** "Because viewModelScope launches on Dispatchers.Main by default; on the local JVM, the Android Main thread looper does not exist and throws an IllegalStateException without setMain."
+
+- **Interviewer:** "Can UnconfinedTestDispatcher skip delays automatically in runTest?"
+  **Answer:** "Yes, both dispatchers share the underlying TestScheduler and skip delay() durations inside runTest blocks."
 
 ## Self-check rubric
 
@@ -87,4 +170,4 @@ Predict when a launched child begins under each dispatcher, demonstrate the obse
 - [Kotlin TestDispatcher API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/) — dispatcher semantics.
 - [Android coroutine testing](https://developer.android.com/kotlin/coroutines/test) — dispatcher usage.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -23,11 +23,63 @@ How do you ensure atomic persistence of transaction status and reversal intent?
 
 ## Explanation in Arabic
 
-لو status اتكتب `unknown` لكن reversal intent ما اتكتبش بسبب crash، العملية ممكن تفضل approved عند issuer من غير متابعة. اكتب تغيير الحالة والـoutbox row في نفس Room/SQLite transaction، بحيث يا الاتنين موجودين يا الاتنين لا. بعدها worker يرسل reversal بالـoriginal operation ID ويتابع acknowledgment. ده atomic محلي فقط؛ provider يحتاج dedup/status reconciliation.
+كيف تضمن التخزين الذري الحتمي (Atomic Persistence) لحالة المعاملة ونية العكس (Reversal Intent) في أندرويد؟
+
+1. خطورة انعدام الذرية (Non-Atomic Persistence Hazard):
+   - تخيل السيناريو التالي في كود الدفع:
+     1. نقوم بتحديث حالة المعاملة إلى `FAILED`.
+     2. في خطوة منفصلة، نقوم بإضافة طلب إلى جدول الـ `reversal_queue`.
+   - إذا انطفأ الهاتف أو قُتلت العملية بين الخطوتين: أصبحت المعاملة معلمة كـ `FAILED`، ولكن **طلب الـ Reversal لم يُسجل أبداً**!
+   - النتيجة: البنك يحتجز أموال العميل، والتطبيق يعتقد أن العملية فشلت، ولا يوجد أي كود في الخلفية يعرف أنه يجب إرسال Reversal!
+
+2. مفهوم الذرية (Atomicity) في قواعد البيانات:
+   - كل العمليات تنفذ معاً ككتلة واحدة غير قابلة للتجزئة: إما أن **تنجح جميعها بالكامل (Commit)**، أو **تفشل جميعها وتتراجع كأن شيئاً لم يكن (Rollback)**.
+
+3. الحل الهندسي: معاملات Room/SQLite الذرية (`@Transaction`):
+   - فتح معاملة ذرية واحدة تدمج:
+     1. تحديث حالة المعاملة الأصلية إلى `IN_DOUBT_NEEDS_REVERSAL`.
+     2. إدراج عنصر جديد في جدول `reversal_queue` يحتوي على كل بيانات الـ ISO 8583 payload.
+     3. جدولة مهمة WorkManager فورية لتنفيذ العكس.
+   - هذا يضمن 100% أن نية العكس محفوظة ومحمية على القرص مهما كانت ظروف تعطل الجهاز.
 
 ## Practical walkthrough
 
-عند timeout يستوجب reversal، `attempt.state=REVERSAL_PENDING` وoutbox row لازم ينجحوا أو يفشلوا مع بعض. استخدم transaction محلية ثم شغّل worker بعد commit؛ متستناش الشبكة جوّه transaction. لو حصل crash بعد send وقبل acknowledgment، worker ممكن يعيد؛ لذلك reversal ID ثابت وlookup قبل اعتبار العملية مكتملة.
+تطبيق المعاملات الذرية لحفظ نية العكس في Room باستخدام `@Transaction`:
+```kotlin
+@Dao
+interface PaymentDao {
+    @Query("UPDATE transactions SET status = :newStatus WHERE id = :txId")
+    suspend fun updateTransactionStatus(txId: String, newStatus: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertReversalIntent(intent: ReversalIntentEntity)
+
+    // ✅ المعاملة الذرية الصارمة: مستحيل تنفيذ خطوة دون الأخرى!
+    @Transaction
+    suspend fun markInDoubtAndEnqueueReversal(
+        txId: String,
+        intent: ReversalIntentEntity
+    ) {
+        updateTransactionStatus(txId, "UNKNOWN_AWAITING_REVERSAL")
+        insertReversalIntent(intent)
+    }
+}
+
+// الاستخدام داخل الـ Repository عند حدوث انقطاع في الشبكة:
+suspend fun handleTimeoutFailure(txId: String, request: PaymentRequest) {
+    val reversalIntent = ReversalIntentEntity(
+        reversalId = UUID.randomUUID().toString(),
+        originalTxId = txId,
+        amountCents = request.amount,
+        payload = request.toIso8583ReversalPayload(),
+        status = "PENDING_DISPATCH"
+    )
+    // الذرية تضمن كتابة كلاهما للقرص معاً:
+    paymentDao.markInDoubtAndEnqueueReversal(txId, reversalIntent)
+    // إطلاق مهمة WorkManager لمعالجة الطابور:
+    reversalWorkScheduler.scheduleReversalWorker()
+}
+```
 
 ## Why it matters and how it works
 
@@ -74,15 +126,30 @@ Production has unique constraints on original operation ID, a worker lease/claim
 
 ## Interview answer — short
 
-“I atomically persist the pending status and reversal outbox row, then let a worker send outside the database transaction. A repeated send is expected, so the backend/provider must handle the stable reversal identity safely.”
+Ensure atomic persistence of transaction status and reversal intent by executing both operations inside a single database transaction (@Transaction in Room/SQLite). If a sudden power loss occurs, SQLite WAL guarantees that both the status update and the reversal queue insertion succeed together or rollback completely.
 
 ## Interview answer — structured
 
-“I use a transactional outbox. The local state change to reversal-pending and the new reversal row commit together in Room; no network call occurs inside that transaction. A worker later sends the reversal and marks it resolved only after authoritative acknowledgment. If the process dies after sending, it may retry, so the reversal carries the original operation identity under the provider’s deduplication contract. Local atomicity does not span the network. The transaction covers only local rows; sending to the provider occurs afterward.”
+Atomic persistence prevents state divergence between payment status records and outbound reversal queues:
+
+1. **The Dual-Write Vulnerability**:
+   - When handling an ambiguous payment outcome (such as a gateway read timeout), two state mutations must occur: (1) transitioning the transaction status to `IN_DOUBT`, and (2) enqueuing a reversal payload in the pending dispatch queue. If performed as separate uncoordinated queries, a crash in between drops the reversal intent while recording a failed status, permanently leaking held customer funds.
+
+2. **SQLite ACID Transaction Guarantees**:
+   - Wrap both operations in an atomic database transaction using Room's `@Transaction` annotation or `db.runInTransaction { ... }`. SQLite's Write-Ahead Log (WAL) ensures that either both mutations are durably committed to the database file or neither takes effect, preventing partial state writes.
+
+3. **Deterministic WorkManager Triggering**:
+   - Following the successful database transaction commit, schedule a persistent `OneTimeWorkRequest` with exponential backoff to dispatch the reversal. If the device powers off immediately after the commit, WorkManager inspects the pending table upon boot and resumes dispatch automatically.
 
 ## Interview answer — deep senior
 
-“I draw all crash windows. Before the DB commit there is no reversal obligation recorded; after commit there is one durable pending row; after remote send but before local acknowledgment the outcome is unknown. A stable reversal identity and status lookup make that last window safe. I put a uniqueness constraint on the original transaction reference, coordinate multiple workers and keep retry/backoff plus dead-letter escalation. I test battery removal around every boundary and verify the backend/provider actually supports deduplication for the relevant retention period. WorkManager later sends it. A backend ledger remains authoritative. I would crash immediately after the remote send to prove a repeated worker attempt remains duplicate-safe. My local transaction updates the attempt only if it is in a state that legitimately requires reversal, and inserts one outbox row keyed by the original attempt and stable reversal ID. The transaction ends before any network call. If the app crashes before commit, neither row appears; after commit, both appear and a startup scanner can schedule delivery. If it crashes after the provider accepted the reversal but before local acknowledgment, a worker can send again, so the remote side must deduplicate or permit status lookup under its protocol. I would test database rollback, concurrent workers, a lost response, and a reversal that remains unknown beyond the allowed window.”
+From an ACID transaction isolation and POS hardware crash perspective, atomicity requires hardware-aware sequencing:
+
+1. **Isolation Levels in Android SQLite**: SQLite operates with `SERIALIZABLE` transaction isolation by default in WAL mode. This guarantees that background sync workers reading the `reversal_queue` cannot observe a half-written transaction state while the UI thread is committing an in-doubt payment.
+
+2. **Immutable Reversal Enqueueing**: Store the exact raw cryptographic payload required for the reversal (e.g. original STAN, terminal ID, card cryptogram, transaction amount) inside the `reversal_queue` table. Do not rely on recomputing the payload later, as volatile context variables will be lost if the process restarts.
+
+3. **Battery-Removal Defense**: On Android POS smart terminals, users frequently pull the battery pack to force-reset frozen screens. By executing `markInDoubtAndEnqueueReversal` before attempting any UI teardown or navigation, the reversal intent is guaranteed to survive the hard reset.
 
 ## How to answer in the interview
 
@@ -98,8 +165,11 @@ Prompt for Room transaction, outbox uniqueness, remote repeatability, crash matr
 
 ## Follow-up questions
 
-- [PAY-07](../pay-07/): What runs after reboot? **Answer:** a durable worker processes pending reversals.
-- [PAY-15](../pay-15/): Can retries be exactly once? **Answer:** transport can repeat; enforce one business effect.
+- **Interviewer:** "What catastrophic state occurs if transaction status and reversal queue insertion are not atomic?"
+  **Answer:** "The app records the transaction as failed but loses the reversal intent, leaving the customer debited at the bank with no automated recovery."
+
+- **Interviewer:** "Why should the reversal queue record store the complete pre-computed reversal payload?"
+  **Answer:** "Because volatile memory context and ephemeral tokens are wiped if the process dies, making it impossible to reconstruct the payload later."
 
 ## Self-check rubric
 
@@ -110,4 +180,4 @@ Can I place the transaction boundary and describe the remaining distributed gap?
 - [Android Room transactions](https://developer.android.com/reference/kotlin/androidx/room/package-summary) — local atomicity.
 - [Android WorkManager overview](https://developer.android.com/topic/libraries/architecture/workmanager) — persistent work.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

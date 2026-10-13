@@ -24,11 +24,51 @@ Why can a Singleton holding Activity Context leak memory?
 
 ## Explanation in Arabic
 
-الـsingleton غالبًا عايش طول عمر الـprocess. لو خزّن `Activity` كـContext، عمر الـActivity يقصر عند rotation أو إغلاق الشاشة، لكن المرجع من singleton يمنع GC من جمعها ومعاها view tree وresources. لو dependency محتاجة Context عام للملفات أو موارد لا تعتمد على theme، استخدم `applicationContext`. لكن `applicationContext` مش بديل سحري لكل حاجة: عرض dialog أو طلب Activity Result يحتاج Activity حية، والأصح تمررها وقت العملية أو تربط المكوّن بالـlifecycle المناسب. افحص retaining path للتأكد من leak الفعلي.
+تسريب الذاكرة الناتج عن احتفاظ كائن أحادي (Singleton) بسياق النشاط (Activity Context):
+
+1. طبيعة دورة حياة الـ Singleton مقابل الـ Activity:
+   - الـ Singleton هو كائن يعيش طوال فترة تشغيل التطبيق (Process Lifetime) لأنه ممسوك بـ Static Reference في كلاس لودر النظام (ClassLoader).
+   - الـ Activity هو كائن واجهة مستخدم دورة حياته مؤقتة؛ يُدمر ويُعاد إنشاؤه عند تغيير اتجاه الشاشة (Configuration Change مثل دوران الشاشة) أو عند ضغط زر الرجوع (Back navigation).
+
+2. كيف يحدث التسريب الفعلي (The Retained Root)?
+   - إذا قمت بتمرير `activityContext` إلى Singleton واحتفظ به في متغير (Field):
+   - عند تدمير النشاط (`onDestroy()`)، يحاول مجمع النفايات (GC) تنظيف النشاط.
+   - لكن الـ GC يجد أن الـ Activity لا يزال متصلاً بـ GC Root نشط وهو (Static Singleton -> Activity Reference).
+   - نتيجة لذلك، تظل الـ Activity محبوسة في الـ Heap، وممسوك معها شجرة الواجهة بالكامل (View Hierarchy)، وكل الصور (Bitmaps)، والمكونات التابعة، مما يستهلك عشرات الميجابايتات في كل دورة شاشة!
+
+3. الحل الهندسي السليم:
+   - إذا كان الـ Singleton بحاجة إلى Context لفتح ملفات أو قراءة موارد النظام، يجب دائماً استخدام `context.applicationContext`.
+   - الـ Application Context دورة حياته مطابقة تماماً لدورة حياة العملية (Process)، فلا يمكن أن يسرب Activity أبداً.
 
 ## Practical walkthrough
 
-مثال image cache في `object` محتاجة تفتح cache directory: ادّيها `applicationContext` وقت الإنشاء، وما تخزنش `Activity`. لو محتاجة تعرض picker أو dialog، خليك في الـActivity نفسها وابعث للـcache النتيجة أو البيانات. بعد rotation مرتين، heap dump لازم ما يلاقيش الـActivity القديمة من cache root. كمان شوف أي lambda داخل cache لأنها ممكن تلتقط الـActivity حتى لو field اسمه Context سليم.
+مثال عملي يوضح التسريب وكيفية إصلاحه:
+```kotlin
+// ❌ كائن أحادي كارثي: يسرب Activity Context وكل ما ترتبط به:
+object LocationTracker {
+    private var context: Context? = null // تسريب صريح!
+
+    fun init(activityContext: Context) {
+        this.context = activityContext // النشاط لن يتحرر أبداً من الذاكرة عند التدوير!
+    }
+}
+
+// ✅ الكود السليم هندسياً: الاحتفاظ بـ Application Context فقط:
+class LocationTracker private constructor(private val appContext: Context) {
+    companion object {
+        @Volatile
+        private var INSTANCE: LocationTracker? = null
+
+        fun getInstance(context: Context): LocationTracker {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: LocationTracker(context.applicationContext).also {
+                    INSTANCE = it
+                }
+            }
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -67,15 +107,23 @@ For an image cache, inject only an application-scope directory or Context, set a
 
 ## Interview answer — short
 
-“A singleton can outlive an Activity. If it holds the Activity Context, that strong reference retains the destroyed Activity and its view tree. Use application Context for compatible app-scope work and keep UI owners short-lived.”
+A Singleton lives for the entire application process lifetime via a static reference. If it retains an Activity Context, the Garbage Collector cannot reclaim the Activity after `onDestroy()`, retaining its entire View hierarchy and Bitmaps on the heap. Singletons should only reference `applicationContext` or avoid holding Context entirely.
 
 ## Interview answer — structured
 
-“The leak is a lifetime mismatch: the singleton remains reachable for the process, while an Activity should become collectible after it is destroyed. A field, callback, or captured lambda can keep that Activity alive. If the singleton only needs storage or application resources, I inject `applicationContext`. If the operation needs a window, theme, or lifecycle, I do it from a live Activity or pass a short-lived interface at call time. I verify by rotating the screen and inspecting a heap retaining path.”
+A Singleton has a process-level lifecycle because it is anchored to a static reference in memory. An Activity, on the other hand, is transient and frequently destroyed and recreated, such as during configuration changes or screen navigation.
+
+When a Singleton holds a strong reference to an Activity Context, that Activity cannot be collected by the Garbage Collector after `onDestroy()` is called. Because an Activity holds references to its entire `Window`, `DecorView`, View hierarchy, resource managers, and loaded Bitmaps, this single reference retains megabytes of dead memory on the heap. If the user rotates the device ten times, ten dead Activity instances remain pinned in memory, quickly leading to an `OutOfMemoryError`.
+
+The standard production fix is ensuring Singletons only ever take `context.applicationContext`. The Application context shares the process lifecycle, making it leak-free for long-lived components. Alternatively, we use dependency injection frameworks like Hilt with `@Singleton` scoped classes that inject `@ApplicationContext` directly.
 
 ## Interview answer — deep senior
 
-“I reason about object ownership first. An application singleton is a GC root path for as long as the process lives. Putting an Activity Context in it can retain the Activity, its Views, drawables, and callbacks through configuration changes. The fix is to reduce the dependency's scope: an application Context for file/cache work, or an Activity-scoped component for UI work. I also inspect indirect captures such as a lambda registered with the singleton, because changing one field may leave the leak. I do not blindly replace every Context with application Context, since window and themed operations need a live Activity and can fail or behave incorrectly otherwise. A repeatable rotation test plus heap analysis demonstrates that old Activity instances become collectable after cleanup. In a file-backed thumbnail cache, the singleton can safely keep an application Context, but the picker launcher stays in the Activity. I inspect callback fields as well as the Context field, then rotate twice and check the old Activity's retaining path. This catches a lambda leak that a simple field replacement would miss.”
+It is also critical to understand when `applicationContext` is *not* a drop-in replacement. The Application context does not have a themed UI scope or a Window token. If you attempt to inflate themed views or display a Dialog (`AlertDialog.Builder(applicationContext)`), the app will crash with an `IllegalStateException` or render without the appropriate theme attributes.
+
+When analyzing a memory dump in LeakCanary or Memory Profiler, this pattern manifests as a clear shortest path to GC Root: `com.example.Singleton.context` -> `MainActivity`. The retained size will equal the entire Activity graph.
+
+If a component truly needs short-term access to an Activity (for example, a global UI navigator or lifecycle observer), it should either accept the Activity as a method parameter rather than storing it as a property, or wrap it in a `WeakReference<Activity>` and verify nullability before invoking UI operations.
 
 ## How to answer in the interview
 
@@ -91,9 +139,11 @@ Discuss scope mismatch, indirect lambda captures, application versus Activity Co
 
 ## Follow-up questions
 
-- Is `applicationContext` suitable for showing a dialog? **Answer:** generally no; dialog UI needs an appropriate live window and Activity theme.
-- Can a singleton leak an Activity without storing a Context field? **Answer:** yes; a listener or lambda capturing the Activity can form the same retaining path.
-- How do you prove the fix? **Answer:** repeat navigation/rotation and inspect retained Activity paths in a heap dump or leak detector.
+- **Interviewer:** "Can using `WeakReference<Activity>` in a Singleton completely eliminate the leak risk?"
+  **Answer:** "Yes, `WeakReference` allows the GC to reclaim the Activity during collection. However, it requires null-checking on every access and may become null unexpectedly during orientation change. The cleaner pattern is passing the Activity ephemerally as a method argument or using an Activity-scoped dependency."
+
+- **Interviewer:** "Can inflating a View with `applicationContext` cause issues even if it doesn't crash?"
+  **Answer:** "Yes. `applicationContext` lacks Activity theme overlays and configuration metrics (like multi-window bounds or system bar insets), which causes UI components to render with wrong typography, missing colors, or incorrect dimensions."
 
 ## Self-check rubric
 
@@ -104,4 +154,4 @@ Trace the singleton-to-Activity path, choose a correct scope, identify indirect 
 - [Memory leak patterns](https://developer.android.com/topic/performance/memory) — resource and reference ownership.
 - [Context API](https://developer.android.com/reference/android/content/Context) — application and Activity context behavior.
 
-Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The cache sketch is illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

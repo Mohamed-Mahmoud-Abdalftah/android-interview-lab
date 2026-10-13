@@ -23,11 +23,54 @@ How do you calculate complexity for nested loops with dependent bounds?
 
 ## Explanation in Arabic
 
-Nested loops مش دائمًا O(n²): لو الداخلي من 0 لحد i، عدد التكرارات `1+2+…+n = n(n+1)/2` وبالتالي O(n²). لو j بيتضاعف كل مرة داخل outer n، الداخلي O(log n) فالمجموع O(n log n). ولو outer والداخل بيمشوا pointer واحد للأمام، ممكن O(n) إجمالي. نعد العمليات الفعلية أو نكتب summation.
+كيف تحسب التعقيد الزمني بدقة للحلقات التكرارية المتداخلة ذات الحدود المعتمدة على بعضها (Dependent Bounds)؟
+
+1. خطأ الضرب السطحي الشائع (The Naive Multiplication Error):
+   - كثير من المطورين ينظرون لحلقتين متداخلتين ويفترضون تلقائياً أن التعقيد هو $O(n \times m)$ دائماً بمجرد ضرب الحدود!
+   - إذا كانت الحلقة الداخلية تعتمد على متغير الحلقة الخارجية ($j$ يعتمد على $i$)، يجب **حساب مجموع المتسلسلة الرياضية (Summation)** بدقة بدلاً من الضرب السطحي.
+
+2. الحالة الكلاسيكية: المتسلسلة الحسابية (Arithmetic Series):
+   - حلقة خارجية `for (i in 0 until n)`، وحلقة داخلية `for (j in i until n)`:
+     * عندما $i = 0$: تنفذ الحلقة الداخلية $n$ مرة.
+     * عندما $i = 1$: تنفذ الحلقة الداخلية $n - 1$ مرة.
+     * عندما $i = n - 1$: تنفذ الحلقة الداخلية $1$ مرة.
+   - إجمالي الخطوات:
+     $$S = n + (n - 1) + (n - 2) + \dots + 1 = \sum_{k=1}^n k = \frac{n(n + 1)}{2} = \frac{n^2}{2} + \frac{n}{2}$$
+   - بإهمال الثوابت والحدود الدنيا، يصبح التعقيد **$O(n^2)$**.
+
+3. المفاجأة الرياضية: المتسلسلة الهندسية (Geometric Series):
+   - تخيل حلقة يتضاعف فيها $i$ (`i *= 2`) بينما تنفذ الحلقة الداخلية $i$ مرة:
+     * إجمالي الخطوات: $1 + 2 + 4 + 8 + \dots + n = 2n - 1$.
+   - التعقيد هنا هو **$O(n)$ خطي وليس $O(n^2)$ ولا $O(n \log n)$** على الإطلاق! لذلك الحساب الرياضي الدقيق إلزامي.
 
 ## Practical walkthrough
 
-Nested loops مش دائمًا `O(n²)`: لو inner يبدأ من i، مجموع 1+2+...+n ما زال quadratic؛ لو pointer يتحرك للأمام مرة واحدة عبر كل outer iterations قد يكون linear. اكتب عدد تكرارات inner كـsum بدل ضرب آلي. مثال `for each row { items.find(...) }` في Compose list يصنع scan لكل row؛ اعمل index مرة خارج render.
+تحليل عملي للفرق بين المتسلسلة الحسابية والمتسلسلة الهندسية في كود كوتلن:
+```kotlin
+// 1. المتسلسلة الحسابية O(n^2):
+fun printPairs(n: Int) {
+    var totalSteps = 0
+    for (i in 0 until n) {
+        for (j in i until n) { // j يعتمد على i
+            totalSteps++
+        }
+    }
+    // totalSteps = n * (n + 1) / 2 -> O(n^2)
+}
+
+// 2. المتسلسلة الهندسية O(n) (حلقة متداخلة تبدو مخادعة ولكنها خطية!):
+fun geometricDependentLoop(n: Int) {
+    var totalSteps = 0
+    var i = 1
+    while (i <= n) {
+        for (j in 0 until i) { // j يعتمد على i المتضاعف
+            totalSteps++
+        }
+        i *= 2 // تضاعف أسي
+    }
+    // الخطوات: 1 + 2 + 4 + 8 + ... + 2^k = 2 * n - 1 -> O(n)!
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +94,32 @@ Use realistic n in benchmarks and move heavy list transforms off the main thread
 
 ## Interview answer — short
 
-“For dependent loops I sum inner work across outer iterations. A triangular loop is O(n²), doubling inner index gives O(n log n), and monotonic two-pointer work can be O(n).”
+Calculate complexity for dependent nested loops by writing out the exact mathematical summation of inner loop executions across each outer iteration rather than naively multiplying bounds. An arithmetic inner loop running n - i steps yields n(n+1)/2 = O(n²), whereas an exponentially stepping outer loop running i steps sums to 2n - 1 = O(n).
 
 ## Interview answer — structured
 
-“I do not multiply loop counts blindly. If the inner loop runs i times for outer i, the total is a triangular sum, O(n²). If it halves or doubles a range each time, I get a logarithmic factor. If two pointers only advance through the input once overall, the total can be linear. I also inspect library calls hidden in a loop, such as List.contains. Sum inner work over outer iterations.”
+Evaluating dependent nested loop complexity requires formulating and solving mathematical summations:
+
+1. **Formulating the Summation**:
+   - Instead of multiplying outer loop limit by inner loop limit, represent total operations as $\sum_{i} T(i)$, where $T(i)$ is the number of operations executed by the inner loop for a specific value of $i$.
+
+2. **The Arithmetic Dependent Loop ($O(n^2)$)**:
+   - In algorithms like Selection Sort or pair combinations (`for i in 0 until n`, `for j in i until n`), the inner loop runs $n, n-1, n-2, \dots, 1$ times.
+   - The summation $\sum_{i=1}^n i = \frac{n(n + 1)}{2} = \frac{1}{2}n^2 + \frac{1}{2}n$. Applying asymptotic rules (dropping constant $\frac{1}{2}$ and lower-order $\frac{1}{2}n$) confirms $O(n^2)$.
+
+3. **The Geometric Dependent Loop ($O(n)$)**:
+   - When the outer loop scales geometrically ($i = 1, 2, 4, 8, \dots, n$) and the inner loop executes $i$ steps, total work is $\sum_{k=0}^{\log_2 n} 2^k = 2^{\log_2 n + 1} - 1 = 2n - 1 = O(n)$.
+   - Despite having nested loops, total work scales strictly linearly.
 
 ## Interview answer — deep senior
 
-“I count iterations, not just loop keywords. If the outer index goes from zero to n and the inner loop runs from that index to n, the total is a triangular sum, roughly n²/2, so it is still quadratic. If the inner pointer only advances forward across the whole algorithm and never resets, the combined work may be linear by amortized analysis. I write the sum or an invariant for each pointer and include the cost of work inside the body; a map lookup or sort there changes the result. This matters in Android list binding: `items.forEach { product -> allPrices.find { it.id == product.id } }` can scan n prices for each of n products, producing quadratic work during rendering. I would build a price-by-ID map once, accepting O(n) memory for expected O(n) total transformation. Then I measure frame time, because a theoretically linear replacement could still allocate too much. The interviewer should hear the derivation and the practical decision.”
+From an algorithmic analysis and optimization angle, dependent loop bounds frequently emerge in string algorithms and parsers:
+
+1. **Amortized Analysis in Two Pointers**: In sliding window algorithms (e.g. longest substring without repeating characters), a `while` loop is nested inside a `for` loop. A naive glance suggests $O(n^2)$. However, because the inner window pointer `left` only advances forward and never resets backward, the inner pointer moves at most $n$ times across the entire algorithm lifecycle. The amortized complexity is $O(n + n) = O(n)$.
+
+2. **Quadratic String Concatenation**: In legacy Java/Android code, running a loop where a string is concatenated inside an outer loop creates a hidden dependent quadratic loop. Because strings are immutable, each `str += char` creates a new character array copying $1 + 2 + 3 + \dots + n$ characters, exploding into $O(n^2)$ time and massive heap churn. `StringBuilder` eliminates this by buffering in amortized $O(1)$.
+
+3. **Big O Master Theorem & Recurrence Trees**: For recursive dependent problems (e.g. divide and conquer), summation trees determine whether work is dominated by leaf nodes, root nodes, or balanced across tree levels.
 
 ## How to answer in the interview
 
@@ -75,8 +135,11 @@ Prompt for summation, geometric progression, amortized pointer argument and hidd
 
 ## Follow-up questions
 
-- [DSA-12](../dsa-12/): What common hidden O(n)? **Answer:** List.find/contains inside per-row mapping.
-- [DSA-03](../dsa-03/): Why discard 1/2 coefficient? **Answer:** asymptotic dominant growth.
+- **Interviewer:** "Why does a sliding window algorithm with nested while loops have $O(n)$ complexity rather than $O(n^2)$?"
+  **Answer:** "Because the inner window pointer advances monotonically forward at most $n$ times across the entire execution, resulting in an amortized $O(n)$ runtime."
+
+- **Interviewer:** "What is the closed form sum of $1 + 2 + 3 + \dots + n$?"
+  **Answer:** "$\frac{n(n + 1)}{2}$, which asymptotically scales to $O(n^2)$."
 
 ## Self-check rubric
 
@@ -87,4 +150,4 @@ Derive the sum for a dependent inner loop rather than multiplying loop bounds bl
 - [Kotlin collection operations](https://kotlinlang.org/docs/collection-operations.html) — API behavior context.
 - [Android performance](https://developer.android.com/topic/performance) — scaling measurements.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

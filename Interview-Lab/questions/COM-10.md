@@ -24,11 +24,59 @@ What are LaunchedEffect, DisposableEffect, SideEffect, and rememberCoroutineScop
 
 ## Explanation in Arabic
 
-`LaunchedEffect(keys)` يطلق coroutine مرتبطة بوجود composable؛ تغيير key يلغي القديمة ويبدأ جديدة. `DisposableEffect(keys)` يسجل resource/listener ويستدعي `onDispose` عند تغيير key أو خروج composable. `SideEffect` ينفذ بعد successful recomposition لنشر state إلى object خارج Compose، وليس لتشغيل طلب طويل. `rememberCoroutineScope()` يعطي scope مرتبطة بالـcomposition لتطلق coroutine من callback مثل الضغط على زر. اختَر حسب lifetime؛ لا تضع registration في body ولا تستخدم `LaunchedEffect(Unit)` لكل user action.
+ما هي تأثيرات الجوانب (Side Effects) في Compose؟ والمقارنة بين `LaunchedEffect` و `DisposableEffect` و `SideEffect` و `rememberCoroutineScope`:
+
+1. ما هو الـ Side Effect في Compose؟
+   - هو أي عملية تغير حالة خارج نطاق دالة الـ Composable، أو تتفاعل مع العالم الخارجي (مثل استدعاء كود غير Composable، أو تسجيل أحداث، أو بدء Coroutine، أو الاشتراك في BroadcastReceiver).
+   - يجب ألا تعمل هذه العمليات أبداً داخل جسم الـ Composable مباشرة لأن Recomposition قد يحدث 60 مرة في الثانية أو يُلغى فجأة.
+
+2. متى تستخدم كل أداة؟
+   - **`LaunchedEffect(key)`**: لتشغيل كود غير متزامن (`suspend` function) مرتبط بدورة حياة الـ Composable. يبدأ عند دخول الـ Composition، ويُلغى تلقائياً عند مغادرتها أو عند تغير الـ `key`.
+   - **`DisposableEffect(key)`**: للعمليات التي تتطلب تنظيفاً متماثلاً (Cleanup / Unregister) مثل تسجيل Listeners أو مراقبة Sensor أو مشغل فيديو. يفرض توفير دالة `onDispose { ... }` تُستدعى عند مغادرة الشاشة.
+   - **`SideEffect { ... }`**: لنشر حالة من Compose إلى كود خارجي غير مرتبط بـ Compose بعد **كل نجاح Recomposition كامل** (مثل إبلاغ مكتبة تحليلات خارجية أو تحديث شريط حالة النظام).
+   - **`rememberCoroutineScope()`**: للحصول على `CoroutineScope` مرتبط بـ Composition لإطلاق مهام معلقة استجابةً **لأحداث المستخدم (User Events)** مثل النقر على زر (`onClick { scope.launch { ... } }`).
 
 ## Practical walkthrough
 
-اختار الـeffect من عمر الشغل: `LaunchedEffect(id)` لشغل coroutine مربوط بالـUI وبهوية id؛ `DisposableEffect` لأي listener له unregister؛ `SideEffect` لنشر قيمة بعد composition ناجحة؛ و`rememberCoroutineScope` لحدث زر زي snackbar. لو التسجيل في body هيتكرر، ولو request مهمة بعد مغادرة الشاشة فالـViewModel أرجح. لو key اتغيرت غلط، listener هيتسجل تاني أو coroutine هتتلغي في نص الشغل. في production اكتب اختبار لدخول الشاشة وتغيير key والخروج منها؛ لازم كل register يقابله unregister.
+أمثلة توضح متى وأين تستخدم كل أداة من أدوات الـ Side Effects الأربعة:
+```kotlin
+@Composable
+fun MediaScreen(
+    mediaId: String,
+    onCompleted: () -> Unit
+) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+
+    // 1. LaunchedEffect: جلب بيانات أو مهمة suspend مرتبطة بالـ mediaId:
+    LaunchedEffect(mediaId) {
+        analytics.trackMediaOpened(mediaId)
+    }
+
+    // 2. DisposableEffect: اشتراك في خدمة خارجية يحتاج تنظيفاً إلزامياً:
+    DisposableEffect(Unit) {
+        val listener = ScreenWakeLock.acquire()
+        onDispose {
+            listener.release() // تنظيف فوري عند مغادرة الـ Composable
+        }
+    }
+
+    // 3. SideEffect: مزامنة حالة داخلية مع كائن خارجي بعد كل Recomposition ناجح:
+    SideEffect {
+        externalTracker.lastRenderTimestamp = System.currentTimeMillis()
+    }
+
+    // 4. rememberCoroutineScope: إطلاق كوروتين في استجابة لحدث نقر المستخدم:
+    Button(onClick = {
+        coroutineScope.launch {
+            snackbarHostState.showSnackbar("Media saved!")
+            onCompleted()
+        }
+    }) {
+        Text("Save")
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -70,15 +118,27 @@ Review every effect for its start trigger, keys, cancellation/cleanup, and owner
 
 ## Interview answer — short
 
-“`LaunchedEffect` runs keyed composition-owned coroutines; `DisposableEffect` pairs registration with cleanup; `SideEffect` publishes after composition; `rememberCoroutineScope` launches from callbacks. Choose the effect from the work’s trigger and cleanup needs.”
+`LaunchedEffect` runs suspending tasks scoped to composition lifecycles and cancels them on departure or key change. `DisposableEffect` is for non-suspending setup that requires cleanup via `onDispose`. `SideEffect` runs non-suspending code after every successful recomposition. `rememberCoroutineScope` provides a scope to launch coroutines from user callbacks like `onClick`.
 
 ## Interview answer — structured
 
-“I select by trigger and cleanup. If work should run while a keyed composable exists, I use `LaunchedEffect(key)` and accept cancel/restart when the key changes. A listener belongs in `DisposableEffect` so it is removed on key change or exit. `SideEffect` is for publishing current Compose data to non-Compose code after a successful composition. For a button-driven Snackbar I use `rememberCoroutineScope` from the event callback. Business requests often belong in ViewModel instead. A click-driven Snackbar uses a remembered scope; an SDK listener needs DisposableEffect and real removal.”
+Side-effect handlers bridge Compose's declarative, restartable runtime with imperative external systems.
+
+1. **`LaunchedEffect(key1, ...)`**: Launches a coroutine in the composition scope upon entering the composition. If any key changes, the running coroutine is cancelled cooperatively and restarted. When leaving the composition, it is cancelled automatically. Used for async operations like fetching data or triggering animations.
+
+2. **`DisposableEffect(key1, ...)`**: Designed for non-suspending side-effects that require **mandatory cleanup**. It executes when entering composition and mandates an `onDispose { ... }` block that runs when leaving composition or before re-running due to key changes. Used for registering broadcast receivers, sensor listeners, or lifecycle observers.
+
+3. **`SideEffect`**: Executes its lambda after **every successful recomposition**. It is non-suspending and cannot be cancelled. Used to publish Compose state mutations to non-Compose external objects (such as updating an external tracking SDK or system properties).
+
+4. **`rememberCoroutineScope()`**: Creates a `CoroutineScope` bound to the calling composable's lifecycle. It is used to launch coroutines outside the composition phase—specifically inside **user callbacks and event listeners** like `Button(onClick = { scope.launch { ... } })`.
 
 ## Interview answer — deep senior
 
-“Effects exist because a composable body can execute again and must not casually perform external work. I ask when the work starts, what owns it, and what ends it. `LaunchedEffect` gives a coroutine whose lifetime follows the call site and its keys; a new key cancels the old job and starts a new one. `DisposableEffect` is for a paired registration and unregistration, such as a lifecycle observer, and its `onDispose` must actually release the resource. `SideEffect` runs after a successful composition to push current Compose state into an external object, so it is unsuitable for an expensive request. `rememberCoroutineScope` is useful when a click should launch a Snackbar or animation rather than when composition itself should trigger the operation. I choose keys based on the identity of the resource, and use `rememberUpdatedState` if a callback should update without restarting registration. For screen data I often prefer a ViewModel with an explicit request owner, which can survive a composable leaving temporarily. I test exit, key change and rapid callbacks because those expose stale capture and duplicate-listener bugs. For every effect I can name the exact event that starts it and the exact event that cancels or disposes it.”
+A critical pitfall in Compose architecture is calling `rememberCoroutineScope().launch { ... }` directly within the body of a Composable function. Because composables can recompose many times per second, doing this launches dozens of duplicate unmanaged coroutines, thrashing the CPU and creating race conditions. Coroutines executed directly within the composition body must strictly use `LaunchedEffect`.
+
+Under the hood, `LaunchedEffect` is implemented as a `DisposableEffect` that creates a `StandaloneCoroutine` under the hood. When the effect is disposed, its `Job.cancel()` is called immediately.
+
+`rememberCoroutineScope()` retrieves the `compositionContinuation`'s CoroutineContext, attaching a `SupervisorJob`. When the composable leaves the Slot Table, the `SupervisorJob` cancels, ensuring no child coroutine leaks into the application background.
 
 ## How to answer in the interview
 
@@ -94,9 +154,11 @@ Compare keyed cancellation, disposal, post-composition publication, event scopes
 
 ## Follow-up questions
 
-- Which effect unregisters a listener? **Answer:** `DisposableEffect` with a meaningful `onDispose`.
-- Should `SideEffect` call a payment API? **Answer:** no; it can run after many recompositions and has no request ownership contract.
-- What happens when a `LaunchedEffect` key changes? **Answer:** its current coroutine is canceled and a new effect starts.
+- **Interviewer:** "Can you use `LaunchedEffect` inside an `onClick` lambda?"
+  **Answer:** "No. `LaunchedEffect` is a `@Composable` function and can only be invoked within a Composable scope. For callbacks like `onClick`, you use a scope obtained via `rememberCoroutineScope()`."
+
+- **Interviewer:** "What happens if an exception is thrown inside a `SideEffect` block?"
+  **Answer:** "Because `SideEffect` executes synchronously during the commit phase of the composition pass, an unhandled exception will crash the composition process and propagate as an unhandled runtime exception."
 
 ## Self-check rubric
 
@@ -107,4 +169,4 @@ Map four use cases to APIs and name keys, cleanup, and duplicate-work risks.
 - [Side-effects in Compose](https://developer.android.com/develop/ui/compose/side-effects) — effect contracts and keys.
 - [Compose mental model](https://developer.android.com/develop/ui/compose/mental-model) — repeatable rendering.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Example ownership must match the product lifecycle.
+Technically reviewed against primary documentation on 2026-10-13.

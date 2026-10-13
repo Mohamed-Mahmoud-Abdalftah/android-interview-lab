@@ -23,11 +23,54 @@ How do you test DI substitutions and scoped dependencies?
 
 ## Explanation in Arabic
 
-اختبار DI لازم يثبت حاجتين مختلفتين: test graph تقدر تستبدل dependency وتتوقع UI behavior، وproduction graph فيها كل bindings/qualifiers/scopes المطلوبة. في Hilt test استبدل `AuthRepository` بfake قبل Activity launch، وخلّي fake ترد بحالة معلومة؛ بعدين assertion على الشاشة أو ViewModel. لو عملت replacement لكل شيء، الاختبار لن يكشف binding ناقصة في build الحقيقي، لذلك ضيف smoke compile/launch للـproduction graph.
+كيف تختبر استبدال التبعيات في الـ Dependency Injection (DI Substitutions) والتبعيات المربوطة بنطاقات (Scoped Dependencies)؟
+
+1. استبدال التبعيات في اختبارات الوحدة (Local Unit Tests):
+   - في الـ Unit Tests على JVM: **لا تستخدم Hilt أو Dagger إطلاقاً**!
+   - اعتمد على حقن التبعيات عبر الـ Constructor يدوياً (Manual Constructor Injection). هذا يوفر سرعة فائقة في التنفيذ وتجنب أي تعقيد في معالجة الـ Code Generation.
+
+2. استبدال التبعيات في اختبارات التكامل والأجهزة عبر Hilt (`@HiltAndroidTest`):
+   - في اختبارات الـ UI والـ Integration Tests التي تتطلب تشغيل Hilt، نستخدم:
+     * `@UninstallModules(ProductionNetworkModule::class)` لإلغاء الموديول الحقيقي الخاص بالإنتاج.
+     * `@BindValue` لحقن كائن Fake أو Mock مباشرة داخل الـ Hilt Dependency Graph للاختبار الحالي.
+
+3. اختبار التبعيات المربوطة بنطاقات (Scoped Dependencies):
+   - **`@Singleton`**: يجب التأكد من عدم تسريب حالتها بين الاختبارات المستقلة (Test Leakage).
+   - **`@ViewModelScoped` / `@ActivityScoped`**: التحقق من إعادة إنشاء التبعية عند تدمير وإعادة إنشاء الـ Scope المقترن بها.
 
 ## Practical walkthrough
 
-جرّب scope: object اللي المفروض Activity-scoped لا يعيش بعد Activity، وSingleton لا يمسك Activity Context. assisted/runtime parameters لها owner واضح. reset fake state بين tests حتى لا تظهر flakes. الـDI framework أداة لتوصيل graph؛ الاختبار يثبت contract السلوك وعمر dependency.
+استبدال موديول الإنتاج بـ Fake في اختبارات Hilt عبر @UninstallModules و @BindValue:
+```kotlin
+@HiltAndroidTest
+@UninstallModules(AnalyticsModule::class) // 1. إلغاء موديول الإنتاج الحقيقي
+@RunWith(AndroidJUnit4::class)
+class CheckoutFlowIntegrationTest {
+
+    @get:Rule(order = 0)
+    val hiltRule = HiltAndroidRule(this)
+
+    @get:Rule(order = 1)
+    val composeTestRule = createAndroidComposeRule<MainActivity>()
+
+    // 2. حقن كائن Fake بديل مباشرة داخل شجرة الـ DI الخاصة بـ Hilt:
+    @BindValue
+    val fakeAnalyticsTracker: AnalyticsTracker = FakeAnalyticsTracker()
+
+    @Before
+    fun init() {
+        hiltRule.inject()
+    }
+
+    @Test
+    fun checkoutScreen_triggersPurchaseEventOnFakeAnalytics() {
+        composeTestRule.onNodeWithText("Complete Order").performClick()
+        
+        // التحقق من أن الـ Fake Analytics استقبل الحدث بنجاح:
+        assertEquals(1, (fakeAnalyticsTracker as FakeAnalyticsTracker).capturedEvents.size)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +94,33 @@ CI verifies unit behavior, instrumentation graph injection and each shipped flav
 
 ## Interview answer — short
 
-“I replace dependencies at the intended DI scope, configure them before launching the consumer, and test production graph wiring separately. Shared fake state and wrong qualifiers are common failures.”
+In local unit tests, substitute dependencies via direct constructor injection without DI frameworks. In Hilt instrumentation tests, use @HiltAndroidTest with @UninstallModules to remove production bindings, replacing them surgically with @BindValue or custom test modules to inject fakes into the active dependency graph.
 
 ## Interview answer — structured
 
-“For a use case, constructor injection makes a fast JVM test enough. For an Android screen, I use Hilt test bindings to replace the repository, then launch the Activity after configuring the fake. I verify scopes and qualifiers so the screen and worker receive the intended instance. I also keep a production graph smoke test because test-only bindings can conceal missing real bindings.”
+Managing dependency injection substitutions in test suites requires separating fast JVM unit tests from full container integration tests:
+
+1. **Local JVM Testing (Pure Constructor Injection)**:
+   - Bypassing Dagger/Hilt entirely in `src/test/` is an industry best practice. When classes follow constructor injection, tests simply pass instantiated Fakes (`MyViewModel(FakeUserRepository())`). This avoids annotation processing overhead and runs in milliseconds.
+
+2. **Hilt Integration Testing (`@HiltAndroidTest`)**:
+   - When testing full Activity or Fragment flows requiring real dependency graphs:
+     - Decorate test classes with `@HiltAndroidTest` and attach `HiltAndroidRule(this)`.
+     - Use `@UninstallModules(ProductionDataModule::class)` to decouple real network/storage bindings.
+     - Use `@BindValue` on a field to automatically bind a Fake instance into the dependency container for that specific test run.
+
+3. **Verifying Scoped Lifecycles**:
+   - Verify that `@ActivityScoped` bindings produce distinct instances when transitioning between activities, while `@Singleton` bindings persist within the test process.
 
 ## Interview answer — deep senior
 
-“I test substitution and graph integrity separately. In a Hilt instrumented test I replace an `AuthRepository` binding with a controllable fake before launching the Activity, then assert Loading, success, denial or retry through the screen. This proves the feature can consume the substituted contract. It does not prove production has the correct qualifier, constructor binding or scope, because the test graph may replace the missing piece. I add a production-graph smoke build or launch in the release-like variant. Scope tests should check lifetime rather than only object identity: an Activity-scoped collaborator must not retain an old Activity after recreation, and a Singleton should not capture Activity Context. I also test runtime parameters where assisted creation is used and clear fake state between tests. I avoid replacing internal details that would make a test pass while the real boundary is broken. DI tests are most useful when they reveal a wrong graph or a user-visible state, not when they merely assert that injection syntax compiled.”
+From an architectural systems perspective, managing test DI containers requires preventing cross-test state pollution:
+
+1. **Singleton State Leaks Across Tests**: If a Fake bound as a `@Singleton` maintains in-memory state (e.g. `FakeDatabase` holding user records), that state persists across consecutive `@Test` methods unless explicitly wiped in `@After` teardown hooks. Build explicit `clear()` methods on all stateful test fakes.
+
+2. **Custom Test Application in Instrumentation**: Hilt generates `HiltTestApplication` for instrumented tests. Ensure your `app/build.gradle.kts` sets `testInstrumentationRunner = "com.example.HiltTestRunner"`, which subclasses `AndroidJUnitRunner` and boots `HiltTestApplication` as the root application context.
+
+3. **Dynamic Test Components**: For feature-modular codebases, avoid a single monolithic test module. Create isolated test modules per feature (`:feature:checkout:testing`) exporting modular fakes, allowing feature tests to compose test graphs independently.
 
 ## How to answer in the interview
 
@@ -75,8 +136,11 @@ Prompt for binding override, scope, setup-before-launch, flavor parity and fake 
 
 ## Follow-up questions
 
-- [TST-08](../tst-08/): Which tests need Hilt? **Answer:** graph/UI wiring; pure use cases can construct directly.
-- [TST-15](../tst-15/): How avoid order-dependent tests? **Answer:** isolate and reset shared fake state.
+- **Interviewer:** "What does @BindValue do in Hilt testing?"
+  **Answer:** "It binds a test class property into the Hilt dependency graph, replacing any existing binding of that type for the duration of the test."
+
+- **Interviewer:** "Why must HiltAndroidRule have an order index of 0?"
+  **Answer:** "Because Hilt must initialize the dependency injection container before other rules (like ActivityScenarioRule or ComposeRule) launch the UI components."
 
 ## Self-check rubric
 
@@ -87,4 +151,4 @@ Replace an AuthRepository in a test graph before Activity launch, assert the scr
 - [Hilt testing](https://developer.android.com/training/dependency-injection/hilt-testing) — test bindings and components.
 - [Android test doubles](https://developer.android.com/training/testing/fundamentals/test-doubles) — dependency replacement.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

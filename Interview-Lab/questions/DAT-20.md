@@ -22,7 +22,68 @@ Recover a server-accepted payment whose response was lost, without duplicate cha
 
 ## Explanation in Arabic
 
-الـserver قبل payment لكن response ضاعت؛ عند العميل ده outcome مجهولة، مش فشل. قبل الإرسال كنا لازم نخزن operation ID وidempotency key ثابتين. بعد timeout أو restart نسأل backend عن الحالة بنفس ID، أو نستقبل reconciliation/webhook عبر backend؛ ما نضغطش charge جديد بمفتاح جديد. UI تعرض Pending لحد authoritative state، والworker repeat-safe.
+قبل السيرفر عملية دفع مالي (Payment Accepted) لكن الاستجابة ضاعت في شبكة الهاتف (Lost Network Response). كيف تتعافى بأمان تام دون خصم العميل مرتين؟
+
+1. فهم طبيعة الفشل (The Distributed Systems Dilemma):
+   - أرسل العميل طلب `POST /orders/123/pay`.
+   - قام السيرفر بالخصم من بطاقة الائتمان وأصدر إيصالاً بنجاح.
+   - في نفس اللحظة، دخل الهاتف في نفق وانقطعت الشبكة، فاستقبل التطبيق `SocketTimeoutException`.
+   - **من منظور الهاتف**: النتيجة مجهولة (Unknown Outcome)، وليست فشلاً! السيرفر قد يكون خصم المبلغ بنجاح.
+   - **الخطأ الكارثي**: أن يعرض التطبيق رسالة 'فشلت العملية' ويطلب من المستخدم الضغط على زر 'ادفع الآن' مرة أخرى بمفتاح جديد، مما يؤدي إلى خصم المبلغ مرتين!
+
+2. بروتوكول التعافي الآمن (Safe Recovery Protocol):
+   - **المرحلة 1: توليد وحفظ Idempotency Key مسبقاً في Room**:
+     * قبل إرسال أول طلب للسيرفر، يتم حفظ المعاملة محلياً في Room بحالة `PAYMENT_PENDING` مع معرف فريد ثابت (UUID) ومفتاح تكرار محدد: `idempotencyKey = "pay_ord_123"`.
+   - **المرحلة 2: إظهار حالة غير مؤكدة للـ UI (Pending Reconciliation)**:
+     * عند وقوع مهلة الاتصال، لا تعرض 'فشل' ولا تعرض 'نجاح'؛ اعرض: 'جارِ التحقق من حالة الدفع مع البنك'.
+   - **المرحلة 3: استعلام استقصائي (Reconciliation Query)**:
+     * يتم إرسال طلب استعلام آمن `GET /orders/123/payment-status` مستخدماً نفس المفتاح.
+     * إذا وجد السيرفر المعاملة قد تمت، يعيد الإيصال ويتم تحديث الـ UI إلى `SUCCESS`.
+     * إذا لم يجد السيرفر أي أثر، يتم إلغاء المعاملة بأمان.
+
+## Practical walkthrough
+
+تنفيذ بروتوكول استرداد الدفع المفقود باستخدام Idempotency Key والاستعلام الاستقصائي:
+```kotlin
+class PaymentRecoveryRepositoryImpl @Inject constructor(
+    private val paymentApi: PaymentApiService,
+    private val paymentDao: PaymentDao
+) : PaymentRepository {
+
+    override suspend fun executePayment(orderId: String, amountCents: Long): PaymentResult {
+        // 1. توليد وتثبيت مفتاح التكرار محلياً قبل أي اتصال شبكي:
+        val idempotencyKey = "idemp_${orderId}_$amountCents"
+        paymentDao.recordIntent(orderId, idempotencyKey, PaymentStatus.PENDING)
+
+        return try {
+            // 2. إرسال الطلب:
+            val receipt = paymentApi.chargeOrder(idempotencyKey, ChargeRequest(orderId, amountCents))
+            paymentDao.updateStatus(orderId, PaymentStatus.CONFIRMED, receipt.receiptUrl)
+            PaymentResult.Success(receipt)
+        } catch (e: IOException) {
+            // 3. انقطعت الشبكة بعد الإرسال! النتيجة غير مؤكدة:
+            reconcileLostPayment(orderId, idempotencyKey)
+        }
+    }
+
+    private suspend fun reconcileLostPayment(orderId: String, idempotencyKey: String): PaymentResult {
+        // استعلام استقصائي باستخدام نفس المفتاح:
+        return try {
+            val statusResponse = paymentApi.getPaymentStatus(orderId, idempotencyKey)
+            if (statusResponse.isPaid) {
+                paymentDao.updateStatus(orderId, PaymentStatus.CONFIRMED, statusResponse.receiptUrl)
+                PaymentResult.Success(statusResponse.toReceipt())
+            } else {
+                paymentDao.updateStatus(orderId, PaymentStatus.FAILED, null)
+                PaymentResult.Failed("Payment was not processed by server. Please try again.")
+            }
+        } catch (e: Exception) {
+            // لا زالت الشبكة مقطوعة: نعرض حالة انتظار التحقق للـ UI:
+            PaymentResult.PendingVerification(orderId)
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -42,10 +103,6 @@ interface Gateway {
 suspend fun recover(id: String, gateway: Gateway): ChargeStatus = gateway.status(id)
 ```
 
-## Practical walkthrough
-
-السيناريو الأخطر: server قبِل charge لكن HTTP response ضاعت؛ client شايفة timeout فقط. قبل الإرسال، احفظ attempt ID وidempotency key وparameters غير حساسة في local durable store. بعد timeout خلّي state `UNKNOWN/PENDING_VERIFICATION`؛ في restart worker أو screen تسأل read-only status endpoint. Retry بنفس key/payload فقط لو contract server/provider يضمن deduplication ومدة retention كافية، وإلا escalation/manual reconciliation. لا تعرض “failed” وتسمح بخصم جديد، ولا تحفظ card/PIN data محليًا. سجّل correlation ID وراقب pending الطويل، واعمل tests server commit + lost response + process kill.
-
 ## Trade-offs and decision criteria
 
 Immediate retry improves responsiveness only when server idempotency is documented and status is reconciled. Waiting for status reduces duplicate risk but can leave Pending UX longer. A support/audit path is essential for unresolved financial operations.
@@ -60,17 +117,27 @@ A checkout backend stores a ledger operation keyed by client operation ID and ex
 
 ## Interview answer — short
 
-“A lost response leaves the payment outcome unknown. I use the original durable operation ID and server status endpoint to reconcile, then retry only with the same key under a documented idempotency contract. The UI remains Pending meanwhile.”
+Recover safely from lost payment responses by treating network drops on mutating requests as uncertain outcomes, never outright failures. Persist an Idempotency Key in Room prior to network dispatch. Upon timeout, query a dedicated status reconciliation endpoint using that key rather than issuing a fresh charge with a new ID.
 
 ## Interview answer — structured
 
-“I would not create a new payment request. The app should have persisted a stable operation ID and idempotency key before sending. On timeout, it marks the operation Pending and queries authoritative server status. If the server reports success, the app updates local state; if it reports rejection, it shows that; if status is not yet final, a durable worker continues reconciliation. A retry is allowed only under the server’s deduplication contract with the same key. This handles process death and avoids falsely telling the user they were not charged.”
+In distributed mobile networking, a lost response after a mutating payment request represents an **Uncertain Outcome (the Two Generals' Problem)**. The server may have already committed the card charge. Retrying blindly or showing a failure screen causes double charges and furious customers.
+
+A production recovery architecture operates in three phases:
+
+1. **Pre-Flight Idempotency Persistence**: Prior to making the network call, persist the transaction intention in Room: `orderId`, `amount`, `status = PENDING`, and a deterministic `Idempotency-Key` (e.g. `UUID`).
+
+2. **State Transition to Uncertain UI**: If the call fails with `SocketTimeoutException` or `IOException`, do **NOT** show a 'Payment Failed - Tap to Retry' button. Update local state to `PaymentStatus.PENDING_VERIFICATION` and inform the user: 'Verifying payment with your bank...'.
+
+3. **Authoritative Reconciliation**: Query a dedicated reconciliation endpoint (`GET /orders/{id}/payment-status` or re-issue the `POST` with the *identical* Idempotency-Key). A compliant backend recognizes the key and returns the existing transaction status without charging again. If the server confirms payment, update local state to `SUCCESS`.
 
 ## Interview answer — deep senior
 
-The hardest failure window is server commit followed by lost response and app crash before local acknowledgement. My workflow makes that recoverable: local Pending record is committed first, the backend assigns one logical charge to a stable key, and status can be queried by operation ID. A worker resumes Pending rows after restart. Idempotency deduplicates logical retries but does not imply only one HTTP request was executed; key retention and payload equality rules must be explicit. I do not let the UI initiate a fresh key while status is uncertain. I monitor unresolved Pending age, provide support correlation IDs and test every crash point, including delayed status propagation and duplicate worker runs.
+From an engineering telemetry and edge-case standpoint:
 
-I begin with the uncertainty: a timeout tells the client it lacks a response, not whether the backend committed. Before submission I persist a stable attempt ID, key, and safe immutable parameters. The backend accepts one logical charge for that key under its documented idempotency rules and exposes a status lookup. If the response is lost, I mark the local state PendingVerification and query status after restart; I do not create a new operation. Idempotency can mean more than one HTTP request but one logical charge, and key retention limits must be understood. I avoid raw card or PIN storage, monitor unresolved attempts, and test crash points around send, commit, and acknowledgement.
+1. **Background Polling via WorkManager**: If the user closes the app while in `PENDING_VERIFICATION`, schedule a constrained `PaymentReconciliationWorker` in WorkManager. When connectivity returns, the worker polls the backend, resolves the payment receipt, and triggers a local notification: 'Your order #123 is confirmed!'.
+
+2. **Backend Webhooks as Secondary Confirmation**: In robust payment flows (Stripe, Adyen, Apple Pay), mobile apps do not rely solely on client polling. The payment provider delivers an asynchronous server-to-server webhook directly to your backend. The backend updates the order status in the cloud database, which your app observes via WebSocket or a silent push notification upon relaunch.
 
 ## How to answer in the interview
 
@@ -86,8 +153,11 @@ Trace pre-send persistence, server commit, lost response and process restart.
 
 ## Follow-up questions
 
-- [DAT-14](../dat-14/): When retry a write? **Answer:** under a server idempotency contract after reconciling uncertainty.
-- [BG-18](../bg-18/): Who owns reversal after app exit? **Answer:** durable operation plus restartable worker and server deduplication.
+- **Interviewer:** "What is the danger of generating a new Idempotency Key on retry?"
+  **Answer:** "Generating a new key treats the retry as an entirely new transaction, causing the server to process a second independent charge."
+
+- **Interviewer:** "What HTTP status code should the server return on duplicate idempotent requests?"
+  **Answer:** "HTTP 200 OK or 201 Created returning the original saved receipt, often accompanied by an `Idempotent-Replayed: true` header."
 
 ## Self-check rubric
 
@@ -98,4 +168,4 @@ Can I hold Pending, query authority, reuse key and test the commit/ack crash win
 - [Kotlin withTimeout API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout.html) — local deadline limitations.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — durable write synchronization.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

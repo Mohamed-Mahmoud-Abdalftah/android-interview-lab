@@ -22,11 +22,55 @@ Compare navigation, cohesion, ownership and Gradle module implications of two pa
 
 ## Explanation in Arabic
 
-Package-by-layer زي `ui/`, `domain/`, `data/` على مستوى app سهلة في البداية لكن feature واحدة بتتوزع على folders بعيدة. Package-by-feature زي `checkout/ui`, `checkout/data` تجمع الملفات اللي بتتغير مع بعض وتساعد ownership. في app كبيرة ممكن تعمل feature modules ومعاها shared core modules لعقود حقيقية؛ ما تعملش `core` garbage dump. تنظيم packages وحده ما يفرضش compile-time boundaries؛ Gradle module dependencies وvisibility/tests هي اللي تمنع imports غلط.
+المقارنة الهيكلية بين تنظيم الحزم حسب الطبقة (Package-by-Layer) وحسب الميزة (Package-by-Feature):
+
+1. تنظيم الحزم حسب الطبقة (Package-by-Layer):
+   - تقسيم الكود أفقياً بناءً على نوع المكون البرمجي:
+     `com.example.app/`
+       `├── presentation/` (كل الـ Activities, Composables, ViewModels)
+       `├── domain/` (كل الـ UseCases, Entities)
+       `├── data/` (كل الـ Repositories, DAOs, DTOs)
+   - **المشكلة الكبرى**: مع نمو التطبيق (أكثر من 30 شاشة)، يصبح كل مجلد متضخماً بمئات الملفات غير المرتبطة ببعضها. كما أن التعديل في ميزة واحدة (مثل الدفع Payment) يجبرك على القفز بين 4 مجلدات مختلفة في أطراف المشروع!
+
+2. تنظيم الحزم حسب الميزة (Package-by-Feature):
+   - تقسيم الكود عمودياً بناءً على مجالات العمل وميزات المستخدم:
+     `com.example.app/`
+       `├── checkout/` (ViewModel, UI, UseCases, Repositories الخاصة بالـ Checkout)
+       `├── auth/` (كل ما يخص تسجيل الدخول)
+       `├── catalog/` (كل ما يخص تصفح المنتجات)
+   - **المزايا الخارقة**: التماسك العالي (High Cohesion)، سهولة العثور على الملفات، واستخدام الـ Visibility Modifiers (`internal` في كوتلن) لحماية الكود الداخلي للميزة.
+
+3. المعمارية الهجينة الحديثة في أندرويد (Feature Modules with Layers):
+   - التطبيقات الكبرى تنظم الكود أولاً **حسب الميزة** (Modules per Feature)، وداخل كل ميزة يتم تنظيم الكود داخلياً **حسب الطبقات** (`presentation`, `domain`, `data`).
 
 ## Practical walkthrough
 
-Package-by-layer تجمع كل ViewModels بعيدًا عن feature data، فيصعب تتبع change؛ package-by-feature يضع feature code قريبًا، لكن shared contracts تحتاج مكان واضح. في مشروع كبير، ابدأ feature modules أو packages بحدود dependency ومنع cycles. لا تنقل الملفات فقط وتعتبر coupling حُل؛ راجع Gradle graph وAPI exposure واختبارات كل feature.
+مقارنة هيكل المجلدات بين النمطين في مشروع حقيقي:
+```text
+// ❌ Package-by-Layer (ضعيف التماسك وصعب الصيانة في المشاريع الكبيرة):
+com.example.app/
+├── ui/
+│   ├── LoginScreen.kt, HomeScreen.kt, CheckoutScreen.kt, ProfileScreen.kt...
+├── viewmodel/
+│   ├── LoginViewModel.kt, HomeViewModel.kt, CheckoutViewModel.kt...
+├── repository/
+│   ├── AuthRepository.kt, CartRepository.kt, ProfileRepository.kt...
+
+// ✅ Package-by-Feature (عالي التماسك وسهل التوزيع والتحويل لـ Modules):
+com.example.app/
+├── auth/
+│   ├── LoginScreen.kt
+│   ├── LoginViewModel.kt
+│   ├── AuthRepository.kt
+│   └── AuthModels.kt
+├── checkout/
+│   ├── CheckoutScreen.kt
+│   ├── CheckoutViewModel.kt
+│   └── CartRepository.kt
+└── core/
+    ├── database/
+    └── network/
+```
 
 ## Why it matters and how it works
 
@@ -50,15 +94,30 @@ A marketplace organizes checkout, search and account by feature; shared payment 
 
 ## Interview answer — short
 
-Package-by-layer groups technical roles; package-by-feature groups files that change together. For a growing app I often favor feature cohesion with explicit shared modules, but packages alone do not enforce boundaries.
+Package-by-layer groups files by technical role (all ViewModels together, all Repositories together), causing scattered feature code and low cohesion. Package-by-feature groups files by business capability (all auth code together, all cart code together), providing high cohesion, encapsulation, and an easy path to Gradle modularization.
 
 ## Interview answer — structured
 
-A layer-first tree makes it easy to find all repositories or ViewModels, but working on checkout may require jumping across the whole tree. Feature-first grouping keeps a vertical slice together and clarifies ownership. In larger apps I combine feature modules with a few truly shared core contracts. I avoid turning `core` into a dumping ground. The important distinction is that a package layout is navigation, while Gradle modules and visibility can enforce dependency rules. If checkout changes usually touch its UI, data mapping and tests together, feature grouping makes reviews and ownership easier. A shared module should contain stable contracts used by several features, not every miscellaneous helper. I would reserve separate Gradle modules for meaningful isolation.
+Packaging strategy determines cognitive load, code navigation speed, and modularization readiness in growing codebases.
+
+1. **Package-by-Layer (Horizontal Partitioning)**:
+   - Groups files strictly by their technical classification (`presentation`, `domain`, `data`).
+   - *Drawbacks*: As the app grows beyond a few screens, packages balloon to hundreds of files. Feature cohesion is completely lost: developing a single feature requires jumping across multiple directories. Everything must be marked `public`, destroying encapsulation.
+
+2. **Package-by-Feature (Vertical Partitioning)**:
+   - Groups all artifacts required for a specific business capability into a single cohesive package (`auth`, `checkout`, `profile`).
+   - *Benefits*: High cohesion. Deleting or modifying a feature touches files in a single self-contained directory. Allows leveraging Kotlin's `internal` visibility to hide feature-internal implementation details.
+
+3. **Modern Hybrid Standard**:
+   - In enterprise Android architecture, we package **by feature at the macro level** (often as separate Gradle modules), and **by layer at the micro level** within that feature (`:feature:checkout/ui`, `.../domain`, `.../data`).
 
 ## Interview answer — deep senior
 
-I choose organization based on team workflow and change coupling. If most commits touch UI, domain, and data for one feature, grouping those files improves discoverability and review. If a cross-cutting platform layer changes independently, a dedicated module can make sense. Feature modules can help parallel ownership and incremental builds, but too many tiny modules add configuration and build overhead. Package names are not a substitute for boundaries: Kotlin code can import across packages unless visibility or module dependencies prevent it. I would define allowed module edges, keep shared contracts small, and periodically audit the `common` area for accidental centralization. The design should make changes local without making simple code hard to find. There is a build-system dimension beyond file navigation. Gradle edges can prevent one feature from importing another feature’s implementation, while packages alone cannot. More modules may improve parallel build behavior in some codebases but add configuration and dependency management; I would measure. I keep `internal` visibility where possible and audit shared modules for becoming a dumping ground. The best layout helps a new engineer find a feature and lets a team change it without surprising cross-feature rebuilds.
+The major architectural triumph of package-by-feature is enabling painless **Multi-Module Migration**. A project structured by layer is nearly impossible to modularize because circular dependencies between packages are rampant across features. In contrast, a project structured by feature can extract `auth/` or `checkout/` directly into an independent Gradle module `:feature:auth` within hours.
+
+Encapsulation is another vital advantage. Under package-by-layer, a repository implementation class in `data` must be declared `public` so a use case in `domain` or a ViewModel in `ui` can access it. Under package-by-feature in separate modules, concrete implementation classes can be marked `internal`, exposing only a clean public interface or entry point.
+
+Shared infrastructure (Network clients, Database drivers, Common UI Design Tokens) lives in dedicated core packages (`core:network`, `core:database`, `core:designsystem`).
 
 ## How to answer in the interview
 
@@ -74,8 +133,11 @@ Draw a feature tree and layer tree for checkout; identify where module rules dif
 
 ## Follow-up questions
 
-- [ARC-26](../arc-26/): What enforces boundaries? **Answer:** module graph, visibility and architecture checks rather than package names alone.
-- [ARC-23](../arc-23/): Can modules overengineer a small app? **Answer:** yes, if configuration cost exceeds change isolation.
+- **Interviewer:** "Where should shared cross-cutting code live in a package-by-feature setup?"
+  **Answer:** "In dedicated foundation modules or packages prefixed with `core/` (e.g. `core/network`, `core/database`, `core/ui`), consumed by feature packages."
+
+- **Interviewer:** "How does package-by-feature improve PR review velocity?"
+  **Answer:** "Reviewers can review changes localized to a single directory rather than diffs scattered across presentation, domain, and data layers, speeding up comprehension and reducing merge conflicts."
 
 ## Self-check rubric
 
@@ -86,4 +148,4 @@ Explain one benefit and cost of each layout, plus one mechanism that enforces de
 - [Android modularization guide](https://developer.android.com/topic/modularization) — module organization and trade-offs.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — layer concerns.
 
-Technically reviewed against the linked official Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

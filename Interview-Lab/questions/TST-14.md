@@ -23,11 +23,57 @@ How do you test Compose UI semantics, navigation, and accessibility?
 
 ## Explanation in Arabic
 
-Compose UI test تتعامل مع semantics، مش ترتيب الـcomposables في source. ابحث عن node بالنص أو role أو content description، واستخدم test tag فقط عند الحاجة، ثم أدخل input واضغط وتأكد من state/destination. في checkout جرّب amount غير صالح: رسالة Error واضحة، Pay لا يعمل charge، ولا تظهر شاشة التأكيد؛ وبعد قيمة صحيحة تأكد من Pending ثم النتيجة المناسبة.
+كيف تختبر شجرة المعاني (Semantics Tree)، والتنقل (Navigation)، وإمكانية الوصول (Accessibility) في Jetpack Compose؟
+
+1. اختبار شجرة المعاني في Compose (Semantics Tree Testing):
+   - في Compose، لا توجد View IDs! الواجهة تُمثل كـ **Semantics Tree** يصف معنى ومحتوى كل عنصر للمستخدم وقارئات الشاشة.
+   - **أدوات الاختيار والتوثيق**:
+     * `onNodeWithText("Submit")`: البحث بالنص المعروض.
+     * `onNodeWithContentDescription("Back")`: البحث بوصف المحتوى للأيقونات.
+     * `onNodeWithTag("login_button")`: البحث بـ TestTag صريح (يُستخدم كحل أخير إذا لم يتوفر نص أو وصف).
+   - **التوكيدات (Assertions)**:
+     * `assertIsDisplayed()`, `assertIsEnabled()`, `assertIsSelected()`, `assertHasClickAction()`.
+
+2. اختبار التنقل (Compose Navigation Testing):
+   - نستخدم `TestNavHostController` من مكتبة `navigation-testing`.
+   - نقوم بربط الـ Controller بـ `NavHost`، وتنفيذ إجراءات النقر، والتحقق من المسار الحالي:
+     `assertEquals("details/{orderId}", navController.currentBackStackEntry?.destination?.route)`.
+
+3. فحص إمكانية الوصول (Accessibility Testing - A11y):
+   - التأكد من أن مساحة النقر لا تقل عن 48×48dp (Touch Target Size).
+   - دمج العقد المترابطة لتسهيل القراءة عبر `Modifier.semantics(mergeDescendants = true)`.
 
 ## Practical walkthrough
 
-Navigation يُختبر بمحتوى الشاشة التي وصل لها المستخدم، مش mock لـ`navigate()`. accessibility تحتاج labels وroles وfocus وfont scaling وRTL؛ automated semantics assertions تساعد لكن لا تستبدل TalkBack/manual device pass. Fake payment source يجعل test حتمية، لكن لا يثبت approval حقيقي أو Android permission dialog. اختبر Route/platform integration منفصلًا.
+اختبار شجرة المعاني والتنقل وفحص إمكانية الوصول في Compose:
+```kotlin
+class ComposeUiAndNavigationTest {
+    @get:Rule
+    val composeTestRule = createComposeRule()
+    private lateinit var navController: TestNavHostController
+
+    @Before
+    fun setupAppNavHost() {
+        composeTestRule.setContent {
+            navController = TestNavHostController(LocalContext.current)
+            navController.navigatorProvider.addNavigator(ComposeNavigator())
+            AppNavHost(navController = navController)
+        }
+    }
+
+    @Test
+    fun navigateFromHomeToDetails_verifiesRouteAndAccessibility() {
+        // 1. التحقق من وجود الزر بإمكانية وصول سليمة والضغط عليه:
+        composeTestRule.onNodeWithContentDescription("View Order Details")
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .performClick()
+
+        // 2. التحقق من انتقال الـ NavController إلى الشاشة والمسار الصحيح:
+        assertEquals("order_details/{id}", navController.currentBackStackEntry?.destination?.route)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +97,34 @@ Run Compose tests on supported screen sizes, RTL locales and font scaling; inclu
 
 ## Interview answer — short
 
-“I test Compose through semantics and user actions, assert visible navigation outcomes, and include accessibility labels, focus and state. Tags help when needed but should not replace user-facing assertions.”
+Test Compose UI via createComposeRule by querying the Semantics Tree with onNodeWithText or onNodeWithContentDescription and asserting states like assertIsDisplayed(). Test navigation using TestNavHostController to assert active backstack routes. Validate accessibility by enforcing semantic content descriptions and 48dp minimum touch targets.
 
 ## Interview answer — structured
 
-“Compose UI testing queries semantics nodes, performs clicks and text input, then asserts resulting UI state. I verify navigation by the destination the user sees rather than mocking a `navigate` call. For accessibility I check labels, roles and error announcements, and I test RTL/font scaling for important screens. A fake backend keeps tests deterministic; separate integration tests verify real payment state. ”
+Testing Jetpack Compose interfaces exercises the semantic contract presented to users and assistive technologies:
+
+1. **Semantics Tree Node Queries**:
+   - Query UI nodes using real user semantics: `composeTestRule.onNodeWithText("Checkout")` or `onNodeWithContentDescription("Shopping Cart")`. Prefer semantic matchers over arbitrary `Modifier.testTag()`, as semantic matchers validate that the UI is accessible to screen readers.
+
+2. **State & Action Assertions**:
+   - Assert node properties: `assertIsDisplayed()`, `assertIsEnabled()`, `assertIsToggleable()`, `assertValueEquals("100")`. Trigger actions via `performClick()`, `performScrollTo()`, or `performTextInput("text")`.
+
+3. **Navigation Contract Testing**:
+   - Mount the `NavHost` using `TestNavHostController(LocalContext.current)`.
+   - Execute UI interactions, then assert destination state via `assertEquals("details_route", navController.currentBackStackEntry?.destination?.route)` without launching real activities.
+
+4. **Accessibility (a11y) Auditing**:
+   - Enable AndroidX `AccessibilityChecks.enable()` during Compose tests. The framework automatically flags insufficient color contrast, missing content descriptions, and touch targets smaller than 48x48dp.
 
 ## Interview answer — deep senior
 
-“I write Compose tests from the user’s point of view. I query the semantics tree by visible text, role or content description, perform typing and clicks, and assert the resulting UI state. For a checkout form I enter an invalid amount, tap Pay and verify a readable error appears while confirmation remains absent. With valid input I release a controlled fake response and assert the pending state and final accessible destination. I avoid matching an exact composable hierarchy; semantics merging can change without changing the user contract. A navigation test should observe the destination, not merely verify a mocked `NavController.navigate` call. Accessibility assertions cover names for icon buttons, error text, action availability and focus where feasible, with RTL and large-font layouts checked on representative devices. Automated tests cannot certify TalkBack behavior or payment authorization, so I keep targeted manual/device accessibility checks and backend integration tests. I also control animation time and lifecycle recreation rather than adding arbitrary sleeps.”
+From an advanced design system testing perspective, semantic merging and unmerged tree inspection provide deep control:
+
+1. **Merged vs. Unmerged Semantics Trees**: By default, Compose merges child semantics into parent nodes for accessibility (e.g. merging a `Button` with its inner `Text` label into a single clickable node). If you need to test a specific inner element, query the unmerged tree explicitly: `onNodeWithText("Subtext", useUnmergedTree = true)`.
+
+2. **Testing Custom Semantics Properties**: When building custom UI components (e.g. custom sliders, star ratings), expose custom semantic properties via `Modifier.semantics { set(CustomKey, value) }`. In tests, query and assert against these typed semantic keys directly.
+
+3. **Robolectric Compose UI Testing**: With modern Robolectric, Compose UI tests using `createComposeRule()` execute directly on the host JVM in seconds, providing rapid UI verification without booting Android emulators.
 
 ## How to answer in the interview
 
@@ -75,8 +140,11 @@ Prompt for semantics tree, merged nodes, accessible name, navigation outcome and
 
 ## Follow-up questions
 
-- [TST-17](../tst-17/): What catches pixel regressions? **Answer:** screenshot tests alongside semantic tests.
-- [TST-18](../tst-18/): What after rotation? **Answer:** visible state should restore from proper owner.
+- **Interviewer:** "What is the difference between merged and unmerged semantics trees in Compose?"
+  **Answer:** "The merged tree collapses child nodes into parent containers for screen readers (TalkBack); the unmerged tree preserves every individual composable node."
+
+- **Interviewer:** "Why should Modifier.testTag() be used as a last resort in Compose tests?"
+  **Answer:** "Test tags do not improve accessibility for real users; querying by text, content description, or semantic role validates both functionality and accessibility."
 
 ## Self-check rubric
 
@@ -87,4 +155,4 @@ Use semantics to enter invalid input, assert an accessible error and absent dest
 - [Compose testing](https://developer.android.com/develop/ui/compose/testing) — semantics and test rules.
 - [Compose accessibility](https://developer.android.com/develop/ui/compose/accessibility) — semantics and accessible UI.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

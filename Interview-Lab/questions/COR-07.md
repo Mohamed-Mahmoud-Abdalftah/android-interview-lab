@@ -22,11 +22,49 @@ Whether the candidate maps dispatchers to execution resources while rejecting `s
 
 ## Explanation in Arabic
 
-`Dispatchers.Main` للتعامل مع UI على Android، و`IO` معمول للـblocking I/O، و`Default` مناسب CPU-intensive work. `Unconfined` بيبدأ في thread المستدعي لحد أول suspension وبعدها ممكن يكمل حسب suspending function؛ مش اختيار آمن كـdefault لواجهة Android. اختيار dispatcher لازم يبقى بحسب طبيعة الـAPI والـscope، مش لمجرد إن الدالة `suspend`.
+الـ `CoroutineDispatcher` هو المسؤول عن تحديد **أي Thread أو Thread Pool** سينفذ الـ Coroutine. فهم الفروق بينهم ضروري جداً لتجنب تجميد الشاشة أو إهدار موارد الجهاز:
+
+1. `Dispatchers.Main`:
+   - محصور على **Android Main (UI) Thread** المربوط بـ `Looper.getMainLooper()`.
+   - مخصص لتحديث واجهة المستخدم (Views, Jetpack Compose UI state, Dialogs) ومعالجة تفاعل المستخدم.
+   - **تحذير صارم:** لا تشغل عليه أي كود ثقيل (Disk I/O, Network, Heavy Math) لأن أي تأخير أكثر من 16ms هيوقع فريمات (Jank)، وتأخير 5 ثوانٍ هيطلع رسالة ANR.
+   - يوجد أيضاً `Dispatchers.Main.immediate` الذي ينفذ الكود فوراً بدون posting إلى message queue إذا كنت بالفعل على Main Thread.
+
+2. `Dispatchers.IO`:
+   - مخصص لعمليات الإدخال والإخراج التي تحظر الـ Thread (Blocking I/O operations).
+   - زي: قراءة/كتابة الملفات من Disk، قراءة/كتابة قاعدة بيانات SQLite/Room، واستدعاءات شبكة blocking.
+   - **حجم الـ Pool:** مصمم بحيث يتمدد حسب الحاجة (Elastic Pool) بحد أقصى **64 Threads** (أو عدد أنوية الـ CPU إن كان أكبر).
+
+3. `Dispatchers.Default`:
+   - مخصص للعمليات الحسابية المكثفة التي تستهلك المعالج (CPU-intensive tasks).
+   - زي: عمل Parsing لملف JSON ضخم، تشفير وفك تشفير، معالجة وفرز قوائم كبيرة (Sorting)، أو معالجة صور.
+   - **حجم الـ Pool:** مربوط مباشرة بعدد أنوية المعالج الفيزيائية (`Runtime.getRuntime().availableProcessors()`)، بحد أدنى 2 threads. لا يمكن أن يزيد عن عدد الأنوية لأن تشغيل threads أكتر من الأنوية على مهام CPU بيعمل context switching ع الفاضي.
+
+4. `Dispatchers.Unconfined`:
+   - لا يقيد الـ Coroutine بأي Thread معين!
+   - يبدأ التنفيذ على نفس الـ Thread الحالي للـ Caller حتى يصل لأول نقطة تعليق (Suspension point)، وبعد التعليق يكمل على الـ Thread الذي نادى دالة الـ resume.
+   - **استخدامه الإنتاجي شبه معدوم**؛ غير مخصص لكود التطبيق العادي لأنه يجعل سلوك الـ Threads غير متوقع، لكنه قد يستخدم في بعض الـ Unit Tests أو العمليات الداخلية المتخصصة جداً.
 
 ## Practical walkthrough
 
-لو repository بيقرأ ملف ثم يفك ضغطه، قراءة الملف synchronous تتعمل على `IO`، وفك الضغط CPU-heavy على `Default`، وبعدها UI تتحدّث على `Main`. كل نقلة لها سبب واضح. `Unconfined` ممكن يكمل على thread مختلف بعد أول suspension، فمش مكان مناسب لكود view. وخلي بالك: لو network API suspend ومكتوب main-safe، إطلاقها من Main ممكن يكون صحيح.
+في شاشة معالجة وتصدير تقرير مالي (PDF Export & Sync):
+- **توزيع العمل على الـ Dispatchers باحترافية:**
+  viewModelScope.launch(Dispatchers.Main) { // 1. نبدأ على Main لعرض شريط التحميل
+      _uiState.value = UiState.Exporting
+      
+      // 2. عمليات حسابية ثقيلة لمعالجة الأرقام ننقلها لـ Default (CPU):
+      val processedData = withContext(Dispatchers.Default) {
+          calculateFinancialSummaries(rawTransactions)
+      }
+      
+      // 3. كتابة ملف الـ PDF على القرص نرسلها لـ IO (Disk Blocking):
+      val pdfFile = withContext(Dispatchers.IO) {
+          writePdfToStorage(processedData)
+      }
+      
+      // 4. نعود تلقائياً لـ Main لإخفاء شريط التحميل وعرض إشعار النجاح:
+      _uiState.value = UiState.Success(pdfFile)
+  }
 
 ## Why it matters and how it works
 
@@ -63,15 +101,27 @@ A photo repository reads bytes from a legacy file API on IO, decodes thumbnail d
 
 ## Interview answer — short
 
-“Main is the Android UI dispatcher, IO is intended for blocking I/O, Default for CPU work, and Unconfined has no stable thread confinement. `suspend` does not choose any of them; I switch context at the operation that owns blocking or CPU work.”
+Dispatchers.Main runs on Android's UI thread for view updates; Dispatchers.IO manages an elastic pool of up to 64 threads for blocking disk and network I/O; Dispatchers.Default uses a thread pool sized to CPU core count for compute-heavy tasks; and Dispatchers.Unconfined starts in the caller thread and resumes in whatever thread resumed the suspension.
 
 ## Interview answer — structured
 
-“Dispatchers answer where instructions run, not how long work lives. Main is where I update Android UI. IO provides capacity for blocking I/O; Default is a shared CPU pool. Unconfined starts in the caller thread and may resume elsewhere after suspension, so it is rarely appropriate for Android UI code. I expose main-safe repository methods and switch only around a synchronous blocking or heavy CPU boundary. I also verify the API contract, because a non-blocking suspend client may need no dispatcher switch.”
+Dispatchers govern thread assignment for coroutines, each tailored for a specific workload characteristics:
+
+**Dispatchers.Main** is bound to the Android Main Looper thread. It is strictly reserved for UI rendering, handling touch events, and mutating Compose or LiveData UI state. Heavy work here causes frame drops and ANRs.
+
+**Dispatchers.IO** is optimized for blocking input/output operations, such as Room database operations, reading local files, or legacy blocking HTTP calls. It uses an elastic thread pool that scales up to 64 threads (or the number of CPU cores if higher), ensuring blocking I/O does not starve other tasks.
+
+**Dispatchers.Default** is reserved for CPU-intensive calculations like JSON parsing, bitmap transformations, cryptographic operations, or sorting large collections. Its thread pool is capped strictly at the number of available CPU cores (minimum 2), preventing unnecessary thread context-switching overhead.
+
+**Dispatchers.Unconfined** does not confine execution to any specific thread. It begins in the caller's thread and resumes in whichever thread resumed the continuation. Because it leads to non-deterministic thread transitions, we avoid it in production Android code.
 
 ## Interview answer — deep senior
 
-“For dispatcher selection I examine whether an operation blocks a thread, burns CPU, or mutates UI. A suspending network client can release the caller thread and be main-safe; a synchronous SDK call inside a `suspend` function still blocks the current dispatcher. I move that SDK boundary to IO, CPU decoding to Default, and render only on Main. I avoid Unconfined because its resume thread follows the suspending function and does not establish UI confinement. IO has capacity for blocking tasks, but unlimited fan-out can still strain memory, connections or the server, so I bound concurrency separately. Tests inject dispatchers and verify main safety; cancellation requires cooperation from the underlying operation. I would inspect the hot path rather than applying IO everywhere. For a file-and-decode flow, synchronous read occupies an IO worker, CPU decode belongs on Default, and rendering returns to Main. IO's elastic views can increase concurrent blocking operations, so an external API may still need a semaphore or rate limit. An `Unconfined` continuation has no stable UI-thread contract, which makes it a poor production default for view state.”
+Behind the scenes, `Dispatchers.Default` and `Dispatchers.IO` share the same underlying JVM thread pool implementation (`ExperimentalCoroutineDispatcher`). When you switch between `Default` and `IO` using `withContext`, the coroutine scheduler can often shift the task between pool sub-queues without an expensive OS thread context switch if worker threads are available.
+
+In Android development, `Dispatchers.Main.immediate` deserves special mention: standard `Dispatchers.Main` schedules execution via `Handler.post()`, introducing an asynchronous dispatch delay even if you are already on the Main thread. `Dispatchers.Main.immediate` executes synchronously if the caller is already on the UI thread, preventing momentary UI flicker.
+
+Furthermore, for fine-grained resource limits, Kotlin 1.6+ introduced `limitedParallelism(n)`. On `Dispatchers.IO`, you can create a dedicated dispatcher with a strict concurrency ceiling (e.g., `Dispatchers.IO.limitedParallelism(4)`) to avoid overwhelming local SQLite database connection pools with dozens of concurrent threads.
 
 ## How to answer in the interview
 
@@ -87,8 +137,14 @@ Trace a coroutine across dispatcher switches and suspension; distinguish thread 
 
 ## Follow-up questions
 
-- [COR-02](../cor-02/): Does `suspend` select IO? **Answer:** no; caller context remains until an explicit context switch.
-- [COR-21](../cor-21/): How limit load? **Answer:** a semaphore or constrained parallelism limits active operations beyond dispatcher selection.
+- **Interviewer:** "Why do `Dispatchers.Default` and `Dispatchers.IO` share the same underlying pool?"
+  **Answer:** "They share the underlying worker thread pool so that switching between CPU work (Default) and I/O work (IO) via withContext can reuse idle worker threads dynamically, minimizing thread creation churn and memory allocation overhead."
+
+- **Interviewer:** "When would you use `limitedParallelism`?"
+  **Answer:** "To enforce a concurrency throttle without creating a new thread pool. For instance, Room database write transactions should be capped at `limitedParallelism(1)` to eliminate SQLite locking errors, or image uploading can be limited to `limitedParallelism(4)` to prevent saturating bandwidth."
+
+- **Interviewer:** "Can a coroutine running on `Dispatchers.Main` cause an ANR if it only calls suspending functions?"
+  **Answer:** "No, as long as the suspending functions are genuinely non-blocking and Main-Safe. Suspension yields the main thread to Android's message queue. An ANR only happens if the coroutine executes a synchronous blocking call (like Thread.sleep or a heavy loop) on Main."
 
 ## Self-check rubric
 
@@ -99,4 +155,4 @@ Can I map each dispatcher, reject `Unconfined` for UI confinement, identify a bl
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — dispatcher and context.
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — main safety and repository boundaries.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

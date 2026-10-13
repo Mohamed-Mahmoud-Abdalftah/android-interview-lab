@@ -24,11 +24,44 @@ How do you manage versionCode/versionName and release notes?
 
 ## Explanation in Arabic
 
-`versionCode` رقم داخلي يستخدمه Android/Play لترتيب updates؛ إصدار جديد لنفس package يحتاج code أعلى وفق قواعد التوزيع. `versionName` نص يظهر للمستخدم مثل `3.4.1`، ليس أساس قرار التحديث. اجعل CI يخصص versionCode فريدًا/متزايدًا للـrelease variants ويمنع إعادة استخدامه، واربطه بـcommit وAAB hash وmapping file. Release notes تشرح تغييرات المستخدم ومخاطر migration/known issues، وتُراجع قبل التوزيع. لا تعتمد على versionName وحده لتتبع hotfix؛ rollback على Android غالبًا يعني نشر build مصحح بـversionCode أعلى أو إيقاف rollout حسب القناة.
+كيف تدير الـ `versionCode` والـ `versionName` وسجلات الإصدار (Release Notes) آلياً وبشكل حتمي في مسارات الـ CI/CD؟
+
+1. ما هو `versionCode` وما هو `versionName`؟
+   - **`versionCode`**: رقم صحيح موجب متزايد دائماً (`Int` مثل `1024`). يستخدمه نظام Android و Google Play لتحديد تسلسل التحديثات. **ممنوع تكرار نفس الرقم أو رفعه برقم أقل في المتجر**!
+   - **`versionName`**: النص الذي يراه المستخدم (`String` مثل `"2.4.1"`). يتبع عادة قواعد الترقيم الدلالي (**Semantic Versioning - SemVer**: `MAJOR.MINOR.PATCH`).
+
+2. أتمتة حساب `versionCode` دون تعديل يدوي:
+   - **الاعتماد على عدد الـ Git Commits**: حساب عدد الـ Commits في الـ Main branch عبر `git rev-list --count HEAD`. رقم متزايد حتمياً دائماً.
+   - **الاعتماد على معرّف بناء الـ CI/CD**: استخدام متغير بيئة الـ CI (مثل `GITHUB_RUN_NUMBER`).
+
+3. أتمتة سجلات التغييرات (Release Notes / Changelogs):
+   - حفظ ملفات التغييرات في مجلد منظم باللغات (`metadata/android/ar-SA/changelogs/{versionCode}.txt`).
+   - استخدام أدوات مثل **Fastlane Supply** أو **Gradle Play Publisher (GPP)** لقراءة ملفات الـ Changelogs ورفعها تلقائياً مع الـ AAB.
 
 ## Practical walkthrough
 
-`versionCode` للترتيب والترقية في Android، `versionName` نص يظهر للمستخدم. CI لازم تولّد code فريد أعلى من المنشور لكل package/track، حتى hotfix من branch قديم. release notes تصف user-visible changes والمخاطر، وليست dump لعناوين commits. اربط tag والAAB والmapping والnotes بـcommit واحد، واختبر update من نسخة قديمة لا clean install فقط.
+حساب versionCode تلقائياً من Git وإعداد versionName وسجلات الإصدار في build.gradle.kts:
+```kotlin
+fun generateVersionCode(): Int {
+    // حساب إجمالي عدد الـ Commits في مستودع Git للحصول على رقم متزايد حتمياً:
+    return try {
+        val process = ProcessBuilder("git", "rev-list", "--count", "HEAD").start()
+        process.inputStream.bufferedReader().readText().trim().toInt()
+    } catch (e: Exception) {
+        1 // قيمة افتراضية إذا كان مجلد الـ Git غير متاح
+    }
+}
+
+android {
+    defaultConfig {
+        // 1. versionCode محسوب آلياً في كل Build:
+        versionCode = generateVersionCode()
+        
+        // 2. versionName يتبع Semantic Versioning:
+        versionName = "2.5.0"
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +85,32 @@ Reserve codes centrally, verify monotonicity before upload, generate release met
 
 ## Interview answer — short
 
-“`versionCode` is the monotonic update identity; `versionName` is the user-facing label. I tie both and reviewed notes to an immutable artifact and release track.”
+Manage versionCode monotonically via CI build numbers or git commit counts (git rev-list --count HEAD), format versionName using Semantic Versioning (MAJOR.MINOR.PATCH), and automate localized release notes using Gradle Play Publisher or Fastlane changelog files matching the versionCode.
 
 ## Interview answer — structured
 
-“I allocate a unique increasing versionCode in CI so Android/Play can accept updates, while versionName communicates a human-readable release. The release record includes source commit, AAB hash, mapping and notes. I review notes for user-visible changes and known issues before staging. A bad release is halted and corrected with a higher code rather than assuming users can downgrade.”
+Automating versioning and release notes eliminates human deployment errors and prevents rejected Play Console uploads:
+
+1. **Deterministic `versionCode` Management**:
+   - Must strictly be a positive monotonically increasing integer (max 2,100,000,000). Google Play rejects any upload with a `versionCode` less than or equal to previous active builds.
+   - Best automated via Git commit depth (`git rev-list --count HEAD`) or CI build run counters (`GITHUB_RUN_NUMBER + OFFSET`). This guarantees that every PR merge produces a unique, incremented code without manual commit modifications.
+
+2. **Semantic `versionName` Modeling**:
+   - Follow Semantic Versioning: `MAJOR.MINOR.PATCH`. Defined in a central `version.properties` file or extracted from Git release tags (`git describe --tags`).
+
+3. **Automated Release Notes Deployment**:
+   - Maintain localized changelog text files under source control: `distribution/whatsnew/whatsnew-en-US` and `whatsnew-ar-SA`.
+   - In CI/CD, tools like **Gradle Play Publisher (GPP)** or **Fastlane Supply** bundle these release notes alongside the compiled AAB directly to Play Store tracks.
 
 ## Interview answer — deep senior
 
-“I separate machine update identity from communication. Android uses `versionCode` to order installable updates; `versionName` is a display label and is not enough to identify a binary. CI allocates codes from a single process that accounts for branches, flavors and Play tracks, and verifies the next artifact is eligible for promotion. I keep an immutable release record: versionCode, versionName, source commit, toolchain, AAB hash, signing fingerprint, mapping file and reviewed release notes. Notes should describe actual user changes, migrations and known limitations; they should be checked against what shipped rather than copied from a ticket list. In a staged incident I halt rollout, retain the faulty build's map for crash analysis, and create a corrected artifact with a higher code if needed. I do not plan on normal device downgrade as rollback. I also watch internal-track codes so test builds do not block a later production promotion. This discipline makes customer support, crash triage and hotfixes traceable to one binary.”
+From an advanced multi-architecture and release pipeline perspective, versioning involves ABI offsets and track management:
+
+1. **ABI Version Code Offsets (For Split APKs)**: When distributing multiple APKs partitioned by ABI, each APK must have a distinct `versionCode`. Standard industry convention uses structured offsets: `64-bit ARM (prefix 2) -> 2001024`, `32-bit ARM (prefix 1) -> 1001024`. The 64-bit build must always have the higher `versionCode` so 64-bit devices prefer the 64-bit APK.
+
+2. **Continuous Deployment with Internal Test Tracks**: Configure CI to publish every successful main branch commit to Google Play Internal Testing Track using automated release tags. This allows QA and beta testers to receive updates within 15 minutes of code merge.
+
+3. **Version Catalog Integration**: Centralize app versioning metadata within `gradle/libs.versions.toml` or `build-logic` convention plugins to keep multi-module sample apps and release flavors synchronized.
 
 ## How to answer in the interview
 
@@ -76,9 +126,11 @@ Discuss monotonic codes, track collisions, artifact provenance, honest notes and
 
 ## Follow-up questions
 
-- Does changing versionName enable an update? **Answer:** no; update ordering relies on versionCode and signature compatibility.
-- Can users normally downgrade to an older code? **Answer:** no; plan a higher-code fix or stop rollout.
-- Why link notes to a hash? **Answer:** to know exactly which binary contains the described changes.
+- **Interviewer:** "What is the maximum integer limit for Android versionCode?"
+  **Answer:** "2,100,000,000 (2.1 billion), which fits within a standard 32-bit signed integer."
+
+- **Interviewer:** "Why must a 64-bit APK have a higher versionCode than a 32-bit APK for the same app version?"
+  **Answer:** "Android installs the compatible APK with the highest versionCode; a higher code ensures 64-bit devices install the optimized 64-bit binary."
 
 ## Self-check rubric
 
@@ -89,4 +141,4 @@ Define both fields, handle track allocation and show a bad-release response with
 - [Version your app](https://developer.android.com/studio/publish/versioning) — code/name semantics.
 - [Release with confidence](https://developer.android.com/studio/publish) — publication context.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Play track policy should be checked for the account.
+Technically reviewed against primary documentation on 2026-10-13.

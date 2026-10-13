@@ -22,7 +22,58 @@ Use adapters and a stable boundary to switch vendor callbacks without leaking ve
 
 ## Explanation in Arabic
 
-Vendor A ترجع callback `onSuccess/onError`، Vendor B ترجع listener مع status codes مختلفة. اعمل Adapter لكل SDK يحوّل لdomain-facing `PaymentGateway` أو `IdentityVerifier` contract. Facade/Repository قدامهم تبقى API واحدة للfeatures، وDI composition تختار implementation. لازم توحّد semantics مش syntax بس: duplicate callbacks، cancellation، timeout، threading، request IDs. tests fake SDKs بتجرّب callback order وأخطاء. لما تبدّل vendor، UI وdomain ما يستوردوش SDK classes. Server validation والsecrets تفضل على backend.
+تبديل مكتبات خارجية (Vendor SDKs) ذات أنظمة استدعاءات (Callbacks) مختلفة: ما هي الأنماط والحدود المعمارية المناسبة؟
+
+1. طبيعة المشكلة عند التعامل مع مكتبات خارجية:
+   - شركة ترغب في استبدال مزود التحقق من الهوية (KYC SDK أو OCR Scanner) من Vendor A إلى Vendor B.
+   - Vendor A يعتمد على Java Callbacks قديمة مع `onSuccess(String json)` و `onError(int code)`.
+   - Vendor B يطلب تشغيل Activity عبر `startActivityForResult` ويعيد كائنات مخصصة معقدة.
+   - إذا كانت هذه الـ SDKs مستوردة مباشرة داخل الـ ViewModels أو الـ Composables، فإن استبدال المزود سيتطلب إعادة كتابة التطبيق بالكامل وإعادة اختبار كل الشاشات!
+
+2. الأنماط المعمارية والحدود الواقية (Boundaries):
+   - **Anti-Corruption Layer (ACL) / Facade Pattern**: طبقة حماية عازلة تحول مفاهيم وأخطاء الـ Vendor الفوضوية إلى نماذج بيانات نقية خاصة بالنطاق الداخلي للتطبيق (Domain Models).
+   - **Adapter Pattern**: محول مخصص لكل Vendor يحول أسلوب الاستدعاء الخاص به (Callbacks أو Intents) إلى `suspend fun` أو `Flow` باستخدام `suspendCancellableCoroutine`.
+   - **Domain Interface (Contract)**: واجهة نقية (`IdentityVerificationGateway`) في طبقة الـ Domain لا تحتوي على أي إشارة لأي نوع أو كلاس من الـ SDK الخارجي.
+   - **Modularization**: وضع كود الـ SDK داخل Gradle module مستقل، بحيث لا تستطيع موديولات الـ UI والـ Features استيراده حتى عن طريق الخطأ.
+
+## Practical walkthrough
+
+بناء Anti-Corruption Layer و Adapter لعزل استدعاءات الـ Vendor المختلفة وتحويلها إلى واجهة نقية:
+```kotlin
+// 1. العقد الصافي في طبقة الـ Domain (لا يعلم شيئاً عن أي Vendor):
+interface DocumentScanner {
+    suspend fun scanPassport(): Result<PassportData>
+}
+
+// 2. Adapter لمزود يعتمد على Callbacks قديمة (Legacy Vendor A):
+class VendorAScannerAdapter(private val vendorASdk: LegacyVendorASdk) : DocumentScanner {
+    override suspend fun scanPassport(): Result<PassportData> = suspendCancellableCoroutine { continuation ->
+        val listener = object : VendorAListener {
+            override fun onScanCompleted(vendorModel: VendorADocResult) {
+                // تحويل الموديل الخاص بالـ Vendor إلى موديل الدومين النظيف:
+                val domainModel = PassportData(vendorModel.docNumber, vendorModel.expiryDate)
+                continuation.resume(Result.success(domainModel))
+            }
+            override fun onScanFailed(errorCode: Int, message: String) {
+                continuation.resume(Result.failure(VendorScanException(errorCode, message)))
+            }
+        }
+        
+        vendorASdk.startScan(listener)
+        continuation.invokeOnCancellation { vendorASdk.cancel() }
+    }
+}
+
+// 3. عند التبديل إلى Vendor B، نكتب فقط Adapter جديد بدون لمس أي ViewModel أو UI:
+class VendorBScannerAdapter(private val modernVendorB: VendorBClient) : DocumentScanner {
+    override suspend fun scanPassport(): Result<PassportData> {
+        return runCatching {
+            val result = modernVendorB.capture()
+            PassportData(result.passportNo, result.validUntil)
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +82,6 @@ Adapters translate incompatible interfaces; a facade or repository exposes a sta
 ## Worked example
 
 Conceptual contract: `suspend fun verify(requestId: String): VerificationOutcome`. Vendor A adapter resumes once from callbacks and unregisters on cancellation; Vendor B adapter maps status codes and may query server for uncertain outcomes. Both pass one contract suite.
-
-## Practical walkthrough
-
-vendor A بتدي callback فيها status code، vendor B بتدي listener يفضل registered؛ Adapter لكل vendor تحول لـ`VerificationOutcome` موحد. لو عايز suspend API، `suspendCancellableCoroutine` تحتاج exactly-once resume guard وcleanup عند cancellation حسب SDK، بس cancellation المحلية ما تلغيش server transaction بالضرورة. لو events متعددة، `callbackFlow` مع `awaitClose` أنسب من suspend one-shot. Facade تقدم `verify(requestId)` وتخفي API differences، لكنها تُظهر PendingVerification لو outcome غير معروف. tests تحاكي duplicate callbacks وlate callback بعد cancel وprocess restart، عشان swap SDK ما يغيرش ضمانات الدومين.
 
 ## Trade-offs and decision criteria
 
@@ -50,17 +97,26 @@ A bank app swaps identity SDKs behind a verification boundary with staged rollou
 
 ## Interview answer — short
 
-I put each vendor behind an Adapter and expose a stable domain-facing Facade or Repository contract. The switch then changes the adapter and wiring, while contract tests protect callback, timeout and cancellation behavior.
+To swap vendor SDKs with mismatched callbacks without breaking the app, establish a strict Anti-Corruption Layer (ACL). Define a clean domain interface representing your app's required capability. Implement the Adapter pattern to translate vendor-specific callbacks into standard Kotlin suspending functions or Flows via suspendCancellableCoroutine, keeping all vendor dependencies isolated inside a dedicated module.
 
 ## Interview answer — structured
 
-I would first define the result semantics the app needs, then write an adapter for each vendor’s callback shape. A facade or repository exposes that result without SDK types. The app DI graph selects the active adapter. Before replacing a vendor, I run the same contract tests against both: success, rejection, duplicate callback, timeout and cancellation. If a vendor has a missing capability, I model that explicitly rather than throw unexpectedly. Backend status remains the final authority for sensitive operations.
+When swapping third-party SDKs, the fatal mistake is allowing vendor-specific types, exceptions, and callback signatures to bleed into ViewModels and UI logic. If Vendor A uses listeners and Vendor B returns intents, changing vendors causes a ripple effect across the entire codebase.
+
+We solve this using three architectural boundaries:
+1. **Domain Contract**: We define a clean interface in our domain layer (`DocumentScanner` or `PaymentGateway`) expressing the business need using pure Kotlin types, completely agnostic of any vendor.
+2. **Adapter & Anti-Corruption Layer (ACL)**: Each vendor SDK gets an Adapter that implements this domain contract. The adapter bridges the callback mechanism into modern coroutines using `suspendCancellableCoroutine`, handles vendor lifecycle requirements, and maps vendor error codes into typed domain errors.
+3. **Physical Module Boundary**: We isolate each vendor SDK in its own Gradle module. The main application module depends on the domain interface, not the vendor SDK, guaranteeing at compile time that no vendor classes can leak into the rest of the application.
 
 ## Interview answer — deep senior
 
-Vendor swaps fail when an adapter only changes method signatures but not behavior. One SDK may call back on Main, another on a worker; one may invoke twice; cancellation may stop a listener but not a remote transaction. I design a domain contract with thread, lifetime and outcome semantics and put each SDK behind an adapter. A facade/repository coordinates durable request identity and maps unknown outcomes to pending verification. DI handles selection, and staged rollout plus telemetry compares real failure categories without exposing personal data. UI and domain import only stable types, so vendor classes remain contained. I test callback order and resource cleanup in addition to happy-path values, and I keep provider credentials on the server.
+When engineering an Anti-Corruption Layer for vendor SDKs in enterprise Android apps, multiple edge cases must be handled beyond simple signature mapping:
 
-I would create a domain contract first: verification returns a confirmed, rejected, or unknown outcome tied to a request ID. Each vendor gets an Adapter that translates its callback shape and error codes into that contract. A one-shot callback can be bridged to a suspending function with cancellation and a guard against multiple completion; a stream of updates belongs in a Flow adapter with unregister cleanup. The facade offers the stable operation to the rest of the app and keeps vendor-specific imports at the boundary. I would not claim cancellation rolls back an already sent request. Contract tests must inject duplicate, missing, and late callbacks and verify process-death reconciliation before declaring the vendor swap safe.
+1. **Thread Hopping & Synchronization**: Vendor callbacks frequently fire on arbitrary background threads or private SDK loopers. The Adapter is responsible for ensuring continuation resumption occurs on appropriate dispatchers (`Dispatchers.Default` for parsing, or handling Android UI thread constraints).
+
+2. **Cancellation & Resource Cleanup**: If the calling coroutine cancels (e.g. user navigates back while the scanner is running), `suspendCancellableCoroutine.invokeOnCancellation` must instruct the vendor SDK to stop camera hardware, free native memory, or deregister listeners. Otherwise, you leak camera sensors and background threads.
+
+3. **Unified Error Semantics**: Vendor A might return HTTP 400 for expired documents, while Vendor B throws an unhandled `SdkInvalidStateException`. The Adapter catches all vendor exceptions, translating them into a unified sealed class hierarchy (`ScanFailure.DocumentExpired`, `ScanFailure.Timeout`, `ScanFailure.SecurityViolation`). The UI only ever responds to domain errors, remaining 100% resilient when swapping vendors.
 
 ## How to answer in the interview
 
@@ -76,8 +132,11 @@ Compare callback semantics, thread, cancellation, duplicates, staged migration a
 
 ## Follow-up questions
 
-- [PAT-04](../pat-04/): Adapter versus Facade? **Answer:** adapter translates vendor interface; facade offers a smaller app API.
-- [PAT-12](../pat-12/): Why facade for unreliable SDK? **Answer:** normalize complexity while preserving typed uncertainty.
+- **Interviewer:** "Why should vendor SDKs live in separate Gradle modules?"
+  **Answer:** "To enforce architectural boundaries at compile time; feature modules cannot accidentally import vendor classes, making vendor swaps zero-risk for UI code."
+
+- **Interviewer:** "What happens if a vendor callback invokes onSuccess multiple times?"
+  **Answer:** "Inside `suspendCancellableCoroutine`, calling `resume` twice throws `IllegalStateException`. The Adapter must guard continuation resumption with an atomic check or use `callbackFlow` if multiple emissions are expected."
 
 ## Self-check rubric
 
@@ -88,4 +147,4 @@ Define a common outcome and two vendor adapters; specify four shared contract te
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — Adapter and Facade patterns.
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — application data boundary.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

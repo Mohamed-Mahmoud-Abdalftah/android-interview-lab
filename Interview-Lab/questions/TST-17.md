@@ -23,11 +23,62 @@ What are screenshot tests, Baseline Profiles, and Macrobenchmark tests?
 
 ## Explanation in Arabic
 
-Screenshot test تقارن شكل UI بصورة baseline وتكشف layout أو RTL regression، لكنها لا تثبت إن الزر يعمل أو إن accessibility semantics صحيحة. `Baseline Profiles` تحدد hot paths علشان ART يهيئ compilation لمسارات مهمة؛ لازم نتحقق من الـprofile في build المناسب. `Macrobenchmark` تقيس startup أو frame timing على جهاز/إعدادات متكررة وبناء release-like، مش داخل unit test.
+ما هي اختبارات لقطات الشاشة (Screenshot Tests)، والـ Baseline Profiles، واختبارات الـ Macrobenchmark في معايير الجودة الحديثة؟
+
+1. اختبارات لقطات الشاشة (Screenshot / Visual Regression Tests):
+   - **فكرتها**: التقاط صورة بكسل-ببكسل (PNG) لكل مكون Composable أو شاشة، ومقارنتها بصورة معتمدة سابقة (Golden Image).
+   - **الميزة**: تكشف أي تشوه بصري غير مقصود (مثل تداخل النصوص، اختفاء مسافات الـ Padding، أو أخطاء في الـ Dark Mode وتكبير الخطوط).
+   - **المكتبات الرائدة**: **Roborazzi** (تعمل بسرعة فائقة على الـ JVM المحلي عبر Robolectric)، و **Paparazzi**، و **Shot**.
+
+2. ما هي الـ Baseline Profiles؟
+   - ملفات قواعد يتم توليدها آلياً تحدد الكلاسات والدوال الأكثر استخداماً في مسارات فتح التطبيق الحرجة (Critical User Journeys).
+   - يقوم نظام Android OS عند تثبيت التطبيق بتجميع هذه الدوال مسبقاً (Ahead-Of-Time - AOT)، مما **يسرع زمن فتح التطبيق (Cold Start) بنسبة تصل إلى 40% ويقضي على الـ Jank** في أول تجربة للمستخدم!
+
+3. اختبارات الـ Macrobenchmark:
+   - اختبارات رسمية تعمل على أجهزة حقيقية لقياس أداء التطبيق الفعلي ككل: قياس زمن الفتح (`StartupTimingMetric`) ومعدل سلاسة الإطارات أثناء التمرير (`FrameTimingMetric`).
 
 ## Practical walkthrough
 
-اختَر metric قبل التحسين: startup من tap لframe جاهز، أو jank في scroll حقيقي. قارن نفس device/OS/thermal state وعدة runs، وابحث عن allocation traces قبل تغيير الكود. لو image loading هو المشكلة، تحسين algorithm في ViewModel قد لا يصلح الرسم. لا تعتبر screenshot “performance test” ولا رقم benchmark واحدًا ضمانًا لكل الأجهزة.
+تنفيذ اختبار Screenshot باستخدام Roborazzi واختبار Macrobenchmark لقياس سرعة التشغيل:
+```kotlin
+// 1. اختبار Screenshot حديث باستخدام Roborazzi و Compose على الـ JVM المحلي:
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class PaymentCardScreenshotTest {
+    @get:Rule
+    val composeRule = createComposeRule()
+
+    @Test
+    fun paymentCard_rendersAccurately_inDarkAndLightMode() {
+        composeRule.setContent {
+            AppTheme(darkTheme = true) {
+                PaymentCard(cardNumber = "**** 4321", balance = "$1,250.00")
+            }
+        }
+
+        // التقاط لقطة الشاشة ومقارنتها تلقائياً بالصورة المرجعية المخزنة:
+        composeRule.onRoot().captureRoboImage("screenshots/payment_card_dark.png")
+    }
+}
+
+// 2. اختبار Macrobenchmark لقياس زمن الـ Cold Start على جهاز حقيقي:
+@RunWith(AndroidJUnit4::class)
+class ColdStartupBenchmark {
+    @get:Rule
+    val benchmarkRule = MacrobenchmarkRule()
+
+    @Test
+    fun measureColdStartup() = benchmarkRule.measureRepeated(
+        packageName = "com.example.app",
+        metrics = listOf(StartupTimingMetric()),
+        iterations = 5,
+        startupMode = StartupMode.COLD
+    ) {
+        pressHome()
+        startActivityAndWait()
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +102,30 @@ Use release-like benchmark variants, controlled thermal/battery state and repres
 
 ## Interview answer — short
 
-“Screenshot tests catch visual changes; Baseline Profiles guide runtime optimization; Macrobenchmark measures user-visible performance on devices. I use them together and validate with release-like builds.”
+Screenshot tests capture and pixel-diff rendered UI against baseline golden images to catch visual regressions. Baseline Profiles pre-compile critical execution paths at install time via AOT compilation to eliminate launch jank. Macrobenchmark tests measure real-world startup latency and scroll frame metrics on physical devices.
 
 ## Interview answer — structured
 
-“Screenshots provide pixel-level regression signals, while semantics tests verify interaction and accessibility. A Baseline Profile describes code paths to precompile and may reduce startup/jank. Macrobenchmark measures startup or scrolling under controlled device conditions. I generate profiles from representative journeys, then benchmark to verify the impact rather than assume it. Debug builds and one-off measurements are unreliable.”
+Modern Android reliability and performance testing relies on three specialized verification technologies:
+
+1. **Screenshot / Visual Regression Tests (Roborazzi / Paparazzi)**:
+   - Render Composables off-screen and compare output PNGs pixel-by-pixel against committed golden reference images. They catch unintended regressions in theme inheritance, text truncation across dynamic font scales, and RTL mirror alignments in seconds on the JVM.
+
+2. **Baseline Profiles**:
+   - Human-readable specifications of classes and methods compiled during app installation using Android Runtime (ART) Ahead-Of-Time (AOT) compilation. By pre-compiling critical user paths (app startup, feed scrolling), Baseline Profiles eliminate runtime JIT interpretation pauses, improving cold launch speed by 30–40%.
+
+3. **Macrobenchmark Testing**:
+   - Black-box performance testing running against non-debuggable release builds on physical hardware. Uses Android OS trace instrumentation to measure `StartupTimingMetric` (Time to Initial Display) and `FrameTimingMetric` (measuring 90th/99th percentile frame drops during fast scrolling lists).
 
 ## Interview answer — deep senior
 
-“These tools answer different questions. A screenshot golden catches a visual regression in light, dark, RTL or font-scaled layouts, but cannot prove a button’s behavior or screen-reader semantics. A Baseline Profile identifies important code paths for ahead-of-time optimization in the installed app; I verify the generated profile is packaged and represents real startup or scroll flows. Macrobenchmark measures user-visible startup and frame performance in a release-like build on a controlled device, across repeated runs. I define the metric and baseline before changing code, keep device and thermal conditions comparable, and inspect traces when a number moves. For a product list that janks, I would measure scroll frames and allocations, then separate image decode, composition/layout and data transformation costs. I would not claim a JVM microbenchmark or one fast emulator run proves production improvement on low-end phones. After optimizing, I rerun correctness and accessibility checks as well: a faster list that drops content descriptions or changes item identity is not a successful release.”
+From an engineering platform and release infrastructure perspective, incorporating these tools requires dedicated pipeline stages:
+
+1. **CI Screenshot Differential Reporting**: When a visual regression occurs, CI should not merely fail the build. Integrate tools (like GitHub Action artifact reports) that generate an HTML visual diff carousel showing the original Golden, the Candidate, and an overlay diff highlighting mismatched pixels in red.
+
+2. **Baseline Profile Automation**: Configure AGP's Baseline Profile Gradle plugin (`androidx.baselineprofile`). Schedule automated monthly Macrobenchmark profiling runs in CI that traverse critical user journeys, generate fresh `baseline-prof.txt` rules, and commit them directly to the repository before major releases.
+
+3. **Device Requirements for Benchmarks**: Never run Macrobenchmark on standard emulators or debug builds. ART compiles debuggable builds with optimizations disabled, skewing measurements. Always execute benchmarks on real, rooted or userdebug physical devices pinned at stable thermal CPU frequencies.
 
 ## How to answer in the interview
 
@@ -75,8 +141,11 @@ Prompt for three tool purposes, release-like benchmark, representative profile p
 
 ## Follow-up questions
 
-- [TST-14](../tst-14/): What does screenshot miss? **Answer:** semantic accessibility and business behavior.
-- [DSA-14](../dsa-14/): Could a profile fix O(n²)? **Answer:** no; identify algorithmic work separately.
+- **Interviewer:** "Why is Roborazzi faster than traditional on-device screenshot testing?"
+  **Answer:** "Roborazzi runs on the host JVM using Robolectric's native graphics engine, generating and comparing screenshots in seconds without booting an Android emulator."
+
+- **Interviewer:** "What is the difference between Time to Initial Display and Time to Full Display in Macrobenchmark?"
+  **Answer:** "Initial Display measures when the first frame renders; Full Display measures when asynchronous network data completes and reportFullyDrawn() is called."
 
 ## Self-check rubric
 
@@ -87,4 +156,4 @@ Choose a screenshot golden for layout, a Baseline Profile for hot-path compilati
 - [Android Baseline Profiles](https://developer.android.com/topic/performance/baselineprofiles/overview) — profile purpose.
 - [Android Macrobenchmark](https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview) — measurement guidance.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

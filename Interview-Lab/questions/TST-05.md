@@ -23,11 +23,63 @@ What is runTest? How are virtual time and TestScope used?
 
 ## Explanation in Arabic
 
-`runTest` يخلق `TestScope` و`TestCoroutineScheduler` علشان نتحكم في coroutine scheduling والـ`delay` افتراضيًا بدل نوم حقيقي. `runCurrent()` يشغّل الشغل الجاهز الآن، و`advanceTimeBy()` يقدّم الساعة الافتراضية، وبعدها قد تحتاج `runCurrent()` عشان تنفّذ tasks على نفس اللحظة. لو ViewModel والـfake يستخدموا dispatchers مختلفة بسchedulers منفصلة، ترتيب الأحداث يبقى غير متوقع؛ شارك scheduler أو حقن dispatcher مناسب.
+ما هي دالة `runTest` في مكتبة `kotlinx-coroutines-test`، وكيف يعمل الوقت الافتراضي (Virtual Time) و `TestScope`؟
+
+1. ما هي `runTest`؟
+   - هي أداة تشغيل الكوروتين الرسمية للاختبارات التي حلت محل `runBlockingTest` القديمة.
+   - تقوم بإنشاء **TestScope** مخصص للاختبار يتحكم بالكامل في تقدم الوقت وتزامن الـ Coroutines.
+
+2. سحر الوقت الافتراضي (Virtual Time & Delay Skipping):
+   - إذا كان الكود يحتوي على تأخير زمني: `delay(10_000L)` (10 ثوانٍ)، فإن اختبار الـ Unit العادي بـ `runBlocking` سيتجمد وينتظر 10 ثوانٍ كاملة في العالم الحقيقي!
+   - مع `runTest`، **يتم تخطي التأخير الزمني تلقائياً (Delay Skipping)**! الـ TestScope يقفز بالوقت الافتراضي 10 ثوانٍ للأمام في أقل من جزء من الثانية (`currentTime += 10000`) دون أي انتظار حقيقي!
+
+3. التحكم بالوقت عبر `advanceTimeBy` و `advanceUntilIdle`:
+   - **`advanceTimeBy(millis)`**: يتقدم بالوقت الافتراضي بمقدار محدد وينفذ الـ Coroutines المجدولة في ذلك النطاق الزمني.
+   - **`advanceUntilIdle()`**: يفرغ طابور المهام وينفذ كل الكوروتينات المعلقة حتى يفرغ الطابور تماماً.
+
+4. التحقق التلقائي من عدم تسريب الكوروتينات (Coroutine Leak Detection):
+   - عند انتهاء بلوك `runTest`، تفحص الدالة الـ Scope؛ إذا كان هناك كوروتين لا زال قيد التشغيل ولم يكتمل، يفشل الاختبار فوراً لمنع تسريب العمليات في الخلفية.
 
 ## Practical walkthrough
 
-الاختبار يثبت Loading قبل release للـfake، وبعدها Success. `runTest` لا يسيطر تلقائيًا على callback حقيقي من SDK أو thread مستقل أو network؛ لازم fake أو adapter قابل للتحكم. ولا تستخدم `advanceUntilIdle()` قبل فحص intermediate state، لأنه ممكن يخفي المرحلة اللي تحاول تختبرها.
+اختبار دالة تحتوي على تأخير زمني طويل عبر runTest وتخطي الوقت الافتراضي:
+```kotlin
+class TimerViewModel : ViewModel() {
+    var countdownFinished = false
+        private set
+
+    fun startTimer() {
+        viewModelScope.launch {
+            delay(60_000L) // انتظار دقيقة كاملة!
+            countdownFinished = true
+        }
+    }
+}
+
+class TimerTest {
+    @Test
+    fun `test countdown fast-forwards 60 seconds instantly`() = runTest {
+        // 1. إعداد الـ Dispatcher التجريبي
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val viewModel = TimerViewModel()
+        viewModel.startTimer()
+
+        // قبل تقدم الوقت: العد لم ينتهِ
+        assertFalse(viewModel.countdownFinished)
+
+        // 2. التقدم بالوقت الافتراضي دقيقة كاملة في 1 ميلي ثانية:
+        advanceTimeBy(60_000L)
+        runCurrent() // تنفيذ المهام المجدولة عند هذا التوقيت
+
+        // 3. التحقق من اكتمال الحدث بنجاح:
+        assertTrue(viewModel.countdownFinished)
+
+        Dispatchers.resetMain()
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -86,15 +138,32 @@ Use a main-dispatcher test rule and shared scheduler across ViewModel collaborat
 
 ## Interview answer — short
 
-“runTest provides a TestScope with virtual time for coroutine delays. I share its scheduler with injected TestDispatchers and advance it deliberately; real I/O remains outside that control.”
+runTest is the official coroutine test runner that executes tests inside a TestScope equipped with virtual time. It automatically skips delays so that long delay() operations resolve instantaneously, provides fine-grained control via advanceTimeBy() and advanceUntilIdle(), and asserts that no background jobs are leaked.
 
 ## Interview answer — structured
 
-“I use runTest for suspend and Flow logic so delay-based behavior can be checked without sleeping. TestScope owns the scheduler, and StandardTestDispatcher queues work until I call runCurrent, advanceTimeBy or advanceUntilIdle. I inject test dispatchers and replace Main for ViewModel tests. I do not assume runTest virtualizes real network or code launched on an unrelated dispatcher. I check intermediate states before advancing the scheduler to idle.”
+`runTest` (from `kotlinx-coroutines-test`) provides deterministic coroutine execution by orchestrating virtual time via `TestScope` and `TestScheduler`:
+
+1. **Automatic Delay Skipping**:
+   - Calls to `delay(60_000L)` inside coroutines run under `runTest` do not block thread execution for 60 seconds. The underlying `TestScheduler` detects scheduled delays and advances virtual time (`currentTime`) instantaneously, executing tests in milliseconds.
+
+2. **Fine-Grained Virtual Time Manipulation**:
+   - `advanceTimeBy(millis)`: Advances virtual time by an exact duration, triggering tasks scheduled within that temporal window.
+   - `runCurrent()`: Executes tasks currently scheduled at the active virtual timestamp without advancing time.
+   - `advanceUntilIdle()`: Continuously drains the scheduler until no pending or delayed tasks remain in the queue.
+
+3. **Automatic Leak & Exception Detection**:
+   - Upon exiting the `runTest` block, the runner asserts that all active children coroutines have concluded. If an orphaned background job remains running, `runTest` throws an `UncompletedCoroutinesError`, guaranteeing clean test boundaries.
 
 ## Interview answer — deep senior
 
-“I use `runTest` to make coroutine timing explicit. It gives a test scope with a scheduler that can run queued work and skip virtual delays; `runCurrent` executes tasks ready at the current time, while `advanceTimeBy` moves the clock. For a retry policy I can assert one call at t=0, no second call just before the backoff, and exactly one next call after the scheduled boundary without sleeping a real second. If a ViewModel uses `StandardTestDispatcher`, I inject one using the test scheduler so its work is visible to the same control. I do not blindly call `advanceUntilIdle` before asserting Loading because it may run the repository completion and erase the intermediate state I wanted to observe. I also distinguish virtual time from control of all external work: a vendor callback, socket or unmanaged thread still needs a fake or integration setup. Finally, I check that child jobs complete or are canceled; a test that leaves background collection running can hang or leak. The scheduler makes a contract deterministic, but the contract must still be chosen deliberately.”
+From an advanced concurrency testing perspective, understanding the relationship between runTest, TestScope, and MainDispatcherRule is vital:
+
+1. **Sharing the TestScheduler**: A frequent testing pitfall occurs when a ViewModel launches coroutines on a `TestDispatcher` that does not share the same `TestScheduler` as `runTest`. In `kotlinx.coroutines.test`, `runTest` creates a root `TestScope`. When replacing `Dispatchers.Main`, you must bind it to the active `testScheduler` (e.g. `StandardTestDispatcher(testScheduler)`) so that time advances synchronously across all coroutine scopes.
+
+2. **Handling Infinite Loop Coroutines**: If code under test launches an infinite ticker (e.g. `while(isActive) { delay(1000); emit() }`), invoking `advanceUntilIdle()` triggers an infinite loop and crashes with an out-of-memory or timeout error. For infinite loops, advance time incrementally with `advanceTimeBy()` and explicitly cancel the parent job before exiting `runTest`.
+
+3. **Default Timeout (60 Seconds)**: `runTest` enforces a 60-second virtual time timeout to prevent hanging test suites if non-virtual blocking operations (like standard `Thread.sleep` or un-yielded loops) block the thread.
 
 ## How to answer in the interview
 
@@ -110,8 +179,11 @@ Prompt for scheduler sharing, `runCurrent` versus `advanceTimeBy`, escaping real
 
 ## Follow-up questions
 
-- [TST-06](../tst-06/): Which dispatcher queues launch work? **Answer:** StandardTestDispatcher until scheduler progress.
-- [TST-10](../tst-10/): How test backoff? **Answer:** advance virtual time in steps and assert attempts.
+- **Interviewer:** "What happens if you use Thread.sleep() inside runTest?"
+  **Answer:** "Thread.sleep() blocks the actual operating system thread and cannot be skipped by virtual time, stalling test execution."
+
+- **Interviewer:** "What is the difference between advanceUntilIdle() and runCurrent()?"
+  **Answer:** "runCurrent() runs only tasks scheduled for the current exact virtual millisecond; advanceUntilIdle() advances virtual time repeatedly until all pending delays execute."
 
 ## Self-check rubric
 
@@ -122,4 +194,4 @@ Explain TestScope and its scheduler, show runCurrent versus advanceTimeBy, asser
 - [Kotlin coroutine testing](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/) — runTest and scheduler.
 - [Android coroutine testing](https://developer.android.com/kotlin/coroutines/test) — test dispatchers.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

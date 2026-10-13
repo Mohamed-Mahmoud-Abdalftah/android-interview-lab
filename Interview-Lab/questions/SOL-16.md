@@ -22,7 +22,51 @@ Diagnose God Class responsibilities using change history, clients, data flow and
 
 ## Explanation in Arabic
 
-God Class غالبًا بقت مسؤولة عن UI events، API، cache، pricing، analytics. ما تقسّمهاش حسب عدد الأسطر بس؛ اعمل change-history وcall-site map: أي أجزاء بتتغير مع بعض ولأي سبب؟ شوف dependencies وstate ownership: networking وRoom للdata، policy مشتركة للدومين، UI projection للViewModel. اكتب characterization tests للحالات المهمة، ثم استخرج coherent slice واحدة كل مرة، وحافظ على cancellation/error semantics. لو helper يستخدم mutable shared state، افصل ownership قبل نقله.
+كيف تحدد وتكتشف المسؤوليات المتماسكة (Cohesive Responsibilities) داخل كلاس متضخم (God Class)؟
+
+1. ما هو الـ God Class في Android؟
+   - كلاس ضخم (1,500 إلى 3,000 سطر) يسيطر على كل شيء؛ يقرأ الحساسات، ويطلب الشبكة، ويعدل قاعدة البيانات، وينسق الرسوم، ويتعامل مع الأذونات (مثل كلاس `OrderManager` أو `MainActivity`).
+
+2. المنهجية العلمية لتحديد المسؤوليات المتماسكة داخل الكلاس:
+   - **فحص استخدام المتغيرات المشتركة (LCOM - Lack of Cohesion of Methods)**:
+     * انظر إلى خصائص الكلاس (Fields): ستجد مجموعة دوال (A, B, C) تستخدم فقط `LocationManager` و `gpsCoordinates`.
+     * ومجموعة أخرى (D, E, F) تستخدم فقط `RetrofitOrderApi` و `authToken`.
+     * ومجموعة ثالثة تستخدم فقط `Dialog` و `Toast`.
+     * هذه المجموعات المنفصلة هي كلاسات جديدة تنادي عليك لاستخراجها فوراً!
+   - **فحص أصحاب المصلحة (Stakeholders / Business Actors)**:
+     * اسأل نفسك: من يطلب تعديل هذا الجزء؟ هل هو فريق الـ UI؟ أم فريق الـ Backend؟ أم فريق الأمان؟
+   - **فحص التسميات (Naming Smells)**: الدوال التي تبدأ بـ `calculate...`, `validate...`, `format...` غالباً ما تكون وظائف Domain يجب فصلها عن وظائف التخزين `save...` و `fetch...`.
+
+## Practical walkthrough
+
+تحليل وتفكيك God Class إلى مكونات متماسكة:
+```kotlin
+// ❌ God Class يجمع حقولاً غير متجانسة إطلاقاً:
+class MonolithicCartManager {
+    // Cluster 1: موقع جغرافي لحساب التوصيل
+    var userLat: Double = 0.0
+    var userLng: Double = 0.0
+    fun updateGpsLocation() { ... }
+
+    // Cluster 2: حسابات الضرائب والخصومات (Domain Rules)
+    fun applyDiscountCoupon(code: String) { ... }
+    fun calculateVatTax(subtotal: Long): Long { ... }
+
+    // Cluster 3: التخزين وقاعدة البيانات (Data Storage)
+    fun persistCartToDatabase() { ... }
+    fun syncWithBackendApi() { ... }
+}
+
+// ✅ التفكيك إلى كلاسات عالية التماسك (High Cohesion):
+// 1. DeliveryLocationProvider (مسؤول عن الموقع فقط)
+class DeliveryLocationProvider { ... }
+
+// 2. CartPricingEngine (مسؤول عن حسابات الضرائب والخصومات في Domain)
+class CartPricingEngine { ... }
+
+// 3. CartRepository (مسؤول عن حفظ البيانات ومزامنة السيرفر في Data)
+class CartRepository { ... }
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +75,6 @@ Cohesion is about related change pressure and invariants. A large class can be c
 ## Worked example
 
 Refactor plan for `CheckoutManager`: (1) test submit/timeout/duplicate tap; (2) move provider SDK mapping to adapter; (3) move eligibility into a policy component; (4) keep UI state transition in ViewModel; (5) move durable request tracking to repository. Measure changed-file locality afterward.
-
-## Practical walkthrough
-
-افتح `CheckoutManager` وشوف change history بدل عدّ الأسطر. لو تعديل provider SDK، eligibility policy، UI loading، وتخزين request ID كلهم بيعدّلوا نفس class، دي أسباب تغيير مختلفة. حدد invariants قبل النقل: no duplicate submission، timeout نتيجته unknown، وserver status هو النهائي. انقل SDK mapping إلى adapter، policy إلى component قابل للاختبار، UI state إلى ViewModel، وtracking durable إلى repository. بعد كل خطوة شغّل behavior tests عشان ما تضيعش ترتيب الأحداث. لو فُصلت functions بس ولسه كل class عارفة تفاصيل التانية، المشكلة ما اتحلتش.
 
 ## Trade-offs and decision criteria
 
@@ -50,15 +90,34 @@ A commerce team uses production incident history to prioritize extracting paymen
 
 ## Interview answer — short
 
-I identify responsibilities by reasons to change and shared invariants, not line count. I capture behavior, extract one coherent slice at a time, and preserve state ownership, cancellation and error semantics.
+Identify cohesive responsibilities in a God Class by analyzing field-method clustering (identifying groups of methods that operate on isolated subsets of class variables), grouping methods by the business actors requesting changes, and isolating orthogonal concerns like validation, storage, and UI into dedicated classes.
 
 ## Interview answer — structured
 
-I inspect recent edits, callers and mutable fields to see which responsibilities actually move together. A God Class might contain UI state, provider SDK mapping, business eligibility and cache policy, each with a different owner. I add characterization tests for important flows, then extract one seam at a time, starting with the most volatile or risky. I avoid merely moving helper methods that still depend on the old class’s mutable state. The goal is independent change and reliable behavior, not a cosmetic reduction in line count. For example, if network mapping moves out but still reads a mutable field inside the old manager, the responsibility has not really moved. I would pass explicit inputs and create one owner for shared state before calling the refactor complete.
+Dismantling a God Class requires an objective, metric-driven analysis of internal cohesion rather than subjective guesswork.
+
+1. **Variable-Method Clustering (LCOM - Lack of Cohesion of Methods)**:
+   - Map out the class fields and observe which methods access which properties.
+   - In a God Class, methods naturally form isolated clusters: Methods A, B, and C only read and write location coordinates; Methods D and E only touch the network client; Methods F and G only manipulate formatting and UI dialogs.
+   - Each distinct cluster represents a distinct cohesive class waiting to be extracted.
+
+2. **Actor Alignment (Single Reason to Change)**:
+   - Group methods by the business stakeholder who commands their changes:
+     * Methods requested by UI designers belong in the Presentation/UI layer.
+     * Methods requested by accountants or product rules (tax rules, loyalty points) belong in Domain Use Cases.
+     * Methods requested by infrastructure or backend changes belong in the Data Repository.
+
+3. **Linguistic Clustering (Naming & Verb Analysis)**:
+   - Look for method prefixes: `validate*()` indicates a Validator, `format*()` indicates a Mapper/Formatter, `sync*()` or `save*()` indicates a Repository.
 
 ## Interview answer — deep senior
 
-A useful decomposition starts with data flow and invariants. I draw how a user action reaches network, persistence and UI state, and identify which fields are shared across those paths. Change history reveals separate actors: design, server schema, pricing and compliance. I put SDK translation in data, reusable policy in a focused component, and screen state in a ViewModel, but I do not scatter a cohesive transaction invariant across many classes. Before each move I write behavior tests for success, failure, cancellation, duplicate taps and process death where applicable. Afterward I inspect module dependencies and whether a new requirement changes fewer unrelated files. I use staged rollout and telemetry for high-risk payment changes. I look for clusters of changes and invariants rather than simply labeling a long class bad. In a checkout manager, provider mapping, eligibility, UI state transitions, and durable request tracking have different change actors. I would capture behavior tests for duplicate taps, timeout, and recovery, then extract one cluster at a time. The adapter handles SDK translation, the policy owns eligibility, the ViewModel exposes screen state, and a repository tracks durable request IDs. The risk is a cosmetic split where the new classes call each other in a cycle and still change together. I would review dependency direction and future changed-file locality, not just class length.
+Static analysis tools (like SonarQube, Detekt, or Konsist) formalize this process. Detekt flags classes violating `ComplexInterface`, `LargeClass` (e.g. >600 LOC), or `TooManyFunctions` (>15 methods). When these metrics trigger, we run an automated dependency structure matrix (DSM) in IntelliJ/Android Studio to visualize coupling blocks.
+
+Once clusters are identified, refactor using the **Extract Class refactoring technique**:
+- Step 1: Create the new focused class (`DeliveryCalculator`).
+- Step 2: Delegate the God Class's methods to an instance of the new class.
+- Step 3: Update client callers to inject the new class directly, gradually strangling the legacy God Class.
 
 ## How to answer in the interview
 
@@ -74,8 +133,11 @@ Use change history, state-field map, call graph and characterization tests to fi
 
 ## Follow-up questions
 
-- [SOL-02](../sol-02/): What defines responsibility? **Answer:** a coherent reason/actor for change, not one method.
-- [ARC-21](../arc-21/): How refactor a 1,000-line ViewModel? **Answer:** characterize behavior and extract data/policy seams incrementally.
+- **Interviewer:** "What is LCOM (Lack of Cohesion of Methods)?"
+  **Answer:** "A software metric that measures the disparity between methods and fields in a class. High LCOM indicates low cohesion, proving that a class is doing too many unrelated things and should be split."
+
+- **Interviewer:** "How do God Classes negatively affect team velocity and Git workflows?"
+  **Answer:** "Multiple developers working on different features simultaneously edit the same massive file, creating frequent and painful merge conflicts, broken builds, and duplicated regression testing."
 
 ## Self-check rubric
 
@@ -86,4 +148,4 @@ Identify three change actors and one shared invariant in a God Class; propose a 
 - [Robert C. Martin, SRP](https://blog.cleancoder.com/uncle-bob/2014/05/08/SingleReponsibilityPrinciple.html) — reasons to change.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — separation of concerns.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

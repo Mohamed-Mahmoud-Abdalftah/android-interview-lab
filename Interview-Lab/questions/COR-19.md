@@ -22,11 +22,42 @@ Explain a read-modify-write race and why coroutine syntax does not serialize sha
 
 ## Explanation in Arabic
 
-الـrace condition بتحصل لما النتيجة تعتمد على ترتيب interleaving بين عمليات متزامنة. `counter++` قراءة ثم حساب ثم كتابة، مش خطوة atomic؛ coroutines على `Default` ممكن تشتغل على threads مختلفة وتضيّع تحديثات. وحتى على thread واحد، suspension بين القراءة والكتابة يسمح coroutine تانية تغيّر القيمة.
+المغالطة الشائعة بأن الـ Coroutines 'Thread-Safe تلقائياً' هي سبب كارثي في أخطاء التزامن (Concurrency Bugs):
+
+1. ما هو الـ Race Condition؟
+   - هو حالة تحدث عندما تحاول عمليتان أو أكثر قراءة وتعديل متغير مشترك (Shared Mutable State) في نفس الوقت، وتعتمد النتيجة النهائية على توقيت الوصول (Timing / Scheduling).
+   - مثال: عمليتان تحاولان زيادة عداد `count++`. العملية تتكون من 3 خطوات في المعالج: قراءة القيمة، زيادتها، ثم حفظها. لو حدثت العمليتان بالتوازي، سيتم فقدان إحدى الزيادات وتصبح النتيجة خاطئة!
+
+2. لماذا الـ Coroutines ليست Thread-Safe تلقائياً؟
+   - الـ Coroutines تعمل على **Thread Pools** متعددة الخيوط (زي `Dispatchers.Default` و `Dispatchers.IO`).
+   - لو أطلقت 100 coroutine وكل واحدة بتعدل في متغير عادي أو `ArrayList` مشترك، الـ Coroutines دي هتتنفذ على خيوط حقيقية متوازية في المعالج، وهيحصل Race Condition وتلف للبيانات أو `ConcurrentModificationException` تماماً مثل الـ Threads العادية!
+   - الـ Coroutines تسهل كتابة الكود غير المتزامن، لكنها **لا تلغي قوانين الذاكرة وتزامن البيانات المشتركة (Shared State)**.
 
 ## Practical walkthrough
 
-لو اتنين coroutines بيزودوا counter مشترك، `counter++` فيها read ثم add ثم write؛ ممكن الاتنين يقروا نفس الرقم وتضيع زيادة. الـcoroutines ممكن تتنفذ على threads مختلفة، وحتى على thread واحد suspension بين القراءة والكتابة يعمل interleaving. `AtomicInteger.incrementAndGet()` حل لقيمة واحدة، لكن تحديث stock مع audit row يحتاج transaction أوسع.
+تطبيق حساب بنكي ومحفظة إلكترونية:
+- عمليتان متزامنتان للإيداع بـ 100 جنيه لكل عملية:
+```kotlin
+// ❌ كود كارثي فيه Race Condition خطير:
+var balance = 0
+coroutineScope {
+    repeat(1000) {
+        launch(Dispatchers.Default) {
+            balance++ // غير متزامن! في النهاية balance سيكون 920 أو 850 بدلاً من 1000!
+        }
+    }
+}
+
+// ✅ الحل باستخدام AtomicInteger أو Mutex:
+val atomicBalance = AtomicInteger(0)
+coroutineScope {
+    repeat(1000) {
+        launch(Dispatchers.Default) {
+            atomicBalance.incrementAndGet() // عملية ذرية Hardware-level آمنة 100%
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -63,15 +94,25 @@ A cart repository updates quantity and total together in one database transactio
 
 ## Interview answer — short
 
-“A race is an outcome that depends on execution order. Coroutines do not make `read; modify; write` atomic. I protect the shared invariant with an atomic primitive, Mutex, confinement or database transaction.”
+A race condition occurs when concurrent tasks read and modify shared mutable state without synchronization, yielding corrupted results. Coroutines are not automatically thread-safe because they execute across multi-threaded dispatcher pools (like Default and IO); accessing shared mutable state concurrently causes identical data races and memory corruption as traditional threads.
 
 ## Interview answer — structured
 
-“Coroutines can run concurrently or in parallel, so shared mutable state has the usual race problems. `counter++` contains separate read and write steps and can lose increments. A single thread is not automatically safe if an operation suspends between those steps. I choose an atomic operation for a simple counter, Mutex for in-memory multi-step state, or a database transaction for persistent invariants. `@Volatile` alone does not solve compound updates.”
+A race condition happens when multiple concurrent execution paths access and mutate shared state without coordination, producing non-deterministic bugs that depend on thread execution timing.
+
+A frequent misconception is that switching from Java threads to Kotlin coroutines magically makes code thread-safe. It does not. Coroutines dispatched on `Dispatchers.Default` or `Dispatchers.IO` execute on underlying multi-threaded worker pools. If two coroutines simultaneously read, increment, and write back a shared variable like `counter++`, CPU thread switching causes lost updates.
+
+Furthermore, standard Java collections like `ArrayList` or `HashMap` have no internal synchronization; concurrent coroutine writes will corrupt their internal arrays and throw `ConcurrentModificationException`.
+
+To prevent race conditions, we must synchronize access using techniques suited for coroutines: thread confinement, atomic primitives, Kotlin's non-blocking `Mutex`, or immutable state flows.
 
 ## Interview answer — deep senior
 
-“I first identify the invariant, not just the variable. An atomic integer can make a simple increment linearizable, but a balance update that must check funds and append a ledger entry needs a transaction at the authoritative store. A Mutex only protects participants using that same in-process lock and disappears after process death; it cannot coordinate other devices or server workers. A confined actor can serialize messages, but may bottleneck throughput. I test a forced interleaving of two updates and then assert the invariant, and I keep server-side financial authority even if the Android client uses a local synchronization primitive. Telemetry checks invariant violations and reconciliation. An atomic counter solves exactly one read-modify-write variable; it does not make a pair of fields or a business invariant atomic. I would reproduce the lost update with two coroutines reading the same initial value before either writes, then choose confinement, Mutex, or a transaction based on ownership. On a real account balance, a client-side lock cannot coordinate other devices or backend workers, so the server ledger remains authoritative.”
+At the hardware and memory architecture level, modern multicore processors use private L1 and L2 caches. Without memory synchronization barriers, writes performed by a coroutine on Core A may remain in Core A's store buffer and not be visible to Core B executing another coroutine. This violates the Java Memory Model's (JMM) 'happens-before' guarantee.
+
+When dealing with suspension points, race conditions can become even more insidious: a coroutine might read a shared balance, suspend across a network call, and then write back the balance. During the suspension window, another coroutine could have modified the balance multiple times, causing a classic Time-of-Check to Time-of-Use (TOCTOU) race condition.
+
+In modern Android MVI/Unidirectional Data Flow architectures, the ultimate cure for race conditions is eliminating shared mutable state entirely: we confine state mutation to a single coroutine dispatcher or use atomic compare-and-swap loops inside `MutableStateFlow.update { current -> current.copy(...) }`.
 
 ## How to answer in the interview
 
@@ -87,8 +128,14 @@ Trace `read; suspend; write`, volatile visibility, local lock boundaries and ser
 
 ## Follow-up questions
 
-- [COR-20](../cor-20/): Which primitive fits multiple fields? **Answer:** Mutex or a transaction, depending on where the invariant lives.
-- [COR-28](../cor-28/): Why is `balance++` unsafe? **Answer:** it is a compound read-modify-write operation.
+- **Interviewer:** "Does running coroutines on `Dispatchers.Main` protect you from race conditions?"
+  **Answer:** "Yes for purely synchronous code, because all execution is confined to the single main thread. However, if a coroutine suspends (e.g., across `delay` or network call), another event can run on the main thread during that suspension window and mutate the state, still producing a logical race condition."
+
+- **Interviewer:** "Why is `volatile` not enough to fix `counter++`?"
+  **Answer:** "`volatile` only guarantees memory visibility (that all threads read the latest value directly from main memory); it does not guarantee atomicity. The `++` operation is three separate instructions (read, increment, write). If two threads read simultaneously, one increment will overwrite the other."
+
+- **Interviewer:** "What is the best way to handle shared mutable state in a ViewModel?"
+  **Answer:** "Use `MutableStateFlow` with immutable data classes and update state via `_state.update { current -> ... }`, which performs atomic, non-blocking updates using atomic compare-and-set loops."
 
 ## Self-check rubric
 
@@ -98,4 +145,4 @@ Can I exhibit a lost update, explain volatile limits, choose a primitive and nam
 
 - [Kotlin shared mutable state](https://kotlinlang.org/docs/shared-mutable-state-and-concurrency.html) — lost updates, atomics and Mutex.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

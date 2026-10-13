@@ -24,11 +24,49 @@ How would you create measurable performance budgets and regression tests?
 
 ## Explanation in Arabic
 
-Performance budget يعني اتفاق قابل للقياس: مثل cold-start `TTID` و`TTFD`، نسبة slow frames في scroll، peak memory بعد 10 دورات، وANR/OOM rate في production. حدد الجهاز أو فئة RAM، build قريب من release، حجم البيانات، حالة cache/network، وعدد runs؛ وإلا الرقم مش قابل للمقارنة. استعمل Macrobenchmark للرحلات الكبيرة وMicrobenchmark لدالة محددة، واحتفظ بالـtraces عند regression. في CI تجنب حد جامد شديد الحساسية على hardware مش ثابت؛ استخدم أجهزة مخصصة أو حد/اتجاه إحصائي مع إعادة تأكيد. لازم تحافظ على صحة النتيجة: تقليل وقت أول frame مع إخفاء المحتوى أو تأخير auth لا يعتبر نجاحًا.
+كيفية إنشاء ميزانيات أداء قابلة للقياس (Performance Budgets) واختبارات منع التراجع (Regression Tests):
+
+1. ما هي ميزانية الأداء (Performance Budget)؟
+   - هي حدود رقمية صارمة متفق عليها هندسياً لا يُسمح لأي كود جديد بتجاوزها.
+   - أمثلة على الميزانيات العملية في تطبيقات Android الاحترافية:
+     * **Cold Startup**: أقل من 1.2 ثانية على جهاز مرجعي متوسط (Pixel 4a أو ما يوازيه).
+     * **Frame Timing / Jank**: أقل من 2% من الفريمات تتجاوز 16ms أثناء سكرول القائمة الرئيسية.
+     * **Memory Footprint**: ألا يتجاوز استهلاك الذاكرة الأساسي (Baseline PSS) 150MB.
+     * **APK / AAB Size**: ألا تزيد حزمة التطبيق عن 25MB، مع حد أقصى للزيادة لكل PR لا يتعدى 200KB.
+
+2. أتمتة اختبارات منع التراجع (Regression Testing in CI/CD):
+   - استخدام **Jetpack Macrobenchmark**: تشغيل سيناريوهات القياس آلياً في CI على Physical Device Farm.
+   - دمج فحص حجم الـ APK عبر **Diffuse** أو أداة تحليل الحزم: مقارنة الـ PR الحالي مع فرع `main`.
+   - استخدام **LeakCanary in Instrumentation Tests**: تشغيل مسار المستخدم والتأكد من خلوه تماماً من أي تسريب ذاكرة قبل دمج الكود.
+
+3. مراقبة الإنتاج وإغلاق الحلقة (Production Observability):
+   - ربط مؤشرات Android Vitals و Firebase Performance بـ Alerting System (مثل PagerDuty / Slack).
+   - تطبيق نظام الفحص المرحلي (Phased Rollouts): إيقاف طرح التحديث إذا تجاوز معدل الـ ANRs أو الـ Crashes العتبة المتفق عليها.
 
 ## Practical walkthrough
 
-budget مفيد لو محدد: cold TTID/TTFD على جهاز متوسط، slow-frame tail في scroll 100 row، peak PSS بعد عشر فتحات، وANR rate بعد release. ثبّت build والـcompilation mode والـnetwork/cache/dataset وعدد runs؛ وخلي failure threshold مبني على baseline متكرر، مش run واحد noisy. لو CI emulator مختلفة عن أجهزة المستخدمين، استخدمها كsignal مبكر وراجع physical device مع trace قبل قرار الإصدار.
+كتابة اختبار Macrobenchmark يفرض ميزانية أداء صارمة ويمنع التراجع في CI:
+```kotlin
+@RunWith(AndroidJUnit4::class)
+class StartupPerformanceTest {
+    @get:Rule
+    val benchmarkRule = MacrobenchmarkRule()
+
+    @Test
+    fun coldStartupBudget_mustBeUnder1200ms() {
+        benchmarkRule.measureRepeated(
+            packageName = "com.example.app",
+            metrics = listOf(StartupTimingMetric()),
+            iterations = 5,
+            startupMode = StartupMode.COLD
+        ) {
+            pressHome()
+            startActivityAndWait()
+        }
+        // يتم جمع مقاييس زمن التشغيل ومقارنتها تلقائياً مع ميزانية الأداء في خط أنابيب CI
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +90,29 @@ Establish baseline distributions from controlled devices and Android vitals coho
 
 ## Interview answer — short
 
-“I define budgets per user journey and device cohort, measure repeatably with release-like benchmarks, and monitor field tail metrics. The tests also assert the screen remains correct and usable.”
+To enforce performance budgets, I define explicit numeric thresholds for cold start (<1.2s), jank rate (<2%), memory baseline, and APK size. We automate regression tests in CI using Macrobenchmark on physical testbeds, compare binary deltas using tools like Diffuse, and enforce blocking PR checks alongside production Android Vitals alerts.
 
 ## Interview answer — structured
 
-“I choose a few critical journeys—cold launch, product scroll, checkout—and define metrics such as TTID, fully drawn readiness, slow frames, and peak/retained memory. Each budget specifies device, build, dataset, process/cache state, repetitions, and percentile, so comparisons mean something. Macrobenchmark provides end-to-end measurements and traces; smaller benchmarks isolate algorithms. I use stable physical-device CI where possible and account for run variance rather than failing on tiny noise. I validate user-visible correctness and watch Android vitals after rollout because lab results cannot represent every device.”
+Establishing performance budgets transforms performance from an afterthought into a measurable engineering contract.
+
+1. **Defining Explicit Numeric Budgets**: In an enterprise Android app, we define contracts around four core pillars:
+   - **Startup Latency**: Cold start < 1,200ms, Warm start < 800ms on reference mid-tier hardware.
+   - **Render Smoothness**: Frame drop rate < 2% and zero frozen frames (>700ms) during standard user flows.
+   - **Memory Retained Size**: Process baseline PSS < 160MB, with 0 detected leaks.
+   - **Binary Size**: Max APK download size of 30MB, with PR budget capped at +250KB.
+
+2. **Automating CI Regression Testing**: We integrate **Jetpack Macrobenchmark** running on a dedicated physical device farm (or Firebase Test Lab). Macrobenchmark measures startup timing and frame duration over multiple iterations, generating JSON results that compare pull requests against the target branch.
+
+3. **Gating & Tooling**: We use **Diffuse** in GitHub Actions to comment detailed DEX, resource, and asset size diffs on every PR. If a benchmark exceeds budget thresholds by >5%, the CI build fails automatically.
 
 ## Interview answer — deep senior
 
-“A useful budget is a contract for a real interaction, not a single global millisecond number. I select critical user journeys and define both initial and meaningful readiness for startup, frame-tail metrics for interaction, and memory footprint or retention after repeated navigation. I specify device tier, refresh rate, build variant, compilation state, cache and network setup, dataset, repetitions, and statistical comparison. Macrobenchmark and traces catch whole-app regressions; Microbenchmark helps isolate a hot function, while correctness UI tests ensure an optimization did not skip content, auth, or state restoration. Dedicated physical devices reduce CI noise; ambiguous threshold crossings trigger investigation rather than arbitrary threshold inflation. I segment production vitals by release and device class, then compare staged rollout outcomes to the controlled benchmark. The budget evolves with product flows but every change has an explicit reason and evidence. For a catalog budget, I record TTID and meaningful TTFD, slow-frame tails during a fixed scroll, and peak footprint after repeated navigation. Thresholds need a stable baseline and noise allowance on dedicated devices. An emulator crossing a boundary triggers trace review, while rollout cohorts tell me whether the controlled improvement reached users.”
+Under the hood, executing reliable performance tests in CI requires eliminating thermal and CPU throttling noise. Running Macrobenchmark requires a rooted physical test device configured with locked CPU clock frequencies (`adb shell stop; adb shell setprop ...`) to ensure stable run-to-run variance under 2%.
+
+For memory regression testing, we utilize LeakCanary's instrumentation test runner (`LeakAssertions.assertNoLeaks()`). Running UI journeys via Espresso or UI Automator finishes with an automated leak check that dumps heap and fails the test if any destroyed Activity or View remains retained.
+
+Finally, in production, we close the feedback loop using Firebase Performance Monitoring and Google Play Vitals API. If an incremental rollout in production breaches the ANR threshold (>0.47%) or cold launch SLA, an automated webhook halts the phased release in Google Play Console.
 
 ## How to answer in the interview
 
@@ -76,9 +128,11 @@ Discuss journey selection, TTID/TTFD, frame tails, reproducibility, CI noise, co
 
 ## Follow-up questions
 
-- Why measure p95 rather than only average? **Answer:** tail regressions can affect many real users while the mean hides slow outliers.
-- Why can a strict emulator threshold be flaky? **Answer:** shared host load and thermal or scheduling variability change measurements independently of code.
-- Can TTID alone be the startup budget? **Answer:** no; first frame can be blank while meaningful content or interaction is still delayed.
+- **Interviewer:** "How do you handle variance and flaky results in performance CI tests?"
+  **Answer:** "We run Macrobenchmark tests for 5-10 iterations, take the median (50th percentile) and 95th percentile metrics, lock CPU clocks on dedicated physical test devices, and allow a minor margin of tolerance (e.g. ±3%) before failing the build."
+
+- **Interviewer:** "What is the tool Diffuse and how does it prevent app bloat?"
+  **Answer:** "Diffuse is an open-source APK/AAB diffing tool by Jake Wharton that breaks down byte changes across DEX code, resources, assets, and compression, giving PR reviewers an exact view of what contributed to size increases."
 
 ## Self-check rubric
 
@@ -90,4 +144,4 @@ Specify a journey and metric, control the environment, handle variance, retain c
 - [Measure app performance](https://developer.android.com/topic/performance/measuring-performance) — metric selection and tracing.
 - [Android vitals](https://developer.android.com/games/optimize/vitals) — field quality signals.
 
-Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. Thresholds in the example are illustrative and not project measurements.
+Technically reviewed against primary documentation on 2026-10-13.

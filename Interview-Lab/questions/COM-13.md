@@ -24,11 +24,53 @@ How do you correctly implement Snackbar, navigation, and callbacks?
 
 ## Explanation in Arabic
 
-الـcomposable ترسل event للمالك مثل `onSave` بدل أن تغير NavController أو repository في جسم الرسم. Snackbar هي UI operation: `SnackbarHostState.showSnackbar()` suspend، فتطلقها من callback عبر `rememberCoroutineScope` أو effect مملوكة للشاشة. Navigation ينفذ عند نتيجة صالحة، وليس كل recomposition لــ`success=true`. صمّم one-shot delivery أو state مع acknowledgment كي لا يتكرر بعد rotation، وانتبه أن event stream قد يفوت عندما lifecycle متوقفة. callback داخل effect طويلة قد تصبح قديمة؛ استخدم key مناسب أو `rememberUpdatedState`.
+كيفية التعامل الصحيح مع أحداث المرة الواحدة (One-off Events) مثل الـ Snackbar والتنقل (Navigation) والـ Callbacks في Jetpack Compose:
+
+1. معضلة أحداث المرة الواحدة (Single-Event Anti-Pattern):
+   - في السابق، كان المطورون يضعون `SharedFlow` أو `Channel` أو `SingleLiveEvent` لإرسال حدث مثل `ShowToast` أو `NavigateToHome`.
+   - المشكلة: الـ Channels قد تفقد الأحداث إذا حدث Configuration Change أثناء الإرسال، أو قد تعيد تنفيذ الحدث مرتين عند إعادة التدوير (Double Navigation)!
+
+2. التوجيه الرسمي الحديث من Google (State-Based Events):
+   - يجب تمثيل رسائل التنبيه والـ Snackbars **كجزء من الـ UI State نفسها**!
+   - يتم وضع كائن مثل `userMessage: UserMessage?` داخل الـ `UiState`.
+   - عندما يقرأ الـ Composable هذه الرسالة، يعرض الـ Snackbar، ثم يُرسل فورياً حدثاً للـ ViewModel يقول: `onMessageShown(messageId)` لتصفير القيمة إلى `null`.
+   - هذا يضمن الحتمية التامة؛ فحتى لو تدوّرت الشاشة أو ماتت العملية، يُعرف بالضبط هل عُرضت الرسالة أم لا.
+
+3. أحداث التنقل (Navigation Events):
+   - التنقل استجابةً لضغط المستخدم المباشر يجب أن يتم في الـ UI Layer فوراً عبر Lambdas (`onClick = { onNavigateToDetails(itemId) }`).
+   - إذا كان التنقل مشروطاً بنتيجة عملية في السيرفر (مثل تسجيل دخول ناجح)، يتم تمثيل حالة الوجهة في الـ ViewModel وعند الوصول لحالة النجاح يُستدعى التنقل ويُفرغ الحدث.
 
 ## Practical walkthrough
 
-في Save، الـbutton يعمل `onSave()` بس. نتيجة الـViewModel لازم تكون event/transition لها ID أو acknowledgment؛ route تنفذ navigation مرة وتعلم إنها اتعالجت. لو فشل، الـroute تعرض snackbar من coroutine مرتبطة بالشاشة؛ لا تكتب `navController.navigate()` في body لما `success` تبقى true. لو event stream غير replayable والشاشة متوقفة، ممكن رسالة النجاح تضيع؛ ولو success Boolean دائمة، navigation ممكن تتكرر. اختار delivery/acknowledgment واضح واختبر rotation والتطبيق في background.
+النمط القياسي لعرض الـ Snackbar كجزء من الحالة وتصفيره بعد العرض:
+```kotlin
+// 1. تمثيل الرسالة في الـ UiState:
+data class EditProfileUiState(
+    val isLoading: Boolean = false,
+    val userMessage: String? = null // رسالة المرة الواحدة كـ State قابلة للإلغاء
+)
+
+// 2. معالجة الرسالة في Compose باستخدام LaunchedEffect وتصفيرها فوراً:
+@Composable
+fun EditProfileScreen(
+    viewModel: EditProfileViewModel,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() }
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    // مراقبة userMessage؛ عند توفره يتم عرضه ثم إبلاغ الـ ViewModel بتصفيره:
+    LaunchedEffect(uiState.userMessage) {
+        uiState.userMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.onUserMessageShown() // تصفير الرسالة لمنع تكرارها عند التدوير!
+        }
+    }
+
+    Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) {
+        ProfileContent(uiState)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -69,15 +111,25 @@ Test duplicate taps, rotation during saving, STOP/START delivery, and back navig
 
 ## Interview answer — short
 
-“User callbacks send intent upward; Snackbar is a screen-owned suspending UI action; navigation follows a consumed result or explicit event contract, never a bare render-body condition. A click emits intent; the route performs one navigation or Snackbar action after a result.”
+Model one-off UI events (like Snackbars) as consumable state properties inside the UI state, displaying them via `LaunchedEffect(userMessage)` and immediately calling an `onMessageDismissed()` event to clear the state. Navigation triggered by user input should be handled directly in the UI via callbacks, while business-driven navigation is driven by explicit state transitions.
 
 ## Interview answer — structured
 
-“I keep a reusable screen unaware of NavController and pass `onSave` or similar callbacks from its route. The owner handles the request and exposes result state. The route shows transient feedback through `SnackbarHostState` in an owned coroutine, and navigates once when a valid result is consumed. I decide how events behave while stopped and after rotation, and I use current callback handling in long-running effects. Duplicate-tap control is in the use case as well as the button. For Save, I separate the request, its authoritative outcome, and the route’s consumed action.”
+Handling one-off events in Jetpack Compose requires transitioning away from legacy event-bus and channel antipatterns toward state-driven architectures.
+
+1. **Snackbar and Transient Messages as State**: Rather than pushing side-effect events through `Channel` or `SharedFlow`, the modern official pattern models messages as state: `userMessage: UserMessage?` inside `ScreenUiState`. In Compose, a `LaunchedEffect(uiState.userMessage)` observes this field. When non-null, it invokes `snackbarHostState.showSnackbar(message)`, and immediately fires a callback `viewModel.onMessageShown(id)` to reset the state to `null`. This prevents missed messages or duplicate displays upon screen rotation.
+
+2. **User-Driven Navigation**: Clicks and direct user navigation (e.g. tapping an item) should be handled immediately in the UI layer through hoisted lambda callbacks (`onItemClick: (Id) -> Unit`), directly invoking the `NavController`.
+
+3. **Business-Driven Navigation**: When navigation depends on business outcomes (e.g. successful authentication), the ViewModel emits a distinct terminal state (e.g. `AuthState.Authenticated`), which the UI observes to execute navigation.
 
 ## Interview answer — deep senior
 
-“I separate three things that often get conflated: the user's intent, the state resulting from work, and an imperative UI action. The screen emits a callback for Save; a ViewModel or use case owns submission and exposes loading, error or saved data. The route owns navigation because that is a destination concern, and a `SnackbarHostState` owned by the visible Scaffold can show feedback from an event-triggered coroutine. I do not navigate from a composable's plain `if (saved)` body, because recomposition or recreation could replay it. Instead I define a one-time transition with acknowledgment, or encode destination state so the route can consume it deterministically. I test what happens if the Activity is stopped when a result arrives; a Channel with no collector can lose it, while a replaying state can duplicate it unless consumed. For callback observers tied to composition I key the actual owner and use `rememberUpdatedState` when the callback changes without changing registration identity. Finally, a disabled button is UX, not the payment or save idempotency guarantee; the domain/backend boundary must reject duplicate operations. I choose an event-delivery contract that accounts for a stopped lifecycle and process restoration.”
+Why did Google advise against using `Channel` or `SharedFlow` for one-off UI events in Compose? Channels buffer events imperatively. If an event is posted while the UI is transitioning lifecycles (e.g. during an Activity recreation or rotation), the collector may either drop the event or consume it before the new composition is ready, resulting in dropped Snackbars or phantom double navigations.
+
+By embedding events in the immutable `UiState`, state restoration is guaranteed: if the screen dies and is recreated via `SavedStateHandle`, the pending message is preserved and displayed reliably.
+
+For navigation specifically, to prevent rapid double-clicks from pushing two duplicate screens onto the backstack, we either guard navigations with a boolean gate or debounce click modifiers, and verify that the destination is not already the top destination on the NavController backstack.
 
 ## How to answer in the interview
 
@@ -93,9 +145,11 @@ Discuss route/screen split, Snackbar suspension, event delivery, navigation repl
 
 ## Follow-up questions
 
-- Why avoid navigation in a composable body? **Answer:** rendering may repeat and trigger duplicate back-stack changes.
-- Where should `showSnackbar` launch? **Answer:** from a screen-owned coroutine triggered by an event or controlled effect.
-- Can a disabled button guarantee one save? **Answer:** no; domain and backend operations must handle duplicates too.
+- **Interviewer:** "What happens if a user rotates the screen while a Snackbar is currently being displayed?"
+  **Answer:** "If modeled as state cleared only upon `showSnackbar()` completion, the recreated screen will simply re-display the active message. If cleared immediately before display, the rotation drops it gracefully without crashing."
+
+- **Interviewer:** "How do you prevent rapid double-taps on navigation buttons in Compose?"
+  **Answer:** "By using a single-click modifier that checks `SystemClock.elapsedRealtime()`, or checking that `navController.currentBackStackEntry?.destination?.route` matches the expected source route before navigating."
 
 ## Self-check rubric
 
@@ -107,4 +161,4 @@ Trace Save through callback, state, Snackbar or navigation; cover rotation and d
 - [Navigation in Compose](https://developer.android.com/develop/ui/compose/navigation) — route navigation practices.
 - [Side-effects in Compose](https://developer.android.com/develop/ui/compose/side-effects) — callbacks and effects.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Event-delivery choice is application-specific.
+Technically reviewed against primary documentation on 2026-10-13.

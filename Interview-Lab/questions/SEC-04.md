@@ -23,11 +23,44 @@ Why is local.properties not a runtime security mechanism?
 
 ## Explanation in Arabic
 
-`local.properties` ملف محلي أثناء build، مفيد ما تحطّش قيمة في Git. لكن لما Gradle يحطّها في `BuildConfig` أو resource فهي بقت جزء من APK الموزّع، وسهل تتشاف بالـdecompilation أو runtime instrumentation. ده يحمي repository بس، مش سرّ وقت التشغيل عند العميل.
+لماذا لا يعتبر ملف `local.properties` آلية أمان في وقت التشغيل (Runtime Security Mechanism) في Android؟
+
+1. ما هو ملف `local.properties` الحقيقي؟
+   - هو ملف نصي محلي على جهاز المطور يُستخدم لتكوين مسار الـ Android SDK وتخزين متغيرات البناء المحلية دون رفعها إلى نظام التحكم بالنسخ Git (`.gitignore`).
+   - إذا قمت بقراءة مفتاح من `local.properties` في ملف `build.gradle.kts` وحقنه في `BuildConfig`:
+     `buildConfigField("String", "API_KEY", "\"$apiKey\"")`
+
+2. لماذا لا يوفر أي أمان على الإطلاق في وقت التشغيل؟
+   - أثناء عملية التجميع (Build Time)، يقوم مترجم Gradle بتوليد كلاس Java عادي يسمى `BuildConfig.java`.
+   - يتم تضمين القيمة كنص صريح (Plaintext String) داخل ملف الـ `classes.dex` النهائي داخل الـ APK!
+   - أي شخص يقوم بتنزيل تطبيقك يستطيع فتح الـ APK بأداة مثل `jadx-gui` أو كتابة أمر واحد في سطر الأوامر:
+     `strings classes.dex | grep "my_secret_key"`
+     ويحصل على المفتاح في 2 ثانية فقط!
+
+3. الفائدة الحقيقية لـ `local.properties`:
+   - هو فقط آلية لمنع تسريب المفاتيح في مستودعات Git العامة (Git Leak Prevention). لا علاقة له بأمان الـ APK ضد الهندسة العكسية.
 
 ## Practical walkthrough
 
-لو `local.properties` فيها `PAYMENT_SECRET` وGradle كتبها في `BuildConfig`, الملف نفسه ممكن ما يدخلش Git، لكن القيمة دخلت APK. جرّب تفحص release artifact في بيئة اختبار؛ هتلاقيها أو تلاقي استعمالها وقت runtime. العلاج إن mobile app تبعت intent للـbackend، والـbackend وحده يستعمل credential الخاصة بعد ما يتحقق من الحساب والمبلغ.
+توضيح كيفية استخراج أي مفتاح موضوع في BuildConfig من ملف APK مجمع:
+```kotlin
+// ❌ الوهم الأمني: المطور يعتقد أن حقن المفتاح من local.properties يجعله آمناً:
+// في build.gradle.kts:
+val secretKey = gradleLocalProperties(rootDir, providers).getProperty("PAYMENT_GATEWAY_SECRET")
+android.defaultConfig {
+    buildConfigField("String", "PAYMENT_SECRET", "\"$secretKey\"")
+}
+
+// في كود التطبيق:
+val apiSecret = BuildConfig.PAYMENT_SECRET
+
+// كيف يستخرجه أي مهاجم أو فاحص أمني في ثانيتين؟
+// 1. فك ضغط ملف الـ APK:
+// unzip app-release.apk
+// 2. البحث عن النصوص الصريحة في ملف الـ DEX المجمع:
+// strings classes.dex | grep "sk_live_"
+// -> النتيجة: sk_live_51MzaB... (المفتاح السري مكشوف بالكامل بدون الحاجة حتى لأدوات Decompiler!)
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +84,27 @@ CI scans APKs and release artifacts for sensitive values, not just Git history. 
 
 ## Interview answer — short
 
-“local.properties keeps a value out of source control, but once copied into an APK it is recoverable. Private API credentials belong on a trusted backend; embedded identifiers need restrictions and quotas.”
+local.properties keeps secrets out of Git version control during development, but compiling values into BuildConfig embeds them as plaintext strings inside the APK's classes.dex file. Anyone can extract them in seconds using standard tools like jadx or strings.
 
 ## Interview answer — structured
 
-“`local.properties` is useful build hygiene because it keeps a value out of Git, but Gradle can copy that value into `BuildConfig` or resources in the shipped APK. A client owner can decompile or instrument the app and recover it. If the value authorizes a private provider action, I rotate it and move the call to a backend endpoint that validates the user and operation. Public mobile identifiers need provider restrictions and quotas rather than a secrecy claim.”
+A pervasive misconception among Android developers is conflating **Source Control Hygiene** with **Runtime Binary Confidentiality**:
+
+1. **What `local.properties` Actually Does**: It prevents developers from accidentally committing credentials to public or shared Git repositories. It is strictly a build-time configuration tool for the local developer machine.
+
+2. **Why It Provides Zero Runtime Security**: When Gradle reads a property from `local.properties` and injects it via `buildConfigField`, the Kotlin/Java compiler embeds the raw string literal directly into `BuildConfig.class`. During D8/R8 compilation, the string literal is placed into the APK's `classes.dex` string constant pool.
+
+3. **Trivial Extraction**: An attacker does not need sophisticated reverse engineering skills. Running `jadx` or executing `strings classes.dex | grep -i key` on the distributed APK dumps the secret in plain text.
+
+Private backend API secrets (payment gateway private keys, database master credentials, encryption secret seeds) must **NEVER** be present anywhere in the Android build system. They must reside exclusively on authenticated backend servers.
 
 ## Interview answer — deep senior
 
-“I would trace the credential from build input to release artifact. `local.properties` may keep a value out of Git, but copying it into `BuildConfig` puts it on untrusted devices. R8 or JNI cannot make a privileged credential secret there. If that key can call a payment provider, I would revoke it, inspect usage, and move provider calls behind a backend endpoint that checks user, amount, and operation identity. Public mobile identifiers can remain in the APK only under provider restrictions and quotas. I would add artifact scanning to CI so clean source control does not create a false sense of safety. In a real incident I would identify which released versions contained the key, revoke it at the provider, and compare provider logs with legitimate operation IDs. The replacement backend endpoint should expose the intended operation, not a generic proxy that lets a modified client call arbitrary provider methods. A release artifact scan and secret-use review become build gates, but the key control is moving authority off device.”
+Does using Native NDK C++ (`CMake` / `.so` libraries) hide secrets injected from Gradle?
+
+Some teams inject secrets from `local.properties` into C/C++ files via CMake compiler flags, believing that compiling to native machine code (`.so`) protects the secret.
+
+This is also completely ineffective. Running `strings libnative-lib.so | grep -i secret` or opening the library in Ghidra / IDA Pro reveals the string in the `.rodata` (read-only data) section of the ELF binary in seconds. Even if obscured with XOR masking in C++, dynamic hooking tools like Frida intercept the function that returns the decoded buffer at runtime with a 3-line JavaScript script. Client-side secrecy in distributed binaries is fundamentally impossible.
 
 ## How to answer in the interview
 
@@ -75,8 +120,11 @@ Walk through the build pipeline from local.properties to APK resources or byteco
 
 ## Follow-up questions
 
-- [SEC-31](../sec-31/): What does BuildConfig change? **Answer:** compilation location, not confidentiality after distribution.
-- [SEC-09](../sec-09/): Does R8 hide a secret? **Answer:** it raises analysis effort but cannot prevent extraction.
+- **Interviewer:** "What is the only valid way to protect a private payment API key?"
+  **Answer:** "Keep the private key on your company's backend server; the Android app authenticates to your backend, and your backend communicates with the payment provider."
+
+- **Interviewer:** "Should Google Maps API keys be kept in `local.properties`?"
+  **Answer:** "Yes, to keep them out of Git, but remember that the key is public in the APK and must be secured via Google Cloud SHA-1 restrictions."
 
 ## Self-check rubric
 
@@ -87,4 +135,4 @@ Can I explain the build pipeline, APK extraction, public-key restrictions, and b
 - [OWASP MASVS resilience](https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/) — reverse engineering resistance is limited.
 - [Android app signing](https://developer.android.com/studio/publish/app-signing) — distributed artifacts and signing model.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

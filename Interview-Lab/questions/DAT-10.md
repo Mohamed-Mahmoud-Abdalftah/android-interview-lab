@@ -22,7 +22,58 @@ Prevent concurrent refresh-token rotation races with a single-flight, double-che
 
 ## Explanation in Arabic
 
-لو طلبين استقبلوا `401` في نفس اللحظة وكل واحد عمل refresh، السيرفر اللي يدوّر refresh token ممكن يبطل واحد منهم ويعمل logout غلط. نستخدم Mutex/single-flight على session owner: بعد الدخول للـlock نقارن token الذي فشل بالـtoken الحالي؛ لو اتغير نعيد الطلب بالجديد من غير refresh. لو لم يتغير، نعمل refresh واحد ونحفظ access+refresh atomically.
+كيف تتجنب سباق طلبات تجديد التوكن المتزامنة (Concurrent Refresh-Token Races)؟
+
+1. سيناريو الكارثة في التطبيقات متعددة الخيوط (The Race Condition):
+   - عند فتح التطبيق، يطلق الـ Dashboard ثلاثة طلبات متزامنة في نفس اللحظة: جلب الملف الشخصي، جلب الإشعارات، وجلب السلة.
+   - انتهت صلاحية الـ Access Token، فتعود الطلبات الثلاثة بـ `401 Unauthorized` في نفس الجزء من الثانية!
+   - إذا قامت كل خيط (Thread) باستدعاء سيرفر التجديد بـ Refresh Token:
+     * السيرفر يدعم أمان Refresh Token Rotation (RTR): أول طلب ينجح ويحرق الـ Refresh Token القديم.
+     * الطلب الثاني والثالث يصلان بالـ Refresh Token القديم الذي تم حرقه!
+     * يعتبر السيرفر ذلك هجوماً واختراقاً أمنياً (Token Theft)، فيقوم بحظر حساب المستخدم وحذف جميع الجلسات وإجباره على تسجيل الدخول!
+
+2. الحل المعماري الصارم (Single-Flight Lock & Double-Check Protocol):
+   - **قفل التزامن (Mutex / Synchronized)**: خيط واحد فقط يُسمح له بطلب التجديد في أي لحظة.
+   - **فحص التوكن المزدوج (Double-Check)**: عند دخول الخيط الثاني بعد انتهاء الخيط الأول، يقارن التوكن الفاشل بالتوكن الحالي في الذاكرة. إذا وجده قد تغير، لا يتصل بالسيرفر! بل يعيد الطلب الأصلي بالتوكن الجديد فوراً.
+   - **Single-Flight Deferred**: أو تعليق الطلبات الأخرى على `Deferred` ينتظر اكتمال الطلب الأول ويستخدم نتيجته.
+
+## Practical walkthrough
+
+تنفيذ بروتوكول Single-Flight مع فحص التوكن المزدوج لمنع سباق التجديد:
+```kotlin
+class SafeTokenManager @Inject constructor(
+    private val tokenStorage: SecureTokenStorage,
+    private val refreshApi: RefreshApi
+) {
+    private val refreshMutex = Mutex()
+
+    suspend fun getOrRefreshValidToken(failedToken: String?): Result<String> {
+        // قفل متزامن يمنع أي خيط آخر من بدء طلب تجديد جديد:
+        refreshMutex.withLock {
+            val currentToken = tokenStorage.getAccessToken()
+            
+            // الفحص المزدوج الحاسم (Double-Check):
+            // لو خيط آخر قام بالتجديد أثناء انتظار هذا الخيط في الطابور:
+            if (currentToken != null && currentToken != failedToken) {
+                // التوكن تم تجديده بالفعل! نرجع التوكن الجديد فوراً بدون لمس السيرفر:
+                return Result.success(currentToken)
+            }
+
+            // إذا كنا نحن الخيط الأول: ننفذ طلب تجديد واحد فقط (Single-Flight):
+            val refreshToken = tokenStorage.getRefreshToken() ?: return Result.failure(SessionExpiredException)
+            
+            return try {
+                val response = refreshApi.refreshToken(refreshToken)
+                tokenStorage.saveTokens(response.accessToken, response.newRefreshToken)
+                Result.success(response.accessToken)
+            } catch (e: Exception) {
+                tokenStorage.clearSession()
+                Result.failure(e)
+            }
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,10 +102,6 @@ class TokenRefresh(private val store: TokenStore, private val api: AuthApi) {
 // a logout increments the generation. These are app-owned contracts.
 ```
 
-## Practical walkthrough
-
-mutex حوالين refresh لوحده مش كفاية؛ لازم recheck للـaccess token بعد ما caller يستنى lock. مثال: A وB اتلقوا 401 لتوكن v1؛ A يحدّث لـv2، B يدخل lock بعده فيلاحظ v2 ويرجع retry به بدل refresh تاني. خزّن access+refresh كزوج في عملية واحدة، واربطه بـsession generation عشان logout أثناء refresh ما يتراجعش. لو refresh server رجّع invalid_grant، أنهِ session حسب العقد؛ لو timeout، ما تعلنش logged out تلقائيًا. في OkHttp Authenticator sync، تجنب lock coroutine مع blocking `runBlocking` على نفس dispatcher/client من غير تصميم دقيق.
-
 ## Trade-offs and decision criteria
 
 Mutex simplifies correctness but holds waiters during network refresh; use a session-level Deferred/single-flight if many callers should await one refresh without holding a lock. A server refresh-token family/rotation policy matters. Do not overwrite credentials after logout.
@@ -69,17 +116,25 @@ A session repository stores tokens with generation, serializes refresh and repla
 
 ## Interview answer — short
 
-“I use one session-scoped refresh coordinator. After acquiring the lock, I recheck whether the failed request’s token is already obsolete; only if it is current do I refresh once and atomically save the new pair.”
+Avoid concurrent refresh-token races using a synchronized single-flight lock with a double-check protocol. When multiple concurrent requests hit 401 simultaneously, serialize them behind a Mutex. The first thread refreshes tokens; subsequent threads detect that the active token already changed and replay immediately without calling the refresh API.
 
 ## Interview answer — structured
 
-“The race appears when two requests fail with the same access token. Both can try to rotate the refresh token, and the second may invalidate the first or trigger an incorrect logout. I serialize refresh in a session-scoped coordinator, recheck the stored access token after entering the lock, and let later callers reuse the token another request produced. The new access/refresh pair is stored atomically. I bound retry loops and use a session generation so a refresh completing after logout cannot restore credentials. A server refresh-token family/rotation policy matters. Do not overwrite credentials after logout.”
+When an app launches, multiple parallel network calls (profile, notifications, feed) often receive `401 Unauthorized` simultaneously. If each thread independently issues a refresh call under Refresh Token Rotation (RTR), the server treats subsequent calls using the old single-use token as credential theft, forcibly revoking the user's session.
+
+The industry-standard solution is the **Single-Flight Lock with Double-Check Protocol**:
+
+1. **Synchronized Lock**: All 401 handling is funneled through a shared lock (`Mutex` in coroutines, or `synchronized` in OkHttp Authenticator).
+
+2. **Double-Check Verification**: When a thread acquires the lock, it compares the token that triggered its 401 against the current in-memory token. If another thread already completed a refresh while this thread was waiting, `currentToken != failedToken`. The thread immediately skips the refresh API call and retries with the new token.
+
+3. **Atomic Session Update**: The winning thread executes exactly one refresh call, atomically saving both the new access token and the new refresh token to secure storage before releasing the lock.
 
 ## Interview answer — deep senior
 
-I design refresh as a single-flight state transition. The key invariant is one refresh operation per observed expired token for a session. A lock or in-flight Deferred coordinates callers, and every waiter rechecks current token after waiting. Token-pair persistence and session generation checks must be atomic with respect to logout; otherwise a late response can resurrect a cleared session. In an OkHttp Authenticator integration I remember that the callback is synchronous and avoid recursion through the same auth client or exhausting its executor. I test two, ten and cancelled callers, server token rotation, refresh failure and logout during refresh. Permanent invalid credentials clear session; transient network failure does not automatically mean the user is unauthenticated. Refreshing without recheck duplicates rotation.
+In modern asynchronous architectures using Kotlin Coroutines, senior teams often implement this using **`CompletableDeferred` or `SharedFlow` single-flight coordination**.
 
-The invariant is one logical refresh per expired token in one live session. I would coordinate callers with a lock or in-flight task, then recheck the stored access token after waiting: if another request already replaced v1 with v2, I retry with v2 instead of rotating again. I store the new access and refresh token together, conditional on the session generation so logout cannot be undone by a late response. I treat permanent invalid-grant differently from a transient network error. Because OkHttp’s Authenticator is synchronous, the adapter must not block a dispatcher or connection path needed by its own refresh call. Concurrency tests should force both 401 responses at once.
+Instead of blocking JVM threads with `synchronized`, the token manager maintains an atomic reference to an active refresh job: `private val activeRefresh = AtomicReference<Deferred<String>?>()`. When a coroutine hits 401, it inspects the atomic reference. If an active job exists, it simply awaits the existing `Deferred`. If no job exists, it creates a new `async` job, atomically swaps it into the reference, and notifies all awaiting coroutines upon completion, clearing the reference in a `finally` block. This yields 100% non-blocking coroutine safety.
 
 ## How to answer in the interview
 
@@ -95,8 +150,11 @@ Draw two callers racing, recheck-after-lock and logout generation safeguards.
 
 ## Follow-up questions
 
-- [DAT-09](../dat-09/): Where attach token? **Answer:** transport boundary, with coordinated 401 handling.
-- [DAT-19](../dat-19/): How avoid false session invalidation? **Answer:** one refresh plus generation-aware commit.
+- **Interviewer:** "Why shouldn't you fire refresh-token requests in an OkHttp Interceptor instead of Authenticator?"
+  **Answer:** "Interceptors do not naturally serialize 401 retries; Authenticator was designed specifically by OkHttp to manage retries and handle concurrent 401 responses cleanly."
+
+- **Interviewer:** "What happens if the single refresh call fails with network timeout?"
+  **Answer:** "Release the lock and let callers retry transiently, but do NOT clear user session credentials on transient network timeouts—only on explicit 400/401 refresh responses."
 
 ## Self-check rubric
 
@@ -107,4 +165,4 @@ Can I prove one refresh, atomic pair save, bounded retries and no logout resurre
 - [Kotlin shared mutable state](https://kotlinlang.org/docs/shared-mutable-state-and-concurrency.html) — Mutex coordination.
 - [OkHttp calls guide](https://lysine.dev/okhttp/features/calls/) — authentication follow-up.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

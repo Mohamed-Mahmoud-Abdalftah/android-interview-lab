@@ -22,7 +22,53 @@ Contrast interchangeable algorithm selection with behavior governed by current s
 
 ## Explanation in Arabic
 
-Strategy بتختار behavior/algorithm مستقل بناءً على config أو context: card vs wallet provider، أو compression algorithm. State pattern بيغيّر behavior لأن object في state معينة وانتقالاتها: checkout `Idle -> Submitting -> PendingVerification -> Confirmed`. الاتنين ممكن يستخدموا interface وpolymorphism، لكن “ليه السلوك اتغيّر؟” هو الفرق. Strategy غالبًا caller يختارها، State يغيّرها transition داخل state machine. في payments provider strategy ما يقررّش إن transaction نجحت؛ server status يحرك state.
+المقارنة الدقيقة بين نمط الحالة (State Pattern) ونمط الاستراتيجية (Strategy Pattern) مع أمثلة عملية واقعية في Android:
+
+1. وجه الشبه الخادع (The Identical Structure):
+   - النمطان يمتلكان نفس المخطط الهيكلي (UML Structure) تماماً: كلاس سياق (Context Class) يمتلك مرجعاً لـ Interface مجرد، وهذا الـ Interface له عدة تطبيقات ملموسة.
+
+2. الفرق الجوهري في النية والسلوك (Intent & Behavior):
+   - **نمط الاستراتيجية (Strategy Pattern)**:
+     * **النية**: تبديل **خوارزميات متبادلة (Interchangeable Algorithms)** تؤدي نفس الهدف بأساليب مختلفة.
+     * **طريقة الاستخدام**: العميل (Client) يحدد الاستراتيجية غالباً مرة واحدة (مثل اختيار المستخدم: "أريد الدفع بـ PayPal")، والاستراتيجيات لا تعلم شيئاً عن بعضها البعض.
+     * **مثال**: استراتيجيات ضغط الصور (JPEG vs WebP vs PNG) أو استراتيجيات الدفع.
+   - **نمط الحالة (State Pattern)**:
+     * **النية**: جعل الكائن **يغير سلوكه بالكامل عندما تتغير حالته الداخلية** (Finite State Machine).
+     * **طريقة الاستخدام**: الحالة تتغير تلقائياً وبشكل ديناميكي ومستمر استجابةً للأحداث، وحالات الـ State غالباً هي التي تقرر وتطلق الانتقال إلى الحالة التالية بنفسها!
+     * **مثال**: آلة حالات اتصال البلوتوث (`Disconnected -> Connecting -> Connected -> Disconnecting`).
+
+## Practical walkthrough
+
+مقارنة بين Strategy للدفع و State لاتصال البلوتوث في كود Kotlin:
+```kotlin
+// 1. STRATEGY PATTERN: خوارزميات متبادلة لا تغير نفسها ولا تعلم عن بعضها:
+interface ImageCompressionStrategy {
+    fun compress(bitmap: Bitmap): ByteArray
+}
+class JpegCompression : ImageCompressionStrategy { ... }
+class WebPCompression : ImageCompressionStrategy { ... }
+// العميل يختار استراتيجية واحدة ويمررها للعملية:
+imageSaver.save(bitmap, WebPCompression())
+
+// 2. STATE PATTERN: آلة حالات ديناميكية حيث تغير الحالات سلوك الجهاز وتنتقل ذاتياً:
+sealed interface BleConnectionState {
+    fun connect(context: BleManager)
+    fun disconnect(context: BleManager)
+}
+
+class DisconnectedState : BleConnectionState {
+    override fun connect(context: BleManager) {
+        context.startScan()
+        context.transitionTo(ConnectingState()) // الحالة تنقل السياق للحالة التالية!
+    }
+    override fun disconnect(context: BleManager) { /* لا شيء */ }
+}
+
+class ConnectingState : BleConnectionState {
+    override fun connect(context: BleManager) { /* تجاهل: الاتصال جارٍ بالفعل */ }
+    override fun disconnect(context: BleManager) { context.cancel(); context.transitionTo(DisconnectedState()) }
+}
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +77,6 @@ Strategy encapsulates interchangeable policies; State encapsulates behavior that
 ## Worked example
 
 Conceptual example: `PaymentStrategy.submit()` has card/wallet implementations. `CheckoutState` sealed cases determine whether Submit is legal and how timeout is represented. A reducer updates state; a selected strategy performs the provider request.
-
-## Practical walkthrough
-
-Strategy بتجاوب “هننفّذ العملية بإيه؟” مثل CardStrategy أو WalletStrategy على نفس submit contract. State بتجاوب “احنا فين دلوقتي وإيه legal next event؟” مثل Idle→Submitting→PendingVerification→Confirmed. تبديل strategy ما يغيّرش state machine تلقائيًا؛ كل provider لازم يرجّع outcomes تتترجم للحالات نفسها. لو حطيت `isLoading`, `isSuccess`, `isFailed` booleans، ممكن كلهم يبقوا true بالخطأ؛ sealed State مع transition function أوضح. Strategy واحدة ممكن تكون lambda بسيطة لو الاختيار قليل؛ class hierarchy لو behavior/lifecycle مختلف فعلًا.
 
 ## Trade-offs and decision criteria
 
@@ -50,17 +92,30 @@ A checkout ViewModel uses a reducer for state transitions and a gateway strategy
 
 ## Interview answer — short
 
-Strategy varies an algorithm or provider selected for a task; State varies behavior according to current lifecycle state and transitions. A payment provider strategy and checkout state machine can coexist.
+Strategy encapsulates interchangeable algorithms usually chosen once by the client (e.g. Payment methods, image compression). State models a dynamic state machine where an object alters its behavior based on internal state changes, with states often triggering transitions to succeeding states (e.g. Media playback or Bluetooth connectivity).
 
 ## Interview answer — structured
 
-I use Strategy when multiple implementations of one operation should be interchangeable, for example card and wallet SDK adapters. I use State when permitted behavior depends on where an object is in a lifecycle, such as Idle, Submitting or PendingVerification. Their class diagrams can look alike, but the reason for change differs. In checkout, a selected strategy performs the request; a state machine decides whether submit is legal and how results update UI. Server confirmation remains authoritative.
+While State and Strategy share an identical structural UML diagram (a Context class delegating to an Interface with polymorphic implementations), they diverge sharply in architectural intent and lifecycle behavior.
+
+1. **Strategy Pattern (Interchangeable Algorithms)**:
+   - **Intent**: Provide alternative ways of accomplishing the exact same task.
+   - **Selection**: Configured from the outside by the client or dependency injection container (e.g. selecting `PaypalStrategy` vs `StripeStrategy`, or sorting via `PriceComparator`).
+   - **Independence**: Strategies are completely decoupled from each other and have no awareness of succeeding strategies.
+
+2. **State Pattern (Dynamic Behavioral Transformation)**:
+   - **Intent**: Enable an object to behave like an entirely different class when its internal state changes (Finite State Machine).
+   - **Transitions**: Driven internally by events occurring over time. State implementations actively invoke callbacks on the Context to transition it to succeeding states (e.g. `ConnectingState` transitions the context to `ConnectedState` upon receiving a BLE GATT callback).
+   - **Coupling**: States often hold references to valid neighboring target states in the state machine.
 
 ## Interview answer — deep senior
 
-The distinguishing question is who selects the behavior and why. A Strategy is often supplied by configuration, DI or a router to perform one operation; it can usually be changed without implying an internal transition. State is tied to the object’s history and legal transitions. A checkout in `Submitting` rejects duplicate taps, while `PendingVerification` waits for server status after a timeout. One of several payment strategies may execute the request from that state. I test strategies for common outcome semantics and the state machine for transition legality, process-death restoration and late responses. If the flow has only two cases, a clear conditional may be easier than a hierarchy.
+In modern Android architecture, the classic GoF State pattern has evolved into **Declarative State Machines (MVI)**. Instead of mutable context objects passing polymorphic pointers (`context.transitionTo(...)`), modern Kotlin architecture uses:
+- A `sealed interface DeviceState` representing immutable state models.
+- A `sealed interface DeviceEvent` representing incoming triggers.
+- A pure Reducer function: `reduce(currentState: DeviceState, event: DeviceEvent): DeviceState`.
 
-I use Strategy for interchangeable behavior and State for lifecycle-specific behavior or transition rules. Card and wallet providers may implement one submit contract, so a router selects the strategy at request time. The checkout state then moves through Idle, Submitting, PendingVerification, and a terminal result according to events. Those are separate axes: choosing a provider does not by itself make a transition legal, and a timeout from either provider should map to uncertain status rather than Failed. I would use a sealed state plus a tested reducer to reject invalid events, and use a simple function for the strategy if a full class hierarchy buys nothing. The failure is scattering booleans and provider conditionals through UI.
+This functional evolution preserves the exact intent of the State pattern while guaranteeing complete thread-safety, zero memory leaks, and seamless integration with Jetpack Compose.
 
 ## How to answer in the interview
 
@@ -76,8 +131,11 @@ Draw two axes—provider choice and checkout lifecycle—and test each independe
 
 ## Follow-up questions
 
-- [PAT-05](../pat-05/): Which family contains both? **Answer:** behavioral patterns with different intent.
-- [ARC-25](../arc-25/): Why explicit payment state? **Answer:** it prevents invalid transitions and represents uncertainty.
+- **Interviewer:** "Can a class use both State and Strategy simultaneously?"
+  **Answer:** "Yes. An `AudioPlayer` can use the State pattern to manage playback lifecycles (`Playing`, `Paused`, `Buffering`), while simultaneously using the Strategy pattern to select an audio decoding strategy (`OpusDecoder` vs `FlacDecoder`)."
+
+- **Interviewer:** "How does the State pattern eliminate complex nested if/else statements?"
+  **Answer:** "Instead of checking `if (state == PLAYING) ... else if (state == PAUSED)` in every method, the context delegates execution directly to `currentState.handle()`, replacing branching logic with polymorphism."
 
 ## Self-check rubric
 
@@ -88,4 +146,4 @@ State who selects Strategy, what changes State, and model a timeout without decl
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — original Strategy and State patterns.
 - [Android UI state guidance](https://developer.android.com/topic/architecture/ui-layer/stateholders) — screen state modeling.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -22,11 +22,40 @@ Can the candidate place `CoroutineExceptionHandler` at an uncaught boundary and 
 
 ## Explanation in Arabic
 
-`CoroutineExceptionHandler` آخر محطة لملاحظة exception غير ممسوكة من coroutine، خصوصًا root `launch` أو supervised `launch`. مش بديل `try/catch` حوالين API عايز تحول فشله إلى UI state، ومش طريقة ترجع نتيجة من `async`. في child عادي الفشل يروح للـparent؛ handler مركّب على child مش بالضرورة يستقبلها هناك.
+الـ `CoroutineExceptionHandler` (CEH) هو من أكثر الأدوات التي يساء فهمها في Kotlin Coroutines:
+
+1. متى يعمل الـ `CoroutineExceptionHandler`؟
+   - يعمل **فقط** كـ **Last-Resort Global Catch Block** (ملاذ أخير) للتعامل مع الـ Uncaught Exceptions.
+   - يعمل **فقط** إذا كان ملحقاً بـ **Root Coroutine** (أي Coroutine يتم إطلاقها مباشرة من Scope، زي `scope.launch(ceh)`).
+   - يعمل فقط مع `launch`؛ ولا يعمل أبداً مع `async` لأن `async` تغلف استثناءها داخل كائن `Deferred`!
+
+2. أين لا يساعد الـ CEH ولا يعمل إطلاقاً (Where it does NOT help)?
+   - **داخل Child Coroutines:** لو وضعت CEH على ابن داخل `coroutineScope`، فلن يُستدعى أبداً! لأن الابن يصعد الاستثناء لأبيه فوراً.
+   - **مع `async`:** استثناءات `async` لا تذهب للـ CEH؛ هي تنتظر حتى يتم استدعاء `await()`.
+   - **للتعافي من الخطأ (Error Recovery):** الـ CEH لا يمكنه إعادة تشغيل الـ Coroutine أو إخفاء الخطأ؛ عند وصول الاستثناء للـ CEH، تكون الـ Coroutine قد ماتت بالفعل وانتهت!
+   - وظيفته الصحيحة الوحيدة: تسجيل الخطأ للـ Crashlytics، أو إظهار رسالة عامة للمستخدم، وليس استعادة مسار العمل.
 
 ## Practical walkthrough
 
-لو `launch` تحت supervisor فشل من غير `try/catch`، ممكن `CoroutineExceptionHandler` يستقبل الخطأ بعد انتهاء الـcoroutine علشان logging. لكنه ما يرجّعش قيمة ولا يعمل retry ولا يمنع فشل business flow. `async` بيحتفظ بالخطأ للـ`await`، وتحت parent عادي الفشل يمشي عبر الـJob tree. لذلك الحل العملي غالبًا catch قريب من عملية الطلب مع حالة UI واضحة.
+توضيح عملي للفرق بين المكان الصحيح والخاطئ لـ CEH:
+```kotlin
+val handler = CoroutineExceptionHandler { _, exception ->
+    Log.e("App", "Uncaught exception: $exception")
+}
+
+// ✅ يعمل بنجاح: ملحق بـ Root Coroutine مستخدمة launch:
+val scope = CoroutineScope(SupervisorJob() + handler)
+scope.launch {
+    throw RuntimeException("Root failed!") // سيتم التقاطه في handler
+}
+
+// ❌ لن يعمل إطلاقاً (فخ شائع):
+scope.launch { // Root
+    launch(handler) { // Child! الـ handler هنا سيتم تجاهله تماماً!
+        throw RuntimeException("Child failed!") // يصعد للـ Root ويتجاهل handler الابن
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -77,15 +106,23 @@ An application sync coordinator uses a supervisor and handler to report unexpect
 
 ## Interview answer — short
 
-“`CoroutineExceptionHandler` observes an uncaught coroutine exception; it does not recover the coroutine or replace local error handling. A failed `async` exposes failure through `await`. I use a handler for final reporting at an owned root and map expected errors near the operation.”
+CoroutineExceptionHandler only catches uncaught exceptions in root coroutines launched with 'launch'. It does not catch exceptions in child coroutines (which delegate to their parent), it does not catch exceptions in 'async' (which encapsulate errors until await), and it cannot recover from failures—it only logs or reports them after the coroutine has already terminated.
 
 ## Interview answer — structured
 
-“A handler is a last-resort observation hook. In a normal child tree, exceptions propagate to the parent, so putting the handler on an arbitrary child may not handle them there. A root or supervised `launch` can report uncaught failure through its handler. An `async` holds failure in its Deferred and `await` throws. For a repository call I catch expected failures inside the suspend function and return a typed result or throw to the caller; the ViewModel then shows error state. Cancellation is rethrown, not treated as a user-visible API error.”
+A `CoroutineExceptionHandler` (CEH) is purely a last-resort error logging and global reporting mechanism, not a general error recovery tool.
+
+It only triggers under strict conditions: 1) It must be installed on a **root coroutine** or scope; and 2) the coroutine must be launched via `launch`. If an unhandled exception reaches the root of the hierarchy, the CEH executes its callback, typically used to log breadcrumbs to Crashlytics or show a generic error toast.
+
+Where it does NOT help: First, it has zero effect when attached to child coroutines. A child coroutine always delegates unhandled exceptions upward to its parent, ignoring its own CEH. Second, it does not catch exceptions from `async` coroutines, which encapsulate errors inside the `Deferred` until `await()` is called. Third, it cannot recover or resume execution—by the time CEH runs, the coroutine has already crashed and unwound.
 
 ## Interview answer — deep senior
 
-“I would not use `CoroutineExceptionHandler` as a blanket safety net. It is invoked when an exception is uncaught at an appropriate coroutine boundary, after the failed coroutine cannot continue; it is for reporting, not retrying or producing a value. In a normal hierarchy child failures are delegated to parents, whereas a supervised `launch` can have an uncaught failure without cancelling peers. `async` intentionally exposes its exception through `await`, so an unawaited Deferred is an ownership smell. In production I define each operation’s error contract, convert expected network errors to state, preserve cancellation, and use the handler for unexpected telemetry. I also test that failure clears loading indicators and does not silently leave a durable operation stuck. I would put an expected network failure inside the operation's `try/catch` so the UI can show retry state. The handler is useful when a supervised `launch` reaches an unexpected terminal exception with no ordinary propagation path, and should send telemetry that can be correlated with the owning task. A handler attached to a normal child will not override its parent's failure path, and a handler on `async` does not replace awaiting the result.”
+Under the hood, exception handling in structured concurrency operates through a hierarchical delegation chain. When a child coroutine throws an unhandled exception, it checks if it has a parent. If a parent Job exists, the child passes the exception to the parent via `parent.childCancelled(cause)` and terminates. It completely bypasses its own context's `CoroutineExceptionHandler`.
+
+Only when the exception reaches the root `Job` (a Job with no parent), does the coroutine machinery check the root context for a `CoroutineExceptionHandler`. If present, it invokes `handleException(context, exception)`. If no CEH is found in the root context, it delegates to the JVM's `Thread.currentThread().uncaughtExceptionHandler`, which results in a fatal Android app crash.
+
+In production architecture, CEH should never replace standard `try-catch` blocks or domain Result wrapping in repositories and ViewModels. It should only be configured once on top-level scopes (like custom application-level scopes) as a safety net against unexpected runtime crashes.
 
 ## How to answer in the interview
 
@@ -101,8 +138,14 @@ Distinguish launch/async, normal/supervised parent and expected/unexpected error
 
 ## Follow-up questions
 
-- [COR-15](../cor-15/): Where does `async` surface failure? **Answer:** through `await`, subject to parent failure propagation.
-- [COR-16](../cor-16/): What happens to cancellation? **Answer:** rethrow it; do not report it as an ordinary failure.
+- **Interviewer:** "Why does attaching CEH to `async` not catch the exception?"
+  **Answer:** "Because `async` wraps its result and any thrown exception inside the `Deferred<T>` object. The exception is considered handled until someone invokes `deferred.await()`, at which point it is rethrown at the `await()` call site. CEH only handles uncaught exceptions from `launch`."
+
+- **Interviewer:** "Can you use `try-catch` around a `launch` call to catch exceptions thrown inside it?"
+  **Answer:** "No! Wrapping `try { scope.launch { throw Exception() } } catch (e: Exception)` does nothing because `launch` returns immediately and executes asynchronously on a dispatcher. The exception is thrown inside the coroutine block, not in the calling thread."
+
+- **Interviewer:** "Where should error handling actually live in an Android app?"
+  **Answer:** "In the repository or use-case layer using `try-catch` wrapped into domain Result/Either sealed classes, or in the ViewModel around suspending calls, so the UI can gracefully show retry buttons and descriptive error messages."
 
 ## Self-check rubric
 
@@ -113,4 +156,4 @@ Can I place a handler correctly, explain its limits, map domain errors locally, 
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — handler semantics and async.
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — UI error ownership.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

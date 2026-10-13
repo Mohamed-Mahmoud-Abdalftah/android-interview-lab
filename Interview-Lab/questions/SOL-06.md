@@ -22,7 +22,53 @@ Explain high-level policy versus low-level detail, source dependencies, and runt
 
 ## Explanation in Arabic
 
-DIP تقول high-level business policy ما تعتمدش على low-level detail زي Retrofit service أو Room DAO مباشرة؛ الاتنين يعتمدوا على abstraction مناسبة للpolicy. مثال `EligibilityUseCase` يحتاج `AccountStatusSource`، وdata implementation تستخدم API/DB. وقت التشغيل DI تربطهم، لكن DIP هي direction/types مش أداة حقن. لا تضع interface في data module ثم تخلي domain تستورد Retrofit DTO من signature؛ ده مش inversion حقيقي. في Android guidance domain اختيارية وقد تعتمد على repository في data؛ وضّح هل تتكلم عن Clean Architecture classic ولا توصيات Android العملية.
+شرح مبدأ عكس التبعية (Dependency Inversion Principle - DIP) مع مثال عملي واقعي في Android:
+
+1. تعريف مبدأ عكس التبعية (DIP):
+   - ينص المبدأ على قاعدتين أساسيتين:
+     * **القاعدة 1**: الوحدات عالية المستوى (High-level modules) يجب ألا تعتمد على الوحدات منخفضة المستوى (Low-level modules). كلاهما يجب أن يعتمد على التجريدات (Abstractions).
+     * **القاعدة 2**: التجريدات يجب ألا تعتمد على التفاصيل (Details)؛ التفاصيل هي التي يجب أن تعتمد على التجريدات.
+
+2. ما الذي ينتهك DIP في Android؟
+   - عندما يقوم كلاس `CheckoutViewModel` (High-level) بإنشاء أو استدعاء كلاس `RetrofitOrderApi` أو `RoomOrderDatabase` (Low-level infrastructure) مباشرة!
+   - أي تغيير في تفاصيل قاعدة البيانات أو السيرفر يجبرك على تغيير كود العرض والبيزنس عالي المستوى.
+
+3. كيف نطبق DIP في Android؟
+   - نقوم بإنشاء **Interface مجرد في طبقة الـ Domain** يسمى `OrderRepository`.
+   - الـ `CheckoutViewModel` يعتمد على الـ `OrderRepository` interface فقط.
+   - الـ `OrderRepositoryImpl` في طبقة الـ Data يعتمد على الـ `OrderRepository` interface وينفذه.
+   - محرك الـ DI (Hilt) يقوم بحقن الـ Implementation في وقت التشغيل.
+
+## Practical walkthrough
+
+تطبيق مبدأ DIP في كود Kotlin في Android:
+```kotlin
+// ❌ انتهاك صارخ لـ DIP: High-level ViewModel يعتمد مباشرة على Low-level Retrofit Service:
+class BadOrderViewModel {
+    // ارتهان مباشر بتفاصيل البنية التحتية:
+    private val api = Retrofit.Builder().baseUrl("https://api.com").build().create(OrderApi::class.java)
+}
+
+// ✅ تطبيق DIP السليم: كلاهما يعتمد على التجريد (Abstraction):
+// 1. التجريد (Abstraction) يعيش في الـ Domain:
+interface OrderRepository {
+    suspend fun submitOrder(order: Order): Result<OrderConfirmation>
+}
+
+// 2. High-level module (ViewModel) يعتمد على التجريد فقط:
+@HiltViewModel
+class GoodOrderViewModel @Inject constructor(
+    private val orderRepository: OrderRepository // اعتماد نقي على Interface
+) : ViewModel() { ... }
+
+// 3. Low-level module (Data layer) يعتمد على التجريد وينفذ تفاصيله:
+class OrderRepositoryImpl @Inject constructor(
+    private val api: OrderApi,
+    private val dao: OrderDao
+) : OrderRepository {
+    override suspend fun submitOrder(order: Order): Result<OrderConfirmation> { ... }
+}
+```
 
 ## Why it matters and how it works
 
@@ -40,10 +86,6 @@ class CanTransfer(private val source: AccountStatusSource) {
 ```
 A Retrofit-backed class can implement the contract in data, while tests use a fake.
 
-## Practical walkthrough
-
-لو `CanTransfer` بتستورد `RetrofitTransferApi` وتفهم HTTP codes، business rule مربوط بتفاصيل الشبكة. خليها تسأل `AccountStatusSource` عن `AccountStatus` مفهومة في الدومين. الـdata adapter يترجم response وnetwork errors، والـcomposition root يربط adapter بالعقد. اختبر قرار التحويل بـfake من غير Android أو network. لازم تحدد معنى الحالة القديمة أو unknown: هل تمنع التحويل ولا تطلب refresh؟ مجرد interface حوالين Retrofit response مش DIP مفيد، لأن نوع النقل لسه متسرب جوه policy.
-
 ## Trade-offs and decision criteria
 
 A contract adds indirection and DI wiring. In a tiny feature, depending on a concrete repository may be simpler if it exposes stable app data. Use DIP where volatile implementation would otherwise reach important policy.
@@ -58,15 +100,31 @@ A credit-limit rule depends on `CreditStatusSource`; production adapter fetches 
 
 ## Interview answer — short
 
-DIP means high-level policy depends on a stable abstraction rather than a specific low-level adapter. DI can supply the adapter at runtime, but the interface and dependency direction are the design choice.
+Dependency Inversion Principle dictates that high-level modules (business/UI) must not depend on low-level modules (networking/database); both must depend on abstractions. In Android, the Domain layer defines the `Repository` interface, and the Data layer implements it, inverting the source code dependency.
 
 ## Interview answer — structured
 
-I separate the business decision from the mechanism that fetches inputs. A transfer eligibility rule should know account status, not Retrofit response types or a particular database. It depends on a small `AccountStatusSource` contract, while a data adapter implements that contract. The app graph injects the implementation. This keeps policy tests fast and transport changes local. I add the abstraction when it protects a meaningful boundary, not for every pure helper. In a transfer feature, I would ask for an account eligibility fact, not an HTTP response object.
+The Dependency Inversion Principle (DIP) establishes that **high-level policies should not depend on low-level details; both should depend on abstractions**.
+
+In procedural or coupled architectures, control and dependencies flow in the same direction: a ViewModel (high-level) directly instantiates a Database or Retrofit client (low-level). Consequently, if the database schema or network library changes, the high-level business code is forced to change.
+
+DIP inverts this relationship:
+1. The high-level layer (Domain/Presentation) defines the abstraction: `interface UserRepository`.
+2. The low-level infrastructure layer (Data) imports that interface and implements it: `class UserRepositoryImpl : UserRepository`.
+3. At compile time, the source code dependency points inward toward the high-level abstraction. At runtime, the Dependency Injection container (Hilt) resolves and injects the implementation.
+
+This insulates critical business rules: the network library can be swapped from Retrofit to Ktor without altering a single line of business logic.
 
 ## Interview answer — deep senior
 
-The key is source dependency direction. The high-level policy names the information it needs in domain terms; the low-level adapter knows how to get it from a server or database. Both can be wired at runtime through DI, but using Hilt alone does not guarantee DIP if the use case still imports a concrete SDK. I inspect module edges and signature types, especially DTO or Android framework leakage. In classic Clean Architecture, contracts often belong inward with policy. Android’s practical guidance may organize the optional domain layer above data repositories, so I state the chosen model explicitly. For a critical flow I also test substitution and server authority; swapping adapters should not alter the rule’s result meaning. Dependency inversion concerns the direction of source-level dependencies: high-level transfer policy should not import transport details. I would define a small status contract in the consumer's language and put the Retrofit mapping in a data adapter. Wiring can be manual or through Hilt; the mechanism of construction is a separate concern. The useful test replaces the source with an in-memory fake and checks blocked, active, and unknown states. The failure mode is an interface whose method still returns `Response<Dto>`: that merely renames the dependency while preserving the coupling. In production I would also specify stale-data behavior, cancellation, and how authorization is confirmed by the backend.
+DIP is the foundational mechanism that powers the **Dependency Rule in Clean Architecture**. Without DIP, Clean Architecture would be impossible because the core domain would be forced to depend on database drivers and network libraries to fetch data.
+
+In Gradle multi-module architecture, DIP is enforced via Gradle configuration:
+- `:core:domain` defines `interface AuthRepository`. It has zero dependencies on network or database modules.
+- `:core:data` has `implementation(project(":core:domain"))` and provides `AuthRepositoryImpl`.
+- The compile graph physically forbids `:core:domain` from accessing `:core:data`.
+
+This inversion enables 100% pure JVM unit testability: we can test `AuthUseCase` by passing an in-memory `FakeAuthRepository` without touching SQLite or mocking HTTP calls.
 
 ## How to answer in the interview
 
@@ -82,8 +140,11 @@ Draw source arrows versus runtime calls; identify a leaking DTO signature and a 
 
 ## Follow-up questions
 
-- [SOL-07](../sol-07/): DIP versus DI? **Answer:** DIP is design direction; DI is one way to supply dependencies.
-- [ARC-03](../arc-03/): What is the Dependency Rule? **Answer:** classic Clean Architecture source dependencies point inward.
+- **Interviewer:** "What is the difference between DIP and Dependency Injection (DI)?"
+  **Answer:** "DIP is an architectural design principle about the direction of code dependencies. DI is a practical creational design pattern/technique (used by Hilt/Koin) to provide instances of dependencies to a class at runtime."
+
+- **Interviewer:** "Where should the abstraction (interface) live according to DIP?"
+  **Answer:** "In the higher-level module (Domain layer), alongside the client that consumes it, NOT in the low-level infrastructure module."
 
 ## Self-check rubric
 
@@ -94,4 +155,4 @@ Show an inverted account-status contract, locate its implementation, and explain
 - [Robert C. Martin, A Little Architecture](https://blog.cleancoder.com/uncle-bob/2016/01/04/ALittleArchitecture.html) — dependency inversion.
 - [Android dependency injection](https://developer.android.com/training/dependency-injection) — DI mechanics.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

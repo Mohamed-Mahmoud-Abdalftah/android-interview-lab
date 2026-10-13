@@ -23,11 +23,55 @@ What are authorization, reversal, void, refund, and reconciliation?
 
 ## Explanation in Arabic
 
-Authorization طلب موافقة وحجز/اعتماد حسب rail؛ reversal رسالة لإلغاء أثر authorization غير محسوم أو لم يكتمل ضمن قواعد الشبكة؛ void يلغي عملية قبل settlement حسب provider؛ refund يرجّع مال بعد عملية مكتملة؛ reconciliation يطابق سجلات terminal/backend/provider ويكشف الفروق. الأسماء والتوقيت مش universal؛ لازم نلتزم بعقد acquirer.
+ما هي الفروق الجوهرية بين العمليات المالية الأساسية: التفويض (Authorization)، والعكس (Reversal)، والإلغاء (Void)، والاسترداد (Refund)، والمطابقة (Reconciliation)؟
+
+1. التفويض (Authorization - Auth):
+   - عملية حجز المبلغ في حساب حامل البطاقة والتأكد من وجود رصيد كافٍ وصلاحية البطاقة دون سحب المبلغ فوراً إلى حساب التاجر.
+   - يتم سحب المبلغ فعلياً لاحقاً في مرحلة تسمى **التسوية (Capture / Settlement)**.
+
+2. العكس التلقائي (Reversal):
+   - عملية إلغاء فورية وفنية تُطلقها ماكينة الدفع أو التطبيق **أثناء المعاملة نفسها وقبل إتمام الجلسة**.
+   - تحدث عندما يفشل الهاتف في استلام الرد، أو ينفد ورق الطابعة، أو يفشل قارئ البطاقات الذكية (EMV Chip Failure). يقوم البنك بإلغاء حجز المبلغ فوراً وإعادته للعميل في ثوانٍ.
+
+3. الإلغاء اليدوي (Void):
+   - إلغاء معاملة كاملة وافق عليها البنك بالفعل، ولكن **قبل إغلاق دورة العمل اليومية وتسوية الحسابات (Before Batch Settlement)**.
+   - ميزته: لا يتم خصم أي رسوم معالجة (Interchange fees) على التاجر أو العميل لأن الأموال لم تنتقل بعد بين البنوك.
+
+4. الاسترداد (Refund):
+   - إعادة الأموال للعميل **بعد إغلاق الدورة المالية وانتقال الأموال لحساب التاجر (After Settlement)** (مثلاً بعد يومين عندما يرجع العميل البضاعة).
+   - تستغرق من 3 إلى 10 أيام عمل لتظهر في كشف حساب العميل وتتحمل الشركة رسوم معالجة.
+
+5. المطابقة اليومية (Reconciliation):
+   - فحص وتطابق السجلات المحلية المخزنة في ماكينة الـ POS مع سجلات البنك وخادم الدفع في نهاية كل يوم؛ للتأكد من عدم وجود أي مبالغ مفقودة أو معاملات معلقة.
 
 ## Practical walkthrough
 
-لو authorization approved ولسه مش captured، void/cancel أو reversal ممكن ينفع حسب rail والنافذة الزمنية؛ بعد settlement refund غالبًا workflow جديدة. متستخدمش الأسماء كأنها API موحدة لكل acquirer. في المقابلة اربط كل operation بـoriginal reference، حالة التسوية، deadline، ودليل نهائي من provider.
+جدول مقارنة شامل للعمليات المالية ودورة حياة المعاملة:
+```markdown
+| العملية المالية | التوقيت (Timing) | التأثير على الرصيد | الرسوم (Fees) | زمن الظهور للعميل |
+|---|---|---|---|---|
+| **Authorization** | لحظة الشراء | حجز المبلغ (Hold) | لا توجد رسوم نهائية | فوري |
+| **Reversal** | فوري (ثوانٍ بعد عطل فني) | إلغاء الحجز فوراً | صفر | ثوانٍ إلى دقائق |
+| **Void** | نفس اليوم (قبل إغلاق الـ Batch) | إلغاء العملية بالكامل | صفر رسوم انتقال | 24 إلى 48 ساعة |
+| **Refund** | بعد أيام (بعد إغلاق الـ Batch) | تحويل عكسي من التاجر للعميل | يتحمل التاجر رسوم المعالجة | 3 إلى 7 أيام عمل |
+| **Reconciliation** | يومياً في نهاية الـ Shift | مطابقة دفاتر الحسابات | - | تقرير تدقيق مالي |
+```
+نموذج الكود لإصدار Reversal فوري عند فشل محلي في أندرويد:
+```kotlin
+suspend fun executePaymentWithSafeReversal(paymentRequest: PaymentRequest) {
+    val txId = paymentDao.insertPending(paymentRequest)
+    try {
+        val authResponse = paymentGateway.authorize(paymentRequest)
+        // إذا انقطع التيار الكهربائي هنا أو تعطل طبع الإيصال، يجب إطلاق Reversal!
+        printReceiptOrThrow(authResponse)
+        paymentDao.markCompleted(txId, authResponse.authCode)
+    } catch (e: ReceiptPrintException) {
+        // عطل محلي بعد الموافقة -> إطلاق Reversal فوري للبنك لحماية العميل:
+        reversalQueueManager.enqueueImmediateReversal(txId, paymentRequest)
+        throw PaymentAbortedException("Hardware failure; transaction reversed.", e)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +95,36 @@ Document provider mapping and settlement cutoffs with payments specialists. Reco
 
 ## Interview answer — short
 
-“I would first ask whether the payment is only authorized, captured, or settled. Then I choose the provider-supported cancellation, reversal, void, or refund flow and reconcile the resulting ledger entry.”
+Authorization holds funds on the card. Reversal immediately cancels an in-flight authorization due to technical failure before completion. Void cancels an approved transaction on the same day before batch settlement with no interchange fees. Refund transfers settled funds back days later incurring fees. Reconciliation audits terminal records against bank ledgers.
 
 ## Interview answer — structured
 
-“These terms represent different lifecycle moments. Authorization is the approval request, not necessarily final settlement. A reversal addresses an authorization that should not stand, often after an uncertain terminal outcome; a void cancels a transaction before settlement under a provider’s rules; a refund is a new return of funds after completion. Reconciliation compares terminal, backend and provider records to resolve gaps. I follow the exact acquirer contract, because naming and windows vary. Refunds have customer-service and fraud considerations. A same-day uncaptured authorization and a return after settlement require different operations.”
+Understanding financial lifecycle operations is essential for architects building transactional mobile systems:
+
+1. **Authorization (Auth)**:
+   - Verifies card authenticity and places a temporary hold on the customer's credit line. Does not transfer money; funds are transferred only upon subsequent 'Capture' or batch settlement.
+
+2. **Reversal (Auto-Reversal / 0400 Message)**:
+   - An automated, immediate technical rollback executed by terminal firmware or client code when a transaction succeeds at the bank but fails locally (e.g. printer paper jam, EMV chip reader failure, or client timeout). Releases the hold within seconds.
+
+3. **Void**:
+   - A merchant-initiated cancellation of an approved transaction executed **prior to end-of-day batch settlement**. The transaction is dropped from the clearing batch; no interchange fees are incurred, and the hold drops off.
+
+4. **Refund**:
+   - Executed **post-settlement** when funds have already migrated into the merchant's acquiring bank. It initiates an inverse funds transfer, incurring interchange transaction processing fees and taking 3–7 business days.
+
+5. **Reconciliation**:
+   - The operational auditing process matching local terminal transaction storage records against payment gateway settlement logs, isolating discrepancies and stranded balances.
 
 ## Interview answer — deep senior
 
-“I build an explicit mapping from provider statuses and references to our state machine. A lost authorization response becomes unknown, prompting status lookup and possibly reversal tied to the original operation. A void is used only when the provider allows canceling an unsettled transaction; a refund has a separate authorization and idempotency identity after capture/settlement. Reconciliation runs independently of UI lifetime, compares ledgers by safe correlation IDs and investigates mismatches. I test duplicate reversals, late approvals and settlement cutoff transitions against the certified integration. Maintain explicit states and protocol references. I would not call a POS reversal a refund merely because both may restore customer funds. I would ask for the rail, provider, capture mode, and settlement status before naming a recovery action. An authorization may be a hold rather than collected funds. A void or cancellation can be available before capture or settlement, while a refund normally addresses a completed charge and has its own record and customer experience. A reversal in a POS protocol can be a specific message tied to the original transaction and strict timing; it is not a generic API alias for refund. Reconciliation is the evidence process that compares terminal, backend, and provider ledgers and finds missing or mismatched entries. I would document each operation's permitted window, original reference, acknowledgment, and retry policy.”
+From an EMV L2 kernel and payment network compliance perspective, subtle operational nuances exist:
+
+1. **The 'Void vs. Reversal' Architecture Nuance**: Developers often confuse Voids and Reversals. A Reversal undoes an authorization that never successfully finished its complete terminal protocol handshake. A Void cancels a transaction that was 100% completed, printed, and approved, but the merchant manually voids it before midnight settlement.
+
+2. **Partial Reversals in Split Tenders**: In multi-tender checkouts (e.g. paying $50 with Gift Card and $50 with Visa), if the Visa authorization succeeds but the Gift Card fails, the client engine must trigger a Partial Reversal strictly against the Visa transaction while restoring the cart state.
+
+3. **Reconciliation Batch Balancing**: In Smart POS Android devices (Pax, Poynt, Sunmi), closing the business batch sends an ISO 8583 0500 Batch Upload message summarizing total counts and debit volumes. If terminal and host totals mismatch by even 1 cent, the host halts settlement and forces a manual transaction-by-transaction reconciliation audit.
 
 ## How to answer in the interview
 
@@ -75,8 +140,11 @@ Prompt for lifecycle timing, original reference, separate refund identity and re
 
 ## Follow-up questions
 
-- [PAY-01](../pay-01/): Why is unknown a state? **Answer:** timeout cannot prove issuer decline.
-- [PAY-15](../pay-15/): How do reversals retry? **Answer:** durable original identity and provider-specific deduplication.
+- **Interviewer:** "Why is a Void commercially preferred over a Refund if a customer cancels an order on the same day?"
+  **Answer:** "Because a Void cancels the transaction before settlement, eliminating payment gateway interchange processing fees for the merchant."
+
+- **Interviewer:** "What is the difference between Authorization and Settlement (Capture)?"
+  **Answer:** "Authorization holds the funds on the cardholder's credit limit; Settlement captures and transfers the actual money from the issuer to the merchant bank."
 
 ## Self-check rubric
 
@@ -87,4 +155,4 @@ Can I classify five terms by lifecycle stage and avoid assuming universal provid
 - [Stripe PaymentIntent lifecycle](https://docs.stripe.com/payments/paymentintents/lifecycle) — provider-specific authorization/capture states.
 - [Stripe refunds](https://docs.stripe.com/refunds) — refund as separate workflow.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

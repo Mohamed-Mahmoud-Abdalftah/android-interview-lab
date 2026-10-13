@@ -22,7 +22,53 @@ Design a facade that normalizes an unreliable SDK without hiding errors or durab
 
 ## Explanation in Arabic
 
-Facade تقدّم API صغير مستقر فوق SDK معقد: `submitPayment`, `queryStatus`, `cancelIfAllowed` بدل callbacks/options موزعة في ViewModels. جوّاها adapters تحول callback لtyped outcome، dedupe للcallback المكرر، timeout handling، request ID، وlogging آمن. لكن Facade ما تعلنش success من callback محلي لو server status لسه unknown؛ ترجع `PendingVerification` وتعمل reconciliation. لازم تراعي cancellation: إلغاء coroutine مش بالضرورة يلغي transaction على server. facade مش excuse لإخفاء كل أخطاء SDK تحت `Boolean`.
+كيف يبسط نمط الواجهة (Facade Pattern) التعامل مع مكتبة خارجية غير موثوقة أو فوضوية (Unreliable Third-Party SDK)؟
+
+1. مشكلة التعامل المباشر مع مكتبات الـ Third-Party الفوضوية:
+   - مكتبات الدفع، الخرائط، البلوتوث، أو الإعلانات الخارجية غالباً ما تكون سيئة التصميم:
+     * تفرض كوداً طويلاً ومعقداً لبدء اتصال بسيط.
+     * ترمي استثناءات غير متوقعة، أو تحتوي على Listeners غريبة.
+     * إذا قمت باستدعائها في كل مكان في شاشات التطبيق، تصبح رهينة لهذه المكتبة، وتغييرها أو تحديثها مستقبلاً يتطلب تعديل عشرات الشاشات!
+
+2. كيف يحل الـ Facade Pattern هذه الكارثة؟
+   - نقوم ببناء كلاس وسيط يسمى **Facade** (مثل `BiometricAuthFacade` أو `MapsLocationFacade`).
+   - **يخفي كل التعقيد والقذارة بداخل كود واحد محصور**:
+     * يبتلع الاستثناءات العشوائية ويحولها إلى Results آمنة.
+     * ينسق الخطوات الخمسة المعقدة للـ SDK ويختصرها في دالة واحدة معلقة: `suspend fun authenticate(): Boolean`.
+   - تصبح شاشات التطبيق نظيفة وتتعامل مع الـ Facade فقط. إذا قررت الشركة غداً استبدال الـ SDK بمكتبة أخرى، فالتعديل ينحصر داخل الـ Facade فقط دون المساس بأي شاشة في التطبيق!
+
+## Practical walkthrough
+
+بناء Facade لتبسيط SDK بصمة فوضوي ومعقد:
+```kotlin
+// كلاس Facade يعزل مكتبة البصمة الفوضوية خلف واجهة نظيفة معلقة:
+class BiometricAuthFacade @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
+    suspend fun authenticateUser(title: String, subtitle: String): BiometricResult = suspendCancellableCoroutine { continuation ->
+        try {
+            val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                .setTitle(title)
+                .setSubtitle(subtitle)
+                .setNegativeButtonText("Cancel")
+                .build()
+
+            // إخفاء كل تعقيد الـ Callbacks والـ Executors داخل الـ Facade:
+            val callback = object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    continuation.resume(BiometricResult.Success)
+                }
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    continuation.resume(BiometricResult.Error(errString.toString()))
+                }
+            }
+            // تنفيذ طلب البصمة...
+        } catch (e: Exception) {
+            continuation.resume(BiometricResult.Error(e.localizedMessage ?: "Biometric failed"))
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +77,6 @@ A facade simplifies a subsystem boundary while presenting stable semantics. For 
 ## Worked example
 
 Conceptual API: `PaymentFacade.submit(requestId, amount): SubmitOutcome` returns `Confirmed`, `Rejected`, or `PendingVerification`; `observeStatus(requestId)` exposes backend-confirmed updates. Internal adapter handles duplicate callbacks and SDK exceptions; caller sees no vendor types.
-
-## Practical walkthrough
-
-third-party SDK ممكن callback ترجع success code ثم status endpoint تتأخر، أو timeout بعد server accept. Facade تعرض `submit(requestId): SubmitOutcome` و`observeStatus(requestId)` بدل ما كل ViewModel تكرر vendor quirks. جوهها Adapter لكل callback وretry/reconciliation policy موثقة، لكن ما تحولش unknown لـsuccess/failure لمجرد API سهلة. `PendingVerification` تفضل حالة صريحة، وrequest ID محفوظة قبل submit. لو SDK method مش cancellable، facade توضح إن cancellation توقف انتظار caller بس وقد تحتاج status query. اختبر callback مرتين، late callback، process death، 401، وحالات server mismatch.
 
 ## Trade-offs and decision criteria
 
@@ -50,17 +92,23 @@ A fintech app wraps a flaky provider SDK, persists request IDs, and monitors cal
 
 ## Interview answer — short
 
-A Facade can give callers one stable API over a messy SDK, normalizing callbacks and errors. For payments I preserve uncertain outcomes and reconcile with the server rather than hiding failures behind a Boolean.
+A Facade encapsulates an unreliable third-party SDK behind a simplified, resilient application-owned API. It converts cumbersome callbacks into suspending coroutines, absorbs unpredictable exceptions into safe Result types, and acts as an anti-corruption layer so swapping the vendor SDK later touches only the Facade.
 
 ## Interview answer — structured
 
-I would define a small domain-facing facade for the operations callers truly need, then hide vendor callbacks and configuration behind it. The facade maps duplicate callbacks, exceptions and timeouts into typed outcomes with documented cancellation behavior. It should not own UI navigation or pretend that local SDK success proves a server transaction. An uncertain submit returns a request ID for verification, and the repository/backend supplies final status. I test callback order, duplicates and process-death recovery around the boundary.
+Wrapping an unreliable third-party SDK inside a **Facade** acts as an **Anti-Corruption Layer (ACL)**, protecting the core application from external instability and poor vendor API design.
+
+1. **API Simplification**: Third-party SDKs frequently demand multi-step initialization rituals (setting listeners, configuring flags, handling token exchanges). A Facade condenses 10 steps into a single cohesive, high-level suspending method: `suspend fun scanDocument(): DocumentResult`.
+
+2. **Resilience & Error Containment**: Volatile vendor libraries often throw undocumented runtime exceptions or return obscure integer error codes. The Facade catches vendor exceptions, intercepts error codes, and maps them into safe, typed domain results (`Result<T>`), preventing vendor crashes from taking down the app.
+
+3. **Vendor Insulation (Zero Lock-in)**: By consuming only the Facade, feature ViewModels and Use Cases never import vendor package classes (`com.vendor.sdk.*`). If the vendor doubles their pricing or deprecates their library, swapping to a competitor requires rewriting only the internal implementation of the Facade; the rest of the application remains completely untouched.
 
 ## Interview answer — deep senior
 
-An unreliable SDK creates two kinds of complexity: interface complexity and semantic uncertainty. A Facade reduces the first by exposing a small application contract; internal adapters handle callback shape, threading and error codes. It must not erase the second. A timeout can occur after a successful server commit, and cancelling a coroutine may only stop waiting, not undo the payment. I would carry a persisted request ID, return a pending outcome, and query authoritative server status. Duplicate callbacks should be collapsed within the current process while server idempotency protects business effects. I keep analytics and UI effects outside the facade or in dedicated collaborators, avoid logging sensitive payloads, and run contract tests against a fake SDK that invokes callbacks in surprising orders.
+In modern Android, Facades excel at **converting legacy Callback APIs into Coroutines and Flows**. Vendors often supply outdated Java listener interfaces (`onSuccess`, `onError`). Inside the Facade, we wrap these callbacks using `suspendCancellableCoroutine` or `callbackFlow`, installing proper cancellation cleanup in `awaitClose { ... }`.
 
-I would give callers one stable domain operation, not a pile of vendor callbacks. The facade can validate input, call the SDK through an adapter, and expose Confirmed, Rejected, or PendingVerification with a request ID. It simplifies sequencing but must not erase uncertainty. If the SDK times out after sending a payment, the facade should persist or expose the identity needed to query status; it should not return definite failure and invite another charge. I would separate a short-lived UI call from durable reconciliation, document cancellation limits of the vendor API, and contract-test duplicate or late callbacks. Swapping vendors then affects the adapter, while the rest of the app keeps its domain contract.
+Furthermore, a Facade allows injecting **Feature Flags and Fallback Mechanisms**. If the third-party analytics or crash SDK crashes or hangs, the Facade can evaluate an in-memory killswitch, silently bypassing the vendor call and returning a cached fallback without the UI ever knowing a failure occurred.
 
 ## How to answer in the interview
 
@@ -76,8 +124,11 @@ Define facade operations, callback normalization, cancellation, duplicate callba
 
 ## Follow-up questions
 
-- [PAT-04](../pat-04/): Facade versus Adapter? **Answer:** facade simplifies a subsystem; adapter changes an incompatible interface.
-- [PAT-16](../pat-16/): How swap vendor SDKs? **Answer:** vendor adapters behind a stable facade/repository contract.
+- **Interviewer:** "What is an Anti-Corruption Layer (ACL) in Domain-Driven Design?"
+  **Answer:** "A translation layer (typically implemented as a Facade and Adapter) that sits between your clean domain model and a messy external system, preventing foreign concepts from polluting your code."
+
+- **Interviewer:** "How does `suspendCancellableCoroutine` help in a Facade?"
+  **Answer:** "It bridges asynchronous callback-based third-party SDK APIs into modern Kotlin suspending functions, supporting cooperative cancellation if the calling coroutine scope cancels."
 
 ## Self-check rubric
 
@@ -88,4 +139,4 @@ Model duplicate callback, timeout and cancellation without declaring false payme
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — Facade and Adapter patterns.
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — repository boundary.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

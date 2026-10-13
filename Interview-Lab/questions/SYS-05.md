@@ -22,11 +22,66 @@ Design payment lifecycle with idempotent backend, pending state and reconciliati
 
 ## Explanation in Arabic
 
-Payment state machine: Created locally → PendingSubmit → Authorized/Declined → Captured/Settled أو Reversed حسب backend contract. نعمل operation ID ثابت قبل network، ونرسل idempotency key مع payload مطابق؛ timeout يعني Unknown/Pending وليس Failed. backend ledger يفرض transitions وdeduplication، وAndroid worker تستعلم عن status وتتصالح بعد process death. UI ما تعرضش نجاح أو تسمح charge جديد من غير authority.
+كيف تصمم دورة حياة معاملات دفع قوية ومرنة (Robust Payment Transaction Lifecycle) تمنع السحب المزدوج وتتحمل انقطاع الشبكة؟
+
+1. التحديات القاتلة في مدفوعات الموبايل:
+   - **مشكلة الانقطاع بعد الخصم (Payment in Flight Network Drop)**: المستخدم ضغط "ادفع الآن"، البنك خصم المبلغ، ولكن قبل أن تصل استجابة النجاح للهاتف انقطعت شبكة الإنترنت! إذا ضغط المستخدم "ادفع" مجدداً، قد يُخصم منه المبلغ مرتين!
+   - **موت التطبيق أثناء معالجة البوابة (Process Death / Crash)**: إغلاق التطبيق أثناء انتظار تأكيد 3D Secure.
+
+2. الركائز الهندسية لمعاملات الدفع:
+   - **مفتاح عدم التكرار (Client-Side Idempotency Key)**: لكل عملية دفع يتم توليد `idempotencyKey = UUID()` فريد محلياً وتمريره في هيدر الطلب `Idempotency-Key: <uuid>`. إذا أعاد التطبيق إرسال نفس الطلب 10 مرات بسبب مشاكل الشبكة، يدرك السيرفر فوراً أنه نفس الطلب ويعيد نتيجة المعاملة الأولى دون تكرار الخصم!
+   - **آلة حالات المعاملة الصريحة (Explicit State Machine)**:
+     `INITIATED -> PROCESSING -> AUTHORIZED -> CAPTURED` أو `FAILED`.
+   - **المطابقة التلقائية والاستعلام السيرفري (Polling / Reconciliation)**: عند انقطاع الاتصال أو إعادة فتح التطبيق بعد عطل، لا يعيد التطبيق محاولة الدفع، بل يستعلم عن حالة المعاملة الأصلية: `GET /payments/order/{orderId}` لمعرفة هل تم الخصم أم لا.
+   - **Webhooks ومطابقة السيرفر**: السيرفر يعتمد على إشعارات Webhooks المباشرة من بوابة الدفع (Stripe/PayPal) كمصدر الحقيقة النهائي وليس استجابة تطبيق الموبايل.
 
 ## Practical walkthrough
 
-تخيّل POS بعت authorize والـUI عملت timeout. نفس `operationId` و`idempotencyKey` يفضلوا محفوظين، والـUI تعرض Pending لحد status من ledger أو provider. ممنوع تبدأ authorize جديدة بمفتاح جديد لمجرد إن HTTP فشل؛ ممكن تخصم مرتين. فرّق بين Authorized وCaptured وSettled وReversed لأن كل انتقال ليه صاحب وسبب. سجل transition timestamp وcorrelation ID للتسوية والدعم.
+تصميم نظام دفع قوي يعتمد على Idempotency Key ومطابقة الحالة عند الفشل وانقطاع الشبكة:
+```kotlin
+class PaymentTransactionCoordinator @Inject constructor(
+    private val paymentApi: PaymentApiService,
+    private val paymentDao: PaymentTransactionDao
+) {
+    suspend fun executePayment(orderId: String, amountCents: Long): PaymentResult {
+        // 1. جلب أو إنشاء سجل المعاملة محلياً بمفتاح عدم تكرار فريد وثابت:
+        val existingTx = paymentDao.getTransactionForOrder(orderId)
+        val idempotencyKey = existingTx?.idempotencyKey ?: UUID.randomUUID().toString()
+
+        if (existingTx == null) {
+            paymentDao.insert(PaymentRecord(orderId, idempotencyKey, status = PaymentStatus.PENDING))
+        }
+
+        return try {
+            // 2. إرسال طلب الدفع مع الـ Idempotency-Key في الهيدر
+            val response = paymentApi.chargeOrder(
+                idempotencyKey = idempotencyKey,
+                request = ChargeRequest(orderId, amountCents)
+            )
+
+            paymentDao.updateStatus(orderId, PaymentStatus.COMPLETED)
+            PaymentResult.Success(response.transactionId)
+        } catch (e: IOException) {
+            // 3. انقطاع الشبكة أثناء الدفع! لا تعيد المحاولة بالدفع؛ استعلم عن الحالة السيرفرية:
+            reconcilePaymentStatus(orderId, idempotencyKey)
+        }
+    }
+
+    private suspend fun reconcilePaymentStatus(orderId: String, idempotencyKey: String): PaymentResult {
+        return try {
+            val statusResponse = paymentApi.queryPaymentStatus(idempotencyKey)
+            if (statusResponse.isPaid) {
+                paymentDao.updateStatus(orderId, PaymentStatus.COMPLETED)
+                PaymentResult.Success(statusResponse.transactionId)
+            } else {
+                PaymentResult.PendingResolution
+            }
+        } catch (e: Exception) {
+            PaymentResult.NetworkErrorRequiresCheck
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -60,15 +115,34 @@ A checkout persists operation ID/amount, submits through backend, shows Pending 
 
 ## Interview answer — short
 
-“I model payment as explicit states, persist a stable operation ID before send and let backend ledger enforce idempotency and transitions. Timeout is unknown, so UI stays Pending and a durable worker reconciles status. Reversal is a separate linked operation.”
+Design a robust payment lifecycle by attaching a client-generated UUID idempotency key to each transaction, enforcing an explicit state machine, and never blindly retrying failed charges. If a network drop occurs in-flight, query the backend payment status using the idempotency key to reconcile transaction state without double-charging.
 
 ## Interview answer — structured
 
-“A robust payment flow begins with a local pending record and stable idempotency key. The server validates the amount and owns authorization/capture state. Android sends the request and records only an authoritative result; if the response is lost, it shows Pending and queries status rather than creating a new charge. WorkManager resumes reconciliation after process death. A reversal or refund is a new linked transaction with its own server contract, not a local deletion. I test retries, duplicate workers and crash windows.”
+Payment flows require zero-tolerance for duplicate charges and resilient handling of network failures:
+
+1. **Client-Generated Idempotency Keys**:
+   - Before dispatching a charge request, generate a cryptographically unique `idempotencyKey = UUID()` and persist it locally in Room associated with the order ID.
+   - Transmit this key in the HTTP header (`Idempotency-Key: <uuid>`). If network drops occur and the request is retried, payment gateways (e.g. Stripe, Adyen) recognize the key and return the original transaction receipt without re-executing charges.
+
+2. **State Machine Modeling**:
+   - Model the lifecycle with explicit states: `Created -> PaymentMethodAttached -> ActionRequired (3DS) -> Processing -> Succeeded / Failed`.
+
+3. **In-Flight Network Disconnection Recovery (Reconciliation)**:
+   - When an HTTP timeout occurs, the client does not know whether the charge succeeded on the gateway. **Never retry the charge mutation directly**. Instead, trigger a reconciliation query (`GET /payments/reconcile?key=<idempotencyKey>`) to retrieve the authoritative state.
+
+4. **Server-to-Server Webhook Authority**:
+   - The backend must not consider orders finalized solely because the mobile client returned success. Final order fulfillment is unlocked exclusively via authenticated server-side webhooks from the payment provider.
 
 ## Interview answer — deep senior
 
-“I separate logical payment identity from HTTP attempts. Before transmission, the client persists an operation ID and immutable amount/order context. The backend binds that ID to one ledger operation, rejects payload mismatch and exposes status. Authorization, capture, settlement and reversal may be distinct transitions, and only backend authority can confirm them. A coroutine or HTTP timeout merely stops client waiting; it cannot prove the charge failed or undo it. The app keeps Unknown/Pending, schedules repeat-safe reconciliation and reuses the same key only under documented retention rules. I instrument state transition latency and unresolved Pending age, suppress sensitive logs, and test duplicate taps, process death at every boundary, delayed webhooks and reversal races. I would draw the payment timeline with separate authorization, capture, settlement and reversal transitions and name the system allowed to perform each. A network timeout moves the client to Pending or Unknown, not Declined. The backend keeps a ledger and provider reference, deduplicates stable operation IDs under a documented retention policy, and exposes status for reconciliation. I would test response loss after provider acceptance, worker repetition and process death. Metrics should age unresolved operations and alert before support sees duplicate-charge reports.”
+From a staff architecture perspective, payment systems require handling edge cases in client-side lifecycle and user interaction:
+
+1. **UI Double-Tap & Concurrency Guards**: Prevent duplicate button clicks by disabling the UI immediately and using reactive StateFlow debounce mechanisms. The `executePayment()` method must be bounded by an in-memory Mutex to block concurrent triggers for the same order.
+
+2. **3D Secure / Biometric Process Death**: When navigating to a 3DS webview or external banking app, the host Android OS may kill the main application under memory pressure. The app must persist order state and idempotency keys in persistent Room storage so that upon returning via Deep Link (`myapp://payment-return`), the activity reconstructs state and polls the backend for final status.
+
+3. **Telemetry & PCI Auditing**: Mask PAN numbers (showing only first 6/last 4) in all UI logs, and completely eliminate CVV/CVC persistence from memory and storage post-tokenization.
 
 ## How to answer in the interview
 
@@ -84,8 +158,11 @@ Draw payment states and justify how every crash window converges to authoritativ
 
 ## Follow-up questions
 
-- [DAT-20](../dat-20/): How recover lost response? **Answer:** query server status by original operation ID.
-- [BG-18](../bg-18/): How handle reversal after exit? **Answer:** durable linked operation and server deduplication.
+- **Interviewer:** "What is the difference between authorization and capture in payments?"
+  **Answer:** "Authorization holds the funds on the customer's card; Capture actually transfers the money to the merchant's account."
+
+- **Interviewer:** "Why should the client never generate the charge amount directly?"
+  **Answer:** "To prevent tampering; the client submits the order ID, and the server computes the authoritative amount from verified database inventory."
 
 ## Self-check rubric
 
@@ -96,4 +173,4 @@ Can I define states, preserve unknown outcomes and prevent duplicate charges?
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — durable pending operations.
 - [Kotlin withTimeout API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout.html) — timeout limits.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

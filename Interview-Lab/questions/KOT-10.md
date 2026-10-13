@@ -22,7 +22,30 @@ Contrast deferred read-only initialization with deferred mutable assignment and 
 
 ## Explanation in Arabic
 
-`lazy` delegate لـ`val` بيحسب القيمة أول مرة تتقري، وبيخزنها بعدها؛ افتراضيًا `LazyThreadSafetyMode.SYNCHRONIZED` بيضمن نشرها مرة واحدة بين threads، وفيه modes تانية لو السياق يبرر. `lateinit` ينفع لـnon-null `var` مناسب النوع، يتسند بعد البناء؛ القراءة قبل التهيئة ترمي `UninitializedPropertyAccessException`. الاتنين مش حل عام لتأجيل dependency design. في Android، `lazy` ممكن يمسك View من Activity قديمة لو الـowner طويل العمر، و`lateinit` ممكن يفشل بعد lifecycle transition.
+المقارنة بين `by lazy` و `lateinit var` بتحدد استراتيجية تأجيل التهيئة (Deferred Initialization) في دورة حياة التطبيق:
+
+1. `by lazy`:
+   - بتستخدم فقط مع المتغيرات غير القابلة للتعديل (`val`).
+   - التهيئة بتتم عند **أول قراءة للمتغير (First Access)**، والنتيجة بتتحفظ (Cached) للاستدعاءات القادمة.
+   - بتدعم Thread-Safety Modes:
+     * `SYNCHRONIZED` (الافتراضي): بيستخدم Double-Checked Locking لضمان تهيئة واحدة حتى مع وجود Multiple Threads.
+     * `PUBLICATION`: بيسمح بتهيئة متزامنة، وأول ثريد يخلص هو اللي نتيجته بتتسجل.
+     * `NONE`: مفيش أي Synchronization؛ بيوفر في الأداء ومناسب لو القراءة محصورة في الـ Main Thread فقط.
+
+2. `lateinit var`:
+   - بتستخدم فقط مع المتغيرات القابلة للتعديل (`var`).
+   - ممنوعة مع الـ Primitives (زي `Int` و `Boolean`)؛ لازم تكون Non-null Object Reference.
+   - مناسبة جداً للـ Dependency Injection (زي `@Inject lateinit var api: Api`) والـ Android Lifecycle (زي تهيئة Views في `onCreate`).
+   - تقدر تفحص هل اتعمل لها تهيئة ولا لأ باستخدام `::property.isInitialized` لمنع `UninitializedPropertyAccessException`.
+
+## Practical walkthrough
+
+في Android Activity:
+- `by lazy`: مناسبة لتهيئة كائنات ثقيلة مش محتاجة استدعاء خارجي زي Repositories أو Formatters:
+  `private val analytics by lazy(LazyThreadSafetyMode.NONE) { FirebaseAnalytics.getInstance(this) }`
+- `lateinit var`: مناسبة للـ Dagger/Hilt Field Injection أو ViewBinding في Fragments:
+  `@Inject lateinit var userRepo: UserRepository`
+- **الخطأ الشائع:** قراءة `lateinit var` قبل ما الـ DI أو `onCreate` يشتغلوا؛ ده هيضرب `UninitializedPropertyAccessException` ويوقع التطبيق فوراً.
 
 ## Why it matters and how it works
 
@@ -43,10 +66,6 @@ fun main() {
 }
 ```
 
-## Practical walkthrough
-
-`by lazy` بيشغّل initializer أول access وبعدها يخزّن النتيجة؛ مناسب لـparser/config ثابتة بتتعمل عند الطلب. الافتراضي synchronized initialization، ولو استخدمت `LazyThreadSafetyMode.NONE` لازم تتأكد إن access محصور في thread واحد. `lateinit var` وعد إنك هتعيّن القيمة قبل القراءة؛ القراءة بدري ترمي `UninitializedPropertyAccessException`. في Android view binding داخل Fragment، اربطها بعمر الـview وامسحها في `onDestroyView` أو استخدم pattern أوضح؛ `lateinit` لو احتفظت بالـview بعد destroy يسبب leak. الاتنين مش بديل لـdependency injection lifecycle.
-
 ## Trade-offs and decision criteria
 
 Prefer constructor injection when a dependency is required immediately. `lazy` is useful for an expensive optional value; its synchronized mode has small coordination cost. `lateinit` fits framework-driven assignment, such as test setup or view binding inside a controlled lifecycle, but nullable property plus explicit state may be clearer.
@@ -61,17 +80,23 @@ A repository lazily builds a rarely used parser with a stable application-scoped
 
 ## Interview answer — short
 
-`lazy` computes a `val` on first access and caches it. `lateinit` lets a non-null `var` be assigned later, but reading it first throws. I choose based on who creates the value and when it must be valid, including lifecycle cleanup.
+by lazy is used for read-only val properties, initializing them on first access and caching the result with optional thread-safety modes. lateinit var is for mutable var properties where initialization is deferred to a lifecycle method or dependency injection framework, and it cannot be used with primitive types.
 
 ## Interview answer — structured
 
-I use `lazy` when construction can be deferred and the object can live as long as its owner, such as a parser configuration. Its default mode synchronizes first initialization; other modes need an explicit threading decision. I use `lateinit` when an external step assigns a non-null property, such as test setup, and I make that initialization order clear. In Android I am careful with view references: a Fragment can outlive its view, so a retained binding needs to be cleared at view destruction. Neither keyword makes a lifecycle contract safe on its own.
+I distinguish by lazy and lateinit var by ownership, mutability, and lifecycle.
+
+by lazy is strictly for val properties. It initializes the object on its first access using a lambda and caches the result. It is thread-safe by default using double-checked locking, but we can optimize it using LazyThreadSafetyMode.NONE for Main-thread-only UI components.
+
+lateinit var is for mutable var properties where the value is assigned later by an external caller, such as Hilt field injection or Activity lifecycle callbacks. It only works with non-primitive object types. If accessed before initialization, it throws an UninitializedPropertyAccessException, which can be guarded using ::property.isInitialized.
+
+In Android, I prefer by lazy for self-contained dependencies and lateinit var for framework-injected dependencies.
 
 ## Interview answer — deep senior
 
-The key questions are initialization timing, publication across threads, and cleanup. `lazy` delegates value creation and caching; alternative thread-safety modes change guarantees. `lateinit` expresses a mutable initialization gap and can be checked with `::property.isInitialized` where visible, but that is not a replacement for a sound lifecycle. In a Fragment, view-scoped resources must be cleared when the view is destroyed. For dependency injection, constructor parameters are clearer when the object cannot function without the dependency. `lazy` and `lateinit` solve different problems. A `lazy val` owns an initializer and computes on first read; the default mode synchronizes initialization, while other modes trade guarantees for overhead. The cached value may still be mutable, so lazy initialization does not make later operations thread-safe.
+Under the hood, by lazy utilizes Kotlin's property delegation mechanism. The compiler generates a delegate field of type Lazy<T>. When the property getter is invoked, it delegates to Lazy.value. Under the default SYNCHRONIZED mode, it uses an internal lock and double-checked locking to ensure single initialization across threads. In Android UI layers where code executes exclusively on the Looper main thread, allocating that synchronization monitor is unnecessary overhead. Setting LazyThreadSafetyMode.NONE eliminates synchronization locks completely.
 
-A regex used by a parser can be a `lazy val`: the initializer is owned by the property and only runs when needed. A test fixture populated by setup may use `lateinit`, but a missing setup step becomes an immediate access exception; constructor injection is better for a mandatory dependency. In a Fragment, a binding follows the view lifetime rather than the Fragment object, so a `lateinit` binding that never clears can retain a destroyed view. I would choose a nullable backing field or a view-lifecycle delegate, and verify access is impossible after `onDestroyView`.
+lateinit var generates a standard mutable backing field without getter/setter indirection. The compiler inserts a null check into the getter: if the internal reference is null, it throws an UninitializedPropertyAccessException. Because primitive types on the JVM cannot hold null, lateinit cannot support Int, Double, or Boolean. In modern Android development, lateinit is commonly used in Fragment ViewBinding, where it must be cleared in onDestroyView to prevent memory leaks.
 
 ## How to answer in the interview
 
@@ -87,8 +112,14 @@ Discuss `LazyThreadSafetyMode`, exception retry semantics, allowed `lateinit` ty
 
 ## Follow-up questions
 
-- [KOT-02](../kot-02/): Is a `lazy val` deeply immutable? **Answer:** no; the cached object may itself be mutable.
-- [KOT-25](../kot-25/): Does lazy initialization make subsequent mutations safe? **Answer:** no; only initialization publication is addressed by a suitable mode.
+- **Interviewer:** "Why can't you use `lateinit` with primitive types like `Int` or `Boolean`?"
+  **Answer:** "Because in JVM bytecode, primitives have default values (like 0 and false) and cannot hold null. Kotlin's `lateinit` mechanism detects uninitialized state by checking if the internal reference is null. Without nullability representation at the bytecode level, it cannot differentiate an uninitialized primitive from a property explicitly set to 0."
+
+- **Interviewer:** "What is the danger of using `lateinit var` for ViewBinding in Fragments?"
+  **Answer:** "A Fragment's view lifecycle can be destroyed and recreated multiple times while the Fragment instance remains alive. If the ViewBinding is held in a `lateinit var` and not cleared in `onDestroyView()`, it retains a strong reference to the detached View hierarchy, causing a massive memory leak. It must be nulled out in `onDestroyView()`."
+
+- **Interviewer:** "When should you explicitly pass `LazyThreadSafetyMode.NONE` to `by lazy`?"
+  **Answer:** "When the property is guaranteed to be accessed only from a single thread, typically the Android Main thread (such as ViewModels or Activities). Passing `NONE` eliminates the synchronization lock and volatile read overhead, improving initialization performance."
 
 ## Self-check rubric
 
@@ -99,4 +130,4 @@ Explain which construct owns initialization, predict an early `lateinit` read, a
 - [Kotlin delegated properties](https://kotlinlang.org/docs/delegated-properties.html) — lazy delegation.
 - [Kotlin properties](https://kotlinlang.org/docs/properties.html) — `lateinit` semantics.
 
-Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against primary documentation on 2026-10-13.

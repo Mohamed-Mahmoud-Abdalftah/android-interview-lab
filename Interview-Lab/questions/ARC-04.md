@@ -22,11 +22,59 @@ Define repository as data abstraction/source coordination and use case as busine
 
 ## Explanation in Arabic
 
-Repository interface أو class بتقدّم app data وتخفي هل جت من Room أو network أو cache، وكمان تحدد refresh/conflict/source-of-truth policy. UseCase بيمثل فعل business محدد زي `PlaceOrder` أو `ObserveEligibleOffers`، وممكن يجمع أكتر من repository أو يطبق rule. مش كل repository method محتاجة UseCase wrapper؛ لو الـViewModel بس بيقرأ products من repo بسيط، wrapper فارغ يزوّد ملفات من غير فائدة. Repository ما يسرّبش DTOs للـUI، وUseCase ما يتحوّلش لمكان لكل logic بلا ownership.
+ما هو نمط الـ Repository وما هو الـ UseCase؟ وما هي الفروق الجوهرية بينهما؟
+
+1. ما هو نمط المستودع (Repository Pattern)؟
+   - الـ Repository هو **وسيط مجرد (Mediator)** بين مصادر البيانات المختلفة وباقي أجزاء التطبيق.
+   - مهمته الأساسية: توفير واجهة نظيفة وكأن البيانات مقروءة من مجموعة كائنات في الذاكرة (`In-memory collection`).
+   - يخفي تفاصيل من أين أتت البيانات: هل أتت من الـ Cache؟ أم من قاعدة بيانات Room؟ أم من الـ Network عبر Retrofit؟
+   - هو المسؤول الوحيد عن إدارة استراتيجية الـ Caching وقواعد مزامنة البيانات (Offline-first sync).
+
+2. ما هو كائن حالة الاستخدام (UseCase / Interactor)؟
+   - الـ UseCase هو كائن يمثل **عملية بيزنس محددة لمرة واحدة (Single Business Action)** تعبر عن رغبة المستخدم أو النظام (مثل `SubmitTransferUseCase`, `GetAccountSummaryUseCase`).
+   - يركز على: قواعد التحقق (Validation)، دمج نتائج أكثر من Repository، وتطبيق الشروط الحسابية.
+   - يتبع مبدأ Single Responsibility: له دالة تنفيذ واحدة (غالباً `operator fun invoke`).
+
+3. المقارنة الجوهرية:
+   - **الـ Repository**: يتحدث بلغة البيانات والتخزين (`saveUser`, `getUserById`, `syncCart`).
+   - **الـ UseCase**: يتحدث بلغة المنتج وقواعد العمل (`PlaceOrderUseCase`, `VerifyEligibilityUseCase`).
 
 ## Practical walkthrough
 
-Repository يمثل data contract مثل `observeOrders()` مع سياسة cache/server، وUseCase يمثل action أو policy مثل `SubmitOrder` أو `GetEligibleOffers`. مش كل DAO يحتاج repository wrapper فارغ، ومش كل getter يحتاج UseCase. لو payment retry له قواعد، ضعه في use case/domain، بينما request mapping والstatus endpoint في repository. اجعل الاختبار يثبت القرار والأثر.
+تطبيق عملي يوضح الفرق بين UseCase يدمج مستودعين و Repository يدير الـ Cache:
+```kotlin
+// 1. REPOSITORY: يركز على مصادر البيانات والـ Cache:
+class UserRepositoryImpl(
+    private val localDao: UserDao,
+    private val remoteApi: UserApi
+) : UserRepository {
+    override fun getUser(id: String): Flow<User> = localDao.getUser(id).onStart {
+        // استراتيجية مزامنة البيانات والـ Cache:
+        refreshUser(id)
+    }
+    private suspend fun refreshUser(id: String) {
+        val networkUser = remoteApi.fetchUser(id)
+        localDao.insertUser(networkUser.toEntity())
+    }
+}
+
+// 2. USE CASE: يركز على سيناريو البيزنس وينسق بين Repositories متعددة:
+class UpgradeToPremiumUseCase @Inject constructor(
+    private val userRepository: UserRepository,
+    private val paymentRepository: PaymentRepository
+) {
+    suspend operator fun invoke(userId: String, paymentMethodId: String): Result<Subscription> {
+        val user = userRepository.getUserSync(userId) ?: return Result.failure(UserNotFoundException())
+        if (user.isSuspended) return Result.failure(AccountSuspendedException())
+
+        val chargeResult = paymentRepository.charge(paymentMethodId, PREMIUM_COST_CENTS)
+        if (chargeResult.isSuccess) {
+            userRepository.markAsPremium(userId)
+        }
+        return chargeResult
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -88,15 +136,27 @@ An offline-first feed repository exposes database-backed Flow and refreshes from
 
 ## Interview answer — short
 
-A Repository abstracts and coordinates data sources, including source-of-truth rules. A UseCase represents a business action or reusable rule above that data. The domain layer is optional; I add use cases when they clarify real behavior.
+A Repository mediates between multiple data sources (Network, Room, Cache), abstracting data access behind a collection-like interface and managing caching. A Use Case (Interactor) encapsulates a single business operation, enforcing domain rules and orchestrating multiple repositories.
 
 ## Interview answer — structured
 
-I use a repository to define how the app obtains and updates data, not simply as a DAO wrapper. It can combine Room, network, and cache and expose a stable model. A use case expresses something the product does, such as placing an order or computing eligibility, often by calling one or more repositories. Android guidance treats use cases as optional. If one merely forwards a single repository call, I may skip it until complexity or reuse appears. A practical signal that a use case earns its place is a rule used by checkout, profile, and notifications or an operation coordinating several repositories. If it is only `operator fun invoke() = repository.get()`, I ask what boundary or behavior it actually adds.
+The Repository and Use Case patterns serve complementary but distinct architectural purposes.
+
+1. **The Repository Pattern**: Acts as a mediator between domain/business layers and diverse raw data sources (Remote API, Room DB, in-memory cache). Its responsibilities are:
+   - Presenting a clean, domain-centric collection interface (`Flow<User>`, `suspend fun save()`).
+   - Encapsulating storage details, offline-first policies, and data synchronization logic.
+   - Mapping DTOs/Entities into clean Domain Models.
+
+2. **The Use Case (Interactor)**: Encapsulates a **single granular business operation**. It represents an action the user or system wants to perform (e.g. `CheckoutCartUseCase`, `AuthenticateWithBiometricsUseCase`). Its responsibilities are:
+   - Enforcing core business rules and validation logic.
+   - Orchestrating interactions across multiple repositories.
+   - Exposing a single entry point—conventionally implemented using Kotlin's `operator fun invoke()`.
 
 ## Interview answer — deep senior
 
-The separation becomes valuable when data consistency and business policy evolve independently. A repository decides whether local storage is the source of truth, how remote refresh is applied, and what failures are surfaced. A use case can validate rules, coordinate repositories, and return a domain outcome that is not tied to transport details. I keep cancellation and error semantics explicit and do not pretend a use case alone survives process death. For a tiny app I may call a repository from a ViewModel; for a multi-feature payment workflow I likely want a use case with focused tests. I review the direction of dependencies and model types, because a beautifully named repository that returns Retrofit DTOs still leaks its boundary. For an offline-first feed, repository consistency is substantial work: choose local truth, refresh, map, and preserve cached data on failure. A use case above it might calculate what the user may do with those articles, but should not reimplement refresh logic. I test the repository against races and stale data, and the use case against policy inputs. If the operation must survive process death, persisted work and scheduling sit outside a screen coroutine.
+A frequent architectural smell is creating 1-to-1 **Passthrough Use Cases** that merely wrap a repository method: `class GetUserUseCase(repo) { invoke(id) = repo.getUser(id) }`. If a business action involves zero validation, zero coordination, and zero transformation, creating a use case solely for dogma introduces meaningless boilerplate. Google's official architecture guidance explicitly recommends treating the Domain layer as optional: ViewModels can directly consume Repositories when business logic is absent.
+
+However, Use Cases become indispensable when business rules must be shared across multiple entry points. For example, if an `AddToCartUseCase` is executed by a standard product screen, a search screen, and a deep-link notification handler, placing the validation and limit checks inside a UseCase prevents duplicating business logic across three ViewModels.
 
 ## How to answer in the interview
 
@@ -112,8 +172,11 @@ Compare repository data ownership with use-case action semantics; explain offlin
 
 ## Follow-up questions
 
-- [ARC-10](../arc-10/): Who decides source of truth? **Answer:** the data layer/repository contract and implementation.
-- [ARC-13](../arc-13/): When is a use case optional? **Answer:** when no meaningful reuse or complex policy warrants it.
+- **Interviewer:** "When is a Use Case genuinely necessary versus overengineering?"
+  **Answer:** "It is necessary when business rules require validation, orchestrate multiple repositories, or must be reused across multiple ViewModels. It is overengineering when it simply passes a call directly to a single repository method without added value."
+
+- **Interviewer:** "Why should a UseCase have only one public method (`invoke`)?"
+  **Answer:** "To uphold the Single Responsibility Principle. A UseCase represents a single business action; having multiple disparate public functions turns it into a god class."
 
 ## Self-check rubric
 
@@ -124,4 +187,4 @@ Describe a repository that actually coordinates sources, one use case that adds 
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — repository responsibilities.
 - [Android domain layer](https://developer.android.com/topic/architecture/domain-layer) — use cases and optionality.
 
-Technically reviewed against the linked official Android architecture guidance on 2026-10-11. Conceptual flows and snippets are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

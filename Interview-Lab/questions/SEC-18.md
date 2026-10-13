@@ -23,11 +23,66 @@ How do you validate exported components, deep links, and PendingIntents?
 
 ## Explanation in Arabic
 
-`exported` component مدخل من apps تانية؛ لازم نراجع manifest النهائي، permissions المطلوبة، caller identity والـURI اللي داخلة. Deep link مش دليل إن المستخدم مخوّل؛ ممكن attacker يفتح URL مزيف بparameters. `PendingIntent` لو mutable من غير داعي ممكن يتغيّر محتواه. كل incoming data تتحقق، والـbackend يقرر ownership.
+كيف تتحقق من أمان المكونات المصدرة (Exported Components)، الروابط العميقة (Deep Links)، والـ PendingIntents؟
+
+1. تأمين المكونات المصدرة (Exported Components):
+   - بدءاً من Android 12 (API 31)، أصبح تحديد `android:exported="true|false"` إلزامياً لكل Activity و Service و Receiver يحتوي على Intent Filter.
+   - **القاعدة الأساسية**: اجعل كل المكونات `exported="false"` ما لم تكن مخصصة صراحة للاستدعاء من تطبيقات خارجية أو النظام.
+   - إذا كان المكون مصدراً لتبادل البيانات مع تطبيقاتك الأخرى التابعة لنفس الشركة، احمه بـ **Signature Permission** (`android:protectionLevel="signature"`)، بحيث يرفض النظام استدعاء المكون إلا إذا كان التطبيق المتصل موقعاً بنفس مفتاح الشهادة الخاص بك.
+
+2. حماية الـ Deep Links ومنع الـ Intent Redirection:
+   - الروابط العميقة التقليدية (`scheme://host/path`) يمكن لأي تطبيق خبيث على الهاتف تسجيل نفس الـ Scheme واعتراضها.
+   - **الحل**: استخدام **Android App Links** المدعومة بنظام Digital Asset Links (`.well-known/assetlinks.json`) للتحقق المشفر من ملكية الدومين.
+   - فحص وتطهير (Sanitize) جميع المعاملات (Query Parameters) بدقة، وتجنب استخدامها مباشرة في فتح شاشات داخلية أو WebViews لمنع ثغرات Open Redirect.
+
+3. تأمين الـ PendingIntents (Mutability Risks):
+   - الـ PendingIntent يمنح التطبيق المستلم صلاحية تنفيذ الـ Intent المرفق بصلاحيات وهوية تطبيقك الأصلي!
+   - إذا تم إنشاء PendingIntent كـ `FLAG_MUTABLE`، يمكن لتطبيق وسيط تعديل الـ Action أو الـ Extras واستغلاله في اختراق التطبيق أو تسريب بيانات.
+   - **الحل الإلزامي**: استخدام `PendingIntent.FLAG_IMMUTABLE` دائماً، ولا تستخدم `FLAG_MUTABLE` إلا إذا كان الـ Intent يتطلب ملء بيانات من النظام (مثل أزرار الرد السريع في الإشعارات Direct Reply).
 
 ## Practical walkthrough
 
-Deep link زي `bank://transfer?amount=100` يقدر أي app يفتحه، فلا تثق في amount أو `approved=true` من الـIntent. أعد جلب operation من backend وتحقق من user والـstate. `PendingIntent` mutable ممكن تتعدّل fields لو مش محتاج ده؛ استخدم immutable/explicit target حسب الحالة. بالنسبة لـprovider، راجع exported والـURI grants والصلاحيات في merged manifest.
+تأمين المكونات، الروابط العميقة، والـ PendingIntents ضد هجمات الـ Hijacking والـ Intent Injection:
+```kotlin
+// 1. إنشاء PendingIntent غير قابل للتعديل (Immutable) لتأمين الإشعارات:
+fun createSecureNotificationPendingIntent(context: Context, orderId: String): PendingIntent {
+    val intent = Intent(context, OrderDetailsActivity::class.java).apply {
+        // تحديد المكون الصريح لمنع اعتراض الـ Intent
+        putExtra("extra_order_id", orderId)
+    }
+    
+    // استخدام FLAG_IMMUTABLE يمنع أي تطبيق خارجي من التلاعب بالـ Extras أو الـ Action
+    return PendingIntent.getActivity(
+        context,
+        orderId.hashCode(),
+        intent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+}
+
+// 2. التحقق الصارم من مدخلات الـ Deep Link ومنع الـ Open Redirect:
+class DeepLinkHandlerActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val uri = intent.data ?: run { finish(); return }
+        
+        // التحقق من الدومين والمسار لمنع الـ Path Traversal أو الـ Injections
+        if (uri.scheme == "https" && uri.host == "pay.example.com") {
+            val safeTarget = when (uri.path) {
+                "/checkout" -> {
+                    val rawToken = uri.getQueryParameter("token")
+                    if (isValidTokenFormat(rawToken)) Screen.Checkout(rawToken) else Screen.Error
+                }
+                else -> Screen.Home
+            }
+            navigateTo(safeTarget)
+        } else {
+            finish() // رفض أي روابط غير معروفة فوراً
+        }
+    }
+    private fun isValidTokenFormat(token: String?): Boolean = token?.matches(Regex("^[a-zA-Z0-9_-]{16,64}$")) == true
+}
+```
 
 ## Why it matters and how it works
 
@@ -72,15 +127,27 @@ CI inspects merged manifests for unintended exports, tests hostile intents and d
 
 ## Interview answer — short
 
-“I treat exported components, deep links and PendingIntents as cross-app boundaries. I validate inputs, restrict exposure, use immutable explicit PendingIntents by default, and verify financial state server-side.”
+Set android:exported="false" unless public access is required, and protect inter-app components with signature permissions. For PendingIntents, strictly use FLAG_IMMUTABLE to prevent malicious payload mutation. For deep links, enforce verified Android App Links and strictly validate query parameters to prevent intent redirection and path traversal.
 
 ## Interview answer — structured
 
-“An exported Android component can receive data from another app. I inventory each entry in the merged manifest, limit permissions and validate every URI, extra and content URI. A deep link can navigate the user but cannot prove payment approval. PendingIntents carry the creator’s privileges, so I make them explicit and immutable unless a documented fill-in field is required. The backend checks authenticated ownership for any sensitive operation. Deep links can carry attacker-controlled inputs.”
+Securing IPC boundaries requires rigorous controls across components, deep links, and intents:
+
+1. **Exported Components**: Unintentionally exported components create unauthorized entry points into private business logic. Mark all Activities, Services, and Receivers `android:exported="false"` unless explicitly required. For multi-app suites sharing components, enforce custom permissions with `android:protectionLevel="signature"`.
+
+2. **PendingIntent Immutability**: A `PendingIntent` executes with the permissions and identity of the creating application. If flagged `FLAG_MUTABLE`, receiving applications can mutate the wrapped intent's action, data, or flags—enabling Intent Redirection attacks. Always apply `PendingIntent.FLAG_IMMUTABLE` unless interaction requires runtime system completion (such as Inline Reply in notifications).
+
+3. **Deep Link Validation & App Links**: Custom URI schemes (`scheme://`) lack ownership verification and can be claimed by malicious apps. Use **Android App Links** with SHA-256 assetlinks verification on the server. Never pass deep link URLs directly to internal WebViews or invoke component launch intents dynamically based on untrusted intent extras.
 
 ## Interview answer — deep senior
 
-“My review combines static manifest inspection and adversarial tests. I try direct intents, malformed links, unexpected MIME types, traversal-like paths and URI grants. For PendingIntents I inspect mutability and whether the target is explicit, because a holder may act with our identity. App Links help route trusted domains but request parameters remain untrusted. I bind any payment callback to a locally known operation and query authoritative server state; even a valid link cannot set approved status. I also review SDK-added components in the merged manifest. A payment-return activity receives `myapp://checkout/result?operationId=...`. Another app can send that intent.  I would test the same entry point from an untrusted app with missing, oversized and conflicting extras, then replay a PendingIntent if the action is intended to be one-shot. For deep links, a valid-looking operation ID is only a lookup key; the server must check that the current user owns it. For providers, I would inspect URI grants and query parameters as carefully as activity intents, because the manifest export is only the first gate.”
+From a threat modeling perspective, Intent-based attacks represent a significant vulnerability surface in Android applications:
+
+1. **Intent Redirection / Proxying Vulnerability**: A common flaw occurs when an exported Activity extracts an untrusted `Intent` from its extras (e.g., `intent.getParcelableExtra("target_intent")`) and invokes `startActivity(targetIntent)`. An attacker can construct an intent pointing to an unexported internal activity, effectively bypassing `exported="false"` using the victim app as an unintentional proxy.
+
+2. **PendingIntent Hijacking in Foreground Services**: When creating `PendingIntent` instances for notifications or alarms, ensure the wrapped Intent explicitly targets a concrete component class name (`setClass()` or `setComponent()`). Implicit intents wrapped in PendingIntents can be intercepted by rival apps registered for the matching intent filter.
+
+3. **Automated Manifest Auditing**: Run automated CI static analysis (e.g., Android Lint `ExportedService`, `UnspecifiedImmutableFlag`) to block builds containing unreviewed exported declarations or mutable pending intents.
 
 ## How to answer in the interview
 
@@ -96,8 +163,11 @@ Prompt for manifest export audit, caller identity, URI parsing, explicit immutab
 
 ## Follow-up questions
 
-- [SEC-01](../sec-01/): Why does export matter to sandboxing? **Answer:** it intentionally opens a cross-UID entry point.
-- [PAY-08](../pay-08/): Can a return link prove payment success? **Answer:** no; query authoritative status.
+- **Interviewer:** "When is PendingIntent.FLAG_MUTABLE legitimately required?"
+  **Answer:** "When the receiving process must fill in intent extras, such as Android Notification Inline Reply actions or Geofence transition data."
+
+- **Interviewer:** "What is the difference between Android Deep Links and Android App Links?"
+  **Answer:** "Deep Links use custom schemes without verification and trigger an app picker disambiguation dialog; App Links use HTTPS and verify domain ownership via Digital Asset Links to open directly without prompts."
 
 ## Self-check rubric
 
@@ -108,4 +178,4 @@ Can I test a hostile intent, explain PendingIntent delegation, and reject deep-l
 - [Android exported component guidance](https://developer.android.com/privacy-and-security/risks/android-exported) — component exposure.
 - [PendingIntent security](https://developer.android.com/privacy-and-security/risks/pending-intent) — mutability risk.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

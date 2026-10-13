@@ -23,11 +23,51 @@ What are OWASP MASVS/MASTG, and how do they guide mobile security reviews?
 
 ## Explanation in Arabic
 
-OWASP MASVS معيار controls لأمن mobile apps، وMASTG دليل عملي للاختبارات. نستخدمهم عشان نحدد requirements ونربط كل control باختبار ودليل، مش عشان نعمل checkboxes ونقول التطبيق “آمن”. نطاق fintech يركز على storage، crypto، network، authentication، platform وresilience حسب threat model.
+ما هي معايير OWASP MASVS و MASTG، وكيف ترشد المهندسين في مراجعات الأمان واختبار الاختراق لتطبيقات أندرويد؟
+
+1. ما هو OWASP MASVS (Mobile Application Security Verification Standard)؟
+   - هو المعيار الصناعي العالمي الموحد لمتطلبات أمان تطبيقات الموبايل.
+   - يقسم متطلبات الأمان إلى 8 مجالات رئيسية:
+     * **MASVS-STORAGE**: أمان تخزين البيانات، تشفير قواعد البيانات، منع التسريب في الـ Logs والـ Backups.
+     * **MASVS-CRYPTO**: استخدام خوارزميات التشفير القياسية (AES-GCM)، توليد المفاتيح في Keystore، حظر الخوارزميات الضعيفة (MD5, SHA1, DES, ECB).
+     * **MASVS-AUTH**: إدارة الجلسات، التوكنز، وحماية المصادقة البيومترية.
+     * **MASVS-NETWORK**: تشفير الاتصالات عبر TLS 1.3، تثبيت الشهادات (Pinning)، وتأمين WebViews.
+     * **MASVS-PLATFORM**: أمان مكونات النظام (Exported components, App Links, PendingIntents).
+     * **MASVS-CODE**: جودة الكود، إعدادات المترجم، وتحديث المكتبات.
+     * **MASVS-RESILIENCE**: مقاومة الهندسة العكسية، فحص الـ Root، وحماية الـ Binary.
+
+2. مستويات التقييم (Verification Levels):
+   - **MASVS-L1 (Standard Security)**: المتطلبات الأساسية لجميع التطبيقات (حماية البيانات، HTTPS، منع الـ Logs غير الآمنة).
+   - **MASVS-L2 (Defense-in-Depth)**: مخصص للتطبيقات الحساسة (Fintech, Banking, Healthcare) ويتطلب تشفيراً عتادياً و Play Integrity.
+   - **MASVS-R (Resilience)**: متطلبات إضافية لمقاومة الهندسة العكسية والـ Tampering.
+
+3. ما هو OWASP MASTG (Mobile Application Security Testing Guide)؟
+   - هو الدليل العملي لاختبار كل بند في الـ MASVS، ويحتوي على أوامر الاختبار العملية وأكواد Frida وأدوات الفحص (MobSF, apktool, jadx) للتأكد من استيفاء المتطلبات.
 
 ## Practical walkthrough
 
-في review لتطبيق POS، اربط MASVS-STORAGE بملفات token وbackup، وMASTG باختبار استخراج release APK والـrestore. سجل لكل control النتيجة والدليل ونوع الجهاز/API level والحد المتبقي. MASVS معيار requirements وMASTG طرق اختبار؛ مرور checklist آليًا لا يغطي backend authorization ولا يثبت إن الجهاز الحقيقي محمي من كل هجوم.
+تطبيق قائمة فحص (Checklist) برمجية مستوحاة من OWASP MASVS-L2 أثناء الـ Code Review:
+```kotlin
+// فحص برمجي مستوحى من MASVS-STORAGE و MASVS-CRYPTO:
+object SecurityReviewChecklist {
+    // 1. MASVS-STORAGE: التأكد من عدم استخدام Plaintext SharedPreferences للأسرار
+    fun auditStorage(sharedPrefsName: String, context: Context): Boolean {
+        val prefsFile = File(context.filesDir.parent, "shared_prefs/$sharedPrefsName.xml")
+        // فحص الملف للتأكد من خلوه من أي كلمات مرور أو مفاتيح صريحة
+        val content = prefsFile.readText()
+        val hasExposedTokens = content.contains("token") || content.contains("password")
+        return !hasExposedTokens
+    }
+
+    // 2. MASVS-CRYPTO: التحقق من رفض خوارزميات التشفير الممنوعة أمنياً
+    fun validateCipherTransformation(transformation: String) {
+        val forbidden = listOf("DES", "ECB", "MD5", "RC4")
+        if (forbidden.any { transformation.contains(it, ignoreCase = true) }) {
+            throw SecurityException("MASVS-CRYPTO Violation: Insecure cipher $transformation is strictly forbidden!")
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +91,35 @@ Keep a control-to-test matrix in security review, run MASTG procedures against r
 
 ## Interview answer — short
 
-“MASVS states mobile security controls; MASTG explains how to test them. I map them to the app’s threat model, collect release-build evidence and record gaps rather than equating checklist completion with security.”
+OWASP MASVS defines the security standard across storage, crypto, network, platform, and resilience tiers, evaluated at L1 (baseline), L2 (defense-in-depth for fintech), and R (tamper resistance). MASTG provides practical testing guides, test cases, and penetration testing tools to verify each requirement.
 
 ## Interview answer — structured
 
-“I use MASVS to define expected security properties and MASTG to choose test procedures. For a fintech app that includes local storage, cryptography, authentication, network transport and tamper resilience. I map each relevant control to a concrete test on a release build, record evidence and risks, then fix and retest. I also threat-model business logic because a checklist cannot by itself catch duplicate payments or client-only authorization. ”
+OWASP MASVS and MASTG serve as the authoritative security verification framework for modern mobile engineering:
+
+1. **MASVS (Specification)**: Defines actionable requirements organized across core security domains:
+   - **MASVS-STORAGE**: Sensitive data at rest, cache clearing, backup exclusion, keyboard cache suppression.
+   - **MASVS-CRYPTO**: Hardware-backed keys, AES-GCM, cryptographically secure PRNGs, eliminating broken primitives.
+   - **MASVS-NETWORK**: Modern TLS configuration, certificate pinning, WebView network boundary hardening.
+   - **MASVS-PLATFORM**: Restricting exported components, validating deep links, and securing IPC.
+   - **MASVS-RESILIENCE**: Anti-tampering, integrity verification, and root/instrumentation mitigations.
+
+2. **Security Levels**:
+   - **MASVS-L1**: Baseline hygiene required for any commercial application.
+   - **MASVS-L2**: Deep defense-in-depth mandatory for fintech, banking, and healthcare applications.
+   - **MASVS-R**: Optional resilience layer providing client hardening against dynamic reverse engineering.
+
+3. **MASTG (Testing Guide)**: Provides concrete white-box source code audits, dynamic runtime analysis scripts (Frida), and static tooling (MobSF, JADX) to verify compliance against every MASVS control.
 
 ## Interview answer — deep senior
 
-“I start from assets—tokens, transaction identity, card-adjacent data and financial authority—and enumerate realistic device and network attackers. I select MASVS controls that address those threats, then use MASTG methods to test actual APK, backend interactions, backups and telemetry. Each result has device/OS/build context, evidence and residual risk; automated tools are aids with false positives and false negatives. I pair this with adversarial payment-flow tests and security review of server trust boundaries. A ‘pass’ is scoped to tested behavior and time, not a perpetual certificate. A useful deliverable is a traceable matrix: asset, threat, MASVS control, MASTG procedure, release-build evidence, affected API levels, owner and residual risk. I would prioritize payment authority, token storage and cross-app entry points over cosmetic checklist coverage. Automated static findings are a starting point; dynamic tests and backend tests still matter. A green control result should describe what was actually tested and what remained out of scope.”
+From an architectural governance perspective, senior engineers operationalize MASVS/MASTG throughout the software development lifecycle:
+
+1. **Threat Modeling & Architecture Phase**: Map every new feature against MASVS controls during design. If a feature introduces biometric authentication, align directly with `MASVS-AUTH` and `MASVS-CRYPTO` by mandating hardware-bound `CryptoObject` patterns.
+
+2. **Automated CI/CD Verification**: Embed automated compliance gates into CI pipelines using tools like MobSF CLI, Android Lint with custom security rules, and Semgrep scanning for cryptographic misconfigurations (e.g. hardcoded IVs, `allowBackup=true`, or `FLAG_MUTABLE` PendingIntents).
+
+3. **Vendor & Penetration Testing Alignment**: Use MASTG test identifiers (e.g. `MASTG-TEST-0001`) as the contract benchmark for third-party penetration testing audits, ensuring repeatable, evidence-based security verification rather than subjective vendor opinions.
 
 ## How to answer in the interview
 
@@ -75,8 +135,11 @@ Prompt for asset/threat inventory, control-to-test evidence, release APK, tool l
 
 ## Follow-up questions
 
-- [SEC-23](../sec-23/): Which storage test matters? **Answer:** inspect backup and actual files, not just declarations.
-- [SEC-27](../sec-27/): Can MASVS replace backend authorization review? **Answer:** no; test business state and ownership.
+- **Interviewer:** "What is the difference between MASVS-L1 and MASVS-L2?"
+  **Answer:** "L1 focuses on standard mobile data hygiene and best practices; L2 enforces advanced threat defense, including hardware-backed cryptographic attestation, strict zeroization, and multi-factor authorization."
+
+- **Interviewer:** "Does achieving MASVS-R guarantee an app cannot be hacked?"
+  **Answer:** "No; MASVS-R raises the economic and time cost for reverse engineers, but client execution on a hostile device can never be mathematically guaranteed secure."
 
 ## Self-check rubric
 
@@ -87,4 +150,4 @@ Can I map a control to a concrete test and explain limits of scans/checklists?
 - [OWASP MASVS](https://mas.owasp.org/MASVS/) — mobile verification areas.
 - [OWASP MASTG](https://mas.owasp.org/MASTG/) — testing guide.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

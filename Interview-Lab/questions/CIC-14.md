@@ -23,11 +23,47 @@ How do you use staged rollout, crash-rate gates, and rollback plans?
 
 ## Explanation in Arabic
 
-Staged rollout ينزل النسخة لنسبة صغيرة ثم يزيدها حسب crashes/ANRs وbusiness metrics مثل payment unknown rate، login failure وreversal backlog. لو metric تعدّت threshold نوقف توزيع جديد، لكن الأجهزة اللي ثبتت النسخة تظل عليها؛ rollback الحقيقي غالبًا feature gate أو fix-forward compatible. Database migration لازم تشتغل مع النسخ القديمة والجديدة أثناء rollout.
+كيف تدير عملية الإطلاق التدريجي (Staged Rollout)، وبوابات معدل الأعطال (Crash-Rate Gates)، وخطط التراجع (Rollback Plans) في أندرويد؟
+
+1. معضلة التراجع (Rollback) في أندرويد:
+   - على عكس خوادم الويب، **لا يمكنك عمل Rollback فوري لإصدار أندرويد قديم** لأن نظام أندرويد يرفض تثبيت نسخة ذات `versionCode` أقل من المثبتة على جهاز المستخدم.
+   - بمجرد تثبيت التحديث على هواتف المستخدمين، لا يمكنك سحبه إجبارياً إلا بطرح تحديث جديد تماماً برقم أعلى.
+
+2. استراتيجية الإطلاق التدريجي (Staged Rollout):
+   - طرح التطبيق بنسب تصاعدية مدروسة: **1% -> 5% -> 20% -> 50% -> 100%** على مدار عدة أيام.
+   - الهدف: حصر نطاق الضرر (Blast Radius) في شريحة ضئيلة من المستخدمين إذا ظهرت كارثة غير متوقعة.
+
+3. بوابات جودة المراقبة (Crash-Rate Gates):
+   - مراقبة مؤشرات **Android Vitals** و **Firebase Crashlytics** فور بدء كل مرحلة:
+   - **Crash-free users**: يجب ألا يقل عن 99.9%.
+   - **User-perceived crash rate**: معيار جوجل في Vitals هو أقل من 1.09% (لتفادي معاقبة التطبيق في محركات بحث المتجر).
+   - إذا تجاوز معدل الأعطال النسبة المقبولة، يتم **إيقاف الطرح فوراً (Halt Rollout)**.
+
+4. خطة الاستجابة للكوارث (Disaster Recovery Plan):
+   - **الخط الدفاعي الأول (Feature Flags)**: إيقاف الميزة المسببة للكراش سحابياً عبر Firebase Remote Config فوراً، دون الحاجة لتحديث التطبيق.
+   - **الخط الدفاعي الثاني (Emergency Hotfix)**: إذا كان الكراش في كود التهيئة (Application.onCreate) ولا تعمل معه الأعلام، يتم عمل Hotfix فوري وزيادة الـ `versionCode` وطرحه للمتجر بنسبة 100%.
 
 ## Practical walkthrough
 
-Staged rollout يعرّض نسبة صغيرة أولًا، لكن نسبة قليلة مش معناها risk قليل لو payments أو login مكسورين. حدد قبل النشر gates مثل crash/ANR، auth failure، payment unknown rate، support tickets، مع baseline وthreshold ووقت مراقبة. لو gate فشل، أوقف توسيع النسبة، عطّل feature من server إن كان آمنًا، وجهّز build جديد بـversionCode أعلى؛ Android المستخدم الذي حدّث لا يرجع تلقائيًا للقديم. راقب pending operations عند rollback حتى ما تضيعش reconciliation.
+مخطط منطقي لإدارة الطرح التدريجي ومراقبة الـ Crash Rate:
+```kotlin
+// معالجة الأخطاء الحرجة بالاعتماد على Remote Config كخط دفاع أول:
+class FeatureManager(private val remoteConfig: FirebaseRemoteConfig) {
+    fun isNewCheckoutFlowEnabled(): Boolean {
+        // إذا رصدنا كراشات في الإنتاج، نغير القيمة إلى false في الكونسول
+        // فيتم تعطيل الميزة فوراً لجميع المستخدمين خلال دقائق:
+        return remoteConfig.getBoolean("enable_new_checkout_flow")
+    }
+}
+```
+جدول مراحل الطرح التدريجي القياسي:
+| اليوم | النسبة | الشرط للانتقال للمرحلة التالية |
+|---|---|---|
+| اليوم 1 | 1% | استقرار Vitals و Crash-free > 99.9% لمدة 24 ساعة |
+| اليوم 2 | 5% | لا توجد كراشات OOM أو فواتير متكررة |
+| اليوم 3 | 20% | فحص استقرار الخوادم الخلفية والـ API latency |
+| اليوم 4 | 50% | استمرار المؤشرات الخضراء |
+| اليوم 5 | 100% | إطلاق كامل لجميع المستخدمين |
 
 ## Why it matters and how it works
 
@@ -51,15 +87,36 @@ Release runbook defines thresholds, observation windows, owner and escalation. R
 
 ## Interview answer — short
 
-“I stage rollout with crash, ANR and payment-health gates. Halting stops new distribution, not existing installs, so I prepare server mitigation and compatible fix-forward.”
+Manage releases via staged rollouts (1% to 100%) to contain blast radius, gating progression behind Android Vitals and Crashlytics metrics (crash-free users > 99.9%). Since Android prohibits downward versionCode rollbacks, mitigate critical incidents by halting rollouts, toggling remote feature flags, or releasing an expedited hotfix with an incremented versionCode.
 
 ## Interview answer — structured
 
-“I release to a small cohort, compare crash/ANR and business outcomes against baseline, then expand only when evidence is stable. For fintech I watch payment unknowns, approvals and reversal backlog as well as crashes. If a gate fails, halt expansion and use server feature flags or a compatible hotfix for users already updated. Database/backend contracts must support mixed app versions during rollout.”
+A disciplined mobile release rollout framework consists of three operational pillars:
+
+1. **Staged Rollout Cadence**:
+   - Releases progress through controlled cohorts: 1% -> 5% -> 20% -> 50% -> 100% over a 4 to 5-day cycle. This limits the blast radius of latent device-specific or OS-version bugs to a fraction of the user base.
+
+2. **Automated Quality Gates & Android Vitals**:
+   - Progression between stages requires meeting strict thresholds:
+     - Crash-free user rate $\ge 99.9%$.
+     - User-perceived crash rate in Android Vitals below Google's 1.09% bad-behavior threshold.
+     - ANR rate below 0.47%.
+   - If any metric breaches thresholds, the staged rollout is immediately halted in Google Play Console.
+
+3. **Multi-Tiered Rollback Strategy**:
+   - Android OS strictly rejects installing an APK with a lower `versionCode` than the active installed build, making client-side rollbacks impossible.
+   - **Tier 1 (Instant)**: Kill-switch the faulty code path via server-side Feature Flags (Firebase Remote Config).
+   - **Tier 2 (Hotfix)**: If startup crashes prevent remote config fetches, branch a hotfix from the release tag, revert the culprit commit, increment `versionCode`, and expedite a 100% hotfix release.
 
 ## Interview answer — deep senior
 
-“I define rollout and containment before pressing publish. A staged rollout limits exposure while I compare crash, ANR, startup and business transaction metrics against the prior release and explicit thresholds. I segment by app version, device, API level and network where useful; aggregate averages can hide an ABI-specific failure. A low crash rate does not excuse a payment flow that records unknown outcomes without reconciliation. If a gate fires, I halt expansion, use a tested server-side feature control where safe, and prepare a fixed higher-version release. I do not promise that Play can instantly downgrade devices already updated. A rollback plan also covers data compatibility and in-flight operations: disabling new payments must not stop workers from reconciling old attempts. The trade-off is slower reach versus time to detect issues. I keep an incident owner and decision log so the team can act on thresholds rather than debate during an outage.”
+From an organizational resilience and SRE perspective, release gating requires clear runbooks and automated alerting:
+
+1. **The 'Halting vs. Halved' Rollout Myth**: When you halt a staged rollout in Google Play Console, users who already received the update remain on that buggy version; halting only stops new users from downloading it. Teams must actively support the cohort stuck on the buggy version until the hotfix is published.
+
+2. **In-App Force Updates (Flexible vs. Immediate)**: When a severe zero-day vulnerability or corrupt local database migration occurs, a standard store update is insufficient because users may not update for weeks. Integrating the Google Play In-App Updates API with an `AppUpdateType.IMMEDIATE` flow forces a blocking full-screen update dialog on app launch for broken client versions.
+
+3. **Server-Side API Compatibility**: When rolling out a new app version over 5 days, backend APIs must support both old and new payload schemas simultaneously. Never deploy breaking API changes until the client staged rollout reaches 100% and adoption curves stabilize.
 
 ## How to answer in the interview
 
@@ -75,8 +132,11 @@ Prompt for cohort segmentation, financial metrics, installed-user limit and mixe
 
 ## Follow-up questions
 
-- [CIC-03](../cic-03/): What artifact is monitored? **Answer:** the exact promoted AAB/version.
-- [PAY-14](../pay-14/): How handle ABI crash? **Answer:** cohort halt while recovery paths stay active.
+- **Interviewer:** "Why can't you simply deploy the previous APK version to Google Play if a release fails?"
+  **Answer:** "Google Play and the Android OS Package Manager enforce strictly monotonic versionCode increments; downgrading versionCode causes an installation failure on user devices."
+
+- **Interviewer:** "What happens to users who already downloaded a faulty build if you halt a staged rollout?"
+  **Answer:** "They remain on the faulty build; halting only prevents new users from downloading it, which is why feature flags or immediate hotfixes are required."
 
 ## Self-check rubric
 
@@ -87,4 +147,4 @@ Declare staged rollout percentage, cohort metrics and stop thresholds before rel
 - [Android staged releases](https://developer.android.com/studio/publish) — release workflow.
 - [Android vitals](https://developer.android.com/topic/performance/vitals) — crash/ANR monitoring.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

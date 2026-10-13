@@ -23,11 +23,44 @@ A production hotfix is needed while feature branches have diverged. Explain your
 
 ## Explanation in Arabic
 
-لو production محتاج hotfix وfeature branches اختلفت، أبدأ من tag/commit اللي اتشحن فعلًا، أعمل minimal fix مع test، وأطلع release candidate منفصل. بعدها أنقل نفس المنطق لـmain/feature branches بـmerge أو cherry-pick مدروس، وأتحقق من conflicts. ما أدمجش features غير جاهزة في hotfix. لو schema/backend اتغيروا لازم نفحص compatibility مع النسخ المثبتة.
+حدث كراش حرج في الإنتاج بينما فرع التطوير الرئيسي (`main`) ابتعد وتضمن ميزات جديدة غير جاهزة للإطلاق. ما هي استراتيجيتك الدقيقة في Git والـ CI؟
+
+1. توصيف المأزق الهندسي:
+   - التطبيق الحي في المتجر هو الإصدار `v2.4.0`.
+   - فرع `main` يحتوي على 40 كوميت لميزات جديدة للإصدار `v2.5.0` ما زالت قيد التطوير والاختبار، وبالتالي **يستحيل تجميع أو إطلاق `main` للإنتاج فوراً**.
+
+2. استراتيجية الإصلاح العاجل (Hotfix Branching Strategy):
+   - **1. التفريع من تاج الإنتاج (Branch from Tag)**: إنشاء فرع جديد مشتق مباشرة من التاج الدقيق للإصدار الإنتاجي: `git checkout -b hotfix/2.4.1 v2.4.0`.
+   - **2. الإصلاح الجراحي (Surgical Fix)**: كتابة أقل قدر ممكن من الكود لحل العطل الحرج فقط، مع كتابة Unit Test يثبت المشكلة ويتحقق من حلها.
+   - **3. بناء واختبار وتوزيع الـ Hotfix**: رفع الـ Hotfix وتجميع نسخة `v2.4.1` مع زيادة الـ `versionCode`، وتوزيعها لمسار الإنتاج مع Staged Rollout.
+   - **4. وسم الإصدار (Tagging)**: عمل Tag جديد على الكوميت: `git tag v2.4.1`.
+   - **5. إعادة الدمج في الفرع الرئيسي (Backporting)**: دمج أو انتقاء (`cherry-pick`) كوميت الإصلاح إلى فرع `main` فوراً؛ لضمان عدم عودة الكراش للظهور عند إطلاق التحديث الكبير القادم `v2.5.0`.
 
 ## Practical walkthrough
 
-Production hotfix يبدأ من tag أو commit النسخة المنشورة، مش من feature branch متباعد. اعزل أقل تعديل يصلح incident، اختبر release variant والمسار المتأثر، ثم انشر versionCode أعلى تدريجيًا. بعدين انقل الإصلاح لـmain وبقية release branches بـmerge أو cherry-pick مع فحص conflicts semantic. لو main فيها refactor يجعل نفس patch غير صحيح، اكتب equivalent fix واختبره. احتفظ بالحادثة والـartifact والcommit المرتبطين.
+تسلسل أوامر Git خطوة بخطوة للتعامل مع الـ Hotfix وإعادة الدمج:
+```bash
+# 1. إنشاء فرع الـ hotfix انطلاقاً من Tag النسخة الحالية في الإنتاج:
+git fetch --tags
+git checkout -b hotfix/2.4.1 tags/v2.4.0
+
+# 2. كتابة كود الإصلاح الجراحي واختبارات الوحدة:
+# ... تعديل الكود واختباره محلياً ...
+git commit -am "fix(checkout): resolve NPE during 3DS biometric challenge (#451)"
+
+# 3. تجميع واختبار الـ release bundle ورفعه للإنتاج عبر CI:
+git push origin hotfix/2.4.1
+# بعد اكتمال النشر والتأكد من استقرار الإصدار:
+git tag -a v2.4.1 -m "Release hotfix 2.4.1"
+git push origin v2.4.1
+
+# 4. نقل الإصلاح إلى فرع التطوير الرئيسي (Backporting):
+git checkout main
+git pull origin main
+git cherry-pick tags/v2.4.1^{commit} -x
+git push origin main
+# النتيجة: تم حل مشكلة الإنتاج دون سحب أي كود غير جاهز، وتم تأمين الفرع الرئيسي.
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +84,34 @@ Incident log maps deployed version, hotfix SHA, main follow-up and rollout state
 
 ## Interview answer — short
 
-“I branch from the deployed tag for a minimal, tested hotfix, release it separately, then propagate the logical fix to divergent branches and verify each context.”
+Branch immediately from the production release tag (e.g., git checkout -b hotfix/2.4.1 v2.4.0). Apply a surgical fix with a regression test, increment versionCode, build and deploy v2.4.1 to production. Once verified, tag the hotfix and backport the commit to main via git cherry-pick -x or merge to prevent bug regression in future releases.
 
 ## Interview answer — structured
 
-“I identify the exact production commit and artifact, create a hotfix branch from that base, implement a narrow fix and run the release-risk tests. I ship a new version with staged monitoring rather than pulling unfinished feature work into production. Then I merge or cherry-pick the fix to main, resolving semantic differences caused by divergence. Schema and backend compatibility with installed clients are part of the decision. ”
+Executing a production hotfix when the mainline has diverged requires a strict, audited protocol:
+
+1. **Isolate the Baseline via Release Tag**:
+   - Check out a dedicated hotfix branch directly from the production release Git tag (`git checkout -b hotfix/2.4.1 tags/v2.4.0`). Never attempt to hotfix directly from `main` or develop, as unverified features will leak into production.
+
+2. **Surgical Implementation & Regression Testing**:
+   - Write the minimal atomic fix necessary to resolve the crash. Accompany it with a failing unit test that reproduces the incident to confirm the fix.
+
+3. **Version Bump & Production Deployment**:
+   - Increment `versionCode` and update `versionName` to `"2.4.1"`. Trigger the CI pipeline to compile, sign, and upload the hotfix AAB to Google Play production via staged rollout.
+
+4. **Audit Tagging & Backporting to Mainline**:
+   - Tag the release commit (`git tag -a v2.4.1`).
+   - Backport the hotfix commit into `main` using `git cherry-pick -x` or by merging the hotfix branch into `main`. The `-x` flag records the original commit hash, guaranteeing that the fix survives into subsequent major releases.
 
 ## Interview answer — deep senior
 
-“I branch the hotfix from the code that actually shipped, identified by the production tag and artifact provenance, rather than from a moving main branch full of unrelated features. I make the smallest safe change, add a regression test for the incident, build the production release variant and publish a higher-version candidate through the urgent release gate. Then I forward-port the fix to main and supported branches with merge or cherry-pick as appropriate, reviewing semantic differences caused by divergence. A patch that applies cleanly to refactored main may still behave differently, so each destination gets its own tests. I avoid rewriting public history or merging unfinished features into the emergency release. If the issue can be contained by a safe server control, I may reduce exposure while the binary is prepared. The trade-off is some duplicated integration work for isolation and speed. I track which users received which build and ensure the fix does not abandon in-flight financial or data operations.”
+From an operational and incident management perspective, hotfixes carry hidden risks:
+
+1. **The 'Forgot to Backport' Trap**: The most frequent failure in hotfix workflows is deploying the hotfix, celebrating the fix, and forgetting to merge it back into `main`. Three weeks later, `v2.5.0` ships and re-introduces the identical crash, causing severe reputational damage. Enforce automated CI bots or branch policies that require a PR merging the hotfix branch back into `main` before closing the incident.
+
+2. **Database Migration Clashes**: If the hotfix touches Room or SQLite database schemas, handle versioning cautiously. If `v2.4.0` was on db version 4, the hotfix `v2.4.1` might introduce db version 5. If `main` already introduced a different migration for db version 5, a merge collision occurs that can corrupt user databases upon future updates. Backport migrations must reconcile schema version numbers carefully.
+
+3. **Expedited Store Review**: Alert Google Play Developer Support or use expedited review requests in Play Console if the hotfix addresses a catastrophic revenue or data-loss incident.
 
 ## How to answer in the interview
 
@@ -75,8 +127,11 @@ Prompt for deployed artifact base, minimal scope, branch propagation, compatibil
 
 ## Follow-up questions
 
-- [CIC-07](../cic-07/): When cherry-pick? **Answer:** surgical propagation with dependency review.
-- [CIC-14](../cic-14/): How ship hotfix safely? **Answer:** stage and monitor installed-version effects.
+- **Interviewer:** "Why is branching from the production release tag safer than fixing on `main`?"
+  **Answer:** "Because `main` contains incomplete, unverified feature code; branching from the tag guarantees binary parity with production, containing only the surgical fix."
+
+- **Interviewer:** "What is the danger of not backporting a hotfix into the mainline development branch?"
+  **Answer:** "The bug will resurface in the next scheduled feature release, causing a regression."
 
 ## Self-check rubric
 
@@ -87,4 +142,4 @@ Branch the hotfix from the production tag, cherry-pick only the fix, test and re
 - [Git cherry-pick documentation](https://git-scm.com/docs/git-cherry-pick) — patch replay.
 - [Android publishing](https://developer.android.com/studio/publish) — release process.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

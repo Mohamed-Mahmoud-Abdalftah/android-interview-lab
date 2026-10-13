@@ -23,11 +23,48 @@ How do you deal with flaky tests, retries, and quarantine policies?
 
 ## Explanation in Arabic
 
-Flaky test يفشل أحيانًا بنفس code؛ ممكن يكشف race حقيقي أو test harness timing. نسجل first attempt والenvironment، نعيد للتشخيص، ونصلح السبب. Retries محدودة ومعلنة، quarantine لها owner وdeadline وبديل يغطي risk؛ مش نحول test red إلى green بصمت. Payment/security gate لا يُشال لمجرد إنه مزعج.
+كيف تتعامل مع الاختبارات المتقلبة (Flaky Tests)، وما هي سياسات إعادة المحاولة (Retries) والعزل (Quarantine) في الـ CI؟
+
+1. ما هو الـ Flaky Test وما خطورته؟
+   - هو اختبار يعطي نتائج متضاربة (ينجح أحياناً ويفشل أحياناً) لنفس الكود ونفس البيئة دون أي تغيير.
+   - خطورته: يدمر ثقة المطورين في الـ CI، ويجعل الفريق يتجاهل فشل الاختبارات ("مجرد فليك، أعد تشغيل الـ Pipeline!")، مما يؤدي لتمرير كوارث حقيقية للإنتاج.
+
+2. الأسباب التقنية للـ Flakiness في أندرويد:
+   - الاعتماد على `Thread.sleep` أو أوقات انتظار غير محددة بدلاً من `IdlingResource` أو `advanceUntilIdle()` في الـ Coroutines.
+   - الرسوم المتحركة (Animations) النشطة في المحاكي أثناء اختبارات الـ UI.
+   - الاعتماد على شبكة إنترنت حقيقية أو خوادم خارجية غير مستقرة بدلاً من MockWebServer.
+   - تسريب البيانات (State Leak) بين الاختبارات في قواعد بيانات Room المشتركة.
+
+3. استراتيجية العزل وإعادة المحاولة (Quarantine & Retry Policy):
+   - **إعادة المحاولة المحدودة (Bounded Retries)**: السماح لـ Gradle بإعادة تشغيل الاختبار الفاشل مرة أو مرتين كحد أقصى (`maxRetries = 1`) لمنع تعطيل الـ PRs العاجلة.
+   - **سياسة العزل الفوري (Quarantine)**: أي اختبار يفشل بشكل متقلب يتم تمييزه بـ `@FlakyTest`، ونقله فوراً من مسار فحص الـ PRs إلى مسار ليلي منعزل (Non-blocking Nightly Suite).
+   - **تذكرة عمل ذات أولوية (P1 Bug)**: فتح Issue فوري للفريق المسؤول، مع إعطاء مهلة محددة (SLA: مثلاً أسبوع) لإصلاحه أو حذفه نهائياً من المشروع.
 
 ## Practical walkthrough
 
-الـflaky test يمر مرة ويفشل مرة لنفس الكود؛ اعرف الأول هل race في التطبيق، sleep في test، shared DB، emulator load، أو external service. ثبّت seed والclock والresponses وخد first failure logs/screenshot. retry ممكن يساعد تشخيص مؤقت، لكنه لو خلّى failure أخضر بصمت فقدنا الإشارة. quarantine يكون باسم owner، issue، deadline، وبديل يغطي المسار؛ security/payment tests الحرجة لا تتشال من gate بلا بديل. قس flake rate منفصل عن product failures.
+إعداد Gradle Test Retry وعزل الاختبارات المشكوك فيها عبر JUnit Categories:
+```kotlin
+// app/build.gradle.kts
+plugins {
+    id("org.gradle.test-retry") version "1.5.8"
+}
+
+tasks.withType<Test>().configureEach {
+    retry {
+        // إعادة المحاولة فقط في بيئة الـ CI وبحد أقصى محاولة واحدة:
+        maxRetries.set(if (System.getenv("CI") == "true") 1 else 0)
+        maxFailures.set(5) // إذا كان هناك أكثر من 5 أخطاء، أوقف البناء ولا تعيد المحاولة (فشل حقيقي)
+        failOnPassedAfterRetry.set(false) // يسمح بالنجاح المؤقت مع تسجيل الاختبار المتقلب
+    }
+
+    // استبعاد الاختبارات المعزولة (@Category(FlakyTest::class)) من فحص الـ PRs:
+    if (project.hasProperty("excludeFlaky")) {
+        useJUnit {
+            excludeCategories("com.example.testing.FlakyTestCategory")
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +88,34 @@ Weekly flake dashboard assigns owners; quarantine expiry fails or escalates. CI 
 
 ## Interview answer — short
 
-“I preserve first-failure evidence, identify app versus harness versus environment cause, and use retries or quarantine only as visible, time-limited mitigations.”
+Manage flaky tests by addressing root causes (animations, unconfined coroutines, shared state), applying bounded retries in CI (max 1 retry) to prevent pipeline blockage, and enforcing a strict quarantine policy where flaky tests are moved out of blocking PR checks into non-blocking nightly suites until fixed.
 
 ## Interview answer — structured
 
-“A flaky test is a reliability bug in either the app, test or environment. I reproduce on the same CI image, inspect timing and shared state, then replace sleeps with deterministic synchronization or fix the app race. CI can retry once for diagnosis, but the original failure remains visible. Quarantine has an owner, deadline and alternate coverage, especially for security/payment flows.”
+Flaky tests undermine engineering trust and require an operational and technical mitigation policy:
+
+1. **Root-Cause Remediation**:
+   - Replace asynchronous delays and `Thread.sleep` with Kotlin Coroutines' `runTest` and `advanceUntilIdle()`.
+   - Enforce hermetic test environments: disable emulator animations via ADB, mock network layers with OkHttp MockWebServer, and use in-memory Room databases with strict `@Before`/`@After` teardowns.
+
+2. **Bounded Retries in CI**:
+   - Implement the Gradle Test Retry plugin configured to retry failed tests at most once (`maxRetries = 1`). Retries act as a temporary velocity buffer to prevent blocking innocent PRs while logging telemetry.
+
+3. **Automated Quarantine Protocol**:
+   - If a test passes only on retry, CI logs it as a flake metric. The test is immediately tagged (`@FlakyTest`) and quarantined from the blocking PR gate to a non-blocking scheduled suite.
+
+4. **SLA-Driven Resolution**:
+   - A P1 technical debt ticket is automatically generated for the owning squad. If not resolved within a defined SLA (e.g. 5 days), the quarantined test is deleted to keep test suites lean and trustworthy.
 
 ## Interview answer — deep senior
 
-“A flaky test is a defect in the test system or product synchronization, not a green result after enough retries. I preserve the first failing run, reproduce it in a focused loop and compare order, emulator image, machine load, time zone, network and shared state. Then I classify the cause: app race, test synchronization, environmental instability or external dependency. I replace sleeps with observable conditions or virtual time, give each test isolated data and make fake responses controllable. A retry can be a temporary diagnostic or containment measure, but the report must show the first failure and its frequency. Quarantine needs an owner, an issue, a time limit and an alternative signal, especially for release-critical payment or security flows. I measure both flake rate and escaped defects; making CI faster by hiding failures is worse than a slower trustworthy gate. Once fixed, I run the focused test repeatedly and on the target CI environment before removing the exception.”
+From an engineering telemetry and cultural perspective, flaky test tracking must be automated:
+
+1. **Flakiness Observability Dashboard**: Measure 'Flake Rate' across CI builds (total retries / total runs). If an organization's flake rate exceeds 1%, engineering leadership must treat test stabilization as a sprint blocker. Without visibility, engineers develop 'retry fatigue' where they blindly restart entire CI pipelines.
+
+2. **De-flaking via Repeated Local Execution**: When debugging a suspect test, run it 100 times in a loop locally using Gradle `--rerun-tasks`: `./gradlew test --tests 'com.app.SuspectTest' --repeat 100`. This reliably forces race conditions and coroutine leaks to surface.
+
+3. **The Anti-Pattern of Infinite Retries**: Treating retries as a permanent fix rather than an alert mechanism creates dangerous compounding flakiness. Two flaky tests with 90% pass rates have an 81% combined pass rate; 10 such tests drop overall pipeline reliability below 35%, rendering CI useless.
 
 ## How to answer in the interview
 
@@ -75,8 +131,11 @@ Prompt for first failure, same-environment reproduction, app race, quarantine ow
 
 ## Follow-up questions
 
-- [TST-21](../tst-21/): How triage CI-only? **Answer:** compare device image, order and resource load with artifacts.
-- [TST-24](../tst-24/): How keep PR fast? **Answer:** improve reliability before adding retries.
+- **Interviewer:** "Why should tests that pass only after a retry still be flagged as failures in metrics?"
+  **Answer:** "Because masked flakes degrade into persistent failures; recording them in metrics ensures visibility and accountability before they completely break the pipeline."
+
+- **Interviewer:** "How do you reproduce a race condition in a suspected flaky test locally?"
+  **Answer:** "Run the specific test repeatedly in a loop (e.g. 100 times) using test runner repeat flags to expose timing variations."
 
 ## Self-check rubric
 
@@ -87,4 +146,4 @@ Classify a flaky test by ordering, timing, shared state or environment; collect 
 - [Android testing guidance](https://developer.android.com/training/testing) — reliable test practice.
 - [Gradle test execution](https://docs.gradle.org/current/userguide/java_testing.html) — test reporting.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

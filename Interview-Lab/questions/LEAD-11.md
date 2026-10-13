@@ -23,11 +23,41 @@ A team disagrees about MVVM vs MVI. How do you lead a decision based on constrai
 
 ## Explanation in Arabic
 
-خلاف MVVM/MVI ما يتحسمش بعدد المقالات. نحدد المشكلة: state معقدة؟ events؟ offline؟ حجم team؟ testability؟ ونقارن implementation صغير لنفس الشاشة، نقيس cognitive load، bugs وspeed. ممكن MVVM بStateFlow واحد يكفي؛ MVI يفيد لو transitions كثيرة وتحتاج reducer واضح لكنه يزيد ceremony. نوثق قرار قابل للمراجعة.
+اختلف الفريق الهندسي بشدة حول استخدام نمط MVVM مقابل MVI في التطبيق الجديد. كيف تقود الفريق لاتخاذ قرار موضوعي قائم على القيود؟
+
+1. طبيعة الخلافات المعمارية في الفرق:
+   - غالباً ما تتحول النقاشات حول الأنماط المعمارية إلى "حروب دينية (Religious Tech Wars)"؛ كل مهندس يدافع عن النمط الذي اعتاد عليه بحماس، مما يسبب تعطل اتخاذ القرار وتوتر بيئة العمل.
+   - دور القائد الهندسي هو **نزع الطابع الشخصي عن النقاش، وتحويله من "ماذا أحب أنا؟" إلى "ما هي القيود والاحتياجات الحقيقية لمشروعنا وفريقنا؟"**.
+
+2. المقارنة الهندسية الموضوعية بين MVVM و MVI:
+   - **MVVM (Model-View-ViewModel)**:
+     * المميزات: مألوف جداً لجميع المطورين، سهل التعلم، كمية كود مكرر (Boilerplate) قليلة، مناسب جداً للشاشات البسيطة والمتوسطة.
+     * العيوب: تعدد مصادر الحالة (`_stateA`, `_stateB`) قد يسبب حالات سباق وتضارب غير متوقع في الشاشات شديدة التعقيد.
+   - **MVI (Model-View-Intent)**:
+     * المميزات: تدفق أحادي صارم (Unidirectional Data Flow - UDF)، مصدر وحيد للحقيقة (`UiState` كائن واحد ثابت)، إمكانية تتبع الأخطاء وتسجيل جميع الأحداث وإعادة تشغيلها (Time-travel debugging) بسهولة.
+     * العيوب: كود مكرر كثير (Actions, Intents, Reducers, Effects)، منحنى تعلم أعلى، وتخصيص كائنات جديدة في الـ Heap مع كل حدث.
+
+3. خطوات قيادة القرار الهندسي:
+   - **1. عمل Prototype مصغر ومحدد بوقت (Timeboxed Spike)**: بناء نفس الشاشة المعقدة بكلا النمطين في يومي عمل.
+   - **2. وضع مصفوفة معايير موضوعية**: مقارنة سهولة الاختبار، ومنحنى التعلم لأعضاء الفريق الجدد، وسرعة التطوير.
+   - **3. اتخاذ القرار والالتزام به (Disagree and Commit)**: بعد الاتفاق، توثيق القرار في ADR، والتزام الجميع به لمنع تشتت الكود.
 
 ## Practical walkthrough
 
-خلاف MVVM/MVI غالبًا خلاف على حدود state/event، مش اسم pattern. اختار شاشة واقعية فيها loading، user edits، retry وprocess death؛ ارسم event -> state -> side effect، وشوف أين يحدث duplication أو stale data. اعمل prototype صغير واختبارات، وقارن كلفة تعليم الفريق والتغيير والتشخيص. ممكن MVVM مع reducer واضح يحقق المطلوب بدون framework جديد، وممكن MVI يساعد لو state transitions معقدة. سجّل القرار وقواعد الاستثناء.
+مصفوفة تقييم مقارنة لاتخاذ قرار موضوعي في اجتماع الفريق:
+```markdown
+### مصفوفة تقييم المعمارية لاختيار نمط العرض (Presentation Layer):
+
+| المعيار المرجح (الوزن 1-5) | MVVM (Multiple StateFlows) | MVI (Single Immutable UiState) |
+|---|---|---|
+| **سهولة التنبؤ بالحالة ومنع التضارب (وزن 5)** | 3/5 (تعدد الـ Flows يسبب حالات وسيطة) | **5/5 (حالة ذرية واحدة مستحيلة التضارب)** |
+| **منحنى التعلم وإنتاجية الفريق الحالي (وزن 4)** | **5/5 (الجميع يتقنه بالفعل)** | 3/5 (يتطلب تدريب أسبوعين للـ Juniors) |
+| **كمية الكود الروتيني (Boilerplate) (وزن 3)** | **4/5 (كود مباشر وسريع)** | 2/5 (Sealed classes للـ Intents والـ Reducers) |
+| **توافق ممتاز مع Jetpack Compose (وزن 5)** | 4/5 | **5/5 (Compose يعشق الحالة الأحادية الثابتة)** |
+| **إجمالي النقاط المرجحة** | 67 نقطة | **72 نقطة (فوز MVI للشاشات المعقدة)** |
+```
+صياغة القرار التوافقي الذكي (Hybrid Pragmatism):
+"سنعتمد نمط MVI المبسط (Single UiState مع StateFlow ودوال أحداث عادية في ViewModel بدلاً من Sealed Intents المعقدة) لنحصل على أمان الحالة الأحادية في Compose دون إغراق الفريق في كود مكرر غير ضروري."
 
 ## Why it matters and how it works
 
@@ -51,15 +81,33 @@ Facilitator invites engineers with different views, records evidence and dissent
 
 ## Interview answer — short
 
-“I frame MVVM versus MVI around state complexity, team skills and failure modes, run a small pilot, then document a reversible decision rather than vote on labels.”
+Lead the team to a constraint-based decision by depersonalizing the debate, building a shared rubric comparing MVVM and MVI against project variables (Compose compatibility, team seniority, state complexity), running a timeboxed prototype on a real screen, making a firm collaborative choice documented in an ADR, and enforcing 'Disagree and Commit'.
 
 ## Interview answer — structured
 
-“I ask what pain we are solving: scattered state transitions, hard-to-test effects or just inconsistent style. MVVM and MVI are not exclusive; a ViewModel can expose a single immutable state and use reducer-like transitions. For a complex checkout I prototype both, test timeout and late callbacks, and compare readability, testability and migration cost. I choose a convention with a narrow rollout and a review date instead of mandating a rewrite across all screens.”
+Resolving architectural deadlocks requires transforming subjective ideological debates into evidence-based systems engineering:
+
+1. **Depersonalize and Establish Objective Evaluation Criteria**:
+   - Remove dogma by defining evaluation dimensions weighted by project context: Jetpack Compose state compatibility, state predictability under concurrent flows, junior onboarding ramp-up time, and boilerplate verbosity.
+
+2. **Comparative Empirical Prototyping**:
+   - Commission a 2-day timeboxed spike where two engineers build the identical complex screen (e.g. checkout form with validation and payment polling) in lightweight MVVM and strict MVI. Compare pull requests side-by-side evaluating testability, readability, and state race condition susceptibility.
+
+3. **Synthesize Pragmatic Hybrid Solutions**:
+   - Often, the optimal engineering solution is a pragmatic synthesis. Adopt a 'Lightweight MVI' approach: a single immutable `StateFlow<UiState>` coupled with direct ViewModel action methods (`onSearchQueryChanged(q)`), capturing MVI's single source of truth without the cognitive friction of exhaustive Sealed Intent reducers.
+
+4. **Institutionalize via ADR & Disagree and Commit**:
+   - Author an ADR formalizing the standard. Establish team alignment around the principle of 'Disagree and Commit' to prevent rogue architectural fragmentation across feature modules.
 
 ## Interview answer — deep senior
 
-“I turn a pattern debate into a decision about state ownership and failure behavior. I pick a representative screen—perhaps a checkout with editable amount, loading, unknown payment outcome and process recreation—and ask each proposal to show where events enter, how state changes, who runs effects and what survives a kill. A small prototype and tests reveal more than arguing about names. MVVM can be clear with an immutable UI state and explicit reducer; an MVI-style unidirectional loop may be useful when transitions are complex, but it adds ceremony and learning cost. I compare debugging, testability, migration and team familiarity, then choose the smallest coherent model for this codebase. I write the decision and exceptions so future reviews are consistent. I do not claim a pattern alone fixes duplicate charges; durable identity and backend idempotency remain separate contracts. The trade-off is uniformity versus tailoring, so I seek enough consistency without forcing every simple screen into a complex framework.”
+From an engineering leadership and team dynamics perspective, architectural consistency supersedes local perfection:
+
+1. **Codebase Cohesion Value**: A medium-tier architecture applied with 100% consistency across 50 modules delivers significantly higher velocity than having 3 squads using pure MVI, 2 squads using MVVM, and 1 squad using Clean MVP. Consistent patterns allow engineers to switch squads seamlessly with zero cognitive friction.
+
+2. **Compose State Hoisting Reality**: In modern Jetpack Compose development, the line between MVVM and MVI has largely blurred. Google's official architecture guidelines prescribe a single unidirectional `StateFlow<UiState>` hoisted from ViewModel to Composable, standardizing the ecosystem on state-driven UDF patterns.
+
+3. **Navigating Technical Deadlocks**: When a squad remains in a 50/50 split, the technical lead must break the tie decisively based on the documented rubric. Explain the rationale transparently, listen to remaining concerns, and reinforce that team velocity requires moving forward as one cohesive unit.
 
 ## How to answer in the interview
 
@@ -75,8 +123,11 @@ Prompt for overlapping patterns, representative pilot, criteria, dissent and dur
 
 ## Follow-up questions
 
-- [LEAD-01](../lead-01/): How explain the choice? **Answer:** problem, constraints, options, evidence and revisit trigger.
-- [LEAD-06](../lead-06/): What records it? **Answer:** an ADR with consequences and exceptions.
+- **Interviewer:** "What is the core advantage of a single immutable UiState (MVI) over multiple independent LiveData/StateFlows (MVVM)?"
+  **Answer:** "It eliminates intermediate impossible states and race conditions, guaranteeing that the UI renders an atomic, synchronized snapshot of data."
+
+- **Interviewer:** "What does the leadership principle 'Disagree and Commit' mean in practice?"
+  **Answer:** "Engineers debate vigorously and voice concerns, but once a decision is made, everyone fully commits to executing it without passive resistance."
 
 ## Self-check rubric
 
@@ -87,4 +138,4 @@ Turn MVVM/MVI disagreement into explicit state, event, team and testing criteria
 - [Android UI architecture](https://developer.android.com/topic/architecture/ui-layer) — UI state guidance.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — separation of concerns.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

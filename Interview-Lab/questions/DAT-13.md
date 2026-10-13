@@ -22,7 +22,66 @@ Design Paging 3 with Room source, RemoteMediator keys and refresh transaction.
 
 ## Explanation in Arabic
 
-`Paging 3` تقسم البيانات صفحات بدل تحميل feed كله. للـoffline-first، `Pager` يستخدم Room `PagingSource` للـUI، و`RemoteMediator` يقرر متى يجيب صفحات من API ويكتب rows وremote keys في Room transaction. UI ما تعرضش response network مباشرة؛ Room تفضل source. لازم نميز REFRESH/APPEND/PREPEND، endOfPagination، invalidation، وأخطاء load state.
+كيف تنفذ مكتبة Paging 3 مع RemoteMediator لدعم التصفح بالصفحات في تطبيق Offline-First؟
+
+1. المفهوم المعماري لـ Paging 3 مع الـ Offline-First:
+   - **المصدر الوحيد للحقيقة هو Room (Single Source of Truth)**: لا تعرض الـ UI صفحات الشبكة مباشرة!
+   - الـ `Pager` يقدم البيانات للـ UI حصرياً من `PagingSource` الخاص بقاعدة بيانات Room.
+   - **دور الـ `RemoteMediator`**: يعمل كمراقب في الخلفية. عندما يقترب المستخدم من نهاية القائمة المعروضة في الشاشة وتنفد البيانات من Room، يتدخل `RemoteMediator` تلقائياً ليطلب الصفحة التالية من الـ Network API ويكتبها في Room.
+   - بمجرد كتابة البيانات في Room، يقوم Room تلقائياً بتحديث `PagingData` المعروضة في الشاشة بسلاسة.
+
+2. مكونات دورة حياة RemoteMediator:
+   - **`LoadType.REFRESH`**: عندما يقوم المستخدم بالسحب للتحديث (Pull-to-Refresh)، أو عند التشغيل لأول مرة.
+   - **`LoadType.APPEND`**: عندما يصل المستخدم لنهاية القائمة لجلب الصفحة التالية.
+   - **`LoadType.PREPEND`**: عند التمرير لأعلى (نادراً ما يحتاج لجلب بيانات إذا كنا نبدأ من البداية).
+   - **`RemoteKeys` Table**: جدول في Room يخزن أرقام الصفحات السابقة والتالية (`prevKey`, `nextKey`) لكل عنصر لضمان معرفة الصفحة التالية بدقة.
+
+## Practical walkthrough
+
+هيكل تنفيذ RemoteMediator الكامل في Paging 3 مع Room:
+```kotlin
+@OptIn(ExperimentalPagingApi::class)
+class ArticleRemoteMediator(
+    private val api: ArticleApiService,
+    private val database: AppDatabase
+) : RemoteMediator<Int, ArticleEntity>() {
+
+    override suspend fun load(loadType: LoadType, state: PagingState<Int, ArticleEntity>): MediatorResult {
+        return try {
+            // 1. تحديد رقم الصفحة المطلوبة بناءً على LoadType:
+            val page = when (loadType) {
+                LoadType.REFRESH -> 1
+                LoadType.PREPEND -> return MediatorResult.Success(endOfPaginationReached = true)
+                LoadType.APPEND -> {
+                    val remoteKey = getRemoteKeyForLastItem(state)
+                    val nextKey = remoteKey?.nextPage ?: return MediatorResult.Success(endOfPaginationReached = remoteKey != null)
+                    nextKey
+                }
+            }
+
+            // 2. جلب البيانات من السيرفر:
+            val response = api.fetchArticles(page = page, pageSize = state.config.pageSize)
+            val endOfPagination = response.items.isEmpty()
+
+            // 3. كتابة البيانات ومفاتيح الصفحات في Room داخل Transaction واحدة:
+            database.withTransaction {
+                if (loadType == LoadType.REFRESH) {
+                    database.remoteKeysDao().clearAllKeys()
+                    database.articleDao().clearAllArticles()
+                }
+                val nextKey = if (endOfPagination) null else page + 1
+                val keys = response.items.map { ArticleRemoteKey(it.id, prevPage = page - 1, nextPage = nextKey) }
+                database.remoteKeysDao().insertAll(keys)
+                database.articleDao().insertAll(response.items.map { it.toEntity() })
+            }
+
+            MediatorResult.Success(endOfPaginationReached = endOfPagination)
+        } catch (e: Exception) {
+            MediatorResult.Error(e) // Paging 3 يعرض حالة الخطأ في الـ UI مع زر Retry تلقائياً
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -46,10 +105,6 @@ fun feed(dao: FeedDao, mediator: FeedMediator): Flow<PagingData<FeedItem>> =
     ).flow
 ```
 
-## Practical walkthrough
-
-Paging 3 مع Room: UI تقرأ `PagingSource` من DAO، و`RemoteMediator` يجيب pages من server ويكتب rows + remote keys في DB transaction. `REFRESH` لازم يحدد هل يمسح cache الحالية أو يحتفظ بيها لو fetch فشل؛ امسح فقط بعد success حسب policy. `APPEND` استخدم cursor/keys stable، واحمي من duplicate pages عبر primary key/upsert مناسب. لو feed بتتغير كتير، offset pagination ممكن تفوّت/تكرر عناصر؛ server cursor/snapshot يساعد. `loadState` يميز loading/error/end، والـcached rows تفضل ظاهرة offline. اختبر empty page، duplicate IDs، process restart، وrefresh مع pending edits.
-
 ## Trade-offs and decision criteria
 
 Paging controls memory/network demand but adds remote-key and invalidation complexity. A network-only PagingSource may be simpler for ephemeral data; Room plus mediator is preferable when offline startup and a single local truth matter.
@@ -64,17 +119,33 @@ A news app opens cached Room articles instantly, appends pages via server cursor
 
 ## Interview answer — short
 
-“Paging 3 loads bounded pages. For offline-first I use Room as PagingSource and RemoteMediator to fetch and transactionally store remote pages and keys. UI reads Room, and I handle load states, stable IDs and refresh carefully.”
+Paging 3 with RemoteMediator uses Room as the single source of truth for the UI while fetching pages from the network on demand. The Pager streams data from Room's PagingSource, and RemoteMediator intercepts pagination boundaries (REFRESH, APPEND) to load network pages and save them alongside pagination keys in a Room transaction.
 
 ## Interview answer — structured
 
-“A Pager produces PagingData. If offline support matters, Room supplies the PagingSource and a RemoteMediator fetches from the API when needed, then writes entities and remote keys in one transaction. That keeps the UI’s source of truth local. I define REFRESH and APPEND behavior, use server cursor/version semantics rather than fragile offsets on changing feeds, and surface loading/error states with retry. `cachedIn(viewModelScope)` helps avoid repeating paging work across ordinary configuration changes.”
+Implementing Paging 3 with `RemoteMediator` provides production-grade offline-first pagination:
+
+1. **Architecture Separation**:
+   - The presentation layer collects `Flow<PagingData<T>>` served exclusively by Room's generated `PagingSource`.
+   - `RemoteMediator` acts as the network pump. It does not return items to the UI; it fetches remote payloads and writes them into Room. Room's invalidation tracker then emits updated paging slices to the UI.
+
+2. **LoadTypes & Lifecycle**:
+   - **`REFRESH`**: Triggered on initial load or swipe-to-refresh. If online, clears existing database tables and inserts page 1.
+   - **`APPEND`**: Triggered when the user scrolls near the end of the loaded viewport. Fetches the next page and appends entities to Room.
+   - **`PREPEND`**: Triggered if scrolling upwards; typically returns `endOfPaginationReached = true` if items are only added forward.
+
+3. **RemoteKeys Table**: Maintains cursor/page pointers in SQLite for each entity, ensuring accurate page math across app restarts and process recreation.
 
 ## Interview answer — deep senior
 
-Paging is a consistency problem as well as a memory optimization. The mediator needs a stable pagination contract from the backend, preferably opaque cursors or versions. On refresh, replacing rows and keys must be atomic; on append, duplicate page delivery should be harmless through stable primary keys. I preserve offline cached rows if a network refresh fails and do not erase pending user edits. The UI observes Room PagingData and displays load state separately. I test empty pages, duplicated cursors, reordered items, app restart, offline mode and cancellation. A network-only source is acceptable when offline persistence is not required, but it does not meet an instant offline feed requirement.
+A frequent failure mode in Paging 3 is **Infinite Refresh Loops caused by Table Invalidation**.
 
-I treat Paging as a persistence and consistency design, not just a RecyclerView optimization. The UI pages from Room; RemoteMediator fetches from the network and writes items plus remote keys to that database. A refresh should not clear last-good data before a failed request, and appends should tolerate duplicate delivery through stable keys. For a changing news feed I prefer cursor or snapshot semantics over naive offsets, subject to the backend contract. I store rows and keys in one local transaction, expose load states, and keep cached content available offline. I test empty and duplicate pages, scrolling after refresh, and process restart before trusting pagination behavior.
+If your `RemoteMediator` writes to a secondary table that triggers invalidation of the primary observed query *before* the transaction finishes, or if `RemoteMediator` returns `MediatorResult.Success(endOfPaginationReached = false)` when the network actually returned an empty list, Paging 3 continuously triggers new `APPEND` loads in an infinite loop, draining battery and flooding the server.
+
+**Defensive Rules**:
+- Always write entities and `RemoteKeys` together inside `database.withTransaction { }`.
+- If `response.items.isEmpty()`, immediately set `endOfPaginationReached = true`.
+- Use `initialize(): InitializeAction` in `RemoteMediator`. If cached database data is fresh (e.g. less than 10 minutes old), return `InitializeAction.SKIP_INITIAL_REFRESH` to open the screen instantly without hitting the network.
 
 ## How to answer in the interview
 
@@ -90,8 +161,11 @@ Trace REFRESH/APPEND, key storage, cursor stability and cached failure behavior.
 
 ## Follow-up questions
 
-- [DAT-21](../dat-21/): How open news instantly? **Answer:** Room-backed PagingSource with RemoteMediator refresh.
-- [DAT-12](../dat-12/): Why transaction? **Answer:** page rows and remote keys must commit together.
+- **Interviewer:** "What is the purpose of `InitializeAction.SKIP_INITIAL_REFRESH`?"
+  **Answer:** "It instructs RemoteMediator to skip the network refresh on launch if local cached data is deemed fresh, opening the screen offline immediately."
+
+- **Interviewer:** "How do you display error states with Paging 3 in Compose?"
+  **Answer:** "Inspect `lazyPagingItems.loadState.append` or `refresh` for `LoadState.Error`, rendering a retry button or error banner."
 
 ## Self-check rubric
 
@@ -101,4 +175,4 @@ Can I identify source of truth, persist keys atomically and test changing server
 
 - [Android Paging network/database guide](https://developer.android.com/topic/libraries/architecture/paging/v3-network-db) — RemoteMediator pattern.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

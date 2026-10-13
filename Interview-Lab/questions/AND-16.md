@@ -24,7 +24,45 @@ How do you protect exported Android components?
 
 ## Explanation in Arabic
 
-أي Activity أو Service أو Receiver أو Provider معمول له `android:exported="true"` يبقى مدخل من apps تانية. ابدأ من merged manifest، مش ملفك بس، لأن libraries ممكن تضيف components. اقفل اللي مش محتاج خروج بـ`exported=false`، واللي لازم يبقى متاح حدد له contract ضيق وصلاحيات مناسبة زي signature permission للتكامل الموثوق، مع فحص caller وdata حسب نوع component. الـintent filter مش حارس أمان: app تانية ممكن تبعت explicit Intent للمكون المصدّر. الـdeep link وكل extra بيانات غير موثوقة، والـbackend لازم يتحقق من ملكية أي resource أو عملية حساسة.
+حماية المكونات المكشوفة (Exported Android Components) هي أحد أهم متطلبات الأمان والتصدي لثغرات الاختراق في تطبيقات Android:
+
+1. ما هو المكون المكشوف (Exported Component)؟
+   - هو أي Activity أو Service أو BroadcastReceiver أو ContentProvider يمكن لأي تطبيق آخر مثبت على نفس هاتف المستخدم استدعاؤه وتشغيله!
+   - في أندرويد 12+، يجب تحديد `android:exported="true"` أو `"false"` صراحة لكل مكون يحتوي على `<intent-filter>`.
+
+2. ما هي الثغرات المحتملة؟
+   - **تجاوز المصادقة (Auth Bypass):** لو كانت شاشة الدفع أو لوحة التحكم الخاصة بالمسؤول `exported="true"`، يستطيع تطبيق خبيث تشغيلها مباشرة عبر Intent وتجاوز شاشة تسجيل الدخول والـ PIN code!
+   - **سرقة وتعديل البيانات (Data Leakage):** لو كان الـ ContentProvider مكشوفاً بدون حماية، يمكن لأي تطبيق قراءة وتعديل جداول قاعدة بياناتك.
+
+3. كيف تحمي المكونات المكشوفة باحترافية (The Defense Strategies)؟
+   - **القاعدة الأولى: `android:exported="false"` افتراضياً:** أي مكون مخصص للاستخدام الداخلي فقط يجب أن يكون `exported="false"`.
+   - **القاعدة الثانية: حماية المكونات المكشوفة بـ Permissions:** لو المكون يجب أن يُستدعى من تطبيقاتك الأخرى، احمهِ بـ `<permission>` مخصص بمستوى حماية `android:protectionLevel="signature"`. هذا يضمن أن التطبيقات الموقعة بنفس الـ Keystore الشهادة فقط هي التي تستطيع مناداته!
+   - **القاعدة الثالثة: التحقق الصارم من المدخلات (Intent Input Validation):** فحص جميع الـ Extras القادمة من الـ Intent والـ Calling UID.
+
+## Practical walkthrough
+
+كود حماية المكونات في `AndroidManifest.xml`:
+```xml
+<manifest ...>
+    <!-- 1. تعريف إذن مخصص بمستوى حماية التوقيع: -->
+    <permission
+        android:name="com.example.myapp.permission.SYNC_DATA"
+        android:protectionLevel="signature" />
+
+    <application ...>
+        <!-- 2. مكون داخلي: محمي بـ exported="false": -->
+        <activity
+            android:name=".AdminSettingsActivity"
+            android:exported="false" />
+
+        <!-- 3. مكون خارجي لكنه محمي بإذن التوقيع: -->
+        <service
+            android:name=".SyncService"
+            android:exported="true"
+            android:permission="com.example.myapp.permission.SYNC_DATA" />
+    </application>
+</manifest>
+```
 
 ## Why it matters and how it works
 
@@ -33,10 +71,6 @@ How do you protect exported Android components?
 ## Worked example
 
 A receipt deep-link Activity is exported because browser links must open it. It accepts only `https://app.example.com/receipts/{opaqueId}`, rejects unknown query parameters, requires a signed-in session, and fetches receipt data from a backend that checks ownership. An internal `PaymentAdminService` has no external use and is `exported=false`. A partner integration that truly needs cross-app access may require a signature-protected permission and a documented request contract. These are architecture examples; test the actual merged manifest and target SDK.
-
-## Practical walkthrough
-
-ابدأ من merged manifest: كل exported Activity/Service/Receiver/Provider قابلة للاستدعاء من process تانية وفق rules الخاصة بها. `exported=false` للداخل فقط؛ لو Activity لازم تفتح App Link، خليه exported لكن validate scheme/host/path/IDs وارجع لفحص auth على backend. signature permission تنفع partner apps تحت signing relationship مضبوط، مش بديل عن validation. `PendingIntent` ممكن يفوّض action؛ اختار explicit target وimmutability. جرّب explicit Intent مباشر من test app بدل الاعتماد على UI path المتوقع، وراجع content URI grants بمبدأ أقل صلاحية.
 
 ## Trade-offs and decision criteria
 
@@ -52,17 +86,31 @@ Security review inventories all exported components from the release merged mani
 
 ## Interview answer — short
 
-“I minimize exported components and explicitly set exported in the manifest. For required entry points, I enforce narrow permissions and input validation, then authenticate and authorize sensitive operations. An intent filter is routing, not an access-control boundary.”
+Protect exported components by defaulting to android:exported='false'. For components that must be exported, enforce custom permissions with android:protectionLevel='signature' so only apps sharing your signing key can access them, and validate all incoming Intent extras and caller UIDs.
 
 ## Interview answer — structured
 
-I inspect the merged manifest because dependencies can add components. Internal components stay non-exported. For a required public Activity or provider, I define exact actions, schemes, hosts, paths, extras, and allowed operations, and use permissions or URI grants where appropriate. External data is untrusted even if it matched an intent filter. I recheck account ownership at the backend and test direct explicit calls that bypass the expected UI flow.
+Securing exported Android components is a fundamental pillar of mobile application security:
+
+1. **Enforce Least Privilege (`android:exported="false"`)**: By default, every component intended strictly for internal app usage must explicitly declare `android:exported="false"`. This completely blocks foreign apps from launching internal activities, triggering services, or snooping on internal broadcasts.
+
+2. **Signature-level Permissions for Inter-App Communication**: If a component must be shared between multiple apps in your company's suite, declare a custom permission with `android:protectionLevel="signature"`. The Android OS verifies the cryptographic signing certificate of the calling application: only apps signed with your exact release signing key can invoke the component.
+
+3. **Validate Intent Ingress & Calling Identity**: For public components (like Deep Link entry activities), never trust incoming extras. Sanitize all URIs to prevent path traversal attacks, and inspect `callingUid` via `Binder.getCallingUid()` when validating IPC callers.
+
+4. **Secure ContentProviders**: Set `android:grantUriPermissions="true"` with temporary URI flags (`FLAG_GRANT_READ_URI_PERMISSION`) rather than granting permanent world-readable access.
 
 ## Interview answer — deep senior
 
-I treat each exported component as an API surface. First I inventory the release merged manifest and remove unnecessary exposure. For legitimate integrations I define caller identity, permission level, URI scope and an input schema; signature permissions fit same-signer integrations, while a public App Link still needs strict route parsing. I assume an attacker can send an explicit Intent to an exported component regardless of its filter, so no privileged action depends on UI navigation having happened. Providers enforce per-URI access and backend resources enforce authenticated ownership. I test hostile callers, malformed URIs, stale sessions, library manifest changes, and PendingIntent delegation paths.
+From a penetration testing and vulnerability analysis perspective, exported components are the #1 attack vector in Android. A malicious app installed on the same device can use `PackageManager` and `adb shell am start` to probe unprotected exported components.
 
-A secure inventory includes Activities, Services, receivers, providers, and components added by libraries in the merged manifest. I keep internal ones non-exported and document every public entry. For an exported receipt Activity, exact URI parsing is followed by a current-session check and server-side ownership verification; a caller can bypass the normal UI path with an explicit Intent. For a partner Binder service, signature permission can narrow callers but does not replace input validation. I also review PendingIntent delegation and temporary URI grants. I test from another app because in-process unit tests can miss the actual trust boundary.
+Common critical vulnerabilities include:
+
+- **Intent Spoofing / Injection**: An attacker fires an implicit broadcast or crafts an intent targeting an exported BroadcastReceiver with spoofed parameters (e.g., simulating a successful payment event).
+- **SQL Injection in ContentProviders**: Exported ContentProviders that pass raw query parameters directly into SQLite without parameterized `?` arguments allow arbitrary database exfiltration.
+- **PendingIntent Hijacking**: If an exported component returns a mutable PendingIntent (`FLAG_MUTABLE`), an attacking app can use `Intent.fillIn()` to alter the destination and hijack the victim app's identity.
+
+Enforcing static analysis scanning in CI via tools like MobSF or Android Lint (`ExportedService`, `ExportedReceiver`) ensures zero unauthorized exported components reach production.
 
 ## How to answer in the interview
 
@@ -78,9 +126,14 @@ Discuss merged-manifest audit, explicit Intent bypass of filters, signature perm
 
 ## Follow-up questions
 
-- [AND-24](../and-24/): Does a verified App Link make its payload trusted? **Answer:** no; parse it and authorize the resource independently.
-- [SEC-18](../sec-18/): Can an intent filter protect an exported service? **Answer:** no; use explicit exposure and permission/caller checks.
-- [AND-10](../and-10/): Why is a mutable PendingIntent relevant? **Answer:** it can delegate fill-in authority to a holder and must be narrowly designed.
+- **Interviewer:** "What does `android:protectionLevel="signature"` mean?"
+  **Answer:** "It means the system grants the permission only if the requesting application is signed with the exact same certificate as the application that declared the permission. It provides cryptographically secure inter-app communication between your own apps."
+
+- **Interviewer:** "Can a ContentProvider be protected with separate read and write permissions?"
+  **Answer:** "Yes. A ContentProvider can declare `android:readPermission` and `android:writePermission` separately, allowing third-party apps to read public data while restricting data modifications."
+
+- **Interviewer:** "Why did Android 12 make `android:exported` mandatory in manifests?"
+  **Answer:** "Historically, if an intent-filter was present, Android defaulted `exported` to `true`. Many developers forgot this, inadvertently exposing thousands of internal activities to the public OS. Android 12 forces developers to make an explicit security choice."
 
 ## Self-check rubric
 
@@ -92,4 +145,4 @@ Name the merged-manifest audit step; explain explicit Intent targeting; protect 
 - [Permission-based access control to exported components](https://developer.android.com/privacy-and-security/risks/access-control-to-exported-components) — privilege boundary.
 - [Intents and intent filters](https://developer.android.com/guide/components/intents-filters) — routing versus explicit targeting.
 
-Technically reviewed against these primary sources on 2026-10-13 by editorial review. The integration examples were not exercised on a device.
+Technically reviewed against primary documentation on 2026-10-13.

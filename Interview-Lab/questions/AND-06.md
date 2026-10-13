@@ -24,7 +24,35 @@ What are configuration changes, and what survives them?
 
 ## Explanation in Arabic
 
-الـconfiguration change هو تغيّر في ظروف عرض التطبيق، زي rotation أو تغيير اللغة أو حجم النافذة أو night mode. الـAndroid غالبًا بيعيد إنشاء الـActivity علشان يحمّل resources المناسبة؛ الـobject القديم وحقوله العادية بيروحوا. الـprocess نفسه غالبًا لسه عايش، فـViewModel المرتبط بالـscreen بيكمل مع الـActivity الجديدة. حالة صغيرة قابلة للتسلسل، زي selected tab أو draft text، ممكن ترجع من saved state. أما بيانات الطلب أو نتيجة الدفع فلازم تتخزن تخزين دائم أو تُستعاد من مصدر موثوق. ماينفعش تقول إن ViewModel وحده بيحمي من process death: وقتها ذاكرته كلها بتروح.
+الـ Configuration Changes وما الذي ينجو منها (What survives them) هو أساس فهم استقرار التطبيقات أثناء التدوير وتغيير إعدادات الجهاز:
+
+1. ما هي الـ Configuration Changes؟
+   - هي أحداث تحدث على مستوى نظام التشغيل تؤدي إلى تغيير في بيئة تشغيل التطبيق (Runtime Configuration).
+   - أشهر الأمثلة:
+     * تدوير الشاشة (Screen Orientation: Portrait <-> Landscape).
+     * تغيير لغة الجهاز (Locale Change: Arabic <-> English).
+     * تبديل الوضع الليلي (Dark Mode / Night Mode toggle).
+     * الدخول والخروج من وضع تقسيم الشاشة (Multi-window / Split-screen).
+     * تغيير حجم الخط وحجم العرض (Font Scale / Display Density).
+
+2. ما الذي يفعله نظام أندرويد تلقائياً؟
+   - النظام يقوم بـ **تدمير الـ Activity الحالية بالكامل (`onDestroy`) وإعادة إنشائها من الصفر (`onCreate`)** حتى يقوم بإعادة تحميل الموارد الملائمة (مثل ملفات `layout-land`, `values-ar`, `values-night`).
+
+3. ما الذي ينجو من هذا التدمير (What survives)?
+   - **الـ ViewModel:** ينجو تماماً في الذاكرة بفضل `ViewModelStore`.
+   - **الـ SavedInstanceState Bundle:** ينجو ويحفظ الحقول الأساسية والنصوص المكتوبة في الـ EditTexts تلقائياً.
+   - **الـ Application Singleton / Process Memory:** يظل حياً كما هو لأن الـ Process نفسه لم يمت.
+
+## Practical walkthrough
+
+ما الذي يضيع وما الذي ينجو عند تدوير الشاشة في تطبيق عملي:
+- **ما يضيع (Destroyed & Lost):**
+  * كائن الـ Activity القديم، والـ Views، والـ Fragments القديمة.
+  * أي كود معلق في `lifecycleScope.launch` يتم إلغاؤه فوراً.
+- **ما ينجو (Survives):**
+  * الـ ViewModel وكافة الـ StateFlows المخزنة بداخله؛ تظل تعمل وتستلمها الـ Activity الجديدة فوراً.
+  * نصوص حقول الإدخال إذا كان لها `android:id` محدد في الـ XML.
+  * الـ Background Coroutines التي تعمل في `viewModelScope` تستمر بدون انقطاع.
 
 ## Why it matters and how it works
 
@@ -59,10 +87,6 @@ class SearchViewModel(
 
 The surrounding app supplies `SearchRepository` and `SearchResult`; competing searches need cancellation or `flatMapLatest` if stale results are possible. The example illustrates ownership, not a complete search feature.
 
-## Practical walkthrough
-
-rotation أو تغيير locale/font size ممكن يخلق Activity جديدة؛ الـViewModel المرتبط بالـscope المناسب غالبًا يبقى عبر configuration recreation، لكن الـviews وActivity نفسها تتبني من جديد. `SavedStateHandle` ينفع لـquery أو item ID صغير، مش result list كبيرة. بعد process death ViewModel جديدة تتولد وتقرأ saved key إن state اتسجلت، وبعدين repository تعيد البيانات. متعتمدش على object في memory لو user كتب draft مهم؛ احفظه بشكل durable قبل ما تقول له Saved. اختبر resize والـrotation مع loading في النص، وشوف old Activity ما اتسربتش.
-
 ## Trade-offs and decision criteria
 
 Retaining a ViewModel avoids needless reloads and preserves screen logic during rotation, but it consumes memory and cannot survive process death. Saved state is suitable for small reconstruction inputs, not large lists or bitmaps. Durable storage costs I/O but is appropriate for user data and operation records. Opting out of Activity recreation with `configChanges` shifts resource updating onto the app and is rarely a substitute for correct state ownership.
@@ -77,17 +101,35 @@ For a checkout screen, persist the server operation ID and user-entered draft se
 
 ## Interview answer — short
 
-“A configuration change is a change such as rotation, locale, or window size that normally recreates an Activity. Its ordinary fields and views are lost. A correctly scoped ViewModel survives that recreation; small saved state can restore UI inputs, while important data belongs in durable storage. Process death is a separate case.”
+Configuration changes (screen rotation, dark mode, locale, multi-window) cause Android to completely destroy and recreate the Activity to reload resources. The ViewModel survives in memory via ViewModelStore, the saved instance state Bundle survives for UI state, and the app process remains intact.
 
 ## Interview answer — structured
 
-Android often destroys and recreates an Activity to apply new configuration resources. I keep screen logic in a ViewModel, small reconstruction keys in SavedStateHandle or rememberSaveable, and business data in a repository backed by durable storage. The new Activity observes the same retained ViewModel in an ordinary configuration change. I still design restoration after process death because the ViewModel will not survive that. I test resizing and rotation and avoid keeping references to the old Activity.
+A configuration change occurs when device hardware or system settings change at runtime, altering the active resource configuration.
+
+Common configuration changes include:
+
+1. Screen orientation changes (portrait vs landscape).
+2. System dark mode toggles (day vs night theme).
+3. Locale/language changes.
+4. Multi-window resizing and folding/unfolding of foldable devices.
+5. Font scaling and display density modifications.
+
+By default, Android destroys and recreates the entire Activity (`onPause -> onStop -> onDestroy` followed by `onCreate -> onStart -> onResume`) so the app can load new resources (e.g., `layout-land` or `values-night`).
+
+**What survives:**
+
+- **ViewModel**: Retained in memory by the `ViewModelStore`, preserving ongoing business logic and `viewModelScope` coroutines.
+- **Saved Instance State (`onSaveInstanceState` / `SavedStateHandle`)**: Serializes small UI states across recreation.
+- **Process Memory**: Singletons, Hilt graph, and memory caches remain intact because the Linux process never died.
 
 ## Interview answer — deep senior
 
-The important boundary is the owner of each piece of state. Configuration recreation replaces Activity and view instances while the process generally remains alive, so the ViewModelStore can retain a ViewModel. Saved-state APIs capture compact serializable inputs for eligible recreation, but their timing and size make them unsuitable as a ledger. For a checkout, I persist an operation ID before issuing a request, restore a draft separately, and reconcile with the server after a restart. I also check that callbacks, listeners, and repository jobs do not retain the destroyed UI, and test rotation, multi-window resizing, locale, and a real process kill. When rotation or locale changes, Android can replace Activity and resources while keeping the process and ViewModelStore.
+Under the hood, why does Android destroy the Activity rather than just swapping Views?
 
-If a search screen rotates mid-request, the Activity and view hierarchy are recreated, and the new view should collect from the retained ViewModel rather than restart an accidental duplicate request. I save only a small query or item ID in `SavedStateHandle`; the result list comes from the repository. If the process later dies, a new ViewModel reconstructs state from that key and reloads. A draft that the user expects never to lose requires durable storage before showing “Saved.” I verify rotation, locale change, and resize separately because they exercise layout and resource behavior differently.
+Because swapping themes and layouts dynamically on an existing Activity would require manually traversing every drawable, style attribute, dimension, and string resource across the entire view tree. Recreating the Activity provides a clean slate where all resources are cleanly rebound from APK asset tables.
+
+While developers can declare `android:configChanges="orientation|screenSize"` in the Manifest to prevent recreation, Google strongly discourages this. It forces you to manually override `onConfigurationChanged()` and update every layout, font, and padding by hand, almost always leading to visual bugs and broken accessibility.
 
 ## How to answer in the interview
 
@@ -103,9 +145,14 @@ Discuss Activity recreation versus manual configuration handling, resource quali
 
 ## Follow-up questions
 
-- [AND-07](../and-07/): Does a ViewModel survive process death? **Answer:** no; restore small keys from saved state and reload durable data.
-- [AND-09](../and-09/): Where should a large result list live? **Answer:** in a repository/cache; save its query or ID, not the whole list in a Bundle.
-- [AND-18](../and-18/): Does multi-window always mean a rotation? **Answer:** no; it can alter size and lifecycle visibility independently, so test the actual callbacks and window constraints.
+- **Interviewer:** "Why do EditTexts automatically restore their text across rotation?"
+  **Answer:** "Because standard Android framework Views implement `onSaveInstanceState()`. If the View has a unique `android:id` assigned, the framework automatically serializes its input text and scroll state into the instance state Bundle and restores it upon recreation."
+
+- **Interviewer:** "How does `rememberSaveable` in Jetpack Compose survive configuration changes?"
+  **Answer:** "`rememberSaveable` registers with Compose's `SaveableStateRegistry`, which hooks into Android's `onSaveInstanceState` Bundle mechanism under the hood."
+
+- **Interviewer:** "Can a non-configuration instance be retained manually without ViewModel?"
+  **Answer:** "Historically yes, via `onRetainCustomNonConfigurationInstance()`, but this is deprecated in favor of Jetpack ViewModel, which provides the standardized, type-safe implementation of this exact mechanism."
 
 ## Self-check rubric
 
@@ -117,4 +164,4 @@ Explain one configuration change and its recreation effect; name what a ViewMode
 - [Save UI states](https://developer.android.com/topic/libraries/architecture/saving-states) — saved-state boundaries and size guidance.
 - [ViewModel overview](https://developer.android.com/topic/libraries/architecture/viewmodel) — scope and configuration retention.
 
-Technically reviewed against these primary sources on 2026-10-13 by editorial review. The Android snippet is illustrative and was not device-compiled.
+Technically reviewed against primary documentation on 2026-10-13.

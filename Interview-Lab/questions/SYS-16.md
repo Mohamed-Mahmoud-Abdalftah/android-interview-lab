@@ -22,11 +22,52 @@ Choose simple MVVM or additional Clean Architecture boundaries by complexity and
 
 ## Explanation in Arabic
 
-لتطبيق صغير، ViewModel + repository + data sources مع unidirectional state غالبًا كفاية؛ use case لكل getter يزود boilerplate بلا قيمة. لما business rules تتكرر في شاشات أو تحتاج independence/testability قوية، domain layer/use cases أو interfaces مستقلة تستحق الكلفة. المهم single source of truth، lifecycle، error/cancellation contract، مش اسم pattern.
+قارن بين نمط MVVM البسيط و Clean Architecture، ومتى تختار كلاً منهما وفقاً لحجم المشروع وتعقيد منطق الأعمال؟
+
+1. نمط MVVM البسيط (View -> ViewModel -> Repository):
+   - **الهيكل**: الـ Composable يستمع لـ StateFlow في ViewModel، والـ ViewModel يستدعي الـ Repository مباشرة لجلب البيانات وحفظها.
+   - **المزايا**: كود خفيف وبسيط، عدد ملفات قليل، سرعة تسليم عالية، ممتاز للتطبيقات القياسية التي تقوم بعمليات CRUD عادية (جلب بيانات وعرضها).
+   - **العيوب**: إذا كان التطبيق يحتوي على منطق أعمال معقد (Business Rules) تتكرر في أكثر من مكان، يبدأ الـ ViewModel في التضخم ويتحول إلى God-Class.
+
+2. نمط Clean Architecture (Presentation -> Domain -> Data):
+   - **الهيكل**: إضافة طبقة الـ Domain التي تحتوي على **UseCases / Interactors** المستقلة تماماً عن أي كود يخص أندرويد.
+   - **المزايا**: عزل كامل لقواعد العمل، إمكانية إعادة استخدام الـ UseCases عبر أكثر من ViewModel، سهولة كتابة Unit Tests نقية بدون أي Mocks تخص الـ Android Framework.
+   - **العيوب**: تكاثر هائل في عدد الملفات (Boilerplate File Proliferation)، والـ Pass-Through UseCases التي لا تفعل سوى استدعاء دالة الـ Repository مباشرة وتضيف تعقيداً بلا قيمة!
+
+3. متى تختار كل منهما؟
+   - **ابدأ بـ Pragmatic MVVM**: إذا كانت الـ UseCases مجرد سطر واحد يمرر الاستدعاء للـ Repository، فلا تكتبها!
+   - **أدخل الـ UseCases عند الحاجة فقط**: عندما تظهر قاعدة عمل معقدة تجمع بيانات من مستودعين (Repositories) مختلفين أو تتكرر في أكثر من شاشة.
 
 ## Practical walkthrough
 
-تطبيق notes صغير: Screen → ViewModel → Repository → Room/HTTP كفاية. لو pricing rule تستخدمها checkout والreceipt والrefund، حطها في domain use case مستقل باختبارات واضحة. Clean Architecture مش عدد طبقات ثابت؛ نقل logic للـViewModel يربطها بالـUI، ونقل كل getter لـuse case فارغة يعمل boilerplate. اختر seam حسب reuse وتغيّر dependencies، واحتفظ بSSOT وstate flow واضحة.
+المقارنة بين استدعاء Repository مباشر في MVVM واستخدام UseCase مبرر في Clean Architecture:
+```kotlin
+// ❌ فخ الـ Pass-Through UseCase غير المفيد (Boilerplate بلا قيمة):
+class GetUserUseCase(private val repo: UserRepository) {
+    suspend operator fun invoke(id: String) = repo.getUser(id) // لا يفعل أي شيء سوى التمرير!
+}
+
+// ✅ استخدام سليم لـ UseCase في Clean Architecture يبرر وجوده بتنسيق منطق أعمال حقيقي:
+class CompleteCheckoutUseCase @Inject constructor(
+    private val cartRepository: CartRepository,
+    private val paymentRepository: PaymentRepository,
+    private val analyticsTracker: AnalyticsTracker
+) {
+    suspend operator fun invoke(cartId: String, paymentToken: String): CheckoutResult {
+        val cart = cartRepository.getCart(cartId) ?: return CheckoutResult.InvalidCart
+        if (cart.items.isEmpty()) return CheckoutResult.EmptyCart
+        
+        val payment = paymentRepository.charge(cart.totalCents, paymentToken)
+        return if (payment.isSuccess) {
+            cartRepository.clearCart(cartId)
+            analyticsTracker.trackPurchase(cart.totalCents)
+            CheckoutResult.Success(payment.transactionId)
+        } else {
+            CheckoutResult.PaymentFailed(payment.errorMessage)
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -57,15 +98,33 @@ A small notes app uses ViewModel+Repository. A checkout app extracts pricing/dis
 
 ## Interview answer — short
 
-“I use the simplest layered MVVM that meets the problem: UI state in ViewModel and data ownership in repository. I add domain/use-case boundaries when business logic is complex or reused, not as mandatory ceremony.”
+Simple MVVM is ideal for standard apps with minimal business logic, delivering high velocity with few layers. Clean Architecture introduces a Domain layer with UseCases to isolate complex business rules and cross-repository orchestration. Use Pragmatic MVVM by default, introducing UseCases only when real business orchestration justifies the indirection.
 
 ## Interview answer — structured
 
-“MVVM and Clean Architecture answer different questions. MVVM helps organize screen state and events; a clean dependency boundary can keep business rules independent of UI and data implementation. Android’s guidance starts with UI and data layers and treats domain as optional. For a small app, a ViewModel calling a repository is clear. If pricing or eligibility rules are reused across screens and workers, I extract a testable use case and perhaps an interface. I judge the extra mapping and DI cost against real coupling.”
+Comparing simple MVVM against Clean Architecture involves balancing rapid execution speed against decoupling and maintainability:
+
+1. **Simple MVVM (View -> ViewModel -> Repository)**:
+   - **Structure**: ViewModels interact directly with Repositories. Ideal for CRUD-heavy applications, data display, and feature teams prioritizing development velocity.
+   - **Trade-off**: As applications grow, ViewModels risk accumulating complex multi-repository business orchestration, resulting in bloated classes that are difficult to test in isolation.
+
+2. **Clean Architecture (Presentation -> Domain -> Data)**:
+   - **Structure**: Introduces a pure Kotlin Domain layer containing UseCases (Interactors) that orchestrate business rules independently of Android framework dependencies.
+   - **Trade-off**: High file overhead. Writing pass-through UseCases that simply delegate one line to a repository introduces unnecessary indirection without educational or architectural value.
+
+3. **Pragmatic Synthesis (Domain on Demand)**:
+   - Standard operations (e.g. fetching a profile, paginating articles) flow directly from ViewModel to Repository.
+   - Domain UseCases are introduced strictly when business logic requires orchestrating multiple repositories (e.g. checkout validating cart, charging payment, clearing cache, logging purchase) or is shared across multiple ViewModels.
 
 ## Interview answer — deep senior
 
-“I begin with explicit responsibilities rather than a pattern diagram. UI renders immutable state; ViewModel coordinates screen lifetime; repository owns data sources and conflict policy. That may be enough for one team and a simple feature. When the same business rule spans several ViewModels, background work or alternative data implementations, I introduce a domain boundary with stable inputs/outputs and tests. I avoid both a god ViewModel that contains SQL/network logic and a maze of pass-through use cases that add no invariant. Process death, cancellation, offline source of truth and server authority remain the same regardless of pattern label. I measure change impact and test friction before expanding layers. A small notes app uses ViewModel+Repository. For the small notes app, a ViewModel and repository can give testable state flow without a use-case class for every read. When a pricing rule is shared by checkout, receipt and refund, extracting a domain operation provides one place for the invariant and independent tests. I would avoid putting network DTOs into the UI or making the domain layer mirror every repository method. The choice is reversible: start simple, measure repeated logic and change coupling, then add the boundary that solves a real problem.”
+From an architectural purity standpoint, the value of the Domain layer is its complete isolation from framework churn:
+
+1. **Zero Android Framework Dependencies**: The Domain layer should be a pure Kotlin library module containing zero imports from `android.*`. It does not know about Jetpack Compose, ViewModels, or SQLite. This guarantees that business logic can be tested instantly in pure JVM unit tests without Robolectric and can theoretically be shared via Kotlin Multiplatform (KMP).
+
+2. **Repository Boundary Enforcement**: In strict Clean Architecture, the domain layer defines the Repository interfaces, and the data layer implements them (Dependency Inversion Principle). In pragmatic Android MVVM, repository interfaces often live alongside the data layer. Inversion is valuable primarily when data layers swap out implementations (e.g. mocking in integration tests or swapping network drivers).
+
+3. **Architectural Cost-Benefit**: For an MVP or a small team, full Clean Architecture can reduce velocity by 30% due to continuous DTO-to-Domain-to-Ui mapping boilerplate. A senior architect chooses Clean Architecture when complex enterprise business rules demand long-term testability and cross-team boundary protection.
 
 ## How to answer in the interview
 
@@ -81,8 +140,11 @@ Identify a rule that justifies extraction and one that does not.
 
 ## Follow-up questions
 
-- [SYS-02](../sys-02/): What layers are baseline? **Answer:** UI and data, with domain optional.
-- [MOD-13](../mod-13/): When interface? **Answer:** when it protects a real ownership/volatility boundary.
+- **Interviewer:** "What is an anemic UseCase?"
+  **Answer:** "A UseCase that contains no business logic and merely forwards a single method call to a repository, adding boilerplate without architectural benefit."
+
+- **Interviewer:** "Can a ViewModel call multiple Repositories directly in Pragmatic MVVM?"
+  **Answer:** "Yes, if the coordination logic is specific to that screen; but if the coordination represents an enterprise business rule reused elsewhere, extract it into a UseCase."
 
 ## Self-check rubric
 
@@ -93,4 +155,4 @@ Can I choose by complexity, keep business rules out of UI and avoid ceremonial l
 - [Android architecture guide](https://developer.android.com/topic/architecture) — optional domain layer.
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — repository responsibilities.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

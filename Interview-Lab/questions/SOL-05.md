@@ -22,7 +22,55 @@ Explain client-specific interfaces rather than merely “small interfaces” or 
 
 ## Explanation in Arabic
 
-ISP بتقول client ما يعتمدش على methods مش بيستخدمها. لو `AccountService` فيها login، analytics، export، payment، وكل screen لازم inject نفس giant contract، أي تغيير فيه يعمل ripple ويجبر fake implementations على methods فارغة. اقسمها حسب client needs: `SessionReader`, `SignOut`, `PaymentStatusSource` مثلًا. الهدف مش interface واحدة لكل method؛ خلي interface متماسكة لخدمة client واضح. في Android modules، العقود الضيقة تقلل imports وbuild/test coupling.
+شرح مبدأ فصل الواجهات (Interface Segregation Principle - ISP) مع مثال عملي واقعي في Android:
+
+1. تعريف مبدأ فصل الواجهات (ISP):
+   - ينص المبدأ على: **"لا ينبغي إجبار أي كود أو عميل (Client) على الاعتماد على واجهات (Interfaces) تحتوي على دوال لا يستخدمها"**.
+   - الأفضل دائماً إنشاء عدة واجهات صغيرة متخصصة (Fine-grained interfaces) بدلاً من واجهة واحدة ضخمة تجمع كل شيء (Fat Interface).
+
+2. ما الذي ينتهك ISP في Android الكلاسيكي؟
+   - كلاس `TextWatcher` الشهير في Java Android! إذا أردت مراقبة النص فقط بعد تغييره، فأنت مجبر على تنفيذ 3 دوال: `beforeTextChanged`, `onTextChanged`, و `afterTextChanged`، وتترك أول دالتين فارغتين بلا فائدة!
+   - مستودع ضخم `interface FullUserRepository` يحتوي على 20 دالة (قراءة البروفايل، تحديث الصورة، حذف الحساب، دفع الفاتورة، تسجيل الدخول)؛ في حين أن شاشة العرض البسيطة تحتاج فقط لدالة قراءة الاسم!
+
+3. كيف نطبق ISP في Android الحديث؟
+   - تقسيم الواجهات الكبيرة إلى واجهات دقيقة حسب الاستخدام:
+     * `interface UserReader { fun getUser(): Flow<User> }`
+     * `interface UserWriter { suspend fun updateUser(user: User) }`
+   - في Kotlin، استخدام الـ Lambdas المباشرة (مثل `doAfterTextChanged { ... }`) أو واجهات أحادية الدالة (Functional Interfaces - `fun interface`).
+
+## Practical walkthrough
+
+المقارنة بين واجهة ضخمة تنتهك ISP وواجهات مجزأة دقيقة:
+```kotlin
+// ❌ انتهاك صارخ لـ ISP: واجهة ضخمة تجبر الكلاسات على تنفيذ دوال لا تحتاجها:
+interface UserManagementService {
+    fun readProfile(): User
+    fun updateProfile(user: User)
+    fun deleteAccount()
+    fun processSubscriptionPayment(amount: Long)
+}
+
+// شاشة العرض البسيطة تضطر للتعامل مع دوال الحذف والدفع الحساسة بلا داعٍ!
+class ReadOnlyProfileWidget(private val service: UserManagementService) { ... }
+
+// ✅ تطبيق ISP السليم: واجهات دقيقة مقسمة حسب الصلاحيات والاحتياج:
+fun interface UserProfileReader {
+    fun readProfile(): Flow<User>
+}
+
+interface UserProfileWriter {
+    suspend fun updateProfile(user: User)
+}
+
+interface AccountTerminator {
+    suspend fun deleteAccount()
+}
+
+// يمكن لكلاس الـ Repository في طبقة Data تنفيذ الواجهات الثلاث معاً، ولكن الـ Widget يستهلك Reader فقط:
+class ReadOnlyProfileWidget(private val reader: UserProfileReader) {
+    // آمن تماماً، ولا يعرف أي شيء عن الحذف أو الدفع!
+}
+```
 
 ## Why it matters and how it works
 
@@ -38,10 +86,6 @@ class AccountMenu(private val signOut: SignOut)
 ```
 A read-only widget does not need to depend on sign-out or payment methods. Shared implementation may implement both interfaces.
 
-## Practical walkthrough
-
-لو widget عايز يعرض اسم المستخدم فقط، متدّيلوش `AccountService` فيها logout وtoken refresh وحذف الحساب. خليه يعتمد على `SessionReader` صغيرة، وشاشة الإعدادات على `SignOut`. نفس implementation ممكن ينفذ الاتنين. لما يتغير logout flow، widget مش محتاج إعادة بناء معرفي أو fake ضخم في اختباره. لكن متقسّمش interface إلى getter لكل field؛ دور على مجموعات calls اللي clients فعلاً بتستخدمها. اعمل جدول client مقابل methods، واتبع dependencies الحقيقية قبل الrefactor.
-
 ## Trade-offs and decision criteria
 
 Over-splitting creates interface clutter and wiring. Group operations that change together for one client. A cohesive repository API can have several methods without violating ISP; size alone is not the criterion.
@@ -56,15 +100,25 @@ A wallet app exposes a narrow session reader to UI, a token refresher to network
 
 ## Interview answer — short
 
-ISP says a client should not depend on operations it does not use. I split a broad service into cohesive capabilities aligned with consumers, without creating one interface per method.
+Interface Segregation Principle states that clients should not be forced to depend on methods they do not use. In Android, rather than creating a bloated 20-method repository interface or implementing the cumbersome 3-method `TextWatcher`, we split contracts into fine-grained single-purpose interfaces like `UserProfileReader` and `UserProfileWriter`.
 
 ## Interview answer — structured
 
-If a profile screen only needs to observe session status, it should not depend on a giant account interface that also exposes payment or export commands. Wide contracts make unrelated changes rebuild clients and force fakes to implement unused methods. I define narrow capability interfaces for groups of related operations, and one implementation may implement several. The rule is about client dependency, not an arbitrary maximum method count. For example, a payment status widget should not receive an interface that can initiate a charge or delete an account. Narrowing its dependency reduces both accidental calls and the surface that tests must fake. One implementation can still own the shared state.
+The Interface Segregation Principle (ISP) states that **no client should be forced to depend on methods it does not use**.
+
+When an interface becomes a 'fat interface' (accumulating dozens of methods across multiple feature areas), any change to an unrelated method forces recompilation and re-testing across all consumers. Furthermore, mock implementations in unit tests become bloated with empty stub methods.
+
+Classic Android examples of ISP violations include:
+- **`TextWatcher`**: Forces implementers to override `beforeTextChanged()`, `onTextChanged()`, and `afterTextChanged()` even if they only care about text changes. (Modern Android resolved this with `core-ktx` extension `doAfterTextChanged { ... }`).
+- **`Animator.AnimatorListener`**: Forces four method implementations (`onAnimationStart`, `End`, `Cancel`, `Repeat`) for a simple end callback.
+
+In modern architecture, we segregate data contracts based on consumer roles: splitting a monolithic `UserRepository` into `UserReader` and `UserWriter`. A read-only home widget injects only `UserReader`, ensuring it has zero visibility or coupling to sensitive account deletion or password change operations.
 
 ## Interview answer — deep senior
 
-I would inspect which methods each consumer actually calls and which changes cause cascading edits. A broad `AccountService` can tie settings, checkout and analytics to one signature set; even a fake for one screen must stub unrelated operations. Splitting into `SessionReader`, `SignOut`, and `PaymentStatusSource` lets each feature depend on its own capability and makes contract tests precise. But I do not split every method into a separate interface if several operations form one cohesive client use case. On Android, narrower contracts also help modularization and prevent accidental imports of provider-specific or security-sensitive methods. The implementation can still share a repository internally; ISP is about what clients see. I would build a client-method matrix before splitting anything. ISP is about the consumer's contract rather than the implementation's class size. I would map which operations each caller actually uses; a read-only UI component should not import token rotation or account deletion capabilities. Small role interfaces let one implementation serve several consumers while tests provide focused fakes. A sign-out change should not force a read-only widget to update its mock. The risk is splitting too far into dozens of one-method interfaces that obscure the workflow. I would group methods by stable client role and migrate one caller at a time, checking dependency graphs and tests for accidental access to unrelated operations.
+Kotlin provides exceptional language support for ISP via **Functional (SAM) Interfaces** (`fun interface`). A functional interface contains exactly one abstract method and can be implemented via a concise lambda: `val reader = UserProfileReader { flowOf(currentUser) }`. This makes mocking in unit tests practically instantaneous without heavy mocking libraries.
+
+ISP also protects security and modularization. In enterprise fintech applications, the payment SDK might implement `PaymentAuditor`, `PaymentExecutor`, and `PaymentConfigurator`. The standard checkout UI module is injected only with `PaymentExecutor`, while administrative modules receive `PaymentConfigurator`. This compiler-level segregation prevents feature developers from accidentally exposing administrative configurations.
 
 ## How to answer in the interview
 
@@ -80,8 +134,11 @@ Compare one giant account API to client-facing capabilities; discuss fake tests 
 
 ## Follow-up questions
 
-- [SOL-08](../sol-08/): How differs from SRP? **Answer:** ISP focuses on a client’s dependency surface; SRP on reasons a module changes.
-- [SOL-15](../sol-15/): How split a wide interface? **Answer:** cluster methods by consumer capability, then migrate callers.
+- **Interviewer:** "How did Android KTX resolve ISP violations in legacy Android listeners?"
+  **Answer:** "KTX introduced extension functions accepting single lambdas with default no-op parameters (e.g. `view.doAfterTextChanged { }`, `animator.doOnEnd { }`), freeing developers from overriding unused methods."
+
+- **Interviewer:** "Can a single concrete class implement multiple segregated interfaces?"
+  **Answer:** "Yes. A single `UserRepositoryImpl` can implement both `UserReader` and `UserWriter`, while clients inject only the specific interface abstraction they require."
 
 ## Self-check rubric
 
@@ -92,4 +149,4 @@ Identify two clients using different method subsets, propose capability interfac
 - [Robert C. Martin, A Little Architecture](https://blog.cleancoder.com/uncle-bob/2016/01/04/ALittleArchitecture.html) — interface segregation and dependency direction.
 - [Android modularization guide](https://developer.android.com/topic/modularization) — module boundaries.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

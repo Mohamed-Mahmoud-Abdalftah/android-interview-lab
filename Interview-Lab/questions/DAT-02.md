@@ -22,7 +22,55 @@ Explain method semantics, common status classes and why idempotency is a server 
 
 ## Explanation in Arabic
 
-`GET` قراءة safe غالبًا، `PUT` يستبدل resource و`DELETE` لهما semantics idempotent في HTTP، و`POST` غالبًا ينشئ action ومش آمن نعيده بلا عقد. `2xx` نجاح، `3xx` redirect، `4xx` مشكلة في الطلب/صلاحية، `5xx` فشل server؛ `401` auth، `403` منع، `404` غير موجود، `409` conflict، `429` rate limit. idempotency معناها تكرار نفس العملية له نفس الأثر المقصود، مش إن الشبكة نفذتها مرة واحدة.
+ما هي دوال HTTP (Methods)، وأكواد الحالة الشائعة (Status Codes)، وما هو مبدأ الـ Idempotency الحرج في تطبيقات الهاتف؟
+
+1. دوال HTTP ودلالاتها المعمارية (HTTP Methods Semantics):
+   - **GET**: قراءة الموارد فقط. آمنة (Safe) ولا يجب أن تحدث أي تغيير في حالة السيرفر، وقابلة للتخزين المؤقت (Cacheable).
+   - **POST**: إرسال بيانات لإنشاء مورد جديد أو تنفيذ عملية غير قابلة للتكرار (مثل خصم رصيد أو طلب شحن). **ليست آمنة وليست Idempotent**.
+   - **PUT**: استبدال مورد موجود بالكامل (Replace/Upsert). دالة **Idempotent**.
+   - **PATCH**: تحديث جزئي لبعض حقول المورد.
+   - **DELETE**: حذف مورد محدد. دالة **Idempotent**.
+
+2. ما هو الـ Idempotency (خاصية التكرار الآمن) ولماذا هي حرجة للموبايل؟
+   - **التعريف**: العملية تعتبر Idempotent إذا كان تكرار إرسال نفس الطلب $N$ مرة ينتج عنه نفس الأثر تماماً على السيرفر كإرساله مرة واحدة فقط ($f(f(x)) = f(x)$).
+   - **أهميتها في الموبايل**: شبكة الموبايل تنقطع باستمرار (Flaky Networks). إذا أرسل التطبيق طلب `POST /checkout` وانقطع الاتصال قبل وصول الرد، لا يعلم التطبيق هل السيرفر خصم المبلغ أم لا! إذا أعاد التطبيق المحاولة بدون **Idempotency Key**، فقد يُخصم من المستخدم مرتين!
+
+3. أكواد الحالة الأكثر أهمية في Android:
+   - `200 OK` / `201 Created`: نجاح العملية.
+   - `401 Unauthorized`: التوكن منتهي أو غير صالح (يتطلب تجديد التوكن عبر Refresh Token).
+   - `403 Forbidden`: المستخدم مسجل لكنه لا يملك صلاحية هذا المورد (لا تحاول تجديد التوكن!).
+   - `404 Not Found`: المورد غير موجود.
+   - `409 Conflict`: تعارض في البيانات (مثل تعديل ملف تم تعديله من جهاز آخر - ETag Mismatch).
+   - `429 Too Many Requests`: تجاوز حد الطلبات (يتطلب احترام ترويسة `Retry-After`).
+   - `500/502/503`: أخطاء في السيرفر (تتطلب إعادة المحاولة مع Exponential Backoff).
+
+## Practical walkthrough
+
+إرسال طلب POST مالي مع Idempotency Key لضمان عدم الخصم المزدوج عند انقطاع الشبكة:
+```kotlin
+class PaymentRepositoryImpl @Inject constructor(
+    private val paymentApi: PaymentApiService,
+    private val pendingTransactionsDao: PendingTransactionsDao
+) : PaymentRepository {
+    override suspend fun chargeOrder(orderId: String, amount: Money): Result<PaymentReceipt> {
+        // 1. توليد مفتاح تكرار آمن (Idempotency Key) وحفظه محلياً في Room أولاً:
+        val idempotencyKey = "pay_${orderId}_${amount.cents}"
+        pendingTransactionsDao.recordPending(idempotencyKey, orderId)
+        
+        return runCatching {
+            // 2. إرسال الطلب في الترويسة:
+            // إذا انقطعت الشبكة وأعاد OkHttp أو WorkManager الإرسال،
+            // يعرف السيرفر هذا المفتاح ويعيد نفس الإيصال السابق دون خصم جديد!
+            paymentApi.processCharge(
+                idempotencyKey = idempotencyKey,
+                request = ChargeRequest(orderId, amount.cents)
+            )
+        }.onSuccess {
+            pendingTransactionsDao.markConfirmed(idempotencyKey)
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -47,10 +95,6 @@ interface PaymentsApi {
 }
 ```
 
-## Practical walkthrough
-
-HTTP method مش “اسم function” فقط: GET للقراءة، POST غالبًا إنشاء/command، PUT استبدال تحت URI معروف، PATCH تعديل جزئي، DELETE إزالة. HTTP بيعرّف GET/PUT/DELETE idempotent في intended effect، لكن implementation ممكن تكسر العقد؛ POST ممكن يبقى logically idempotent لو backend عامل key retention وpayload matching. 200/201/204 نجاح بأجسام مختلفة، 400 خطأ request، 401 auth، 403 authorization، 404 absent، 409 conflict، 429 rate limit، و5xx server. timeout بعد POST ما يقولش العملية فشلت؛ احتفظ operation ID، اسأل status، ولا تعيد بمفتاح جديد. parse `Retry-After` حسب العقد، ومتتعاملش مع كل 4xx كretry.
-
 ## Trade-offs and decision criteria
 
 A method’s standard semantics are a starting point, not proof of a specific backend guarantee. POST with a stable server-enforced key can be logically idempotent; GET that changes state violates expectations and creates caching/retry risk. Always read the API contract.
@@ -65,17 +109,28 @@ A payment client persists a stable operation key before POST, marks outcome Pend
 
 ## Interview answer — short
 
-“HTTP methods describe intent; GET is safe, PUT and DELETE are idempotent by semantics, while POST often is not. Status codes classify outcomes, but timeout is ambiguous. I retry writes only under a documented server idempotency contract.”
+HTTP methods define operation semantics: GET is safe and idempotent, PUT/DELETE are idempotent, POST is non-idempotent. Idempotency guarantees that executing a request multiple times produces the identical server state as executing it once, which is vital on flaky mobile networks to prevent duplicate payments or orders via client-generated Idempotency Keys.
 
 ## Interview answer — structured
 
-“I explain both protocol and business meaning. GET is a read; PUT sets a resource representation; DELETE removes one; POST commonly creates or triggers work. 2xx succeeds, 4xx usually needs client action, 5xx may be transient, and 429 asks us to slow down. Idempotency means repeating the same request has the same intended effect, not that only one packet traversed the network. For payments I use a stable key backed by server deduplication and reconcile uncertain outcomes rather than blindly resending. Always read the API contract.”
+Understanding HTTP methods and idempotency is essential for designing resilient mobile APIs:
+
+1. **Method Semantics & Idempotency**:
+   - An operation is **idempotent** if making $N$ identical requests has the exact same side-effect on the server as making 1 request ($f(f(x)) = f(x)$).
+   - `GET`, `HEAD`, `OPTIONS` are safe (read-only) and idempotent.
+   - `PUT` (full replacement) and `DELETE` (resource removal) are idempotent. Calling `DELETE /users/42` ten times results in user 42 being deleted, regardless of whether subsequent responses return 204 or 404.
+   - `POST` is **non-idempotent**: calling `POST /orders` five times creates five distinct orders and charges the user five times.
+
+2. **The Mobile Reality of Flaky Networks**:
+   On cellular networks, connection drops frequently occur *after* the server processes a `POST` write but *before* the client receives the `200 OK` response. If the client retries blindly, duplicate operations occur. Production mobile apps prevent this by attaching a deterministic **`Idempotency-Key` UUID** in request headers, allowing the server to recognize duplicate submissions and return cached receipts without re-executing writes.
 
 ## Interview answer — deep senior
 
-A robust retry decision combines method semantics, endpoint contract, status code and operation identity. HTTP defines safe and idempotent methods, but a backend can implement them badly, and a POST can be made logically repeat-safe with a documented idempotency-key system. On timeout, I cannot know if the server committed. I persist one operation ID, reuse the same key within its retention policy, query authoritative status and avoid duplicate UI actions. I distinguish 401 refresh, 403 denial, 409 conflict, 429 throttling and transient 5xx. I set bounded backoff and honor Retry-After; I never claim exactly-once network execution from a key.
+From a protocol perspective, senior engineers handle status codes with explicit architectural responses:
 
-I would separate HTTP semantics from a particular server contract. GET is a safe read; PUT and DELETE are defined as idempotent in intended effect, while POST is not automatically so. A backend can make a POST logically repeat-safe with an idempotency key, but the client must know key retention and what happens if the payload changes. Status classes guide the first branch, then endpoint details matter: a 401 may call for session repair, a 409 for conflict handling, and a 429 for rate-limit delay. If a payment POST times out, I cannot infer failure from silence; I reuse the persisted operation identity and query status. That decision prevents a duplicate side effect.
+- **`401 Unauthorized` vs. `403 Forbidden`**: A `401` indicates authentication failure—the OkHttp `Authenticator` should intercept this, pause pending requests, perform a single-flight token refresh, and retry the request. A `403` indicates authorization failure (the user is authenticated, but lacks admin privileges)—**never retry a 403 with a token refresh**, as this triggers an infinite retry loop; navigate to an error state or notify the user.
+
+- **`429 Too Many Requests`**: Inspect the `Retry-After` header. If the server says `Retry-After: 30`, suspend coroutine execution for 30 seconds rather than retrying immediately with exponential backoff, respecting server capacity and preventing IP bans.
 
 ## How to answer in the interview
 
@@ -91,8 +146,11 @@ Explain safe/idempotent distinction, timeout uncertainty, server deduplication a
 
 ## Follow-up questions
 
-- [DAT-14](../dat-14/): Which failures deserve retry? **Answer:** classified transient failures with bounded backoff and safe endpoint semantics.
-- [DAT-20](../dat-20/): What if response is lost? **Answer:** reconcile by stable operation ID before another charge.
+- **Interviewer:** "Does HTTP status code 500 mean the write failed on the server?"
+  **Answer:** "Not necessarily! The server could have written to the database and crashed during response serialization. Client retries must use idempotency keys."
+
+- **Interviewer:** "Can `PATCH` be idempotent?"
+  **Answer:** "It depends on the payload: `PATCH { "age": 30 }` is idempotent; `PATCH { "incrementAge": 1 }` is non-idempotent."
 
 ## Self-check rubric
 
@@ -103,4 +161,4 @@ Can I state method semantics, classify key status codes and design one safe writ
 - [HTTP Semantics RFC 9110](https://httpwg.org/specs/rfc9110.html) — method and status semantics.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — retryable writes.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

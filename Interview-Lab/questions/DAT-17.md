@@ -22,7 +22,56 @@ Set cache expiry and invalidation by data semantics, server validators and sessi
 
 ## Explanation in Arabic
 
-Expiration مش TTL ثابت لكل حاجة. نحدد max age حسب domain، ونستخدم server version/ETag أو `Last-Modified` لإعادة التحقق، ونبطل cache عند mutation, logout أو tenant switch. UI تعرض fetchedAt/stale marker لو المحتوى قديم. محتوى أخبار يتحمل دقائق؛ entitlement أو سعر دفع يحتاج server confirmation قبل فعل حساس.
+كيف تدير انتهاء صلاحية الكاش (Caching Expiration) وإبطاله (Invalidation) في تطبيقات Android؟
+
+1. الفرق بين انتهاء الصلاحية والإبطال (Expiration vs. Invalidation):
+   - **Expiration (انتهاء الصلاحية الزمني - Time-based TTL)**: تحديد مدة بقاء البيانات صالحة في الكاش (Time-To-Live). بعد مرور 10 دقائق مثلاً، تعتبر البيانات Stale وتتطلب إعادة طلبها من السيرفر.
+   - **Invalidation (الإبطال الفوري المبني على الأحداث - Event-driven Invalidation)**: مسح أو تفريغ الكاش فوراً نتيجة لحدث معين (مثل قيام المستخدم بتسجيل الخروج Logout، أو تعديل الملف الشخصي، أو استلام Push Notification من السيرفر تفيد بتغير البيانات).
+
+2. استراتيجيات إدارة الصلاحية حسب طبيعة البيانات:
+   - **بيانات ثابتة (Static Assets / Lookup tables)**: TTL طويل جداً (أيام أو أسابيع).
+   - **بيانات متغيرة متوسطة (News / Products Feed)**: TTL يتراوح بين 5 إلى 15 دقيقة مع دعم Stale-While-Revalidate.
+   - **بيانات مالية وحساسة (Account Balance / Rights Entitlements)**: TTL صفر (No-Cache)، تتطلب دائماً فحص السيرفر أو استخدام ETag `If-None-Match`.
+
+3. آليات الإبطال الصارمة (Strict Invalidation Rules):
+   - **عند تسجيل الخروج (Logout / Account Switch)**: يجب إفراغ جميع جداول الـ Room والـ DataStore المرتبطة بالمستخدم لمنع تسريب بياناته للمستخدم التالي.
+   - **عند العمليات المحلية (Local Mutations)**: إذا قام المستخدم بحذف عنصر من السلة، يتم إبطال وحذف العنصر من Room فوراً دون انتظار استجابة السيرفر.
+
+## Practical walkthrough
+
+إدارة انتهاء صلاحية الكاش عبر TTL زمني وترويسات ETag في الـ Repository:
+```kotlin
+class CachedFeedRepository @Inject constructor(
+    private val feedDao: FeedDao,
+    private val feedApi: FeedApiService,
+    private val metaStore: CacheMetadataStore
+) {
+    private val CACHE_TTL_MS = TimeUnit.MINUTES.toMillis(15) // صلاحية 15 دقيقة
+
+    fun observeFeed(): Flow<List<FeedItem>> = feedDao.observePosts()
+
+    suspend fun refreshFeedIfExpired(forceRefresh: Boolean = false) {
+        val lastFetchTime = metaStore.getLastFetchTime()
+        val isExpired = System.currentTimeMillis() - lastFetchTime > CACHE_TTL_MS
+
+        if (isExpired || forceRefresh) {
+            val savedETag = metaStore.getFeedETag()
+            // إرسال ETag للتحقق مما إذا كان السيرفر قد غير البيانات:
+            val response = feedApi.fetchFeed(ifNoneMatch = savedETag)
+            
+            if (response.code() == 304) {
+                // 304 Not Modified: البيانات لم تتغير على السيرفر! نجدد الـ TTL فقط ونوفر الباندويث:
+                metaStore.saveLastFetchTime(System.currentTimeMillis())
+            } else if (response.isSuccessful && response.body() != null) {
+                // 200 OK: بيانات جديدة، نحفظها في Room ونحدث الـ ETag:
+                feedDao.replaceFeed(response.body()!!.items)
+                metaStore.saveFeedETag(response.headers()["ETag"])
+                metaStore.saveLastFetchTime(System.currentTimeMillis())
+            }
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -43,10 +92,6 @@ fun isExpired(row: CachedRow<*>, nowEpochMs: Long, ttlMs: Long): Boolean =
 // Also invalidate on mutation/session switch and revalidate with server version.
 ```
 
-## Practical walkthrough
-
-cache expiration لازم تميز transport cache بـHTTP headers عن domain rows في Room. `Cache-Control/ETag` تقلل network requests، لكن local `fetchedAt`/server version تحدد UX freshness. TTL بالساعة الجهاز ممكن يتأثر بتغيير clock؛ لو محتاج ضمان قوي استخدم server version/validation أو monotonic timing للجلسة، واتعامل مع offline case صراحة. عند write أو logout، invalidate affected keys/account partition بدل `clearAll` عشوائي. لو refresh response قديمة وصلت بعد جديدة، قارن version قبل الكتابة. balance أو permission لا تعتمد على stale row قبل action؛ news headline يمكن تعرضها مع age label.
-
 ## Trade-offs and decision criteria
 
 TTL is simple and available offline but can be wrong after device clock changes. Server validators reduce payload but need endpoint support. Push invalidation is timely but unreliable during disconnect, so periodic/reconnect revalidation remains necessary.
@@ -61,17 +106,30 @@ A catalog caches pages with server versions and fetchedAt, revalidates on app fo
 
 ## Interview answer — short
 
-“I define freshness per data type, use TTL plus server validators where available, invalidate on mutations and session changes, and prevent older responses overwriting newer data. Sensitive actions verify current server state.”
+Manage cache expiration using domain-specific TTLs paired with HTTP conditional validation (ETags / If-None-Match returning 304 Not Modified). Invalidate caches proactively upon user mutations, FCM push invalidations, and enforce immediate database purges on logout or user switching.
 
 ## Interview answer — structured
 
-“Cache expiry is a product decision. A news feed can show labeled stale content for fast startup, while a payment quote must be fresh. I store fetched time and server version/ETag, revalidate conditionally, and invalidate on writes, logout or tenant changes. Network push hints are useful but cannot be the only invalidation mechanism because mobile connections drop. I also guard against out-of-order refresh responses and device clock changes.”
+A comprehensive caching strategy separates time-based expiration from event-driven invalidation:
+
+1. **Time-To-Live (TTL) Expiration**:
+   - Different domains demand different freshness thresholds: user avatars (7 days), catalog feed (15 minutes), account balances (0 seconds / always revalidate).
+   - Leverage **HTTP Conditional Requests**: Store server `ETag` or `Last-Modified` headers. When the TTL expires, issue a lightweight `If-None-Match` request. If unchanged, the server returns **`304 Not Modified`** with an empty body, saving mobile bandwidth while refreshing the TTL.
+
+2. **Event-Driven Invalidation**:
+   - **Local Write Invalidation**: When a user updates their profile, the repository immediately mutates Room, ensuring UI screens observe fresh state without waiting for a TTL cycle.
+   - **Remote Server Invalidation**: Use high-priority FCM Silent Push notifications to instruct clients to invalidate specific cache keys when backend data updates.
+   - **Session Purges**: On `Logout` or account switching, execute an atomic SQLite wipe (`database.clearAllTables()`) to prevent data leaking between users.
 
 ## Interview answer — deep senior
 
-I distinguish HTTP transport caching from the app’s Room-backed domain cache. Cache-Control/ETag can reduce network cost, while local rows need explicit freshness metadata and invalidation triggers. A single TTL is too blunt: offline browse may tolerate stale articles, but authorization, stock and money require authoritative checks before action. I partition cache by account, clear or replace it on logout, version rows so older refreshes cannot overwrite newer ones, and revalidate on reconnect/foreground. Device wall clocks can change, so I do not rely on them alone for security decisions. Tests cover clock skew, out-of-order responses, account switch and offline staleness.
+A subtle pitfall in Android caching is **Clock Skew with Device Time**.
 
-I separate wire caching from application state. HTTP validators such as ETag can save bandwidth, while Room rows need product-specific freshness metadata and invalidation rules. A single TTL is inadequate: a news card can be shown stale with a label, but a balance or permission must be revalidated before a sensitive action. I partition rows by account, invalidate related data after writes, and reject an older server version arriving after a newer response. Device wall-clock changes also make naïve age checks unreliable, so I test clock skew and offline startup. On refresh failure I keep the last-good snapshot when the feature allows it rather than clearing the screen.
+If a developer calculates expiration using `System.currentTimeMillis()` (`now - lastFetched > TTL`), and the user manually alters device time or travels across time zones, the cache may appear permanently expired or permanently fresh.
+
+To prevent clock skew bugs:
+- Use **`SystemClock.elapsedRealtime()`** for in-session relative cache calculations (which counts milliseconds since device boot, immune to user time adjustments).
+- For persistent multi-day caches, rely on the server's HTTP `Date` header to calculate relative age rather than trusting the Android hardware clock.
 
 ## How to answer in the interview
 
@@ -87,8 +145,11 @@ Define per-domain max age, account partitioning, validators and race-safe refres
 
 ## Follow-up questions
 
-- [DAT-08](../dat-08/): Which cache strategy displays stale then updates? **Answer:** stale-while-revalidate.
-- [DAT-16](../dat-16/): How avoid stale overwrite? **Answer:** server version/precondition and conflict policy.
+- **Interviewer:** "What is the advantage of HTTP 304 Not Modified?"
+  **Answer:** "It informs the client that the cached data is still valid without re-transmitting the HTTP response payload, saving battery and cellular data."
+
+- **Interviewer:** "Why shouldn't you delete cached data immediately when a TTL expires?"
+  **Answer:** "Keep the stale data to support offline viewing; mark it as stale and attempt a revalidation, falling back to stale content if the network fails."
 
 ## Self-check rubric
 
@@ -99,4 +160,4 @@ Can I set freshness by domain, invalidate session data and handle out-of-order u
 - [HTTP Semantics RFC 9110](https://httpwg.org/specs/rfc9110.html) — conditional requests.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — cache freshness.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

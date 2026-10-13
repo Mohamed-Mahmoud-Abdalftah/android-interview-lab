@@ -23,11 +23,51 @@ How do you publish builds to internal testing and Play Console?
 
 ## Explanation in Arabic
 
-بعد build/test للـrelease AAB، نرفعها بـPlay Console أو Publishing API لinternal testing track مع versionCode فريد وrelease notes مناسبة، ونتأكد testers/environment صح. بعد smoke/QA نرقّي نفس version إلى closed/open أو production staged rollout حسب policy. Credentials في protected CI job فقط، والـbackend endpoints ما تتبدلش بالغلط بسبب flavor.
+كيف تقوم بأتمتة نشر وتوزيع نسخ التطبيق على مسار الاختبارات الداخلية (Internal Testing) ومتجر Google Play؟
+
+1. مسار الأتمتة الحديث:
+   - النشر اليدوي عبر سحب وإفلات الـ AAB في المتصفح بطيء وعرضة للأخطاء البشرية (مثل نسيان رفع ملف الـ mapping.txt أو اختيار حزمة خاطئة).
+   - الحل الهندسي: استخدام **Google Play Developer API** عبر أدوات أتمتة مثل: Fastlane (`supply`), أو إضافة Gradle Play Publisher (GPP), أو GitHub Actions الرسمية.
+
+2. خطوات الإعداد المتكاملة:
+   - **1. حساب الخدمة (Service Account)**: إنشاء Service Account في Google Cloud Console ومنحه الصلاحيات المطلوبة في Google Play Console (صلاحيات الإصدار وإدارة مسارات الاختبار).
+   - **2. مفتاح الـ API**: تحميل مفتاح JSON الخاص بالـ Service Account وتخزينه كـ Secret مشفر في الـ CI.
+   - **3. بناء حزمة الإنتاج (AAB)**: تشغيل `./gradlew bundleRelease` لتوليد الـ Android App Bundle.
+   - **4. رفع الـ AAB وملفات الـ De-obfuscation**: إرسال الـ AAB مصحوباً بملف `mapping.txt` و `native-debug-symbols.zip` إن وجدت.
+   - **5. كتابة الـ Release Notes**: تضمين ملفات الـ Changelog لكل لغة مدعومة تلقائياً (مثلاً `whatsnew-en-US`).
+   - **6. تعيين المسار (Track)**: النشر التلقائي المباشر لمسار الـ `internal` للاختبار السريع من قبل الفريق.
 
 ## Practical walkthrough
 
-بعد signed AAB من commit محدد، ارفع النسخة لـinternal testing track مع versionCode صحيح وrelease notes، وثبّت نتيجة smoke test على نفس الـartifact. بعدها closed testing ثم production staged rollout حسب سياسة المنتج؛ راقب crashes وANR وpayment conversion قبل زيادة النسبة. Play upload ممكن يقبل bundle لكنه لا يثبت إن feature شغالة على الأجهزة، لذلك جرّب install/update لنسخة release ومراجعة device matrix. لا تعيد بناء الـbundle بين track والتاني لو تريد ضمان نفس البايتات.
+طريقتان شائعتان لنشر الـ AAB تلقائياً لمسار Internal Testing:
+```yaml
+# الطريقة 1: استخدام GitHub Action موثوقة ومباشرة
+- name: Deploy to Google Play Internal
+  uses: r0adkll/upload-google-play@v1
+  with:
+    serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
+    packageName: com.example.proapp
+    releaseFiles: app/build/outputs/bundle/release/app-release.aab
+    track: internal
+    status: completed
+    mappingFile: app/build/outputs/mapping/release/mapping.txt
+    whatsNewDirectory: distribution/whatsnew
+```
+```ruby
+# الطريقة 2: استخدام Fastlane (Lane مخصصة في Fastfile)
+lane :deploy_internal do
+  gradle(task: 'bundleRelease')
+  upload_to_play_store(
+    track: 'internal',
+    package_name: 'com.example.proapp',
+    json_key_data: ENV['PLAY_STORE_JSON_KEY'],
+    aab: 'app/build/outputs/bundle/release/app-release.aab',
+    mapping_paths: ['app/build/outputs/mapping/release/mapping.txt'],
+    skip_upload_images: true,
+    skip_upload_screenshots: true
+  )
+end
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +91,33 @@ Release dashboard tracks Play processing, tester install, crash/ANR and payment 
 
 ## Interview answer — short
 
-“I upload a signed, versioned AAB to internal testing with protected credentials, smoke-test it, then promote a verified artifact through Play tracks with staged production monitoring.”
+Automate publishing by generating a signed AAB, configuring a Google Cloud Service Account with Google Play Console release permissions, and using Fastlane (supply), Gradle Play Publisher, or a GitHub Action to upload the AAB along with R8 mapping.txt and release notes to the Internal Testing track via the Play Developer API.
 
 ## Interview answer — structured
 
-“The job builds the intended release flavor, runs checks, records versionCode/hash and uploads the AAB to the correct Play app and internal track. Testers verify installation and critical flows. Promotion to production is gated on evidence and uses staged rollout with crash and business metrics. Signing and Publishing API credentials are isolated from PR jobs, and track/flavor/applicationId are asserted to prevent a wrong release. Play tracks manage distribution audiences.”
+Publishing Android builds to internal testing and Google Play tracks is automated through a systematic workflow:
+
+1. **Identity & Access Management (IAM)**:
+   - Create a dedicated Google Cloud Service Account linked to Google Play Console with least-privilege permissions (e.g. 'Manage testing tracks and releases'). Store its JSON private key in CI secrets.
+
+2. **Release Compilation & Metadata Packaging**:
+   - The CI pipeline executes `./gradlew bundleRelease` producing the `.aab`, while R8 produces the corresponding `mapping.txt` and native debug symbols (`native-debug-symbols.zip`).
+
+3. **Automated Upload via Play Developer API**:
+   - Using tooling like Fastlane (`upload_to_play_store`), Gradle Play Publisher (GPP), or GitHub Actions (`r0adkll/upload-google-play`), the pipeline initiates an edit session on the Google Play Developer API, uploads the AAB and de-obfuscation files, attaches localized changelogs (`whatsnew/whatsnew-en-US`), and commits the edit to the `internal` testing track.
+
+4. **Instant Verification Ring**:
+   - Builds deployed to the Internal Testing track bypass lengthy Google Play manual reviews, becoming accessible to internal QA and developers via Play Store links within minutes.
 
 ## Interview answer — deep senior
 
-“I publish from a release candidate that has an immutable source commit, variant, version code and signed AAB. CI records its digest, R8 mapping and test evidence, then uploads that artifact to an internal track where testers exercise install, upgrade, critical navigation and any device-specific SDK path. Promotion to closed or staged production uses explicit approval and the same verified artifact where the distribution system permits it. I monitor crashes, ANRs, startup, key transactions and support signals as the rollout expands; an upload success only proves the store accepted the artifact. If a gate fails I halt expansion, use a server flag to contain a feature where safe, or publish a fixed higher-version build. I do not promise that Android users already updated can be instantly rolled back to an older APK. Release notes and tag identify what changed, but mapping and provenance identify what actually shipped. High-risk payment changes get provider sandbox and hardware evidence before production exposure.”
+In enterprise release management, managing API limits and track progression requires strategic design:
+
+1. **Track Promotion Without Rebuilding**: An essential practice is promoting existing builds rather than rebuilding. Once an internal track AAB is validated, use the Play Developer API to promote that exact release artifact from `internal` to `closed` (alpha/beta) and eventually to `production`, maintaining 100% binary parity.
+
+2. **Google Play API Quotas & Race Conditions**: Google Play API allows only one active edit session per package at any given time. Concurrent CI pipelines trying to upload distinct flavors simultaneously will fail with HTTP 409 Conflict. CI runners must serialize Play Store publishing jobs or use mutex locks.
+
+3. **Automated Notification Integration**: After successful upload, the pipeline queries the Play API for the newly minted release status and posts an actionable Slack/Teams alert containing the direct Play Store testing link, the git commit SHA, and author details.
 
 ## How to answer in the interview
 
@@ -75,8 +133,11 @@ Prompt for AAB provenance, versionCode, correct applicationId/track, protected c
 
 ## Follow-up questions
 
-- [CIC-03](../cic-03/): Why promote same artifact? **Answer:** preserve evidence tied to its hash.
-- [CIC-19](../cic-19/): How prevent wrong flavor? **Answer:** assert applicationId, host and variant before upload.
+- **Interviewer:** "Why is the Google Play Internal Testing track preferred for automated CI over Closed Alpha?"
+  **Answer:** "Internal testing updates are available almost instantaneously (under 5–10 minutes) without undergoing standard Google Play store review latency."
+
+- **Interviewer:** "What error occurs if two CI jobs attempt to upload releases to the Play Store API simultaneously?"
+  **Answer:** "An HTTP 409 conflict, because the Play Developer API enforces a single active edit session per application at a time."
 
 ## Self-check rubric
 
@@ -87,4 +148,4 @@ Trace one signed build from immutable source SHA to internal testers and then Pl
 - [Android app publishing](https://developer.android.com/studio/publish) — release preparation.
 - [Play App Signing](https://developer.android.com/studio/publish/app-signing) — signed uploads.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

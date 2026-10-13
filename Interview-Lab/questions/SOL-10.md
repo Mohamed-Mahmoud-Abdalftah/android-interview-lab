@@ -22,7 +22,53 @@ Identify when a mandatory base hook creates behavioral substitution failure and 
 
 ## Explanation in Arabic
 
-لو `BaseFragment` بتطلب `setupToolbar()` وكل child لازم تنفذها، screen من غير toolbar هتعمل no-op أو ترمي exception. لو base contract وعد إن كل Fragment عندها toolbar قابل للإعداد، subclass دي ما تقدرش تحل محل base من غير special case، وده LSP violation. لو method optional بوضوح وdefault no-op والcallers مش بتفترض toolbar، قد لا يكون violation تقني، لكنه design smell. الأفضل `ToolbarOwner` capability أو `ToolbarController` collaborator للشاشات اللي تحتاجها، وما تحطش واجهة UI ثابتة في كل Fragment.
+عندما يفرض كلاس `BaseFragment` تنفيذ دالة `setupToolbar()` ولكن بعض الشاشات ليس بها Toolbar: متى ينتهك هذا مبدأ LSP؟ وكيف يُعالج؟
+
+1. متى وكيف ينتهك هذا مبدأ لسكوف (LSP Violation)؟
+   - ينتهك LSP فوراً عندما يتوقع الكلاس الأساسي (أو مستدعي الكود) أن الدالة `setupToolbar()` ستقوم بتهيئة شريط أدوات صالح، ولكن الكلاس الفرعي:
+     * يرمي استثناء: `throw UnsupportedOperationException("No toolbar")` مما يسبب Crash للمستخدم.
+     * أو يترك الدالة فارغة كـ No-op، فيقوم الكود الخارجي بالتعامل مع Toolbar غير موجود (NullPointer أو سلوك خفي مكسور).
+   - النتيجة: لا يمكن استبدال `BaseFragment` بـ `NoToolbarFragment` بأمان دون حدوث مفاجآت وسلوكيات مكسورة.
+
+2. العلاج المعماري الجذري:
+   - **إزالة الدالة من الـ BaseClass فوراً**: الكلاس الأساسي يجب ألا يفرض إلا السلوكيات المشتركة بين 100% من الشاشات.
+   - **إنشاء واجهة اختيارية (Marker/Capability Interface)**: `interface HasToolbar { fun getToolbar(): Toolbar }`.
+   - أو الأفضل: استخدام **Delegate مستقل** يتم استدعاؤه فقط داخل الشاشات التي تحتاج لشريط أدوات.
+
+## Practical walkthrough
+
+معالجة انتهاك LSP في شاشات الـ Fragments:
+```kotlin
+// ❌ انتهاك LSP: BaseFragment يفرض Toolbar على شاشات لا تحتاجه (كالشاشات المنبثقة والشاشات الكاملة):
+abstract class LeakyBaseFragment : Fragment() {
+    abstract fun setupToolbar(): Toolbar // فرض إلزامي!
+}
+
+class FullscreenPlayerFragment : LeakyBaseFragment() {
+    override fun setupToolbar(): Toolbar {
+        // 💥 يكسر LSP: يرمي استثناء أو يعيد null بطريقة غير متوقعة:
+        throw UnsupportedOperationException("No toolbar in video player")
+    }
+}
+
+// ✅ الحل المعماري المتوافق مع LSP: فصل القدرات في Interface أو Delegate:
+abstract class SafeBaseFragment : Fragment() {
+    // يحتوي فقط على السلوكيات العامة المشتركة بين 100% من الشاشات (مثل التحليلات أو الربط الأساسي)
+}
+
+// واجهة خاصة بالشاشات التي تمتلك Toolbar فقط:
+interface ToolbarProvider {
+    fun configureToolbar(toolbar: Toolbar)
+}
+
+class CatalogFragment : SafeBaseFragment(), ToolbarProvider {
+    override fun configureToolbar(toolbar: Toolbar) { /* إعداد Toolbar للشاشة */ }
+}
+
+class SafePlayerFragment : SafeBaseFragment() {
+    // لا ينفذ ToolbarProvider، ولا يكسر أي عقود!
+}
+```
 
 ## Why it matters and how it works
 
@@ -39,10 +85,6 @@ class CheckoutHeader(private val host: ToolbarHost) {
 ```
 A full-screen camera Fragment does not implement `ToolbarHost` and need not pretend to support it.
 
-## Practical walkthrough
-
-السؤال هنا مش إن `setupToolbar()` فاضية وخلاص؛ هل base contract بيقول إن كل Fragment يقدر يجهز toolbar؟ لو camera screen مفيهاش toolbar وبتعمل throw أو no-op مخفي، caller بيتعامل معاها كبديل وبيفشل. الأفضل تخلي capability مستقلة `ToolbarHost` أو controller يتضاف للشاشات المناسبة فقط. لو method optional صراحة وبلا افتراض من callers، LSP قد لا تنكسر لكن تصميم الـbase غالبًا لسه مربك. اختبر caller كان بيعمل إيه مع أي subclass، خصوصًا بعد navigation أو recreation.
-
 ## Trade-offs and decision criteria
 
 A default no-op can be acceptable if optional behavior is explicit and callers do not rely on it. A capability interface adds wiring but prevents invalid base assumptions. Avoid adding an interface if a simple local helper suffices.
@@ -57,15 +99,26 @@ A media app has camera and library Fragments. Only library screens compose a too
 
 ## Interview answer — short
 
-It violates LSP when the base contract promises toolbar setup but a subclass cannot support it and must throw or break caller expectations. I would narrow the capability or use composition. A documented optional no-op is a different contract.
+It violates LSP when the caller expects a functional toolbar contract, but a subclass throws `UnsupportedOperationException`, returns null, or no-ops, breaking behavioral expectations. Fix it by removing `setupToolbar()` from `BaseFragment` and moving it to an optional `ToolbarProvider` capability interface or composable delegate.
 
 ## Interview answer — structured
 
-I first ask what `BaseFragment` promises. If callers can treat every subclass as toolbar-capable, a screen that throws from `setupToolbar()` breaks substitution. A no-op may also be misleading if callers expect visible configuration. I would extract a `ToolbarHost` or controller used only by toolbar screens and remove the requirement from the common base. If the hook is explicitly optional with no caller guarantee, it may not be a strict LSP violation, though the hierarchy may still be awkward. In a migration, I would preserve screens that actually use the toolbar while removing the compulsory hook from screens that do not. I would test rotation and back navigation because toolbar setup often interacts with the Activity lifecycle.
+A `BaseFragment` enforcing an abstract `setupToolbar()` violates the Liskov Substitution Principle (LSP) whenever a subclass cannot fulfill that contract meaningfully.
+
+Under LSP, any client holding a reference to `BaseFragment` should be able to invoke `setupToolbar()` with the guarantee that a toolbar exists, has been configured, and conforms to lifecycle invariants. When a fullscreen video player, bottom sheet, or modal dialog subclasses `BaseFragment`, it has no toolbar. If the developer:
+1. **Throws `UnsupportedOperationException`**: It breaks program execution at runtime.
+2. **Returns null or executes an empty no-op**: It breaks postconditions, leading to silent bugs or subsequent `NullPointerException`s if the host Activity queries the fragment's toolbar.
+
+**The Architectural Remedy**:
+- Remove `setupToolbar()` entirely from `BaseFragment`. A base class must define *only* invariants that apply to 100% of all derived classes.
+- Extract toolbar capability into an optional interface: `interface ToolbarHost { fun getToolbar(): Toolbar }`.
+- The hosting Activity inspects `if (fragment is ToolbarHost)` before configuring navigation bars, preserving substitution safety.
 
 ## Interview answer — deep senior
 
-The principle is behavioral, not syntax-based. A subclass can compile while rejecting a valid operation of its base type. If `BaseFragment` always calls `setupToolbar()` during lifecycle and one child has no toolbar, throwing is a clear failure. A silent no-op may also violate user-visible expectations depending on the documented contract. I would add tests that exercise the base behavior through each subclass, then introduce an explicit toolbar capability for only the applicable screens. The migration can be incremental: stop invoking the hook unconditionally, move toolbar setup to a collaborator, and remove obsolete overrides. I would also inspect other BaseFragment responsibilities such as analytics and permissions, because the same overbroad abstraction often hides lifecycle leaks and test coupling. I would ask what callers are promised by `BaseFragment`. If the base says every screen can configure a toolbar, a camera subclass that throws or silently does nothing breaks substitutability when a caller invokes that behavior. The fix is to move the capability to a narrow `ToolbarHost` or compose a controller only into screens with toolbars. If the base explicitly models optional toolbar behavior and callers handle absence, the LSP claim is less direct, though the hierarchy may still be awkward. I would migrate call sites to depend on the capability they actually require and test navigation and recreation, where hidden no-op behavior often surfaces.
+This scenario exposes the fundamental flaw of **inheritance-driven architecture**. Base classes tend to accumulate 'feature creep' over years: one developer adds toolbar logic, another adds swipe-to-refresh, a third adds FAB handling, until `BaseFragment` is 1,200 lines long and every new screen must fight against inherited assumptions.
+
+In modern Android development, the industry consensus is to **eliminate BaseFragment and BaseActivity entirely**. Shared behaviors are extracted into standalone, self-contained delegates implementing `DefaultLifecycleObserver` or composed via Jetpack Compose's `Scaffold(topBar = { ... })` where the toolbar parameter is naturally optional.
 
 ## How to answer in the interview
 
@@ -81,8 +134,11 @@ State base contract precisely, distinguish no-op from throw, and outline a safe 
 
 ## Follow-up questions
 
-- [SOL-04](../sol-04/): What does LSP require? **Answer:** subclasses honor the behavior clients expect from the base.
-- [SOL-11](../sol-11/): How replace the giant base? **Answer:** compose optional lifecycle-aware collaborators.
+- **Interviewer:** "Why is eliminating `BaseFragment` completely considered best practice today?"
+  **Answer:** "Base classes create rigid inheritance hierarchies, hide dependencies, cause LSP violations, and slow down build times. Composition via delegates and Compose UI provides far greater flexibility and testability."
+
+- **Interviewer:** "How does Jetpack Compose solve the optional toolbar problem?"
+  **Answer:** "Compose's `Scaffold` composable accepts an optional `topBar: @Composable () -> Unit = {}` parameter. If a screen has no toolbar, you simply omit the parameter without subclassing or overriding anything."
 
 ## Self-check rubric
 
@@ -93,4 +149,4 @@ Explain the contract condition for violation, give a counterexample where option
 - [Kotlin inheritance](https://kotlinlang.org/docs/inheritance.html) — override behavior.
 - [Liskov and Wing, A Behavioral Notion of Subtyping](https://www.cs.columbia.edu/~wing/publications/LiskovWing94.pdf) — substitutability.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

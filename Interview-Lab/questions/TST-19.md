@@ -23,11 +23,73 @@ Write tests for three parallel APIs with partial success and cancellation.
 
 ## Explanation in Arabic
 
-قبل test للـ3 APIs لازم تحدد product policy: هل profile/balance/offers لازم ينجحوا معًا، أم كل قسم مستقل؟ في all-or-nothing استخدم gates معلقة، خلّي profile ينجح وbalance يفشل وoffers تفضل pending، ثم أثبت أن aggregate يفشل وأن child المنتظر اتلغى؛ مجرد فشل واحد بدون assertion على cancellation ناقص. في partial-success، `supervisorScope` تسمح للأبناء المستقلين يكملوا، لكن كل `async` failure لازم تتعالج عند `await`؛ `CancellationException` لا تتحول إلى data.
+اكتب اختبارات وحدة (Unit Tests) لثلاث استدعاءات متزامنة في الشبكة (3 Parallel APIs) تدعم النجاح الجزئي (Partial Success) وإلغاء العمليات (Cancellation)؟
+
+1. سيناريو الاختبار المطلوب:
+   - شاشة الـ Dashboard تقوم بجلب بيانات: (1) الـ User Profile، (2) الـ Transactions، (3) الـ Exchange Rates بشكل متزامن عبر `async/await`.
+   - **سيناريو النجاح الجزئي (Partial Success)**: إذا فشلت خدمة أسعار الصرف (Exchange Rates) في الشبكة، يجب ألا يفشل الاختبار أو ينهار التطبيق؛ يجب أن تنجح بيانات الـ Profile والـ Transactions وتُعرض للمستخدم مع علامة خطأ للقسم الفاشل فقط.
+   - **سيناريو الإلغاء (Cancellation)**: إذا ألغى المستخدم العملية أو خرج من الشاشة، يجب إلغاء جميع الاستدعاءات الثلاثة فوراً في نفس اللحظة.
+
+2. كيفية الاختبار باستخدام `runTest` و `StandardTestDispatcher`:
+   - نستخدم Fakes أو Mocks لتمثيل الخدمات الثلاث، ونتحكم في وقت الاستجابة والتعليق لإثبات التزامن الحقيقي وإلغاء الـ Jobs المعلقة.
 
 ## Practical walkthrough
 
-اختبر parent cancellation وlate response بعد retry/navigation حتى ما تعرضش نتيجة قديمة. `runTest` يساعدك تتحكم في scheduling، وHTTP adapter integration test تثبت إلغاء requests الحقيقي. الـUI state المتوقعة تتبع قرار consistency، مش تفضيل عام لـscope معيّنة.
+كتابة كود الـ Coordinator واختبارات الـ Partial Success والـ Cancellation التام باستخدام runTest:
+```kotlin
+// 1. الكود المراد اختباره: جلب متزامن مع دعم الفشل الجزئي عبر supervisorScope:
+class DashboardAggregator(
+    private val profileApi: suspend () -> String,
+    private val ordersApi: suspend () -> List<String>,
+    private val ratesApi: suspend () -> Double
+) {
+    suspend fun loadDashboard(): DashboardResult = supervisorScope {
+        val profileDeferred = async { runCatching { profileApi() } }
+        val ordersDeferred = async { runCatching { ordersApi() } }
+        val ratesDeferred = async { runCatching { ratesApi() } }
+
+        DashboardResult(
+            profile = profileDeferred.await().getOrNull(),
+            orders = ordersDeferred.await().getOrDefault(emptyList()),
+            ratesError = ratesDeferred.await().exceptionOrNull() != null
+        )
+    }
+}
+
+// 2. اختبارات الوحدة الشاملة في JVM:
+class DashboardAggregatorTest {
+    @Test
+    fun `partial failure allows profile and orders to succeed when rates service fails`() = runTest {
+        val aggregator = DashboardAggregator(
+            profileApi = { "Ahmed" },
+            ordersApi = { listOf("Order #1") },
+            ratesApi = { throw IOException("Rates service unavailable") }
+        )
+
+        val result = aggregator.loadDashboard()
+        assertEquals("Ahmed", result.profile)
+        assertEquals(1, result.orders.size)
+        assertTrue(result.ratesError)
+    }
+
+    @Test
+    fun `canceling parent job cancels all three parallel calls immediately`() = runTest {
+        var child1Cancelled = false
+        val aggregator = DashboardAggregator(
+            profileApi = { try { delay(1000); "Done" } finally { child1Cancelled = true } },
+            ordersApi = { delay(1000); emptyList() },
+            ratesApi = { delay(1000); 1.0 }
+        )
+
+        val job = launch { aggregator.loadDashboard() }
+        runCurrent()
+        job.cancel() // إلغاء المهمة الرئيسية
+        runCurrent()
+
+        assertTrue("Child coroutine must execute cancellation cleanup", child1Cancelled)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -92,15 +154,32 @@ Production telemetry records per-call status and aggregate outcome without PII. 
 
 ## Interview answer — short
 
-“I script three controllable APIs, fail one while others are pending, and assert the chosen policy: cancel all for atomic aggregation or preserve independent results for partial success. I also test parent cancellation and late responses.”
+Test parallel APIs by wrapping concurrent async calls inside supervisorScope with runCatching to assert partial success when one dependency throws an exception. Test cancellation by launching the aggregation job, invoking job.cancel(), and asserting via finally blocks that child coroutines execute cancellation cleanup immediately.
 
 ## Interview answer — structured
 
-“The test begins with a product rule. If the screen requires a consistent bundle, I use coroutineScope and fail the aggregate when one child fails; siblings are canceled. If sections are independent, I use supervisorScope and handle each result explicitly. I inject fake calls that suspend until the test releases them, then assert intermediate state, cancellation and final UI. I do not infer behavior from a happy-path test where all three return immediately.”
+Writing tests for concurrent multi-service aggregation requires validating both partial fault tolerance and structured cancellation boundaries:
+
+1. **Testing Partial Success (Fault Isolation)**:
+   - Implement the aggregator using `supervisorScope` so that failure in one async branch does not automatically cancel sibling branches.
+   - Configure test stubs such that Service A returns valid user data, Service B returns order records, and Service C throws `IOException("503 Service Unavailable")`.
+   - Assert that the aggregated result contains populated data for Services A and B alongside an explicit typed error or empty fallback for Service C, verifying graceful UI degradation.
+
+2. **Testing Coordinated Cancellation**:
+   - Launch the aggregation call inside a parent `launch` coroutine job.
+   - Provide mock functions configured with long delays (`delay(10_000L)`) instrumented with `finally` blocks tracking cancellation flags.
+   - Advance time partially, invoke `job.cancel()`, and advance the scheduler.
+   - Assert that `job.isCancelled` becomes true and all child jobs terminate cleanly without leaking un-cancelled background coroutines.
 
 ## Interview answer — deep senior
 
-“I start by stating the product rule. If the three fields form one consistent bundle, the contract is all-or-nothing: under `coroutineScope` a child failure cancels siblings, and the screen should not publish a misleading partial bundle. I use three suspended fake calls, release profile, fail balance while offers is pending, and assert both the aggregate failure and the pending child’s cancellation. If sections are independent, I use supervision plus explicit result handling for each child; `supervisorScope` does not magically turn exceptions into values, and cancellation of the parent still stops every child. I add a table for all succeed, early failure, late failure, timeout, parent cancellation and stale completion after retry. The fake’s gates make order deterministic so the test actually observes concurrency rather than three instant responses. I also verify how the UI communicates a partial balance error without overwriting profile or showing an unsafe total. Finally, Retrofit-level tests check request cancellation behavior, while domain tests justify whether partial data is safe for this particular screen.”
+From an advanced concurrency testing perspective, verifying thread safety and race conditions requires strict assertions:
+
+1. **Concurrent Dispatcher Stress Testing**: In addition to virtual time tests in `runTest`, run concurrent aggregation routines against `Dispatchers.Default` under multi-threaded stress tests with 100 iterations. This verifies that shared state aggregators or cache mutations do not throw `ConcurrentModificationException` when three parallel network threads complete at the exact same physical millisecond.
+
+2. **Asserting Non-Blocking Concurrency**: Assert that execution is genuinely parallel rather than sequential by measuring virtual elapsed time. If three independent APIs each take 1,000ms, the entire aggregated call must complete in exactly 1,000ms of virtual time, not 3,000ms.
+
+3. **CancellationException Preservation**: Ensure your error-handling operators (`runCatching`) do not swallow `CancellationException`. If cancellation is swallowed, cancelling the screen or leaving the view fails to abort child HTTP requests, resulting in wasted radio bandwidth.
 
 ## How to answer in the interview
 
@@ -116,8 +195,11 @@ Prompt for explicit product policy, controlled deferreds, sibling cancellation, 
 
 ## Follow-up questions
 
-- [TST-10](../tst-10/): What happens if cancellation is swallowed? **Answer:** work may continue and emit stale data.
-- [TST-05](../tst-05/): How control order? **Answer:** shared TestCoroutineScheduler plus gated fakes.
+- **Interviewer:** "What happens if you use coroutineScope instead of supervisorScope for parallel calls?"
+  **Answer:** "If any child coroutine fails in coroutineScope, the entire scope fails immediately and cancels all other sibling coroutines."
+
+- **Interviewer:** "How do you verify that three async calls ran in parallel rather than sequentially?"
+  **Answer:** "Assert that total execution virtual time equals the maximum individual call duration rather than the sum of all durations."
 
 ## Self-check rubric
 
@@ -128,4 +210,4 @@ Make all three calls controllable. Fail balance while offers is pending and asse
 - [Kotlin exception handling](https://kotlinlang.org/docs/exception-handling.html) — supervision/failure propagation.
 - [Kotlin coroutine testing](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/) — deterministic scheduling.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

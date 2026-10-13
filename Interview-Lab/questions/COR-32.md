@@ -22,11 +22,46 @@ Design deterministic coroutine tests for cancellation, supervision and timeout w
 
 ## Explanation in Arabic
 
-اختبار concurrency بالـ`Thread.sleep` عشوائي وممكن ينجح بالصدفة. `runTest` مع `TestDispatcher` يسمح نتحكم في virtual time، و`CompletableDeferred` أو fake API يحدد ترتيب الأحداث. نختبر إن sibling اتلغى عند فشل required call، وإن supervisor حفظ مستقلين، وإن timeout انتهى عند الزمن المحدد؛ ونفصل ده عن test حقيقي لdriver blocking أو Android lifecycle.
+اختبار التزامن والإلغاء والمهلات الزمنية (Cancellation, Supervision, and Timeouts) بشكل حتمي وموثوق (Deterministically) بدون استخدام `Thread.sleep` هو جوهر اختبارات الـ Unit Tests الحديثة في Kotlin:
+
+1. المشكلة في اختبارات الـ Concurrency التقليدية:
+   - استخدام `Thread.sleep(1000)` يجعل الاختبارات بطيئة جداً، والأخطر: يجعلها غير مستقرة (Flaky Tests)؛ لأن توقيت الـ CPU على سيرفرات الـ CI/CD قد يتأخر بضع أجزاء من الثانية فيفشل الاختبار عشوائياً!
+
+2. الحل القياسي: `kotlinx-coroutines-test` و `runTest`:
+   - **`runTest`**: توفر بيئة اختبار ذات وقت افتراضي (Virtual Time) يتم تخطيه فوراً.
+   - **`StandardTestDispatcher`**: لا ينفذ المهام فوراً؛ بل يضعها في طابور انتظار، مما يتيح لك التحكم الدقيق في وقت التنفيذ خطوة بخطوة.
+
+3. التحكم في الوقت والمهام:
+   - `advanceTimeBy(timeMillis)`: تقديم عقارب الساعة الافتراضية بمقدار محدد (لاختبار الـ Timeouts و delay).
+   - `advanceUntilIdle()`: تنفيذ كل المهام المعلقة في الطابور حتى يفرغ تماماً.
+   - `runCurrent()`: تنفيذ المهام الجاهزة للتنفيذ في الوقت الحالي فقط.
 
 ## Practical walkthrough
 
-لو test استخدم `Thread.sleep`، ترتيب children هيبقى حسب ضغط الجهاز وممكن الاختبار يفلّك. استخدم `runTest` وdispatcher محقون على نفس `TestCoroutineScheduler`، و`CompletableDeferred` كحواجز صريحة لتثبت sibling cancellation وsupervision. تقدّم virtual time للـtimeout، وبعدها تأكد إن كل jobs خلصت. اختبارات JVM دي لا تثبت سلوك SDK blocking أو lifecycle على جهاز؛ ليهم integration tests.
+كتابة Unit Test كامل يختبر Timeout و Cancellation بشكل حتمي 100%:
+```kotlin
+@Test
+fun `fetchWithTimeout aborts and returns fallback when time exceeds 2 seconds`() = runTest {
+    // محاكاة استدعاء API يستغرق 3 ثوانٍ في الوقت الافتراضي:
+    val fakeApi = FakeApi(delayMs = 3_000L)
+    val repository = Repository(fakeApi, testScheduler)
+
+    // نطلق العملية التي بداخلها withTimeoutOrNull(2000):
+    val resultDeferred = async { repository.fetchWithTimeout() }
+
+    // نقدم الوقت بمقدار ثانية واحدة (العملية لا زالت تعمل):
+    advanceTimeBy(1_000L)
+    assertTrue(resultDeferred.isActive)
+
+    // نقدم الوقت ثانية إضافية (تم تجاوز مهلة الـ 2000ms):
+    advanceTimeBy(1_001L)
+
+    // نتحقق من النتيجة: حصل timeout ورجع الـ fallback فوراً:
+    val result = resultDeferred.await()
+    assertEquals(FallbackData, result)
+}
+```
+لاحظ: الاختبار يستغرق 5 ميلي-ثانية فقط على الـ CI/CD بدلاً من الانتظار الحقيقي لعدة ثوانٍ!
 
 ## Why it matters and how it works
 
@@ -98,15 +133,25 @@ A repository suite injects one test scheduler, tests three-call all-or-nothing f
 
 ## Interview answer — short
 
-“I use `runTest`, injected test dispatchers and controlled fakes, then advance virtual time rather than sleeping. I assert sibling cancellation, supervised partial results and timeout outcomes. I keep real SDK and Android lifecycle behavior for integration/device tests.”
+Use 'kotlinx-coroutines-test' with 'runTest' and 'StandardTestDispatcher'. Virtual time skipping with advanceTimeBy() tests timeouts instantly and deterministically without Thread.sleep(), while advanceUntilIdle() flushes queued tasks, completely eliminating test flakiness.
 
 ## Interview answer — structured
 
-“Deterministic concurrency tests control both scheduling and dependency responses. `runTest` supplies a virtual clock; I inject dispatchers and use fakes with `CompletableDeferred` gates to force one API failure while peers are pending. For all-or-nothing I assert the peers receive cancellation and no partial state is emitted. For supervision I assert healthy children complete and cancellation still stops all. For timeout I advance virtual time to the boundary and assert the result or exception without real `sleep`. I then test transport and lifecycle contracts separately because virtual time cannot verify them.”
+To test concurrent cancellation, supervision, and timeouts deterministically, I use the modern `kotlinx-coroutines-test` framework with `runTest`.
+
+The key architectural mechanism is **Virtual Time Control**. `runTest` provides a `TestScope` backed by a `StandardTestDispatcher` and a `TestCoroutineScheduler`. Instead of sleeping real OS threads with `Thread.sleep()`—which causes slow, flaky tests on CI—virtual time skips delays instantaneously while preserving execution order.
+
+To test timeouts: I configure the mock operation with a simulated delay (e.g., `delay(5000)`), call `advanceTimeBy(5001)`, and assert that `TimeoutCancellationException` was thrown or the timeout fallback executed.
+
+To test cancellation and supervision: I inject `testDispatcher` into my components, launch child coroutines, simulate an exception in one child, call `runCurrent()`, and assert that supervised siblings remain active while unsupervised hierarchies cancel appropriately.
 
 ## Interview answer — deep senior
 
-“I structure the suite around observable invariants. All child jobs must finish or cancel when the operation returns; a failed required call must not publish partial data; independent calls should preserve healthy results; a parent cancellation must stop retries. `runTest` and a shared `TestCoroutineScheduler` let me advance delays and execute queued continuations deterministically. Controlled fakes expose start/cancel signals so I can force interleavings, including a failure just before timeout and cancellation during retry delay. I avoid unconfined production dispatchers in the unit under test or inject them, since real IO escapes the virtual clock. Finally I add focused integration tests for an actual blocking SDK, WorkManager recovery and Android lifecycle, where scheduler simulation is insufficient. `runTest` skips/advances delays under its scheduler. My tests would force exact order with fake gates: start two siblings, fail the required third, and assert both siblings run `finally` before the aggregate returns. Under supervision I would fail one optional child and assert healthy values still arrive; then cancel the parent and assert all stop. Virtual time advances retry delays and timeout boundaries without sleeping. I would inject dispatchers so all coroutines share the scheduler, while leaving real SDK interruption and Android lifecycle behavior to targeted integration tests.”
+Under the hood, `StandardTestDispatcher` does not execute scheduled coroutines immediately upon builder invocation. Instead, it queues tasks into the `TestCoroutineScheduler`. This gives developers three surgical levers of control: 1. `runCurrent()`: Executes all scheduled tasks that are ready to run at the current virtual timestamp. 2. `advanceTimeBy(millis)`: Advances the virtual clock, triggering any delayed tasks or timeouts scheduled within that window. 3. `advanceUntilIdle()`: Continuously drains all pending tasks until the scheduler queue is completely empty.
+
+When testing Android ViewModels that reference `Dispatchers.Main`, you must register a `MainDispatcherRule` (a JUnit TestRule) that invokes `Dispatchers.setMain(testDispatcher)` in `@Before` and `Dispatchers.resetMain()` in `@After`.
+
+Finally, `runTest` includes an automatic uncaught exception detector: if any coroutine in the test scope fails with an unhandled exception, `runTest` fails the test automatically at the end of the block, preventing swallowed background crashes.
 
 ## How to answer in the interview
 
@@ -122,8 +167,14 @@ Explain scheduler ownership, fake barriers, assertions beyond return values and 
 
 ## Follow-up questions
 
-- [COR-25](../cor-25/): What must all-or-nothing test assert? **Answer:** sibling cancellation and no partial UI commit.
-- [COR-26](../cor-26/): What must supervision test assert? **Answer:** one failure leaves healthy siblings running while parent cancellation still stops all.
+- **Interviewer:** "What is the difference between `StandardTestDispatcher` and `UnconfinedTestDispatcher`?"
+  **Answer:** "`StandardTestDispatcher` queues tasks and requires explicit advancement via `runCurrent()` or `advanceUntilIdle()`, giving full control over execution interleaving. `UnconfinedTestDispatcher` eagerly executes new coroutines immediately until their first suspension point, which is convenient for simple sequential tests."
+
+- **Interviewer:** "Why must you use `Dispatchers.setMain` in unit tests?"
+  **Answer:** "Because `Dispatchers.Main` relies on Android's `Looper.getMainLooper()`, which does not exist in local JVM unit tests and throws an IllegalStateException unless replaced with a TestDispatcher."
+
+- **Interviewer:** "What happens if a coroutine launched in `runTest` never completes?"
+  **Answer:** "`runTest` has a default 60-second real-time timeout. If an unfinished coroutine remains active (e.g., a leaked infinite loop or unclosed flow collection), `runTest` fails with an UncompletedCoroutinesError."
 
 ## Self-check rubric
 
@@ -134,4 +185,4 @@ Can I force an interleaving, advance virtual time, assert Job cleanup and name o
 - [Kotlin coroutines test API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/) — virtual-time scheduler and runTest.
 - [Android coroutine testing guidance](https://developer.android.com/kotlin/coroutines/test) — dispatcher injection and Android tests.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

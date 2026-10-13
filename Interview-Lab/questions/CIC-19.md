@@ -23,11 +23,44 @@ The app release pipeline deploys the wrong flavor. How do you prevent recurrence
 
 ## Explanation in Arabic
 
-لو pipeline نشر wrong flavor، أولًا نوقف rollout ونفهم هل التطبيق اتصل بbackend غلط أو حمل keys/permissions غير مناسبة. بعدين نفحص variant task، artifact metadata، applicationId، signing cert، host وPlay track. الإصلاح مش تغيير اسم job فقط؛ CI لازم تعمل assertion على الـbuilt AAB قبل upload، وتربط target environment بmetadata موثوقة.
+نشر خط أنابيب الـ CI/CD نكهة خاطئة (مثل نشر نسخة الـ Staging أو الـ Dev إلى مسار الإنتاج في المتجر). كيف تمنع تكرار هذه الكارثة نهائياً؟
+
+1. تحليل السبب الجذري (Root Cause Analysis - RCA):
+   - **1. غموض في أسماء المهام (Ambiguous Tasks)**: تشغيل أمر عام مثل `./gradlew bundleRelease` في مشروع يحتوي على نكهات، مما يجعل Gradle يبني نكهة عشوائية أو أول نكهة معرفة أبجدياً.
+   - **2. استخدام مسارات عامة (Wildcard Artifacts)**: كتابة مسار مثل `app/build/outputs/bundle/*/*.aab` في أداة الرفع، فتقوم برفع أول ملف تجده في المجلد.
+   - **3. أخطاء في تكوين الـ CI**: عدم مطابقة فرع البناء مع متغيرات البيئة الصحيحة.
+
+2. آليات المنع والحماية الهندسية الصارمة:
+   - **1. أسماء مهام صريحة ومحددة بالكامل**: استخدام `./gradlew bundleProdRelease` دائماً بدلاً من المهام العامة.
+   - **2. فحص ما قبل النشر (Pre-Flight Verification Gate)**: كتابة مهمة فحص في الـ CI تقوم بفك حزمة الـ AAB وفحص الـ Manifest للتأكد قطيعاً من أن `package_name` يطابق تطبيق الإنتاج الرسمي وليس `.dev` أو `.staging`.
+   - **3. التحقق من `BuildConfig` وثوابت البيئة**: فحص أن `BuildConfig.BUILD_TYPE == "release"` و `BuildConfig.FLAVOR == "prod"`.
+   - **4. مسار ملفات حصري بدون Wildcards**: تحديد مسار الـ AAB الدقيق: `app/build/outputs/bundle/prodRelease/app-prod-release.aab` وإفشال البناء فوراً إذا لم يكن الملف في هذا المسار الدقيق.
 
 ## Practical walkthrough
 
-لو AAB اتوقّع بمفتاح غلط، أوقف promotion واعرف هل upload اترفض أم وصل track وأي مستخدم استلمه. فرّق بين upload key وapp signing key في Play App Signing؛ إجراءات الاسترداد مختلفة ولا ينفع تفترض استبدال مفتاح تطبيق منشور ببساطة. راجع CI secret reference وfingerprint قبل الرفع، اعزل credential الخطأ، ثم ابنِ artifact صحيح بهوية source/version مناسبة حسب حالة الرفع. لازم incident log يحفظ ماذا نُشر فعلًا.
+إعداد مهمة فحص برمجية في Gradle أو CI للتحقق من هوية الـ AAB قبل رفعه لـ Google Play:
+```bash
+# خطوة فحص صارمة في GitHub Actions قبل النشر:
+- name: Verify Production Artifact Integrity
+  run: |
+    AAB_PATH="app/build/outputs/bundle/prodRelease/app-prod-release.aab"
+    
+    # 1. التأكد من وجود الملف في المسار الدقيق الخاص بنكهة الإنتاج:
+    if [ ! -f "$AAB_PATH" ]; then
+      echo "CRITICAL ERROR: Production AAB not found at expected path!" && exit 1
+    fi
+    
+    # 2. فحص الـ Package Name داخل الـ Manifest باستخدام bundletool لمنع نكهات dev أو staging:
+    PACKAGE_NAME=$(bundletool dump manifest --bundle="$AAB_PATH" | grep 'package=' | head -n 1)
+    echo "Inspected Package: $PACKAGE_NAME"
+    
+    if [[ "$PACKAGE_NAME" == *".dev"* ]] || [[ "$PACKAGE_NAME" == *".staging"* ]]; then
+      echo "FATAL: Staging or Dev flavor detected in release artifact! Aborting deployment!"
+      exit 1
+    fi
+    
+    echo "SUCCESS: Verified genuine production artifact. Proceeding to Play Store deployment."
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +84,33 @@ Postmortem records root cause, affected installs, data exposure assessment and g
 
 ## Interview answer — short
 
-“I halt rollout, assess installed impact, then add a pre-upload assertion on the actual AAB’s package, host, signing, variant and target track. Tests must cover the artifact that ships.”
+Prevent wrong flavor deployments by eliminating wildcard artifact paths, invoking fully qualified Gradle tasks (bundleProdRelease), implementing an automated pre-flight verification step using bundletool to assert the production package ID, and isolating deployment workflows into protected branch-restricted pipelines.
 
 ## Interview answer — structured
 
-“Wrong-flavor publishing is an artifact-selection and environment-boundary failure. I stop new distribution, assess whether users reached the wrong backend, and inspect the tested versus uploaded hashes. The pipeline then binds one explicit Gradle task to one output path, verifies applicationId, endpoint, signing identity and Play app/track, and rejects any mismatch. Separate backend/provider accounts and staged rollout limit damage.”
+Preventing accidental flavor misdeployment requires eliminating ambiguity across build scripts, artifacts, and CI gates:
+
+1. **Explicit Fully-Qualified Gradle Invocations**:
+   - Ban generic tasks like `./gradlew bundle` or `./gradlew assembleRelease` in release workflows. Always invoke explicit variant tasks such as `./gradlew bundleProdRelease`.
+
+2. **Eliminate Wildcard Artifact Patterns**:
+   - Remove patterns like `build/outputs/bundle/*/*.aab` in deployment steps. Hardcode the exact deterministic artifact path: `app/build/outputs/bundle/prodRelease/app-prod-release.aab`, failing the build immediately if the expected path is missing.
+
+3. **Pre-Flight Manifest & Bytecode Inspection**:
+   - Implement an automated pre-deployment verification step. Use Google's `bundletool` CLI to inspect the generated AAB manifest, asserting that the package name matches `com.company.app` and does not contain `.dev` or `.staging` suffixes, and verifying that the signing certificate matches the production upload fingerprint.
+
+4. **Branch & Environment Decoupling**:
+   - Decouple CI pipelines: staging deployment workflows only trigger on the `develop` branch with staging credentials, while production deployment workflows trigger solely on protected release tags with production credentials.
 
 ## Interview answer — deep senior
 
-“First I contain the release: stop promotion and establish whether the bundle was rejected, accepted only into an internal track, or reached users. I compare the uploaded certificate fingerprint with the expected upload identity and distinguish it from the app-signing key managed by Play App Signing. Those keys have different roles and recovery procedures, so I follow the store’s current documented flow rather than assuming I can replace a production signing key at will. I inspect the trusted CI job, secret reference and artifact provenance, revoke or rotate a compromised credential if needed, and rebuild from the intended protected commit. I validate package ID, version code and signing fingerprint before another upload, then test install/update on the relevant track. A wrong key may be a configuration mistake or an intrusion signal, so audit logs and access review matter. I preserve evidence of which artifact, if any, users received and communicate a correction plan based on that fact.”
+From an operational reliability and post-mortem perspective, defense against misconfiguration involves structural guarantees:
+
+1. **Automated Smoke Testing via Internal Track**: Even with manifest verification, mandate that the deployed AAB lands on the Google Play Internal Testing track first. An automated smoke test on Firebase Test Lab or an internal canary group tests that the app connects to production endpoints and returns 200 OK before the release is promoted to general production.
+
+2. **Compile-Time Safety via Gradle Variant Filters**: If a specific flavor/buildType combination should never exist (e.g. `devRelease` or `prodDebug`), eliminate it entirely using `androidComponents.beforeVariants`: disable invalid variants so running an incorrect task fails instantly with 'Task not found'.
+
+3. **Audit Trail and Telemetry**: Log the build SHA, release variant name, and signer fingerprint into the CI summary dashboard, guaranteeing transparency and immediate detection if unexpected parameters were supplied.
 
 ## How to answer in the interview
 
@@ -75,8 +126,11 @@ Prompt for tested/uploaded hash, actual AAB inspection, endpoint tuple, already-
 
 ## Follow-up questions
 
-- [CIC-16](../cic-16/): What are flavor dimensions? **Answer:** environment variants with explicit application/host identity.
-- [CIC-14](../cic-14/): Does halt undo install? **Answer:** no; plan mitigation for installed cohort.
+- **Interviewer:** "How can you disable invalid variant combinations like `prodDebug` in Gradle?"
+  **Answer:** "Using `androidComponents.beforeVariants`, filter variants matching flavor 'prod' and buildType 'debug' and call `enabled = false`."
+
+- **Interviewer:** "Why is using wildcard paths like `bundle/*/*.aab` dangerous in CI deployment steps?"
+  **Answer:** "If an earlier task built a dev or staging AAB, the wildcard may pick and deploy the wrong file to production."
 
 ## Self-check rubric
 
@@ -87,4 +141,4 @@ Specify variant identity assertions in build metadata and pre-publish gates; dem
 - [Android build variants](https://developer.android.com/build/build-variants) — variant configuration.
 - [Android App Bundle](https://developer.android.com/guide/app-bundle) — packaged artifact.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

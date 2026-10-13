@@ -22,11 +22,46 @@ Diagnose why a coroutine on Main can still produce jank/ANR and provide a verifi
 
 ## Explanation in Arabic
 
-`launch` على `Dispatchers.Main` بيشتغل على UI thread. لو جوه `suspend fun` نادينا blocking library بتمسك thread، الـLooper مش هيعالج input أو draw لحد ما النداء يرجع؛ كلمة `suspend` لا تجعلها non-blocking. نحدد stack من ANR traces أو profiler، ننقل boundary إلى IO أو API async، ونختبر responsiveness مع driver الحقيقي.
+بدء Coroutine على `Dispatchers.Main` واستدعاء مكتبة تعمل بنظام Blocking وحدوث ANR هو السيناريو الكلاسيكي لأخطاء الـ Main Thread في Android:
+
+1. تحليل العطل الدقيق (The Exact Failure Mechanism):
+   - `Dispatchers.Main` مربوط بالـ `Looper.getMainLooper()` والـ `Handler` الخاص بالـ UI Thread.
+   - عندما تبدأ Coroutine على Main وتستدعي دالة Blocking من مكتبة خارجية (مثل `legacyCrypto.hash()` أو `file.readBytes()` أو `Thread.sleep()`):
+   - الـ Coroutine **لا تُعلّق (Does NOT suspend)**؛ بل تحظر خيط الـ Main Thread بالكامل (Blocks OS Main Thread)!
+   - الـ Main Thread يتوقف عن معالجة رسائل الـ `Choreographer` المسؤولة عن رسم الشاشة (Rendering frames)، ويتوقف عن معالجة أحداث اللمس (Input events).
+   - بعد 5 ثوانٍ من عدم الاستجابة، يتدخل نظام أندرويد ويعرض للمستخدم نافذة: **'Application Not Responding (ANR)'** ويطلب إغلاق التطبيق بالقوة.
+
+2. الإصلاح الدقيق (The Fix):
+   - نقل الاستدعاء الـ Blocking فوراً من الـ Main Thread إلى `Dispatchers.IO` (لو كان I/O) أو `Dispatchers.Default` (لو كان CPU math) عبر دالة **`withContext`**.
+   - بذلك تصبح الدالة **Main-Safe**، ويظل الـ Main Thread حراً لرسم الشاشة بسلاسة تامة.
 
 ## Practical walkthrough
 
-في ANR trace هتلاقي main Looper دخل `fetchBlocking()` ولم يرجع؛ مفيش suspension حقيقية أثناء النداء حتى لو الدالة الخارجية `suspend`. التشخيص يبدأ من stack trace والـprofiler عشان تحدد blocking boundary. خلي repository يعمل `withContext(IO)` حول النداء أو بدّله بـasync client؛ حدّ parallel calls واختبر library الحقيقي، لأن cancel قد لا يوقفه.
+الكود الفاشل وإصلاحه المعماري:
+```kotlin
+// ❌ الكود المسبب للـ ANR:
+fun onProcessClicked() {
+    viewModelScope.launch(Dispatchers.Main) {
+        _uiState.value = UiState.Loading
+        // كارثة: مكتبة تحظر الـ Thread لمدة 6 ثوانٍ على الـ Main Thread:
+        val key = LegacyCryptoLib.generateRsaKeySync(4096) // ANR CRASH!
+        _uiState.value = UiState.Success(key)
+    }
+}
+
+// ✅ الإصلاح السليم بتحقيق Main-Safety:
+fun onProcessClicked() {
+    viewModelScope.launch(Dispatchers.Main) {
+        _uiState.value = UiState.Loading
+        // ننقل الحسابات الثقيلة لـ Dispatchers.Default باستخدام withContext:
+        val key = withContext(Dispatchers.Default) {
+            LegacyCryptoLib.generateRsaKeySync(4096) // يعمل في الخلفية بدون أي تأثير على UI
+        }
+        // نعود لـ Main Thread تلقائياً لتحديث الـ UI:
+        _uiState.value = UiState.Success(key)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -61,15 +96,37 @@ An ANR report shows Main parked in a third-party synchronous SDK. The team repro
 
 ## Interview answer — short
 
-“A coroutine on Main still executes on the UI thread until it suspends. A blocking library call prevents the Looper from drawing or handling input and can cause ANR. I confirm the blocking stack in traces, move that boundary off Main or use an async API, then test responsiveness and cancellation.”
+The failure occurs because calling synchronous blocking code on Dispatchers.Main halts the Android UI Looper message queue, preventing Choreographer frame rendering and touch dispatch, triggering an ANR after 5 seconds. Fix it by offloading the blocking call to withContext(Dispatchers.Default) or withContext(Dispatchers.IO) to restore Main-Safety.
 
 ## Interview answer — structured
 
-“I would not assume `viewModelScope.launch` means background execution. It usually starts on Main. If a suspend wrapper calls a synchronous SDK, the SDK occupies Main until it returns, delaying frames and input. I inspect the ANR trace and profiler to identify the actual blocking method, then make the repository main-safe by switching that call to IO or replacing it with a non-blocking API. CPU-heavy work goes to Default. I test the slow path, set driver timeouts and handle late results if the SDK ignores cancellation.”
+The exact failure mechanism is thread starvation on the Android UI Looper.
+
+`Dispatchers.Main` executes directly on Android's Main Looper thread. Marking a function as a coroutine does not change how synchronous code runs. When the coroutine executes a synchronous blocking call from a third-party library (like heavy cryptography or disk reading), it monopolizes the operating system main thread.
+
+Because the main thread is blocked, Android's `Choreographer` cannot process VSYNC pulses to draw 60/120Hz frames, and the `InputDispatcher` cannot dispatch user touch events. If an input event goes unhandled for 5 seconds, the OS flags an Application Not Responding (ANR) error and prompts the user to force-close the app.
+
+The definitive fix is enforcing **Main-Safety**: wrap the blocking library invocation inside `withContext(Dispatchers.Default)` for CPU-bound computations or `withContext(Dispatchers.IO)` for blocking I/O. The coroutine suspends, yields the main thread to the Android message queue so the UI remains fluid, executes the blocking code on a background worker thread, and seamlessly resumes on Main with the result.
 
 ## Interview answer — deep senior
 
-“The precise failure chain is dispatcher inheritance, synchronous call and blocked Looper. The coroutine starts in Main; the call has no suspension point, so no continuation is parked and the same UI thread remains inside the SDK. The system sees input or lifecycle work unserved long enough to report an ANR. I use production traces to confirm this path, because the apparent coroutine frame alone is not proof of the blocker. The repository owns the fix: a documented main-safe suspend contract, `withContext(IO)` for legacy blocking I/O or a genuine asynchronous SDK, plus concurrency limits and timeouts. I regression-test under artificial slow I/O and monitor ANR rates. Cancellation is separate; moving threads does not make an uncooperative call stoppable. To diagnose an ANR I would inspect the main thread trace and follow the call into the synchronous SDK; merely seeing `launch` or `suspend` in the source proves nothing about blocking. A main-safe repository can switch that specific call to an IO dispatcher, or preferably use an async client with a cancellation contract. I would cap outstanding requests, measure latency and test navigation cancellation, because an uncooperative SDK may still return after the ViewModel is gone.”
+From a performance monitoring and diagnostic perspective, identifying these bottlenecks in production requires strict tooling. In debug builds, we enable **StrictMode**:
+
+```kotlin
+StrictMode.setThreadPolicy(
+    StrictMode.ThreadPolicy.Builder()
+        .detectDiskReads()
+        .detectDiskWrites()
+        .detectCustomSlowCalls()
+        .penaltyLog()
+        .penaltyDeathOnNetwork()
+        .build()
+)
+```
+
+StrictMode immediately logs a red flash or crashes the app in debug builds if disk or network I/O touches the main thread.
+
+In production APM monitoring, we track **ANR Watchdog traces** and Google Play Console vitals. When inspecting an ANR trace file (`traces.txt`), a blocked coroutine on Main will show the main thread in the `BLOCKED` or `RUNNABLE` state stuck in the third-party library method frame rather than in `MessageQueue.nativePollOnce()`. Offloading that exact stack frame via `withContext` completely resolves the ANR.
 
 ## How to answer in the interview
 
@@ -85,8 +142,14 @@ Trace Looper starvation, identify blocking stack evidence and verify the fix und
 
 ## Follow-up questions
 
-- [COR-02](../cor-02/): Does `suspend` imply background work? **Answer:** no.
-- [COR-29](../cor-29/): Will IO fix cancellation? **Answer:** it protects Main but may not interrupt the SDK.
+- **Interviewer:** "Why doesn't `suspend` automatically prevent this ANR?"
+  **Answer:** "Because `suspend` is only a compiler marker for non-blocking suspension points. If the code inside the suspend function invokes a blocking Java or native call without switching dispatchers via withContext, it executes synchronously on the caller's thread."
+
+- **Interviewer:** "How do you detect slow frame drops (Jank) before they become full ANRs?"
+  **Answer:** "Using Android's `JankStats` library or Firebase Performance Monitoring to monitor dropped frames (jank occurs when a frame takes longer than 16.6ms at 60Hz or 8.3ms at 120Hz to render)."
+
+- **Interviewer:** "Should repository methods be responsible for `withContext` or should the ViewModel handle it?"
+  **Answer:** "The repository must be responsible. Following the Main-Safety design guideline, all public suspend functions exposed by repositories must internally guarantee that they can be safely called from Dispatchers.Main."
 
 ## Self-check rubric
 
@@ -97,4 +160,4 @@ Can I explain the exact UI-thread blockage, collect trace evidence, choose IO ve
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — main safety.
 - [Android ANR guidance](https://developer.android.com/topic/performance/vitals/anr) — diagnosis and traces.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

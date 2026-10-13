@@ -23,11 +23,40 @@ How do you mentor junior developers and improve team engineering practice?
 
 ## Explanation in Arabic
 
-Mentoring junior مش مجرد review comments أو pair programming مرة. نعرف مستوى الشخص وهدفه، ندي مهمة بحدود واضحة ومساحة قرار، نعمل pair في نقطة صعبة، وfeedback محدد على reasoning/tests. نرفع المسؤولية تدريجيًا ونبني team practice زي design review، test examples، incident learning. ما نخليش mentoring يتحول لاعتماد دائم على senior.
+كيف تقوم بتوجيه المطورين المبتدئين (Mentoring Juniors) ورفع المستوى الهندسي العام للفريق (Engineering Excellence)؟
+
+1. دور الـ Senior الحقيقي:
+   - الـ Senior لا يُقاس بعدد أسطر الكود التي يكتبها بمفرده، بل بـ **مضاعفة إنتاجية وقدرات زملائه في الفريق (Force Multiplier)**.
+   - إعطاء الحل المباشر للمبتدئ يجعله معتمداً عليك دائماً؛ التوجيه الحقيقي يعلمه **كيف يفكر كمهندس، وكيف يقرأ الـ Stacktrace، وكيف يختبر افتراضاته بنفسه**.
+
+2. استراتيجيات التوجيه الفردي (Mentorship Tactics):
+   - **1. البرمجة الثنائية الموجهة (Pair Programming with Driver/Navigator)**: المبتدئ هو من يكتب الكود على لوحة المفاتيح (Driver)، بينما الـ Senior يوجه ويسأل أسئلة تحفيزية (Navigator).
+   - **2. جلسات 1:1 منتظمة مع خطة نمو واضحة**: مراجعة التحديات التي تواجهه، واقتراح كتب أو مقالات أو أجزاء من الكود لدراستها وتطبيقها.
+   - **3. تشجيع الاستكشاف في بيئة آمنة**: السماح له بارتكاب أخطاء في الـ PR وتوجيهه لاكتشافها عبر الاختبارات دون إحراج.
+
+3. رفع المستوى الهندسي للفريق ككل (Team Excellence):
+   - **ورش عمل داخلية (Tech Talks / Lunch & Learns)**: مشاركة أحدث الأدوات (مثل Compose Performance, Baseline Profiles).
+   - **توثيق المعمارية وقرارات التصميم (ADRs & Guidelines)**: كتابة وثائق واضحة في الـ Wiki حتى لا تظل المعرفة حكراً على شخص واحد (Eliminating the Bus Factor).
+   - **توحيد معايير الـ PRs**: إعداد قوالب للـ PR تفرض كتابة خطوات الاختبار وإرفاق صور للـ UI.
 
 ## Practical walkthrough
 
-الmentoring مش إن senior يكتب الكود بدل junior. خليه يشرح invariant في PR، مثل “لا نكرر charge بعد timeout”، ثم اعمل pair على test يثبت failure، وبعدها سيبه ينفذ مع feedback محدد. اكتب decision record أو مثال repo عشان المعرفة تبقى للفريق. قيّم التقدم باستقلالية القرار وجودة tests وتقليل إعادة العمل، مش بعدد التعليقات. لو الخطأ يمس security/payment، تدخل مباشرة لحماية المستخدم مع شرح السبب والتعلم.
+إطار عمل لجلسة توجيه عملية (Mentoring Framework) ونموذج الـ Socratic Method:
+```markdown
+### سيناريو توجيه واقعي:
+المبتدئ: "الـ App بيكراش في الشاشة دي ومش عارف ليه، ممكن تساعدني أصلحه؟"
+
+❌ رد خاطئ من Senior متعالٍ:
+"أنت ناسي تحط nullable check في السطر ده، حط ?.let وهيشتغل."
+
+✅ الرد الاحترافي التوجيهي (Socratic Method):
+الـ Senior: "تعال نبص سوا على الـ Logcat. افتح الـ Stacktrace... إيه أول سطر مكتوب فيه كود يخص مشروعنا؟"
+المبتدئ: "السطر 42 في ProfileViewModel."
+الـ Senior: "ممتاز! نوع الـ Exception إيه؟"
+المبتدئ: "NullPointerException على user.email."
+الـ Senior: "عظيم، تفتكر ليه user.email ممكن يرجع null من السيرفر في الحالة دي؟ وإزاي نخلي الـ ViewModel يعالج الحالة دي بأمان في الـ Unit Test قبل ما نعدل الكود؟"
+```
+النتيجة: تعلم المبتدئ كيفية قراءة الـ Logcat، واستنتاج السبب الجذري، وكتابة اختبار لمنع تكرار الخطأ.
 
 ## Why it matters and how it works
 
@@ -51,15 +80,33 @@ Measure progress via independent delivery, fewer repeated review findings, test 
 
 ## Interview answer — short
 
-“I mentor with clear goals, scoped ownership, concrete feedback and increasing independence. I improve team habits through examples, reviews and incident learning rather than making myself a bottleneck.”
+Mentor junior engineers by acting as a force multiplier: use the Socratic method to guide problem-solving rather than handing out answers, pair-program with juniors at the keyboard, and provide safe psychological environments for learning. Elevate team practice through internal tech talks, architectural documentation (ADRs), and clear engineering standards.
 
 ## Interview answer — structured
 
-“I start by understanding the developer’s goals and current strengths. We agree on a bounded task and quality criteria, pair on the unfamiliar part, and use review to discuss reasoning and tests rather than only edits. I then reduce support as confidence grows. For team practice, I document decisions, create good test examples and share incident lessons. I measure whether the person can own similar work independently and whether recurring defects decline.”
+Technical mentorship is the primary metric distinguishing senior engineers from individual contributors:
+
+1. **Socratic Guidance Over Handing Out Solutions**:
+   - When a junior encounters a blocker, resist writing the code for them. Use Socratic questioning to walk them through debugging: inspecting Logcat, setting conditional breakpoints, analyzing coroutine stack traces, and forming hypotheses. This builds independent problem-solving capability.
+
+2. **Pair Programming Dynamics**:
+   - Practice Driver-Navigator pairing where the junior developer holds the keyboard ('Driver') while the senior navigates high-level design and tests ('Navigator'). This forces active cognitive participation.
+
+3. **Structured Growth and Psychological Safety**:
+   - Establish regular 1-on-1 engineering check-ins. Assign stretch tasks calibrated slightly above their current capability, paired with an explicit safety net of prompt, empathetic PR reviews.
+
+4. **Systemic Team-Level Elevation**:
+   - Codify tribal knowledge into written Architecture Decision Records (ADRs) and onboarding wikis to lower the Bus Factor. Host monthly internal lightning talks covering emerging Android practices (Baseline Profiles, Compose stability, KMP).
 
 ## Interview answer — deep senior
 
-“I mentor through ownership with a safe feedback loop. I start by making the engineering contract explicit—for example, a payment timeout means unknown outcome, not permission to create a new charge. I ask the developer to describe the failure case, pair on a focused test or design review, then let them implement and defend the trade-offs in their own words. My code review comments are specific about behavior and risk, not a stream of stylistic preferences. I share reusable examples and decision records so the team can apply the lesson without me present. I measure improvement by how independently they identify edge cases, communicate assumptions and ship stable changes, not by how many lines I rewrote. On a high-risk security or financial defect I intervene promptly, protect the release and explain the reasoning afterward. The trade-off is short-term throughput versus long-term team capacity; good mentoring creates both competence and accountability without pretending all mistakes are equally safe to learn in production.”
+From an organizational health and team culture perspective, leadership creates high-trust environments:
+
+1. **Normalizing Vulnerability and Mistakes**: Senior leaders build psychological safety by openly discussing their own past production mistakes and refactoring missteps. When a junior sees a staff engineer say 'I was wrong about that architecture approach, let's pivot', it eliminates imposter syndrome and encourages transparency.
+
+2. **Delegating Architectural Ownership**: The ultimate test of mentorship is delegation. Identify promising mid-level engineers and assign them ownership of an entire technical epic (e.g. migrating SharedPreferences to Jetpack DataStore), coaching them from behind the scenes on writing the RFC and coordinating with stakeholders.
+
+3. **Establishing Objective Career Ladders**: Partner with engineering management to map clear competencies (Junior -> Mid -> Senior). Ensure mentees understand what behaviors (code quality, communication, system design, initiative) are required for their next career milestone.
 
 ## How to answer in the interview
 
@@ -75,8 +122,11 @@ Prompt for learner goal, graduated scope, concrete feedback, team metric and saf
 
 ## Follow-up questions
 
-- [LEAD-02](../lead-02/): What makes review educational? **Answer:** precise failure reasoning and actionable test suggestion.
-- [LEAD-14](../lead-14/): How improve legacy team practice? **Answer:** safe seams and shared ownership, not a rewrite mandate.
+- **Interviewer:** "Why is the junior holding the keyboard during pair programming more effective?"
+  **Answer:** "Because it forces active muscle memory and cognitive engagement, preventing passive watching and accelerating learning."
+
+- **Interviewer:** "What is the 'Bus Factor' and how does technical documentation mitigate it?"
+  **Answer:** "The minimum number of engineers that can abruptly leave the team before a project stalls; documentation distributes knowledge so projects survive departures."
 
 ## Self-check rubric
 
@@ -87,4 +137,4 @@ Give a mentoring example with a learner-owned task, timely feedback and a measur
 - [Android architecture guide](https://developer.android.com/topic/architecture) — maintainable ownership boundaries.
 - [Google code review guidance](https://google.github.io/eng-practices/review/reviewer/) — review communication.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

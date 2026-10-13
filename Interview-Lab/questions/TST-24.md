@@ -23,11 +23,52 @@ How do you gate PRs without creating an unreasonably slow pipeline?
 
 ## Explanation in Arabic
 
-PR gate هدفها feedback سريع على أخطاء التغيير، لكن السرعة لا تبرر إسقاط invariant مالي أو أمني. شغّل formatting/lint/static checks، compilation وtargeted JVM tests على كل PR؛ استخدم changed-module scope بحذر لأن shared module تؤثر على غيرها. شغّل emulator suites الأصغر على المخاطر أو merge queue، وnightly matrix للأجهزة والmigrations، مع release candidate gate لـPOS hardware/provider sandbox.
+كيف تفرض بوابات اختبار صارمة (Gate PRs) على طلبات الدمج دون التسبب في بطء مفرط وتعطيل خط الإنتاج في الـ CI/CD؟
+
+1. معضلة سرعة الـ CI مقابل دقة الاختبارات:
+   - إذا قمت بتشغيل كل اختبارات الـ Unit والاختبارات البصرية والـ End-to-End على كل PR، سيستغرق الـ CI أكثر من 40 دقيقة لكل Commit!
+   - هذا يصيب المطورين بالإحباط ويعطل إنتاجية الفريق بالكامل.
+
+2. استراتيجية البوابات متعددة المراحل (Tiered PR Gating Pipeline):
+   - **المرحلة 1: بوابة الـ PR السريعة (Fast PR Gate - أقل من 5 دقائق)**:
+     * فحص التنسيق والجودة الساكنة (ktlint, detekt, Android Lint للملفات المعدلة فقط).
+     * **اختبار الموديولات المتأثرة فقط (Affected Module Testing)**: باستخدام أدوات مثل `affected-module-detector`؛ إذا عدل المطور كود في موديول `:feature:profile`، يقوم Gradle باختبار هذا الموديول فقط متخطياً باقي الـ 40 موديول في المشروع!
+     * تشغيل اختبارات الـ Unit السريعة على الـ JVM المحلي فقط.
+   - **المرحلة 2: بوابة الدمج النهائي (Merge Queue / Pre-Merge Gate - 10-15 دقيقة)**:
+     * تُنفذ بعد موافقة الـ Reviewers وقبل دمج الكود في الـ Main branch مباشرة.
+     * تشغيل اختبارات التكامل وفحص توافق الـ APIs.
+   - **المرحلة 3: مسار الاختبارات الثقيلة الليلي (Nightly Builds / Post-Merge)**:
+     * تشغيل اختبارات الـ UI على المحاكيات (Compose / Espresso)، واختبارات لقطات الشاشة (Screenshot Tests)، والـ Macrobenchmarks بشكل مجمع في الليل دون تعطيل عمل المطورين اليومي.
 
 ## Practical walkthrough
 
-لو PR لمس transaction، شغّل backend idempotency contract فورًا حتى لو أبطأ. قِس median وp95 feedback time وأسباب failures، وقلّل setup/cache misses قبل حذف coverage. أي quarantine لها owner وexpiry؛ release لا يمر إذا اختبار حرج flaky بلا بديل.
+تكوين اختبار الموديولات المتأثرة واستخدام Gradle Build Cache في GitHub Actions للوصول لسرعة < 5 دقائق:
+```yaml
+# جزء من ملف .github/workflows/pr-gate.yml السريع:
+name: Fast PR Gate
+on: [pull_request]
+
+jobs:
+  fast-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # لجلب سجل التغييرات واكتشاف الموديولات المعدلة
+
+      - name: Setup Java Toolchain
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v3
+
+      # 1. تشغيل الفحص والاختبارات للموديولات المتأثرة فقط بـ PR Diff:
+      - name: Run Affected Unit Tests Only
+        run: ./gradlew runAffectedUnitTests -Paffected_module_detector.enable
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +92,36 @@ Publish per-stage duration, queue time, flaky rate and defect escapes. Review ga
 
 ## Interview answer — short
 
-“I run fast, high-signal checks early and parallelize them, then schedule slower device and E2E checks according to risk. Critical security/payment checks remain mandatory before release.”
+Gate PRs under 5 minutes by testing only modules impacted by the PR diff via affected-module-detector, executing fast local JVM unit tests, leveraging remote Gradle build caching, and offloading heavy on-device UI and Macrobenchmark tests to merge queues or nightly builds.
 
 ## Interview answer — structured
 
-“My PR gate usually compiles affected code, runs lint/static analysis, JVM unit tests and contracts in parallel. Slower emulator or E2E suites run by affected area, nightly or before release. I measure queue and execution time, cache deterministic dependencies, and shard device tests. A risk exception is explicit: payment idempotency or security boundary changes may require a slower required check immediately. ”
+Maintaining rigorous quality gates without degrading developer velocity requires a tiered pipeline strategy:
+
+1. **Affected Module Testing**:
+   - In a multi-module codebase (e.g. 50+ modules), running every test suite on every PR is wasteful. Use tools like **Affected Module Detector** to analyze Git diffs. If a PR touches only `:feature:checkout`, Gradle compiles and executes tests strictly for `:feature:checkout` and its direct dependents, skipping the other 45 modules.
+
+2. **Tier 1: Fast PR Feedback (< 5 Minutes)**:
+   - Target: Fast block/unblock signal for developers.
+   - Executes: Incremental static analysis (ktlint, detekt, modified-file Android Lint) and affected JVM unit tests.
+   - Powered by **Remote Gradle Build Cache**, downloading pre-compiled binaries for unaffected modules.
+
+3. **Tier 2: Merge Queue Gate (10–15 Minutes)**:
+   - Runs when a PR is approved and queued for merge.
+   - Executes full project compilation, integration contract tests, and release APK assembly smoke tests.
+
+4. **Tier 3: Asynchronous Nightly Suite**:
+   - Executes heavy, slow, or resource-intensive suites: full emulator instrumentation tests, visual screenshot diffs, and Macrobenchmark performance profiles.
 
 ## Interview answer — deep senior
 
-“I design the pipeline around both feedback latency and risk. Every PR gets fast compile, lint/static checks and focused JVM tests so developers learn quickly. A module-aware selection can help, but a shared API or build-logic change must trigger dependents; otherwise the fast path gives false confidence. I run targeted emulator tests on risky UI, database or platform changes, and a broader API/device matrix nightly or in a merge queue. A release candidate must pass migrations from supported schemas, minified startup, payment lost-response cases and any required terminal or provider sandbox verification. Some invariants are too important to defer: if a PR changes transaction identity or authorization, the backend idempotency contract gate should run immediately. I profile the critical path—dependency downloads, Gradle configuration, compilation, emulator boot and test runtime—before removing checks. I publish median and p95 feedback time alongside escape rate, because faster green builds that miss incidents are not a win. Flaky critical tests get an owner and replacement gate, not a permanent silent retry.”
+From an infrastructure optimization and developer productivity perspective, pipeline velocity relies on caching and sharding:
+
+1. **Remote Build Cache Hit Rate Optimization**: A well-tuned remote build cache achieves an 80%+ cache hit rate. Tasks like `compileKotlin` and `lint` pull outputs instantly from the shared cache. Measure and monitor cache hit rates; a drop in cache hits indicates non-deterministic task inputs.
+
+2. **Parallel Test Worker Allocation**: Configure `gradle.properties` on CI runners with `org.gradle.parallel=true` and allocate optimal test workers (`maxParallelForks = Runtime.runtime.availableProcessors() / 2`). Running independent module tests across parallel workers reduces execution wall-clock time by 60%.
+
+3. **Fail-Fast Configuration**: Configure test runners with `--fail-fast`. If an assertion fails on test 3 out of 100, Gradle terminates execution immediately, providing instant error feedback to the author rather than wasting 10 minutes completing remaining tests.
 
 ## How to answer in the interview
 
@@ -75,8 +137,11 @@ Prompt for critical path, risk-triggered checks, cache correctness, flake govern
 
 ## Follow-up questions
 
-- [CIC-20](../cic-20/): How optimize a 40-minute CI? **Answer:** profile queue/build/test critical path first.
-- [TST-23](../tst-23/): Which tests cannot be skipped? **Answer:** those proving high-impact release risks.
+- **Interviewer:** "What is Affected Module Testing?"
+  **Answer:** "A build optimization that analyzes Git commit diffs to compile and test only the specific modules changed by the PR and their downstream dependents."
+
+- **Interviewer:** "What is the benefit of the --fail-fast flag in Gradle tests?"
+  **Answer:** "It stops test execution immediately upon encountering the first test failure, saving CI runner time and accelerating developer feedback."
 
 ## Self-check rubric
 
@@ -87,4 +152,4 @@ Name a fast PR gate for compilation, focused JVM tests and static checks; place 
 - [Android CI guidance](https://developer.android.com/studio/build/building-cmdline) — command-line builds.
 - [Gradle performance](https://docs.gradle.org/current/userguide/performance.html) — build optimization.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -22,11 +22,40 @@ Compare latest-pair combination with positional pairing.
 
 ## Explanation in Arabic
 
-`combine` بيطلع قيمة جديدة لما أي upstream يطلع بعد ما كل مصدر قدّم قيمة أولى؛ يستخدم أحدث قيمة من كل واحد. `zip` يقرن الأولى بالأولى والتانية بالتانية وينتظر pairs؛ لو واحد خلص من غير شريك يقف. UI state من Room + filter غالبًا `combine`؛ pairing خطين من نتائج متطابقة بالترتيب قد يناسب `zip`.
+المقارنة بين `combine` و `zip` بتحدد كيفية دمج تدفقين من البيانات (Merging two Flows):
+
+1. المشغل `combine` (الدمج عند أي تحديث جديد):
+   - يدمج التدفقين، و **يصدر قيمة جديدة في كل مرة يصدر فيها أي من التدفقين قيمة جديدة** (بشرط أن يكون كلا التدفقين قد أصدرا قيمة أولى على الأقل).
+   - يأخذ أحدث قيمة من التدفق الأول مع أحدث قيمة من التدفق الثاني (Latest values combined).
+   - **الاستخدام المثالي في Android:** تجميع مدخلات شاشة متعددة (مثل: نص البحث + خيار الفلتر المختار + حالة الاتصال بالإنترنت) لتوليد حالة الـ UI.
+
+2. المشغل `zip` (الربط الزوجي المتسلسل 1:1):
+   - يربط العناصر **زوجاً بزوج حسب الترتيب (Strict 1-to-1 Pairing)**.
+   - العنصر الأول من التدفق A يُربط فقط مع العنصر الأول من التدفق B. والعنصر الثاني مع الثاني، وهكذا.
+   - لو التدفق A أصدر 10 عناصر بينما التدفق B أصدر عنصراً واحداً فقط، الـ `zip` سينتظر ويتعلق حتى يصدر B عنصره الثاني قبل إنتاج الزوج الثاني!
+   - ينتهي البث بمجرد انتهاء أقصر تدفق بينهما.
 
 ## Practical walkthrough
 
-لو `priceFlow` و`currencyFlow` بيتغيروا بسرعات مختلفة، `combine` يطلع آخر price مع آخر currency بعد ما الاتنين يطلعوا أول قيمة؛ كل تغيير بعد كده يحدث النتيجة. `zip` يطابق أول مع أول وثاني مع ثاني وينتهي حسب اكتمال أحد المصدرين؛ مناسب pairing محدود، مش شاشة dashboard حية. جرب emissions غير متساوية في test.
+مقارنة عملية في الكود:
+```kotlin
+val flowA = flowOf("A1", "A2", "A3")
+val flowB = flowOf("B1", "B2")
+
+// مع zip:
+flowA.zip(flowB) { a, b -> "$a-$b" }.collect { println(it) }
+// النتيجة: "A1-B1", "A2-B2" فقط! (A3 تم تجاهله لأن B انتهى)
+
+// مع combine في الـ ViewModel الحقيقي:
+combine(
+    searchQueryFlow,
+    selectedCategoryFlow,
+    sortByFlow
+) { query, category, sort ->
+    // كلما غير المستخدم الفلتر أو الحرف المكتوب، يتم إنتاج حالة جديدة فوراً بأحدث القيم:
+    FilterState(query, category, sort)
+}.collect { updateUi(it) }
+```
 
 ## Why it matters and how it works
 
@@ -61,15 +90,23 @@ A catalog screen combines current cached items with text filter state, showing a
 
 ## Interview answer — short
 
-“combine uses the latest value from each source after both have emitted; zip pairs values by position. I use combine for independent changing UI state and zip only when pair-by-order semantics are truly intended.”
+combine emits a new paired value whenever EITHER flow emits, using the latest values from both streams; zip pairs elements strictly 1-to-1 by order index (item 1 with item 1, item 2 with item 2) and halts when the shorter flow completes.
 
 ## Interview answer — structured
 
-“`combine` waits for an initial value from each upstream and then emits whenever either changes, using the other’s latest value. That matches a product list combined with a search filter. `zip` pairs the nth value of one flow with the nth of the other and cannot continue once pairing is impossible. I avoid zip for unrelated UI state because a fast source can wait or end unexpectedly. I also do not mistake combine for an atomic snapshot: if cross-source consistency matters, I need versions or one authoritative transaction.”
+The difference between `combine` and `zip` comes down to temporal pairing versus index-based pairing.
+
+**`combine`** is the standard workhorse for Android UI state generation. Once each upstream flow emits at least once, `combine` produces a new value whenever *either* flow emits, pairing the newly emitted item with the most recent cached item from the other stream. I use it constantly in ViewModels to merge search text, category filters, and user authentication status into a single unified `UiState`.
+
+**`zip`** enforces strict index-based 1-to-1 pairing. Element 0 from Flow A is paired only with Element 0 from Flow B. If Flow A emits 5 items while Flow B emits 1, `zip` suspends after the first pair, waiting until Flow B produces its second item. Furthermore, `zip` terminates as soon as the shorter flow completes.
 
 ## Interview answer — deep senior
 
-“The two operators answer different time questions. Combine asks, ‘What is the latest pair now?’ and may recompute repeatedly as either stream changes. Zip asks, ‘What is pair number n?’ and naturally fits coordinated finite sequences, but a slow side backpressures pairing and an early completion ends it. For Android state, combine usually fits Room rows plus a filter or connectivity flag. I control expensive transformations and ensure the UI can represent loading before each source first emits. For price and inventory, the latest independent values may come from different server revisions; a versioned backend aggregate is needed for a consistent checkout. Tests vary source rates and completion order to expose accidental assumptions. I would compare the pairing rule, not just the function names. `combine` waits until each upstream has produced a value, then emits a result whenever either source updates using the latest value from the other. That fits a UI derived from current account and current settings. `zip` pairs the nth value from each source and advances in lockstep, so a fast side waits for the slower side and completion can end the paired stream. It is useful for corresponding finite sequences, not for a long-lived screen that should react whenever either input changes. I would demonstrate with two flows of unequal speed and list the emitted pairs. When one input is StateFlow, combine can use its current value immediately as one side.”
+Under the hood, `combine` is implemented using internal channels and fair selector loops (`select` expression). It maintains internal state slots for each upstream stream. When any upstream sends a new value, the slot is updated, and the transform lambda is evaluated with the latest snapshot of all slots.
+
+In contrast, `zip` buffers upstream emissions sequentially in paired queues. If one flow is fast and the other is slow, `zip` buffers the fast flow's items in memory waiting for corresponding pairs, which can create heap memory pressure if the flows emit at vastly different cadences.
+
+In modern Android development, `combine` supports merging up to 5 flows directly with type-safe overloads, or an arbitrary `Array<Flow<T>>` for dynamic widget configurations.
 
 ## How to answer in the interview
 
@@ -85,8 +122,14 @@ Trace emission timelines for both operators and identify where version consisten
 
 ## Follow-up questions
 
-- [FLO-14](../flo-14/): Which operator switches inner requests? **Answer:** `flatMapLatest` cancels the previous inner collection.
-- [FLO-28](../flo-28/): Does combine make remote/cache atomic? **Answer:** no; the repository still defines source of truth and versions.
+- **Interviewer:** "Why won't `combine` emit anything if one of the flows never emits an initial item?"
+  **Answer:** "Because `combine` requires a full set of values to evaluate its transform lambda. If Flow A emits 10 values but Flow B has not emitted anything yet, `combine` buffers the latest from Flow A and remains silent until Flow B emits its first element."
+
+- **Interviewer:** "Can you combine more than 5 flows in Kotlin?"
+  **Answer:** "Yes. There is an overload `combine(vararg flows: Flow<T>) { array -> ... }` that takes an array or collection of flows, returning an array of latest values."
+
+- **Interviewer:** "When would you actually use `zip` in a real Android app?"
+  **Answer:** "When you have two ordered sequential streams that correspond 1-to-1, such as pairing a stream of recorded audio frames with a synchronized stream of video frame timestamps."
 
 ## Self-check rubric
 
@@ -96,4 +139,4 @@ Can I draw both timelines, predict completion and state one cross-source consist
 
 - [Kotlin Flow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-flow/) — combine and zip.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

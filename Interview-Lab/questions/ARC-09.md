@@ -22,11 +22,53 @@ Separate durable business facts from screen-specific rendering and interaction s
 
 ## Explanation in Arabic
 
-Domain state حقيقة تخص business زي `OrderStatus.Paid` من server أو `AccountBalance` validated. UI state هي snapshot الشاشة: loading، displayed text، selected tab، enablement، snackbar/permission prompt visibility. نفس domain value ممكن يترندر بشكل مختلف حسب locale والشاشة. UI state أحيانًا ephemeral وتختفي بعد recreation، لكن business state لازم مصدرها data layer وتترجع بعد process death. ما تعتبرش `success = true` في ViewModel دليل إن payment اتسجل؛ السيرفر مصدر الحقيقة.
+كيف تختلف حالة الواجهة (UI State) عن حالة الأعمال/النطاق (Business / Domain State)؟
+
+1. ما هي حالة الأعمال (Business / Domain State)؟
+   - تمثل الحقيقة الأساسية للبيانات والمنتج (Source of Truth) بصرف النظر عن كيفية أو مكان عرضها.
+   - أمثلة: رصيد الحساب البنكي، عناصر سلة التسوق الفعلية في قاعدة البيانات، وحالة اشتراك المستخدم (Active / Expired).
+   - تتميز بأنها: طويلة الأجل (Long-lived)، مستقلة عن أجهزة العرض وشاشات الهواتف، ولا تتغير بمجرد تفاعل بصري.
+
+2. ما هي حالة الواجهة (UI State)؟
+   - تمثل ما يراه المستخدم ويتفاعل معه على الشاشة في اللحظة الراهنة.
+   - أمثلة: هل مؤشر التحميل (Spinner) ظاهر؟ ما هو نص رسالة الخطأ المترجمة المعروضة؟ أي تبويب محدد حالياً؟ هل القائمة منسدلة (Expanded)؟ وما هو النص المكتوب في حقل البحث؟
+   - تتميز بأنها: مؤقتة (Ephemeral)، تعيش مع الشاشة، وتتأثر بالحجم والدوران ونوع الجهاز.
+
+3. لماذا يُعتبر الخلط بينهما خطأ معمارياً فادحاً؟
+   - إذا قمت بحفظ متغير مثل `isDropdownExpanded: Boolean` داخل الـ Domain Entity، فإنك لوثت بيانات البزنس بتفاصيل واجهة مستخدم مؤقتة لا معنى لها في قاعدة البيانات أو على السيرفر!
 
 ## Practical walkthrough
 
-UI state فيها loading, selected tab, error banner؛ business state مثل payment Approved/Unknown لا يجب يختفي مع Activity. UI يمكن تعرض Unknown كرسالة، لكن source of truth في repository/backend. لو تعيد UI state من saveable وحدها بعد process death، ممكن تعرض success قديم. فرّق ephemeral presentation عن durable domain outcome واختبر restart.
+توضيح الفرق العملي بين Domain State و UI State وكيف يحول الـ ViewModel بينهما:
+```kotlin
+// 1. DOMAIN STATE (حالة البزنس النقية - تعيش في Domain/Database):
+data class BankAccount(
+    val accountNumber: String,
+    val balanceCents: Long,
+    val currency: String,
+    val isOverdrawn: Boolean
+)
+
+// 2. UI STATE (حالة العرض المخصصة للشاشة - تعيش في Presentation):
+@Immutable
+data class AccountDetailsUiState(
+    val isLoading: Boolean = false,
+    val formattedBalance: String = "", // مجهزة للعرض المباشر: "-$150.00"
+    val balanceColor: Color = Color.Black, // أحمر إذا كان مكشوفاً
+    val isDepositButtonEnabled: Boolean = true,
+    val errorMessage: String? = null
+)
+
+// 3. التحويل في الـ ViewModel:
+fun BankAccount.toUiState(): AccountDetailsUiState {
+    return AccountDetailsUiState(
+        isLoading = false,
+        formattedBalance = CurrencyFormatter.format(balanceCents, currency),
+        balanceColor = if (isOverdrawn) Color.Red else Color.Green,
+        isDepositButtonEnabled = !isOverdrawn
+    )
+}
+```
 
 ## Why it matters and how it works
 
@@ -50,15 +92,31 @@ An order details screen observes Room-backed order status and composes locale-sp
 
 ## Interview answer — short
 
-Domain state is a business fact or rule, while UI state is the screen’s current renderable snapshot. ViewModel maps one into the other, and durable facts come from the data source of truth rather than a UI flag.
+Business/domain state represents persistent, presentation-independent business facts (e.g. account balance, cart items in DB). UI state represents transient, presentation-specific rendering requirements (e.g. loading spinners, active tab indexes, formatted strings, and error banners).
 
 ## Interview answer — structured
 
-An order can be `Pending` in the domain while one screen shows a spinner and another shows a status badge. Those visual choices are UI state. Domain state carries facts that other features and the server care about; UI state carries display text, selection, loading, and interaction flags. I map between them in a state holder and restore durable facts from the repository after process death. A local success animation never becomes proof of a completed payment. In a checkout screen, a pending server transaction can display a spinner, a status badge, or a retry-disabled button depending on the screen. Those are projections, while the request ID and confirmed status are domain data. I keep the projection recomputable.
+Distinguishing between UI state and Business/Domain state is a cornerstone of clean separation of concerns.
+
+1. **Business / Domain State**:
+   - Represents core domain truth and invariants independently of how or whether data is displayed.
+   - Examples: A user's remaining credit balance, an authentication token, or an order's fulfillment status.
+   - Maintained in data/domain layers, often backed by local databases (Room) or remote servers. It survives Activity destructions and app process restarts.
+
+2. **UI State (Presentation State)**:
+   - Represents the visual rendering of the screen at a specific instant.
+   - Examples: Whether a loading indicator is spinning, active text field inputs, whether an accordion item is expanded, or localized error strings.
+   - Scoped to the UI lifecycle (ViewModel or Composable) and ephemeral in nature.
+
+The ViewModel acts as the transformer: it observes long-lived domain state, applies presentation logic, and projects it into formatted, immutable `UiState` snapshots.
 
 ## Interview answer — deep senior
 
-I separate lifetime and authority. Domain data such as an account balance or payment status should be validated and obtained from the app’s data layer, with server authority where appropriate. UI state is a projection for one screen; it may include localized strings, transient loading, selected tab, or whether a button is enabled. Some UI state deserves SavedStateHandle restoration, while other effects can be derived anew. Conflating them causes bugs: a local Boolean can masquerade as a payment result, or a formatted string can be used as a monetary amount. I model domain transitions explicitly, use the repository as source of truth, and let each ViewModel derive its own immutable UI state. Tests verify both policy and rendering separately. I also consider restoration separately. A selected tab might be saved in a SavedStateHandle, while a confirmed payment must come from repository/server state after recreation. If the ViewModel merely remembers a Boolean, process death can erase or falsely preserve a conclusion. Tests should cover mapping the same domain state into different screen models and should verify that transport uncertainty never becomes a paid UI state. This separation protects both UX and business correctness.
+A frequent architectural defect is leaking UI state down into domain repositories or databases. For example, adding `var isSelected: Boolean` or `var isExpanded: Boolean` directly onto a database entity or domain model corrupts pure business definitions with transient UI concerns. If that entity is reused across a notification service, widget, or background sync worker, those UI properties are completely meaningless and cause data corruption bugs.
+
+Conversely, storing domain business rules inside UI state creates duplicate logic across screens. For instance, checking if an account is eligible for a loan must be evaluated in a domain Use Case, not computed ad-hoc within a composable's `UiState` mapping lambda.
+
+In testing, domain state is tested via assertions on repository updates, whereas UI state is tested by asserting that domain events produce expected visual states in `StateFlow`.
 
 ## How to answer in the interview
 
@@ -74,8 +132,11 @@ Contrast durable order status with a screen spinner, selected tab, and localized
 
 ## Follow-up questions
 
-- [ARC-10](../arc-10/): Where does durable order status live? **Answer:** in a data source of truth, not only a ViewModel flag.
-- [ARC-11](../arc-11/): What belongs in UI state? **Answer:** loading, content, empty/error display and interaction status.
+- **Interviewer:** "Can UI state exist without domain state?"
+  **Answer:** "Yes. Purely transient UI states—like an accordion expansion toggle, a dialog visibility flag, or animation progress—are UI states that have zero backing domain state."
+
+- **Interviewer:** "Where should the formatting of a date timestamp (Long to String) occur?"
+  **Answer:** "In the Presentation layer (ViewModel or Presentation Mapper). Formatting depends on device locale and UI display rules, which have no place in the pure domain layer."
 
 ## Self-check rubric
 
@@ -86,4 +147,4 @@ Give two domain facts and two UI-only fields, then explain how a ViewModel deriv
 - [Android state holders](https://developer.android.com/topic/architecture/ui-layer/stateholders) — screen UI state versus data.
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — application data ownership.
 
-Technically reviewed against the linked official Android architecture guidance on 2026-10-11. Conceptual flows and snippets are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

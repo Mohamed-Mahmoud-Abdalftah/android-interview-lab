@@ -24,11 +24,51 @@ What is idempotency, and why does it matter for financial transactions?
 
 ## Explanation in Arabic
 
-Idempotency معناها إن تكرار نفس العملية بالـidentity نفسها ما يعملش أثر مالي جديد كل مرة. الـnetwork ممكن تبعت request والـserver تنفذها وبعدين الرد يضيع؛ العميل يشوف timeout لكنه ما يعرفش هل الدفع نجح. لو رجّع request بمفتاح جديد، ممكن يخصم مرتين. عشان كده العميل يحتفظ بـoperation ID ثابت ويعيده، والـserver يطبّق سياسة idempotency ومعاها status lookup وreconciliation. ده يدي at-least-once delivery مع business effect محمي، مش وعد إن الـHTTP request اتنفذت مرة واحدة بالضبط.
+ما هي خاصية الـ Idempotency (اللاتكرارية)، ولماذا تعتبر أمراً حيوياً وإلزامياً في المعاملات المالية؟
+
+1. ما هو الـ Idempotence في علوم الحاسوب والشبكات؟
+   - هو خاصية تعني أن **تنفيذ نفس العملية عدة مرات ينتج نفس النتيجة تماماً دون أي آثار جانبية إضافية (Side-effects)**.
+   - رياضياً: $f(f(x)) = f(x)$.
+   - في بروتوكول HTTP: طلبات `GET` و `PUT` و `DELETE` تعتبر Idempotent افتراضياً، بينما طلبات `POST` (المستخدمة في الدفع) **ليست Idempotent بطبيعتها** وتنشئ مورداً جديداً مع كل استدعاء إذا لم يتم تأمينها!
+
+2. لماذا تعتبر قاتلة في التطبيقات المالية؟
+   - تخيل عميلاً يضغط زر "ادفع 100 دولار".
+   - يرسل التطبيق الطلب، ويخصم البنك 100 دولار من الحساب، ولكن شبكة الجوال تسقط قبل أن تعود الاستجابة إلى هاتف العميل (HTTP Timeout).
+   - يرى العميل شاشة تحميل متوقفة، فيضغط الزر مرة ثانية!
+   - إذا لم يكن النظام Idempotent: سيخصم البنك 100 دولار أخرى (Double Charge)! ويفقد العميل ثقته في التطبيق وتتعرض الشركة لغرامات نزاعات الدفع (Chargebacks).
+
+3. كيف تعمل تقنية الـ Idempotency Key؟
+   - يولد التطبيق **معرفاً عشوائياً فريداً عالمياً (UUID v4)** ويخزنه محلياً مع الطلب.
+   - يرسل هذا المعرف في ترويسة الطلب: `Idempotency-Key: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d`.
+   - يقوم خادم الدفع (Payment Gateway مثل Stripe) بتخزين المفتاح في Redis. إذا استلم نفس المفتاح مرة أخرى خلال 24 ساعة، **لا ينفذ الخصم ثانية**، بل يعيد نفس الاستجابة المخزنة مسبقاً فوراً!
 
 ## Practical walkthrough
 
-مثال عملي: العميل ضغط Pay مرة، الـserver نفذت charge لكن response ضاعت. قبل retry، العميل يقرأ intent المحفوظة ويرجع بنفس key ونفس amount/currency، مش UUID جديدة. لو provider dedupe window انتهت، نفس key وحدها مش ضمان؛ status lookup وledger reconciliation لازم يسبقوا إعادة الإرسال. في Stripe API v1 تحديدًا أول نتيجة محفوظة ممكن تكون `500`، فمتفسرش replay كنجاح.
+تطبيق نمط الـ Idempotency Key في كود كوتلن باستخدام OkHttp Interceptor:
+```kotlin
+// Interceptor يضمن إرفاق Idempotency-Key فريد ومحفوظ محلياً لكل معاملة مالية:
+class IdempotencyInterceptor(private val transactionDao: TransactionDao) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+
+        // فحص ما إذا كان الطلب معاملة مالية حساسة تتطلب Idempotency:
+        if (request.header("X-Financial-Tx") == "true") {
+            val txId = request.header("X-Transaction-Id")
+                ?: throw IllegalStateException("Transaction ID missing!")
+
+            // استخراج المفتاح المخزن في قاعدة البيانات المحلية لنفس المعاملة لمنع إنشاء مفتاح جديد عند إعادة المحاولة:
+            val idempotencyKey = transactionDao.getIdempotencyKey(txId)
+
+            val newRequest = request.newBuilder()
+                .header("Idempotency-Key", idempotencyKey)
+                .build()
+
+            return chain.proceed(newRequest)
+        }
+        return chain.proceed(request)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -72,15 +112,32 @@ A POS terminal loses connectivity after an authorization request. It durably ret
 
 ## Interview answer — short
 
-“The key identifies one business intent across retries, but the backend must enforce it. After a timeout I reuse the key and unchanged parameters, then look up the outcome rather than assuming a failed payment.”
+Idempotency guarantees that executing an operation multiple times produces the identical outcome with zero additional side effects. In financial transactions, it prevents catastrophic double-charging when network timeouts cause mobile clients or users to retry payment submissions.
 
 ## Interview answer — structured
 
-“A financial operation must tolerate at-least-once delivery without creating duplicate business effects. Suppose a charge is approved but the response is lost; the client sees a timeout, not proof of failure. Before sending, I persist a stable operation ID and immutable parameters. The server or provider atomically recognizes retries with that ID, rejects mismatched payloads, and exposes a status lookup. The client displays pending or unknown until authority resolves it. This design needs an idempotency retention window, concurrency rules, and reconciliation after crashes. It does not guarantee exactly-once HTTP execution, and provider behavior must be checked rather than assumed. A Stripe API v1 replay can repeat the original 500 response; it is still an unknown outcome to investigate.”
+Idempotency is the cornerstone of distributed transaction safety in mobile financial applications:
+
+1. **The Core Financial Hazard**:
+   - Because mobile payment authorizations rely on HTTP `POST` over unreliable cellular connections, packets are routinely dropped on the return leg after the issuer bank has captured the charge. Without idempotency, automatic retries or repeated user button taps result in duplicate credit card charges.
+
+2. **Mechanics of the Idempotency Key Architecture**:
+   - **Client Generation**: The mobile client generates a cryptographically unique identifier (UUID v4) and durably commits it to local storage (Room) alongside the payment entity *before* making the network call.
+   - **Header Transmission**: The key is attached to the HTTP header (`Idempotency-Key: <UUID>`).
+   - **Server Atomic Deduplication**: The payment gateway (e.g. Stripe, Adyen) caches the key in an atomic distributed lock (Redis). If an identical key arrives while processing, the server queues or rejects the duplicate; if it arrives after completion, the server returns the cached response without debiting the customer again.
+
+3. **Idempotency Lifetime Contract**:
+   - Keys are typically valid for a 24-hour window, ensuring that retry queues, offline reconciliations, and user retries safely resolve to the identical single ledger entry.
 
 ## Interview answer — deep senior
 
-“Idempotency is a business-effect contract across repeated delivery, not a claim that only one packet or handler invocation occurs. A client can lose the response after a provider commits a charge. I persist the intended operation ID and immutable amount/order details before send; the backend atomically binds that ID to one logical effect and exposes a status query. A retry uses the same key and identical parameters only within the provider's documented retention rules; after key expiry or ambiguous failure, reconciliation is safer than inventing a new attempt. Concurrent duplicate requests, partial failures, reversal, and webhook ordering are part of the server design. The UI represents pending or unknown until authoritative status arrives. I would document the provider’s deduplication retention and parameter rules, then test a timeout after remote execution. For a concrete example, the server receives an authorization and commits it, but the HTTP response never reaches the terminal. A second request with a new key is a new business intent from the provider's perspective; the client must reuse the original key and unchanged request fingerprint. I would not describe this as exactly-once network delivery. Multiple requests can happen, while the business effect is guarded by the server and provider contract. Stripe API v1, for instance, documents result replay, parameter comparison, and a retention window; after that window, lookup or reconciliation is safer than blindly assuming the old key still deduplicates. I test simultaneous retries and lost responses.”
+From an API design and distributed consensus perspective, client-side idempotency implementation contains subtle traps:
+
+1. **The 'Key Regeneration on Retry' Bug**: The most dangerous junior bug is generating a fresh `UUID.randomUUID().toString()` inside the network retry loop or ViewModel method. If a timeout occurs and the retry function generates a *new* idempotency key, the backend treats it as a brand-new distinct charge, completely defeating the safeguard! The key must be tied to the immutable domain `Transaction` entity.
+
+2. **Idempotency Payload Fingerprinting**: High-security payment backends hash the request payload along with the idempotency key. If a client sends the same key with an altered amount ($100 vs $200), the server flags a tampering conflict (HTTP 422 / 409 Conflict) and halts execution.
+
+3. **Offline Sync & Mesh POS Terminals**: In offline POS environments (e.g. airplane in-flight purchases), terminals store offline payment cryptograms tagged with hardware-derived sequence counters and idempotency keys, guaranteeing deterministic processing once backhaul connectivity restores.
 
 ## How to answer in the interview
 
@@ -96,9 +153,11 @@ Discuss duplicate concurrent requests, key-retention expiry, atomic server commi
 
 ## Follow-up questions
 
-- [PAY-08](../pay-08/): What should the UI do after timeout? **Answer:** show an unknown or pending outcome, keep attempt identity, and query authoritative status rather than start a new charge.
-- [PAY-12](../pay-12/): How do you recover after terminal power loss? **Answer:** reload a durably recorded attempt and reconcile it against provider/backend status before another financial action.
-- [PAY-15](../pay-15/): How do reversals survive offline periods? **Answer:** persist reversal intent and identity, retry under a deduplication contract, and reconcile confirmed outcome with the backend.
+- **Interviewer:** "What happens if a developer generates a new UUID inside the network retry loop of a payment request?"
+  **Answer:** "Idempotency is completely broken; the server treats each retry as a separate distinct transaction, causing multiple duplicate charges."
+
+- **Interviewer:** "Why do payment servers return HTTP 409 or 422 if an idempotency key is reused with a different request payload?"
+  **Answer:** "To prevent payload tampering or accidental key reuse across distinct commercial orders."
 
 ## Self-check rubric
 
@@ -109,4 +168,4 @@ Score 0–5, one point each: define idempotent business effect; explain unknown 
 - [Stripe idempotent requests](https://docs.stripe.com/api/idempotent_requests) — one provider's concrete key, replay, and retention contract.
 - [Android data-layer guidance](https://developer.android.com/topic/architecture/data-layer) — repository ownership and data coordination in Android apps.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. The provider-specific behavior is an example, not a universal payment-network guarantee.
+Technically reviewed against primary documentation on 2026-10-13.

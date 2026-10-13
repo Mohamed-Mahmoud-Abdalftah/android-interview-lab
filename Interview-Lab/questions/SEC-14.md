@@ -23,11 +23,74 @@ Where should access and refresh tokens be stored and how are they revoked?
 
 ## Explanation in Arabic
 
-Access token قصير العمر غالبًا يتحفظ في memory لو ده مناسب لتجربة المستخدم؛ refresh token أكثر حساسية لأنه يطلع access tokens جديدة. لو لازم يبقى بعد process death، خليه في app-private storage مع حماية حسب threat model وbackup policy واضحة. Logout الحقيقي مش مسح المحلي بس: لازم server يبطل grant/session، والـapp يمسح copies ويوقف refresh jobs.
+أين وكيف يجب تخزين الـ Access Tokens والـ Refresh Tokens، وكيف يتم إلغاؤها (Revocation) من جهة السيرفر والتطبيق؟
+
+1. استراتيجية تخزين الـ Tokens على الهاتف:
+   - **Access Token (قصير العمر - Short-Lived: 5 إلى 15 دقيقة)**: يُفضل الاحتفاظ به في **ذاكرة الـ RAM فقط** (داخل Singleton أو Repository في الذاكرة) أثناء تشغيل التطبيق. لا داعي لحفظه على القرص إذا كان قصير العمر، أو يُحفظ مشفراً في Keystore/DataStore إذا أردنا تجنب طلب توكن جديد عند إعادة فتح التطبيق.
+   - **Refresh Token (طويل العمر - Long-Lived: أيام أو أسابيع)**: **يُمنع منعاً باتاً تخزينه كنص صريح (Plaintext)**. يجب تخزينه مشفراً باستخدام مفتاح عتادي داخل Android Keystore مدمج مع Jetpack DataStore.
+
+2. آلية الـ Token Rotation والـ Revocation في السيرفر:
+   - **Refresh Token Rotation (RTR)**: في كل مرة يستخدم فيها العميل الـ Refresh Token للحصول على Access Token جديد، يقوم السيرفر بإنشاء Refresh Token جديد وإلغاء القديم فوراً.
+   - **كشف سرقة التوكن (Token Theft Detection)**: إذا حاول مهاجم استخدام Refresh Token قديم تم تدويره مسبقاً، يدرك السيرفر فوراً أن هناك سرقة حدثت، فيقوم بإلغاء عائلة التوكنز بالكامل (Family Revocation) وقطع جميع الجلسات فوراً.
+
+3. آلية التجديد التلقائي عبر OkHttp Authenticator:
+   - لا يتم فحص صلاحية التوكن يدوياً في كل Request. بل نعتمد على `okhttp3.Authenticator` الذي يتم استدعاؤه تلقائياً فقط عند رجوع استجابة `HTTP 401 Unauthorized` من السيرفر، ليقوم بتجميد الطلبات وتجديد التوكن وإعادة المحاولة بسلاسة.
 
 ## Practical walkthrough
 
-لو access token مسروقة، قصر عمرها وscope يقلل الضرر، لكن لازم backend يقدر يبطل refresh token ويكتشف replay حسب session policy. خزّن access token في memory إن أمكن، وrefresh token محمية محليًا فقط لو persistence مطلوبة. عند logout امسح الاثنين محليًا واطلب revocation على السيرفر؛ مسح الهاتف وحده ما يبطل token موجودة عند مهاجم.
+تنفيذ تجديد التوكن بسلاسة وأمان باستخدام OkHttp Authenticator و Mutex لمنع Race Conditions:
+```kotlin
+class TokenAuthenticator(
+    private val tokenStorage: SecureTokenStorage,
+    private val authService: AuthService
+) : Authenticator {
+    private val refreshMutex = Mutex()
+
+    override fun authenticate(route: Route?, response: Response): Request? {
+        // 1. منع المحاولات المتكررة اللانهائية إذا فشل الـ Refresh أصلاً:
+        if (responseCount(response) >= 3) return null
+
+        val currentAccessToken = runBlocking { tokenStorage.getAccessToken() }
+        
+        // 2. فحص ما إذا كان طلب آخر قد قام بتجديد التوكن بالفعل أثناء انتظار هذا الطلب:
+        val requestToken = response.request.header("Authorization")?.removePrefix("Bearer ")
+        if (requestToken != currentAccessToken && currentAccessToken != null) {
+            // تم تجديد التوكن بالفعل؛ إعادة إرسال الطلب بالتوكن الجديد فوراً:
+            return response.request.newBuilder()
+                .header("Authorization", "Bearer $currentAccessToken")
+                .build()
+        }
+
+        // 3. تجديد التوكن بشكل متزامن وحصري عبر Mutex:
+        return runBlocking {
+            refreshMutex.withLock {
+                val latestToken = tokenStorage.getAccessToken()
+                if (latestToken != requestToken && latestToken != null) {
+                    return@withLock response.request.newBuilder()
+                        .header("Authorization", "Bearer $latestToken")
+                        .build()
+                }
+
+                val refreshToken = tokenStorage.getRefreshToken() ?: return@withLock null
+                val newTokensResult = authService.refreshTokens(refreshToken)
+                
+                if (newTokensResult.isSuccessful) {
+                    val newTokens = newTokensResult.body()!!
+                    tokenStorage.saveTokens(newTokens.accessToken, newTokens.refreshToken)
+                    response.request.newBuilder()
+                        .header("Authorization", "Bearer ${newTokens.accessToken}")
+                        .build()
+                } else {
+                    // تم رفض الـ Refresh Token على السيرفر؛ إبطال الجلسة وتوجيه المستخدم لتسجيل الدخول
+                    tokenStorage.clearTokens()
+                    null
+                }
+            }
+        }
+    }
+    private fun responseCount(response: Response): Int = generateSequence(response) { it.priorResponse }.count()
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +114,32 @@ Production logout coordinates local clearing, cancellation of pending authentica
 
 ## Interview answer — short
 
-“Keep access tokens short-lived and minimize persistence; protect a necessary refresh token with an explicit recovery plan. Logout requires server-side revocation as well as local clearing, and refresh must be race-safe.”
+Store short-lived access tokens in memory or encrypted storage, and long-lived refresh tokens strictly in Keystore-backed encrypted DataStore. Revocation must occur server-side by blacklisting session IDs in Redis. Use OkHttp's Authenticator with a Mutex to seamlessly refresh tokens upon 401 responses and handle token rotation.
 
 ## Interview answer — structured
 
-“I keep access tokens short-lived and preferably in memory, while protecting a refresh token only if persistent sessions are required. One session owner serializes refresh so concurrent 401 responses do not race token rotation. Logout clears local credentials and asks the backend to revoke the session; local deletion alone cannot invalidate a stolen bearer token. I also test invalid-grant, transient network errors and refresh replay so the UI does not confuse temporary failure with signed-out state.”
+Token architecture follows a tiered security approach balancing user experience against attack windows:
+
+1. **Storage Topology**:
+   - **Access Token**: Short validity (5–15 minutes). Can reside in an in-memory repository during active process lifecycle, supplemented with Keystore-backed encrypted persistence to survive process death without forced re-logins.
+   - **Refresh Token**: Longer validity (7–30 days). Must never be stored in plain SharedPreferences. It must be encrypted using Android Keystore AES-GCM and stored in Jetpack DataStore.
+
+2. **Server-Side Revocation**:
+   - Mobile logout must invoke a backend `/logout` or `/revoke` endpoint. The server marks the session/refresh token family revoked in a distributed cache (e.g. Redis).
+   - Client-side token deletion alone is insufficient because a compromised token remains valid on the server until expiry.
+
+3. **Refresh Token Rotation (RTR)**:
+   - Every refresh request invalidates the previous refresh token and issues a new pair. If an invalidated refresh token is ever reused, the server detects token compromise and immediately revokes all tokens issued to that user session.
 
 ## Interview answer — deep senior
 
-“I treat access and refresh tokens as bearer credentials with different lifetimes. The access token is short-lived and preferably memory-only; a persistent refresh token is protected locally only when the product needs session continuity. One session owner serializes refresh so concurrent 401 responses do not race token rotation. The backend maintains session identity, revocation and replay policy; clearing local state on logout is necessary but does not invalidate a stolen copy. I would keep tokens out of logs, test refresh failure and key loss, and require step-up for sensitive payments even with a valid access token. I would test two simultaneous requests receiving 401, a rotated refresh token arriving while logout begins, and a stolen refresh token replayed from another device. A process-local mutex prevents duplicate refresh attempts in one app process, but the server must own rotation and replay detection across devices. The UI should treat authoritative invalid-grant as signed out, while a temporary network failure should not accidentally erase a valid session.”
+In high-traffic distributed mobile apps, token refreshing introduces significant concurrency and failure handling challenges:
+
+1. **Handling Thundering Herds on 401**: When multiple parallel API calls fail simultaneously with `401 Unauthorized`, an uncoordinated authenticator triggers parallel refresh calls. The first call succeeds and rotates the refresh token; the subsequent calls submit an already-invalidated refresh token, causing the backend to falsely assume token theft and revoke the session! We prevent this by serializing refresh execution using a Coroutines `Mutex` inside `okhttp3.Authenticator`.
+
+2. **Re-entrant 401 Loop Protection**: `Authenticator.authenticate()` must track `response.priorResponse` count. If the refresh request itself fails or if three consecutive retries return 401, return `null` to terminate the loop, wipe stored tokens, and dispatch an unauthenticated session event to navigate to the Login screen.
+
+3. **Token Binding & Attestation**: In high-assurance fintech apps, refresh tokens are cryptographically bound to a client-generated Keystore EC keypair (DPoP - Demonstrating Proof-of-Possession). Even if an attacker intercepts the refresh token via TLS proxy, they cannot replay it without signing the request using the device's non-exportable private key.
 
 ## How to answer in the interview
 
@@ -75,8 +155,11 @@ Trace login, refresh rotation, concurrent 401 handling, logout and server-side r
 
 ## Follow-up questions
 
-- [SEC-13](../sec-13/): What if the encryption key is lost? **Answer:** clear the replaceable token and re-authenticate.
-- [SEC-15](../sec-15/): Where else can tokens leak? **Answer:** headers in logs, analytics, crash reports and screenshots.
+- **Interviewer:** "What is the difference between an OkHttp Interceptor and an Authenticator for auth tokens?"
+  **Answer:** "An Interceptor attaches the current token to outgoing requests; an Authenticator is triggered only when the server returns 401 Unauthorized, specifically designed for token refresh."
+
+- **Interviewer:** "Why should JWTs not store sensitive PII in their payload?"
+  **Answer:** "JWT payloads are Base64Url-encoded, not encrypted; anyone intercepting or inspecting the token in memory can decode and read the claims instantly."
 
 ## Self-check rubric
 
@@ -87,4 +170,4 @@ Can I explain token lifetime, storage, single-flight refresh, offline logout and
 - [Android Keystore system](https://developer.android.com/privacy-and-security/keystore) — local key protection.
 - [OWASP MASVS authentication](https://mas.owasp.org/MASVS/controls/MASVS-AUTH-1/) — authentication and session controls.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

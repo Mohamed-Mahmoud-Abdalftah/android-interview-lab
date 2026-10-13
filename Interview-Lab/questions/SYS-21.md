@@ -22,11 +22,69 @@ Design Home with three independent services and partial failures without swallow
 
 ## Explanation in Arabic
 
-Home عندها ثلاثة cards مستقلة؛ لو واحد فشل، نخلي الاتنين الناجحين ظاهرين مع error/retry على card الفاشلة. `supervisorScope` تعزل فشل الإخوة، وكل child ترجع typed outcome جوهها؛ `CancellationException` تترمي تاني علشان خروج الشاشة يلغي الكل. cached values لازم تتوسم freshness، وmonitoring تعرف أي service متعطلة؛ لو card أساسية للقرار، نغير policy بدل partial success عمياء.
+كيف تصمم شاشة رئيسية (Home Screen) تعتمد على 3 خدمات مستقلة وتدعم الفشل الجزئي (Partial Failure) دون تعطل الشاشة بالكامل؟
+
+1. خطأ التصميم الكارثي (The All-or-Nothing Anti-Pattern):
+   - استخدام `zip` أو `awaitAll` لدمج استجابات الخدمات الثلاث (مثلاً: Stories API, Feed API, Recommendations API).
+   - **المشكلة**: إذا فشلت خدمة التوصيات (Recommendations) أو استغرقت 10 ثوانٍ، فإن الشاشة بالكامل تفشل وتعرض شاشة بيضاء أو رسالة خطأ، وتمنع المستخدم من رؤية الـ Feed والـ Stories الأساسية!
+
+2. المعمارية السليمة: العزل التام والتراجع المتدرج (Graceful Degradation):
+   - **استقلالية الجلب (Independent Concurrent Fetching)**: جلب بيانات كل خدمة في Coroutine مستقل مع عزل الأخطاء عبر `runCatching`.
+   - **تمثيل الحالة المنفصل (Independent State Streams)**: كل ميزة تمتلك حالة خاصة بها:
+     `storiesState: StateFlow<SectionState<List<Story>>>`,
+     `feedState: StateFlow<SectionState<List<Post>>>`,
+     `recommendationsState: StateFlow<SectionState<List<Recommendation>>>`.
+   - **التراجع للكاش المحلي (Cache Fallback)**: إذا فشلت خدمة الـ Feed عبر الإنترنت، يتم عرض آخر بيانات مخزنة محلياً من الـ Room DB مع علامة صغيرة توضح أن البيانات غير محدثة.
+   - **واجهة مستخدم مرنة في Compose**: تعرض الـ Stories والـ Feed بشكل طبيعي، بينما تعرض خانة الـ Recommendations زراً صغيراً لإعادة المحاولة (Inline Retry) أو تخفي القسم بهدوء دون إفساد تجربة المستخدم.
 
 ## Practical walkthrough
 
-Home فيها weather وnews وoffers؛ news ممكن تقع والباقي يظهر. كل card ليها state مستقلة Success/Loading/Error/Cached مع timestamp، والـViewModel تملك الطلبات. `supervisorScope` تعزل فشل direct children، لكن `CancellationException` لازم تعدي لما الشاشة تتقفل. لا تستخدم partial success لو الأرقام بتكوّن total مالي واحد. قس failure rate لكل service ووقت stale data.
+تنفيذ تجميع مرن ومقاوم للفشل الجزئي لثلاث خدمات مستقلة في ViewModel و Compose:
+```kotlin
+sealed interface SectionState<out T> {
+    object Loading : SectionState<Nothing>
+    data class Success<T>(val data: T) : SectionState<T>
+    data class Error(val message: String, val cachedFallback: Boolean = false) : SectionState<Nothing>
+}
+
+data class HomeUiState(
+    val banners: SectionState<List<Banner>> = SectionState.Loading,
+    val feedItems: SectionState<List<FeedItem>> = SectionState.Loading,
+    val recommendations: SectionState<List<Recommendation>> = SectionState.Loading
+)
+
+class HomeViewModel @Inject constructor(
+    private val bannerRepo: BannerRepository,
+    private val feedRepo: FeedRepository,
+    private val recsRepo: RecommendationsRepository
+) : ViewModel() {
+    private val _uiState = MutableStateFlow(HomeUiState())
+    val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    fun loadHomeScreenData() {
+        // 1. جلب Banners بشكل مستقل مع عزل الخطأ
+        viewModelScope.launch {
+            bannerRepo.getBanners()
+                .onSuccess { data -> _uiState.update { it.copy(banners = SectionState.Success(data)) } }
+                .onFailure { _uiState.update { it.copy(banners = SectionState.Error("Could not load banners")) } }
+        }
+
+        // 2. جلب الـ Feed بشكل مستقل
+        viewModelScope.launch {
+            feedRepo.getFeedStream().collect { feed ->
+                _uiState.update { it.copy(feedItems = SectionState.Success(feed)) }
+            }
+        }
+
+        // 3. جلب الـ Recommendations بشكل مستقل؛ الفشل هنا لا يؤثر إطلاقاً على الـ Feed أو الـ Banners!
+        viewModelScope.launch {
+            recsRepo.getRecommendations()
+                .onSuccess { recs -> _uiState.update { it.copy(recommendations = SectionState.Success(recs)) } }
+                .onFailure { _uiState.update { it.copy(recommendations = SectionState.Error("Recommendations unavailable")) } }
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -65,15 +123,33 @@ A commerce Home loads offers, order status and support tips independently, each 
 
 ## Interview answer — short
 
-“I supervise the three independent calls, capture each domain failure inside its child, await all outcomes and render per-card state. Parent cancellation still stops the group, so I rethrow CancellationException.”
+Design aggregate screens for partial failure by fetching independent services concurrently using isolated coroutine scopes and runCatching blocks. Represent sections with independent state streams in a unified UI state, fall back to local cached data where available, and render inline section retries without blocking or failing the entire screen.
 
 ## Interview answer — structured
 
-“Because these Home services are independent, I do not discard two useful cards when the third fails. I use a supervised scope and run three child requests concurrently, converting each expected error to its own typed result. Cancellation is different: leaving the screen cancels all children and must propagate. The ViewModel exposes loading, ready, stale and error state per card; retry targets only the failed dependency. I set timeouts and measure per-service failures so partial UI does not hide an outage.”
+Aggregating multiple microservices into a single mobile dashboard requires defensive concurrency and resilient UI state composition:
+
+1. **Avoid All-or-Nothing Composition**:
+   - Combining calls via `zip`, `combine` with synchronous throws, or `awaitAll` creates an all-or-nothing anti-pattern. If a non-essential service (e.g. Recommendations) throws a 500 or times out, the entire screen fails.
+
+2. **Independent Section Concurrency**:
+   - Launch three independent coroutine jobs within `viewModelScope` using `runCatching` or supervisory scopes. If the Recommendations service fails, its exception is caught in isolation, allowing the Feed and Hero Banners to load and render immediately.
+
+3. **Modular State Modeling**:
+   - Model the overall screen state as an aggregate data class holding individual `SectionState<T>` wrappers (`Loading`, `Success`, `Error`). Compose renders each section according to its discrete state.
+
+4. **Graceful UI Degradation & Cache Fallbacks**:
+   - If a service fails, check Room persistence for cached records. If cached data exists, render it with a subtle 'Offline' chip. If no cache exists, render an inline retry placeholder or cleanly collapse the section without breaking the parent layout.
 
 ## Interview answer — deep senior
 
-“I begin with product semantics: three independent Home cards may show partial success, but a financial total assembled from three sources may require all-or-nothing. For independent cards, a ViewModel-owned operation starts three supervised children and converts expected failures to typed per-card outcomes, while rethrowing cancellation. Each result carries a timestamp and source so the UI can distinguish fresh, cached and unavailable values. I would give a critical account card a prominent stale warning, while a recommendation card can use a quieter retry affordance. Timeouts and retry budgets are per dependency and bounded; a failing service must not flood its backend. I would cache only data whose stale use is acceptable, and avoid showing a global ‘success’ state that hides an outage. Tests fail each dependency in turn, then all three, and cancel the parent during an in-flight request to ensure no late state update. Production monitoring groups latency, failure and stale age by card and release cohort so partial rendering does not conceal a systemic problem.”
+From a staff-level systems perspective, partial failure resilience extends into network protocol design and backend orchestration:
+
+1. **Backend-for-Frontend (BFF) vs. Client Aggregation**: In enterprise architectures, mobile clients should ideally query a single mobile BFF gateway. The BFF aggregates the 3 microservices concurrently on high-speed datacenter backbones. If recommendations time out within 150ms, the BFF returns a partial JSON payload containing banners and feed items along with a partial-error metadata flag, saving mobile battery and round-trips.
+
+2. **Independent Section Pull-to-Refresh**: When the user performs a pull-to-refresh gesture, trigger refresh jobs across all three sections concurrently. Keep already-rendered cached content on screen while refreshing, transitioning sections to loading indicators only if no data was previously visible.
+
+3. **Targeted Telemetry & Alerting**: Log individual endpoint failure rates. If Recommendations fail for 15% of sessions while Core Feed succeeds, telemetry surfaces microservice-specific degradation rather than generic app-level crash alarms.
 
 ## How to answer in the interview
 
@@ -89,8 +165,11 @@ Compare independent card semantics with all-or-nothing quote and test cancellati
 
 ## Follow-up questions
 
-- [COR-26](../cor-26/): How preserve partial results? **Answer:** supervisorScope plus per-child typed outcome.
-- [SYS-11](../sys-11/): How choose timeout/retry? **Answer:** per-service policy with bounded attempts and cancellation.
+- **Interviewer:** "What is SupervisorJob and why is it useful when fetching multiple independent services?"
+  **Answer:** "A SupervisorJob ensures that failure in one child coroutine does not automatically cancel its sibling coroutines or the parent scope."
+
+- **Interviewer:** "How should Compose handle an empty state versus an error state in a lazy list section?"
+  **Answer:** "An empty state displays a friendly empty graphic or collapses gracefully; an error state provides an inline error message with a dedicated section retry button."
 
 ## Self-check rubric
 
@@ -101,4 +180,4 @@ Can I show three outcomes, preserve cancellation and avoid masking an outage?
 - [Kotlin exception handling](https://kotlinlang.org/docs/exception-handling.html) — supervision.
 - [Android UI architecture](https://developer.android.com/topic/architecture/ui-layer) — state holders.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

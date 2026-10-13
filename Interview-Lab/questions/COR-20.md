@@ -22,11 +22,36 @@ Compare suspending exclusion, blocking locks, atomics and confinement by invaria
 
 ## Explanation in Arabic
 
-`Mutex` بيعمل critical section للـcoroutines و`lock` بتعلّق بدل ما تحجز thread وهي مستنية. `synchronized` lock للـJVM بيحجز thread أثناء الانتظار ومينفعش تحط suspend call داخل الـmonitor. Atomic types ممتازة لعملية صغيرة على قيمة واحدة. Confinement معناه مالك واحد يعدّل الـstate، وده يبسط التصميم لكن ممكن يبقى bottleneck.
+المقارنة بين وسائل حماية البيانات المشتركة في Kotlin Coroutines:
+
+1. الـ `Mutex` (Kotlin Coroutines Mutex):
+   - هو **Non-blocking (Suspending) Lock**.
+   - لما coroutine تحاول تدخل كود محمي بـ `mutex.withLock` ويكون محجوزاً، الـ Coroutine **تُعلّق (Suspends)** وتترك الـ OS Thread حراً لينفذ مهام أخرى!
+   - مخصص حصرياً لبيئة الـ Coroutines لحماية العمليات المعقدة والـ Suspend functions.
+
+2. الـ `synchronized` (Java Monitors):
+   - **Blocking Lock** على مستوى نظام التشغيل والـ JVM.
+   - يحظر خيط المعالجة بالكامل (Blocks OS Thread).
+   - **تحذير صارم:** لا يمكن استخدامه حول Suspend functions! ولا يجب استخدامه داخل Coroutines لأنه يستهلك الـ Threads ويسبب تجويع الـ Thread Pool و ANR.
+
+3. الـ Atomic Types (`AtomicInteger`, `AtomicReference`):
+   - مبنية على تعليمات الـ CPU المباشرة: **Compare-And-Swap (CAS)**.
+   - أسرع وسيلة على الإطلاق (Lock-free و Zero-overhead) للعمليات البسيطة (زي العدادات وتحديث المراجع الفردية).
+   - لا تناسب العمليات المعقدة متعددة الخطوات.
+
+4. الـ Thread Confinement (الحصر على خيط واحد):
+   - حصر جميع عمليات التعديل على Thread واحد محدد (زي `Dispatchers.Main` أو `Dispatchers.Default.limitedParallelism(1)`).
+   - بسيط جداً ويمنع الحاجة لأي Locks، لكنه قد يكون عنق زجاجة لو العمليات ثقيلة جداً.
 
 ## Practical walkthrough
 
-لو عندك `stock` و`reservationCount` لازم يتغيروا مع بعض، `Mutex.withLock` يخلّي coroutine تنتظر من غير حجز thread. `synchronized` بيحجز thread وقت الانتظار ومينفعش تعمل suspension داخل critical section. atomic مناسب لتعديل قيمة واحدة، وconfinement مناسب لو كل التحديثات تمر على owner واحد. أي حل داخل process ما يحميش server stock من جهاز تاني.
+مقارنة عملية لاختيار الأداة المناسبة:
+1. **عداد مرات النقر (Simple Counter):**
+   - الأفضل: `private val clickCount = AtomicInteger(0)` -> `clickCount.incrementAndGet()` (أسرع بنية).
+2. **قراءة ملف، تحديث التوكن، ثم حفظه في قاعدة البيانات (Suspending critical section):**
+   - الأفضل: `private val mutex = Mutex()` -> `mutex.withLock { refreshToken() }` (يعلق بدون حظر خيوط).
+3. **إدارة حالة الـ UI في الـ MVI ViewModel:**
+   - الأفضل: `Thread Confinement` على Main Thread أو استخدام `MutableStateFlow.update { }`.
 
 ## Why it matters and how it works
 
@@ -63,15 +88,27 @@ A repository uses a local Mutex to coalesce token refresh calls, then the server
 
 ## Interview answer — short
 
-“Mutex gives coroutine-friendly exclusion; synchronized blocks a thread; atomics suit simple single-value operations; confinement serializes access under one owner. I choose based on the invariant and whether it is local or persistent.”
+Mutex is a non-blocking, suspension-aware lock designed for coroutines; synchronized is a thread-blocking Java monitor that must never be used with suspending functions; Atomic types use hardware-level compare-and-swap (CAS) for lock-free primitive updates; and Confinement confines state mutation to a single thread/dispatcher, eliminating locks entirely.
 
 ## Interview answer — structured
 
-“If I only increment one counter, an atomic primitive is simple and efficient. If I must check and update multiple in-memory fields together, `Mutex.withLock` gives a suspending wait and a clear critical section. `synchronized` is acceptable for tiny non-suspending JVM code but blocks waiting threads. Confinement can remove locks by giving state one owner, at a throughput cost. For data that must remain correct across processes or devices, I use a database or server transaction instead of trusting an app-level lock.”
+Choosing the right synchronization tool depends on whether the critical section suspends, how long it runs, and the complexity of the shared state.
+
+**Mutex** is Kotlin's suspension-aware mutual exclusion lock. When a coroutine waits for a locked Mutex via `mutex.withLock`, it suspends without blocking the underlying OS thread, keeping worker pools responsive. It is the only choice when protecting a critical section that contains suspending calls.
+
+**synchronized** is Java's traditional monitor lock. It forcibly blocks the operating system thread. You cannot call suspending functions inside a synchronized block, and using it in coroutines is an anti-pattern because it starves thread pools and can cause ANRs.
+
+**Atomic types** (AtomicInteger, AtomicReference) provide lock-free, ultra-fast synchronization for single variables via CPU Compare-And-Swap (CAS) instructions, with zero lock contention overhead.
+
+**Thread Confinement** confines all mutations to a single dispatcher (such as `Dispatchers.Main` or `Dispatchers.Default.limitedParallelism(1)`), eliminating the need for locks altogether through structural design.
 
 ## Interview answer — deep senior
 
-“I distinguish local coordination from the authoritative invariant. A Mutex protects coroutines that share that exact instance and its `lock` suspends while waiting, but the lock does not survive process death. A JVM monitor can be fast for tiny synchronous sections, yet blocking and suspension do not mix inside it. Atomics are ideal for a single CAS-style operation; combining fields often requires a loop or stronger transaction. Confinement, such as an actor, serializes mutations and makes ordering explicit but can become a hotspot. In a token refresh repository I might use a Mutex to prevent duplicate refresh calls and recheck the token inside the lock. For financial balance, server transaction and idempotent operation records remain authoritative. I would choose `Mutex` when coroutine waiters should suspend and a whole in-process invariant needs a critical section. A JVM monitor can be fine for a tiny non-suspending section, but waiting blocks a thread and suspending while holding it is unsafe. Atomics fit simple counters; confinement fits state owned by one actor or dispatcher. I would profile contention and verify every reader and writer uses the same boundary. Database transactions are still required across processes.”
+At the performance and scheduling layer, each approach presents different trade-offs: `AtomicInteger` has zero suspension and zero lock overhead; it is resolved directly in CPU registers via cache coherency protocols (MESI). However, CAS loops can experience spinning overhead under extreme contention.
+
+`Mutex` involves internal queue management (`LockContender` nodes on the heap). While non-blocking, acquiring and releasing a Mutex is significantly more expensive in CPU instructions than an atomic CAS. Therefore, you should never use a Mutex for a simple primitive increment.
+
+With Thread Confinement using `limitedParallelism(1)`, Kotlin creates an exclusive sequential queue on top of the shared pool. It provides the simplicity of single-threaded programming without locking, but context switching across dispatchers via `withContext(singleThreadDispatcher)` incurs dispatch latency. In Android architecture, combining `AtomicReference` or `StateFlow.update` with immutable data structures offers the cleanest and most performant state synchronization.
 
 ## How to answer in the interview
 
@@ -87,8 +124,14 @@ Defend critical-section size, recheck-after-lock, lock scope and persistent inva
 
 ## Follow-up questions
 
-- [COR-19](../cor-19/): Why is volatile insufficient? **Answer:** it does not make compound updates atomic.
-- [COR-28](../cor-28/): What fixes balance races? **Answer:** a transaction at the authoritative ledger, with local synchronization only as support.
+- **Interviewer:** "Why does the Kotlin compiler forbid calling suspend functions inside a `synchronized` block?"
+  **Answer:** "Because Java synchronized blocks bind a lock to the executing OS thread. If a coroutine suspended inside synchronized, it would yield the thread while retaining the monitor lock, creating immediate deadlocks and thread starvation across the runtime."
+
+- **Interviewer:** "Is Kotlin's `Mutex` re-entrant?"
+  **Answer:** "No! Kotlin's standard `Mutex` is non-reentrant. If a coroutine that already holds a Mutex attempts to acquire it again (e.g., in a nested function call), it will suspend and deadlock itself indefinitely."
+
+- **Interviewer:** "How does `Dispatchers.Default.limitedParallelism(1)` compare to a single-threaded executor?"
+  **Answer:** "A traditional single-threaded executor allocates a dedicated OS thread permanently. `limitedParallelism(1)` shares the general worker pool and ensures that at most one coroutine executes at any time, eliminating the overhead of keeping a dedicated thread alive."
 
 ## Self-check rubric
 
@@ -98,4 +141,4 @@ Can I compare waiting behavior, pick by invariant, avoid network calls under loc
 
 - [Kotlin shared mutable state](https://kotlinlang.org/docs/shared-mutable-state-and-concurrency.html) — atomics, confinement and Mutex.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

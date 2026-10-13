@@ -22,7 +22,20 @@ Choose among value carrier, behavior-bearing class, singleton, and class-level f
 
 ## Explanation in Arabic
 
-`data class` مناسبة لقيم بيانات لها `equals/hashCode/toString/copy` مولّدين من الـprimary constructor. `class` عادية مناسبة لو الهوية، invariants، أو behavior أهم من نسخ القيمة. `object` singleton على مستوى الـclassloader لشيء واحد، مش مخزن global آمن لكل state. `companion object` عضو مرتبط بالـclass لتنظيم factory أو constants؛ مش static field مطابق تمامًا لـJava في كل interop حالة. `copy` shallow، فـmutable list جوا data class تفضل مشتركة.
+في Kotlin، عندنا 4 تصنيفات رئيسية للكلاسات، كل واحد فيهم معمول علشان يحل مشكلة معمارية محددة:
+
+1. الـ data class: معمول خصيصاً لتمثيل حوامل البيانات (Data Holders). المترجم بيولد له تلقائياً equals و hashCode و toString و copy و componentN بناءً على حقول الـ Primary Constructor.
+2. الـ Regular Class: كلاس عادي للخدمات والمنطق (Services, ViewModels, Repositories). افتراضياً مقفول ضد الوراثة (final)، ومبيولدش دوال مقارنة تلقائية.
+3. الـ object: يعرف Singleton حقيقي على مستوى الـ Process، بيتم إنشاؤه بطريقة Thread-safe بواسطة الـ ClassLoader في الـ static initializer (<clinit>).
+4. الـ companion object: كائن مرتبط بالكلاس نفسه وهو البديل للـ static members في Java، ومناسب جداً للـ Factory Methods وحفظ الـ Constants.
+
+## Practical walkthrough
+
+في تطبيق أندرويد بنكي:
+- بنستخدم data class لتمثيل حالة الشاشة TransferUiState(val amount: Double, val recipient: String).
+- بنستخدم companion object داخل الـ State لتعريف الحالة الابتدائية: companion object { val Initial = TransferUiState(0.0, "") }.
+- بنستخدم object لتعريف Singleton عديم الحالة زي PaymentFormatter.
+- احذر من تخزين Activity Context أو مراجع دورية داخل object؛ ده هيعمل Memory Leak طول عمر التطبيق لأن الـ Singleton مبيتحذفش أبداً من الـ Garbage Collector.
 
 ## Why it matters and how it works
 
@@ -41,10 +54,6 @@ class Session private constructor(val account: Account) {
 object AccountIdFormat { fun valid(id: String) = id.isNotBlank() }
 ```
 
-## Practical walkthrough
-
-`data class Account(id, name)` مناسبة لـsnapshot UI فيها value semantics. لكن `copy()` shallow: لو جواها `MutableList` فالنسخة والاصل ممكن يشتركوا فيها. `class Session` مناسبة لما فيه identity وlifecycle أو controlled construction؛ `companion object` يعمل factory جنب النوع لكنه مش object instance لكل Session. `object` singleton داخل process، مش persistent store ولا scoped لكل user. في app فيه account switch، حط session state عند owner قابل للreset بدل global `object` ممكن يحتفظ ببيانات user قديم.
-
 ## Trade-offs and decision criteria
 
 Use data class when all primary fields define value equality; use regular class for controlled identity or mutable invariants. `object` avoids duplicate instances but complicates state isolation and tests if it holds mutable data. Companion factories are discoverable; top-level functions may be simpler for stateless helpers.
@@ -59,17 +68,29 @@ An Android app uses `data class ProfileUiState` for immutable rendering, `class 
 
 ## Interview answer — short
 
-A data class is for value-like records with generated equality and copy. A regular class suits identity and behavior. An `object` is a singleton declaration, while a companion object holds class-level factories or members. I choose by lifecycle and equality needs.
+A data class automatically generates equals, hashCode, toString, copy, and component functions for data modeling. A regular class is an unspecialized class used for logic and behavior. An object defines a thread-safe singleton managed by the JVM classloader. A companion object belongs to the class itself, serving as a factory or static-like member container.
 
 ## Interview answer — structured
 
-I first ask whether the type is a value or an entity with identity. A data class gives component functions, equality, and `copy`, but the copy is shallow, so nested mutable state needs care. A regular class lets me define construction and identity deliberately. An `object` creates a process-level singleton, which is useful for stateless utilities but risky for user session state. A companion object belongs to the class declaration and is a good place for a validated factory. In a multi-account app I would keep session ownership in a scoped component and use a data class for immutable account display state.
+In Kotlin, each of these constructs serves a distinct architectural purpose:
+
+A data class is designed for pure data holders. The compiler generates equals, hashCode, toString, componentN, and copy functions based on its primary constructor properties, making it the ideal choice for UI states, network DTOs, and domain entities.
+
+A regular class holds business logic, state machines, or services like ViewModels and Repositories, where identity and lifecycle matter more than structural value comparison.
+
+An object declares a lazy, thread-safe singleton initialized upon first classloader access. It is great for stateless utilities or navigation routes.
+
+Finally, a companion object acts like static members in Java but remains a first-class object that can implement interfaces. I primarily use companion objects for factory methods like fromDto or storing class-scoped constants.
 
 ## Interview answer — deep senior
 
-I would ask what defines equality, who owns lifecycle, and whether construction needs validation. Data classes generate value-like methods, but their `copy` does not clone nested objects. Regular classes can hide mutable state behind methods. Objects are lazily initialized singletons within a classloader, so they are process-local and unsuitable as durable storage or as holders of an Activity. Companions are real objects and can implement interfaces; Java interoperability may need deliberate annotations. The choice should make invariants obvious to callers.
+Under the hood on the JVM, these four constructs compile into very different bytecode patterns.
 
-For an account feature, I might model the displayed account as a data class, a session controller as a regular class with explicit lifecycle, a stateless format validator as an `object`, and a validated session factory in a companion. The failure mode is placing the current user in a global object: it can retain stale state after account switching and disappears after process death. I would scope session state to the authenticated owner and reload it from the authoritative source. I would also test `copy()` with nested collections so it does not masquerade as a deep snapshot.
+A data class generates bytecode for equals() that compares every primary constructor property, an appropriate hashCode() using primes, and a copy() method with default arguments that uses synthetic flags to selectively replace fields. It is strictly final and cannot be open or abstract. A critical caveat is that properties declared inside the class body are completely ignored by generated equality and copy methods.
+
+An object compiles into a final class with a private constructor and a public static final INSTANCE field initialized in the static initializer (<clinit>). The JVM specification guarantees that class loading is synchronized, making object instantiation inherently thread-safe without explicit locking. However, using objects to store mutable state creates global state, complicates unit testing, and risks memory leaks if Android Context is stored.
+
+A companion object compiles into an inner class named Companion, with a static instance held by the enclosing class. When called from Kotlin, it provides concise syntax, but from Java, callers must use EnclosingClass.Companion.method() unless annotated with @JvmStatic. In production architecture, I use data classes for immutable UI states and DTOs, companion objects for test factories or serializers, and avoid stateful objects in favor of dependency injection with Hilt.
 
 ## How to answer in the interview
 
@@ -85,8 +106,14 @@ Discuss data-class constructor fields, shallow copy, singleton initialization an
 
 ## Follow-up questions
 
-- [KOT-04](../kot-04/): Why can two data-class copies compare equal? **Answer:** generated equality compares primary-constructor values.
-- [KOT-02](../kot-02/): Does `val` inside a data class make nested objects immutable? **Answer:** no; it fixes the property reference only.
+- **Interviewer:** "Why can't a data class be marked as open or abstract?"
+  **Answer:** "Because the compiler generates equals(), hashCode(), and copy() based strictly on primary constructor properties. If a data class were subclassed with additional properties, the symmetric contract of equals() (a.equals(b) == b.equals(a)) would break, leading to subtle bugs in collections. To model polymorphic hierarchies, we use sealed classes or sealed interfaces with data class leaves."
+
+- **Interviewer:** "How is a Kotlin object guaranteed to be thread-safe without using synchronized blocks?"
+  **Answer:** "In JVM bytecode, the singleton instance is assigned in the static class initializer block (<clinit>). The JVM specification strictly guarantees that class loading and static initialization are atomic and thread-safe. No thread can see the instance in a partially constructed state."
+
+- **Interviewer:** "When should you annotate a companion object method with @JvmStatic?"
+  **Answer:** "You use @JvmStatic when the method must be called from Java code as a real static method, such as ClassName.method() rather than ClassName.Companion.method(). It is also required when creating methods for certain frameworks or JUnit 5 @MethodSource factories that reflectively look for static methods."
 
 ## Self-check rubric
 
@@ -97,4 +124,4 @@ Choose a declaration for UI state, repository, and factory; explain shallow copy
 - [Kotlin data classes](https://kotlinlang.org/docs/data-classes.html) — generated members and copy.
 - [Kotlin object declarations](https://kotlinlang.org/docs/object-declarations.html) — objects and companions.
 
-Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against primary documentation on 2026-10-13.

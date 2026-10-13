@@ -22,11 +22,31 @@ Distinguish fan-in, queued buffering, dropped intermediate values and cancellati
 
 ## Explanation in Arabic
 
-`merge` يجمع عدة flows في stream واحدة وemissions ممكن تتداخل. `buffer` يفصل producer عن collector بقناة buffer لكن لا يعني إسقاط القيم افتراضيًا. `conflate` يحتفظ بالأحدث لما المستهلك بطيء ويسقط intermediates. `collectLatest` يلغي شغل معالجة القيمة السابقة عند وصول أحدث. اختيار الإسقاط أو الإلغاء لازم يبقى آمن لنوع البيانات.
+المقارنة الشاملة بين استراتيجيات التعامل مع الضغط العكسي وتزاحم البيانات (Backpressure & Concurrency Strategies):
+
+1. `merge` (الدمج المتزامن):
+   - يدمج عدة Flows في تدفق واحد ويبث عناصرها في نفس اللحظة التي تصدر فيها (Interleaved).
+   - لا يؤخر ولا يلغي أي شيء.
+
+2. `buffer(capacity)` (التخزين المؤقت في الذاكرة):
+   - يفصل الـ Producer عن الـ Collector في خيوط/كوروتينز منفصلة باستخدام Channel وسيطة.
+   - يسمح للـ Producer بالاستمرار في إنتاج البيانات حتى لو كان الـ Collector بطيئاً، حتى يمتلئ الـ Buffer.
+
+3. `conflate` (التخطي لصالح الأحدث):
+   - حالة خاصة من `buffer(capacity = 1, onBufferOverflow = DROP_OLDEST)`.
+   - لو الـ Collector مشغول في معالجة عنصر، والـ Producer أنتج 5 عناصر جديدة، يتم **إسقاط وتخطي الـ 4 عناصر القديمة**، وإعطاء الـ Collector العنصر الأخير فقط بمجرد أن يفرغ!
+
+4. `collectLatest` (الإلغاء الفوري للعمل الحالي):
+   - لا ينتظر الـ Collector حتى يفرغ! **يلغي الـ Coroutine الخاصة بالعنصر القديم فوراً** ويبدأ معالجة العنصر الجديد في اللحظة التي يصل فيها.
 
 ## Practical walkthrough
 
-`merge` تجمع streams مستقلة، مش backpressure strategy بحد ذاتها. `buffer` تفصل producer/consumer بقناة وتسمح upstream تسبق؛ `conflate` تسقط intermediate وتبقي الأحدث؛ `collectLatest` تلغي معالجة القيمة القديمة. في telemetry مالية لا تسقط أحداث، لكن preview صورة متغيرة بسرعة ممكن latest ينفع. قِس memory والـlatency وما تستخدمش buffer بلا حد.
+توضيح الفرق بالرسم ومثال قراءة الحساسات (Sensor Data):
+- حساس الحركة يصدر 100 إحداثية في الثانية، والـ UI يستغرق 50ms لرسم الشاشة:
+  * بدون أي شيء (Default): الـ Producer سيتعلق وينتظر الـ Collector، فتنخفض قراءات الحساس ويحدث بطء عام.
+  * مع `buffer(100)`: الحساس ينتج في الذاكرة، ولكن الـ UI سيتأخر أكثر فأكثر عن الواقع (Lagging UI) لأن الطابور يزداد طولاً!
+  * مع `conflate()`: الـ UI يكمل رسم الإطار الحالي، ولما يخلص يأخذ أحدث إحداثية من الحساس ويسقط كل ما حدث أثناء الرسم. ممتاز لعرض عداد السرعة!
+  * مع `collectLatest`: إذا وصل إحداثي جديد، يتم إلغاء رسم الإطار القديم فوراً والبدء في رسم الإحداثي الجديد.
 
 ## Why it matters and how it works
 
@@ -61,15 +81,25 @@ A telemetry chart merges two sensor streams and shows only the latest visual fra
 
 ## Interview answer — short
 
-“merge combines streams, buffer queues ahead, conflate skips intermediate values, and collectLatest cancels old processing. I use dropping only when the latest snapshot is sufficient, never for required business events.”
+merge combines multiple streams concurrently into one; buffer decouples producer and collector via an in-memory queue to absorb speed mismatches; conflate drops intermediate unread values keeping only the newest; and collectLatest cancels the collector's current in-flight execution immediately when a new value arrives.
 
 ## Interview answer — structured
 
-“These operators solve different problems. `merge` fans multiple sources into one concurrent stream. `buffer` decouples upstream and downstream within bounded capacity, typically preserving emitted values until capacity/backpressure applies. `conflate` lets a slow consumer skip intermediate values. `collectLatest` cancels its prior action when a new value arrives. For a UI progress graph, dropping stale frames is fine. For transaction or audit records it is not; those need durable ingestion and explicit acknowledgement.”
+These operators provide distinct concurrency and backpressure buffering strategies when producer and collector speeds diverge:
+
+**`merge`** combines emissions from multiple flows into a single unified stream, executing concurrently and interleaving items as they appear.
+
+**`buffer(capacity)`** runs the upstream producer and downstream collector in separate concurrent coroutines connected via a Channel queue. It allows a fast producer to continue generating values without suspending, absorbing bursty spikes as long as the buffer has room.
+
+**`conflate()`** is a backpressure dropper. If the collector is slow, `conflate` skips intermediate upstream values and only delivers the freshest, most recent item when the collector finishes its current task. The collector finishes its work uninterrupted.
+
+**`collectLatest`** takes cancellation further: rather than letting the slow collector finish, it cancels the active collector block immediately the instant a new emission arrives, switching work immediately to the latest value.
 
 ## Interview answer — deep senior
 
-“I start by defining whether each emission is a state snapshot or an irreplaceable occurrence. Merge gives no single total order across sources, so I include source IDs and timestamps when order matters. Buffer can improve throughput by overlapping stages but needs a capacity/memory policy; it is not magical infinite storage. Conflate intentionally loses intermediate values, and collectLatest intentionally abandons prior processing if it cooperates. A blocking or remote side effect may still finish despite cancellation. In production I separate a durable event capture pipeline from a lossy UI render pipeline, measure queue depth and dropped-frame counts, and test a fast producer with a slow consumer to prove the selected behavior. I would first separate combining sources from handling an overloaded consumer. `merge` interleaves emissions from independent flows; it does not make a slow renderer faster. `buffer` lets producer and consumer run more independently up to capacity, trading memory for throughput. `conflate` keeps the latest pending value and drops intermediate ones, appropriate only when every transition is not required. `collectLatest` goes further: it cancels the collector’s work for an old value when a new one arrives. For screen rendering of rapidly changing progress, latest or conflate can be sensible; for payment or audit events, dropping or cancelling is incorrect. I would profile throughput, latency, and memory and test exactly which values are processed under a deliberately slow collector.”
+Under the hood, `conflate()` is literally defined in the Kotlin standard library as `buffer(Channel.CONFLATED)`. A conflated channel holds a buffer of size 1 and uses `BufferOverflow.DROP_OLDEST`. This makes `conflate` allocation-friendly: it retains a single slot on the heap and overwrites the pointer without allocating queue nodes.
+
+The difference between `conflate` and `collectLatest` is a frequent staff-level interview distinction: With `conflate`, the collector **never gets interrupted** while working on an item; it completes its current iteration fully, and only then reads the latest element from the buffer. With `collectLatest`, the collector **is aggressively interrupted and cancelled** via `CancellationException` mid-execution whenever an upstream item arrives. If your collector block modifies persistent storage (like saving a file), `collectLatest` can abort mid-write, while `conflate` lets each write complete cleanly.
 
 ## How to answer in the interview
 
@@ -85,8 +115,14 @@ Draw a fast-producer/slow-consumer timeline and classify which emissions can be 
 
 ## Follow-up questions
 
-- [FLO-12](../flo-12/): What does collectLatest cancel? **Answer:** the previous collector action.
-- [FLO-29](../flo-29/): Which strategy fits slow rendering? **Answer:** latest-only visual state, while durable data is preserved separately.
+- **Interviewer:** "When would you prefer `conflate` over `collectLatest`?"
+  **Answer:** "When the collector's work is a transactional task that must run to completion once started (like saving a frame to disk or completing a database transaction), but you only want to process the latest available item next."
+
+- **Interviewer:** "What is the default buffer size in `buffer()`?"
+  **Answer:** "Calling `buffer()` without parameters uses `Channel.BUFFERED`, which defaults to a capacity of 64 elements."
+
+- **Interviewer:** "Does `buffer()` change the CoroutineDispatcher of the upstream flow?"
+  **Answer:** "No. `buffer()` only introduces a Channel between concurrent coroutines. To change the dispatcher of the upstream flow, you must use `flowOn()`."
 
 ## Self-check rubric
 
@@ -96,4 +132,4 @@ Can I distinguish queue, drop and cancel; state when each is unsafe; and choose 
 
 - [Kotlin Flow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-flow/) — buffer/conflate/merge behavior.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

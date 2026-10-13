@@ -22,11 +22,53 @@ Handle transient UI actions without event loss or repetition across lifecycle an
 
 ## Explanation in Arabic
 
-في UDF، user events تدخل state holder ونتيجتها state جديدة. Snackbar أو navigation غالبًا “one-time effect”، لكن channel/SharedFlow بس ممكن تضيع event لو UI مش بتجمع، وreplay ممكن تعيدها بعد rotation. Android guidance تفضّل تمثّل ViewModel event كـUI state قابل للملاحظة؛ مثل `showLoginRequired` ومعاه acknowledgement لما UI تنفذ action. Navigation trigger لازم مرتبط بbusiness state أو state flag واضح، مش payment effect يتنفّذ اعتمادًا على emission عابر. لو العملية لازم تنجو من process death، persist الحالة أو request ID؛ effect stream في الذاكرة لا يكفي.
+كيف تدير أحداث المرة الواحدة (One-Time Effects) مثل الـ Snackbars، الـ Toasts، وأحداث التنقل في معمارية UDF؟
+
+1. معضلة أحداث المرة الواحدة في UDF:
+   - في المعمارية أحادية الاتجاه (UDF)، الواجهة عبارة عن مراقب لحالة مستمرة (`StateFlow<UiState>`).
+   - الأحداث العابرة (مثل إظهار رسالة خطأ سريعة Snackbar أو التنقل لشاشة أخرى عند نجاح الدفع) ليست حالات مستمرة؛ بل هي أحداث يجب أن تستهلك **مرة واحدة فقط (Fire-and-Forget)**.
+   - إذا وضعت حدثاً كـ Boolean في الـ State (مثل `showError = true`) دون تصفيره، فعند تدوير الشاشة (Configuration Change) يعاد استهلاك الحدث ويظهر الـ Snackbar مرة أخرى للمستخدم بدون داعٍ!
+
+2. الطريقة الحديثة الرسمية الموصى بها (State-Based Event Consumption):
+   - تمثيل الحدث ككائن قابل للاستهلاك في الـ State: `val userMessage: UserMessage? = null`.
+   - عندما تقرأه الواجهة، تعرض الـ Snackbar فوراً، ثم ترسل حدثاً للـ ViewModel: `onMessageDismissed(messageId)` لتصفيره إلى `null`.
+   - الميزة: استعادة تامة وموثوقة للحالة حتى مع موت العملية (Process Death).
+
+3. بديل الـ Channels الموجهة للـ UI:
+   - استخدام `Channel<UiEffect>(Channel.BUFFERED)` والتحويل إلى `receiveAsFlow()`.
+   - يتم استقبالها في Compose عبر `LaunchedEffect`.
+   - تنبيه: يجب جمع الـ Channel عبر دورة حياة آمنة (`repeatOnLifecycle`) لمنع فقدان الأحداث أثناء وجود التطبيق في الخلفية.
 
 ## Practical walkthrough
 
-One-time effect مثل navigation/snackbar لا تعامله كـstate دائم يعاد بعد rotation بلا قصد، لكن event channel بلا replay قد يضيع لو UI متوقفة. حدد semantics: navigation كنتيجة user action؟ أم business state يمكن اشتقاقها؟ للدفع لا تجعل Approved مجرد event؛ خزّنه state. اختبر collector توقف/رجوع وprocess death، واظهر action pending بوضوح.
+تنفيذ أحداث المرة الواحدة باستخدام نمط الرسائل القابلة للاستهلاك ونمط الـ Channel:
+```kotlin
+// النمط الرسمي الموصى به: State-Based مع تصفير الحدث بعد استهلاكه:
+data class PaymentUiState(
+    val isProcessing: Boolean = false,
+    val pendingMessage: String? = null // يمثل حدث المرة الواحدة كـ State
+)
+
+@Composable
+fun PaymentScreen(
+    viewModel: PaymentViewModel,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() }
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    // مراقبة الرسالة؛ عرضها ثم إبلاغ الـ ViewModel بتصفيرها فوراً:
+    LaunchedEffect(state.pendingMessage) {
+        state.pendingMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.onMessageShown() // تصفير لمنع تكرار العرض عند تدوير الشاشة!
+        }
+    }
+
+    Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) {
+        PaymentContent(state)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -50,15 +92,30 @@ A signup flow persists account creation, exposes `AccountCreated(id)` state, nav
 
 ## Interview answer — short
 
-In UDF, I turn events into state and define acknowledgement for one-time UI actions. An in-memory effect stream may lose or replay events across lifecycle changes, so durable business outcomes must come from persisted state.
+Manage one-time effects either by modeling them as consumable state in `UiState` and clearing them via an `onDismissed()` callback immediately after display (Google's official recommendation), or via a buffered `Channel<UiEffect>` collected with `LaunchedEffect` and `repeatOnLifecycle`.
 
 ## Interview answer — structured
 
-I first classify the effect: a cosmetic toast may be best-effort, while navigation after account creation should be reproducible. Android guidance recommends ViewModel events produce UI state. I can expose a pending navigation state, let the UI act, then acknowledge it. A Channel or SharedFlow is possible if I define buffering and replay behavior, but it is not durable across process death. For payments I derive the UI from server-backed status rather than an ephemeral success event. For navigation after signup, I prefer a state that says account creation succeeded and a pending navigation action, then an acknowledgement after the UI handles it. I test rotation between those steps. A best-effort toast has a weaker requirement and may use an ephemeral effect.
+Managing one-time transient events (Snackbars, toasts, navigation triggers) in Unidirectional Data Flow requires balancing state immutability with single-consumption guarantees.
+
+1. **The Consumable State Pattern (Official Google Recommendation)**:
+   - Model the one-off event directly inside the `UiState`: `userMessage: UserMessage?`.
+   - In Compose, a `LaunchedEffect(state.userMessage)` triggers when non-null, displays the Snackbar via `snackbarHostState.showSnackbar(message)`, and immediately invokes a callback `viewModel.onMessageShown(id)` to clear the state back to `null`.
+   - *Advantage*: Guarantees state restoration across process death via `SavedStateHandle` without event dropping or phantom repeats.
+
+2. **The Buffered Channel Pattern (Side-Effect Stream)**:
+   - In the ViewModel, declare `private val _effectChannel = Channel<UiEffect>(Channel.BUFFERED)` exposed as `val effects = _effectChannel.receiveAsFlow()`.
+   - In Compose, collect effects inside `LaunchedEffect(Unit)`.
+   - *Advantage*: Zero boilerplate callback required to clear state; strictly delivers events sequentially.
+   - *Caution*: Must be collected with lifecycle awareness (`flowWithLifecycle` or `repeatOnLifecycle`) so events emitted while in the background are buffered rather than dropped.
 
 ## Interview answer — deep senior
 
-The hard part is delivery semantics. Compose and Activity lifecycles can stop collection; a channel may deliver to an unexpected collector, while replay may duplicate a command. I prefer modeling the result as state when the action matters: the ViewModel exposes a pending outcome, UI consumes it in a lifecycle-aware way, and calls back to acknowledge completion. The underlying business record is persisted if it must survive process death. I test rotation between state update and acknowledgement, repeat collectors, back stack recreation, and duplicate taps. For purely decorative feedback, a best-effort effect stream may be acceptable and simpler. I never equate one emission with exactly-once payment execution or server confirmation. The effect contract must say what happens with zero collectors, a recreated collector, and process death. A Channel can lose an item or deliver it to the wrong consumer depending on setup; replay can repeat navigation. State with acknowledgement makes the pending action visible and testable, but only persisted or reconstructible business state survives process death. If server confirmation matters, the app should derive it from repository status, not from whether an effect was emitted. This is a delivery design problem, not simply a choice of Flow type.
+Why did the classic `SharedFlow(replay = 0)` fail for single-shot events? `SharedFlow` with zero replay acts as a hot broadcast. If an event is emitted while the UI is executing an orientation change or navigation transition, no collector is actively subscribed. The event is silently dropped into the void, and the user never sees the Snackbar or confirmation alert!
+
+A `Channel(Channel.BUFFERED)` solves this by maintaining an internal queue. If the UI is temporarily unsubscribed during screen rotation, the channel buffers the event until the new Activity/Composable subscribes, delivering it reliably without loss.
+
+For user-driven navigation, remember that not all navigation is a ViewModel effect: clicking an item to open details should directly invoke `navController.navigate()` from the UI callback, avoiding roundtrips through the ViewModel.
 
 ## How to answer in the interview
 
@@ -74,8 +131,11 @@ Compare state acknowledgement with Channel and SharedFlow semantics during stop,
 
 ## Follow-up questions
 
-- [ARC-09](../arc-09/): Is a navigation command a domain fact? **Answer:** no; derive it from UI state or confirmed domain outcome.
-- [FLO-20](../flo-20/): Does SharedFlow guarantee process-death delivery? **Answer:** no; it is in-memory.
+- **Interviewer:** "Why is `SharedFlow(replay = 0)` problematic for one-time events?"
+  **Answer:** "It drops emissions if there are no active subscribers at the exact millisecond of emission, causing lost navigation or toast events during configuration changes or background transitions."
+
+- **Interviewer:** "Can `Channel.receiveAsFlow()` be collected by multiple collectors?"
+  **Answer:** "No. Channels are unicast by default; emissions are consumed by whichever collector retrieves them first, which is ideal for single-screen UI effects."
 
 ## Self-check rubric
 
@@ -86,4 +146,4 @@ Describe how navigation occurs once after signup across rotation and why an in-m
 - [Android UI events](https://developer.android.com/topic/architecture/ui-layer/events) — state-driven ViewModel events.
 - [Android UI layer](https://developer.android.com/topic/architecture/ui-layer) — UDF.
 
-Technically reviewed against the linked official Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

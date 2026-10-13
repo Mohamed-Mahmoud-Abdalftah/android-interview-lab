@@ -24,11 +24,43 @@ Explain int versus Integer in Java interoperability.
 
 ## Explanation in Arabic
 
-Java `int` قيمة primitive لا تقبل null، بينما `Integer` object wrapper يقبل null ويُستخدم حيث مطلوب reference مثل generics. Kotlin تعرض Java `int` كـ`Int`، و`Integer` غالبًا كـ`Int?` حسب annotations والسياق، لكن generic Java collection ممكن عناصرها تظهر platform types بسبب نقص معلومات nullability. لذلك ما تفترضش إن `List<Integer>` سليمة من null. في المقارنة استخدم `==` للقيمة، مش `===` للهوية؛ cached wrappers تجعل الهوية متغيرة مع القيمة. لو `Integer` null واتعمل له unboxing لحساب رقم سيحدث crash.
+الفرق بين النوعين الأوليين `int` و `Integer` والتعامل بين Kotlin و Java على مستوى الذاكرة والأداء:
+
+1. كيف يترجم كود Kotlin إلى بايت كود JVM؟
+   - في Kotlin، النوع `Int` غير القابل للعدم (`Int`) يترجم دائماً في البايت كود إلى `int` بدائي (primitive) على الـ JVM، ولا يستهلك سوى 4 بايت مباشرة في الـ Stack أو كـ field داخل الكائن.
+   - أما إذا كان نوعه يقبل العدم `Int?`، فيجب على المترجم تمثيل القيمة كـ Reference Object وهو `java.lang.Integer` (Boxed)، لأنه لا يمكن وضع `null` داخل `int` بدائي.
+
+2. كلفة الـ Object Overhead في `Integer`:
+   - الـ `int` البدائي: 4 بايت فقط.
+   - الـ `Integer` المُغلّف (Boxed Object): يحتوي على Object Header (عادة 12 بايت) + الـ value (4 بايت) + Padding للمحاذاة على 8 بايت = 16 إلى 24 بايت على الـ Heap، بالإضافة إلى 4-8 بايت لعنوان الإشارة (Pointer Reference) إليه!
+   - هذا يعني زيادة في الذاكرة بنسبة 400% إلى 600% لكل رقم، بالإضافة إلى Memory Churn وضغط على الـ Garbage Collector.
+
+3. الـ Autoboxing في الحلقات والمجموعات (Collections):
+   - استخدام `List<Int>` في Kotlin يترجم إلى `java.util.List<Integer>`، مما يجبر كل عنصر على أن يكون مغلفاً في كائن `Integer` على الـ Heap.
+   - في المعالجات الحسابية الثقيلة أو قوائم الإحداثيات والرسوم، يُفضل دائماً استخدام المصفوفات البدائية: `IntArray` بدلاً من `Array<Int>` أو `List<Int>`.
 
 ## Practical walkthrough
 
-لو SDK Java رجّعت `Integer` من غير nullability annotation، Kotlin ممكن تعرضها كـplatform type؛ الكود يترجم حتى لو القيمة null وتكسر عند الحساب. اعمل adapter صغير يحوّلها لـdomain value واضح: صفر لو العقد يقول غياب القيمة يعني صفر، أو error لو الغياب فساد بيانات. اختبر null فعلًا في boundary test؛ `===` هنا يسأل عن object identity، مش العدد.
+مقارنة عملية تظهر تأثير التغليف (Boxing) على الذاكرة وسرعة المعالجة:
+```kotlin
+// ❌ كود سيء: يسبب Autoboxing مستمر لكل عنصر في القائمة، مهدراً الذاكرة ومسبباً GC Churn:
+fun calculateSum(numbers: List<Int>): Long { // List<Int> تخزن كائنات java.lang.Integer
+    var total: Long = 0L
+    for (num in numbers) { // Unboxing من Integer إلى int في كل دورة
+        total += num
+    }
+    return total
+}
+
+// ✅ كود احترافي: استخدام Primitive Array بدون أي Heap Allocation لكل رقم:
+fun calculateSumFast(numbers: IntArray): Long { // يترجم مباشرة إلى int[] في الـ JVM
+    var total: Long = 0L
+    for (num in numbers) { // قراءة مباشرة من الذاكرة المتتالية بدون فك تغليف
+        total += num
+    }
+    return total
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +84,23 @@ Wrap Java-facing SDK responses in a Kotlin adapter that validates nullability an
 
 ## Interview answer — short
 
-“Java `int` is a non-null primitive; `Integer` is a nullable object wrapper. Kotlin maps them to numeric types but Java platform nullability and auto-unboxing need explicit care.”
+In Kotlin, a non-nullable `Int` compiles to JVM primitive `int` (4 bytes on the stack), whereas nullable `Int?` or generic collections like `List<Int>` compile to boxed `java.lang.Integer` (16-24 bytes on the heap). Boxed integers multiply memory footprint and cause GC churn, so high-performance paths should use `IntArray` or primitive-specialized collections.
 
 ## Interview answer — structured
 
-“A Java `int` stores a primitive value, while `Integer` is a reference object, which supports null and generic collections. Boxing and unboxing bridge them. In Kotlin, primitive int maps to `Int`; a boxed `Integer` can surface as nullable or as a platform type when annotations are missing. I validate null at the Java boundary rather than relying on optimistic Kotlin types. I compare numbers by value, because wrapper identity and caching are not a correctness rule.”
+Under the hood, Kotlin does not expose primitives directly in syntax, but its compiler maps them intelligently based on nullability and generics.
+
+A standard non-nullable `Int` compiles directly to a primitive `int` on JVM bytecode, occupying just 4 bytes of contiguous memory with zero object overhead. However, when an `Int` is marked nullable (`Int?`) or used as a type argument in standard generics like `List<Int>`, the runtime must represent it as a boxed reference: `java.lang.Integer`.
+
+The memory impact is drastic: while a primitive `int` requires 4 bytes, a `java.lang.Integer` requires a 12-byte object header, 4 bytes of value payload, and 8-byte alignment padding, consuming 16 to 24 bytes on the heap, plus 4 to 8 bytes for the reference pointer. In high-frequency loops or graphics/sensor processing, this creates massive memory bloat and garbage collection churn. In production, we mitigate this by using primitive arrays like `IntArray` instead of `Array<Int>`, or specialized Android collections like `SparseIntArray` to avoid boxing entirely.
 
 ## Interview answer — deep senior
 
-“The distinction matters at API boundaries. A Java method returning `int` promises a value; one returning `Integer` can represent absence and can be null unless its contract says otherwise. Kotlin's mapping makes both pleasant to use, but an unannotated Java value may be a platform type that bypasses strict null checking. I convert it into an explicit domain value in one adapter, deciding whether null means unknown, default, or error. This prevents auto-unboxing crashes and avoids spreading platform uncertainty. I never use wrapper identity for equality, since caching is an implementation behavior. If large numeric collections are on a measured hot path, I consider primitive arrays to reduce boxing; normal UI code favors clarity. I make the null policy explicit in the adapter: zero is acceptable only if the SDK contract defines absence that way; otherwise null becomes a typed error. A boundary test supplies null and checks the business outcome, because a platform type can compile while still crashing at unboxing time.”
+Java interoperability introduces subtle boxing pitfalls. If a Kotlin function expects `Int` and calls a Java method returning `Integer`, or vice-versa with platform types (`Integer!`), implicit boxing and unboxing occur at bytecode boundaries (`Integer.valueOf()` and `intValue()`). Furthermore, unboxing a null `Integer` returned from Java produces a fatal `NullPointerException` at runtime in Kotlin.
+
+Another critical JVM optimization to understand is the **Integer Cache** (`java.lang.IntegerCache`), which caches boxed values between -128 and 127 by default. Comparing boxed integers inside this range with reference equality (`===`) might deceptively evaluate to `true`, but comparing values outside this range fails because distinct instances are allocated on the heap.
+
+When profiling memory in Android Studio, collections of boxed primitives appear as massive retained sizes dominated by millions of tiny `java.lang.Integer` instances. Replacing `Map<Int, CustomObject>` with Android's `SparseArray<CustomObject>` eliminates the `Integer` key boxing completely, saving megabytes of heap in large list adapters or cache layers.
 
 ## How to answer in the interview
 
@@ -76,9 +116,11 @@ Discuss primitive versus reference, nullable wrapper, platform types, auto-unbox
 
 ## Follow-up questions
 
-- Can Java `Integer` hold null? **Answer:** yes; it is a reference type, unlike primitive `int`.
-- What is a Kotlin platform type? **Answer:** a Java-derived type with incomplete nullability information that can permit unsafe use unless validated.
-- Why can wrapper `===` appear to work for small values? **Answer:** JVM boxed-value caching may reuse instances; identity is still the wrong numeric comparison.
+- **Interviewer:** "What happens if a Java method returns `Integer` and is assigned to a non-nullable Kotlin `Int`?"
+  **Answer:** "The compiler accepts it as a platform type `Int!`. If the Java method returns null, unboxing it into Kotlin's primitive `int` invokes `intValue()`, which instantly throws a `NullPointerException`. We always annotate Java boundaries with `@NonNull` or type it explicitly as `Int?` in Kotlin."
+
+- **Interviewer:** "Why does `IntArray` not box elements while `Array<Int>` does?"
+  **Answer:** "`IntArray` compiles directly to JVM bytecode primitive array `int[]`, storing contiguous 4-byte values. In contrast, `Array<Int>` compiles to `Integer[]`, which is an array of object pointers pointing to separate `Integer` instances on the heap."
 
 ## Self-check rubric
 
@@ -90,4 +132,4 @@ Describe both Java types, map them to Kotlin, handle a null wrapper, and explain
 - [Kotlin numbers](https://kotlinlang.org/docs/numbers.html) — boxed number caching.
 - [Java autoboxing tutorial](https://docs.oracle.com/javase/tutorial/java/data/autoboxing.html) — conversion mechanics.
 
-Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The SDK example is illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

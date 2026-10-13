@@ -23,11 +23,69 @@ How do you avoid duplicate payment requests after UI timeout?
 
 ## Explanation in Arabic
 
-الـUI timeout معناه إن الرد ما وصلش، مش إن الدفع فشل. ممكن issuer وافق قبل انقطاع الاتصال. نخلي نفس operation ID ونظهر pending/unknown، نسأل backend/provider عن status، ونمنع زر “ادفع تاني” ينشئ charge جديد قبل حل النتيجة. لو retry مسموح نستخدم نفس idempotency key والparameters تحت عقد provider.
+كيف تمنع طلبات الدفع المكررة (Duplicate Payment Requests) الناتجة عن نفاد وقت واجهة المستخدم (UI Timeout) أو نقر العميل المتكرر؟
+
+1. سيناريوهات التكرار الشائعة في واجهة المستخدم (UI Hazards):
+   - **1. النقر المزدوج المتسارع (Double-Tapping / Rapid Clicks)**: ينقر المستخدم على زر "تأكيد الدفع" مرتين بسرعة قبل أن يتم تعطيل الزر (Disable).
+   - **2. نفاد وقت الواجهة (UI Timeout)**: تستغرق استجابة البنك 25 ثانية، بينما شاشة التطبيق مضبوطة على إظهار رسالة خطأ بعد 15 ثانية! يرى المستخدم رسالة فشل، فيضغط الزر مرة ثانية بينما الطلب الأول ما زال قيد المعالجة في البنك!
+   - **3. استدارة الشاشة (Configuration Changes)**: تدوير الشاشة يعيد إنشاء الـ Activity فيقوم بكود البدء مرة أخرى إذا لم تكن المعمارية سليمة.
+
+2. آليات المنع متعددة الطبقات (Multi-Layer Defense):
+   - **الطبقة 1: واجهة المستخدم (UI Layer - Debounce & State)**:
+     * تعطيل زر الدفع فوراً عند أول نقرة (`enabled = false`) وإظهار مؤشر تحميل (Loading Spinner).
+     * استخدام `throttleFirst(1000ms)` في تدفقات Compose أو Coroutines لمنع النقرات المتتالية.
+   - **الطبقة 2: طبقة إدارة الحالة (ViewModel & State Machine)**:
+     * استخدام كائن حالة أحادي (`PaymentUiState.Processing`)؛ إذا كان الـ ViewModel في حالة `Processing`، يتجاهل أي حدث دفع جديد فوراً.
+   - **الطبقة 3: طبقة النطاق والبيانات (Repository & Mutex)**:
+     * استخدام **Kotlin `Mutex`** لمنع إطلاق دالتين للدفع بالتوازي لنفس الـ Session.
+   - **الطبقة 4: طبقة الشبكة (Network - Idempotency Key)**:
+     * ربط الطلب بـ Idempotency-Key محفوظ في Room، بحيث يرفض الخادم أي طلب مكرر لنفس المعاملة.
 
 ## Practical walkthrough
 
-لو شاشة الدفع قالت timeout، رجّع حالة `Checking` لنفس `operationId` بدل تفتح زر Pay جديد فورًا. Repository تسأل status؛ لو unknown بعد كده، خلي checkout معلّقة وابدأ reconciliation. حتى لو UI اختفت ورجعت، ID من التخزين ترجع نفس العملية بدل charge جديدة.
+تنفيذ هندسي متكامل لمنع تكرار طلبات الدفع عبر الطبقات الثلاث:
+```kotlin
+// 1. في الـ ViewModel: حماية عبر Mutex وحالة المعالجة الأحادية:
+class CheckoutViewModel(private val repository: PaymentRepository) : ViewModel() {
+    private val paymentMutex = Mutex()
+    private val _uiState = MutableStateFlow<CheckoutUiState>(CheckoutUiState.Idle)
+    val uiState: StateFlow<CheckoutUiState> = _uiState.asStateFlow()
+
+    fun onPayClicked(orderId: String, amount: Long) {
+        viewModelScope.launch {
+            // حماية Mutex: إذا كان هناك دفع جاري، يتم تجاهل النقرة فوراً:
+            if (!paymentMutex.tryLock()) return@launch
+            try {
+                _uiState.value = CheckoutUiState.Processing
+                val result = repository.executePayment(orderId, amount)
+                _uiState.value = CheckoutUiState.Success(result)
+            } catch (e: Exception) {
+                _uiState.value = CheckoutUiState.Error(e.message ?: "Payment failed")
+            } finally {
+                paymentMutex.unlock()
+            }
+        }
+    }
+}
+
+// 2. في واجهة Compose: زر معطل ومحمي ضد النقر المتكرر:
+@Composable
+fun CheckoutScreen(viewModel: CheckoutViewModel) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val isProcessing = state is CheckoutUiState.Processing
+
+    Button(
+        onClick = { viewModel.onPayClicked("ord_123", 5000) },
+        enabled = !isProcessing // تعطيل الزر فورياً عند بدء الدفع
+    ) {
+        if (isProcessing) {
+            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+        } else {
+            Text("Pay $50.00")
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +109,31 @@ Backend/terminal metrics track unresolved age and duplicate attempts. Customer s
 
 ## Interview answer — short
 
-“After a UI timeout I show a recoverable pending state and keep the original payment identity. The repository looks up the authoritative result; a second tap does not create a new charge while the first remains unknown.”
+Prevent duplicate payments by implementing multi-layered safeguards: immediately disable buttons and display loading spinners on the UI, protect ViewModel dispatch using a Kotlin Mutex or single-flight state guards, calibrate UI timeouts to exceed backend gateway SLAs, and anchor requests with persistent Idempotency Keys.
 
 ## Interview answer — structured
 
-“The server may have completed the charge even though the response was lost. I persist an operation ID and immutable parameters before sending, then show pending or unknown after timeout. The backend provides status lookup and enforces idempotency for retries with the same identity. Until authority resolves the result, the UI prevents a new charge for that purchase and survives process death. Provider-specific retention and replay semantics must be checked. A cancel button may mean “stop waiting,” not “reverse approved payment.” The customer sees one pending operation with a reference they can return to after process death.”
+Preventing duplicate payment requests requires an end-to-end defense-in-depth architecture across UI, presentation, and data layers:
+
+1. **Presentation & UI Layer Defenses**:
+   - **Instant Click Debouncing & Button Disabling**: The moment a user taps 'Pay', the button transitions to `enabled = false` and displays an explicit indeterminate progress spinner. Event handlers use `throttleFirst` to drop rapid taps.
+   - **ViewModel State Guards via Mutex**: Protect execution blocks using Kotlin `Mutex.tryLock()`. If a payment operation is currently active, subsequent invocations return immediately without launching duplicate coroutines.
+
+2. **Timeout SLA Alignment**:
+   - A frequent architectural flaw is setting a 15-second client UI timeout when the payment gateway has a 30-second acquiring SLA. The UI prematurely times out and shows a retry button while the backend transaction is still processing. Client timeouts must exceed gateway read timeouts, and timeouts must transition to an 'In-Doubt Checking' screen rather than a generic failure screen.
+
+3. **Persistent Idempotency Layer**:
+   - If the user manages to force-retry (e.g. by killing and restarting the app), the order entity retains the original `idempotency_key`. The subsequent network call presents the identical key to the payment gateway, which returns the original result rather than debiting the customer again.
 
 ## Interview answer — deep senior
 
-“I design the timeout path as part of the state machine, not an exception handler. The client cannot infer remote failure from a socket error, so it records unknown and resumes from durable identity after restart. The backend serializes same-ID requests, rejects parameter drift, queries provider state and reconciles late webhooks. I distinguish a retry of the same operation from a new customer purchase, because the latter needs a new ID. If lookup remains unknown beyond provider windows, operations handles the case; the UI does not claim approval or decline. Tests simulate server success with a lost response and duplicate taps. Creating a new UUID on each button tap can double-charge. I would test a timeout after issuer approval, then a repeated tap, to show no new operation ID is created. The UI can say 'checking payment' and give the customer an opaque reference, but it must not quietly create another authorization for the same purchase. I keep the operation ID and request fingerprint in durable storage before sending. After timeout the repository asks the backend for status; if the backend also lacks certainty, it consults the provider or waits for reconciliation. An explicit cancel action means stop waiting unless the payment contract confirms a financial cancellation. I would test a server commit with response loss, two rapid taps, process recreation, and a second device trying the same purchase. Those cases reveal whether the lock is only visual or enforced at the business boundary.”
+From an Android lifecycle and process death perspective, state handling requires lifecycle-proof architecture:
+
+1. **Configuration Changes & Process Recreation**: If a user rotates the screen during payment processing, a naive Activity might re-invoke `onCreate` and trigger duplicate payment logic. Managing payment operations inside an injected Application-scoped or WorkManager-backed service unbinds transaction execution from transient UI component lifecycles.
+
+2. **The 'In-Doubt' Loading Screen**: When an inevitable client-side timeout occurs after 35 seconds, never display a simple 'Transaction Failed — Try Again' dialog. Display: 'Verifying payment with your bank... Please do not re-submit.' Query the transaction status endpoint before allowing the user to initiate a new checkout session.
+
+3. **Backend Race Condition Mitigation**: What if two duplicate requests arrive at the backend within 5 milliseconds due to multi-threaded glitches? Distributed Redis locks on `idempotency_key` ensure only one worker thread enters the payment processing block, returning an HTTP 409 Conflict to the concurrent duplicate.
 
 ## How to answer in the interview
 
@@ -75,8 +149,11 @@ Prompt for lost response, same-key retry, parameter immutability, process death 
 
 ## Follow-up questions
 
-- [PAY-02](../pay-02/): What prevents duplicate business effects? **Answer:** server-side idempotency with stable identity.
-- [PAY-01](../pay-01/): What state follows timeout? **Answer:** unknown until authoritative evidence arrives.
+- **Interviewer:** "Why should client UI timeouts always be longer than backend payment gateway timeouts?"
+  **Answer:** "To prevent premature client failure dialogs while the backend is still actively and legitimately capturing funds."
+
+- **Interviewer:** "How does `Mutex.tryLock()` prevent duplicate payment executions in Kotlin Coroutines?"
+  **Answer:** "It atomically attempts to acquire the lock without suspending; if already held by an in-flight payment, it returns false and exits immediately."
 
 ## Self-check rubric
 
@@ -87,4 +164,4 @@ Can I explain timeout ambiguity, durable identity, status lookup and safe UI beh
 - [Stripe idempotent requests](https://docs.stripe.com/api/idempotent_requests) — one provider’s retry semantics.
 - [Android offline-first data layer](https://developer.android.com/topic/architecture/data-layer/offline-first) — persistent state recovery.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -24,11 +24,37 @@ An app installs in debug but crashes on launch in release due to renamed classes
 
 ## Explanation in Arabic
 
-ابدأ بالـcrash stack وartifact/version/variant، ثم retrace بالماب المطابقة. لو `ClassNotFoundException` أو reflection/JNI load في launch، افحص class name المتوقع وهل R8 أزال/غيّر الاسم؛ راجع `mapping.txt`, `usage.txt` وmerged rules. تجربة release مؤقتة بدون minify قد تدعم الفرضية، لكنها ليست إثباتًا وحدها لأن builds اختلفت أيضًا. أثبت بإعادة إنتاج crash في minified artifact، إضافة keep rule دقيقة أو إصلاح SDK، ثم تشغيل نفس launch path بنجاح مع R8. احتفظ بتغطية release startup في CI.
+تطبيق يُثبت ويعمل بشكل مثالي في بيئة الـ Debug، ولكنه ينهار فور الفتح (Crash on Launch) في بيئة الـ Release بسبب أسماء كلاسات تم تشويشها. كيف تثبت السبب الجذري برهانياً وتصلحه؟
+
+1. إثبات السبب الجذري برهانياً (Step-by-Step Proof):
+   - **الخطوة 1: استخراج الـ Crash Stack Trace الأصلي**: تشغيل الـ Release APK عبر ADB وقراءة الخطأ المشوش في Logcat:
+     `java.lang.ClassNotFoundException: a.b.c`.
+   - **الخطوة 2: فك التشفير عبر `retrace`**: تمرير الـ Stack Trace لـ `retrace mapping.txt` لاكتشاف اسم الكلاس الأصلي (مثلاً `com.example.ui.MainActivity` أو كلاس Fragment).
+   - **الخطوة 3: البرهان في `usage.txt`**: فتح ملف `usage.txt`؛ إذا كان اسم الكلاس موجوداً فيه، فهذا إثبات قطعي بأن R8 اعتبره كوداً ميتاً وحذفه.
+   - **الخطوة 4: فحص ملف الـ AndroidManifest المدمج**: فتح الـ APK في APK Analyzer وفحص `AndroidManifest.xml`. إذا كان الـ Manifest يشير إلى `com.example.ui.MainActivity` بينما R8 شوش اسم الكلاس إلى `a.b.c`، فهذا يثبت سبب الانهيار فور الفتح.
+
+2. الحل الجذري:
+   - إضافة قاعدة Keep Rule صريحة أو استخدام تعليق `@Keep` على الكلاس المستهدف.
 
 ## Practical walkthrough
 
-لو debug يعمل وrelease ينهار بسبب class renamed، اثبت: stack retraced، dependency تعمل reflection بالاسم، R8 usage/mapping، وتجربة rule ضيقة تعيد السلوك على minified build. لا تكتفِ بإطفاء minify؛ ده يثبت ارتباطًا جزئيًا لا root cause. أضف consumer rule أو adapter بدون reflection إن مناسب، واختبر sample app release. احتفظ بحجم/أداء قبل وبعد.
+خطوات التحقيق العملي في انهيار تشويش الكلاسات وحله بقاعدة Keep Rule دقيقة:
+```bash
+# 1. التقاط الـ Crash المشوش من الهاتف:
+adb logcat -d *:E | grep -E "FATAL EXCEPTION|ClassNotFoundException"
+# المخرجات: Caused by: java.lang.ClassNotFoundException: Didn't find class "com.example.auth.AuthRouter"
+
+# 2. التحقق من ملف usage.txt لإثبات أن R8 حذفه أو شوش اسمه:
+grep "com.example.auth.AuthRouter" app/build/outputs/mapping/release/usage.txt
+```
+
+```kotlin
+// 3. الحل في كود Kotlin بإضافة تعليق @Keep الصريح:
+@Keep // يمنع R8 من حذف الكلاس أو تغيير اسمه نهائياً
+class AuthRouterImpl : AuthRouter {
+    // Implementation
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +78,32 @@ Archive maps and reports per artifact, include minified release startup test on 
 
 ## Interview answer — short
 
-“I reproduce the exact minified release, retrace its crash, inspect R8 mapping/usage and the string lookup, then fix the narrow required name or member and rerun launch.”
+Prove the cause by retrieving the crash from Logcat, retracing it with mapping.txt to identify the original class, confirming its deletion in usage.txt, and inspecting the merged manifest or reflection call site in APK Analyzer. Remediate by applying a targeted @Keep annotation or surgical ProGuard rule.
 
 ## Interview answer — structured
 
-“I do not infer R8 from debug versus release alone. I capture the exact release stack and retrace with its map, inspect the configured reflective class name and R8 output, and compare a controlled minification-off experiment. Then I add a targeted rule or replace the fragile lookup and show the same release launch path passes with minification enabled. CI keeps a startup regression test.”
+Proving and remediating an immediate startup crash caused by obfuscated or stripped classes follows a forensic debugging pipeline:
+
+1. **Capture & Retrace the Exception**:
+   - Extract the startup crash log via `adb logcat -d *:E`. Run the trace through `retrace mapping.txt`. The deobfuscated trace pinpoints the exact class (e.g. `ClassNotFoundException: Didn't find class com.example.analytics.AppInitializer`).
+
+2. **Definitive Proof via R8 Diagnostic Reports**:
+   - Search for the class inside `app/build/outputs/mapping/release/usage.txt`. If present, R8 explicitly determined it was unreferenced dead code and pruned it from `classes.dex`.
+   - If the class exists in `classes.dex` under an obfuscated name (`a.b.c`), but dynamic instantiation points (e.g., `Class.forName("com.example.analytics.AppInitializer")` or an unmerged manifest entry) look for the original string name, the failure is proven.
+
+3. **Surgical Remediation**:
+   - Decorate the class with `@androidx.annotation.Keep` or add a surgical rule in `proguard-rules.pro`: `-keep class com.example.analytics.AppInitializer { <init>(); }`.
+   - Rebuild and verify that the class now appears in `seeds.txt` and the app boots cleanly.
 
 ## Interview answer — deep senior
 
-“To prove causality I control the artifact and the hypothesis. I identify the crashing release variant, version, mapping file and startup exception; an unrelated debug APK is only a comparison. Suppose manifest metadata names a plugin loaded through `Class.forName`. I retrace the release stack and inspect mapping and usage reports to determine whether R8 renamed or removed that configured class or its constructor. I check the merged release manifest too, because an incorrect string there can mimic an R8 issue. I may run a temporary release with minification disabled to narrow the search, but that changes a large set of transformations and is not a final proof. The convincing experiment keeps R8 on and changes only the required dynamic contract—perhaps a targeted rule preserving the class name and constructor, or SDK code that references the class explicitly. If the crash disappears and a minified startup test exercises that lookup, the causal claim is much stronger. I then review rule scope and artifact size, archive mapping with the release, and monitor startup crashes in staged rollout.”
+From an architectural systems perspective, startup obfuscation crashes frequently result from Manifest Merging and DI service loading:
+
+1. **ServiceLoader & Provider Reflection**: Libraries using Java `ServiceLoader` (e.g. Kotlin Coroutines `AndroidDispatcherFactory`, OkHttp platform engines) rely on metadata files inside `META-INF/services/`. If R8 obfuscates the implementing class without rewriting the service provider configuration file, `ServiceLoader` throws runtime initialization exceptions on startup. Configure R8 with `-keepnames` for service provider classes.
+
+2. **Manifest Class Reference Obfuscation**: AGP automatically preserves any Activity or Service declared in the application's merged manifest. However, if an activity is declared in an external library manifest that was modified dynamically via manifest placeholders or instantiated via custom classloaders, AGP may miss the reference. Always verify the merged manifest inside `intermediates/merged_manifests/release/`.
+
+3. **Automated Release Smoke Testing in CI**: Before deploying, CI release pipelines must execute an automated monkey test or startup smoke test (`adb shell monkey -p <pkg> 500`) against the signed release APK on an emulator to assert that startup initialization succeeds.
 
 ## How to answer in the interview
 
@@ -76,9 +119,11 @@ Discuss controlled comparison, mapping, usage reports, manifest string, construc
 
 ## Follow-up questions
 
-- Does debug success alone prove R8 caused the crash? **Answer:** no; other variant settings may differ.
-- Why keep R8 enabled in the final proof? **Answer:** it tests the actual shipping transformation with a narrow fix.
-- Could a kept class still fail? **Answer:** yes; required name or constructor/member may still be changed or missing.
+- **Interviewer:** "Why does AGP automatically keep Activities declared in AndroidManifest.xml?"
+  **Answer:** "AGP automatically generates ProGuard keep rules for all component classes referenced in the merged AndroidManifest.xml as compilation entry points."
+
+- **Interviewer:** "What is the difference between ClassNotFoundException and NoClassDefFoundError?"
+  **Answer:** "ClassNotFoundException occurs when dynamic loading (Class.forName) fails to find the class; NoClassDefFoundError occurs when a class was present at compile time but missing from the runtime classpath."
 
 ## Self-check rubric
 
@@ -89,4 +134,4 @@ State hypothesis, collect exact-artifact evidence, change one rule and verify mi
 - [R8 keep rule examples](https://developer.android.com/topic/performance/app-optimization/keep-rule-examples) — reflection and naming.
 - [Recover stack traces](https://developer.android.com/tools/retrace) — mapping evidence.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Plugin scenario is illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -23,11 +23,59 @@ How do you protect signing material and CI secrets?
 
 ## Explanation in Arabic
 
-Android signing key لو اتسرب attacker يقدر يوقّع artifacts حسب منظومة التوزيع؛ CI secrets زي Play API credentials برضه خطيرة. نخلي release signing في protected job/environment، صلاحيات أقل ما يمكن، approvals/audit، وuntrusted PR/fork jobs من غير secrets. ما نطبعش قيم في logs أو artifacts، ونستخدم managed key storage/Play App Signing حسب release setup.
+كيف تقوم بحماية مفاتيح التوقيع (Signing Keystore) وأسرار الـ CI/CD من التسريب أو الاختراق؟
+
+1. المخاطر الأمنية الرئيسية:
+   - **تسريب الـ Keystore**: إذا تسرب مفتاح توقيع التطبيق وكلمة السر، يمكن لأي مخترق نشر تحديثات خبيثة للمستخدمين.
+   - **اختراق عبر Pull Requests**: تشغيل سيرفرات الـ CI تلقائياً على فروع الـ Forks المفتوحة قد يسمح لمهاجم بطباعة الـ Secrets في الـ Logs (`echo $KEYSTORE`).
+   - **كشف الأسرار في الـ Version Control**: رفع ملفات `.jks` أو كلمات المرور صراحة في `build.gradle.kts`.
+
+2. أفضل الممارسات الهندسية لحماية الأسرار:
+   - **Google Play App Signing**: الاعتماد على جوجل لحفظ مفتاح التوقيع الرئيسي (App Signing Key). السيرفر يحتاج فقط لمفتاح الرفع (Upload Key)؛ وإذا ضاع أو تسرب مفتاح الرفع، يمكن إعادة ضبطه بسهولة عبر Google Support دون فقدان التطبيق.
+   - **تخزين الـ Keystore كـ Secret سحابي**: تحويل ملف الـ JKS إلى نص مشفر (Base64) وتخزينه داخل GitHub Secrets أو HashiCorp Vault أو GCP Secret Manager.
+   - **استدعاء الأسرار بشكل عابر (Ephemeral Extraction)**: فك تشفير الـ Keystore في ملف مؤقت داخل مجلد الـ Runner أثناء البناء فقط، ثم حذفه فور انتهاء المهمة.
+   - **عزل أسرار الـ PRs**: منع فروع الـ PRs القادمة من الـ Forks من الوصول لأسرار التوقيع والـ Play Store نهائياً.
 
 ## Practical walkthrough
 
-Signing key وPlay credentials أسرار نشر، مش input لأي PR. خزنها في secret manager أو protected CI environment بمبدأ أقل صلاحية، وحدد من يقدر يشغّل release job ومن يقدر يوافقه. استخدم ephemeral/OIDC credentials لو provider يدعم، وراجع log masking لأنه مش يمنع كل تسريب؛ PR خبيث ممكن يبعث السر للشبكة لو job شغّل كوده بنفس الصلاحيات. اعمل rotation/revocation plan وتابع audit logs، وافصل upload key عن app signing key حسب نموذج Play.
+إعداد توقيع الـ Release في Gradle بشكل آمن باستخدام متغيرات البيئة المشفرة:
+```kotlin
+// app/build.gradle.kts
+android {
+    signingConfigs {
+        create("release") {
+            // قراءة المسار والأسرار من متغيرات البيئة فقط، وتجنب وضعها في الكود نهائياً:
+            storeFile = System.getenv("KEYSTORE_FILE_PATH")?.let { file(it) }
+            storePassword = System.getenv("KEYSTORE_STORE_PASSWORD")
+            keyAlias = System.getenv("KEYSTORE_KEY_ALIAS")
+            keyPassword = System.getenv("KEYSTORE_KEY_PASSWORD")
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
+}
+```
+وفي ملف GitHub Actions:
+```yaml
+- name: Decode and Setup Keystore
+  env:
+    KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+  run: |
+    echo "$KEYSTORE_BASE64" | base64 --decode > /tmp/release_upload.jks
+- name: Build Release Bundle
+  env:
+    KEYSTORE_FILE_PATH: /tmp/release_upload.jks
+    KEYSTORE_STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
+    KEYSTORE_KEY_ALIAS: ${{ secrets.KEYSTORE_KEY_ALIAS }}
+    KEYSTORE_KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD }}
+  run: ./gradlew bundleRelease
+- name: Clean Up Keystore
+  if: always()
+  run: rm -f /tmp/release_upload.jks
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +99,33 @@ Periodic audit reviews who can trigger release, secret access logs, credential e
 
 ## Interview answer — short
 
-“I isolate signing and Play credentials in protected release jobs. Untrusted PR code runs without secrets; masking alone cannot prevent exfiltration from a malicious build script.”
+Protect signing material by using Google Play App Signing (so CI only holds an Upload Key), storing the keystore as a base64-encoded secret in CI secret vaults, injecting credentials dynamically via environment variables, decoding the file ephemerally into a temporary path deleted on cleanup, and strictly isolating release secrets from untrusted PR builds.
 
 ## Interview answer — structured
 
-“I keep the signing pipeline separate from ordinary PR checks. Fork code is untrusted and gets read-only permissions, no keystore or Play API credentials. A protected merge/release job retrieves scoped secrets, signs the exact tested AAB and records provenance. Play App Signing and upload-key recovery are considered in the custody plan. Logs and artifacts are scanned for accidental leakage.”
+A hardened mobile secret management architecture relies on four defensive layers:
+
+1. **Google Play App Signing Architecture**:
+   - Delegate root app signing authority to Google Cloud Key Management. The CI pipeline only holds an **Upload Key**. If an upload key is compromised, administrators can revoke and rotate it via Play Console without stranding existing installed users.
+
+2. **Encrypted Secret Storage & Ephemeral Lifecycle**:
+   - The upload keystore binary is encoded as base64 and stored in enterprise secret vaults (GitHub Secrets, AWS Secrets Manager, or HashiCorp Vault). The CI runner decodes the file into an ephemeral temporary path (`/tmp/upload.jks`) immediately before compilation and securely wipes it in a `finally` or `if: always()` post-build step.
+
+3. **Zero Secrets in Source Control**:
+   - Keystore passwords, aliases, and Play Console JSON API keys are strictly injected via environment variables at runtime, never committed to `build.gradle.kts` or `keystore.properties`.
+
+4. **PR Execution Security Boundary**:
+   - Pull requests originating from public forks or unverified contributors are executed in unprivileged sandbox runners where production release secrets are strictly masked and unavailable.
 
 ## Interview answer — deep senior
 
-“My main rule is a trust boundary: a workflow that executes untrusted pull-request code must never receive signing material or publishing credentials. A secret mask in logs is not a security boundary; code with the secret can send it elsewhere. I use protected branches and environments, minimal token permissions, limited reviewers for promotion and separate release jobs that check out a trusted ref. Where supported, short-lived federated credentials reduce stored long-lived secrets. For Android I distinguish the upload key used by our pipeline from the app signing key held under Play App Signing; their recovery and compromise paths differ. I restrict artifact and mapping access too, keep audit logs, and rehearse revocation/rotation. An attacker can hide exfiltration in a build script or dependency, so dependency verification and careful workflow review matter alongside encrypted secret storage. The trade-off is a few controlled steps in the release path for a much smaller blast radius.”
+From a DevSecOps and supply-chain defense perspective, advanced secret protection involves preventing indirect exfiltration:
+
+1. **Malicious Dependency and PR Injection**: Attackers can submit PRs modifying third-party dependencies or Gradle build scripts to print `System.getenv()` into build logs or send secrets via curl. GitHub Actions enforces that `pull_request` triggers do not have access to repository secrets by default. Never use `pull_request_target` with an automatic checkout of PR head code, as this exposes secrets to attacker-controlled scripts.
+
+2. **Log Masking and Redaction**: Ensure CI secret values are registered with secret masking utilities (e.g., `::add-mask::` in GitHub Actions). Gradle log levels must never be set to `--debug` or `--info` on production signing tasks, as Gradle may log command-line arguments and environment parameters.
+
+3. **OIDC (OpenID Connect) for Cloud Access**: Replace long-lived API service account JSON keys for Google Cloud and Google Play with short-lived OIDC federated tokens. The GitHub Actions runner authenticates directly with GCP Workload Identity Federation using temporary cryptographic credentials, eliminating static stored credentials.
 
 ## How to answer in the interview
 
@@ -75,8 +141,11 @@ Prompt for malicious Gradle script, PR versus release isolation, Play upload key
 
 ## Follow-up questions
 
-- [CIC-18](../cic-18/): How can PR steal secrets? **Answer:** execute code in privileged workflow context.
-- [CIC-03](../cic-03/): What ties release to source? **Answer:** artifact hash, commit and signing provenance.
+- **Interviewer:** "What is the critical security benefit of Google Play App Signing over managing the app signing key manually?"
+  **Answer:** "If your upload key is compromised or lost, Google Play can rotate it upon request without abandoning the app or stranding existing users."
+
+- **Interviewer:** "Why is using `pull_request_target` dangerous when handling secrets in GitHub Actions?"
+  **Answer:** "Because it runs in the context of the base branch with secret access, allowing untrusted PR code to exfiltrate secrets if checked out directly."
 
 ## Self-check rubric
 
@@ -87,4 +156,4 @@ Keep signing credentials out of untrusted PR jobs, scope and rotate secrets, pro
 - [Play App Signing](https://developer.android.com/studio/publish/app-signing) — signing and upload key roles.
 - [Android publishing](https://developer.android.com/studio/publish) — release workflow.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

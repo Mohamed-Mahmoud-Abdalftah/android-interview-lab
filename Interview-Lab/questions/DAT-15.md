@@ -22,7 +22,69 @@ Persist offline edits and synchronize them safely after reconnect/process death.
 
 ## Explanation in Arabic
 
-وقت offline edit، نحفظ التعديل والـpending operation في Room transaction واحدة قبل ما نقول للمستخدم Saved. كل عملية لها stable ID وbase version. WorkManager يقرأ الطابور عند توفر network، يرسل بالترتيب المطلوب، ويعلّم acknowledged فقط بعد server response موثوقة. لو timeout، نستعلم عن status بنفس ID بدل إنشاء تعديل جديد.
+كيف تزامن التعديلات المحلية (Local Writes) بعد انقطاع الاتصال في تطبيق Offline-First؟
+
+1. دورة حياة العملية غير المتصلة (Offline Mutation Lifecycle):
+   - **الخطوة 1: التسجيل المحلي الفوري في Room (Atomic Commit)**:
+     * عند ضغط المستخدم على 'إرسال تعليق' أو 'تعديل ملف' وهو غير متصل، يتم حفظ التعديل في جدول البيانات الأساسي مع حالة `SYNC_PENDING`، ويتم إضافة سجل إلى جدول طابور المزامنة `sync_queue` يحتوي على: `operationId: UUID`, `actionType: EDIT`, `entityId`, `payloadJson`, `timestamp`.
+     * يتم هذا داخل `database.withTransaction` لضمان عدم وجود تعديل بدون سجل في الطابور.
+     * الـ UI تُحدّث فوراً ليشاهد المستخدم تعديله في 5ms.
+   - **الخطوة 2: جدولة المزامنة المضمونة عبر WorkManager**:
+     * يتم إطلاق `OneTimeWorkRequestBuilder<SyncWorker>()` مع شرط توفر الإنترنت `Constraints(NetworkType.CONNECTED)`.
+     * يتميز WorkManager بأنه يضمن التنفيذ حتى لو أغلقت الشاشة، أو مات الـ Process، أو أعيد تشغيل الهاتف.
+   - **الخطوة 3: التنفيذ المتسلسل والمعالجة (Execution & Acknowledgment)**:
+     * يقرأ `SyncWorker` العمليات بالترتيب الزمني (FIFO).
+     * يرسل العملية إلى السيرفر مرفقة بـ `idempotencyKey = operationId`.
+     * عند استلام `200 OK`، يتم حذف السجل من طابور `sync_queue` وتحديث حالة الكيان في Room إلى `SYNCED`.
+
+## Practical walkthrough
+
+هيكل طابور المزامنة و SyncWorker لمعالجة التعديلات غير المتصلة:
+```kotlin
+// 1. كيان طابور المزامنة المحلي في Room:
+@Entity(tableName = "sync_mutations_queue")
+data class SyncMutationEntity(
+    @PrimaryKey val operationId: String = UUID.randomUUID().toString(),
+    val entityType: String,
+    val entityId: String,
+    val action: String, // CREATE, UPDATE, DELETE
+    val payloadJson: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+// 2. معالج المزامنة في WorkManager:
+@HiltWorker
+class OutboxSyncWorker @AssistedInject constructor(
+    @Assisted appContext: Context,
+    @Assisted workerParams: WorkerParameters,
+    private val database: AppDatabase,
+    private val syncApi: RemoteSyncApi
+) : CoroutineWorker(appContext, workerParams) {
+
+    override suspend fun doWork(): Result {
+        val pendingMutations = database.syncDao().getOldestPendingMutations(limit = 20)
+        
+        for (mutation in pendingMutations) {
+            try {
+                // إرسال العملية مع Idempotency Key:
+                syncApi.pushMutation(mutation.operationId, mutation.toRequest())
+                // عند التأكيد، نحذفها من الطابور ونثبت الحالة:
+                database.withTransaction {
+                    database.syncDao().deleteMutation(mutation.operationId)
+                    database.itemsDao().markSynced(mutation.entityId)
+                }
+            } catch (e: IOException) {
+                // خطأ شبكة عابر: نطلب من WorkManager إعادة المحاولة بـ Exponential Backoff:
+                return Result.retry()
+            } catch (e: HttpException) {
+                if (e.code() == 409) handleConflict(mutation) // معالجة النزاع
+                else database.syncDao().markFailed(mutation.operationId, e.message)
+            }
+        }
+        return Result.success()
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -46,10 +108,6 @@ import androidx.room.Transaction
 }
 ```
 
-## Practical walkthrough
-
-offline edit لحظة الحفظ اعمل transaction تضم note الجديدة وoutbox command بنفس operation ID؛ لو crash بعد commit، worker يلاقي pending. worker يبعت command لما network تسمح، ويعدّل status/remote version بعد ack. لو ack ضاع، replay بنفس ID لا يخلق edit جديدة لو server idempotency contract موجود. conflict لو base version قديمة: لا تسكت وتكتب فوق تعديل جهاز تاني؛ اعرض conflict أو merge حسب field. اجعل queue مرتبطة بـuser/account، لا ترسل rows من user قديم بعد logout. اختبر crash قبل/بعد commit، أثناء send، وبعد server ack وقبل local ack.
-
 ## Trade-offs and decision criteria
 
 Optimistic local UI feels immediate but can later conflict. Waiting for server avoids conflict UX but fails offline. Outbox adds schema/worker complexity and requires a visible pending state. Ordering rules depend on domain.
@@ -64,17 +122,34 @@ A field inspection form commits edits locally, shows Pending badge, and syncs wi
 
 ## Interview answer — short
 
-“I use a transactional local outbox: save the edit and pending operation together, then a durable worker sends it with a stable ID and version. I acknowledge only after server confirmation and handle conflicts explicitly.”
+Sync offline writes by committing the optimistic edit and an outbox queue record atomically to Room. Enqueue a WorkManager worker with a connected network constraint. When online, the worker processes outbox operations sequentially using idempotency keys, deleting queue records only upon verified server acknowledgment.
 
 ## Interview answer — structured
 
-“Offline edits need a durable workflow, not an in-memory retry coroutine. I commit the edited row and an outbox operation in one Room transaction, with a stable operation ID and base server version. A Worker sends pending entries when constraints permit. The UI shows local data as Pending. If the response is lost, the worker queries status or retries under the server’s idempotency contract; it does not create a new logical operation. Version conflicts go through a domain-specific merge or user resolution path. Ordering rules depend on domain.”
+Synchronizing offline writes requires the **Outbox Pattern** backed by WorkManager to guarantee eventual consistency:
+
+1. **Atomic Local Outbox Commit**:
+   - When a user performs an offline edit, we do not simply mutate the UI state. We open a `roomDatabase.withTransaction { }`.
+   - Inside the transaction, we write the optimistic entity state to Room (`status = PENDING_SYNC`) AND insert a mutation command record into an internal `sync_outbox` table (`operationId = UUID`, `payload`, `timestamp`). Both succeed or fail together.
+   - The UI reflects the change in 5ms.
+
+2. **Durable Sync Dispatcher (`WorkManager`)**:
+   - Enqueue a unique WorkManager job (`ExistingWorkPolicy.APPEND_OR_REPLACE`) requiring `NetworkType.CONNECTED`.
+   - WorkManager guarantees execution across app process death, phone reboots, and background constraints.
+
+3. **Idempotent Sequential Processing**:
+   - The worker drains the outbox in chronological order. Each HTTP call transmits `Idempotency-Key: <operationId>`.
+   - Only upon receiving an explicit HTTP 200/201 response does the worker remove the mutation from the outbox and flip the entity status to `SYNCED` in SQLite.
 
 ## Interview answer — deep senior
 
-I design every crash point. Before local commit, the UI cannot claim save; after commit but before enqueue, a startup scan must schedule pending rows; after server acceptance but before local acknowledgement, the next worker run must reconcile by operation ID. Room gives atomic local edit/outbox persistence, and the server provides idempotency and version checks across devices. I keep an explicit state machine: pending, sending, acknowledged, conflicted, failed with retry metadata. The worker is repeat-safe, and cancellation does not discard the row. I test airplane mode, multiple offline edits, process death at each transition, conflict with another device and expired credentials.
+Two severe failure modes occur in production offline sync engines:
 
-I make the offline write atomic locally: the edited note and its outbox command commit in the same Room transaction. That guarantees a restarted worker can find every local edit that the UI claims was saved. The worker sends with a stable operation ID and expected server version, then records acknowledgement and new version locally. A lost acknowledgement may cause another HTTP request, so server idempotency or status reconciliation is required for one logical edit. If another device changed the note, the conflict policy must preserve user intent instead of silently overwriting it. I scope queues by account and test crash windows around commit, send, and acknowledgement.
+1. **Out-of-Order Execution (The Chronological Bug)**:
+   If a user edits an item offline and then deletes it 5 seconds later, firing two independent parallel network requests risks the Delete arriving *before* the Edit. The server executes Delete, then executes Edit, resurrecting the deleted item! To prevent this, the outbox processor must process mutations for the same `entityId` strictly sequentially (FIFO) or collapse intermediate states before syncing.
+
+2. **The Zombie Pending Mutation (Process Kill during Sync)**:
+   If the worker sends the mutation, the server commits it, but the cellular radio drops before the client receives the acknowledgment, the mutation remains in `sync_outbox`. When connectivity restores, the worker re-submits the mutation. Because the request carries the exact same `operationId` as its Idempotency Key, the backend recognizes it as a duplicate and acknowledges success without repeating side effects.
 
 ## How to answer in the interview
 
@@ -90,8 +165,11 @@ Draw outbox state transitions, crash windows and conflict resolution.
 
 ## Follow-up questions
 
-- [DAT-16](../dat-16/): What if base version is stale? **Answer:** apply domain merge or surface a conflict, never silently overwrite.
-- [BG-08](../bg-08/): Who retries after process death? **Answer:** WorkManager reads durable outbox rows.
+- **Interviewer:** "Why shouldn't you run offline sync in a standard ViewModel coroutine?"
+  **Answer:** "If the user closes the app or navigates away, the ViewModelScope is cancelled immediately, aborting the sync and leaving operations stranded until the screen is reopened."
+
+- **Interviewer:** "What is 'Mutation Coalescing'?"
+  **Answer:** "Combining multiple pending edits on the same record into a single network payload before uploading, saving cellular bandwidth and reducing API requests."
 
 ## Self-check rubric
 
@@ -102,4 +180,4 @@ Can I commit edit/outbox atomically, recover each crash window and reconcile dup
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — queued writes and sync.
 - [Android persistent work](https://developer.android.com/develop/background-work/background-tasks/persistent) — restartable scheduling.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

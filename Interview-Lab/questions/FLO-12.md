@@ -22,11 +22,43 @@ Compare full collection, cancellation of previous action and one-value extractio
 
 ## Explanation in Arabic
 
-`collect` يعالج كل emission بالتتابع لحد ما Flow تخلص أو تتلغى. `collectLatest` لما value جديدة تيجي يلغي processing القديمة ويبدأ الأحدث، فمناسب search preview أو rendering قابل للإلغاء، مش كتابة مالية لازم تكتمل. `first` يستنى أول قيمة تطابق الشرط ويرجعها، وبعدها يوقف collection.
+المقارنة بين المشغلات النهائية (Terminal Operators) `collect` و `collectLatest` و `first`:
+
+1. المشغل `collect`:
+   - يجمع **كل عنصر بالترتيب** وينفذ البلوك الخاص به حتى ينتهي بالكامل قبل الانتقال للعنصر التالي.
+   - يطبق Backpressure: لو معالجة العنصر استغرقت ثانيتين، الـ Producer ينتظر ويتعلق حتى ينتهي الـ Collector.
+   - يضمن معالجة 100% من العناصر بدون إسقاط أي عنصر.
+
+2. المشغل `collectLatest`:
+   - **يلغي معالجة العنصر الحالي إذا وصل عنصر جديد فوراً!**
+   - لو البلوك شغال بيعالج العنصر 1، ووصل العنصر 2، يلغي الـ Coroutine الخاصة بالعنصر 1 ويبدأ فوراً في معالجة العنصر 2.
+   - مناسب جداً لواجهات المستخدم (UI updates والبحث): إذا غير المستخدم نص البحث، لا نريد استكمال البحث عن النص القديم؛ نلغيه ونبحث عن النص الأحدث.
+
+3. المشغل `first`:
+   - يأخذ **أول عنصر فقط** يطابق الشرط، ثم **يلغي الـ Flow بالكامل فوراً** ويرجع القيمة للمتصل.
+   - يحول الـ Flow إلى دالة One-shot suspend ترجع قيمة مفردة.
 
 ## Practical walkthrough
 
-`collect` يعالج كل emission بالترتيب وقد يبطّئ upstream، `collectLatest` تلغي شغل block القديمة عند قيمة جديدة، و`first` ترجع أول قيمة وتوقف collection. بحث سريع يناسب `collectLatest` لو عرض النتائج القديمة يمكن إلغاؤه، لكن كتابة مالية أو حفظ ملف لا تلغيها لمجرد emission أحدث. `first` على StateFlow ترجع القيمة الحالية فورًا غالبًا؛ لو عايز Ready استخدم `filterIsInstance<Ready>().first()`.
+مقارنة عملية في شاشة البحث وتفاصيل المستخدم:
+```kotlin
+// 1. استخدام collectLatest في البحث بالـ UI:
+searchQueryFlow.collectLatest { query ->
+    val results = api.search(query) // لو المستخدم كتب حرف جديد أثناء الطلب، يتم إلغاء هذا الطلب فوراً!
+    _uiState.value = results
+}
+
+// 2. استخدام first لجلب التوكن لمرة واحدة (One-shot read):
+suspend fun getAuthToken(): String {
+    // نأخذ أول قيمة غير فارغة ونلغي تدفق الـ DataStore فوراً:
+    return dataStore.tokenFlow.first { it.isNotEmpty() }
+}
+
+// 3. استخدام collect لتسجيل أحداث في Analytics (يجب معالجة كل حدث):
+analyticsEventsFlow.collect { event ->
+    analyticsSdk.log(event) // يضمن عدم إسقاط أي حدث!
+}
+```
 
 ## Why it matters and how it works
 
@@ -61,15 +93,25 @@ A search screen uses collectLatest to cancel stale preview rendering. A reposito
 
 ## Interview answer — short
 
-“collect handles every emission, collectLatest cancels the previous action for a newer value, and first returns one value then stops. I use latest-only behavior only when old work can safely be abandoned.”
+collect processes every single emitted element sequentially without dropping items; collectLatest cancels the processing block of the previous element as soon as a new element arrives; and first() retrieves only the first matching element and cancels the stream immediately.
 
 ## Interview answer — structured
 
-“The choice expresses product semantics. `collect` processes the stream sequentially. `collectLatest` cancels an in-progress action when a new value arrives, useful for a search result view where only the newest rendering matters. `first` is a terminal one-shot read and cancels the upstream after a value arrives. I consider what the initial StateFlow value means: `first()` might return Loading. I also do not use collectLatest for payments or durable writes, because cancelling a client action does not roll back an external effect.”
+These three terminal operators handle stream consumption with distinct execution and cancellation semantics:
+
+**`collect`** is the baseline terminal operator. It processes every emission sequentially. If processing an item takes 500ms, upstream suspension ensures no items are skipped or cancelled. I use `collect` when every event must be processed, such as database synchronization or analytics logging.
+
+**`collectLatest`** is optimized for UI state and search. When a new emission arrives while the previous emission's block is still executing, `collectLatest` cancels the previous block's coroutine and starts processing the new item immediately. If a user types 'A' then quickly 'B', the API call for 'A' is cancelled mid-flight in favor of 'B'.
+
+**`first()`** is a suspending function that takes the very first emitted value (or the first value matching a predicate) and immediately cancels the flow. It effectively converts a continuous stream into a one-shot query, ideal for reading an initial token from DataStore.
 
 ## Interview answer — deep senior
 
-“I distinguish cancellation of local processing from cancellation of upstream or server work. `collectLatest` creates a child action for each emission and cancels the previous action on new data. If that action cooperates, stale CPU/UI work stops; if it already submitted a write, the server may still commit. `collect` is appropriate when each emission must be handled in order, though a slow collector can exert backpressure. `first` extracts one value and ends collection; for a state stream I may use a predicate such as Ready and a deadline so I do not return the initial Loading state or wait forever. Tests inject rapid emissions and verify whether old actions finish or cancel according to the chosen contract. I would choose from the semantics of the work inside the terminal operator. `collect` handles each value sequentially under normal Flow execution, so a slow handler can backpressure upstream. `collectLatest` cancels the previous handler when a new value arrives, which is right for disposable rendering or search result processing but dangerous for an irreversible write. `first` waits for one emission and cancels the collection afterward; on StateFlow that is normally the current value, even if it is Loading. For a specific state, filter before first. I would test rapid emissions with a delayed handler and verify which work completes. The key interview point is that cancellation is a correctness choice, not merely a performance switch.”
+Under the hood, `collectLatest` is implemented using `channelFlow` and `mapLatest` mechanics. Every time upstream emits, `collectLatest` cancels the inner child coroutine using `CancellationException`. However, this introduces an important production caveat: **if the work inside `collectLatest` does not suspend, it cannot be cancelled!** Cancellation is cooperative: if your block executes a non-suspending synchronous calculation without checking `ensureActive()`, `collectLatest` cannot cancel it midway.
+
+With `first()`, the implementation works by throwing a private, internal `AbortFlowException` once the first matching element is collected, which unwinds the collector and safely terminates upstream collection without bubbling an error to the caller.
+
+In unit testing with Turbine, `awaitItem()` behaves like `first()` by synchronously verifying and consuming one item from the testing event queue.
 
 ## How to answer in the interview
 
@@ -85,8 +127,14 @@ Trace cancellation boundary, initial StateFlow value, empty Flow behavior and ex
 
 ## Follow-up questions
 
-- [FLO-16](../flo-16/): Is collectLatest a buffer? **Answer:** no; it cancels prior collector action.
-- [FLO-25](../flo-25/): Why use latest-only search? **Answer:** stale query results no longer match current input.
+- **Interviewer:** "What happens if a flow is empty and you call `first()`?"
+  **Answer:** "Calling `first()` on an empty flow throws a `NoSuchElementException: Expected at least one element`. You should use `firstOrNull()` if the flow might complete without emissions."
+
+- **Interviewer:** "Can `collectLatest` result in wasted work?"
+  **Answer:** "Yes, if the cancelled work was an expensive network call that already triggered a server-side side effect. For write operations (like placing an order or saving data), always use standard `collect` to ensure operations run to completion."
+
+- **Interviewer:** "How does `first()` compare to `take(1).collect()`?"
+  **Answer:** "`take(1).collect { }` limits the stream to 1 item and collects it, but returns `Unit`. `first()` is a suspending function that returns the actual element `T` directly."
 
 ## Self-check rubric
 
@@ -96,4 +144,4 @@ Can I choose among all/latest/first, explain cancellation limits and test an ini
 
 - [Kotlin Flow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-flow/) — terminal operators.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

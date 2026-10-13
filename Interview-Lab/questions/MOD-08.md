@@ -24,11 +24,57 @@ What belongs in :core:network, :core:database, :core:ui, and feature modules?
 
 ## Explanation in Arabic
 
-`:core:network` قد يملك HTTP client configuration، auth interceptor العام وserialization infrastructure؛ ليس checkout endpoint policy كلها. `:core:database` يملك Room setup، migration infrastructure وshared transaction primitives، لكن feature-owned tables/DAOs قد تبقى في data feature حسب graph. `:core:ui` أو design system يملك theme، tokens ومكونات عامة لا تعرف business entities. feature module يملك screen, state, events, navigation entry، وقواعد العمل الخاصة به أو تنسيق use case. السؤال الحاسم: لو feature واحدة تغيرت، هل يجب تعديل core؟ لو نعم دائمًا، core صارت مكبًا للتفاصيل.
+ما هي المسؤوليات الدقيقة التي تنتمي لكل من: `:core:network`، و `:core:database`، و `:core:ui`، و `:feature`؟ وكيف تمنع تسرب المنطق؟
+
+1. `:core:network` (البنية التحتية للاتصال بالشبكة):
+   - **ما ينتمي إليه**: إعدادات `OkHttpClient`, محولات `Retrofit`, إدارة شهادات الأمان و SSL Pinning, الـ Auth Interceptors لإرفاق الـ Bearer Tokens, ومتابعة جودة الاتصال وتحديث الـ Base URL.
+   - **ما لا ينتمي إليه (خطر التسريب)**: نماذج بيانات خاصة بميزة تجارية معينة (مثل `CartResponse` أو `OrderDto`). هذه النماذج تنتمي لموديول بيانات الميزة نفسها (`:data:cart` أو `:data:order`).
+
+2. `:core:database` (البنية التحتية لقاعدة البيانات المحلية):
+   - **ما ينتمي إليه**: بناء كائن `RoomDatabase` الرئيسي، وإدارة الـ TypeConverters العامة، واستراتيجيات التشفير (SQLCipher)، وتنفيذ قواعد الترقية (Database Migrations).
+   - **ما لا ينتمي إليه**: استعلامات الـ SQL الخاصة بشاشات معينة أو الـ DAOs المحددة للميزات.
+
+3. `:core:ui` / `:core:designsystem` (مكونات الواجهة المشتركة):
+   - **ما ينتمي إليه**: ألوان التطبيق (Color Palette), الخطوط (Typography), الأشكال (Shapes), وأزرار عامة وحقول إدخال ومكونات عرض خالية من المنطق التجاري.
+   - **ما لا ينتمي إليه**: بطاقات عرض تعتمد على موديل تجاري (مثل بطاقة عرض المنتج `ProductCard` التي تعتمد على `ProductEntity`). يجب أن تأخذ المكونات بيانات بدائية (Primitives).
+
+4. `:feature:*` (موديولات الميزات المستقلة):
+   - **ما ينتمي إليه**: واجهات العرض (Composables/Screens), الـ ViewModels, الـ UI State, والـ Navigation Routes الخاصة بالميزة فقط.
 
 ## Practical walkthrough
 
-`:core:network` يوفر HTTP client/config وليس product API DTO لكل feature؛ `:core:database` يوفر DB infrastructure/shared tables؛ `:core:ui` tokens/components لا feature business. Feature تملك screen, state, policy خاص بها. لو core يستورد feature model فهذا عكس الاتجاه. افصل shared contract فقط عندما يوجد أكثر من مستهلك وسلوك ثابت.
+تنظيم المسؤوليات ومنع تسريب منطق الميزات إلى موديولات الـ Core:
+```kotlin
+// ❌ تسريب خاطئ: وضع كود منتج تجاري داخل :core:ui:
+// في موديول :core:ui:
+@Composable
+fun ProductCard(product: ProductDomainModel) { /* ... */ }
+// خطأ! جعلت :core:ui يعتمد على موديل تجاري في :domain:product!
+
+// ✅ التصميم النظيف: :core:ui يعتمد فقط على عناصر بدائية (Stateless Primitives):
+// في موديول :core:ui:
+@Composable
+fun StandardMediaCard(
+    title: String,
+    subtitle: String,
+    imageUrl: String,
+    onClick: () -> Unit
+) {
+    Card(...) { /* رسم عام بدون أي اعتماد على أي موديل تجاري */ }
+}
+
+// 📁 في موديول :feature:catalog:
+@Composable
+fun CatalogProductItem(product: Product, onSelect: () -> Unit) {
+    // الميزة هي التي تمرر البيانات للمكون العام في :core:ui:
+    StandardMediaCard(
+        title = product.name,
+        subtitle = product.formattedPrice,
+        imageUrl = product.imageUrl,
+        onClick = onSelect
+    )
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +98,26 @@ Publish module responsibilities and codeowners, track public API churn and affec
 
 ## Interview answer — short
 
-“Core modules own stable cross-cutting infrastructure and UI primitives; features own their workflows, endpoints, state and business-specific presentation.”
+:core:network owns network infrastructure (OkHttp, SSL, Retrofit engine, auth interceptors). :core:database owns the Room database container and migrations. :core:ui owns stateless design tokens and generic widgets. Feature modules own user-facing screens, ViewModels, and presentation state, ensuring zero business domain models leak into core foundations.
 
 ## Interview answer — structured
 
-“I put shared HTTP configuration in core network, database setup and migration tooling in core database, and neutral theme/components in core UI. The orders feature or its data module still owns orders endpoint mapping, schema policy and screen state. That prevents every product change from touching a high-fan-out core module. I make ownership of shared transactions and migrations explicit and keep core APIs narrow.”
+Clear architectural separation between infrastructure core modules and domain feature modules prevents the core from degrading into an unmaintainable monolith:
+
+1. **`:core:network`**: Houses HTTP client engines (`OkHttpClient`), token refresh interceptors, SSL pinning configurations, and connectivity observers. It must **not** host feature-specific API endpoints (like `OrderApiService`); feature APIs belong in their respective `:data:*` modules.
+2. **`:core:database`**: Manages the underlying database engine (`RoomDatabase`), encryption keys, and schema migration coordinators. Feature-specific DAOs and entities should be provided by data modules and aggregated by the database.
+3. **`:core:ui` (Design System)**: Contains design tokens (theme colors, typography, elevations) and generic, stateless UI primitives (`AppButton`, `EmptyStateView`, `AppDialog`). It must remain strictly agnostic of business models, accepting only primitive parameters.
+4. **`:feature:*`**: Contains end-to-end presentation logic for a user journey: composable screens, ViewModels, UI state machines, and local navigation routes.
 
 ## Interview answer — deep senior
 
-“The labels are useful only if they express change ownership. `:core:network` should hold stable transport configuration—client setup, common interceptors and serialization facilities—not every feature's endpoint policy. `:core:database` can own a Room database shell and migration test infrastructure, while each feature's data owner remains accountable for its schema and queries even if they compile into a shared database artifact. `:core:ui` or design system provides tokens and generic components such as an accessible button; it should not import Orders entities to decide button text. Feature modules own screen state, events, navigation entry and workflow-specific rules, with feature data mapping its API and persistence models. I watch the public API of core because a small unstable change fans out to many builds and teams. There are exceptions: a cross-feature transaction or shared authenticated transport needs central coordination. I write those owners down, test migrations and app assembly, and look at change history. If every orders change modifies core, I likely placed policy at the wrong level.”
+A critical design challenge in multi-module database architecture is **Room Database Aggregation**.
+
+Room requires its `@Database(entities = [...], version = ...)` annotation to enumerate all entity classes at compile time. If entities live inside feature modules, having `:core:database` declare the database directly creates an illegal circular dependency (core depending on features).
+
+Senior engineers resolve this in one of two ways:
+1. **Entity Delegation in `:core:database`**: Entities live in `:core:model` or dedicated `:data:*:model` modules that `:core:database` imports, keeping DAOs internal to their data modules.
+2. **Single Database in `:app`**: The concrete `@Database` class is declared inside the `:app` module (where all feature data modules are already aggregated), while `:core:database` provides only the database builder infrastructure and migrations.
 
 ## How to answer in the interview
 
@@ -76,9 +133,11 @@ Discuss transport versus endpoint policy, physical database versus schema owners
 
 ## Follow-up questions
 
-- Where should an OrdersApi interface live? **Answer:** usually in orders data ownership, using shared transport infrastructure.
-- Can a database be physically shared? **Answer:** yes, while schema/migration ownership remains explicit.
-- Why avoid domain entities in core UI? **Answer:** it couples reusable components to one feature's business model.
+- **Interviewer:** "Why shouldn't an Auth Token interceptor live in a feature module?"
+  **Answer:** "Because all network requests across all feature modules need authentication; centralizing token refresh in `:core:network` avoids duplicate or conflicting token states."
+
+- **Interviewer:** "Can a feature module have its own separate Room Database?"
+  **Answer:** "Yes, if the feature's data is completely independent and offline-contained, a separate SQLite file is often cleaner than a single shared database."
 
 ## Self-check rubric
 
@@ -89,4 +148,4 @@ Place four concrete classes in modules, explain one shared exception, and identi
 - [Android modularization patterns](https://developer.android.com/topic/modularization/patterns) — feature and core roles.
 - [Data layer guidance](https://developer.android.com/topic/architecture/data-layer) — repository ownership.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Physical schema split depends on project architecture.
+Technically reviewed against primary documentation on 2026-10-13.

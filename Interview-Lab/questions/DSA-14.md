@@ -23,11 +23,41 @@ A product list freezes on low-end devices. How do you distinguish rendering bott
 
 ## Explanation in Arabic
 
-Product list بتجمد على جهاز ضعيف؟ نجيب trace/frame metrics ونشوف: CPU في data transform أو `find` متكرر؟ Compose recomposition/bind؟ bitmap decode كبيرة؟ GC بسبب allocations؟ GPU overdraw؟ نجرب input sizes مختلفة: لو الوقت يقفز مع n² فغالبًا algorithm، لو مرتبط بصور/رسم فمسار rendering. ما نغيّرش architecture بالتخمين.
+قائمة المنتجات تتجمد وتتوقف عن التمرير بسلاسة على الأجهزة الاقتصادية الضعيفة. كيف تميز هندسياً بين اختناقات الرسم (Rendering Bottlenecks) والتعقيد الخوارزمي (Algorithmic Complexity)؟
+
+1. منهجية التشخيص والفرز الهندسي (Diagnostic Isolation):
+   - لا تخمن السبب أبداً! استخدم أدوات القياس الرسمية: **Android Studio CPU Profiler** و **Perfetto / Systrace**.
+
+2. علامات الاختناق الخوارزمي (Algorithmic Bottlenecks):
+   - **مؤشرات Profiler**: وقت الـ CPU يضيع في كود الـ Application (دوال Kotlin خاصة بك مثل `prepareUiModel`, `List.contains`, `filter`, فرز القوائم).
+   - **مكان التنفيذ**: استهلاك كامل للـ CPU على خيط الـ Main Thread في حسابات بيانات.
+   - **الحل**: نقل الحسابات إلى `Dispatchers.Default`، تحسين التعقيد من $O(n^2)$ إلى $O(n)$، واستخدام الـ HashMaps.
+
+3. علامات اختناق الرسم والواجهة (Rendering Bottlenecks):
+   - **مؤشرات Profiler / Systrace**: وقت الـ CPU يضيع داخل إطار عمل أندرويد: `Choreographer.doFrame`, `View.onDraw`, `measure`, `layout`, أو دوال Compose: `recompose`, `Modifier.layout`.
+   - **مؤشرات الـ GPU**: معدل Overdraw أحمر داكن (إعادة رسم البكسل أكثر من 4 مرات فوق بعضه)، أو شجرة Views شديدة العمق (View Hierarchy > 10 مستويات).
+   - **الحل**: تسطيح الـ Layout، إزالة الخلفيات المكررة، استخدام Compose `derivedStateOf` لمنع الـ Recompositions غير الضرورية، وتفعيل التمرير المسبق (Prefetching).
 
 ## Practical walkthrough
 
-في freeze لproduct list، خذ trace لمعرفة هل Main في `find`/sort متكرر أم في Compose measure/draw أو image decoding. اعمل baseline للعدد والزمن والـallocations، ثم جرّب pre-index أو paging أو image sizing حسب السبب. ما تنقل كل شيء لـIO عميانيًا؛ لو UI تربط 10k items أو keys غير ثابتة سيظل jank. اختبر على low-end release build.
+خطة عملية لعزل سبب البطء وفحص مؤشرات الأداء بالخطوات البرمجية:
+```kotlin
+// 1. اختبار العزل السريع (Isolation Test):
+// استبدل محتوى الـ Item مؤقتاً بـ Text بسيط: Text("Item")
+// إذا استمر التجمد -> المشكلة خوارزمية (في DiffUtil أو معالجة البيانات).
+// إذا اختفى التجمد وأصبح التمرير 60fps -> المشكلة في رسم وتعقيد الـ UI Item Layout!
+
+// 2. استخدام Trace رسمي في الكود لمشاهدة الدالة في Perfetto / Systrace:
+import androidx.tracing.trace
+
+fun bindItem(product: Product) {
+    trace("ProductItemBinding") {
+        // إذا ظهر هذا القسم في Perfetto مستغرقاً 14ms -> اختناق حسابي داخل الربط
+        val state = calculateComplexDiscount(product)
+        applyStateToView(state)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +81,32 @@ Production test uses representative low-end hardware, thermal state and real cat
 
 ## Interview answer — short
 
-“I profile the frame pipeline, vary input size and disable images temporarily to separate algorithmic work from rendering. Then I fix the measured bottleneck and verify on low-end devices.”
+Distinguish bottlenecks using Android Studio CPU Profiler and Perfetto. If execution time is concentrated in application business logic, sorting, or collection lookups on the main thread, the bottleneck is algorithmic. If time is spent in Choreographer.doFrame, view measure/layout passes, or GPU overdraw, the bottleneck is rendering.
 
 ## Interview answer — structured
 
-“I capture traces and frame metrics while scrolling a realistic list. I split time between data transforms, binding/recomposition, image decode, GC and GPU. Scaling input from hundreds to thousands can reveal an accidental quadratic join, while a constant freeze with heavy images points elsewhere. I use controlled experiments, then benchmark before/after rather than assume Compose itself is slow. Optimize the proven stage first.”
+Diagnosing list stutter on low-end hardware requires systematic profiling to separate computational complexity from layout rendering pipeline limits:
+
+1. **Profiling Trace Analysis via Perfetto**:
+   - **Algorithmic Complexity Signature**: The main thread thread-state shows continuous `Running` blocks with stack traces anchored in application domain logic: data parsing, reflection mappers, unmemoized sorting, or linear collection searches. Frame drops happen because calculations starve the UI thread of frame budgets.
+   - **Rendering Bottleneck Signature**: Time is spent inside Android framework methods: `View.measure()`, `View.layout()`, `View.draw()`, or Compose `LayoutNode.remeasure()`. Systrace reveals heavy `Choreographer#doFrame` stretches and RenderThread GPU sync stalls.
+
+2. **Empirical A/B Isolation Test**:
+   - Temporarily replace complex row items with a plain lightweight `Text("Item")`. If scrolling remains laggy, the root cause is upstream algorithmic computation (e.g. DiffUtil recalculations or reactive stream thrashing). If scrolling instantly stabilizes at 60fps, the culprit is layout complexity or image decoding.
+
+3. **Resolution Pathways**:
+   - Fix algorithmic lag by offloading computations to `Dispatchers.Default` and caching calculations.
+   - Fix rendering lag by flattening view hierarchies, optimizing Compose keys, and removing transparent Overdraw layers.
 
 ## Interview answer — deep senior
 
-“I do not assume a frozen product list is an algorithm problem. I capture a release-like trace and frame timeline on a lower-end device, then inspect whether Main is spending time in repeated `find` or sort calls, image decode, Compose measure/draw, database I/O or GC. I correlate the problem with item count and scroll or filter actions. If it is quadratic transformation, I pre-index by ID or avoid per-row recomputation; if it is image work, I request appropriately sized images and cache carefully; if it is too many rows, I page and use stable keys. Moving work to a background dispatcher can help blocking CPU or I/O, but does not solve a UI that must compose thousands of expensive rows at once. I establish a baseline for frame time, allocations and memory, make one change at a time, then verify both performance and data correctness. The trade-off may be extra memory for a lookup index or added paging complexity, justified only by measured improvement.”
+On low-end Android hardware (e.g. Android Go with weak Quad-Core Cortex-A53 processors), hardware limits exacerbate specific failure modes:
+
+1. **Core Starvation & Priority Inversion**: On weak devices, running heavy background algorithmic tasks on `Dispatchers.Default` can saturate all CPU cores, starving the UI thread of operating system scheduling slots. Explicitly tuning background thread priorities (`Process.setThreadPriority(THREAD_PRIORITY_BACKGROUND)`) ensures the UI thread preempts background calculations.
+
+2. **Garbage Collection Pauses as Root Cause**: Often, a list freeze is neither pure math nor pure rendering—it is memory churn. Low-end devices with 2GB RAM run ART with minimal heap ceilings. If item binding creates temporary lambdas, string builders, or boxed primitives, ART triggers blocking GC passes that pause all threads.
+
+3. **Compose Modifier Re-instantiation**: In Jetpack Compose, declaring complex inline modifiers without caching allocates new modifier chains on every recomposition. Caching modifiers or using `@Stable` state models eliminates layout phase invalidation.
 
 ## How to answer in the interview
 
@@ -75,8 +122,11 @@ Prompt for controlled experiments, scaling signature, profiler attribution, corr
 
 ## Follow-up questions
 
-- [DSA-12](../dsa-12/): What code yields O(n²)? **Answer:** per-item linear lookup.
-- [TST-17](../tst-17/): What measures frames? **Answer:** Macrobenchmark on release-like device setup.
+- **Interviewer:** "What is the quickest empirical test to verify whether a list lag is caused by item layout rendering?"
+  **Answer:** "Temporarily replace the complex item layout with a static simple text label; if smooth scrolling returns, rendering is the bottleneck."
+
+- **Interviewer:** "Why can heavy background tasks cause UI frame drops on low-end quad-core Android devices?"
+  **Answer:** "Because background workers can saturate all available physical CPU cores, causing OS thread scheduling starvation for the main thread."
 
 ## Self-check rubric
 
@@ -87,4 +137,4 @@ Separate data transformation time, main-thread blocking, recomposition/layout an
 - [Android rendering performance](https://developer.android.com/topic/performance/rendering) — frame pipeline.
 - [Macrobenchmark overview](https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview) — device measurement.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

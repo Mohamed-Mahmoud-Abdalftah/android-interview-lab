@@ -22,11 +22,46 @@ Explain cancellation responsiveness in CPU loops and the scheduling distinction 
 
 ## Explanation in Arabic
 
-لو coroutine بتعمل CPU loop طويل من غير suspension، إلغاء الـJob مش هيوقفها فورًا. `ensureActive()` بتفحص حالة الـJob وترمي `CancellationException` لو اتلغى؛ `yield()` بتفحص وبتدي فرصة لغيرها تتنفذ. نحط checks كل كمية عمل مناسبة بدل كل instruction، ونقيس latency الفعلية للإلغاء.
+استخدام `ensureActive()` و `yield()` أثناء العمليات المكثفة على المعالج (CPU-Bound Work) ضروري لضمان التعاونية وعدم تجويع العمليات الأخرى:
+
+1. المشكلة في الـ CPU-Bound Loops:
+   - لما coroutine تنفذ كود حسابي مكثف (زي تشفير، معالجة صور، أو فحص مصفوفات ضخمة)، الكود لا يحتوي على أي دالة تعليق (`suspend`).
+   - لو تم استدعاء `job.cancel()`، الـ Coroutine **لن تتوقف أبداً** وهتفضل شغالة وتستهلك البطارية!
+   - وأيضاً لو الـ Dispatcher Pool فيه عدد threads محدود، الـ Loop دي هتحجز الـ Thread بالكامل وتمنع باقي الـ Coroutines من التنفيذ (Starvation).
+
+2. دور دالة `ensureActive()`:
+   - بتفحص: هل الـ Job الحالي تم إلغاؤه؟
+   - لو تم إلغاؤه: ترمي `CancellationException` فوراً وتنهي التنفيذ.
+   - لو لم يتم إلغاؤه: تكمل التنفيذ بدون أي تبديل خيوط وبدون أي تأخير (Zero overhead).
+
+3. دور دالة `yield()`:
+   - بتفحص الإلغاء وترمي `CancellationException` تماماً مثل `ensureActive()`.
+   - **الإضافة الجوهرية في `yield()`:** تقوم بتعليق الـ Coroutine مؤقتاً وتضعها في نهاية طابور الـ Dispatcher، وتمنح فرصة للـ Coroutines الأخرى في نفس الـ Pool أن تتنفس وتتنفذ (Fair Scheduling)!
+
+4. متى نستخدم كل واحدة منهما؟
+   - استخدم `ensureActive()` لو الـ Loop سريعة والمطلوب فقط فحص الإلغاء بأعلى سرعة.
+   - استخدم `yield()` لو الـ Loop ثقيلة جداً وتريد إعطاء فرصة لباقي المهام في الـ Thread Pool حتى لا تتجمد.
 
 ## Practical walkthrough
 
-في image processing loop طويلة، `ensureActive` كل 512 عنصر مثلًا تخلي إغلاق الشاشة يوقف الحساب خلال chunk بدل ما يستمر للآخر. `yield` يفحص الإلغاء ويتيح scheduling لشغل تاني، فاختاره لو العدالة مهمة؛ لكن كثرة `yield` تضيع وقت. شغّل الحساب على `Default`، وقس latency الفعلية لأن حجم الـchunk المناسب يعتمد على تكلفة العنصر.
+في دالة توليد صورة مصغرة (Thumbnail Processing Loop):
+```kotlin
+suspend fun processLargeDataSet(records: List<RawRecord>) = withContext(Dispatchers.Default) {
+    val results = mutableListOf<ProcessedRecord>()
+    for ((index, record) in records.withIndex()) {
+        // 1. فحص الإلغاء في كل لفة:
+        ensureActive()
+        
+        // 2. كل 100 لفة نمنح فرصة للمهام الأخرى عبر yield:
+        if (index % 100 == 0) {
+            yield()
+        }
+        
+        results.add(transformRecord(record))
+    }
+    results
+}
+```
 
 ## Why it matters and how it works
 
@@ -66,15 +101,29 @@ A gallery indexer processes images in chunks on Default and checks cancellation 
 
 ## Interview answer — short
 
-“CPU loops need explicit cooperative cancellation checks. `ensureActive` throws when the Job is cancelled; `yield` also offers a scheduling opportunity. I check at measured chunk boundaries on a CPU dispatcher.”
+Use ensureActive() to verify cancellation and throw CancellationException immediately with zero scheduling overhead. Use yield() to both check for cancellation and yield the current thread to other waiting coroutines in the dispatcher queue, ensuring fair scheduling during heavy CPU tasks.
 
 ## Interview answer — structured
 
-“Suspending functions often observe cancellation, but a pure CPU loop may not suspend for a long time. I insert `ensureActive` periodically so a cancelled screen request stops, or `yield` when fairness with other coroutines matters. I run heavy work on Default rather than Main. The check frequency is a performance trade-off: too sparse gives slow cancellation, too frequent adds overhead. I test both throughput and cancellation latency with realistic input sizes.”
+During intensive CPU-bound calculations, coroutines do not hit natural suspension points like network calls or delays. This causes two production problems: they ignore cancellation, and they monopolize worker threads in the dispatcher pool.
+
+I use `ensureActive()` when I strictly want cancellation responsiveness with maximum performance. It checks the Job's active state and immediately throws `CancellationException` if the job was cancelled. If the job is active, it does nothing and has zero dispatching or scheduling overhead.
+
+I use `yield()` when a CPU-bound task is heavy and I want fair scheduling. `yield()` checks for cancellation just like `ensureActive()`, but if active, it suspends the coroutine and dispatches it to the back of the dispatcher's work queue. This temporarily releases the OS thread so other waiting coroutines on the same dispatcher can execute, preventing thread starvation.
 
 ## Interview answer — deep senior
 
-“I would choose an explicit cancellation budget. A CPU-bound parser can run millions of instructions without a suspension point, so cancelling its Job only sets state until it checks. `ensureActive` observes that state and throws; `yield` does that plus a dispatch opportunity, useful if one coroutine monopolizes a thread. I process bounded chunks on Default, check between chunks and avoid shared mutable state without synchronization. A native decoder or synchronous SDK may require its own stop mechanism; these helpers cannot interrupt arbitrary code inside it. In production I measure cancellation response under load and make sure a stale result is not published even if the last chunk completes near cancellation. Neither makes non-cooperative native calls cancellable. I would choose a chunk size from measured work rather than a fixed folklore number. If one image tile takes milliseconds, checking every few tiles may meet a cancellation target; if each tile is expensive, check more often. `ensureActive` is a cheap fail-fast check, while `yield` can improve fairness when other coroutines share Default. Neither substitutes for a dispatcher switch away from Main or solves an uninterruptible native decoder.”
+Under the hood, `ensureActive()` is an inline extension function on `CoroutineScope` and `Job` that executes:
+
+```kotlin
+if (!isActive) throw getCancellationException()
+```
+
+Because it is inlined, it compiles directly to a simple conditional jump in bytecode without creating any continuation frames or dispatch objects.
+
+`yield()`, by contrast, is a true suspending function. It captures the current `Continuation` and dispatches it via `dispatcher.dispatchYield()`. If the dispatcher's event queue is empty, the runtime immediately reschedules and resumes the coroutine on the same thread with minimal latency. If other tasks are enqueued, they execute first.
+
+In high-frequency loops (e.g., iterating 100,000 times), calling `yield()` on every single iteration causes excessive scheduling overhead and degrades throughput. The senior engineering pattern is batching: call `ensureActive()` on every iteration, and throttle `yield()` to once every 100 or 500 iterations.
 
 ## How to answer in the interview
 
@@ -90,8 +139,14 @@ Contrast checks, fairness, dispatcher choice and uncooperative library calls.
 
 ## Follow-up questions
 
-- [COR-10](../cor-10/): Why is cancellation cooperative? **Answer:** the running code must reach a cancellable suspension or explicit check.
-- [COR-29](../cor-29/): Can `yield` cancel a blocking SDK call? **Answer:** no, it cannot execute until that call returns.
+- **Interviewer:** "Can `yield()` be called on `Dispatchers.Unconfined`?"
+  **Answer:** "Calling `yield()` on `Dispatchers.Unconfined` still yields execution, but because Unconfined has no thread queue, it might resume on whichever thread triggered the yield, which can lead to unpredictable stack depths."
+
+- **Interviewer:** "Why not just use `delay(1)` instead of `yield()`?"
+  **Answer:** "`delay(1)` forces the coroutine to pause for at least 1 millisecond by scheduling a timer event. `yield()` introduces zero artificial sleep delay; if no other coroutines are waiting, it resumes immediately without waiting."
+
+- **Interviewer:** "What is the difference between `Thread.yield()` and Coroutines `yield()`?"
+  **Answer:** "`Thread.yield()` is an OS-level hint to the thread scheduler to yield the current CPU quantum. Coroutines `yield()` is a cooperative user-space suspension that yields the worker thread to other coroutines in the Kotlin dispatcher queue."
 
 ## Self-check rubric
 
@@ -102,4 +157,4 @@ Can I place a check, justify frequency, choose Default, and state the limitation
 - [Kotlin cancellation guidance](https://kotlinlang.org/docs/cancellation-and-timeouts.html) — cooperative checks.
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — dispatchers.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -23,11 +23,73 @@ How do you design biometric-gated access to a Keystore operation?
 
 ## Explanation in Arabic
 
-Biometric prompt لوحده UI gate؛ لو المطلوب حماية crypto operation لازم key في Android Keystore متقيّدة بـuser authentication، ونربط `Cipher`/`CryptoObject` بـ`BiometricPrompt`. نجاح dialog من غير key policy مش دليل إن secret اتحمى. نوع authenticator، fallback ومدة صلاحية المصادقة لازم تتحدد حسب risk، مع recovery لو key اتبطلت.
+كيف تصمم وصولاً مشروطاً بالبصمة (Biometric-Gated Access) لعمليات Android Keystore بشكل عتادي لا يمكن تجاوزه برمجياً؟
+
+1. الفرق الجوهري بين الفحص الشكلي والتأمين العتادي:
+   - **الفحص الشكلي (Boolean Authentication - ❌)**: مجرد إظهار `BiometricPrompt` واستدعاء العملية في `onAuthenticationSucceeded()`. هذا الفحص يمكن لمهاجم تجاوزه بسطر واحد في Frida عبر استدعاء الـ Callback مباشرة دون لمس مستشعر البصمة!
+   - **التأمين العتادي التشفيري (Crypto-Gated Authentication - ✅)**: ربط مفتاح الـ Keystore بمتطلب التحقق البيومتري (`setUserAuthenticationRequired(true)`). في هذا النمط، يظل المفتاح مقفلاً داخل عتاد الهاتف (TEE / Secure Element) وترفض الشريحة إجراء أي عملية تشفير أو فك تشفير حتى يقدم مستشعر البصمة العتادي تصريحاً مشفراً للـ Keystore!
+
+2. دور كائن `BiometricPrompt.CryptoObject`:
+   - نقوم بإنشاء `Cipher` غير مهيأ بالكامل، ونمرره مغلفاً داخل `CryptoObject` إلى `BiometricPrompt.authenticate()`.
+   - عند نجاح البصمة الحقيقية عتادياً، يفتح الـ Keymaster تصريح الـ Cipher مؤقتاً.
+   - نقوم باسترجاع الـ Cipher المشفر من الـ Callback واستخدامه في تنفيذ `cipher.doFinal()`. لو حاول المهاجم استدعاء الـ Callback عبر Frida دون بصمة حقيقية، سيفشل `cipher.doFinal()` برمي `UserNotAuthenticatedException` لأن العتاد لم يفتح المفتاح!
 
 ## Practical walkthrough
 
-لو مجرد dialog `BiometricPrompt` قفل زر التحويل، hook يقدر يتجاوز الـcallback. لو الهدف توقيع challenge، ولّد Keystore signing key تشترط user authentication واربط `Signature` بـ`CryptoObject` وقت prompt حسب دعم الـAPI. بعد التوقيع، backend يتحقق من challenge والsession والمبلغ؛ توقيع محلي من غير ربط تفاصيل العملية ممكن يتعاد استخدامه.
+تنفيذ Biometric-Gated Crypto حقيقي مدعوم عتادياً ومحصن ضد هجمات الـ Hooking:
+```kotlin
+class BiometricCryptoManager(private val activity: FragmentActivity) {
+    private val KEY_ALIAS = "biometric_user_vault_key"
+
+    // 1. توليد مفتاح مقفل عتادياً يتطلب بصمة المستخدم لكل عملية:
+    fun generateBiometricProtectedKey() {
+        val keyGen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        val spec = KeyGenParameterSpec.Builder(
+            KEY_ALIAS,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+        )
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setUserAuthenticationRequired(true) // يتطلب بصمة لكل عملية تشفير/فك تشفير
+            .setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG) // مدة الصلاحية 0 = لكل عملية على حدة
+            .setInvalidatedByBiometricEnrollment(true) // إبطال المفتاح فوراً إذا أضيفت بصمة جديدة للهاتف
+            .build()
+        keyGen.init(spec)
+        keyGen.generateKey()
+    }
+
+    // 2. فك تشفير البيانات عبر ربط الـ Cipher بـ BiometricPrompt.CryptoObject:
+    fun authenticateAndDecrypt(iv: ByteArray, ciphertext: ByteArray, onSuccess: (ByteArray) -> Unit) {
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        val secretKey = keyStore.getKey(KEY_ALIAS, null) as SecretKey
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
+            init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(128, iv))
+        }
+
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Confirm payment")
+            .setNegativeButtonText("Cancel")
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+            .build()
+
+        val biometricPrompt = BiometricPrompt(
+            activity,
+            ContextCompat.getMainExecutor(activity),
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    // الـ Cipher الآن فقط أصبح مفكوك القفل عتادياً!
+                    val authenticatedCipher = result.cryptoObject?.cipher!!
+                    val decryptedPayload = authenticatedCipher.doFinal(ciphertext)
+                    onSuccess(decryptedPayload)
+                }
+            }
+        )
+
+        // تمرير الـ CryptoObject إلزامي لجعل القفل عتادياً
+        biometricPrompt.authenticate(promptInfo, BiometricPrompt.CryptoObject(cipher))
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +113,30 @@ For a fintech flow, threat-model which exact operation needs a gesture; use a se
 
 ## Interview answer — short
 
-“I bind a Keystore key operation to BiometricPrompt via CryptoObject when I need cryptographic gating. A dialog alone is only UI control; the backend still authorizes the transaction.”
+Gate Keystore operations with biometrics by setting setUserAuthenticationRequired(true) on the key and passing a Cipher wrapped in a BiometricPrompt.CryptoObject to authenticate(). Decrypt only using the authenticated Cipher in onAuthenticationSucceeded; hardware enforces key release, preventing bypass via software hooks.
 
 ## Interview answer — structured
 
-“I configure the Keystore key to require user authentication, initialize a Cipher or Signature, and pass it through BiometricPrompt as a CryptoObject where the API combination supports it. After success, the app performs the operation. I choose per-use versus timed authorization based on risk, and plan for enrollment changes, lockout and key invalidation. For a transfer, the server verifies a challenge-bound result and independently checks session and transaction policy.”
+Biometric-gated security must be backed cryptographically rather than relying on boolean UI callback results:
+
+1. **The Vulnerability of Boolean Prompts**: Invoking `BiometricPrompt.authenticate(promptInfo)` without a `CryptoObject` treats the result as a simple boolean status. An attacker running Frida hooks `onAuthenticationSucceeded()` to invoke the success callback directly without touching the sensor.
+
+2. **Hardware Cryptographic Binding (CryptoObject)**:
+   - When generating the AES key in `AndroidKeyStore`, configure `.setUserAuthenticationRequired(true)` with `.setUserAuthenticationParameters(0, AUTH_BIOMETRIC_STRONG)` and `.setInvalidatedByBiometricEnrollment(true)`.
+   - Initialize a `Cipher` with the key and wrap it inside `BiometricPrompt.CryptoObject(cipher)`.
+   - Pass the `CryptoObject` into `biometricPrompt.authenticate()`.
+
+3. **Hardware Enforcement**: The Android Keymaster / TEE hardware keeps the key material locked. Only upon receiving authenticated biometric proof from the hardware fingerprint sensor does the secure enclave release the cryptographic key for that specific `Cipher` instance. Attempting to call `cipher.doFinal()` without biometric hardware unlocking throws `UserNotAuthenticatedException`.
 
 ## Interview answer — deep senior
 
-“A biometric gate must protect a concrete capability, not merely a screen. I decide whether I need local decryption or a challenge signature, configure KeyGenParameterSpec accordingly, and verify the AndroidX/platform authenticator rules for supported API levels. I bind a fresh server challenge and immutable transfer parameters to the signature so a replay or UI modification cannot approve a different amount. I handle cancellation, lockout, device credential fallback and invalidated keys with explicit re-enrollment. I do not claim that a biometric prompt makes a rooted client trusted; the backend remains authoritative. I would decide whether the capability is local decryption or signing a server challenge, then choose a key policy compatible with the required authenticator and Android versions. The challenge should include an operation identity and expire so a signature cannot be replayed for another transfer. Enrollment changes and key invalidation require a fallback flow, usually re-enrollment or stronger server authentication. A successful prompt alone must not advance server transaction state.”
+From an architectural standpoint, designing biometric crypto requires handling edge cases in the user security lifecycle:
+
+1. **Biometric Enrollment Changes**: When a user registers a new finger on the device, `setInvalidatedByBiometricEnrollment(true)` immediately renders the key permanently unusable. Any subsequent `cipher.init()` throws `KeyPermanentlyInvalidatedException`. The application must handle this by safely deleting the invalid key, purging local biometric-gated caches, and prompting the user for full password authentication.
+
+2. **Per-Use vs. Time-Window Authentication**: Specifying a duration of `0` in `setUserAuthenticationParameters` requires biometric verification for every individual cryptographic transaction. Setting a duration greater than zero allows the hardware key to remain unlocked for that duration (e.g., 30 seconds), which is useful for bulk operations but presents a larger attack window.
+
+3. **Strong vs. Weak Biometrics**: Financial applications must strictly configure `BiometricManager.Authenticators.BIOMETRIC_STRONG` (Class 3 hardware with < 0.002% False Acceptance Rate and liveness detection). Weak biometrics (Class 2 / 2D camera face unlock) are prohibited from unlocking Keystore keys marked with `AUTH_BIOMETRIC_STRONG`.
 
 ## How to answer in the interview
 
@@ -75,8 +152,11 @@ Prompt for auth-bound key, CryptoObject, per-use versus time-window policy, enro
 
 ## Follow-up questions
 
-- [SEC-13](../sec-13/): What if enrollment invalidates a key? **Answer:** re-authenticate and enroll a new key.
-- [SEC-27](../sec-27/): Can a patched UI approve a transfer? **Answer:** backend verifies challenge and transaction state.
+- **Interviewer:** "Can Face Unlock on budget Android devices unlock AUTH_BIOMETRIC_STRONG keys?"
+  **Answer:** "No; standard 2D camera face recognition is classified as Class 1 or Class 2 (Weak) and Android Keystore blocks it from unlocking Strong-tier cryptographic keys."
+
+- **Interviewer:** "What happens if the device has no screen lock set when generating a biometric key?"
+  **Answer:** "KeyGenParameterSpec initialization fails immediately with an InvalidAlgorithmParameterException because secure lock screen credentials are a prerequisite."
 
 ## Self-check rubric
 
@@ -87,4 +167,4 @@ Can I distinguish UI gating from cryptographic gating and describe operation-bou
 - [BiometricPrompt guide](https://developer.android.com/identity/sign-in/biometric-auth) — cryptographic authentication flow.
 - [KeyGenParameterSpec](https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec) — user-auth key constraints.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -22,7 +22,69 @@ Redesign global mutable singleton ownership to eliminate test order dependence a
 
 ## Explanation in Arabic
 
-Global singleton mutable زي `object SessionCache { var user = ... }` تفضل بين tests في نفس process، فتستطيع test A تغيّر نتيجة B. كمان process death يمسحها وActivity references تسرّب memory. حدّد owner: repository أو session state holder بlifetime واضح، constructor injection للكود اللي يحتاجه، وfactory/test setup تنشئ instance جديدة لكل test. لو في shared app instance، اجعل state immutable snapshots أو تحكم في writes، وخزّن durable facts في data layer. `object` stateless formatter ممكن يفضل okay؛ المشكلة mutable global ownership.
+الـ Singleton العام القابل للتعديل (Global Mutable Singleton) يجعل الاختبارات تعتمد على ترتيب التنفيذ (Order-Dependent). كيف تعيد تصميم ملكية البيانات (Ownership)؟
+
+1. ما هي مشكلة الـ Global Mutable Singleton؟
+   - كلاس معرّف كـ `object UserSession` في Kotlin يحتوي على متغيرات عامة: `var currentUser: User? = null` و `var authToken: String? = null`.
+   - **تلوث بيئة الاختبار (State Pollution)**: عند تشغيل Unit Tests على الـ JVM، تعمل جميع الاختبارات في نفس عملية الـ JVM Process. إذا قام `TestA` بتسجيل دخول مستخدم ونسي تفريغ الكائن، فإن `TestB` سيبدأ مع بيانات مستخدم موجودة مسبقاً، مما يؤدي إلى نجاح الاختبار عند تشغيله بمفرده وفشله الغامض عند تشغيل السلسلة كاملة (Flaky & Order-dependent tests).
+   - **Memory Leaks & Race Conditions**: إذا احتفظ الـ Singleton بمرجع لـ Context أو Activity، فإنه يسرّب الذاكرة طوال فترة حياة التطبيق، كما أن الوصول المتزامن من Threads متعددة بدون مزامنة يسبب تصادمات بيانات (Data Corruption).
+
+2. كيفية إعادة تصميم الملكية (Redesigning Ownership):
+   - **استبدال الـ `object` بـ Class عادي**: تحويل الـ Singleton من كائن ثابت عالمي إلى كلاس عادي يتم حقنه بواسطة Dependency Injection (`@Singleton` Scope في Hilt).
+   - **Constructor Injection**: تمرير الـ Session Holder عبر الـ Constructor لكل كلاس يحتاجه.
+   - **Test Isolation**: في الـ Unit Tests، يتم إنشاء نسخة جديدة تماماً من الكلاس لكل اختبار على حدة (`@Before fun setup()`), مما يضمن عزل الاختبارات بنسبة 100%.
+
+## Practical walkthrough
+
+المقارنة بين Global Mutable Object وحامل حالة محقون معزول لكل اختبار:
+```kotlin
+// ❌ فوضى الـ Global Mutable Singleton: اختبارات ملوثة وتعتمد على الترتيب:
+object GlobalUserSession {
+    var token: String? = null // متغير عام يلوث الـ JVM Process في كل الاختبارات!
+    var userId: String? = null
+}
+
+// Test A يغير الحالة:
+@Test fun testLogin() {
+    GlobalUserSession.token = "token_123"
+    assertTrue(AuthManager.isLoggedIn())
+}
+// Test B يفشل لو اشتغل بعد Test A لأنه يتوقع مستخدم غير مسجل:
+@Test fun testLoggedOutState() {
+    // سيفشل هنا لأن GlobalUserSession.token لا يزال محتفظاً بقيمة token_123 من Test A!
+    assertFalse(AuthManager.isLoggedIn())
+}
+
+// ✅ الحل النظيف: كلاس عادي محقون بـ Scoped Ownership عبر Constructor Injection:
+interface SessionManager {
+    fun getToken(): String?
+    fun setToken(token: String?)
+}
+
+class DefaultSessionManager @Inject constructor(
+    private val storage: KeyValueStorage
+) : SessionManager {
+    private val _token = MutableStateFlow<String?>(null)
+    override fun getToken(): String? = _token.value
+    override fun setToken(token: String?) { _token.value = token }
+}
+
+// في الـ Tests: كل اختبار ينشئ نسخته المستقلة في @Before، عزل تام 100%:
+class AuthManagerTest {
+    private lateinit var sessionManager: SessionManager
+    private lateinit var authManager: AuthManager
+
+    @Before
+    fun setUp() {
+        sessionManager = FakeSessionManager() // نسخة جديدة طازجة لكل اختبار!
+        authManager = AuthManager(sessionManager)
+    }
+    
+    @Test fun testLoggedOutState() {
+        assertFalse(authManager.isLoggedIn()) // ينجح دائماً بغض النظر عن الترتيب!
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -40,10 +102,6 @@ class SessionStore(initialUser: String? = null) {
 ```
 Each unit test constructs its own store. Production may wrap persistent storage and synchronization; this small class alone is not thread-safe or durable.
 
-## Practical walkthrough
-
-global `object SessionStore` بيعيش طول process، فtest A تكتب user وtest B تشوفه لو مفيش reset؛ production account switch ممكن يورث data من user قديم، وprocess death يمسحها. بدّلها بـ`SessionStore` instance تتخلق في auth/session scope وتتحقن في consumers، مع `close/reset` واضح وقت logout. test ينشئ store جديدة لكل case أو fake store. لو process restart، token/session recovery من persistent credential policy/server، مش من singleton memory. ما تعملش App-wide `@Singleton` لكل حاجة عشان DI موجودة؛ scope لازم تتطابق مع ownership.
-
 ## Trade-offs and decision criteria
 
 An injected instance adds wiring but improves isolation and ownership. A stateless `object` may be simplest. If multiple threads access mutable session data, use a proper state holder and synchronization; merely replacing singleton with class does not solve races.
@@ -58,17 +116,26 @@ A fintech app moves session facts to repository backed by protected storage and 
 
 ## Interview answer — short
 
-A mutable global Singleton makes tests share hidden state and can leak lifecycle objects. I replace it with an explicitly owned, injected state holder and fresh test instances, while keeping durable session truth in repository/server paths.
+Global mutable singletons (`object` with `var`) persist state across test executions in the same JVM process, causing test order dependence and flakiness. Redesign ownership by turning the singleton into a standard class, injecting it via Constructor Injection, controlling its lifecycle scope through a DI container (like Hilt @Singleton), and creating fresh in-memory instances per test.
 
 ## Interview answer — structured
 
-I first separate stateless singleton helpers from mutable global state. The latter creates order-dependent tests because values survive between cases in one process, and it does not survive Android process death reliably. I move the state into a repository or scoped holder with constructor injection, so each test gets a fresh fake. If production needs a shared instance, DI can scope it deliberately and I define synchronization and persistence. A singleton should not retain an Activity or act as client-side authorization authority.
+A global mutable singleton (`object Session { var user: User? }`) violates single ownership and destroys test determinism. Because JVM test runners reuse the same classloader process to run multiple test suites, mutations made by Test A persist into Test B. Tests become order-dependent: running Test B alone passes, but running the whole test suite fails.
+
+To fix this, we redesign state ownership:
+1. **Demote `object` to a Standard Class**: We replace the Kotlin `object` with an interface and a concrete class (`SessionManager`). The class encapsulates its state within thread-safe abstractions like `StateFlow`.
+2. **Explicit Constructor Injection**: Any ViewModel, Repository, or Interactor that needs session information declares `SessionManager` in its constructor. Nothing accesses ambient global state.
+3. **Container-Managed Scope**: In production, the DI container (Hilt) manages a single instance scoped with `@Singleton`. In JVM tests, we instantiate a fresh `FakeSessionManager` in `@Before`, guaranteeing 100% test isolation and determinism.
 
 ## Interview answer — deep senior
 
-The root problem is hidden ownership. A global `object` with mutable fields can be read and changed by any caller, so tests influence one another and production behavior depends on call order. I identify who owns updates and what must survive process death. A session repository can expose immutable snapshots, persist only appropriate token material, refresh with the backend, and invalidate on logout. Features depend on its contract rather than global access. Unit tests construct a new in-memory fake per test, and integration tests cover refresh/logout races. A DI singleton may still be used for the repository instance, but its scope and state protocol are explicit; it must not capture Activity context. Stateless `object` helpers remain fine.
+Beyond test ordering bugs, global mutable singletons introduce severe Android runtime vulnerabilities:
 
-I would first identify who owns the mutable state. A global `object SessionStore` couples every test to the previous process state and can retain one account after a switch. I replace it with an instance passed through constructors, scoped to the authenticated session, and dispose or reset it on logout. Each test constructs its own store, so order no longer changes the result; integration tests verify account-switch teardown. The object still disappears on process death, so durable credentials and server session recovery need a separate design. A DI container helps wire the scope, but marking the store application-wide singleton would recreate the problem under a different annotation. Ownership, not the keyword, is the fix.
+1. **Process Death Vulnerability**: When Android terminates an app process in the background due to low memory, static variables are purged. When the user returns, the Activity is recreated, but the global singleton's state is reset to `null`, causing widespread `NullPointerExceptions` or forcing unexpected logouts. Proper ownership means persisting critical state to Room or encrypted DataStore, with the session manager reloading state reactively.
+
+2. **Concurrency and Visibility Hazards**: Naive global singletons with `var` fields lack memory barriers. If thread A writes `user = newProfile` and thread B reads it on another thread, thread B can observe stale cached CPU register values unless fields are `@Volatile` or guarded by a Mutex.
+
+3. **Stateless Utilities vs. State Holders**: Kotlin `object` is perfectly appropriate for stateless utilities (math functions, date formatters, serializers). It becomes toxic only when it holds mutable state. By moving state into injected repositories, we gain observability, thread-safety, and test parallelizability.
 
 ## How to answer in the interview
 
@@ -84,8 +151,11 @@ Diagnose test order dependence, separate stateless singleton, specify owner, per
 
 ## Follow-up questions
 
-- [PAT-03](../pat-03/): Is a Kotlin object durable? **Answer:** no; it is an in-process instance.
-- [DI-14](../di-14/): Why not singleton-scope everything? **Answer:** long lifetimes cause leaks and shared mutable state.
+- **Interviewer:** "Is Kotlin `object` always bad in Android?"
+  **Answer:** "No. Stateless singletons, single-instance formatters, sealed class objects, and pure utilities are great. It is mutable state (`var`) inside an `object` that causes architectural problems."
+
+- **Interviewer:** "What is the difference between a Singleton Pattern and a DI Singleton Scope?"
+  **Answer:** "The Singleton Pattern enforces a single instance globally via a private constructor and static access. DI Singleton Scope lets the container create one instance for the app graph, but the class itself remains a normal class that can be easily instantiated multiple times in tests."
 
 ## Self-check rubric
 
@@ -96,4 +166,4 @@ Explain a failing test order, propose injection, and state what must survive pro
 - [Kotlin object declarations](https://kotlinlang.org/docs/object-declarations.html) — object lifetime.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — persistent data ownership.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

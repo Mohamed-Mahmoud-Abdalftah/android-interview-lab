@@ -23,11 +23,39 @@ How do you decide build versus buy for third-party libraries/SDKs?
 
 ## Explanation in Arabic
 
-قرار build vs buy يعتمد على قيمة الميزة، وقت الوصول، security/compliance، جودة SDK، التحديثات، lock-in، cost وteam capability. SDK مدفوعات أو biometric لازم نفهم certifications والدعم وABI/OS matrix؛ بناء بديل داخلي ممكن يبقى غير واقعي أو غير مسموح. بنعمل proof صغير، threat review، وexit plan لو vendor فشل.
+كيف تتخذ قرار البناء الذاتي مقابل الشراء أو استخدام حل جاهز (Build versus Buy) للمكتبات وحزم الـ SDK في أندرويد؟
+
+1. إطار عمل التقييم الاستراتيجي (Core vs. Context Framework):
+   - **Core (جوهر الميزة التنافسية للشركة)**:
+     * الشيء الذي يميز تطبيقك عن جميع المنافسين (مثل: خوارزمية تسعير التوصيل في أوبر، أو محرك معالجة الصوت في Spotify).
+     * **القاعدة: ابنِ دائماً بنفسك (Build)** لامتلاك الملكية الفكرية والتحكم الكامل في الأداء والتطوير.
+   - **Context (البنية التحتية والوظائف المساعدة)**:
+     * وظائف ضرورية لتشغيل التطبيق لكنها ليست ميزتك التنافسية (مثل: عرض الخرائط، إرسال الإشعارات، معالجة الدفع ببطاقات الائتمان، أو قص وتعديل الصور).
+     * **القاعدة: اشترِ أو استخدم حلاً جاهزاً موثوقاً (Buy / Open Source)** لتوفير الوقت والتركيز على الـ Core.
+
+2. التكلفة الإجمالية للملكية (Total Cost of Ownership - TCO):
+   - يعتقد المطورون خطأً أن كتابة الحل داخلياً "مجانية"!
+   - تكلفة البناء الداخلي تشمل: رواتب المهندسين أثناء البناء، تكلفة الصيانة السنوية المستمرة، مواكبة تحديثات إصدارات أندرويد السنوية، وتصحيح الثغرات الأمنية.
+
+3. المخاطر التقنية لشراء واستخدام SDKs خارجية في أندرويد:
+   - **انتفاخ الحجم (APK Size Bloat)**: إضافة 15MB لحجم التطبيق.
+   - **أمان وخصوصية البيانات (GDPR/Compliance)**: هل الـ SDK تتتبع بيانات المستخدمين خلسة وتعرض التطبيق للحظر في Google Play؟
+   - **استهلاك البطارية واستقرار النظام**: هل تشغل Background Services تسبب OOM أو ANR؟
+   - **خطر الهجر (Abandonware)**: ماذا لو توقف المطور عن تحديث المكتبة مع إطلاق Android 15؟
 
 ## Practical walkthrough
 
-لو محتاج crash reporting أو payment SDK، اعمل build-vs-buy على capability المطلوبة: time-to-market، maintenance، security، privacy، Android/ABI support، vendor SLA، exit cost. لا تدخل SDK لمجرد أن demo نجح؛ جرّبه في minified release على الأجهزة المستهدفة، راجع permissions وdata flow وoffline/timeout. ولو تبني بنفسك، احسب بروتوكولات وعمليات support طويلة الأجل. حدد adapter وحدود ownership عشان تقدر تستبدل vendor لاحقًا.
+مصفوفة تقييم عملية لقرار Build vs Buy (مثال: محرك المحادثة الفورية في تطبيق تجاري):
+```markdown
+| المعيار | الخيار 1: بناء نظام Chat داخلياً | الخيار 2: شراء SDK جاهز (Stream / Sendbird) |
+|---|---|---|
+| **الزمن اللازم للوصول للسوق (Time to Market)** | 6 إلى 9 أشهر | أسبوعان إلى شهر واحد |
+| **تكلفة التطوير المبدئية** | رواتب 4 مهندسين (~$200,000) | رسوم إعداد واشتراك شهري ($1,500/mo) |
+| **التوافق وميزات الموبايل** | مجهود ضخم: WebSockets, Local Room Caching, Reconnects | جاهزة: Offline Sync, Push Notifications, Media Uploads |
+| **التحكم والخصوصية** | تحكم كامل 100% في البيانات | البيانات مخزنة لدى طرف ثالث (تتطلب تدقيق أمني) |
+| **القرار النهائي والتبرير** | مرفوض (سيعطل إطلاق التطبيق ويشتت الفريق) | **تم اختياره** للوصول السريع للسوق مع عزله وراء Interface |
+```
+القاعدة الذهبية عند الشراء: **اعزل الـ SDK وراء Interface داخلي (Adapter Pattern)** حتى تتمكن من استبدالها لاحقاً إذا رفع المورد أسعاره دون إعادة كتابة التطبيق!
 
 ## Why it matters and how it works
 
@@ -51,15 +79,37 @@ Document decision matrix with weighted criteria, owner, security review, total c
 
 ## Interview answer — short
 
-“I compare total lifecycle cost and risk, not just implementation time. For an SDK I check security, maintenance, device support, data handling and exit strategy before buying.”
+Decide build versus buy using the Core vs. Context framework: build custom solutions for core business differentiators that define your competitive edge; buy or use open-source SDKs for commodity infrastructure like analytics, maps, or chat. Evaluate the Total Cost of Ownership (ongoing maintenance, Android OS upgrades, APK size, security compliance) and encapsulate third-party SDKs behind internal interfaces.
 
 ## Interview answer — structured
 
-“I start with requirements and constraints: is the capability commodity, regulated or differentiating? I compare in-house build effort and ongoing maintenance with a vendor’s reliability, license, privacy, security and Android compatibility. I run a proof on target devices and isolate vendor APIs behind a narrow adapter where useful. For EMV, certification may make a vendor SDK mandatory; I still test callbacks, ABI support and reversal behavior. The decision includes an exit trigger and migration cost. ”
+Navigating the Build vs. Buy architectural dilemma requires balancing strategic differentiation against long-term maintenance overhead:
+
+1. **Strategic Core vs. Context Alignment**:
+   - **Core**: Capabilities that directly drive competitive differentiation and customer value (e.g. proprietary financial transaction routing). Build internally to maintain intellectual property, latency control, and roadmap flexibility.
+   - **Context**: Commodity capabilities required for application operation (e.g., payment gateway bridges, push notification delivery, video streaming pipelines). Buy SaaS or adopt tier-1 open-source solutions to maximize speed to market.
+
+2. **Total Cost of Ownership (TCO) Calculation**:
+   - Building internally carries massive hidden costs: opportunity cost of diverged engineering talent, continuous maintenance across annual Android OS breaking changes (e.g., photo picker migrations, background service restrictions), bug remediation, and documentation overhead.
+
+3. **Mobile-Specific Vendor Due Diligence**:
+   - Audit candidate SDKs against strict mobile criteria:
+     - **Binary Footprint**: Impact on download size (AAB/APK size) and method count limits.
+     - **Stability & Performance**: Background thread usage, memory consumption, and Crashlytics reputation.
+     - **Security & Privacy**: Adherence to Google Play User Data policies, runtime permissions, and transparent network telemetry.
+
+4. **Encapsulation via the Adapter Pattern**:
+   - Never allow vendor SDK classes to leak across domain code. Wrap external SDKs behind an internal abstraction interface, insulating the codebase from vendor deprecation or pricing hikes.
 
 ## Interview answer — deep senior
 
-“I compare building and buying against the actual capability and risk. For a payment SDK, buying may provide certified device integration and shorter time to market, but it introduces vendor release cadence, ABI support, callback semantics, data handling and outage dependency. Building in-house offers control yet can require expertise and ongoing compliance or certification work that the team does not have. I prototype the riskiest path in a minified release build on target devices, inspect permissions and data flows, and test timeout, disconnect and process death before selecting a vendor. I score total cost of ownership, security review, support terms, update frequency and exit cost rather than license price alone. I wrap the SDK behind a small domain interface so the app’s UI does not depend on raw callbacks, but I do not claim an adapter removes vendor constraints. The decision document states which evidence would make us switch and how in-flight operations remain safe during migration.”
+From an engineering governance and risk management angle, third-party mobile SDKs represent major supply-chain vulnerabilities:
+
+1. **Supply-Chain Security Audits**: Malicious SDK updates can silently introduce credential harvesting or violate user privacy policies, leading to immediate Google Play store de-platforming. Enforce dependency hash pinning, monitor CVE vulnerability databases, and review SDK ProGuard/R8 rules to ensure sensitive classes are not un-obfuscated.
+
+2. **Vendor Lock-In and Exit Strategy**: Always define an explicit exit gate before integrating proprietary SDKs. If a vendor doubles their license pricing in year 2, how long would it take the squad to migrate? If migration takes more than 2 sprints due to deep framework entanglement, the architecture lacks sufficient abstraction.
+
+3. **Open-Source Health Metrics**: When considering open-source libraries, audit commit frequency, issue triage velocity, corporate backing (e.g. Square, Google, JetBrains), and active Kotlin Multiplatform roadmaps to avoid adopting abandonware.
 
 ## How to answer in the interview
 
@@ -75,8 +125,11 @@ Prompt for lifecycle cost, supply-chain review, regulated constraints, adapter b
 
 ## Follow-up questions
 
-- [PAY-09](../pay-09/): Why wrap EMV SDK? **Answer:** isolate callbacks/quirks while preserving capability contracts.
-- [CIC-18](../cic-18/): What if dependency build code is malicious? **Answer:** verify supply chain and isolate secrets.
+- **Interviewer:** "Why should third-party SDKs be encapsulated behind internal interface adapters?"
+  **Answer:** "To prevent vendor-specific types from polluting business logic, making it easy to swap or remove the vendor without rewriting application code."
+
+- **Interviewer:** "What is the primary operational danger of integrating unvetted commercial SDKs into an Android app?"
+  **Answer:** "Privacy violations or background tracking that can result in immediate Google Play policy enforcement and app removal."
 
 ## Self-check rubric
 
@@ -87,4 +140,4 @@ Compare build and buy on capability, maintenance, security, privacy, cost and ex
 - [Android app dependencies](https://developer.android.com/build/dependencies) — dependency management.
 - [Gradle dependency verification](https://docs.gradle.org/current/userguide/dependency_verification.html) — supply-chain checks.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

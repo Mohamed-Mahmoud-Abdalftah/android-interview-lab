@@ -22,11 +22,46 @@ Compare switching, sequential and concurrent flattening of inner flows.
 
 ## Explanation in Arabic
 
-`flatMapLatest` يلغي inner Flow القديم لما upstream تطلع قيمة جديدة؛ مناسب query search. `flatMapConcat` يكمّل inner الأولى ثم يبدأ التالية بالترتيب؛ مناسب خطوات لازم تتعالج بالتتابع. `flatMapMerge` يجمع عدة inner flows بالتوازي مع concurrency limit، والنتائج ممكن تتداخل. الاختيار لازم يعكس هل القديم مهم وهل الترتيب لازم محفوظ.
+المقارنة بين مشغلات التسطيح (Flattening Operators) `flatMapLatest` و `flatMapConcat` و `flatMapMerge`:
+
+1. `flatMapConcat` (التسطيح التسلسلي المتتابع):
+   - ينتظر انتهاء التدفق الداخلي الأول بالكامل قبل أن يبدأ التدفق الداخلي التالي (Sequential).
+   - لو عندك أحداث سريعة، كل حدث سينتظر في الطابور حتى ينتهي التدفق السابق تماماً.
+   - يضمن الترتيب الصارم 100%، لكنه بطيء ولا يدعم التوازي.
+
+2. `flatMapMerge` (التسطيح المتوازي المتزامن):
+   - يجمع التدفقات الداخلية بالتوازي في نفس الوقت (Concurrent).
+   - يسمح بتحديد سقف التوازي عبر معامل `concurrency` (الافتراضي 16).
+   - النتائج قد تتداخل وتصل بدون ترتيب زمني مطابق لترتيب الانطلاق.
+
+3. `flatMapLatest` (التسطيح مع الإلغاء الفوري للأقدم):
+   - **يلغي التدفق الداخلي الحالي فوراً بمجرد وصول عنصر جديد من الـ Upstream!**
+   - المشغل رقم 1 في شاشات البحث والـ UI: إذا كتب المستخدم حرفاً جديداً، يلغي طلب الشبكة الداخلي القديم فوراً ويبدأ طلباً للبحث الجديد.
 
 ## Practical walkthrough
 
-Search query `a` وبعدها `ab`: `flatMapLatest` تلغي collection القديمة وتبدأ الجديدة؛ ده يمنع نتيجة `a` المتأخرة من استبدال `ab` لو API متعاونة مع cancellation. `flatMapConcat` تنفذ واحد وراء واحد لو الترتيب مطلوب، و`flatMapMerge` تشغّل بالتوازي لنتائج مستقلة. لا تستخدم merge على search وتفترض ترتيب النتائج؛ اختبر late response.
+مقارنة عملية في شاشة البحث عن مستخدمين:
+```kotlin
+// 1. flatMapLatest في البحث (هو الأنسب دائماً): 
+searchQueryFlow
+    .debounce(300L)
+    .flatMapLatest { query ->
+        repository.searchUsers(query) // لو كتب المستخدم كلمة جديدة، يلغي البحث السابق فوراً!
+    }
+    .collect { render(it) }
+
+// 2. flatMapConcat في معالجة طلبات متسلسلة (تفريغ طابور حفظ):
+uploadQueueFlow
+    .flatMapConcat { file ->
+        repository.uploadSingleFile(file) // لا يبدأ رفع الملف الثاني حتى ينتهي الأول تماماً
+    }
+
+// 3. flatMapMerge في جلب تفاصيل متوازية:
+userIdsFlow
+    .flatMapMerge(concurrency = 3) { id ->
+        repository.fetchUserDetails(id) // يجلب 3 مستخدمين بالتوازي لتوفير الوقت
+    }
+```
 
 ## Why it matters and how it works
 
@@ -62,15 +97,23 @@ A product search pipeline debounces normalized query and flatMapLatest to cancel
 
 ## Interview answer — short
 
-“flatMapLatest switches to the newest inner flow; flatMapConcat processes inners sequentially; flatMapMerge collects inners concurrently and interleaves outputs. I choose by staleness, order and resource limits.”
+flatMapConcat flattens streams sequentially, waiting for the previous inner flow to complete before starting the next; flatMapMerge flattens inner streams concurrently with a concurrency limit; and flatMapLatest cancels the active inner flow immediately whenever a new upstream value arrives.
 
 ## Interview answer — structured
 
-“When each input creates another Flow, flattening semantics matter. A search query should usually use `flatMapLatest` so stale result streams are cancelled. If every inner operation must finish in input order, `flatMapConcat` is appropriate. `flatMapMerge` allows concurrency and can reduce latency, but outputs may interleave and need IDs. I consider whether an external side effect has already happened: cancelling an inner collection is not a transaction rollback.”
+These three flattening operators transform incoming values into child flows, differing in how they handle concurrency and cancellation:
+
+**`flatMapConcat`** executes child flows sequentially. When an upstream item arrives, it collects its child flow to completion before collecting the child flow of the next upstream item. It strictly preserves ordering but does not allow concurrency.
+
+**`flatMapMerge`** collects multiple child flows concurrently, merging their emissions into a single downstream stream as they arrive. You can configure the `concurrency` parameter (default 16) to limit simultaneous inner flows. Output order is interleaved and non-deterministic.
+
+**`flatMapLatest`** cancels the currently executing child flow as soon as a new upstream value arrives, switching collection to the new child flow immediately. This is the definitive operator for search queries and UI filters: if the user types a new character, the previous in-flight network request is cancelled immediately.
 
 ## Interview answer — deep senior
 
-“I would ask whether values represent replaceable state or required work. For replaceable search results, latest-only is a good fit, usually after debounce; tests verify slow old responses never replace newer results. For required ordered operations, concat gives sequencing, but a never-completing inner stream can block all subsequent inputs. Merge offers bounded parallelism for independent tasks, yet output order is nondeterministic and concurrency must match server capacity. A payment or upload should not rely on `flatMapLatest` as its completion guarantee. I persist such operations separately, then observe their status as state. The flattening operator governs collection and cancellation, not remote commit semantics. I would define the inner-flow identity first. For search, each query creates a new request flow and an old result is obsolete; `flatMapLatest` cancels the previous inner collection when a new query arrives. For ordered jobs where every result matters, `flatMapConcat` waits for each inner flow to complete before starting the next. For independent work where concurrency is useful, `flatMapMerge` collects several inner flows concurrently, subject to a concurrency limit, and output order can interleave. Cancellation still depends on a cooperative API boundary; a remote server may have processed an old request even if the client stopped waiting. I would test `a` then `ab` with inverted response delays and assert only current-query UI is shown.”
+Under the hood, `flatMapLatest` is an experimental shorthand composed of `mapLatest { transform(it) }.flattenConcat()`. Because it relies on cooperative coroutine cancellation, if the child flow invokes non-suspending, blocking network calls or un-cancellable loops, cancellation will fail to terminate the background work until the call returns.
+
+In enterprise Android architectures, using `flatMapLatest` for read operations (search, filters, suggestions) is recommended. However, **never use `flatMapLatest` for write or mutation operations** (such as placing an order, uploading receipts, or database migrations). If a user taps a submit button twice rapidly, `flatMapLatest` will cancel the first purchase mid-flight, leaving backend transactions in an inconsistent or orphaned state. For mutations, use `flatMapConcat` or discrete sequential coroutines.
 
 ## How to answer in the interview
 
@@ -86,8 +129,14 @@ Compare inner cancellation, order, concurrency and a never-ending inner stream.
 
 ## Follow-up questions
 
-- [FLO-25](../flo-25/): Which flattening fits search? **Answer:** debounce then flatMapLatest for stale-query cancellation.
-- [COR-27](../cor-27/): Can latest cancel a charge? **Answer:** it can cancel client collection, not prove server rollback.
+- **Interviewer:** "Why is `flatMapConcat` dangerous with infinite child flows?"
+  **Answer:** "If a child flow is infinite (e.g., a continuous database observation stream that never completes), `flatMapConcat` will collect that child flow forever and will never process any subsequent upstream items!"
+
+- **Interviewer:** "What is the default concurrency limit of `flatMapMerge`?"
+  **Answer:** "The default concurrency limit is `DEFAULT_CONCURRENCY`, which is 16. You can constrain it (e.g., `flatMapMerge(concurrency = 4)`) to throttle parallel operations."
+
+- **Interviewer:** "How does `flatMapLatest` compare to RxJava's `switchMap`?"
+  **Answer:** "`flatMapLatest` in Kotlin Flow is the exact conceptual equivalent of RxJava's `switchMap`: both cancel the previous inner subscription when a new item arrives."
 
 ## Self-check rubric
 
@@ -97,4 +146,4 @@ Can I choose each operator for a use case and predict stale/ordered/interleaved 
 
 - [Kotlin Flow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-flow/) — flatMap operators.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

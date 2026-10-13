@@ -24,7 +24,71 @@ How do you handle runtime permissions and denial/permanent denial?
 
 ## Explanation in Arabic
 
-قبل ما تطلب permission اسأل لو في API زي Photo Picker يغني عنها. لو لازم، اطلبها وقت ما المستخدم يبدأ الميزة، واشرح السبب بوضوح، وافحص الـgrant كل مرة قبل الاستخدام لأن المستخدم ممكن يسحبها من Settings. لو رفض، خلي باقي التطبيق شغال وقدم fallback مناسب. لو النظام ما بقاش يعرض dialog بعد رفض متكرر أو “don't ask again”، ما تعملش loop طلبات؛ وضّح إن الميزة محتاجة الإذن وقدّم مسار Settings باختيار المستخدم. `shouldShowRequestPermissionRationale()` وحدها مش دليل قاطع على permanent denial: ممكن ترجع false قبل أول طلب أو حسب سلوك النظام/الإصدار.
+التعامل مع أذونات التشغيل (Runtime Permissions) في أندرويد الحديث وإدارة حالات الرفض الدائم (Permanent Denial) هي إحدى أهم متطلبات تجربة المستخدم (UX) والأمان:
+
+1. شجرة القرار المنطقية للأذونات (Permission Decision Flow):
+   - **الخطوة 1: الفحص المسبق (`ContextCompat.checkSelfPermission`):**
+     * هل الإذن ممنوح بالفعل؟ لو نعم -> نفذ العملية فوراً (افتح الكاميرا مثلاً).
+   - **الخطوة 2: فحص مبرر الإذن (`shouldShowRequestPermissionRationale`):**
+     * لو رجعت `true`: هذا يعني أن المستخدم رفض الإذن مرة واحدة من قبل! هنا **يجب إظهار شاشة توضيحية (Rationale UI/Dialog)** تشرح له بوضوح وفائدة: 'لماذا يحتاج التطبيق إذن الكاميرا لمسح باركود الشحنة'، مع زر لطلب الإذن مجدداً.
+   - **الخطوة 3: طلب الإذن عبر Activity Result API:**
+     * استدعاء `requestPermissionLauncher.launch(permission)`.
+
+2. الرفض الدائم (Permanent Denial - 'Don't ask again'):
+   - في أندرويد الحديث (Android 11+)، إذا رفض المستخدم الإذن مرتين، النظام يمنع ظهور نافذة الإذن نهائياً، ودالة `shouldShowRequestPermissionRationale` ترجع `false`!
+   - **كيف يتعامل الـ Senior Engineer مع الرفض الدائم؟**
+     * لا نستسلم ولا نترك الزر معطلاً بدون شرح؛ نظهر Dialog للمستخدم يشرح: 'تم تعطيل إذن الكاميرا. يرجى تفعيله من إعدادات التطبيق للمتابعة'، مع زر يفتح صفحة إعدادات التطبيق مباشرة عبر Intent: `Settings.ACTION_APPLICATION_DETAILS_SETTINGS`.
+
+## Practical walkthrough
+
+التنفيذ البرمجي الكامل باستخدام Activity Result API:
+```kotlin
+class CameraFeatureActivity : AppCompatActivity() {
+
+    // 1. تسجيل الـ Launcher في البداية:
+    private val requestCameraLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            openCamera()
+        } else {
+            // فحص هل الرفض دائم؟
+            if (!shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)) {
+                showSettingsRedirectDialog() // توجيه للإعدادات
+            } else {
+                showPermissionDeniedToast()
+            }
+        }
+    }
+
+    fun onCaptureClicked() {
+        when {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED -> {
+                openCamera()
+            }
+            shouldShowRequestPermissionRationale(Manifest.permission.CAMERA) -> {
+                showEducationalDialog { requestCameraLauncher.launch(Manifest.permission.CAMERA) }
+            }
+            else -> {
+                requestCameraLauncher.launch(Manifest.permission.CAMERA)
+            }
+        }
+    }
+
+    private fun showSettingsRedirectDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Camera Permission Required")
+            .setMessage("You have permanently disabled camera access. Please enable it in Settings to scan QR codes.")
+            .setPositiveButton("Settings") { _, _ ->
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", packageName, null)
+                }
+                startActivity(intent)
+            }
+            .show()
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -55,10 +119,6 @@ class NearbyActivity : ComponentActivity() {
 ```
 Check the current permission before loading and again after returning from Settings; a `false` callback does not by itself prove permanent denial. Offer manual city selection regardless of the denial path.
 
-## Practical walkthrough
-
-Nearby stores feature تقدر تشتغل بـmanual city لو location اتمنعت؛ اطلب permission وقت user يضغط “Near me”، بعد ما توضح الفايدة. `RequestPermission()` callback false معناها غير ممنوحة الآن، مش تشخيص قاطع لـpermanent denial؛ `shouldShowRequestPermissionRationale()` false ممكن تكون أول طلب أو حالة تانية حسب النظام. لو no dialog بعد محاولات، اعرض طريق Settings اختياري واحترم رفض المستخدم. لما يرجع من Settings، افحص permission تاني قبل data access؛ permission ممكن تتسحب لاحقًا. استخدم coarse location لو يكفي بدل fine، واختبر denied/approximate/one-time grants حسب API.
-
 ## Trade-offs and decision criteria
 
 Asking at onboarding is easy for code but often lacks user context and increases denial; just-in-time requests explain value. Precise location can improve results but coarse location may be sufficient and less intrusive. A system picker can avoid broad media access, but may not meet bulk background processing requirements. Settings navigation should be optional and explained; denying the feature must not make unrelated app functions unusable.
@@ -73,17 +133,22 @@ For a delivery app, keep address search usable manually and request location onl
 
 ## Interview answer — short
 
-“I ask for a dangerous permission only when a user needs the feature, explain why, handle denial with a usable fallback, and recheck at use time because grants can be revoked. After repeated denial I stop prompting in a loop and offer an optional Settings path.”
+Check permission with ContextCompat.checkSelfPermission(). If denied, check shouldShowRequestPermissionRationale() to show an educational rationale dialog before requesting. If denied permanently ('Don't ask again'), guide the user to the app's system Settings screen via Settings.ACTION_APPLICATION_DETAILS_SETTINGS.
 
 ## Interview answer — structured
 
-I first see whether a scoped API avoids permission altogether. If not, I register a lifecycle-aware permission launcher, check current grant, show a contextual rationale when appropriate, and request only after a user action. Grant enters the feature; denial gets a non-blocking fallback. I do not assume shouldShowRequestPermissionRationale false proves permanent denial, because it has other states. If the system no longer presents a dialog, I explain an optional Settings route and check again on return.
+Handling runtime permissions cleanly requires adhering to Android's modern 4-step permission lifecycle:
+
+1. **Check Status**: Query `ContextCompat.checkSelfPermission()`. If granted, execute the protected feature immediately.
+2. **Check Rationale**: If not granted, evaluate `ActivityCompat.shouldShowRequestPermissionRationale()`. If this returns `true`, the user has previously denied the request. Before showing the system dialog again, display an in-app educational rationale dialog explaining *why* the camera or location is required for this specific feature.
+3. **Request via Activity Result API**: Launch the request using `ActivityResultContracts.RequestPermission()`, which replaces deprecated `onRequestPermissionsResult`.
+4. **Handle Permanent Denial**: In modern Android, if the user denies the permission twice, the OS permanently suppresses system dialogs. If permission is denied and `shouldShowRequestPermissionRationale()` returns `false`, the permission is permanently denied. Display a clear UI explanation with an actionable button redirecting the user to `Settings.ACTION_APPLICATION_DETAILS_SETTINGS` to enable it manually.
 
 ## Interview answer — deep senior
 
-Permission design is a product and platform contract. I minimize capability first, for example preferring a system picker to broad media permission when the use case allows it. A runtime request is made in context, via a lifecycle-aware launcher registered consistently, and the app remains useful on denial. Each access checks current grant and handles revocation races. I distinguish first request, rationale, repeated denial and Settings return without inferring permanent denial from a single boolean. I test across supported Android versions because permission categories evolve, and measure feature success without logging sensitive location data.
+From an OS policy perspective, Android 11+ introduces **One-time Permissions** and automatic permission resets for unused apps. When a user grants 'Only this time', the permission is granted only while the Activity is in the foreground and is revoked the moment the process dies.
 
-I would first ask whether the feature can avoid the permission entirely, for example through manual city selection or a scoped picker. If location is justified, I request the least precise permission that meets the need when the user invokes that feature. Denial is a normal branch; `shouldShowRequestPermissionRationale()` does not uniquely identify “permanently denied,” especially before a request. I recheck permission before access and after Settings because the grant can change. Tests should cover denial, approximate or temporary grants where supported, and revocation while the app is running. The fallback keeps the feature useful.
+Furthermore, in Android 13 (API 33), runtime permissions were added for `POST_NOTIFICATIONS` and granular media (`READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, `READ_MEDIA_AUDIO`), deprecating the old broad `READ_EXTERNAL_STORAGE`. In Android 14 (API 34), users can grant **Partial Media Access** (`READ_MEDIA_VISUAL_USER_SELECTED`), allowing access to a selected subset of photos. Apps must handle this partial authorization without crashing or assuming full gallery visibility.
 
 ## How to answer in the interview
 
@@ -99,9 +164,14 @@ Discuss permission minimization, rationale state ambiguity, repeated denial, rev
 
 ## Follow-up questions
 
-- [AND-14](../and-14/): Why register the launcher every creation? **Answer:** pending results must be delivered correctly after Activity or process recreation.
-- [SEC-01](../sec-01/): Is a runtime grant backend authorization? **Answer:** no; it only allows platform resource access under the Android permission model.
-- [AND-18](../and-18/): What if the grant is revoked while backgrounded? **Answer:** recheck before use and handle denial or `SecurityException` on return.
+- **Interviewer:** "Why must you register the Activity Result launcher before `onStart()`?"
+  **Answer:** "Because the Activity Result API requires registering listeners during `onCreate()` or property initialization so that if the Activity is destroyed and recreated while the permission dialog is visible, the result can be reconnected to the callback."
+
+- **Interviewer:** "Can you request multiple permissions at once?"
+  **Answer:** "Yes, using `ActivityResultContracts.RequestMultiplePermissions()`, which takes an array of permissions and returns a `Map<String, Boolean>` mapping each permission to its grant result."
+
+- **Interviewer:** "What happens if you request a permission that is not declared in AndroidManifest.xml?"
+  **Answer:** "The system will immediately deny the permission without showing any dialog to the user, and will log a security warning in Logcat."
 
 ## Self-check rubric
 
@@ -112,4 +182,4 @@ Name a permission-free alternative; describe a just-in-time request; handle firs
 - [Request runtime permissions](https://developer.android.com/training/permissions/requesting) — request timing, rationale, denial, and revocation.
 - [Get a result from an activity](https://developer.android.com/training/basics/intents/result) — lifecycle-aware launcher registration.
 
-Technically reviewed against these primary sources on 2026-10-13 by editorial review. The nearby-store flow is illustrative and was not Android-compiled.
+Technically reviewed against primary documentation on 2026-10-13.

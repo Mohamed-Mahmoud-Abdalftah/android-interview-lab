@@ -23,11 +23,50 @@ How do you reduce flaky UI tests and control scheduling?
 
 ## Explanation in Arabic
 
-Flaky UI test مش “طبيعي” لمجرد إن الاختبارات على emulator. جمّع failure evidence: seed، device/API، order، screenshots، logs ووقت الشبكة. لو test تنتظر 500ms ثابتة، استبدل live backend بfake response تتحكم في إطلاقها أو انتظر semantics state محددة بدل sleep.
+كيف تقضي على الاختبارات المتقلبة (Flaky UI Tests) وتتحكم في الجدولة الزمنية وتزامن العمليات غير المتزامنة؟
+
+1. ما هو الـ Flaky Test ولماذا هو عدو الـ CI/CD الأول؟
+   - هو الاختبار الذي ينجح أحياناً ويفشل أحياناً أخرى على نفس الكود بالضبط دون أي تغيير!
+   - يدمر ثقة المطورين في الـ CI، ويؤخر دمج الـ PRs، ويخفي الأخطاء الحقيقية.
+
+2. الأسباب الجذرية للـ Flakiness في اختبارات أندرويد:
+   - **استخدام `Thread.sleep()`**: جريمة برمجية! إذا كان جهاز الـ CI بطيئاً، سينتهي الـ Sleep قبل اكتمال العملية ويفشل الاختبار.
+   - **حركات الواجهة والـ Animations**: حركات التلاشي والانتقالات تؤخر ظهور العناصر. **الحل**: تعطيل جميع حركات النظام في المحاكي قبل بدء الاختبارات.
+   - **التنافس الشبكي (Network Timing Races)**: الاتصال بسيرفرات حقيقية. **الحل**: استخدام MockWebServer محلي أو Fakes.
+
+3. أدوات التحكم والمزامنة الحتمية:
+   - **في Compose**: استخدام `composeTestRule.mainClock.autoAdvance = false` للتحكم في تقدم الإطارات يدوياً.
+   - **في Espresso**: استخدام `CountingIdlingResource` أو تحويل الكود إلى Coroutines يتم التحكم بها عبر `StandardTestDispatcher`.
+   - **Android Test Orchestrator**: تشغيل كل اختبار في Process مستقلة تماماً ومسح بيانات التطبيق بين الاختبارات لمنع تراكم الحالة.
 
 ## Practical walkthrough
 
-Compose test clock تتحكم في animations، و`runTest` يتحكم في coroutines اللي داخل نطاقه؛ لا تفترض أنهما يتحكمان في كل SDK callback. اعزل DB وDI والـclock لكل test حتى لا تؤثر حالة اختبار سابق. أعد تشغيل الحالة منفردة ثم مع shard/ترتيب CI. Retry مؤقتًا للتشخيص أو quarantine بowner وexpiry، لكنه لا يثبت إن defect اختفى.
+تعطيل Animations النظام برمجياً عبر ADB واستخدام IdlingResource أو MainClock في Compose:
+```bash
+# 1. أوامر إجبارية في CI لتعطيل الـ Animations في المحاكي ومنع الـ Flakiness:
+adb shell settings put global window_animation_scale 0
+adb shell settings put global transition_animation_scale 0
+adb shell settings put global animator_duration_scale 0
+```
+
+```kotlin
+// 2. التحكم الحتمي في ساعة Compose لمنع سباقات التوقيت مع الأنيميشن:
+@Test
+fun testAnimatedBannerAppearsDeterministically() {
+    // إيقاف التقدم التلقائي لساعة الـ Frame Clock:
+    composeTestRule.mainClock.autoAdvance = false
+
+    composeTestRule.setContent {
+        AnimatedBannerScreen()
+    }
+
+    // التقدم بالساعة 500ms حتمياً لإكمال الأنيميشن بدقة:
+    composeTestRule.mainClock.advanceTimeBy(500)
+
+    composeTestRule.onNodeWithText("Welcome Back")
+        .assertIsDisplayed()
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +90,39 @@ CI stores screenshots, logs and test seed/attempt IDs with redaction. Track flak
 
 ## Interview answer — short
 
-“I remove uncontrolled time and state: use scheduler/idling, fake network, reset fixtures and semantic selectors. Retries are diagnostic, not a fix, and quarantined tests need ownership and expiry.”
+Eliminate UI flakiness by banning Thread.sleep(), disabling system animations on test devices, mocking external network boundaries with MockWebServer, controlling Compose clocks deterministically via mainClock.autoAdvance = false, and running tests in isolated processes via Android Test Orchestrator.
 
 ## Interview answer — structured
 
-“I first identify whether the flake comes from app race, test synchronization, environment or shared data. I reproduce it with repeated focused runs and capture the first failure. I replace sleeps with UI synchronization or test clocks, control network responses and isolate database/permissions. A retry may keep CI moving temporarily but remains visible and time-limited. Critical payment and security tests stay release-gating unless an equivalent check exists.”
+Flaky UI tests degrade engineering trust and stall deployment pipelines. Eliminating flakiness requires controlling concurrency, animation timing, and environment isolation:
+
+1. **Ban Arbitrary Sleeps**:
+   - Never write `Thread.sleep(2000)`. Use synchronization hooks: in Espresso, register `CountingIdlingResource`; in Compose, rely on native auto-synchronization or manually advance `composeTestRule.mainClock`.
+
+2. **Disable System Animations on CI Devices**:
+   - UI tests click coordinates based on settled layout trees. If a window transition or fade animation is midway, clicks miss targets. Execute shell commands on CI emulators to disable all animation scales (`window_animation_scale 0`, `transition_animation_scale 0`, `animator_duration_scale 0`).
+
+3. **Hermetic Test Environments**:
+   - Flakiness often mirrors network flakiness. Mock external HTTP endpoints using `MockWebServer` running on `localhost`. Isolate storage by resetting test databases between tests.
+
+4. **Android Test Orchestrator**:
+   - Enable `execution 'ANDROIDX_TEST_ORCHESTRATOR'`. Orchestrator launches each test method in its own fresh `Instrumentation` process, clearing application memory, static singletons, and SQLite files between runs.
 
 ## Interview answer — deep senior
 
-“I first determine whether the flake is product behavior, test synchronization or environment contamination. I preserve the failing seed, device image, build variant, screenshots, logs and test order; then reproduce the test alone and next to the preceding test in the same shard. If a checkout test sleeps 500 milliseconds for a network response, I replace the live dependency with a gate I control, assert Loading, release it and assert Approved or Unknown. I use semantics waits and Compose’s test clock for UI work, and a shared coroutine test scheduler only for coroutines it actually owns. Shared singleton fakes, database rows and leftover service workers must be reset between cases. A retry can collect evidence but is not a fix: it may turn a real race into a green dashboard. If quarantine is needed, I record an owner, affected coverage, expiry and a blocking replacement for critical payment or security paths. Finally I rerun enough repetitions and the original CI shard to show the causal change removed the failure.”
+From an infrastructure resilience perspective, managing flaky tests at scale requires quarantine policies and sharding:
+
+1. **Automated Quarantine Pipelines**: Implement CI tooling (e.g., Flank or Test Grid) that tracks test pass rates over 14 days. If a test fails intermittently without code changes, automatically flag it as `@FlakyTest`, quarantine it into a non-blocking diagnostic suite, and alert the owning team.
+
+2. **Targeted Polling Matchers (`waitUntil`)**: When awaiting complex asynchronous conditions in Compose, use explicit condition timeouts:
+   ```kotlin
+   composeTestRule.waitUntil(timeoutMillis = 5000) {
+       composeTestRule.onAllNodesWithText("Ready").fetchSemanticsNodes().isNotEmpty()
+   }
+   ```
+   This polls at frame boundaries, proceeding immediately when the condition is satisfied rather than waiting for worst-case time ceilings.
+
+3. **Device Matrix Sharding**: Shard instrumentation suites across 4–8 parallel emulators in CI. Sharding keeps individual runner sessions under 5 minutes, preventing emulator memory bloat and thermal throttling that cause late-suite test timeouts.
 
 ## How to answer in the interview
 
@@ -75,8 +138,11 @@ Prompt for first-failure evidence, synchronization, state isolation, bounded qua
 
 ## Follow-up questions
 
-- [TST-21](../tst-21/): What if CI-only? **Answer:** compare device load, shard order and artifacts before changing timeout.
-- [TST-06](../tst-06/): How control coroutine launch timing? **Answer:** TestDispatcher and shared scheduler.
+- **Interviewer:** "What does Android Test Orchestrator do?"
+  **Answer:** "It runs each test in its own dedicated Android instrumentation process, ensuring zero state or static memory leaks between test executions."
+
+- **Interviewer:** "How does composeTestRule.waitUntil() differ from Thread.sleep()?"
+  **Answer:** "waitUntil polls a condition predicate on every frame clock tick and unblocks immediately when true, avoiding wasted time and race conditions."
 
 ## Self-check rubric
 
@@ -87,4 +153,4 @@ Reproduce the order-dependent or timing flake, remove wall-clock sleeps, control
 - [Android test reliability](https://developer.android.com/training/testing) — official testing practices.
 - [Compose testing](https://developer.android.com/develop/ui/compose/testing) — clock/synchronization APIs.
 
-Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

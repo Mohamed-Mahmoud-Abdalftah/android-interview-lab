@@ -22,11 +22,39 @@ Explain read-only exposure without claiming it makes underlying objects immutabl
 
 ## Explanation in Arabic
 
-بنخلي `MutableStateFlow` private ونعرّض `StateFlow` عبر `asStateFlow()` علشان المستهلك يقدر يقرأ ويعمل collect لكن ما يقدرش يغيّر `value` مباشرة. الـViewModel يفضل owner للتحديثات. ده بيحمي API surface، لكنه مش بيحوّل list mutable جوه state إلى immutable، ولا يمنع reference قديم من تغيير نفس object.
+نمط الكبسولة (Encapsulation Pattern) باستخدام `asStateFlow()` هو القاعدة الذهبية في تصميم الـ ViewModels في أندرويد:
+
+1. المشكلة التي يحلها:
+   - في الـ ViewModel، نحتاج أن نكون قادرين على تعديل الحالة (`_uiState.value = ...` أو `_uiState.update { }`).
+   - ولكن **الـ View (Activity/Fragment/Composable) يجب ألا تكون قادرة على تعديل الحالة إطلاقاً!**
+   - لو تم كشف `MutableStateFlow` مباشرة للـ UI، يمكن لأي زر أو كود في الـ UI أن يكتب `viewModel.uiState.value = BadState`، مما يكسر مبدأ **UDF (Unidirectional Data Flow)** ويجعل تتبع الأخطاء كابوساً.
+
+2. ما الذي تفعله دالة `asStateFlow()`؟
+   - تقوم بإنشاء **Read-Only View Wrapper** (`ReadOnlyStateFlow`) حول الـ `MutableStateFlow`.
+   - تمنع أي شخص من عمل Cast خبيث أو غير مقصود: حتى لو حاول المطور كتابة `(uiState as MutableStateFlow).value = ...`، الـ Wrapper الداخلي يمنع ذلك ويرمي `ClassCastException` في وقت التشغيل!
+
+3. النمط القياسي للتنفيذ:
+   - متغير خاص للتعديل: `private val _uiState = MutableStateFlow(...)`
+   - متغير عام للقراءة فقط: `val uiState: StateFlow<T> = _uiState.asStateFlow()`
 
 ## Practical walkthrough
 
-الـViewModel تحتفظ بـ`MutableStateFlow` private وتطلع `asStateFlow()` للـUI. ده يمنع Screen تعمل `_state.value = ...` وتكسر invariants؛ الأحداث ترجع methods زي `onRetry()`. لكن read-only interface مش أمان مطلق لو سربت mutable object جوا `UiState` نفسها، فلازم values غير قابلة للتعديل أو نسخ واضحة.
+الكود القياسي في الـ ViewModel:
+```kotlin
+class CheckoutViewModel : ViewModel() {
+    // 1. Mutable خاص بالـ ViewModel فقط:
+    private val _uiState = MutableStateFlow(CheckoutUiState.Initial)
+    
+    // 2. Read-only مكشوف للـ UI:
+    val uiState: StateFlow<CheckoutUiState> = _uiState.asStateFlow()
+    
+    fun onPromoCodeEntered(code: String) {
+        // التعديل محصور حصرياً داخل دوال الـ ViewModel:
+        _uiState.update { it.copy(promoCode = code) }
+    }
+}
+```
+في الـ Composable: الشاشة تقرأ فقط `val state by viewModel.uiState.collectAsStateWithLifecycle()`، وأي محاولة لتعديل الحالة تتم بإرسال حدث للـ ViewModel.
 
 ## Why it matters and how it works
 
@@ -61,15 +89,28 @@ A checkout ViewModel exposes a read-only price state and methods for quantity ch
 
 ## Interview answer — short
 
-“I keep MutableStateFlow private and expose `asStateFlow()` so consumers can read and collect but not assign values. I also publish immutable snapshots and use `update` for concurrent transformations.”
+Use asStateFlow() to expose a read-only StateFlow interface from a private MutableStateFlow backing property. This enforces Unidirectional Data Flow (UDF) by ensuring only the ViewModel can mutate state while UI components can only observe it, with a runtime wrapper that prevents unsafe downcasting.
 
 ## Interview answer — structured
 
-“Read-only exposure is an encapsulation boundary. The ViewModel owns the private MutableStateFlow and exposes a StateFlow view via `asStateFlow`, while public methods express allowed state transitions. It is the same underlying stream, not a defensive copy. If the state object contains mutable collections, consumers can still mutate them, so I use immutable data and avoid leaking mutable references. For concurrent writers I prefer `update`, which performs an atomic transformation.”
+Exposing state via `asStateFlow()` is the foundational encapsulation pattern in modern Android architecture for enforcing **Unidirectional Data Flow (UDF)**.
+
+We declare a private mutable backing property:
+`private val _uiState = MutableStateFlow(InitialState)`
+And expose a public read-only property:
+`val uiState: StateFlow<MyState> = _uiState.asStateFlow()`
+
+This architectural separation guarantees that state mutations remain strictly confined to the ViewModel's business methods. The UI layer can observe emissions and read values, but it can never directly assign or mutate state.
+
+Crucially, `asStateFlow()` does not perform a simple interface upcast; it wraps the mutable flow in a dedicated `ReadOnlyStateFlow` class. This provides defensive type-safety: if a consumer attempts to dangerously downcast `(uiState as MutableStateFlow).value = ...`, the JVM throws a `ClassCastException`, preventing state corruption.
 
 ## Interview answer — deep senior
 
-“The read-only type prevents accidental external writes to the flow, but not every form of mutation. `asStateFlow()` delegates to the same source, so a mutable list or object stored as the value can still be changed in place, potentially hiding an update because StateFlow uses equality-based conflation. I design a small transition API, publish fresh immutable snapshots and use atomic `update` when multiple coroutines may modify state. For a payment screen I do not trust UI state as transaction authority: the server and durable repository determine the final status. Tests verify that rapid actions preserve updates and that no caller can bypass the owner’s validation. Keep mutation functions small and domain-specific. I would frame `asStateFlow()` as an ownership boundary. The ViewModel alone can mutate the backing `MutableStateFlow`; callers receive a `StateFlow` and can collect or read its current value but cannot call `emit` or assign `.value` through that reference. Events go back through named functions, so validation and atomic `update` stay in one place. This does not make a mutable list inside the state immutable, and it does not make the value persistent after process death. I would use immutable UI models and keep the backing reference private. In tests I verify a concurrent update uses `update` rather than a read-then-write race, and in the UI I collect with lifecycle awareness.”
+Under the hood, why not simply write `val uiState: StateFlow<T> = _uiState` (a simple compiler upcast)?
+
+A plain upcast only provides compile-time visibility restrictions. At runtime, the underlying JVM object remains an instance of `StateFlowImpl` (which implements `MutableStateFlow`). Any caller in Java, or any Kotlin developer using unsafe casting (`as MutableStateFlow`), could bypass your architectural boundary and mutate the internal state from the UI or test classes.
+
+`asStateFlow()` wraps the instance in `ReadOnlyStateFlow`, an internal wrapper that only implements `StateFlow` and delegates read methods to the underlying instance without exposing mutation handles. In enterprise code reviews, we enforce this via lint rules: every public state exposed by a ViewModel must be a read-only `StateFlow` or `SharedFlow` derived via `asStateFlow()` or `stateIn()`.
 
 ## How to answer in the interview
 
@@ -85,8 +126,14 @@ Contrast API immutability, value immutability and server authority.
 
 ## Follow-up questions
 
-- [FLO-06](../flo-06/): Why use immutable values? **Answer:** in-place mutation can prevent meaningful emissions under equality conflation.
-- [COR-19](../cor-19/): Does read-only exposure prevent races? **Answer:** no; concurrent owner writes still need atomic updates.
+- **Interviewer:** "Why not use a custom getter `val uiState get() = _uiState`?"
+  **Answer:** "A custom getter returns the raw `_uiState` reference on every property access, which permits unsafe runtime casting to `MutableStateFlow`. `asStateFlow()` creates the protective wrapper once."
+
+- **Interviewer:** "What is the equivalent function for SharedFlow?"
+  **Answer:** "For `MutableSharedFlow`, the equivalent function is `asSharedFlow()`, which wraps the instance in a read-only `ReadOnlySharedFlow`."
+
+- **Interviewer:** "How does Jetpack Compose interact with `asStateFlow()`?"
+  **Answer:** "Compose consumes it via `collectAsStateWithLifecycle()`, which observes the read-only StateFlow and converts it into a Compose `State<T>`, triggering recomposition only when new distinct states are emitted."
 
 ## Self-check rubric
 
@@ -96,4 +143,4 @@ Can I encapsulate mutation, explain shared underlying stream, publish immutable 
 
 - [Kotlin StateFlow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-state-flow/) — `asStateFlow` and `update`.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

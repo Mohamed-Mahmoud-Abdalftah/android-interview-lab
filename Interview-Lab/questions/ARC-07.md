@@ -22,11 +22,43 @@ Explain mapping as boundary validation and change isolation, with costs and avoi
 
 ## Explanation in Arabic
 
-Mapper مش بس `dto.name -> model.name`؛ دي فرصة تتأكد من units، required fields، enum unknown values، وتفصل schema خارجي عن domain. `UserDto(id: String?)` ممكن يبقى `UserId` validated أو error واضح بدل `id ?: ""` اللي يعمل object باطل. Mapper بين domain وUI يضيف localized text أو presentation flags من غير ما يلوث domain. بس لو كل layer بتعمل copy متطابق من غير اختلاف حقيقي، ده boilerplate؛ اختار boundaries لها سبب تغيير مستقل.
+لماذا نستخدم محولات النماذج (Mappers) بين الطبقات المختلفة؟ وما الفوائد الحقيقية منها؟
+
+1. مبدأ العزل والحماية (Decoupling and Insulation):
+   - الـ Mapper هو المسؤول عن تحويل البيانات عند حدود الطبقات (Architectural Boundaries).
+   - يمنع انتشار التغييرات الخارجية (Schema Ripple Effect): إذا قام فريق الـ Backend بتغيير اسم حقل من `user_name` إلى `handle`، يقتصر التعديل على دالة الـ Mapper في طبقة الـ Data فقط، بينما تظل آلاف الأسطر في الـ Domain والـ UI كما هي دون أي تغيير!
+
+2. تنظيف البيانات والتحقق من صحتها (Data Sanitization & Null-Safety):
+   - استجابات الـ JSON غالباً ما تحتوي على حقول مجهولة، أرقام سالبة غير متوقعة، أو حقول Nullable.
+   - تقوم الـ Mappers بتحويل البيانات غير الموثوقة القادمة من السيرفر إلى نماذج بيزنس صارمة ومضمونة السلامة (Strict Domain Invariants) مع توفير قيم افتراضية آمنة.
+
+3. تجهيز البيانات للواجهة (UI Formatting Optimization):
+   - تحويل التواريخ من Unix Timestamp (`Long`) إلى نصوص منسقة محلياً (`String`) في مرحلة الـ Mapping، مما يريح الـ Composable من استهلاك المعالج في دوال التنسيق أثناء السكرول.
 
 ## Practical walkthrough
 
-Mapper يترجم ويطبّع بين schemas، وليس copy لكل field فقط. مثال backend يرسل amount minor units وstatus string؛ mapper يرفض unknown status أو يحافظ عليه كUnknown بدل افتراض Approved. ضع conversion عند data boundary واختبر null/overflow/new enum. كثرة mapper بلا اختلاف semantics تضيف boilerplate؛ حدد لماذا كل تحويل موجود.
+تنفيذ مابرات نظيفة باستخدام Extension Functions تضمن سلامة البيانات:
+```kotlin
+// 1. Data Layer Mapper: تحويل DTO السيرفر إلى Domain Entity مع تطهير البيانات:
+fun UserDto.toDomain(): User {
+    return User(
+        id = this.id ?: throw InvalidUserDataException("User ID cannot be null"),
+        displayName = this.fullName ?: "Anonymous Guest", // حماية من null
+        isVerified = this.verificationStatus == "VERIFIED",
+        joinedDate = Instant.ofEpochMilli(this.registeredAt ?: 0L)
+    )
+}
+
+// 2. Presentation Layer Mapper: تحويل Domain Entity إلى UI Model جاهز للعرض:
+fun User.toUiModel(dateTimeFormatter: DateTimeFormatter): UserUiModel {
+    return UserUiModel(
+        id = this.id,
+        name = this.displayName,
+        badgeVisible = this.isVerified,
+        formattedJoinDate = dateTimeFormatter.format(this.joinedDate) // محسوبة مسبقاً للـ UI
+    )
+}
+```
 
 ## Why it matters and how it works
 
@@ -59,15 +91,25 @@ A marketplace app accepts versioned product DTOs, maps prices in minor units to 
 
 ## Interview answer — short
 
-Mappers validate and translate across boundaries so transport, database, domain, and UI can change independently. I keep failure behavior explicit and avoid silent defaults that make bad data look valid.
+Mappers isolate architectural boundaries so external API or database changes don't break business logic or UI. They sanitize untrusted nullable payloads into validated domain models and transform domain data into pre-formatted, display-ready UI models.
 
 ## Interview answer — structured
 
-I use a mapper where two models have different contracts. A network DTO may have nullable or versioned fields; a domain model may require a valid ID and money unit; a UI model may need localized text. The mapper is where I enforce those transitions. That improves tests and limits change propagation, but it is not free. If two types are truly identical and stable, I would not copy them solely to satisfy a layer diagram. I would test mappings with missing required IDs, unexpected enum values, and a price-unit change. A mapper that silently converts invalid data into a valid-looking empty or zero value can be more dangerous than having no mapper.
+Mappers are the gatekeepers of architectural boundaries, ensuring that each layer operates exclusively on data structures tailored to its purpose.
+
+1. **Decoupling from External Volatility**: APIs and database schemas evolve constantly. Without mappers, renaming a JSON property cascades through the entire codebase, breaking domain logic and UI layouts. Mappers act as shock absorbers, confining external changes strictly to the data layer.
+
+2. **Data Sanitization and Invariant Enforcement**: Network payloads are untrusted. Mappers sanitize raw inputs: mapping nullable DTO properties to non-nullable domain types with safe fallbacks, parsing raw string codes into type-safe enums or sealed classes, and rejecting corrupt records before they reach core business rules.
+
+3. **Presentation Pre-computation**: Presentation mappers convert raw domain metrics (e.g. timestamps, currency in cents) into localized, human-readable strings (`$12.50`) once, keeping composable functions pure and avoiding expensive formatting passes during 120fps scrolling.
 
 ## Interview answer — deep senior
 
-The most valuable mapper is a validation boundary. It can reject malformed IDs, convert units, handle unknown enum values, and preserve safe error context. I do not let `orEmpty()` or zero defaults conceal a failed transfer amount, because that can create plausible but false state. I test representative server payloads, schema migrations, and UI formatting separately. I also watch allocation and maintenance cost: deep copying a huge object graph on every frame is not justified by theoretical purity. Mapping belongs near the source or target boundary, with clear ownership and one place to update when contracts evolve. The goal is to keep business invariants stable while transport and presentation details change. Mapping also defines an error contract. If validation fails, I decide whether to reject the record, keep previous cached data, or surface a typed failure; I do not bury the cause in a default. For large datasets I consider where mapping runs and measure allocation, but correctness comes first for business-critical fields. I keep locale formatting out of the network mapper and server DTOs out of Compose. That separation lets transport evolve without changing every screen.
+Under the hood, implementing mappers efficiently requires avoiding excessive object allocation churn. In Kotlin, mappers are best written as top-level or internal extension functions (`fun ProductDto.toDomain()`), avoiding unnecessary mapper class instantiations.
+
+When dealing with large lists (e.g. 10,000 items), mapping must be executed off the main thread. Repositories execute DTO-to-Domain mapping within `withContext(Dispatchers.Default)` or `Dispatchers.IO` so that heavy JSON parsing and transformation passes never stutter the Android main looper.
+
+In unit testing, testing mappers is straightforward: developers write pure JVM unit tests passing edge-case DTOs (null fields, malformed strings, boundary values) to verify that the domain model is always constructed in a valid, robust state.
 
 ## How to answer in the interview
 
@@ -83,8 +125,11 @@ Inspect mapper behavior for missing required IDs, unknown enum cases, money conv
 
 ## Follow-up questions
 
-- [ARC-06](../arc-06/): Which models need mapping? **Answer:** models with different transport, storage, business or UI contracts.
-- [ARC-12](../arc-12/): How should mapping errors appear? **Answer:** as typed failures the UI can act on, not silent defaults.
+- **Interviewer:** "Should Mappers be classes or top-level extension functions?"
+  **Answer:** "Top-level extension functions are preferred for stateless mappings because they avoid object allocation. A mapper class is only necessary when it requires injected dependencies like formatters or locale providers."
+
+- **Interviewer:** "Can mapping become a performance bottleneck?"
+  **Answer:** "Yes, if mapping large collections of thousands of items on the main thread. We optimize this by paginating data with Paging 3 and offloading mapping to `Dispatchers.Default`."
 
 ## Self-check rubric
 
@@ -95,4 +140,4 @@ Give a validation mapper, state its failure contract, explain one dangerous defa
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — data-source boundary.
 - [Android UI layer](https://developer.android.com/topic/architecture/ui-layer) — state production.
 
-Technically reviewed against the linked official Android architecture guidance on 2026-10-11. Conceptual flows and snippets are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

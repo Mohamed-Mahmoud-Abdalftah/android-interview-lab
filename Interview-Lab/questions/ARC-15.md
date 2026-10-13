@@ -22,11 +22,43 @@ Choose interfaces for meaningful polymorphism, boundaries and tests, not one per
 
 ## Explanation in Arabic
 
-Interface مفيدة لما consumer محتاج contract مستقل عن implementation: repository له offline/server adapters، payment provider strategies، أو module boundary محتاج fake. لكن `Foo` و`FooImpl` لكل class من غير alternative أو سبب تغيّر بيزود navigation وboilerplate. Concrete implementation ممكن تكون كفاية داخل feature صغير، وتقدر تختبرها بحقن dependencies بتاعتها. الأهم public types ما تسرّبش Retrofit/Room لو هدفك عزلها. DI tool يقدر يحقن concrete class؛ interface قرار design مش شرط Hilt.
+متى تقوم بإنشاء واجهات (Interfaces)، ومتى تكون الكلاسات الحقيقية الملموسة (Concrete Implementations) كافية دون إفراط؟
+
+1. متى يكون الـ Interface واجباً ومبرراً بنسبة 100%؟
+   - **تطبيق مبدأ Inversion of Control (عكس التبعية)**: في حدود الـ Clean Architecture؛ مثل `UserRepository` في الـ Domain والـ `UserRepositoryImpl` في الـ Data، لمنع الـ Domain من الاعتماد على مكتبات خارجية.
+   - **تعدد طرق التنفيذ الفعلية (Polymorphism / Multiple Implementations)**: مثل `PaymentProcessor` الذي يمتلك تنفيذين حقيقيين: `StripeProcessor` و `GooglePayProcessor`.
+   - **عزل المكونات الخارجية صعبة الاختبار (Flaky / Native / Third-Party)**: مثل خدمات الموقع `LocationProvider`، مشغل الصوت `MediaPlayer`، أو مستشعرات البلوتوث؛ حيث تحتاج لـ `FakeLocationProvider` للاختبار على الـ JVM.
+
+2. متى تكون الكلاسات الملموسة (Concrete Classes) كافية ويفضل تجنب الـ Interfaces؟
+   - **كلاسات الـ UseCases الفردية**: الـ `PlaceOrderUseCase` هو كلاس كوتلن نقي 100% ليس له سوى تنفيذ وحيد؛ إنشاء `interface PlaceOrderUseCase` ومعه `PlaceOrderUseCaseImpl` هو تكرار عقيم وبويلربليت لا فائدة منه (Interface-itis).
+   - **الـ ViewModels**: لا تحتاج إطلاقاً لـ Interface لأن الـ Composable أو الـ Fragment يستهلكها كـ Concrete Holder.
+   - **خدمات البيانات الداخلية غير المعقدة** التي ليس لها سوى تطبيق واحد.
 
 ## Practical walkthrough
 
-Interface مفيدة عند boundary متغير أو له بديل اختبار/feature implementation؛ مثل `PaymentGateway` مع sandbox/vendor. لا تكتب `FooInterface` لكل class final لمجرد DI؛ Hilt يمكن يحقن concrete. ابدأ concrete داخل feature وextract contract عند الحاجة. اختبر behavior لا mock call order فقط؛ adapter الحقيقي يحتاج integration test.
+المقارنة بين استخدام مبرر لـ Interface واستخدام غير مبرر (Boilerplate):
+```kotlin
+// ❌ INTERFACE-ITIS (بويلربليت غير مبرر): كلاس نقي له تطبيق وحيد:
+interface CalculateDiscountUseCase {
+    fun execute(order: Order): Long
+}
+class CalculateDiscountUseCaseImpl : CalculateDiscountUseCase {
+    override fun execute(order: Order): Long = (order.total * 0.1).toLong()
+}
+
+// ✅ الكود الأبسط والأنظف: UseCase كـ Concrete Class مباشرة:
+class CalculateDiscountUseCase {
+    operator fun invoke(order: Order): Long = (order.total * 0.1).toLong()
+}
+
+// ✅ استخدام مبرر وممتاز للـ Interface: عزل خدمة خارجية وتعدد التنفيذات:
+interface AnalyticsTracker {
+    fun track(event: String, params: Map<String, Any> = emptyMap())
+}
+class FirebaseAnalyticsTracker : AnalyticsTracker { ... }
+class DebugConsoleAnalyticsTracker : AnalyticsTracker { ... } // مفيد للـ Debug
+class FakeAnalyticsTracker : AnalyticsTracker { ... } // مفيد للـ Unit Tests
+```
 
 ## Why it matters and how it works
 
@@ -50,15 +82,29 @@ A subscription app uses a narrow `EntitlementSource` contract consumed by policy
 
 ## Interview answer — short
 
-I introduce an interface when a consumer needs a stable contract across implementations, module boundaries, or tests. A single concrete class is sufficient when there is no meaningful variation. Interface count is not an architecture quality metric.
+Introduce interfaces at architectural boundaries to invert dependencies (e.g. Domain Repository interfaces), when multiple production implementations exist (e.g. Stripe vs Google Pay), or to abstract volatile external systems (e.g. GPS, Bluetooth). Concrete classes are sufficient for single-implementation Use Cases and ViewModels.
 
 ## Interview answer — structured
 
-I start from the consumer. If it must remain independent of a payment provider or data source, a narrow interface expresses that need and supports a fake in tests. If I have a small internal formatter with one implementation and no volatile dependency, a concrete class is clearer. I can still test it directly and inject its own dependencies. I avoid `IThing`/`ThingImpl` pairs that move in lockstep without isolating change. This is especially relevant in Hilt projects: dependency injection can create a concrete class just fine. An interface should describe consumer needs, such as a narrow session source or payment processor, rather than copy a class’s full public API.
+Deciding when to introduce interfaces distinguishes pragmatic senior engineers from dogmatic architects suffering from 'Interface-itis'.
+
+1. **When Interfaces are Genuinely Necessary**:
+   - **Inversion of Control across Boundaries**: The quintessential Clean Architecture contract: the Domain layer declares `interface OrderRepository`, and the Data layer implements it, keeping the Domain pure.
+   - **Multiple Real Implementations**: When the system genuinely supports swappable implementations (e.g. `interface PaymentGateway` implemented by `StripeGateway` and `PayPalGateway`).
+   - **Abstracting Flaky External Systems**: Wrapping hardware, system frameworks, or third-party SDKs (`LocationManager`, `BluetoothScanner`, `BiometricAuth`) behind an interface allows creating high-speed `Fake` implementations for JVM unit testing.
+
+2. **When Concrete Classes are Sufficient**:
+   - **Use Cases (Interactors)**: A Use Case encapsulates a single business scenario in pure Kotlin. Creating `interface CheckoutUseCase` paired with `CheckoutUseCaseImpl` is 100% redundant boilerplate.
+   - **ViewModels**: ViewModels have a single implementation bound to UI state.
+   - **Internal Utilities**: Helper classes and mappers.
 
 ## Interview answer — deep senior
 
-The question is where change happens. A repository contract consumed by a domain rule can isolate Room or network implementation details; a payment strategy interface can support multiple providers. Those interfaces should be narrow and use domain types. Creating one for every class adds cognitive load and makes refactors touch two declarations. Hilt can construct concrete classes, so DI does not force an interface. I also do not create interfaces solely to mock implementation details; tests can use fakes at meaningful boundaries and instantiate pure concrete collaborators. If a concrete dependency later starts changing independently, extracting a consumer-oriented contract is straightforward. I assess benefit by reduced change propagation, clearer behavior, and test isolation. I also inspect how tests are written. If every test mocks internal helpers, an interface explosion may be hiding over-coupling rather than solving it. A pure concrete class can be instantiated and tested directly; a repository seam can use a small fake. When a second implementation arrives, I can extract the exact common behavior then. The design goal is stable substitution where needed, not maximum indirection. I check public parameter types so a supposed abstraction does not still leak a DTO or framework class.
+A legacy justification for interfaces was testability in Java: developers couldn't mock concrete classes without interfaces. In modern Kotlin, with MockK and Mockito-inline, mocking concrete classes is trivial. More importantly, modern testing best practices advocate using **Fakes over Mocks**. For a pure Kotlin Use Case, you don't even need a mock or a fake—you instantiate the concrete class directly in your test!
+
+In large multi-module codebases, interfaces enable **Compilation Avoidance**. If an interface lives in an API module (`:feature:chat:api`) and its implementation lives in an implementation module (`:feature:chat:impl`), changing the internal implementation logic does not invalidate or recompile the dozens of downstream modules that only depend on the API module.
+
+We adhere to the Rule of Three: do not abstract with an interface until you have two distinct implementations or a strict architectural dependency boundary.
 
 ## How to answer in the interview
 
@@ -74,8 +120,11 @@ Compare a provider strategy with a pure formatter. Discuss consumer-owned contra
 
 ## Follow-up questions
 
-- [ARC-26](../arc-26/): How to enforce boundaries without interface explosion? **Answer:** module visibility, dependency checks and narrow contracts at real seams.
-- [SOL-13](../sol-13/): Why can an interface per class hurt? **Answer:** it doubles maintenance without providing variation or isolation.
+- **Interviewer:** "What is 'Interface-itis'?"
+  **Answer:** "The dogmatic anti-pattern of creating a 1-to-1 interface for every single class in an application (e.g. `Foo` and `FooImpl`), which doubles file counts and maintenance overhead without providing any polymorphism or decoupling value."
+
+- **Interviewer:** "How do API/Impl module splits leverage interfaces for faster build times?"
+  **Answer:** "Consuming modules depend only on the stable API module containing interfaces. When code inside the Impl module changes, Gradle skips recompiling the consuming modules because public ABI signatures haven't changed."
 
 ## Self-check rubric
 
@@ -86,4 +135,4 @@ Name one interface worth extracting and one concrete class you would keep; justi
 - [Android architecture recommendations](https://developer.android.com/topic/architecture/recommendations) — dependency practices.
 - [Android domain layer](https://developer.android.com/topic/architecture/domain-layer) — reuse and testability.
 
-Technically reviewed against the linked official Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

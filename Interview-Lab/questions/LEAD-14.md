@@ -23,11 +23,40 @@ You inherit a legacy app with low test coverage and frequent bugs. What is your 
 
 ## Explanation in Arabic
 
-أول 90 يوم في legacy app: أول شهر أفهم product وincidents، build/release، hotspots، crash/ANR، security، وأعمل baseline. الشهر التاني أضيف safety nets لأكثر flow بيتكسر، أصلح blocker صغير، وأعمل seams للtests. الشهر التالت أحسن جزء واحد end-to-end وأقيس defect rate/lead time. ما أعلنش rewrite ضخم قبل فهم constraints ولا أركز على coverage percentage بلا معنى.
+استلمت قيادة مشروع أندرويد قديم (Legacy App) يعاني من انعدام الاختبارات وتكرار الأخطاء وتذمر المطورين. ما هي خطتك الإستراتيجية لأول 90 يوماً (First 90-Day Plan)؟
+
+1. الفخ القاتل الذي يقع فيه المطورون الجدد:
+   - الحماس الزائد في الأسبوع الأول والمطالبة بإعادة كتابة التطبيق بالكامل من الصفر (The Total Rewrite Trap)!
+   - إعادة الكتابة توقف تطوير ميزات الشركة لشهور، وتعيد إنتاج نفس الأخطاء القديمة، وتفشل في 80% من الحالات.
+   - النهج الهندسي الناضج يعتمد على **الاستقرار أولاً، والتحسين المرحلي التدريجي (Strangler Fig Pattern)**.
+
+2. خطة الـ 90 يوماً الاستراتيجية:
+   - **الأيام 1 - 30 (الاستكشاف، القياس، وتأمين البيئة - Listen, Observe & Measure)**:
+     * الجلوس مع المطورين وفريق المنتج لفهم نقاط الألم وأولويات العمل.
+     * إنشاء **أدوات المراقبة (Observability Baseline)**: ضبط Crashlytics و Android Vitals لمعرفة أماكن تكرار الكراشات بدقة.
+     * تثبيت بيئة الـ CI: إصلاح الاختبارات المتقلبة وتسريع البناء البارد.
+     * إقرار **قاعدة الكشافة (Boy Scout Rule)**: إلزام المطورين بعدم لمس أي ملف دون كتابة اختبار بسيط له وترتيبه.
+   - **الأيام 31 - 60 (وضع المعايير وتأمين التغييرات الجديدة - Guard & Standardize)**:
+     * تطبيق مبدأ **"Test-Driven Bug Fixing"**: أي Bug جديد يُكتشف يُمنع إصلاحه إلا بعد كتابة Unit Test فاشل يثبت المشكلة أولاً ثم إصلاح الكود ليمر الاختبار.
+     * تفعيل أدوات الفحص الساكن (Spotless + Detekt) مع Baseline لمنع دخول أي ديون تقنية جديدة للفرع الرئيسي.
+     * كتابة أول ADR يحدد المعمارية الرسمية للميزات الجديدة (مثل Clean Architecture مع Compose و Coroutines).
+   - **الأيام 61 - 90 (التطوير المعماري ومضاعفة السرعة - Modernize & Accelerate)**:
+     * بدء تجزئة أول موديول معيب وعزله (Modularization via Strangler Fig).
+     * تفعيل الـ Remote Build Cache لتقليل وقت التجميع في الـ CI بنسبة 50%.
+     * استعراض الإنجازات بالأرقام أمام الإدارة: ارتفاع الـ Crash-free من 97% إلى 99.5%، وتسريع وقت تسليم الميزات الجديدة.
 
 ## Practical walkthrough
 
-أول 90 يوم في legacy app: أول أسبوعين افهم release pipeline وأهم crashes وslow builds وpayment/data incidents، واتفق على baseline. بعدها اختار vertical slice واحد متكرر العطل، أضف characterization tests عند boundary حقيقي واصلح السبب. في الشهر الثاني اعمل ownership أوضح وCI gate صغيرة موثوقة؛ الشهر الثالث وسع النمط للمنطقة التالية بعد قياس defect/lead time. تجنب big rewrite أو هدف coverage 80% من غير معرفة risk. احفظ migration/rollback لكل خطوة.
+خارطة طريق خطة الـ 90 يوماً التنفيذية (90-Day Execution Roadmap):
+```markdown
+### خارطة طريق الـ 90 يوماً لإنقاذ وترقية تطبيق Legacy Android:
+
+| المرحلة الزمنية | الأهداف والأنشطة الرئيسية | مؤشرات النجاح المستهدفة (OKRs) |
+|---|---|---|
+| **الشهر 1: الملاحظة والتأمين**<br>(الأيام 1-30) | - تدقيق الاعتماديات والمكتبات المهجورة.<br>- قياس زمن الـ CI ومعدل الكراش الحقيقي.<br>- جلسات 1:1 مع المهندسين وفريق المنتج.<br>- وقف نزيف الأخطاء عبر Boy Scout rule. | - تقرير شامل بحالة الديون التقنية.<br>- لوحة قياس Vitals حية ومفعلة.<br>- صفر اختبارات متقلبة في الـ CI. |
+| **الشهر 2: البوابات والمعايير**<br>(الأيام 31-60) | - فرض Unit Tests إجبارية لأي إصلاح Bug.<br>- تفعيل Detekt & Android Lint baselines.<br>- إقرار ADR للميزات الجديدة.<br>- تدريب الفريق على Compose و Coroutines. | - تغطية 100% لجميع الأخطاء الجديدة بتستات.<br>- انخفاض الـ Escaped Bugs بنسبة 40%.<br>- تسليم أول ميزة بالمعمارية الجديدة. |
+| **الشهر 3: التحديث والتسريع**<br>(الأيام 61-90) | - تجزئة أكثر موديول مسبب للكراشات.<br>- تفعيل Gradle Remote Build Cache.<br>- توثيق الإنجازات في مراجعة ربع سنوية. | - ارتفاع Crash-free من 97.2% إلى 99.5%.<br>- خفض زمن بناء CI من 35 إلى 10 دقائق.<br>- ارتفاع مؤشر رضا المهندسين. |
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +80,36 @@ Present baseline, high-risk plan and measurable wins to product/team. Keep relea
 
 ## Interview answer — short
 
-“I spend the first month learning incidents and release risks, the second adding safety nets to hotspots, and the third delivering a measured incremental improvement—not a blind rewrite.”
+Structure your first 90 days into three distinct 30-day horizons: Days 1–30 focuses on listening, establishing observability baselines, and stabilizing the CI pipeline; Days 31–60 institutes quality gates, mandatory test-driven bug fixes, and ADR architectural standards; Days 61–90 executes targeted modular refactoring via the Strangler Fig pattern and celebrates quantifiable stability gains.
 
 ## Interview answer — structured
 
-“I first make the app build and release reproducibly, review incident and crash data, and map the flows that change often or carry financial/security risk. Then I add targeted tests for those contracts, improve CI and observability, and fix one small high-impact defect. By day 90 I migrate one bounded area behind a clearer seam and compare defects, lead time and performance against baseline. I involve the team so the plan reflects hidden constraints and does not stall feature delivery.”
+Rescuing an inherited legacy codebase requires a disciplined, structured 30-60-90 day framework that builds team trust before touching core architecture:
+
+1. **Days 1–30: Listen, Observe, and Establish Baselines**:
+   - **Avoid the Rewrite Trap**: Reject calls for an immediate ground-up rewrite. Understand business domain history and developer friction through 1-on-1 discovery interviews.
+   - **Telemetry & Baseline Observability**: Audit Google Play Vitals and Crashlytics. Measure key operational baselines: crash-free user rate, cold startup latency, and CI execution times.
+   - **Pipeline Hygiene**: Fix broken CI scripts and stabilize flaky tests so developers regain confidence in automated gates.
+
+2. **Days 31–60: Standardize Quality Gates & Prevent New Debt**:
+   - **Test-Driven Defect Resolution**: Enforce an uncompromising team policy: no production bug is fixed without an accompanying automated test that reproduces the failure before applying the fix.
+   - **Automated Linters with Baselines**: Introduce Spotless and Detekt with baseline files to freeze legacy technical debt and reject any new violations.
+   - **Architectural Standards (ADR)**: Author an ADR codifying the architectural standard (e.g. MVI + Compose) mandated for all net-new screens.
+
+3. **Days 61–90: Modernize, Accelerate, and Demonstrate ROI**:
+   - **Strangler Fig Refactoring**: Extract the most volatile legacy god-class into an isolated, tested module behind a clean interface.
+   - **Build Performance**: Implement Gradle build caching and parallel execution to halve CI feedback loops.
+   - **Quantifiable Executive Reporting**: Present leadership with measurable wins: crash-free rate improved to 99.5%, defect turnaround times reduced, and developer velocity restored.
 
 ## Interview answer — deep senior
 
-“I start by learning where the app hurts users and developers. In the first weeks I map the release path, variants, critical user journeys, crash and ANR clusters, flaky tests, data migrations and ownership. I take a baseline for change lead time, escaped defects and a few high-risk flows, then choose a vertical slice rather than a whole-app rewrite. In the next month I add characterization tests around that slice, repair a recurring failure and make its state and dependency boundaries explicit. In the third month I turn the successful pattern into a small team convention and CI gate, then select the next slice based on evidence. I involve support and QA so I do not optimize only code aesthetics. I protect release cadence with backward-compatible migrations and rollback plans. A raw coverage target is not a strategy: high coverage of trivial getters can coexist with untested payment retries. The trade-off is incremental visible improvement versus the appeal of a clean-slate rewrite; I choose a path that can ship safely every few weeks.”
+From an organizational change management and cultural perspective, leadership determines adoption:
+
+1. **Winning Hearts and Minds Before Refactoring Code**: When a new lead arrives and immediately criticizes existing code, legacy team members become defensive. Acknowledge that the legacy code generated the company's revenue and kept the business alive. Position refactoring as empowering the team with modern tooling rather than correcting past mistakes.
+
+2. **Tackling the Worst Pain Point First**: Identify the single recurring issue that causes developers the most daily frustration (e.g., an unpredictable 45-minute CI build or a flaky database migration). Fixing that single issue in your first 3 weeks earns immediate technical credibility and unlocks team buy-in for future architectural standards.
+
+3. **Incremental strangler fig vs Big Bang**: Emphasize continuous value delivery. By isolating legacy screens behind feature flags and swapping them incrementally, the product continues shipping user features every sprint while health metrics climb steadily.
 
 ## How to answer in the interview
 
@@ -75,8 +125,11 @@ Prompt for discovery evidence, safety net, bounded seam, baseline metrics and te
 
 ## Follow-up questions
 
-- [LEAD-03](../lead-03/): Which debt first? **Answer:** high-impact, frequently changed and risky paths.
-- [LEAD-08](../lead-08/): How know improvement worked? **Answer:** compare incident, lead-time and performance baselines.
+- **Interviewer:** "Why is demanding a complete app rewrite in your first month a major red flag for leadership?"
+  **Answer:** "Because it halts product delivery for months, carries massive business risk, and disregards years of hard-won edge case solutions embedded in the legacy code."
+
+- **Interviewer:** "What is 'Test-Driven Bug Fixing' and why is it vital for legacy projects?"
+  **Answer:** "Writing a failing test that reproduces the bug before touching the code, ensuring the bug is truly understood and preventing it from ever regressing."
 
 ## Self-check rubric
 
@@ -87,4 +140,4 @@ Prioritize a 90-day baseline, high-risk bug containment, seams and targeted test
 - [Android architecture guide](https://developer.android.com/topic/architecture) — separation principles.
 - [Android testing overview](https://developer.android.com/training/testing) — safety net design.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

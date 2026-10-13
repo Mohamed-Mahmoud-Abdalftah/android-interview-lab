@@ -22,7 +22,52 @@ Distinguish connection establishment, socket inactivity and whole-call deadlines
 
 ## Explanation in Arabic
 
-`connectTimeout` يحد وقت إنشاء الاتصال، `readTimeout` وقت انتظار read على socket، `writeTimeout` وقت write، و`callTimeout` يحد عمر الـcall ككل في OkHttp. مش كل واحد deadline إجمالية لنفس الشيء؛ DNS/TLS/redirects/retries ممكن يدخلوا في عمر call. timeout من العميل معناه ما استلمناش نتيجة موثوقة، مش إن السيرفر ما نفذش write.
+ما هي مهلات الاتصال في OkHttp:
+`connectTimeout`، و `readTimeout`، و `writeTimeout`، و `callTimeout`، وما الفرق الجوهري بينها؟
+
+1. تفصيل كل نوع مهلة في OkHttp:
+   - **`connectTimeout` (مهلة فتح الاتصال)**:
+     * الوقت الأقصى المسموح به لإتمام مصافحة TCP الثلاثية (TCP Handshake) ومصافحة TLS/SSL مع السيرفر.
+     * إذا استغرق فتح السوكيت وقتاً أطول (مثلاً بسبب برج اتصالات ضعيف أو سيرفر معطل)، يتم إطلاق `SocketTimeoutException: Connect timed out`.
+     * القيمة الافتراضية في OkHttp: 10 ثوانٍ.
+   - **`readTimeout` (مهلة قراءة البيانات من السوكيت)**:
+     * الوقت الأقصى بين وصول حزمتين متتاليتين من البيانات (Maximum gap between two data packets).
+     * **ليس الوقت الكلي لتحميل الملف**! طالما أن السيرفر يرسل بايتات بانتظام كل ثانيتين، لن يحدث timeout حتى لو استغرق تنزيل الملف ساعة.
+     * يحدث عندما يتوقف السيرفر عن إرسال البيانات فجأة في منتصف الاتصال.
+   - **`writeTimeout` (مهلة كتابة البيانات إلى السوكيت)**:
+     * الوقت الأقصى بين إرسال بايتين متتاليين إلى السيرفر (مثل رفع صورة أو فيديو كبير).
+   - **`callTimeout` (مهلة الطلب الإجمالية من البداية للنهاية)**:
+     * أُضيفت في OkHttp 3.12.
+     * تضع حداً زمنياً صارماً لكامل دورة حياة الطلب: من استعلام DNS، وفتح الاتصال، والـ Redirects، والـ Authentication Retries، حتى اكتمال قراءة الرد بالكامل.
+     * إذا تجاوزت العملية ككل هذه المهلة، يتم إلغاء الطلب فوراً بـ `InterruptedIOException`.
+
+2. قاعدة هندسية في التعامل مع الـ Timeouts:
+   - وقوع مهلة قراءة (`readTimeout`) لا يعني أبداً أن السيرفر لم ينفذ العملية! السيرفر قد يكون نفذ العملية في قاعدة البيانات وتأخر فقط في إرسال الرد.
+
+## Practical walkthrough
+
+إعداد مهلات OkHttp المتوازنة لتطبيق إنتاجي:
+```kotlin
+val okHttpClient = OkHttpClient.Builder()
+    // 1. مهلة إنشاء الاتصال ومصافحة الـ TLS:
+    .connectTimeout(15, TimeUnit.SECONDS)
+    
+    // 2. مهلة انتظار وصول الحزمة التالية من السيرفر:
+    .readTimeout(20, TimeUnit.SECONDS)
+    
+    // 3. مهلة إرسال الحزم في الرفع:
+    .writeTimeout(20, TimeUnit.SECONDS)
+    
+    // 4. المهلة الشاملة للطلب ككل (مفيدة للـ Endpoints الحرجة التي لا يجب أن تعلق):
+    .callTimeout(45, TimeUnit.SECONDS)
+    .build()
+
+// تخصيص مهلة خاصة لعمليات رفع الملفات الكبيرة بدون التأثير على العميل العام:
+val uploadClient = okHttpClient.newBuilder()
+    .writeTimeout(120, TimeUnit.SECONDS)
+    .callTimeout(300, TimeUnit.SECONDS) // مهلة 5 دقائق للرفع بالكامل
+    .build()
+```
 
 ## Why it matters and how it works
 
@@ -44,10 +89,6 @@ val client = OkHttpClient.Builder()
     .build()
 ```
 
-## Practical walkthrough
-
-في mobile network، اتصال ممكن يعلق قبل TCP/TLS، أو server يبدأ الرد وبعدين bytes تتأخر، أو upload body يتعطل. `connectTimeout` لمرحلة الاتصال، `readTimeout` انتظار قراءة bytes، `writeTimeout` للكتابة، و`callTimeout` سقف للcall كلها من بدايتها لنهايتها. لو request فيها redirect/retry، whole-call deadline يمنعها تتمط للأبد. Coroutine `withTimeout` يحط deadline لانتظار caller، لكن لو side effect وصل server، cancellation ما ترجّعوش. اختار budgets حسب endpoint وحجم payload، سجّل phase اللي حصل فيها timeout من غير أسرار، واختبر شبكة بطيئة وresponse ضايع منفصلين.
-
 ## Trade-offs and decision criteria
 
 Short deadlines improve responsiveness but can fail on poor networks; long deadlines tie up resources and UX. A whole-call deadline bounds overall wait, while phase timeouts diagnose particular stalls. Different upload/download sizes may need different policies.
@@ -62,17 +103,29 @@ A media client uses longer write timeout for uploads and exposes progress; a sea
 
 ## Interview answer — short
 
-“Connect, read and write timeouts bound different transport waits; call timeout bounds the whole OkHttp call. A timeout is a local observation, not proof that a server-side write failed.”
+connectTimeout bounds TCP/TLS handshake duration. readTimeout bounds inactivity gaps between incoming data packets. writeTimeout bounds inactivity gaps when transmitting packets. callTimeout sets an absolute, end-to-end deadline spanning DNS, handshakes, retries, and complete response consumption.
 
 ## Interview answer — structured
 
-“I set timeouts from user experience and operation size. Connect timeout limits establishing a connection, read and write timeouts bound socket I/O inactivity, and call timeout bounds the whole call. A coroutine deadline can further limit how long a caller waits, but it does not guarantee rollback. I test slow phases separately. For a read I may retry transient timeout; for a payment write I persist one operation and query status before retrying with the same server-supported key.”
+OkHttp divides timeouts into granular socket-level phases and a top-level end-to-end deadline:
+
+1. **`connectTimeout`**: The maximum time allotted to establish a physical connection to the remote host. It includes DNS resolution, TCP handshake, and TLS session negotiation. If the server is unreachable or cellular towers drop the SYN packet, OkHttp aborts with a connection timeout.
+
+2. **`readTimeout`**: The maximum duration of inactivity allowed between two incoming bytes read from the socket. Crucially, **this is NOT the total download timeout**. A 100MB download taking 10 minutes will never trigger a `readTimeout` as long as data packets continue arriving within the configured threshold.
+
+3. **`writeTimeout`**: The maximum duration of inactivity allowed when pushing bytes to the socket, essential during large multipart image or video uploads.
+
+4. **`callTimeout`**: Introduced in OkHttp 3.12 as an absolute upper bound for the **entire HTTP transaction**. It encompasses DNS, redirects, multi-hop proxy chains, authentication retries, and full body reading. If the entire operation exceeds this threshold, OkHttp immediately aborts the call.
 
 ## Interview answer — deep senior
 
-Timeouts are not interchangeable. A call can fail during DNS/connection, stall on response bytes, or take too long overall through redirects and retries. OkHttp exposes phase-specific and whole-call controls; I configure them per endpoint class, observe timeout type and avoid universally tiny defaults on mobile networks. A coroutine `withTimeout` adds a structured caller deadline, but an uncooperative SDK or server action may continue after it fires. For uploads I report progress and use appropriate write/call deadlines. For money I interpret a lost response as unknown, persist a stable operation ID, and reconcile authoritative status before any repeat. Tests simulate each phase and cancellation.
+From an error-handling and idempotency perspective, distinguishing between `connectTimeout` and `readTimeout` is vital in production:
 
-I set timeouts by failure phase and by the user’s total waiting budget. Connect covers establishing a connection, read and write cover socket I/O inactivity, and call timeout bounds the complete call including redirects or retries. An application deadline may be shorter for an autocomplete request than for an upload, but an extremely small universal value would fail on real mobile networks. A coroutine timeout cancels local waiting; it cannot prove that a server-side write was not committed. For an order submit I therefore pair a call deadline with a persisted request ID and reconciliation. I test slow connect, stalled response, and lost reply separately to see which timeout fired.
+- A **`connectTimeout`** guarantees that **the server never received the request**. The TCP connection never established. Retrying this request immediately (even a `POST` payment request) is 100% safe because no server state was altered.
+
+- A **`readTimeout`** guarantees that **the server received the request, and may have already committed the database transaction**. The socket timeout occurred only while waiting for the response. Retrying a `readTimeout` blindly on a non-idempotent endpoint risks duplicate operations and double charges.
+
+Senior architectures treat `readTimeout` on mutating operations as an *uncertain state*, querying the server via an idempotency reconciliation check rather than issuing a raw retry.
 
 ## How to answer in the interview
 
@@ -88,8 +141,11 @@ Draw call lifecycle and show where each timeout applies; distinguish client wait
 
 ## Follow-up questions
 
-- [COR-17](../cor-17/): Does withTimeout stop server work? **Answer:** no, it cancels local coroutine waiting.
-- [DAT-20](../dat-20/): How recover a lost response? **Answer:** query status using durable operation identity.
+- **Interviewer:** "Can you configure timeouts dynamically per individual Retrofit call?"
+  **Answer:** "Yes, by passing a custom OkHttp Interceptor that inspects a custom `@Headers("Timeout: 30")` annotation and clones the client with updated timeouts."
+
+- **Interviewer:** "What is the consequence of setting `connectTimeout` to 1 second on mobile networks?"
+  **Answer:** "On 3G or congested cellular networks, DNS lookup and TLS 1.3 handshakes regularly take 1.5–3 seconds; an aggressive 1-second timeout causes massive false connection failures."
 
 ## Self-check rubric
 
@@ -100,4 +156,4 @@ Can I map all four deadlines, choose by operation and handle ambiguous writes?
 - [OkHttpClient.Builder API](https://github.com/lysine-dev/okhttp/blob/main/okhttp/src/commonJvmAndroid/kotlin/okhttp3/OkHttpClient.kt) — timeout definitions.
 - [Kotlin withTimeout API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout.html) — caller deadline.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -24,11 +24,36 @@ How do you configure signing keys and Play App Signing safely?
 
 ## Explanation in Arabic
 
-فعّل Play App Signing حسب سياسة التطبيق: app-signing key توقع APKs الموزعة، upload key توقع AAB المرفوعة إلى Play. خزّن upload keystore/password في secret manager أو protected release CI، لا في repo أو `gradle.properties` مشتركة؛ وفّرها فقط لمهمة التوقيع بعد مراجعة source/tests. افحص certificate fingerprint وversionCode وartifact hash قبل الرفع، واستخدم نفس AAB عبر tracks. جهز rotation/reset procedures حسب نوع المفتاح، وقيّد صلاحيات Play Console. لو key اتسرب، تعامل معها كincident وليس مجرد تغيير password.
+كيف تقوم بإعداد وتأمين مفاتيح التوقيع الرقمي (Signing Keys) واستخدام Google Play App Signing بأعلى معايير الأمان؟
+
+1. معمارية Google Play App Signing الحديثة:
+   - تفصل عملية التوقيع إلى مفتاحين مستقلين تماماً:
+     * **مفتاح الرفع (Upload Key)**: يملكه المطور ويستخدمه لتوقيع ملف الـ AAB قبل رفعه إلى Play Console.
+     * **مفتاح توقيع التطبيق (App Signing Key)**: يُخزن داخل بنية Google التحتية المشفرة والمحمية بنظام Google Cloud KMS. يقوم Google Play بحذف توقيع الـ Upload Key وتوقيع الـ Split APKs بمفتاح الـ App Signing Key الرسمي.
+
+2. الميزة الأمنية الكبرى:
+   - في الماضي: إذا فُقد مفتاح التوقيع أو غادر المطور المسؤول، كان التطبيق ينتهي للأبد ويجب تغيير الـ Package Name وخسارة جميع المستخدمين!
+   - مع Play App Signing: إذا فُقد الـ Upload Key، يمكن للمطور طلب إعادة تعيينه (Reset Upload Key) عبر Play Console بسهولة ودون أي تأثير على المستخدمين.
+
+3. أفضل الممارسات الأمنية لحماية المفاتيح:
+   - **ممنوع حفظ المفاتيح في Git**: استبعاد ملفات `.jks` و `.keystore` في `.gitignore`.
+   - **التخزين المشفر في CI/CD**: تشفير الـ Keystore كـ Base64 String وحفظه في GitHub Secrets أو Google Cloud Secret Manager، وقراءته أثناء وقت الـ Build فقط ثم مسحه فوراً.
 
 ## Practical walkthrough
 
-Signing secrets لا تدخل repository أو PR job. Play App Signing يحتفظ بمفتاح التطبيق وفق النموذج، وpipeline تستخدم upload key محفوظة في protected environment. تحقق certificate fingerprint وpackage/version قبل الرفع، وفصل من يملك approval عن من يغير workflow. حضّر recovery لو upload key اتعرضت أو ضاعت، وسجل audit. لا تعتبر log masking ضمانًا ضد malicious build script.
+استخراج شهادة الـ Upload Key وتهيئتها في CI/CD بأمان:
+```bash
+# 1. إنشاء مفتاح Upload Key مشفر جديد باستخدام keytool:
+keytool -genkeypair -v -keystore upload-keystore.jks \
+  -alias upload_key -keyalg RSA -keysize 2048 -validity 10000
+
+# 2. استخراج شهادة المفتاح العامة بصيغة PEM لتسجيلها في Google Play Console:
+keytool -export -rfc -keystore upload-keystore.jks \
+  -alias upload_key -file upload_certificate.pem
+
+# 3. تحويل ملف الـ Keystore إلى Base64 لتخزينه كـ Secret في GitHub Actions:
+base64 -i upload-keystore.jks | pbcopy
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +77,32 @@ Pin release toolchain, restrict credential scope, verify artifact identity autom
 
 ## Interview answer — short
 
-“I keep upload credentials in protected release jobs, distinguish upload from Play's app-signing key, verify certificate and artifact hash, and promote the same tested AAB.”
+Configure signing safely by enrolling in Google Play App Signing, which isolates your developer Upload Key from the master App Signing Key secured in Google Cloud KMS. Manage the upload keystore securely in CI/CD using encrypted base64 environment variables, never committing credentials to Git.
 
 ## Interview answer — structured
 
-“With Play App Signing, I sign the submitted AAB using a controlled upload key; Play signs installed APKs with the app-signing key. PR jobs have no signing access. A protected release job retrieves secrets at execution, signs the exact variant, verifies certificate fingerprint, versionCode and SHA-256, then uploads to an internal track. I promote that same artifact and maintain a tested recovery runbook for key loss or compromise.”
+Modern Android release signing delegates distribution authority to Google Play App Signing while protecting developer upload credentials:
+
+1. **The Dual-Key Security Model**:
+   - **Upload Key**: Held by the developer or CI pipeline. Used exclusively to sign the uploaded `.aab` bundle to prove developer authenticity to Google Play.
+   - **App Signing Key**: Stored securely in Google's enterprise Key Management Service (KMS). Google validates the upload bundle, strips the upload signature, and signs end-user split APKs using the master app signing key.
+
+2. **Disaster Recovery Benefit**:
+   - If a developer machine is lost or an upload key compromised, an account owner can request an upload key reset via the Google Play Console. Google registers the new upload certificate within 48 hours without breaking installed user upgrade lineages.
+
+3. **Automated CI/CD Key Injection**:
+   - Encode the upload keystore binary into a Base64 string and store it inside CI secrets (`ANDROID_KEYSTORE_BASE64`).
+   - During the release pipeline execution, the runner decodes the string to a transient temporary file, compiles and signs the bundle, and deterministically wipes the file before job termination.
 
 ## Interview answer — deep senior
 
-“I design signing as the last protected stage of a reproducible release pipeline. The build from a known source revision and pinned toolchain produces the intended minified variant; untrusted PR code never receives keystore material. In the protected job I retrieve the upload credential from a secret manager, sign the AAB, and verify its upload certificate fingerprint, versionCode and content hash. Under Play App Signing, that upload certificate authenticates submissions, while Play uses its app-signing certificate for delivered APKs. I record both identities because they answer different incident questions. I upload to an internal track and promote the same binary after validation rather than rebuild it under potentially changed dependencies. I keep secrets out of Gradle logs and avoid eager resolution into configuration-cache state. Access to Play Console is least-privilege and audited. Finally I document the current Play procedure for upload-key reset separately from app-signing key issues, and I rehearse what to do if credentials are lost or compromised. Local debug signing is not evidence that production updates will be accepted.”
+From a cryptographic governance perspective, deploying Play App Signing requires managing certificate dependencies across ecosystems:
+
+1. **Third-Party API Certificate Binding**: APIs like Google Maps, SafetyNet/Play Integrity, Firebase Phone Auth, and OAuth2 clients validate requests by checking the app's signing certificate SHA-1/SHA-256 fingerprint. When enrolled in Play App Signing, you must register **Google's App Signing certificate fingerprint** in developer consoles, not your local upload key fingerprint, or production authentication will fail.
+
+2. **Dual-Distribution (Play Store + Alternative Stores)**: If an app is distributed on both Google Play and alternative app stores (e.g. Huawei AppGallery, Samsung Galaxy Store, or direct APK downloads), managing different keys is required unless you export the original signing key to both stores, which partially undermines the isolation benefit.
+
+3. **Hardware-Backed Key Generation**: For maximum enterprise security, generate upload keys within Hardware Security Modules (HSM) or YubiKeys supporting PKCS#11, preventing exportable private key bytes from touching local developer hard drives.
 
 ## How to answer in the interview
 
@@ -76,9 +118,11 @@ Discuss key roles, protected jobs, fingerprint/hash checks, artifact promotion, 
 
 ## Follow-up questions
 
-- Which key signs the AAB you upload? **Answer:** the upload key registered for the app under Play App Signing.
-- Why promote the same artifact? **Answer:** the tested binary remains identical to the one users receive through release tracks.
-- Can PR CI access the signing key? **Answer:** it should not; untrusted code is isolated from protected credentials.
+- **Interviewer:** "What happens if you accidentally publish an app with a debug signing key?"
+  **Answer:** "Google Play Console rejects the upload immediately because debug keystores are well-known and insecure."
+
+- **Interviewer:** "Where do you find the official SHA-1 fingerprint of the App Signing Key?"
+  **Answer:** "Inside Google Play Console under Setup -> App Signing -> App signing key certificate."
 
 ## Self-check rubric
 
@@ -90,4 +134,4 @@ Map key roles, outline a protected pipeline, verify identity and describe incide
 - [Upload an App Bundle](https://developer.android.com/studio/publish/upload-bundle) — release upload flow.
 - [Gradle configuration cache](https://docs.gradle.org/current/userguide/configuration_cache.html) — secret handling caveat.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Follow current Play account recovery policy.
+Technically reviewed against primary documentation on 2026-10-13.

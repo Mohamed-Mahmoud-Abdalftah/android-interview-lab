@@ -22,7 +22,39 @@ Compare resource endpoints, flexible queries and persistent bidirectional connec
 
 ## Explanation in Arabic
 
-`REST` أسلوب API قائم على resources وHTTP methods/cache semantics؛ `GraphQL` العميل يحدد shape للبيانات عبر query/schema لكن لازم server يحكم authorization وquery complexity؛ `WebSocket` اتصال طويل ثنائي الاتجاه للأحداث الحية. اختيار البروتوكول حسب data contract وoffline/cache/operability، مش لأن واحد أحدث. Mobile network بتقطع، فلازم reconnect وsync من مصدر authoritative.
+مقارنة معمارية رفيعة المستوى بين بروتوكولات الاتصال في Android:
+REST و GraphQL و WebSockets، ومتى تختار كل منها؟
+
+1. REST (Representational State Transfer):
+   - **كيف يعمل**: يعتمد على موارد محددة (Resources) عبر عناوين URL (`/users/123/orders`) ودوال HTTP القياسية (GET, POST, PUT, DELETE).
+   - **المميزات**: معيار عالمي، سهل الفهم، ممتاز في التخزين المؤقت (HTTP Caching عبر ETag و Cache-Control)، واستقرار فائق.
+   - **العيوب**: مشكلة الـ Over-fetching (جلب بيانات زائدة لا تحتاجها الشاشة) والـ Under-fetching (الحاجة لطلب 3 endpoints متتالية لعرض شاشة واحدة).
+
+2. GraphQL:
+   - **كيف يعمل**: نقطة اتصال موحدة (`/graphql`) يرسل فيها العميل استعلاماً دقيقاً (Query) يحدد فيه شكل الحقول التي يحتاجها فقط.
+   - **المميزات**: يحل مشكلة الـ Over/Under-fetching تماماً. مثالي للشاشات المعقدة التي تجمع بيانات من جداول متعددة في طلب واحد.
+   - **العيوب في الموبايل**: يفقد ميزة الـ Standard HTTP Caching لأن كل الطلبات ترسل كـ `POST`، ويتطلب مكتبات خاصة (مثل Apollo Kotlin)، وصعوبة إدارة حماية وتعقيد الاستعلامات على السيرفر.
+
+3. WebSockets:
+   - **كيف يعمل**: اتصال ثنائي الاتجاه دائم (Persistent Full-Duplex TCP Connection).
+   - **المميزات**: تبادل بيانات فوري بدون Overhead لترويسات HTTP في كل رسالة.
+   - **متى يُستخدم**: للتطبيقات الحية (Live Chat، التداول المالي الفوري، تتبع حركة السائق على الخريطة في تطبيقات التوصيل).
+   - **التحديات في الموبايل**: استهلاك عالي للبطارية إذا لم يُدار بحذر، وانقطاع الاتصال المتكرر عند تحول الهاتف بين شبكة Wi-Fi وبيانات الجوال، مما يتطلب بروتوكول إعادة اتصال ومزامنة دائم.
+
+## Practical walkthrough
+
+جدول المقارنة واتخاذ القرار الهندسي بين البروتوكولات الثلاثة:
+```text
+┌───────────────┬──────────────────────────┬──────────────────────────┬──────────────────────────┐
+│ المعيار       │ REST                     │ GraphQL (Apollo)         │ WebSockets (OkHttp WS)   │
+├───────────────┼──────────────────────────┼──────────────────────────┼──────────────────────────┤
+│ نوع الاتصال   │ طلب/استجابة (Stateless)  │ طلب/استجابة (Stateless)  │ اتصال دائم (Full-Duplex) │
+│ الكاش التلقائي│ ✅ مدعوم بـ HTTP Caching  │ ❌ يتطلب Normalized Cache│ ❌ غير مدعوم             │
+│ حجم البيانات  │ قد يحتوي على Overfetching│ ✅ الحقول المطلوبة فقط   │ ✅ بيانات خام خفيفة      │
+│ استهلاك بطارية│ منخفض جداً               │ منخفض                    │ يحتاج إدارة دقيقة للـ Ping│
+│ أفضل استخدام  │ CRUD، دفع، مستندات، ملفات│ شاشات لوحات تحكم وتجارة  │ شات، تتبع تاكسي، ألعاب   │
+└───────────────┴──────────────────────────┴──────────────────────────┴──────────────────────────┘
+```
 
 ## Why it matters and how it works
 
@@ -41,10 +73,6 @@ interface FeedTransport {
 // a hint triggers versioned snapshot/sync, not blind UI mutation.
 ```
 
-## Practical walkthrough
-
-اختيار protocol يبدأ من شكل البيانات والتحديث: REST resources مناسبة لcatalog/order APIs واضحة؛ GraphQL يسمح للscreen تطلب fields محتاجاها بس، لكن complexity/cost limit وauth لكل field/server resolver مهمة. WebSocket يفيد live prices أو chat، لكن connection ممكن يتقطع في background؛ لازم reconnect/backoff وsnapshot HTTP عشان ما تضيعش state. في Android app offline-first، Room تفضل مصدر العرض، وWebSocket message تبقى hint لـrefresh أو event له sequence/version، مش source-of-truth وحيد. لا تستخدم socket لشاشة ممكن تتحدث كل دقيقة بـHTTP بسيط وتزوّد battery/network complexity بلا داعي.
-
 ## Trade-offs and decision criteria
 
 REST is often sufficient for CRUD and easier intermediary caching. GraphQL suits heterogeneous reads but complicates cost control. WebSocket is suitable for timely events, not a durable source of truth by itself. Combine snapshot plus push hints when live updates must recover after disconnect.
@@ -59,17 +87,25 @@ A chat app reads cached Room messages, syncs versioned pages via HTTPS and uses 
 
 ## Interview answer — short
 
-“REST uses HTTP resource semantics, GraphQL lets clients request a typed data shape, and WebSocket gives persistent bidirectional messages. I choose by access pattern and still design reconnection, caching and server authority.”
+REST uses standard resource endpoints and excels at HTTP caching for typical CRUD apps. GraphQL uses a single endpoint with client-specified queries, eliminating over-fetching for complex data dashboards. WebSockets provide persistent, bidirectional TCP connections for low-latency real-time apps like chat and live vehicle tracking.
 
 ## Interview answer — structured
 
-“For straightforward resource CRUD, REST benefits from familiar HTTP methods, status codes and caching. GraphQL is useful when screens need varied related fields, but the server must control authorization, query cost and caching. WebSockets are useful for low-latency updates, yet mobile connections drop and push messages are not durable truth. I often pair a snapshot API and local cache with live hints, then resynchronize by cursor after reconnect.”
+Choosing between REST, GraphQL, and WebSockets is driven by data velocity, client flexibility, and caching requirements:
+
+1. **REST (Standard Resource APIs)**: Best for standard CRUD domains, file uploads, and high-cacheability resources. It leverages native HTTP semantics (status codes, ETags, CDN edge caching). Its weakness on mobile is over-fetching (wasting cellular data on unneeded fields) and under-fetching (making chained requests for relational data).
+
+2. **GraphQL (Client-Driven Relational Queries)**: Best for rich, multi-entity consumer dashboards (e.g. an e-commerce feed joining user, cart, promotions, and reviews in a single query). The client asks for exact fields, saving mobile bandwidth. However, because all queries use HTTP `POST`, standard HTTP/CDN caching is lost, requiring specialized normalized caching engines (Apollo Kotlin).
+
+3. **WebSockets (Full-Duplex Real-Time Streams)**: Best for low-latency bidirectional push streams (instant messaging, live bidding, multiplayer games, continuous telemetry). Rather than polling REST endpoints, the server pushes events instantly over an open TCP socket. Mobile implementations must manage heartbeat pings, reconnect state machines, and battery life.
 
 ## Interview answer — deep senior
 
-I start with requirements: data shape, update frequency, offline behavior, bandwidth and operational complexity. REST is usually a good baseline for resource APIs and clear retry semantics. GraphQL can reduce over-fetching across many screen shapes but requires query complexity limits and careful normalized caching; authorization cannot be delegated to the client query. WebSocket offers timely two-way updates, but Android lifecycle, Doze and network transitions require reconnect and catch-up. I use server versions/cursors so a missed socket event triggers a reliable HTTPS sync, write authoritative state to Room, and render from local data. Protocol choice does not replace idempotency, conflict resolution or security.
+When architecting **WebSockets on Android**, mobile operating system constraints dictate strict lifecycle governance:
 
-I choose from freshness, shape, and operating cost. REST is a clear baseline for resources and ordinary caching. GraphQL can fit screens with varied data needs, but the server must enforce authorization and query cost limits; client-selected fields are not a security boundary. A WebSocket supports low-latency updates, yet a mobile app can disconnect or be backgrounded, so it needs a snapshot and reconciliation path. For a price feed, I would load a versioned snapshot over HTTP, persist it locally, then use socket messages to trigger incremental updates while the app is active. If messages are missed, I resynchronize by version rather than assuming a continuous connection.
+1. **Doze Mode & Radio State**: Keeping a raw WebSocket open prevents the cellular radio from dropping from full power (DCH) to low-power idle state, rapidly draining battery. In background states, the OS can terminate TCP sockets without firing `onClosing()`. Robust apps close WebSockets when the app enters `ON_STOP`, falling back to Firebase Cloud Messaging (FCM) high-priority push notifications for background delivery.
+
+2. **The Reconnection State Machine**: Cellular handoffs (switching from Wi-Fi to 5G) drop sockets silently. The Android client must implement an active Ping/Pong heartbeat (e.g. `OkHttpClient.Builder().pingInterval(30, TimeUnit.SECONDS)`) and an exponential backoff reconnect policy that reconciles missed events by querying a REST/Room sync cursor upon reconnect.
 
 ## How to answer in the interview
 
@@ -85,8 +121,11 @@ Defend protocol choice against offline, cache, query abuse and reconnect gaps.
 
 ## Follow-up questions
 
-- [DAT-08](../dat-08/): How render during disconnect? **Answer:** use a local cache and freshness policy.
-- [DAT-07](../dat-07/): Who is source of truth offline? **Answer:** local display state is derived from persistent store; server owns server data.
+- **Interviewer:** "Can you use HTTP/2 Server-Sent Events (SSE) instead of WebSockets?"
+  **Answer:** "Yes. If communication is strictly unidirectional from server to client (e.g. live sports scores or stock tickers), SSE is lighter, runs over standard HTTP, and handles auto-reconnect natively."
+
+- **Interviewer:** "How does Apollo Kotlin manage caching for GraphQL?"
+  **Answer:** "It provides a Normalized Cache that parses response objects by their `id` or `__typename`, storing entities in SQLite to provide reactive Flow queries similar to Room."
 
 ## Self-check rubric
 
@@ -98,4 +137,4 @@ Can I compare all three, name one failure mode each and design missed-event reco
 - [OkHttp documentation](https://lysine.dev/okhttp/) — WebSocket transport support.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — local truth and sync.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

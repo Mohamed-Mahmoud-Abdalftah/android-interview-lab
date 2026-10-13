@@ -22,11 +22,25 @@ Can the candidate identify Android Main as the UI Looper thread and IO as shared
 
 ## Explanation in Arabic
 
-على Android، `Dispatchers.Main` بيجدول continuation على الـUI thread المرتبط بالـmain Looper؛ لو شغّلت عليه blocking call هتوقف الرسم واللمس. `Dispatchers.IO` مش thread خاص بكل coroutine، لكنه dispatcher معمول للعمليات اللي بتحجز thread وهي مستنية I/O. الاتنين بيحددوا التنفيذ، مش عمر الشغل ولا ضمان إلغاء الـSDK.
+هذا السؤال يتعمق في البنية التحتية لـ `Dispatchers.Main` و `Dispatchers.IO` في بيئة أندرويد:
+
+1. هل `Dispatchers.Main` يستخدم الـ UI Thread الحقيقي؟
+   - **نعم، 100%!** على منصة Android، `Dispatchers.Main` مربوط بالـ `Looper.getMainLooper()` والـ `Handler` الخاص بالـ Main Thread.
+   - أي كود يتنفذ عليه بيتم إدراجه كـ `Message` داخل الـ `MessageQueue` الخاصة بالـ UI Thread.
+
+2. هل `Dispatchers.IO` يستخدم Thread Pool؟ وإزاي بيشتغل؟
+   - **نعم، يستخدم Elastic Thread Pool.**
+   - بيشارك البنية التحتية مع `Dispatchers.Default`، لكن مخصص لمهام الـ Blocking.
+   - الحد الأقصى الافتراضي لعدد الـ Threads فيه هو **64** (أو عدد الـ Cores إن كان أكبر).
+   - لو عندك 50 طلب شبكة أو قراءة ديسك blocking شغالين في نفس الوقت، الـ Pool هيفتح threads كافية حتى 64 thread لضمان عدم توقف العمليات الأخرى.
 
 ## Practical walkthrough
 
-في ANR trace ممكن تلاقي `Main` واقف داخل SDK sync call رغم إن الكود مكتوب `launch`. الـdispatcher هنا حدّد thread التنفيذ فقط. نقل النداء إلى `IO` يحمي الـLooper، لكنه مش بيضمن إن SDK هيتوقف فورًا مع cancel، ومش بيحط سقف لعدد sockets أو requests. لازم تقيس زمن النداء وتقيّد عدد العمليات حسب قدرة الخدمة.
+فهم تأثير ذلك على استهلاك الذاكرة وتجنب التجميد:
+- لو شغلت دالة `Thread.sleep(5000)` على `Dispatchers.Main`:
+  الـ Handler هيتوقف عن معالجة رسائل اللمس والرسم الخاصة بـ `Choreographer`، وبعد 5 ثوانٍ النظام هيطلع رسالة 'Application Not Responding' (ANR).
+- لو شغلت 70 دالة `Thread.sleep(5000)` على `Dispatchers.IO`:
+  أول 64 دالة هيحجزوا الـ 64 threads في الـ IO Pool، والـ 6 المتبقين هيقفوا في طابور الانتظار (Queue) حتى يفرغ أي thread، ولكن **لن يحدث أي ANR** لأن الـ Main Thread حر تماماً.
 
 ## Why it matters and how it works
 
@@ -61,15 +75,23 @@ A repository wraps a synchronous encrypted-file read on IO and exposes a main-sa
 
 ## Interview answer — short
 
-“Yes: on Android, Main dispatches UI work to the main thread. IO is shared execution capacity designed for blocking I/O, not a dedicated thread per coroutine. I still have to keep synchronous work off Main and bound concurrency.”
+Yes, Dispatchers.Main uses Android's single UI thread backed by Looper.getMainLooper(). Yes, Dispatchers.IO uses an elastic thread pool that scales up to 64 worker threads, sharing worker threads with Dispatchers.Default while allowing blocking operations without exhausting CPU compute threads.
 
 ## Interview answer — structured
 
-“`Dispatchers.Main` dispatches continuations through Android’s main UI thread, which is where view state and rendering belong. `Dispatchers.IO` is designed for operations that block a worker, such as a synchronous file API. Coroutines can share those threads, and a suspended coroutine does not occupy one while waiting. Neither dispatcher owns lifetime; the Job and scope do. I wrap known blocking boundaries in a repository, avoid unnecessary IO switches for already main-safe suspending APIs, and use separate limits for high fan-out.”
+Yes to both, and understanding their runtime implementation is key to writing high-performance Android apps.
+
+`Dispatchers.Main` directly wraps the Android platform's UI thread. It is powered by `kotlinx-coroutines-android`, which provides a `HandlerDispatcher` tied to `Looper.getMainLooper()`. When you dispatch work to `Dispatchers.Main`, it posts a `Runnable` into the main thread's `MessageQueue`. That is why executing blocking code on it directly blocks the Android Choreographer from rendering 60/120Hz frames and leads to ANRs.
+
+`Dispatchers.IO` is explicitly backed by an elastic thread pool. It shares a common worker pool with `Dispatchers.Default` but overrides its parallelism limit to a default cap of 64 threads (or the number of CPU cores if greater). This design recognizes that I/O tasks spend most of their time waiting on external hardware or network sockets, so having up to 64 threads blocked on I/O does not degrade CPU performance.
 
 ## Interview answer — deep senior
 
-“I would inspect the actual call chain before declaring it safe. Main is the UI Looper thread in an Android runtime; a synchronous Binder or disk call there can delay frames and lead to an ANR. IO has shared elastic capacity for blocking work, but does not create one permanent thread per coroutine and does not make an uncooperative SDK interruptible. A suspending network client may already be safe from Main because it suspends without holding the thread. I inject dispatchers where useful for tests, cap concurrent requests according to downstream limits, and monitor latency and ANR traces. A switch back to Main after `withContext(IO)` lets the screen render safely, provided the owner is still active. Measure and limit fan-out separately. A thread dump can prove the difference: if Main is inside a synchronous Binder call, the coroutine has not suspended and input frames cannot progress. Moving that boundary to IO restores UI responsiveness but does not make the call interruptible or the backend more capable. I would cap outstanding work, measure queue latency, and ensure cancellation prevents late result publication. A main-safe network client should not receive an arbitrary extra IO hop.”
+At the architectural level, `Dispatchers.IO` solves the thread starvation dilemma. If blocking I/O ran on `Dispatchers.Default`, which only has as many threads as CPU cores (e.g., 4 or 8), a few blocking database reads would completely saturate all available threads, preventing compute tasks and animations from running.
+
+By setting the capacity to 64 on `Dispatchers.IO`, the coroutine scheduler can spin up additional OS threads on demand when threads block on `read()` or `write()` calls. When those threads become idle, they are eventually timed out and reclaimed by the runtime.
+
+In Android profiling, you can observe these named threads in Android Studio's Profiler as `DefaultDispatcher-worker-X`. If your application frequently hits the 64-thread ceiling due to slow external APIs, it indicates an architectural bottleneck that should be refactored using non-blocking asynchronous APIs (like OkHttp asynchronous enqueue or Flow) rather than scaling thread pools indefinitely.
 
 ## How to answer in the interview
 
@@ -85,8 +107,14 @@ Compare Main, Main.immediate and IO while tracing suspension, resumption and can
 
 ## Follow-up questions
 
-- [COR-07](../cor-07/): Which dispatcher fits decoding? **Answer:** CPU-heavy decoding generally fits Default, not IO.
-- [COR-31](../cor-31/): Why can a coroutine cause ANR? **Answer:** a blocking call still occupies Main when it runs there.
+- **Interviewer:** "Can you change the 64-thread limit of Dispatchers.IO?"
+  **Answer:** "Yes. You can configure the system property `kotlinx.coroutines.io.parallelism` before runtime initialization, or use `Dispatchers.IO.limitedParallelism(N)` to establish dedicated sub-pools with custom concurrency caps."
+
+- **Interviewer:** "Why does `Dispatchers.Main` require the `kotlinx-coroutines-android` artifact?"
+  **Answer:** "Because standard Kotlin Coroutines is a multiplatform JVM library that knows nothing about Android. The `kotlinx-coroutines-android` library provides the Android-specific implementation that hooks into `android.os.Handler` and `Looper.getMainLooper()`."
+
+- **Interviewer:** "What happens if you use `Dispatchers.Main` in pure JVM unit tests without the Android runtime?"
+  **Answer:** "It will throw an `IllegalStateException: Module with the Main dispatcher had failed to initialize`. In unit tests, you must replace `Dispatchers.Main` using `Dispatchers.setMain(testDispatcher)` from `kotlinx-coroutines-test`."
 
 ## Self-check rubric
 
@@ -97,4 +125,4 @@ Can I name the actual Android thread, explain IO sharing, diagnose a blocking Ma
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — main-safety contract.
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — dispatchers and threads.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

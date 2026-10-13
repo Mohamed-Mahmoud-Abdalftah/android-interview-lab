@@ -22,7 +22,58 @@ Contrast notification, interchangeable algorithm, state-dependent behavior, acti
 
 ## Explanation in Arabic
 
-Observer ينشر changes لمتابعين (Flow/LiveData شبهه بس lifecycle/backpressure semantics مهمة). Strategy يبدّل algorithm مستقل زي payment provider. State يغيّر سلوك object حسب حالته الحالية، وغالبًا transitions جزء من التصميم. Command يحوّل action لobject/data يمكن queue أو log أو undo حسب النظام. Chain of Responsibility يمرّر request على handlers بترتيب محدد لحد ما واحد يعالجها. الأسماء ما تعنيش إن network effect هيبقى exactly-once؛ command queue تحتاج persistence/idempotency لو مهم.
+شرح الأنماط السلوكية الأساسية: Observer و Strategy و State و Command و Chain of Responsibility في Android:
+
+1. نمط المراقب (Observer Pattern):
+   - **الهدف**: علاقة One-to-Many؛ عندما يتغير كائن (Subject)، يتم إشعار جميع المراقبين (Observers) المسجلين تلقائياً.
+   - **في Android**: قلب البرمجة التفاعلية (`StateFlow`, `SharedFlow`, `LiveData`, و `SnapshotState` في Compose).
+
+2. نمط الاستراتيجية (Strategy Pattern):
+   - **الهدف**: تغليف مجموعة من الخوارزميات المتبادلة في كلاسات منفصلة، واختيار الخوارزمية في وقت التشغيل.
+   - **في Android**: اختيار طريقة الدفع (Stripe vs PayPal)، أو اختيار طريقة ترتيب القائمة (حسب السعر vs التاريخ).
+
+3. نمط الحالة (State Pattern):
+   - **الهدف**: السماح لكائن بتغيير سلوكه بالكامل عندما تتغير حالته الداخلية (كأنه يغير كلاسه).
+   - **في Android**: آلة حالات مشغل الوسائط (`IdleState`, `BufferingState`, `PlayingState`, `PausedState`)؛ ضغط زر التشغيل في `PlayingState` يوقف المشغل، بينما ضغطه في `PausedState` يستأنف التشغيل.
+
+4. نمط الأمر (Command Pattern):
+   - **الهدف**: تغليف الطلب بالكامل في كائن مستقل، مما يتيح تأجيل تنفيذه، وضعه في طابور (Queue)، أو التراجع عنه (Undo/Redo).
+   - **في Android**: مهام `WorkManager` (WorkRequest) أو أحداث الـ MVI (`UiIntent`).
+
+5. نمط سلسلة المسؤولية (Chain of Responsibility):
+   - **الهدف**: تمرير الطلب عبر سلسلة من المعالجات (Handlers)؛ كل معالج يقرر معالجة الطلب أو تمريره لمن يليه.
+   - **في Android**: `OkHttp Interceptors Chain`، وتمرير أحداث اللمس (Touch Event Dispatching في View Hierarchy من ViewGroup إلى View).
+
+## Practical walkthrough
+
+أمثلة تمثل الأنماط السلوكية الخمسة في كود Android:
+```kotlin
+// 1. OBSERVER: اشتراك تفاعلي في تدفق الحالة:
+viewModel.uiState.onEach { render(it) }.launchIn(lifecycleScope)
+
+// 2. STRATEGY: استراتيجية فرز قابلة للتبديل في وقت التشغيل:
+val sortedList = list.sortedWith(if (sortByPrice) PriceComparator() else DateComparator())
+
+// 3. STATE: مشغل وسائط يغير سلوكه حسب حالته الداخلية:
+sealed interface PlayerState {
+    fun onPlayClicked(player: MediaPlayerContext)
+}
+class PausedState : PlayerState {
+    override fun onPlayClicked(player: MediaPlayerContext) { player.start(); player.setState(PlayingState()) }
+}
+class PlayingState : PlayerState {
+    override fun onPlayClicked(player: MediaPlayerContext) { player.pause(); player.setState(PausedState()) }
+}
+
+// 4. COMMAND: تغليف عملية حفظ قابلة للوضع في طابور WorkManager:
+val syncCommand = OneTimeWorkRequestBuilder<SyncWorker>().build()
+WorkManager.getInstance(context).enqueue(syncCommand)
+
+// 5. CHAIN OF RESPONSIBILITY: معالجة أحداث اللمس في Android:
+override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+    return if (onInterceptTouchEvent(ev)) onTouchEvent(ev) else child.dispatchTouchEvent(ev)
+}
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +82,6 @@ Behavioral patterns organize communication and decision-making. Strategy varies 
 ## Worked example
 
 Example: checkout observes order Flow, chooses provider Strategy, transitions through `Pending/Confirmed` State, represents `SubmitPayment(requestId)` as a Command for durable handling, and validates request through an ordered chain of handlers. Each layer has explicit ownership and error semantics.
-
-## Practical walkthrough
-
-Observer معناه subscribers بتشوف state changes؛ `StateFlow` مثال، لكن lifecycle-aware collection لازمة للUI. Strategy تبدّل algorithm/provider وراء interface ثابتة. State تمثل الحالة الحالية وتقيّد actions/transition؛ enum booleans مش كفاية لو كل حالة لها payload مختلف. Command يمثل intent قابل للتخزين/retry مثل `SubmitPayment(attemptId)`، لكن لازم idempotency. Chain of Responsibility تمرر request عبر handlers مثل validation→auth→policy، بس ترتيبها مهم وممكن يخفي مين رفض. في checkout، ما تستخدمش الخمس patterns في نفس call stack لمجرد استعراضها؛ كل واحد لازم يحل مشكلة محددة وله test.
 
 ## Trade-offs and decision criteria
 
@@ -50,17 +97,31 @@ A bank transfer flow uses explicit state transitions and persistent request IDs;
 
 ## Interview answer — short
 
-Observer distributes updates; Strategy selects interchangeable behavior; State models behavior tied to current state; Command represents an action; Chain of Responsibility passes a request through handlers. I choose by the actual variation and delivery needs.
+Observer handles reactive 1-to-N updates (`Flow`, Compose State). Strategy swaps interchangeable algorithms (payment methods). State alters object behavior based on its internal state machine (media player states). Command encapsulates executable requests (`WorkManager`). Chain of Responsibility passes requests through sequential handlers (`OkHttp Interceptors`, Touch Dispatch).
 
 ## Interview answer — structured
 
-I distinguish these by the question they answer. Who needs updates? Observer. Which algorithm or provider should run? Strategy. How does behavior change after a transition? State. Should an action be represented and possibly queued? Command. Should several handlers get a chance in order? Chain of Responsibility. In Android, Flow can carry updates, but lifecycle and buffering matter. A queued payment command needs persistence and idempotency; the pattern name alone does not provide durable execution.
+Behavioral patterns govern communication protocols, algorithms, and state transitions between decoupled objects:
+
+1. **Observer**: Defines a one-to-many dependency where state mutations in a subject broadcast notifications to subscribers. The foundation of modern reactive Android (`StateFlow`, `LiveData`, and Compose's `SnapshotMutationPolicy`).
+
+2. **Strategy**: Encapsulates a family of algorithms into interchangeable classes conforming to a common contract. Consumers delegate execution to the strategy instance injected at runtime (e.g. routing between different payment gateways).
+
+3. **State**: Allows an object to alter its behavior when its internal state changes, behaving as if its underlying class transformed. Highly effective for complex state machines (e.g. `ExoPlayer` audio state transitions or Bluetooth connection sequences: `Disconnected`, `Scanning`, `Connecting`, `Connected`).
+
+4. **Command**: Encapsulates a request as an object with its own execution context, enabling parameterization, queuing, scheduling, and undo/redo operations. Embodied by Jetpack `WorkManager` (`OneTimeWorkRequest`) and MVI `Intent` actions.
+
+5. **Chain of Responsibility**: Decouples request senders from receivers by giving multiple handlers a chance to process the request sequentially along a pipeline. Embodied by **OkHttp Interceptor chains** and Android's **`dispatchTouchEvent()` hierarchy**.
 
 ## Interview answer — deep senior
 
-A checkout feature can combine several behavioral patterns without putting everything into one “manager.” Repository status is observed by the UI; a provider strategy selects one SDK adapter; a state machine decides which transitions are legal; a command records a user action; a validation chain applies ordered checks. I keep their contracts distinct. Strategy implementations should be substitutable, while State concerns history and current transition rules. Observers may miss or replay values depending on the chosen stream, so I classify data as current state or durable event. A command placed in an in-memory queue can vanish with the process, and a chain whose order is implicit can reject the wrong request. I test failure propagation, cancellation and server authority, not just the happy path.
+Comparing **State vs Strategy** is a classic interview inquiry:
+- Both share an identical UML class diagram (Context delegating to an Interface with multiple implementations).
+- *The difference is intent and state transitions*:
+  * In **Strategy**, the client generally configures the strategy once (e.g. user chooses 'Pay with PayPal'), and strategies rarely know about other strategies.
+  * In **State**, the context changes states dynamically as events occur, and concrete state objects frequently trigger transitions to succeeding state objects (`PausedState` directly transitions context to `PlayingState`).
 
-I would separate event observation from decision and execution. Observer lets a screen react to repository state, for example through a lifecycle-collected StateFlow. Strategy chooses one provider behavior behind a stable contract. State models where checkout is now and which transitions are legal; a sealed state can carry different payloads. Command represents a durable intent such as SubmitPayment with an attempt ID, which can be queued but still needs server idempotency. Chain of Responsibility can pass a request through validation, authentication, and policy handlers, though ordering and short-circuit behavior must be explicit. For a simple flow I might need only one or two of these. The test is whether the pattern localizes variation or clarifies failure, not whether the diagram includes every name.
+In modern Kotlin, the State pattern is often formalized using **Sealed Interfaces with Reducer Functions** (`MVI`), achieving mathematical state determinism.
 
 ## How to answer in the interview
 
@@ -76,8 +137,11 @@ Compare Strategy/State, observer delivery, command persistence and chain orderin
 
 ## Follow-up questions
 
-- [PAT-09](../pat-09/): Strategy versus State? **Answer:** algorithm variation versus current-state-dependent behavior and transitions.
-- [PAT-13](../pat-13/): What does lifecycle add to Observer? **Answer:** collection/registration must stop with the UI owner.
+- **Interviewer:** "What is the key difference between State and Strategy patterns?"
+  **Answer:** "Strategy encapsulates interchangeable algorithms usually chosen once by the client. State encapsulates dynamic state machine transitions where the object actively changes its behavior and transitions to new states as events occur."
+
+- **Interviewer:** "How does Android's Touch Event System implement Chain of Responsibility?"
+  **Answer:** "A touch event starts at the Window, traverses down through nested `ViewGroup`s via `dispatchTouchEvent()` and `onInterceptTouchEvent()`, until a child view consumes it or passes it back up."
 
 ## Self-check rubric
 
@@ -88,4 +152,4 @@ Match five scenarios to patterns and identify one durability or lifecycle limita
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — behavioral patterns.
 - [Android LiveData overview](https://developer.android.com/topic/libraries/architecture/livedata) — lifecycle-aware Observer example.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

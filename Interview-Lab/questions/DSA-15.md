@@ -23,11 +23,62 @@ Build a rate limiter or deduplication map for requests. What data structure fits
 
 ## Explanation in Arabic
 
-Rate limiter ممكن يستخدم `HashMap<key, bucket>` يخزن tokens/time window لكل user، مع priority queue أو timer لتنظيف expiries. Dedup map يخزن operation ID→result/status مدة محددة، ولازم atomic check-and-set على server لو أكثر من process. Local Android map يمنع double tap في UI فقط؛ ما يضمنش عدم duplicate charge بعد restart أو جهاز تاني.
+كيف تبني نظام تحديد معدل الطلبات (Rate Limiter) أو خريطة لمنع تكرار الطلبات المتزامنة (Request Deduplication) في أندرويد، وما هو الهيكل الأنسب؟
+
+1. متطلبات النظام:
+   - **Rate Limiting**: السماح بحد أقصى من الطلبات (مثلاً: 5 طلبات في الثانية) ورفض أو تأخير الطلبات الزائدة.
+   - **Request Deduplication**: إذا تم استدعاء نفس الـ API بنفس المعاملات 3 مرات بالتوازي قبل اكتمال الطلب الأول، يتم تنفيذ **طلب شبكة واحد فقط** ومشاركة النتيجة مع المستدعين الثلاثة (Coalescing).
+
+2. اختيار هياكل البيانات المناسبة:
+   - **للـ Rate Limiting (خوارزمية Sliding Window Log)**:
+     * **`ArrayDeque<Long>`**: لتخزين الطوابع الزمنية (Timestamps) للطلبات الأخيرة.
+     * عند كل طلب جديد: نزيل الطوابع الأقدم من (`now - windowSize`) من بداية الـ Deque في $O(1)$.
+     * إذا كان حجم الـ Deque أقل من الحد المسموح، نضيف الوقت الحالي ونقبل الطلب، وإلا نرفضه.
+   - **للـ Deduplication (دمج الطلبات المتزامنة)**:
+     * **`ConcurrentHashMap<String, Deferred<Response>>`** (مع Kotlin Coroutines):
+     * إذا كان المفتاح موجوداً في الخريطة، نقوم بعمل `await()` على نفس النتيجة الجاري تحميلها دون فتح اتصال جديد!
+     * عند انتهاء الطلب، نزيل المفتاح من الخريطة في بلوك `finally`.
 
 ## Practical walkthrough
 
-Rate limiter المحلي في المثال يوقف تكرار search خلال window، لكنه لا يضمن منع دفع مكرر عبر جهازين أو بعد process kill. عرف key، clock monotonic، window، eviction وسياسة concurrent calls. للعمليات المالية استخدم operation ID durable وserver idempotency؛ للـUI debounce أو token bucket حسب UX. اختبر الحد عند 999/1000ms وليس فقط happy path.
+تنفيذ Rate Limiter و Request Deduplication في كوتلن بشكل آمن ومتزامن:
+```kotlin
+// 1. Sliding Window Rate Limiter آمن الخيوط (Thread-Safe):
+class SlidingWindowRateLimiter(private val maxRequests: Int, private val windowDurationMs: Long) {
+    private val timestamps = ArrayDeque<Long>()
+    private val lock = Any()
+
+    fun tryAcquire(): Boolean = synchronized(lock) {
+        val now = System.currentTimeMillis()
+        // إزالة الطوابع الزمنية المنتهية الصلاحية من بداية الطابور:
+        while (timestamps.isNotEmpty() && (now - timestamps.first()) > windowDurationMs) {
+            timestamps.removeFirst()
+        }
+        if (timestamps.size < maxRequests) {
+            timestamps.addLast(now)
+            true // مسموح بالطلب
+        } else {
+            false // تم تجاوز المعدل (Rate limited)
+        }
+    }
+}
+
+// 2. Request Deduplicator (Single-Flight Pattern) باستخدام Coroutines:
+class RequestDeduplicator<T> {
+    private val inFlight = ConcurrentHashMap<String, Deferred<T>>()
+
+    suspend fun execute(key: String, block: suspend () -> T): T = coroutineScope {
+        val deferred = inFlight.computeIfAbsent(key) {
+            async(Dispatchers.IO) { block() }
+        }
+        try {
+            deferred.await() // ينتظر الطلب المشترك
+        } finally {
+            inFlight.remove(key, deferred) // تنظيف بعد الاكتمال
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -88,15 +139,29 @@ Production limits by authenticated identity and endpoint, monitors denial rates,
 
 ## Interview answer — short
 
-“A map works for per-key limiter or dedup state, but expiry and atomicity matter. Client-local dedup is only UX; payment idempotency must be enforced server-side with stable operation identity.”
+For a rate limiter, a sliding window log using an ArrayDeque of timestamps fits best, pruning expired entries in O(1) amortized time. For concurrent request deduplication, use a ConcurrentHashMap mapping request keys to in-flight Coroutine Deferred instances (Single-Flight pattern), coalescing concurrent duplicate calls into a single network invocation.
 
 ## Interview answer — structured
 
-“For a token bucket I store capacity, tokens and last refill time per key, updating atomically. For request dedup I map a stable operation ID to parameters/status for a defined retention window. A HashMap gives expected fast lookup, but memory and expiry need policy. On Android, local dedup prevents rapid taps; a backend unique record and provider contract protect against duplicate financial effects across devices and restarts.”
+Designing rate limiters and deduplication managers requires thread-safe collections tailored to sliding time windows and task coalescing:
+
+1. **Sliding Window Rate Limiter (`ArrayDeque<Long>`)**:
+   - **Mechanism**: Maintains timestamps of recent requests in an `ArrayDeque`. On each incoming request at time $t$, pop timestamps older than $t - \text{windowDuration}$ from the head in $O(1)$ time. If the remaining deque size is within limits, push $t$ to the tail and allow the request; otherwise, throttle.
+   - **Trade-off**: Provides exact precision without the boundary burst vulnerabilities of fixed-window counters, consuming minimal $O(k)$ memory where $k$ is the rate limit.
+
+2. **Concurrent Request Deduplication (Single-Flight Pattern)**:
+   - **Mechanism**: Use a `ConcurrentHashMap<String, Deferred<Result>>`. When a request arrives, invoke `computeIfAbsent(key) { async { executeNetworkCall() } }`. Multiple concurrent callers subscribe to the identical `Deferred.await()`, eliminating duplicate network traffic.
+   - **Cleanup**: In a `finally` block, remove the key from the map once the network call completes to ensure subsequent requests fetch fresh data.
 
 ## Interview answer — deep senior
 
-“I start by defining the scope and contract. A local map keyed by request identity with a time window can suppress repeated search taps; a token bucket or sliding window can allow controlled bursts. I inject a monotonic clock for deterministic tests and define eviction so the map cannot grow forever. Concurrent callers need synchronization or an atomic store; otherwise both may pass the check. The example is an in-process guard, not a payment safety boundary: process death, another device or two servers can bypass it. For a financial operation I persist a stable operation ID and require server-side idempotency and status lookup, with provider-specific limits understood. The trade-off in a UI limiter is responsiveness versus unnecessary requests and false suppression of legitimate repeated actions. I test just-before and exactly-at window boundaries, key separation, clock behavior and concurrent access. I monitor rejected counts and user impact, then tune the policy from observed traffic rather than a magic interval.”
+From an Android networking and resilience perspective, these patterns protect battery and server quotas:
+
+1. **Thundering Herd Mitigation on Screen Launch**: When 4 distinct UI components on a dashboard independently request the current user profile upon startup, naive code fires 4 duplicate HTTP requests. The Single-Flight deduplication pattern coalesces these into 1 HTTP call, saving radio wakeups and network bandwidth.
+
+2. **Token Bucket Algorithm Alternative**: For high-throughput client scenarios, the Token Bucket algorithm (`AtomicInteger` tokens replenished at a constant rate) is preferred over timestamp deques because it consumes $O(1)$ space and handles traffic bursts gracefully without logging individual timestamps.
+
+3. **Handling Network Failures in Deduplication**: If the in-flight network call fails with an exception, all awaiting callers must receive the exception cleanly, and the key must be removed from the map immediately so retry logic is not stuck on a failed cached future.
 
 ## How to answer in the interview
 
@@ -112,8 +177,11 @@ Prompt for token bucket state, atomic check-and-set, monotonic time, TTL and pay
 
 ## Follow-up questions
 
-- [PAY-02](../pay-02/): What is idempotency? **Answer:** one intended business effect under server/provider contract.
-- [DSA-10](../dsa-10/): Could LRU hold dedup forever? **Answer:** no, eviction can erase needed identity.
+- **Interviewer:** "What is the primary advantage of the sliding window log over a fixed-window counter for rate limiting?"
+  **Answer:** "It prevents the double-burst edge case where twice the allowed requests arrive across the boundary between two adjacent fixed windows."
+
+- **Interviewer:** "Why is `remove(key, deferred)` preferred over `remove(key)` in the deduplication cleanup block?"
+  **Answer:** "It atomically ensures you only remove the entry if it still points to the exact completed task, avoiding race conditions with newly started requests."
 
 ## Self-check rubric
 
@@ -124,4 +192,4 @@ Choose map/set plus timestamp or token bucket according to exact rate/dedup sema
 - [Kotlin Map API](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.collections/-map/) — map operations.
 - [Stripe idempotent requests](https://docs.stripe.com/api/idempotent_requests) — financial retry semantics.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

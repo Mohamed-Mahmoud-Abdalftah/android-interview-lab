@@ -23,11 +23,45 @@ How do you estimate an unfamiliar feature and communicate risk?
 
 ## Explanation in Arabic
 
-ميزة غير مألوفة ما تتقدرش برقم دقيق من أول دقيقة. نفصل discovery، API/backend contract، Android UI/state، security، tests، rollout. نحدد assumptions والمجهول الكبير ونقترح spike قصير لخفض uncertainty. نعطي range وثقة وتواريخ checkpoints، ونحدّث estimate لما نتعلم. ما نخلطش estimate بالتزام ثابت من غير scope.
+كيف تقوم بتقدير وقت ميزة غير مألوفة (Unfamiliar Feature) وتوصيل المخاطر بوضوح لإدارة المشروع؟
+
+1. التحدي في الميزات غير المألوفة:
+   - عندما يُطلب منك تقدير ميزة تعتمد على تكنولوجيا جديدة لم تستخدمها من قبل (مثل: Bluetooth Low Energy، أو إضافة Biometric Crypto جديدة، أو مكتبة C++ NDK خارجية).
+   - التقدير السريع المتسرع ("أسبوعان!") هو فخ هندسي يدمر مصداقيتك عندما تظهر مشاكل غير متوقعة في الـ Hardware.
+
+2. استراتيجية التقدير الاحترافية (Estimation Methodology):
+   - **1. الفصل بين البحث والتنفيذ (Spike / Timeboxed Exploration)**:
+     * اطلب تخصيص **Spike** لمدة يومين أو 3 أيام بهدف واحد: عمل Prototype سريع يختبر إمكانية الاتصال والـ APIs وإثبات المفهوم (Proof of Concept).
+     * بعد انتهاء الـ Spike فقط، يمكنك تقديم تقدير زمني دقيق للميزة الحقيقية.
+   - **2. التفكيك لعناصر ذرية (WBS - Work Breakdown Structure)**:
+     * تقسيم الميزة إلى مهام صغيرة: واجهة المستخدم (UI)، طبقة البيانات والـ Network، معالجة الـ Edge cases، كتابة الاختبارات، واختبارات الـ QA.
+   - **3. التقدير ثلاثي النقاط (Three-Point Estimation)**:
+     * حساب: التقدير المتفائل (Optimistic $O$)، التقدير الأكثر احتمالاً (Most Likely $M$)، والتقدير المتشائم عند حدوث مشاكل (Pessimistic $P$).
+     * المتوسط المتوقع: $E = \frac{O + 4M + P}{6}$.
+
+3. توصيل المخاطر للإدارة:
+   - توضيح الاعتماديات الخارجية (External Blockers): مثل اعتماد الميزة على جاهزية سيرفرات الـ Backend، أو سلوك الـ Bluetooth المختلف بين هواتف Samsung و Xiaomi.
 
 ## Practical walkthrough
 
-لو feature مجهولة مثل offline checkout، لا تقول “أسبوعين” من UI mockup. فكّك unknowns: backend contract، payment status، Room migration، SDK device، auth، QA matrix وPlay release. اعمل spike قصير للجزء الأعلى مخاطرة، وقدم range مع assumptions ومراحل evidence. عرف ما الذي يمكن قصّه من scope وما الذي لا يمكن قصّه مثل idempotency. بلّغ المخاطر بدري وحدث التقدير عند ظهور نتيجة الـspike بدل الدفاع عن رقم أولي.
+نموذج خطة Spike وتقدير شفاف لميزة BLE غير مألوفة:
+```markdown
+### مقترح إدارة المخاطر لميزة Bluetooth IoT Sync:
+
+#### المرحلة 1: Timeboxed Technical Spike (3 أيام عمل)
+- **الهدف**: اختبار الاتصال بالعتاد (BLE GATT Services) على أجهزة Android 12-14.
+- **المخرجات**: تقرير جدوى فني + اكتشاف القيود النظامية + إزالة الغموض بنسبة 80%.
+
+#### المرحلة 2: تفكيك التقدير (بناءً على نتائج الـ Spike):
+- تصميم واجهات الـ Compose وحالات الأخطاء: 3 أيام.
+- خدمة الاتصال الخلفية وربط Coroutines بالـ BLE callbacks: 5 أيام.
+- التعامل مع القيود الخاصة بالمصنعين (OEM background kills & permissions): 4 أيام.
+- اختبارات الوحدة والـ Integration Tests: 3 أيام.
+
+#### مصفوفة المخاطر المعلنة (Identified Risks):
+1. **[مخاطرة عالية]**: تأخر توفير جهاز الهاردوير التجريبي (Hardware Sample) سيعطل الـ QA.
+2. **[مخاطرة متوسطة]**: قيود توفير الطاقة في هواتف Xiaomi قد توقف الفحص بالخلفية.
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +85,38 @@ Weekly update shows completed evidence, remaining uncertainties, current range a
 
 ## Interview answer — short
 
-“I decompose the work, state assumptions and unknowns, run a focused spike for the riskiest dependency, and communicate a range with checkpoints rather than false precision.”
+Estimate unfamiliar features by separating discovery from delivery using a timeboxed technical spike (2–3 days) to build a prototype and de-risk core unknowns. Break the remaining work into small tasks, provide three-point ranges (best, likely, worst case), and transparently communicate external hardware, backend, and OEM dependencies.
 
 ## Interview answer — structured
 
-“For an unfamiliar feature I identify outcome and constraints, split mobile, backend, security, testing and rollout tasks, then estimate known pieces separately from uncertain integrations. I give a range and confidence level tied to assumptions such as SDK access or API readiness. A short spike answers the highest-risk question; after it, I update the range and show what changed. If the deadline is fixed, I discuss scope options while preserving safety requirements. Share options and consequences.”
+Estimating novel or high-uncertainty mobile features requires disciplined risk engineering rather than speculative guessing:
+
+1. **The Timeboxed Technical Spike Protocol**:
+   - When facing unfamiliar domain territory (e.g. BLE, custom NDK audio, complex biometrics), refuse to provide a full release estimate immediately. Instead, scope a 2-to-3-day timeboxed 'Spike'. The sole objective of the spike is building a disposable proof-of-concept to validate framework APIs, verify hardware compatibility, and uncover hidden constraints.
+
+2. **Granular Work Breakdown (WBS)**:
+   - Following the spike, decompose the epic into discrete sub-tasks: domain models, background services, UI presentation states, offline error recovery, automated tests, and regression testing.
+
+3. **Three-Point Probabilistic Estimation (PERT)**:
+   - Present estimates as ranges rather than single integers:
+     - Optimistic ($O$): Everything works smoothly without device anomalies.
+     - Nominal ($M$): Expected delivery with standard iteration.
+     - Pessimistic ($P$): Vendor bugs, OEM permission hurdles, and store review delays.
+     - Expected duration: $E = \frac{O + 4M + P}{6}$.
+
+4. **Explicit Risk & Dependency Transparency**:
+   - Clearly enumerate external blockers: backend API delivery dates, physical test hardware availability, and third-party vendor SDK support.
 
 ## Interview answer — deep senior
 
-“For unfamiliar work I estimate the uncertainty, not only the visible UI. I break the feature into contracts, Android state ownership, persistence, external SDK behavior, tests and release verification. An offline checkout estimate, for example, depends on whether the backend already supports durable idempotent operation IDs and status lookup; if that is unknown, I time-box a spike with backend and QA before promising a fixed date. I provide a range, the assumptions behind it, a likely critical path and a checkpoint when I will re-estimate. I distinguish scope that can be deferred, such as polish, from safety requirements that cannot, such as preventing duplicate charges. I communicate evidence and choices to product in plain language: what can ship, what risk remains and what additional work changes confidence. The trade-off is spending early time reducing uncertainty versus moving immediately. False precision creates a larger schedule surprise than an honest range with a validation plan.”
+From an engineering leadership and stakeholder communication perspective, managing expectations prevents project crises:
+
+1. **The Cone of Uncertainty**: Communicate the 'Cone of Uncertainty' to product and executive stakeholders. Early in the discovery phase, estimates carry a $4\times$ variance. As the spike concludes and architecture solidifies, variance drops to $1.2\times$. Explaining this mathematically protects team credibility.
+
+2. **Mobile-Specific Hardware Fragmentation Variance**: Mobile estimates carry unique risks that backend projects do not: vendor-specific battery managers (e.g. Samsung vs. Xiaomi killing background workers), camera driver discrepancies, and Play Store policy scrutiny. Factor an explicit 'Device Matrix Testing' buffer into unfamiliar hardware features.
+
+3. **Descoping Strategy (MVP vs. Full Scope)**:
+   - Always present a staged delivery path: 'If the deadline is non-negotiable for an upcoming trade show, we can deliver the MVP (foreground sync only) in 2 weeks with minimal risk, and schedule automated background syncing for the subsequent release.'
 
 ## How to answer in the interview
 
@@ -75,8 +132,11 @@ Prompt for conditional range, dependency map, focused spike, safety floor and up
 
 ## Follow-up questions
 
-- [LEAD-07](../lead-07/): Who owns API uncertainty? **Answer:** mobile/backend/QA agree a contract and test it.
-- [LEAD-13](../lead-13/): What if launch date conflicts with security? **Answer:** escalate risk and choose safe scope or delay.
+- **Interviewer:** "What is the primary deliverable of an engineering spike?"
+  **Answer:** "A throwaway proof-of-concept that answers specific architectural unknowns and allows accurate delivery estimation, not production code."
+
+- **Interviewer:** "Why should mobile estimates factor in device fragmentation buffers?"
+  **Answer:** "Because proprietary OEM battery optimizations, hardware differences, and OS versions introduce device-specific edge cases not visible on emulators."
 
 ## Self-check rubric
 
@@ -87,4 +147,4 @@ Break the unknown feature into discovery, dependencies and implementation slices
 - [Android architecture guide](https://developer.android.com/topic/architecture) — layer/task decomposition.
 - [Android testing overview](https://developer.android.com/training/testing) — verification scope.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -24,11 +24,42 @@ How do you investigate dependency version conflicts and build-speed regressions?
 
 ## Explanation in Arabic
 
-في version conflict، ابدأ بالـconfiguration والvariant المتأثرين؛ `dependencies` و`dependencyInsight --dependency ... --configuration ...` يبينان من طلب كل نسخة ولماذا اختار Gradle نسخة. راجع BOM/constraints وmetadata، وتحقق من runtime behavior لا compilation فقط. لبُطء build قارن baseline مع build scan/profile: configuration، dependency downloads، codegen، Kotlin compile، R8، tests. لا تفترض أن آخر library أضفتها هي السبب؛ جرّب تغييرًا مضبوطًا وحدد critical path/cache misses. تجنب `force` عشوائي يخفي binary incompatibility.
+كيف تحقق في تعارض إصدارات التبعيات (Dependency Version Conflicts) وانحدار سرعة البناء (Build-Speed Regressions)؟
+
+1. التحقيق في تعارض التبعيات (Dependency Conflicts):
+   - **كيف يحل Gradle التعارض افتراضياً؟**: إذا طلبت مكتبة A إصدار `okhttp:4.9.0` وطلبت مكتبة B إصدار `okhttp:4.12.0`، يقوم Gradle باختيار **أحدث إصدار تلقائياً (Latest Version Wins)**. هذا قد يسبب مشاكل توافق إذا كان الإصدار الأحدث يحتوي على Breaking Changes!
+   - **أدوات التشخيص الرسمية**:
+     * `./gradlew :app:dependencies`: يطبع شجرة التبعيات بالكامل مع توضيح الترقيات التلقائية (`-> 4.12.0`).
+     * `./gradlew :app:dependencyInsight --dependency okhttp --configuration releaseRuntimeClasspath`: يشرح بالضبط أي مكتبات طلبت OkHttp ولماذا اختار Gradle هذا الإصدار تحديداً.
+   - **الحل الهندسي**: تثبيت الإصدارات عبر **Gradle Version Catalogs (`libs.versions.toml`)** أو استخدام `strictly` / `force` في `resolutionStrategy`.
+
+2. التحقيق في انحدار سرعة البناء (Build-Speed Regressions):
+   - **Gradle Build Scan (`./gradlew assembleDebug --scan`)**: الأداة الأقوى عالمياً؛ تحلل زمن كل Task، والـ Cache Misses، وزمن الـ Annotation Processing، والـ Garbage Collection pauses.
+   - فحص الـ Non-Cacheable Tasks ومقارنة الـ Build Scans الحالية بسجلات سابقة لاكتشاف الـ Commit المتسبب في التراجع.
 
 ## Practical walkthrough
 
-Dependency conflict قد يظهر duplicate class أو runtime `NoSuchMethodError`؛ افحص dependency graph والconstraints، لا تضف force version قبل معرفة من يطلبها. Build slowdown قد يأتي من plugin upgrade أو task invalidation؛ قس before/after بـBuild Scan. قفل النسخ والتحقق من dependencies يقلل surprise. اختبر release/minified variant بعد align لأنه قد يكشف native/R8 differences.
+أوامر تشخيص التبعيات وفرض الإصدارات الصريحة في build.gradle.kts:
+```bash
+# 1. معرفة سبب اختيار إصدار معين والمسار الدقيق في شجرة التبعيات:
+./gradlew :app:dependencyInsight --dependency okhttp --configuration releaseRuntimeClasspath
+
+# 2. إنشاء تقرير Build Scan كامل لتحليل أسباب بطء البناء:
+./gradlew :app:assembleRelease --scan
+```
+
+```kotlin
+// 3. فرض إصدار معين وحظر الترقية التلقائية في build.gradle.kts:
+configurations.all {
+    resolutionStrategy {
+        // إجبار المشروع بالكامل ومكتباته على استخدام إصدار موحد ومفحوص:
+        force("com.squareup.okhttp3:okhttp:4.12.0")
+        
+        // أو إفشال الـ Build فوراً عند حدوث أي تعارض لإجبار المطورين على حله:
+        failOnVersionConflict()
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +83,30 @@ Pin and verify dependencies, record selected versions by release variant, review
 
 ## Interview answer — short
 
-“I inspect the affected variant's dependency graph and `dependencyInsight`, then profile the build's critical path and cache misses before changing versions or build settings.”
+Investigate dependency conflicts using Gradle's dependencyInsight task to trace conflict graphs, enforcing unified versions via Version Catalogs or resolutionStrategy.force(). Investigate build speed regressions using Gradle Build Scans (--scan) to identify slow tasks, cache misses, and annotation processing bottlenecks.
 
 ## Interview answer — structured
 
-“For a conflict I identify the exact configuration, selected version, request paths and selection reason with Gradle reports. I align compatible versions or add a justified constraint, then test the runtime path, especially minified release. For slow builds I compare controlled baseline runs and inspect configuration, downloads, codegen, compilation and R8 tasks. I fix the proven bottleneck rather than use a broad `force` or random JVM flags.”
+Diagnosing dependency friction and build performance regressions requires targeted Gradle diagnostic tooling:
+
+1. **Dependency Conflict Investigation**:
+   - By default, Gradle's conflict resolution selects the highest requested version (`latest version wins`). This can introduce silent binary incompatibilities if a transitive upgrade introduces breaking API changes.
+   - Run `./gradlew :app:dependencyInsight --dependency <name> --configuration <classpath>`. Gradle prints the exact dependency graph path and selection rationale explaining why a specific version was resolved.
+   - Enforce consistency across the codebase using Gradle Version Catalogs (`libs.versions.toml`) and `resolutionStrategy.force()`, or enable `failOnVersionConflict()` in CI to catch divergent transitive dependencies early.
+
+2. **Build-Speed Regression Profiling**:
+   - Generate a **Gradle Build Scan** using `./gradlew assembleDebug --scan`.
+   - Inspect the Timeline view to identify non-parallel task bottlenecks, measure KAPT/KSP annotation processing durations, identify tasks failing incremental execution, and pinpoint cache misses across remote and local build caches.
 
 ## Interview answer — deep senior
 
-“I separate correctness from speed but use the same evidence discipline. A dependency conflict is resolved per configuration, so I look at the failing release variant's compile or runtime classpath, run `dependencyInsight`, and trace every requester and the selected version. A forced version can make compilation green while an SDK later throws `NoSuchMethodError`, so I prefer compatible upgrades, a platform/BOM where applicable, or an explicit tested constraint. Then I exercise the affected runtime flow. For a build-speed regression I establish comparable warm and clean baselines with the same machine/toolchain and inspect a build scan or task profile. I locate configuration, dependency resolution, compiler/codegen, tests and R8 on the actual critical path. A new processor may invalidate many modules; a custom task with changing undeclared inputs may lose cache hits; neither is solved by blaming Gradle generally. I make one change, remeasure median/variance, and preserve a regression signal in CI. Dependency locks or verification can also prevent a later silent change.”
+From a staff platform architecture viewpoint, maintaining dependency and build velocity requires continuous guardrails:
+
+1. **Rich Version Constraints (Strict vs. Require)**: Modern Gradle supports rich versioning. Specifying `strictly("1.5.0")` prevents any transitive dependency from bumping the version, causing a build failure if incompatible constraints are encountered.
+
+2. **Task Cache Miss Forensics**: When a task fails to pull from the build cache, inspect Gradle's cache key inputs with `--info` or Build Scans. The most frequent culprit is non-hermetic tasks with volatile inputs, such as un-annotated directory inputs or hardcoded machine-specific absolute file paths in compiler arguments.
+
+3. **Dependency Analysis Plugins**: Integrate AutonomousApps' `dependency-analysis-android-plugin` in CI. It automatically identifies unused direct dependencies, transitively used dependencies that should be declared directly, and dependencies leaking across `api` rather than `implementation` boundaries.
 
 ## How to answer in the interview
 
@@ -76,9 +122,11 @@ Discuss per-variant resolution, dependencyInsight, BOM/constraints, runtime link
 
 ## Follow-up questions
 
-- Can a forced version create runtime failure? **Answer:** yes; binary/API compatibility is not guaranteed by resolution success.
-- Why inspect the release configuration? **Answer:** its graph may differ from debug and is the one shipped.
-- Which build time matters? **Answer:** the measured critical path under a representative clean or incremental scenario.
+- **Interviewer:** "What is the difference between implementation and api scope regarding dependency resolution?"
+  **Answer:** "implementation hides the dependency from downstream consumers, preventing compilation leakage and rebuild cascading; api exposes the dependency transitively to all consumers."
+
+- **Interviewer:** "What does failOnVersionConflict() do?"
+  **Answer:** "It instructs Gradle to abort the build immediately whenever two dependencies request different versions of the same library, requiring explicit resolution."
 
 ## Self-check rubric
 
@@ -89,4 +137,4 @@ Trace a selected version, justify a fix, and profile one build regression with c
 - [Gradle dependency reports](https://docs.gradle.org/current/userguide/viewing_debugging_dependencies.html) — selection reasons.
 - [Gradle build performance](https://docs.gradle.org/current/userguide/performance.html) — profiling and optimization.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Example conflict is illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

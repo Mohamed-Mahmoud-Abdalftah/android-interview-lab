@@ -22,11 +22,64 @@ Assign transport, persistence, domain and rendering models to boundaries and exp
 
 ## Explanation in Arabic
 
-DTO شكل network contract وبيعيش جنب Retrofit/service في data. Room entity شكل الجدول وعلاقاته وبيعيش في persistence/data. Domain model يمثّل business meaning من غير HTTP أو SQL annotations، وUI model يمثّل اللي الشاشة محتاجاه بالضبط، زي formatted amount وenabled button. ساعات model واحدة تكفي في app صغير، لكن ما تستخدمش DTO كـUI model لمجرد تقليل mapping؛ تغيّر اسم field في API ممكن يكسر Compose ويكشف nullable transport noise. Mapper يعمل validation ومعالجة version/schema بوضوح.
+أين تعيش كائنات DTOs و Room Entities و Domain Models و UI Models في المعمارية؟ وما دور كل منها؟
+
+1. كائنات الـ DTOs (Data Transfer Objects):
+   - **مكانها**: طبقة الـ Data (داخل مجلد `network` / `remote`).
+   - **مهمتها**: مطابقة الـ JSON Schema أو الـ Protobuf القادم من الـ Backend بدقة.
+   - **خصائصها**: تحوي وسوم Serialization مثل `@SerialName` أو `@SerializedName`، وغالباً ما تكون جميع حقولها قابلة للعدم (Nullable) لأن السيرفر قد يغير العقد في أي وقت.
+
+2. كائنات الـ Room Entities:
+   - **مكانها**: طبقة الـ Data (داخل مجلد `local` / `db`).
+   - **مهمتها**: تمثيل الجداول والصفوف داخل قاعدة بيانات SQLite المحلية.
+   - **خصائصها**: تحوي وسوم Room مثل `@Entity`, `@PrimaryKey`, `@ColumnInfo`.
+
+3. كائنات الـ Domain Models:
+   - **مكانها**: طبقة الـ Domain (داخل مجلد `model`).
+   - **مهمتها**: تمثيل المفاهيم الأساسية للأعمال في التطبيق كـ Pure Kotlin Data Classes.
+   - **خصائصها**: نظيفة تماماً من أي وسوم أو مكتبات خارجية، تضمن ثبات البيانات وسلامتها (Business Invariants).
+
+4. كائنات الـ UI Models:
+   - **مكانها**: طبقة الـ Presentation (داخل مجلد `ui` أو `feature`).
+   - **مهمتها**: مطابقة ما يعرضه الـ Composable أو الـ View على الشاشة مباشرة.
+   - **خصائصها**: نصوص منسقة جاهزة للعرض (Formatted strings)، ألوان، وأيقونات (`@StringRes`, `Color`).
 
 ## Practical walkthrough
 
-DTO تمثل wire schema وقد تحتوي fields nullable، Room entity تمثل storage schema، domain model يمثل invariant، وUiModel يمثل العرض. مثال price cents: لا تسمح DTO string غير صالحة تصبح domain amount بلا validation. تغيير API name أو DB column لا يجب أن يغير Compose screen. إذا موديل واحد يكفي لتطبيق صغير ومستقر، لا تنسخ classes بلا حاجة.
+تتبع نموذج منتج عبر الطبقات الأربع مع الـ Mappers:
+```kotlin
+// 1. DATA LAYER (Network DTO): يطابق JSON السيرفر بدقة:
+@Serializable
+data class ProductDto(
+    @SerialName("prod_id") val id: String,
+    @SerialName("cost_in_cents") val cost: Long,
+    @SerialName("is_active") val active: Boolean?
+)
+
+// 2. DATA LAYER (Local Database Entity): يطابق جدول SQLite:
+@Entity(tableName = "products")
+data class ProductEntity(
+    @PrimaryKey val id: String,
+    val costCents: Long,
+    val lastUpdatedTimestamp: Long
+)
+
+// 3. DOMAIN LAYER (Pure Domain Model): نموذج البيزنس النقي المستقر:
+data class Product(
+    val id: String,
+    val price: Long,
+    val isAvailable: Boolean
+)
+
+// 4. PRESENTATION LAYER (UI Model): نصوص منسقة جاهزة للرسم في Compose:
+@Immutable
+data class ProductUiModel(
+    val id: String,
+    val formattedPrice: String, // جاهز مثل "$19.99"
+    val statusColor: Color,
+    val isBuyButtonEnabled: Boolean
+)
+```
 
 ## Why it matters and how it works
 
@@ -50,15 +103,25 @@ An offline wallet maps validated response DTOs into domain Money values, persist
 
 ## Interview answer — short
 
-DTOs belong to transport, Room entities to persistence, domain models to business meaning, and UI models to rendering. I map at boundaries so schema changes do not ripple through the app, especially for units and nullability.
+DTOs live in Data/remote matching API schemas. Room entities live in Data/local matching SQLite tables. Domain models live in Domain representing pure business entities without framework annotations. UI models live in Presentation holding formatted, display-ready data.
 
 ## Interview answer — structured
 
-These models answer different questions. A DTO matches a server payload, an entity matches local storage, a domain model expresses product rules, and a UI model has exactly what a screen needs to display. In a small app some types may be shared intentionally, but sharing should be a choice, not an accident. I validate and map at boundaries, especially for money units, optional fields, and error values. This keeps Compose from depending on Retrofit or Room details. This becomes critical when external and internal units differ. I would reject an absent required currency or convert minor units explicitly, then format at the UI boundary. One model used everywhere can be acceptable for a tiny stable feature, but it should be an explicit decision with tests.
+Separating models across architectural layers guarantees isolation and prevents external schema changes from cascading across the application.
+
+1. **DTOs (Data Transfer Objects)**: Reside in the **Data Layer** (`remote/dto`). They represent network serialization schemas, annotated with `@Serializable` or `@SerializedName`. They are designed around API payloads and should never leak past the repository boundary.
+
+2. **Room Entities**: Reside in the **Data Layer** (`local/entity`). They represent SQLite table schemas, annotated with `@Entity`, `@PrimaryKey`, and foreign keys. They reflect persistence requirements (indexes, table relations), not UI or business needs.
+
+3. **Domain Models**: Reside in the **Domain Layer** (`domain/model`). Pure Kotlin data classes representing business truth. They contain zero serialization or database annotations, enforcing invariant validity across the app.
+
+4. **UI Models**: Reside in the **Presentation Layer** (`presentation/model`). They contain pre-formatted strings, localized labels, and visual state properties tailored for instant, allocation-free rendering in Compose.
 
 ## Interview answer — deep senior
 
-I evaluate model separation by volatility and correctness risk. Server payloads can change independently of database schema; domain invariants such as positive amount or currency units should not depend on JSON annotations; UI formatting depends on locale and design. Mapping provides a controlled place to reject malformed data, choose defaults only where valid, and track migration. Excessive one-to-one models with no distinct contract add boilerplate, so I consolidate where boundaries truly align. In an offline-first app, Room entity design also reflects query and migration needs, while repository emits domain data from the local source of truth. I never let a formatted UI string become the canonical money value or let transport nullability leak into every composable. The four-model picture is not a requirement to copy every field four times. I look for independent reasons to change: server version, database migration, business invariant, and locale/design. When those are real, mapping localizes them. A Room entity might include indexing and foreign keys that the domain should never see. A UI model might include formatted text and button enablement that should never be persisted. I validate at each ingress and keep authoritative numeric values separate from display strings.
+Why not use a single model class annotated with `@Serializable`, `@Entity`, and consumed directly in Compose? This shortcut—common in junior tutorials—creates catastrophic tight coupling: changing an API property name alters the local SQLite column, forces a Room database migration, and breaks the UI layout simultaneously!
+
+Furthermore, UI models optimize rendering performance in Jetpack Compose. Instead of letting a Composable format dates or currency on every recomposition pass (`format(product.priceCents)`), the ViewModel maps the domain model into a `ProductUiModel` where `formattedPrice = "$19.99"` is computed once. This keeps the Composable function pure, lightweight, and skippable.
 
 ## How to answer in the interview
 
@@ -74,8 +137,11 @@ Trace a balance through DTO, entity, domain Money, and localized UI text. Discus
 
 ## Follow-up questions
 
-- [ARC-07](../arc-07/): Why map models? **Answer:** to validate and isolate independent schema changes.
-- [ARC-22](../arc-22/): What if Compose gets a DTO? **Answer:** it couples rendering to server schema and transport nullability.
+- **Interviewer:** "What is the consequence of passing a Room Entity directly to a Composable?"
+  **Answer:** "It leaks SQLite schema details into the UI, forces Compose to re-render when non-visual database metadata updates, and prevents running pure JVM UI tests without Room dependencies."
+
+- **Interviewer:** "Can a Domain Model and a UI Model be identical in simple apps?"
+  **Answer:** "Yes, if the domain model has no formatting requirements and is already `@Immutable`, the ViewModel can expose it directly to the UI to avoid redundant mapping boilerplate."
 
 ## Self-check rubric
 
@@ -86,4 +152,4 @@ Name each model location, identify two schema-driven changes, and reject a UI-fo
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — data sources and repositories.
 - [Android UI state](https://developer.android.com/topic/architecture/ui-layer/stateholders) — screen UI state.
 
-Technically reviewed against the linked official Android architecture guidance on 2026-10-11. Conceptual flows and snippets are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

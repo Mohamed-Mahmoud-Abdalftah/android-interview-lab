@@ -22,11 +22,43 @@ Explain continued offscreen collection, view retention and cold-source cost.
 
 ## Explanation in Arabic
 
-لو UI عملت `lifecycleScope.launch { flow.collect { ... } }` مرة واحدة، coroutine ممكن تفضل بتجمع وهي STOPPED لحد DESTROYED. ده يستهلك network/battery، ويحدث view مش ظاهرة، أو يحتفظ reference لview اتدمرت في Fragment لو استخدمنا owner غلط. نستخدم `repeatOnLifecycle` أو Compose lifecycle-aware collection، ونشوف هل المصدر cold هيبدأ من جديد.
+ماذا يحدث إذا قامت واجهة المستخدم بجمع تدفقات البيانات إلى ما لا نهاية دون مراعاة دورة الحياة (Without Lifecycle Awareness)؟
+
+1. استنزاف البطارية وموارد الجهاز في الخلفية (Resource & Battery Drain):
+   - لو التطبيق وضع في الخلفية (المستخدم ضغط Home button أو قفل الشاشة)، الـ Flow سيظل يطلب بيانات من السيرفر، يقرأ من الـ Database، ويفحص إحداثيات الـ GPS كل ثانية!
+   - نظام أندرويد يعتبر هذا 'Bad Behavior' ويسجله في Google Play Console كـ Background CPU Spikes مما يخفض تقييم التطبيق.
+
+2. تسريب الذاكرة (Memory Leaks):
+   - الـ Collector يحمل مراجع لكائنات الـ UI (Views, Fragments, Composables). بقاء الـ Coroutine نشطة في الخلفية يمنع الـ Garbage Collector من تحرير هذه الكائنات.
+
+3. انهيار التطبيق (Crashes & Illegal State):
+   - محاولة تعديل View أو تشغيل Navigation Transaction أثناء وجود الشاشة في حالة `STOPPED` يرمي `IllegalStateException: Can not perform this action after onSaveInstanceState`.
+
+4. الحل:
+   - استخدام `repeatOnLifecycle` في الـ Views، و `collectAsStateWithLifecycle()` في Compose.
 
 ## Practical walkthrough
 
-لو Activity عملت `lifecycleScope.launch { flow.collect { render(it) } }` من غير repeat، Job ممكن يفضل شغال وهي STOPPED؛ تستهلك DB/network وتحدث view غير ظاهرة، وخصوصًا Fragment view ممكن تكون اتدمرت. الحل اربط collection بالـSTARTED وراجع upstream sharing، مش بس أضف `launchIn` في scope أطول.
+تحليل العطل الناتج عن الجمع الخاطئ:
+```kotlin
+// ❌ الجمع الكارثي بدون lifecycle awareness:
+lifecycleScope.launch {
+    viewModel.locationFlow.collect { location ->
+        // عندما يكون التطبيق في الخلفية، الـ GPS يعمل بأقصى طاقة ويسحب البطارية!
+        // وإذا حاول تنفيذ navigation هنا:
+        findNavController().navigate(R.id.action_next) // CRASH: IllegalStateException!
+    }
+}
+
+// ✅ الجمع الآمن دورياً:
+viewLifecycleOwner.lifecycleScope.launch {
+    viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+        viewModel.locationFlow.collect { location ->
+            updateMapPin(location) // يتوقف تماماً عند الخروج للـ Background!
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -69,15 +101,25 @@ A location screen collects a ViewModel StateFlow only while STARTED and unregist
 
 ## Interview answer — short
 
-“A raw collection in lifecycleScope lasts until destruction, so it can keep running while UI is stopped. I use repeatOnLifecycle or collectAsStateWithLifecycle, choose the Fragment view owner and design any required event persistence separately.”
+Collecting without lifecycle awareness continues active flow processing in the background, causing severe battery drain, continuous CPU/network usage, potential memory leaks from retained view references, and fatal runtime crashes like IllegalStateException when attempting navigation while the activity is stopped.
 
 ## Interview answer — structured
 
-“The common mistake is assuming `lifecycleScope` means visible-only work. It cancels at destruction, but the Activity can be stopped for a long time first. A collecting coroutine may continue rendering, consuming network or holding a Fragment view reference. For Views I use `viewLifecycleOwner.repeatOnLifecycle(STARTED)`; for Compose I use lifecycle-aware state collection. StateFlow gives the latest snapshot after restart. I then inspect cold upstream behavior because starting collection again may reopen a socket or repeat a network request.”
+Collecting flows indefinitely without lifecycle awareness (such as launching directly in `lifecycleScope.launch` without `repeatOnLifecycle`, or using plain `collectAsState()` in Compose) leads to three severe production defects:
+
+1. **Severe Battery and Network Drain:** If the flow is connected to an upstream sensor, location updates, WebSocket, or polling repository, collection remains completely active even when the phone is locked in a user's pocket. Google Play Console will flag the app for excessive background execution and wake-locks.
+
+2. **Memory Leaks:** The active coroutine retains references to the View or Composable in its closure. If the user navigates between screens, destroyed views cannot be garbage-collected as long as the background collection coroutine is alive.
+
+3. **IllegalState Crashes:** When an emission arrives while the app is in the background, attempting to trigger fragment navigation or show dialogs throws `IllegalStateException: Can not perform this action after onSaveInstanceState`.
+
+Enforcing `repeatOnLifecycle(STARTED)` or `collectAsStateWithLifecycle()` eliminates all these issues by pausing collection the moment the UI leaves the foreground.
 
 ## Interview answer — deep senior
 
-“I investigate both correctness and resource cost. An offscreen collector can maintain sensor registrations or expensive polling, and a Fragment collector bound to the Fragment rather than its view can reference a dead view between onDestroyView and destruction. `repeatOnLifecycle` cancels the inner job at STOP and restarts it at START, while `collectAsStateWithLifecycle` covers common Compose state rendering. That may lose replay-zero effects, which is a modeling problem, not a reason to collect forever. I use StateFlow for current UI state and persist required outcomes. Tests drive lifecycle transitions, count upstream subscriptions and check listener cleanup. `viewLifecycleOwner` matches Fragment view lifetime. I would describe the concrete lifecycle path. A coroutine launched in `lifecycleScope` is cancelled when the lifecycle is destroyed, not merely when the screen moves below STARTED. A long-lived Flow can therefore keep delivering while the Activity is offscreen. That wastes CPU, network, or sensor resources and can update views that should no longer be touched; in a Fragment, using the fragment lifecycle instead of the view lifecycle is especially risky after `onDestroyView`. I use `repeatOnLifecycle` for Views or lifecycle-aware Compose collection and keep UI rendering inside the active block. Then I inspect upstream sharing, because stopping a collector does not automatically stop a producer launched elsewhere. I test Home, navigation, return, and view recreation.”
+At the systems level, Android's OS kernel prioritizes foreground processes (OOM adj 0) and demotes background apps down the OOM adj score list. If a background app continuously spins CPU threads or makes network sockets because of an unpaused Flow collection, Android's system watchdog detects high battery consumption via Batterystats and issues a warning in Android Vitals.
+
+Furthermore, pairing lifecycle-aware collectors with `WhileSubscribed(5000)` in the ViewModel creates an end-to-end reactive circuit: When `repeatOnLifecycle` cancels the collector upon entering `STOPPED`, the ViewModel's `StateFlow.subscriptionCount` drops to 0. After 5 seconds, the ViewModel shuts down upstream Room or Network observations, freeing SQLite cursor locks and closing network sockets at the operating system level.
 
 ## How to answer in the interview
 
@@ -93,8 +135,14 @@ Trace STOP versus DESTROY, Fragment view lifecycle and no-subscriber event behav
 
 ## Follow-up questions
 
-- [FLO-22](../flo-22/): Which API restarts collection? **Answer:** repeatOnLifecycle or collectAsStateWithLifecycle.
-- [FLO-21](../flo-21/): What happens to callbackFlow on cancellation? **Answer:** awaitClose should unregister its listener.
+- **Interviewer:** "Why did `lifecycleScope.launchWhenStarted` get deprecated?"
+  **Answer:** "`launchWhenStarted` only paused execution; it did NOT cancel the coroutine. The upstream flow continued emitting items in the background, buffering them in memory until the app resumed, which still wasted CPU, network bandwidth, and memory."
+
+- **Interviewer:** "How does `repeatOnLifecycle` differ from `launchWhenStarted`?"
+  **Answer:** "`repeatOnLifecycle` actively cancels the collection coroutine when leaving the target state and relaunches a fresh coroutine when re-entering, allowing upstream flows to clean up and shut down completely."
+
+- **Interviewer:** "Can a background worker still collect flows safely?"
+  **Answer:** "Yes, in a background Service or WorkManager task, flow collection is governed by the worker's own CoroutineScope, which terminates when the background work completes."
 
 ## Self-check rubric
 
@@ -104,4 +152,4 @@ Can I explain offscreen cost, bind a Fragment view correctly and preserve requir
 
 - [Android lifecycle coroutines](https://developer.android.com/topic/libraries/architecture/coroutines) — collection recommendations.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

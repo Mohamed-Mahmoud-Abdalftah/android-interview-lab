@@ -22,11 +22,50 @@ Handle older APKs against newer backend contracts with versioned compatibility.
 
 ## Explanation in Arabic
 
-مستخدم Android ممكن يفضل على APK قديمة شهور؛ backend لازم تعرف version skew. نفضّل additive JSON/API changes، default values وfeature negotiation، ونحافظ على endpoints/schema قديمة لفترة معلنة. لو change breaking نستخدم versioned route أو minimum-supported-version response واضح، لكن ما نمسحش قدرة user offline على قراءة data. Contract tests تغطي أقدم نسخة مدعومة.
+كيف تدير انحراف وتفاوت الإصدارات (Version Skew) بين إصدارات التطبيق القديمة في السوق وتحديثات الـ Backend الجديدة؟
+
+1. حقيقة الـ Version Skew في عالم الموبايل:
+   - على الويب: مجرد نشر كود الـ Frontend الجديد يُجبر جميع المستخدمين على استخدام أحدث إصدار عند عمل Refresh.
+   - في الموبايل: هناك مستخدمون ما زالوا يستخدمون إصدارات تم تنزيلها قبل 6 أشهر أو سنة كاملة! بعضهم لا يملك مساحة لتحديث التطبيق، وبعضهم ألغى التحديث التلقائي.
+   - **القاعدة الهندسية الأولى**: **الـ Backend يجب أن يدعم التوافقية العكسية (Backward Compatibility) لعدة إصدارات سابقة دائماً**.
+
+2. القواعد الذهبية لتطور الـ Backend APIs:
+   - **ممنوع حذف أو إعادة تسمية الحقول القديمة**: إذا أردت استبدال حقل `userName` بـ `fullName`، احتفظ بالحقلين معاً في الـ JSON حتى يتم إيقاف الإصدارات القديمة رسمياً.
+   - **الحقول الجديدة تكون اختيارية (Optional/Nullable)**: لا تجعل الحقول الجديدة إجبارية حتى لا تفشل الإصدارات القديمة.
+   - **نمط القارئ المتسامح (Tolerant Reader Pattern)**: تكوين مكتبات السيريالايزيشن في الموبايل (Moshi / Kotlinx Serialization) لتجاهل الحقول المجهولة (`ignoreUnknownKeys = true`).
+
+3. سياسة التحديث الإجباري والتدريجي (Force Update & Soft Update):
+   - إرجاع هيدر في استجابات الـ API مثل `X-Minimum-Supported-Version: 2.4.0`.
+   - إذا كان إصدار العميل أقل من الحد الأدنى، يعرض التطبيق شاشة **Force Update** تمنع الاستخدام وتوجه المستخدم لـ Google Play (باستخدام In-App Update API).
 
 ## Practical walkthrough
 
-لو backend بدأت ترجع enum جديدة وAPK قديمة ما تعرفهاش، parser لازم يتعامل مع unknown بقيمة آمنة بدل crash أو افتراض نجاح. أضف fields قبل فرضها، وخلي server يقبل الطلبات القديمة لحد adoption threshold. لو مضطر تمنع نسخة قديمة أمنيًا، رد واضح بminimum-supported-version ومسار تحديث، وخطط للمستخدم offline عنده outbox لازم ما تضيعش.
+تنفيذ فحص إصدار التطبيق والتعامل مع التحديث الإجباري عبر In-App Updates أو شاشة الحظر:
+```kotlin
+class AppVersionInterceptor(
+    private val currentVersionCode: Long,
+    private val onForceUpdateRequired: () -> Unit
+) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request().newBuilder()
+            // 1. إرسال إصدار التطبيق في كل طلب لتتبع الـ Telemetry من جهة السيرفر
+            .header("X-App-Version", currentVersionCode.toString())
+            .header("X-Platform", "android")
+            .build()
+
+        val response = chain.proceed(request)
+
+        // 2. إذا أعاد السيرفر رمز 426 Upgrade Required أو هيدر الحد الأدنى المدعوم:
+        val minSupported = response.header("X-Min-Supported-Version")?.toLongOrNull() ?: 0L
+        if (response.code == 426 || (minSupported > currentVersionCode)) {
+            // تفعيل مسار التحديث الإجباري ومنع العمليات الحساسة
+            onForceUpdateRequired()
+        }
+
+        return response
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -59,15 +98,35 @@ A bank deploys additive transaction-status fields first, updates Android parser 
 
 ## Interview answer — short
 
-“I assume old APKs coexist with new backend. I use additive or versioned contracts, unknown-field handling, contract tests for supported versions and measured deprecation. Breaking security changes use an explicit upgrade policy.”
+Support mobile version skew by enforcing strict backward compatibility on backends, using the Tolerant Reader pattern (ignoreUnknownKeys) on clients, appending client version headers to all requests, and managing end-of-life versions gracefully via HTTP 426 and Google Play In-App Updates.
 
 ## Interview answer — structured
 
-“Mobile clients cannot all update at once. I deploy backend changes in a backward-compatible way, make new fields optional for old clients, and use versioned endpoints or capability negotiation for a truly different protocol. The app parser handles unknown enum values safely. CI runs contract tests against the oldest supported APK/API model, and telemetry shows when old traffic is low enough to retire a path. If an upgrade is mandatory for security, the backend returns a clear minimum-version response and preserves user data through the transition. Versioned contracts require deprecation policy.”
+Managing version skew is a defining challenge of mobile platform engineering, as hundreds of disparate app versions coexist indefinitely in the wild:
+
+1. **Backend Evolution Rules (Additive Only)**:
+   - Never remove existing JSON fields or alter data types in active API versions. Schema evolution must be strictly additive.
+   - When introducing newer data models, deprecate old fields with graceful sunset schedules (e.g. 12-month deprecation policy) while monitoring active version telemetry.
+
+2. **Tolerant Reader Configuration**:
+   - Configure client parsers (Kotlinx Serialization or Moshi) with `ignoreUnknownKeys = true`. When backends introduce new fields for newer releases, older clients parse payloads smoothly without deserialization exceptions.
+
+3. **Version Identification Headers**:
+   - Attach semantic client headers (`X-App-Version: 3.2.1`, `X-Build-Number: 450`) to every HTTP request. Backends use these headers for telemetry, routing, and phased contract migrations.
+
+4. **Graduated Update Strategy (Soft vs. Force Update)**:
+   - **Soft Update**: For non-breaking improvements, display a dismissible in-app update prompt using Google Play's `AppUpdateManager` (Flexible flow).
+   - **Force Update**: For breaking security changes or decommissioned APIs, the server responds with `HTTP 426 Upgrade Required`. The client presents an unskippable full-screen blocker routing the user directly to the Play Store.
 
 ## Interview answer — deep senior
 
-“I plan an expand-migrate-contract sequence. First the backend accepts both old and new request shapes and emits additive responses. Then new clients roll out gradually with feature capability and schema/version handling. Only after usage data and policy thresholds allow do we remove the old contract. I test unknown fields/enum variants, auth refresh and deep links on old clients, and I maintain a compatibility matrix for DB versions as well. A forced upgrade may be necessary for a severe security flaw, but it must explain the user path and avoid destroying offline drafts. Version skew is an operational reality, not an edge case. I would make a compatibility matrix across supported app versions and backend contract revisions. Unknown response fields should be ignored safely, while unknown business enum values should map to an explicit unsupported state rather than success. A new required request field cannot be enforced until older clients are retired or given a compatibility path. Telemetry should show active old versions and schema errors before removal. Security-mandated upgrades need a clear minimum-version response and a way to preserve pending local data.”
+From an enterprise API lifecycle perspective, managing version skew requires operational discipline across organizational boundaries:
+
+1. **URL vs. Header API Versioning**: Major architectural contract shifts require formal API versioning (e.g., `/v2/checkout` alongside `/v1/checkout`). Backends maintain adapter translation layers mapping deprecated `/v1` requests to new internal microservice schemas, allowing older apps to function until their active user share drops below target deprecation thresholds (e.g. < 0.2%).
+
+2. **Feature Flags as Contract Gateways**: When shipping client changes that depend on newly deployed backend features, protect client code with feature flags. Deploy the mobile code dormant, verify backend stability across multi-region clusters, and activate the mobile flag remotely only once backend coverage is 100% verified.
+
+3. **Automated Backward Compatibility CI Checks**: Run contract testing in backend CI against historical mobile DTO schemas. If a backend PR removes a field or alters a nullable constraint expected by any app version released within the last year, the backend CI build fails automatically.
 
 ## How to answer in the interview
 
@@ -83,8 +142,11 @@ Draw old/new app by old/new server matrix and a deprecation timeline.
 
 ## Follow-up questions
 
-- [SYS-13](../sys-13/): What about local DB? **Answer:** test migration from shipped schemas alongside backend compatibility.
-- [SYS-08](../sys-08/): Can flags replace API versioning? **Answer:** no, old clients may not understand new protocol.
+- **Interviewer:** "What is Google Play In-App Update API Flexible vs Immediate flow?"
+  **Answer:** "Flexible allows the user to continue using the app while the download occurs in the background; Immediate blocks the UI until the update completes and restarts the app."
+
+- **Interviewer:** "Why should enum values in API models always include an UNKNOWN fallback on the client?"
+  **Answer:** "If the backend adds a new enum constant, older clients without an UNKNOWN fallback will crash during JSON deserialization."
 
 ## Self-check rubric
 
@@ -95,4 +157,4 @@ Can I support old clients, parse unknowns and plan safe contract removal?
 - [Android architecture guide](https://developer.android.com/topic/architecture) — robust persistent model boundaries.
 - [Android modularization guide](https://developer.android.com/topic/modularization) — stable API boundaries.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

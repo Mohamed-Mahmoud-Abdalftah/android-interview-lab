@@ -22,11 +22,47 @@ Explain lazy transformations and the terminal nature of launchIn.
 
 ## Explanation in Arabic
 
-`map` يحوّل كل value، و`filter` يعدّي اللي يحقق شرط، و`transform` ممكن يطلع صفر أو أكثر لكل input، و`onEach` side effect زي logging من غير تغيير القيمة. كل دول intermediate وlazy في cold Flow. `launchIn(scope)` terminal: يبدأ collection في scope ويرجع Job لازم owner يتحكم فيه.
+الـ Intermediate Operators في Kotlin Flow بتحدد كيفية تحويل ومراقبة تدفق البيانات بدون استهلاكها حتى يأتي Terminal Operator:
+
+1. `map`:
+   - يحول كل عنصر قادم من النوع `A` إلى النوع `B` (1:1 transformation).
+   - مثال: تحويل `UserDto` القادم من الشبكة إلى `UserUiModel`.
+
+2. `filter`:
+   - يمرر فقط العناصر التي تحقق شرطاً معيناً (Predicate) ويتجاهل الباقي.
+   - مثال: تصفية المنتجات المتاحة فقط في المخزن `filter { it.inStock }`.
+
+3. `transform`:
+   - الأب الروحي الأكثر مرونة لـ `map` و `filter`.
+   - يسمح لك بإصدار 0 أو 1 أو أكثر من عنصر لكل عنصر وارد عبر استدعاء `emit()` اليدوي داخل البلوك.
+
+4. `onEach`:
+   - لتنفيذ أثر جانبي (Side Effect) على كل عنصر دون تعديل قيمته.
+   - مثال: تسجيل السجلات `onEach { Log.d("Tag", it.toString()) }` أو حفظه في Cache.
+
+5. `launchIn(scope)`:
+   - دالة مساعدة لجمع الـ Flow داخل `CoroutineScope` محدد بدون الحاجة لكتابة `scope.launch { flow.collect() }`.
+   - بترجع كائن `Job` يمكن استخدامه لإلغاء المراقبة.
 
 ## Practical walkthrough
 
-في pipeline منتجات، `map` تحول DTO لـUI model، `filter` تشيل غير المتاح، `transform` ممكن تطلع صفر أو أكتر لكل input، و`onEach` للمراقبة أو side effect صغيرة، لكن لا تبدأ collection. `launchIn(viewModelScope)` terminal operator يبدأ جمع في Job؛ لو كررتها في init مرتين يبقى عندك collectors اتنين. راقب exception والـscope.
+سلسلة عمليات متكاملة توضح استخدام الـ Operators معاً:
+```kotlin
+repository.observeTransactions()
+    .filter { it.amount > 0 } // 1. استبعاد المعاملات الصفرية
+    .map { it.toUiDisplay() } // 2. تحويل لنموذج العرض في الواجهة
+    .onEach { uiModel ->
+        analytics.trackTransactionRendered(uiModel.id) // 3. أثر جانبي للتتبع
+    }
+    .transform { uiModel ->
+        emit(uiModel) // 4. إصدار العنصر الأصلي
+        if (uiModel.isHighValue) {
+            emit(uiModel.createFraudWarning()) // إصدار عنصر إضافي اختياري!
+        }
+    }
+    .onEach { _uiState.value = it }
+    .launchIn(viewModelScope) // 5. إطلاق الجمع داخل viewModelScope
+```
 
 ## Why it matters and how it works
 
@@ -62,15 +98,35 @@ A ViewModel derives unread counts from Room rows and launches one collection in 
 
 ## Interview answer — short
 
-“map transforms, filter selects, transform can emit multiple outputs, and onEach performs a side effect. They are lazy intermediate operators. launchIn starts collection in a scope and returns a Job that needs ownership.”
+map transforms elements 1-to-1; filter conditionally allows elements; transform provides arbitrary emissions (0, 1, or many per element) via emit(); onEach performs non-mutating side effects like logging; and launchIn(scope) launches a coroutine to collect the flow, returning a cancellable Job.
 
 ## Interview answer — structured
 
-“I treat a Flow chain as a declarative pipeline until a terminal operator runs. `map` maps one input to one output; `filter` drops values; `transform` can emit zero or several; `onEach` observes values for effects such as metrics. `launchIn(scope)` is terminal and starts collection in that scope. In Android I use a ViewModel scope for producer work and lifecycle-aware collection in the UI. I keep side effects lightweight and do not discard the Job when cancellation or errors matter.”
+These intermediate operators form the core transformation pipeline of Kotlin Flow, executing lazily as upstream emissions arrive:
+
+**`map`** performs a 1-to-1 transformation, converting an upstream element `T` into `R` (e.g., mapping database entities to domain models).
+
+**`filter`** evaluates a boolean predicate, allowing only matching elements to proceed downstream.
+
+**`transform`** is the most versatile foundational operator. It exposes a `FlowCollector`, allowing you to emit zero, one, or multiple transformed elements for each incoming item, or perform complex asynchronous transformations with `emit()`.
+
+**`onEach`** attaches a side-effect without modifying the stream. It is ideal for logging, telemetry, or updating intermediate in-memory caches.
+
+**`launchIn(scope)`** is a concise terminal shorthand: instead of writing `scope.launch { flow.collect() }`, calling `.launchIn(scope)` launches collection in the given scope and returns the resulting `Job` for lifecycle management.
 
 ## Interview answer — deep senior
 
-“Operator choice affects both semantics and lifetime. Intermediate operators on a cold Flow do not execute at construction; each collection traverses them. `transform` is more general than `map`, but that flexibility can obscure one-to-many behavior, so I use the narrowest operator that matches the contract. `onEach` preserves values but its block can suspend or throw, affecting the whole stream. `launchIn` starts the pipeline in an explicit scope and returns a Job; it is not fire-and-forget. I choose a scope whose cancellation matches the data need, avoid blocking telemetry in the chain, and test repeated subscriptions for duplicate side effects. If a collector must return a result, a terminal suspend operator may be clearer. I would write the order of operators left to right and say what each does to cardinality. `map` makes one output from each input; `filter` can discard; `transform` can emit zero, one, or many. `onEach` observes each upstream value and is useful for a small side effect, but it does not start a cold flow. `launchIn(scope)` is equivalent to launching a coroutine that collects and is a terminal operation; its Job is tied to that scope. This means placement and ownership matter. A network call in `onEach` can slow the pipeline or repeat for each collector, so business effects need deliberate boundaries. I would test one collector, cancellation, and error propagation, and avoid launching the same pipeline twice in ViewModel initialization.”
+Under the hood, intermediate operators like `map`, `filter`, and `transform` do not launch coroutines. They simply return a new `Flow` instance that wraps the upstream flow's collector with custom logic. For instance, `map` compiles down to:
+
+```kotlin
+inline fun <T, R> Flow<T>.map(crossinline transform: suspend (T) -> R): Flow<R> = transform { value ->
+    return@transform emit(transform(value))
+}
+```
+
+Because `transform` is inlined, chaining multiple operators like `filter { ... }.map { ... }` generates virtually zero intermediate object allocations in hot paths, executing within the collector's original coroutine frame.
+
+Contrast this with `launchIn(scope)`: `launchIn` is a terminal operator that invokes `scope.launch { collect() }`. In clean architecture, we prefer `launchIn` or `repeatOnLifecycle` at the UI layer, but avoid launching unconfined streams inside pure repository layers.
 
 ## How to answer in the interview
 
@@ -86,8 +142,14 @@ Trace laziness, operator cardinality, failure from onEach and Job lifetime from 
 
 ## Follow-up questions
 
-- [FLO-12](../flo-12/): Which terminal operator gets one value? **Answer:** `first` suspends until the first matching value then cancels collection.
-- [FLO-17](../flo-17/): Which operators move with flowOn? **Answer:** those upstream of the flowOn boundary.
+- **Interviewer:** "Can you call suspending functions inside `map` and `filter`?"
+  **Answer:** "Yes! All transformation lambdas in Flow operators (`map`, `filter`, `transform`, `onEach`) are suspending lambdas (`suspend (T) -> R`), allowing you to call suspending repository functions or database queries directly inside the stream."
+
+- **Interviewer:** "Does `launchIn` catch exceptions thrown upstream?"
+  **Answer:** "No. `launchIn` merely launches a coroutine to call `collect()`. Any unhandled upstream exception will propagate to the parent scope unless guarded with the `.catch { }` operator prior to `launchIn`."
+
+- **Interviewer:** "What is the difference between `onEach` and `map`?"
+  **Answer:** "`map` alters the downstream value by returning a new item. `onEach` performs a side-effect and forwards the original upstream value unchanged."
 
 ## Self-check rubric
 
@@ -97,4 +159,4 @@ Can I classify each operator, predict output count and own the returned collecti
 
 - [Kotlin Flow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-flow/) — intermediate and terminal operators.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

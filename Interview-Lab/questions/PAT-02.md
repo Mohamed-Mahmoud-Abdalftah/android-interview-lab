@@ -22,7 +22,52 @@ Classify patterns by intent and give discriminating examples, not just memorized
 
 ## Explanation in Arabic
 
-GoF بتقسم patterns: Creational تعالج إنشاء objects (`Factory Method`, `Abstract Factory`, `Builder`, `Singleton`)، Structural تعالج تركيب أو تغليف objects (`Adapter`, `Facade`, `Decorator`, `Proxy`)، Behavioral تعالج تفاعل ومسؤوليات (`Observer`, `Strategy`, `State`, `Command`). التقسيم حسب المشكلة الأساسية، مش implementation syntax؛ `object` في Kotlin ممكن ينفّذ Singleton لكن وجود object وحده مش مبرر global state. وفي Android شوف SDK adapter، Flow observer، payment strategy. بعض الأنماط تتداخل في تطبيق واقعي، وممكن class واحدة تلعب أكثر من دور.
+المقارنة بين فئات أنماط التصميم الثلاث (Gang of Four): الإنشائية (Creational)، الهيكلية (Structural)، والسلوكية (Behavioral):
+
+1. الأنماط الإنشائية (Creational Patterns):
+   - **الهدف**: التحكم في **كيفية إنشاء الكائنات وإدارتها** دون ربط الكود بتفاصيل الـ new المباشرة.
+   - **أمثلة شهيرة في أندرويد**:
+     * **Singleton**: نسخة واحدة فقط في الذاكرة (`object` في كوتلن، Room Database).
+     * **Factory / Abstract Factory**: إنشاء كائنات من عائلة معينة دون تحديد كلاساتها الملموسة (`ViewModelProvider.Factory`).
+     * **Builder**: بناء كائنات معقدة خطوة بخطوة (`NotificationCompat.Builder`, `AlertDialog.Builder`).
+
+2. الأنماط الهيكلية (Structural Patterns):
+   - **الهدف**: تنظيم **العلاقات والتركيب بين الكلاسات والكائنات** لتكوين هياكل أكبر وأكثر مرونة.
+   - **أمثلة شهيرة في أندرويد**:
+     * **Adapter**: التوفيق بين واجهتين غير متوافقتين (`RecyclerView.Adapter`).
+     * **Facade**: توفير واجهة بسيطة وموحدة لنظام معقد أو SDK خارجي.
+     * **Decorator**: إضافة سلوك لكائن ديناميكياً دون وراثة (`OkHttp Interceptor`).
+     * **Proxy**: التحكم في الوصول لكائن آخر (مثل Binder IPC في نظام أندرويد).
+
+3. الأنماط السلوكية (Behavioral Patterns):
+   - **الهدف**: تنظيم **طرق التواصل وتوزيع المسؤوليات وتدفق البيانات** بين الكائنات.
+   - **أمثلة شهيرة في أندرويد**:
+     * **Observer**: مراقبة تغيرات البيانات والتفاعل معها (`Flow`, `LiveData`, `StateFlow`).
+     * **Strategy**: تبديل الخوارزميات وطرق المعالجة في وقت التشغيل (طرق الدفع).
+     * **State**: تغيير سلوك الكائن عند تغير حالته الداخلية (آلة حالات المشغل).
+     * **Chain of Responsibility**: تمرير الطلب عبر سلسلة معالجات (`OkHttp Interceptor Chain`).
+
+## Practical walkthrough
+
+أمثلة تمثل الفئات الثلاث في كود Android:
+```kotlin
+// 1. CREATIONAL: Builder Pattern لبناء إشعار معقد بأمان:
+val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+    .setContentTitle("Order Shipped")
+    .setSmallIcon(R.drawable.ic_truck)
+    .setAutoCancel(true)
+    .build()
+
+// 2. STRUCTURAL: Facade Pattern لتبسيط SDK خرائط معقد خلف واجهة بسيطة:
+class LocationTrackerFacade(private val fusedClient: FusedLocationProviderClient) {
+    suspend fun getFreshCoordinates(): Coordinates = ...
+}
+
+// 3. BEHAVIORAL: Observer Pattern لمراقبة تغيرات تدفق البيانات:
+viewModel.userFlow
+    .onEach { user -> renderProfile(user) }
+    .launchIn(lifecycleScope)
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +76,6 @@ The taxonomy helps choose a starting family: construction, composition/interface
 ## Worked example
 
 Scenario: SDK needs complex configuration, so Builder creates a client (creational). A wrapper converts its callback to a domain result (Adapter, structural). Checkout chooses card or wallet route (Strategy, behavioral). UI observes repository state (Observer-like behavior).
-
-## Practical walkthrough
-
-فكر في سؤال كل category بتحله بدل حفظ قائمة أسماء. Creational: إزاي تنشئ object مع config valid؟ `Builder` لـclient مع timeout/endpoint check. Structural: إزاي تركّب APIs مختلفة؟ Adapter يحوّل SDK callback لـdomain result. Behavioral: إزاي يتغير سلوك في runtime؟ Strategy تختار provider أو State تحدد انتقال checkout. نفس feature ممكن تحتاج واحدة من كل مجموعة، لكن ما فيش سبب تختار “واحد من كل نوع” كهدف. لو config بسيطة constructor كفاية، ولو callback مطابق للدومين adapter غير ضروري. اختبر invariant اللي pattern بتمثله، مش عدد classes.
 
 ## Trade-offs and decision criteria
 
@@ -50,17 +91,42 @@ A multi-provider app uses Hilt for construction, adapters for vendor APIs, strat
 
 ## Interview answer — short
 
-Creational patterns organize object creation, structural patterns organize composition or interface adaptation, and behavioral patterns organize algorithms and communication. I classify by intent, then choose the smallest useful implementation.
+Creational patterns govern object instantiation (Singleton, Factory, Builder). Structural patterns govern class and object composition to form larger systems (Adapter, Facade, Decorator). Behavioral patterns govern communication algorithms and responsibility distribution between collaborating objects (Observer, Strategy, State).
 
 ## Interview answer — structured
 
-For a concrete Android feature, I might use Builder to configure a client, Adapter to translate a vendor callback, and Strategy to choose payment handling. Those are creational, structural and behavioral concerns respectively. The categories help me identify which problem I am solving, but the same app can combine them. I would not add a Factory just because construction occurs; ordinary constructors or DI may already be clear. The pattern must make change and testing easier.
+The Gang of Four (GoF) classifies design patterns into three distinct categories based on their intent:
+
+1. **Creational Patterns (Object Instantiation Mechanisms)**:
+   - Abstract the instantiation process, making systems independent of how objects are created, composed, and represented.
+   - *Android Examples*:
+     * **Singleton**: Single shared instance (`object`, Room database instance).
+     * **Builder**: Multi-step configuration of immutable objects (`NotificationCompat.Builder`, `AlertDialog.Builder`).
+     * **Factory Method**: Delegating instantiation to subclasses or providers (`ViewModelProvider.Factory`).
+
+2. **Structural Patterns (Composition & Relationships)**:
+   - Deal with how classes and objects are assembled into larger, decoupled structures.
+   - *Android Examples*:
+     * **Adapter**: Converts one interface into another that clients expect (`RecyclerView.Adapter`).
+     * **Facade**: Exposes a simplified, cohesive API over a complex underlying subsystem (wrapping multi-step third-party SDKs).
+     * **Decorator**: Dynamically augments behavior without subclassing (`OkHttp Interceptors`).
+
+3. **Behavioral Patterns (Communication & Algorithms)**:
+   - Deal with algorithms, assignments of responsibility, and communication protocols between objects.
+   - *Android Examples*:
+     * **Observer**: Publish-subscribe reactive notifications (`StateFlow`, `SharedFlow`, `LiveData`).
+     * **Strategy**: Encapsulating interchangeable algorithms selected at runtime (Payment providers, sorting algorithms).
+     * **Chain of Responsibility**: Passing a request along a chain of handlers (`OkHttp Interceptor Chain`).
 
 ## Interview answer — deep senior
 
-The GoF categories are a map of design forces. Creational patterns hide or coordinate construction; structural patterns compose objects and reconcile interfaces; behavioral patterns describe how responsibilities and state-driven actions collaborate. I ask what is varying: object family, vendor API surface, or runtime algorithm. Confusing these leads to god-objects that both construct and execute providers while also controlling UI. Kotlin syntax can implement the intent compactly, and Android lifecycle may add constraints the original pattern catalog does not address. In production I define the contract, error semantics, ownership and tests. A category is useful for explanation, but it does not prove performance, substitutability or process-death correctness.
+Modern Kotlin has absorbed several GoF patterns directly into language syntax:
+- **Singleton**: Native `object` keyword.
+- **Decorator / Adapter**: First-class **Class Delegation** (`class Foo(bar: Bar) : Bar by bar`) and **Extension Functions**.
+- **Strategy**: Passing higher-order functions or lambdas (`(T) -> Boolean`) directly instead of creating single-method interface hierarchies.
+- **Builder**: Named parameters and default arguments (`data class Config(val timeout: Long = 5000, val retries: Int = 3)`).
 
-I classify patterns by the problem they address. Creational patterns control construction; a Builder is useful when an SDK client has several optional settings and validation. Structural patterns adapt or compose interfaces; an Adapter can isolate a vendor callback contract. Behavioral patterns organize changing behavior; a Strategy can select a payment implementation without putting vendor branches in the UI. In one checkout feature all three may coexist, but the categories are not a checklist. A constructor is better than a Builder for two mandatory values, and a direct call is better than an Adapter when there is no mismatch. I would choose from the expected variation, the invariants, and the test seam, then measure whether the added indirection helps.
+Understanding which patterns are native language idioms versus structural components helps engineers write cleaner code without unnecessary boilerplate classes.
 
 ## How to answer in the interview
 
@@ -76,8 +142,11 @@ Classify Builder, Adapter, Strategy and Observer in one checkout flow; note over
 
 ## Follow-up questions
 
-- [PAT-03](../pat-03/): Which patterns manage construction? **Answer:** Singleton, Factory, Abstract Factory and Builder differ in what they create.
-- [PAT-05](../pat-05/): Which manage behavior? **Answer:** Observer, Strategy, State, Command and Chain of Responsibility.
+- **Interviewer:** "How do Kotlin default arguments reduce the need for the Builder pattern?"
+  **Answer:** "Data classes with default parameter values and named arguments allow instantiating objects with any combination of optional parameters directly in a single call, eliminating the need for separate Builder classes for basic data structures."
+
+- **Interviewer:** "Which category does OkHttp's Interceptor mechanism belong to?"
+  **Answer:** "It combines both Structural (Decorator pattern, wrapping requests/responses) and Behavioral (Chain of Responsibility pattern, passing the request through the interceptor pipeline)."
 
 ## Self-check rubric
 
@@ -88,4 +157,4 @@ Classify four named patterns by problem, then reject one unnecessary factory in 
 - [Kotlin object declarations](https://kotlinlang.org/docs/object-declarations.html) — language-level Singleton example.
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — original taxonomy and catalog.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

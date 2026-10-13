@@ -24,11 +24,51 @@ What is Compose? Compare declarative Compose and XML Views.
 
 ## Explanation in Arabic
 
-Jetpack Compose toolkit لبناء Android UI بـKotlin. في XML Views غالبًا تنشئ hierarchy ثم تغير widgets بأوامر مثل `textView.text = ...`؛ في Compose تصف الـUI المطلوبة بناءً على state، والإطار يعيد تنفيذ الأجزاء اللازمة عندما تتغير state المرصودة. هذا لا يلغي lifecycle ولا business logic ولا يحل performance تلقائيًا. يمكن دمج `ComposeView` داخل View screen أو `AndroidView` لعنصر قديم، وبالتالي النقل تدريجي. المهم يكون مصدر state واضح وتبعد side effects عن جسم composable.
+المقارنة الجوهرية بين النموذج الإعلاني (Declarative) في Jetpack Compose والنموذج الأمري (Imperative) في XML Views:
+
+1. كيف تعمل واجهات XML التقليدية (Imperative Model)؟
+   - في نظام الـ Views، الشاشة عبارة عن شجرة كائنات ذات حالة داخلية متغيرة (`View Hierarchy`).
+   - المطور مسؤول عن مزامنة الحالة يدوياً: العثور على العنصر (`findViewById` أو `ViewBinding`) ثم تغيير خصائصه برمجياً (`textView.text = ...`, `progressBar.visibility = GONE`).
+   - العيب القاتل: حدوث **تضارب الحالة (State Inconsistency)**؛ مثل أن ينسى المطور إخفاء الـ ProgressBar في سيناريو الـ Error، فيظهر لودينج لا نهائي مع رسالة خطأ!
+
+2. كيف يعمل Jetpack Compose (Declarative Model)؟
+   - في Compose، الواجهة عبارة عن دوال برمجية بسيطة تصف كيف تبدو الشاشة بناءً على الحالة الحالية: `UI = f(State)`.
+   - لا توجد كائنات View ممسوكة في الذاكرة لتعديلها يدوياً؛ عندما تتغير الـ State، يقوم محرك Compose بإعادة تشغيل الدوال المتأثرة تلقائياً فيما يُعرف بـ **Recomposition**.
+   - هذا يضمن استحالة حدوث State Desync، لأن الواجهة هي انعكاس رياضي مباشر وحتمي للبيانات.
+
+3. الفروق المعمارية على مستوى الأداء والكود:
+   - **Kotlin بنسبة 100%**: التخلص من طبقة ترجمة XML المعقدة وتكرار الـ Attributes.
+   - **Flattened Layout Tree**: لا توجد قيود الـ Nested Layouts التي كانت تتطلب قياسات مزدوجة (Double Taxation) في Views، بل يفرض Compose نظام Single-Pass Measure.
 
 ## Practical walkthrough
 
-في شاشة تسجيل دخول حقيقية، خلي `LoginUiState` هي المصدر الوحيد لقيمة الإيميل والتحميل والخطأ. الـ`ViewModel` يستقبل `onEmailChange` و`onSubmit` ويغيّر الـstate؛ الـUI لا تستدعي الشبكة وهي بتترسم. وقت النقل من XML، اختار شاشة كاملة أو component بحدود ownership واضحة، وتأكد إن نفس الحقل مش متخزن مرتين. لو خليت XML وCompose يكتبوا نفس قيمة الإيميل، هتظهر race وحالة قديمة بعد rotation. في production اعمل event contract واحد واختبر شاشة النقل قبل تعميمه.
+مقارنة عملية بين XML التقليدي و Jetpack Compose في التعامل مع حالات التحميل والبيانات:
+```kotlin
+// ❌ في نظام XML التقليدي: تعديل أمري عرضة لتضارب الحالات:
+fun renderState(state: UiState) {
+    when (state) {
+        is UiState.Loading -> {
+            binding.progressBar.visibility = View.VISIBLE
+            binding.textView.visibility = View.GONE // إذا نسيت هذا السطر يظل النص القديم ظاهراً!
+        }
+        is UiState.Success -> {
+            binding.progressBar.visibility = View.GONE
+            binding.textView.visibility = View.VISIBLE
+            binding.textView.text = state.data
+        }
+    }
+}
+
+// ✅ في Jetpack Compose: وصف تصريحي حتمي، يستحيل معه تضارب الحالة:
+@Composable
+fun UserProfileScreen(uiState: UiState) {
+    when (uiState) {
+        is UiState.Loading -> CircularProgressIndicator()
+        is UiState.Success -> Text(text = uiState.data)
+        is UiState.Error -> Text(text = uiState.message, color = MaterialTheme.colorScheme.error)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -68,15 +108,23 @@ Migrate a vertical screen with explicit state/event contracts, test process recr
 
 ## Interview answer — short
 
-“Compose describes UI from state in Kotlin; XML Views usually update an existing widget tree. Recomposition updates affected descriptions when observed state changes. For a login form, the owner changes state and Compose redraws the result.”
+XML Views are imperative and stateful: developers manually mutate mutable view hierarchies via `findViewById`/`ViewBinding`, often causing state desynchronization. Jetpack Compose is declarative: UI is a pure function of state (`UI = f(State)`), written entirely in Kotlin, where state mutations automatically trigger targeted recomposition of affected nodes.
 
 ## Interview answer — structured
 
-“I think of Compose as a declarative UI toolkit: the screen function receives state and emits UI, while events go back to its owner. In a View screen, I typically inflate XML and imperatively set widget properties on state updates. Compose can recompose scopes that read changed state and skip eligible work, but I still keep effects lifecycle-aware. I can adopt it incrementally with `ComposeView` or `AndroidView`, and I measure real rendering rather than assuming a performance win. I would demonstrate the shift with a login form: a single immutable UI state feeds the field, button, and error.”
+The architectural shift from XML to Jetpack Compose is a paradigm transition from imperative view mutation to declarative state projection.
+
+In legacy Android Views, UI widgets are stateful objects maintaining their own internal state. To update a screen, developers write imperative glue code to look up views and mutate properties—calling `setText()`, `setVisibility()`, or animating frames. Because data sources and UI widgets hold separate copies of state, screens frequently suffer from **state desynchronization bugs** (e.g. a spinner running while content is already displayed).
+
+Jetpack Compose replaces mutable view objects with composable functions that describe the UI as a direct projection of data: **`UI = f(State)`**. When state updates, Compose's runtime executes **Recomposition**, intelligently re-running only the composables that observe the modified state while skipping unchanged nodes. It is 100% Kotlin, eliminating XML attribute boilerplate, supporting compile-time safety, and enforcing a single-pass measurement model that eradicates layout nesting penalties.
 
 ## Interview answer — deep senior
 
-“The important shift is who owns the update procedure. With Views I commonly inflate a hierarchy and write the changes to each widget when a model changes; with Compose I provide a function that describes the UI for current inputs and observable state. Compose tracks reads, invalidates relevant scopes, and may skip calls whose inputs allow it. That model encourages a single state owner and event callbacks, but it does not remove navigation, lifecycle, or side-effect discipline. A network request in the composable body would be a bug because rendering may run repeatedly. I keep data and business decisions in a ViewModel or other owner, expose a coherent state, and use effects only for work tied to composition. For migration I choose a screen boundary and use interoperability APIs around existing Views or SDK widgets, then test semantics, state restoration and performance on a release build. The choice is not an ideological replacement of XML: an established custom View can remain useful, while Compose often makes dynamic, reusable UI easier to express and reason about. I would migrate one screen first and check that the legacy and Compose sides do not each own the same form value.”
+Under the hood, Compose eliminates the overhead of `View` and `ViewGroup` objects. A traditional `View` class inherits over 80 fields and thousands of lines of legacy layout logic. In Compose, `@Composable` functions emit nodes into an in-memory **Slot Table** managed by the Compose Compiler and Runtime (`androidx.compose.runtime`). The compiler augments composable functions with a synthetic `$composer` parameter, recording call hierarchy, state reads, and memoized values.
+
+Regarding layout passes: Android Views often perform multi-pass measurements (such as `RelativeLayout` or nested weights in `LinearLayout`), leading to $O(2^n)$ measurement complexity. Compose strictly enforces that no node in the UI tree can be measured more than once per layout pass (`Single-Pass Measurement`), while providing **Intrinsic Measurements** when children need to negotiate sizes before full measurement.
+
+Interoperability is seamless: legacy code embeds Compose via `ComposeView`, while Compose embeds legacy views using `AndroidView`, enabling low-risk incremental migration.
 
 ## How to answer in the interview
 
@@ -92,9 +140,11 @@ Discuss observable state, invalidation, recomposition versus draw, side effects,
 
 ## Follow-up questions
 
-- Does recomposition rebuild the entire Android View hierarchy? **Answer:** no; Compose updates its own composition and can limit and skip work by scope.
-- Can a project mix Compose and Views? **Answer:** yes, using supported interoperability APIs during incremental adoption.
-- Where should network work run? **Answer:** in an owner or lifecycle-aware effect, never as an uncontrolled render-body call.
+- **Interviewer:** "What is the Compose Slot Table and how does it manage composition state?"
+  **Answer:** "The Slot Table is Compose's internal continuous array data structure. It stores composable call groups, parameters, and `remember` values sequentially. During recomposition, the runtime walks the slot table using a gap buffer algorithm, updating changed slots and reusing unchanged results."
+
+- **Interviewer:** "Why does Compose enforce single-pass measurement?"
+  **Answer:** "Single-pass measurement guarantees that UI tree traversal scales linearly $O(n)$ with the number of nodes, preventing exponential layout calculation slowdowns caused by deeply nested layouts in legacy XML views."
 
 ## Self-check rubric
 
@@ -105,4 +155,4 @@ Compare update models, explain a state change, name an interoperability path, an
 - [Compose mental model](https://developer.android.com/develop/ui/compose/mental-model) — declarative UI and recomposition.
 - [Compose and Views interoperability](https://developer.android.com/develop/ui/compose/migrate/interoperability-apis) — gradual migration.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The login form is illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

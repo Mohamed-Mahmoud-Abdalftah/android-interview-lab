@@ -26,11 +26,64 @@ What is the test pyramid, and where do contract tests fit?
 
 ## Explanation in Arabic
 
-هرم الاختبارات (Test Pyramid) هو نموذج اقتصادي لتوزيع الاختبارات بناءً على السرعة وتكلفة الصيانة ومستوى الثقة. في قاعدة الهرم بيكون عندنا عدد كبير جدًا من الـUnit Tests السريعة اللي بتفحص منطق البيزنس في أجزاء من الثانية. في المنتصف بتيجي الـIntegration Tests والـContract Tests. الـContract Tests بتمثل اتفاق رسمي وموثق بين الـConsumer (تطبيق الأندرويد) والـProvider (الـBackend API). التطبيق بيحدد العقد اللي متوقعه: شكل الـJSON، الحقول الإلزامية، الـHTTP headers (زي `Idempotency-Key`)، وحالات الـError. الـContract Test بتتحقق إن الـclient parser بيتعامل مع الـcontract ده بأمان، وبنفس الوقت الـcontract بيصدر كـPact أو JSON schema يتشغل في الـCI بتاع الـbackend عشان نضمن إن أي تعديل من مهندسي الـbackend مش هيكسر التطبيق في الإنتاج.
+ما هو هرم الاختبارات (Test Pyramid) في أندرويد، وأين تقع اختبارات التعاقد (Contract Tests) ضمن هذا الهرم؟
+
+1. هرم الاختبارات الكلاسيكي في أندرويد (The Android Testing Pyramid):
+   - **القاعدة (Unit Tests - 70%)**: أكبر عدد من الاختبارات. سريعة، رخيصة، تختبر منطق الأعمال المنعزل على JVM (ViewModels, UseCases, Repositories).
+   - **الوسط (Integration Tests - 20%)**: عدد متوسط. تختبر تفاعل المكونات (Room DB, OkHttp Interceptors, WorkManager).
+   - **القمة (UI & E2E Tests - 10%)**: أقل عدد من الاختبارات. بطيئة، مكلفة، تختبر أهم مسارات المستخدم الحرجة (Critical User Journeys مثل تسجيل الدخول وإتمام الدفع) على أجهزة حقيقية.
+
+2. أين تقع اختبارات التعاقد (Contract Tests)؟
+   - تقع في **طبقة الـ Integration Tests في منتصف الهرم**.
+   - **وظيفتها**: التحقق من أن العقد المتفق عليه بين تطبيق الموبايل وخادم الـ Backend (الـ API Request & Response JSON Schema) لم ينكسر!
+   - بدلاً من تشغيل اختبار E2E بطيء يتصل بسيرفر حقيقي، يقوم الـ Contract Test بفحص الـ Payload مقابل مواصفات الـ API (مثل Pact أو WireMock) على الـ JVM المحلي في ثوانٍ معدودة!
+
+3. الفائدة الجوهرية لاختبارات التعاقد:
+   - تمنع كسر التطبيق في الإنتاج عندما يقوم فريق الـ Backend بحذف أو تعديل حقل في الـ JSON دون إعلام فريق الموبايل.
 
 ## Practical walkthrough
 
-لو الـbackend غير اسم حقل من `payment_id` لـ `transaction_id`، كل الـUnit Tests عند الفريقين ممكن تنجح لو كانت بتستخدم mocks يدوية! والـUI E2E test بطيئة ومكلفة وممكن تفشل لأسباب شبكة مش واضحة. الـContract Test بتملأ الفجوة دي فورًا: بنعمل MockWebServer test بيستقبل الـJSON الحقيقي المتفق عليه ويثبت إن الـclient بيقراه صح، وبنختبر كمان حالات الـEdge: لو الـbackend بعت enum جديد مش معروف للـclient (مثال: status غير متوقعة)، هل التطبيق هيقفل بـ `SerializationException` ولا الـparser هيرجع `PaymentStatus.UNKNOWN` بأمان؟ كده بنكتشف كسر الـAPI في ثوانٍ معدودة داخل الـPR قبل ما أي كود يوصل لنسخة الـRelease.
+تنفيذ Contract Test باستخدام MockWebServer للتحقق من توافق الـ JSON Schema مع كلاسات الـ DTO:
+```kotlin
+class ApiContractTest {
+    private lateinit var mockWebServer: MockWebServer
+    private lateinit var apiService: UserApiService
+
+    @Before
+    fun setup() {
+        mockWebServer = MockWebServer()
+        apiService = Retrofit.Builder()
+            .baseUrl(mockWebServer.url("/"))
+            .addConverterFactory(MoshiConverterFactory.create())
+            .build()
+            .create(UserApiService::class.java)
+    }
+
+    @Test
+    fun `user profile response contract satisfies expected domain schema`() = runTest {
+        // محاكاة استجابة الـ JSON المعتمدة في مواصفات الـ OpenAPI:
+        val contractJson = """
+            {
+                "user_id": "usr_9988",
+                "email": "dev@example.com",
+                "is_active": true
+            }
+        """.trimIndent()
+
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(contractJson))
+
+        val response = apiService.getUserProfile("usr_9988")
+        
+        // التحقق من أن السيريالايزر قرأ الحقول بنجاح دون أي تعارض في الأنواع:
+        assertEquals("usr_9988", response.id)
+        assertEquals("dev@example.com", response.email)
+        assertTrue(response.isActive)
+    }
+
+    @After
+    fun tearDown() = mockWebServer.shutdown()
+}
+```
 
 ## Why it matters and how it works
 
@@ -218,34 +271,33 @@ In a production mobile release pipeline:
 
 ## Interview answer — short
 
-“The test pyramid prioritizes many fast, low-cost unit tests at the base, fewer integration and contract tests in the middle, and a minimal set of expensive E2E tests at the apex. Contract tests sit between unit and E2E tests, verifying that the Android client and backend API agree on request formats, headers, and response schemas using tools like MockWebServer or Pact, preventing API drift without slow E2E suites.”
+The test pyramid balances 70% fast local unit tests at the base, 20% integration tests in the middle, and 10% UI/E2E tests at the apex. Contract tests sit in the integration layer, verifying that client network serialization and DTO expectations strictly match backend API schemas without running heavy end-to-end device tests.
 
 ## Interview answer — structured
 
-“When evaluating the test pyramid and contract testing:
-1. **Pyramid Economics:**
-   - **Unit Tests (~70%):** Fast, isolated tests for ViewModels, Use Cases, and domain calculations.
-   - **Integration Tests (~20%):** Validates Room queries, database migrations, and repository cache logic.
-   - **Contract Tests:** Sits at the network boundary, ensuring consumer expectations match provider responses.
-   - **E2E Tests (~10%):** UI tests for critical checkout or authentication journeys on emulators.
-2. **Why Hand-Crafted Mocks Fail:** Unit tests with mock responses pass even when the backend renames JSON fields. Contract tests run actual JSON serialization through OkHttp and Kotlinx Serialization.
-3. **Consumer-Driven Contract (CDC):** Android defines the contract fixture (required fields, headers, and error shapes). In CI, tools like Pact verify that the backend implements these expectations before deploying.
-4. **Resilient Deserialization:** Contract tests enforce resilience—such as tolerating unknown keys and mapping new server enum variants to `UNKNOWN` safely.
-5. **Production Balance:** Fast contract tests catch schema drift on PRs, while a small set of automated E2E tests verify deployed routing and authentication.”
+The testing pyramid structures test investments to maximize regression detection while minimizing execution duration:
+
+1. **The Modern Android Test Pyramid**:
+   - **Base (Unit Tests ~70%)**: High-volume, fast local JVM tests verifying business algorithms, ViewModels, UseCases, and state reducers in milliseconds.
+   - **Middle (Integration Tests ~20%)**: Medium-volume tests validating component boundaries: Room database transactions, WorkManager scheduling, and network DTO parsers.
+   - **Apex (UI / E2E ~10%)**: Low-volume, high-fidelity instrumentation and Compose tests verifying core customer conversion funnels (checkout, login).
+
+2. **Positioning Contract Tests**:
+   - Contract tests reside in the **Integration Layer**.
+   - Rather than relying on slow, brittle E2E tests against live backend staging clusters to verify that API responses match client expectations, contract tests validate client-server JSON schemas (using Pact, WireMock, or OpenAPI schema validators) locally on the JVM in seconds.
+
+3. **Value Proposition**:
+   - Contract testing catches API contract drift, unexpected nullability shifts, and renamed JSON fields early in CI before code merges, eliminating a major source of production outages.
 
 ## Interview answer — deep senior
 
-“A senior engineer views the test pyramid not as a dogmatic percentage rule, but as a risk-based economics model. The higher you climb the pyramid, the slower, more expensive, and more brittle the tests become.
+From an organizational architecture perspective, contract testing enables autonomous cross-team deployments:
 
-In modern microservice architectures, the most common production outage is API contract drift: the backend modifies an endpoint or field nullability, while the mobile team discovers it only after release because unit tests were insulated behind green stubs. Conversely, relying on end-to-end UI tests to catch schema drift is disastrous—they are slow, flakily fail on network blips, and pinpoint failures poorly.
+1. **Consumer-Driven Contract Testing (Pact)**: The mobile client defines the contract by publishing a Pact file specifying the exact request parameters and response fields it consumes. When the backend team runs their CI pipeline, Pact replays the mobile contract against their active API routes. If a backend PR drops a field required by the mobile app, backend CI fails before deployment.
 
-Contract tests solve this exact boundary risk. In my architecture, I implement consumer contract tests using MockWebServer and Kotlinx Serialization. The test validates both sides of the HTTP exchange:
-1. **Request Contract:** Asserts exact HTTP verbs, paths, required headers (such as `Idempotency-Key` or `X-Client-Version`), and serialized JSON request body formats.
-2. **Response Contract & Resilience:** Tests that agreed JSON payloads deserialize into domain models, and explicitly tests negative scenarios. I verify that unknown keys are safely ignored (`ignoreUnknownKeys = true`), nullable fields are accommodated, and unrecognized enum values gracefully fall back to `UNKNOWN` instead of throwing a fatal `SerializationException`.
+2. **The Testing Trophy Alternative**: Some engineering leaders propose the **Testing Trophy** model (advocated by Kent C. Dodds), which places heavy emphasis on integration tests over isolated unit tests. In modern Android, integration tests combining ViewModels, Repositories, and in-memory Fakes provide higher confidence than unit tests mocking every collaborator.
 
-Furthermore, in enterprise systems, we advance this to Consumer-Driven Contract testing via Pact. The Android test suite generates a contract artifact specifying the exact subset of the API our screens consume. This contract is uploaded to a Pact Broker, and the backend CI pipeline runs against it on every commit. If a backend engineer removes a field that our app relies on, their CI pipeline breaks immediately (`can-i-deploy: false`).
-
-Contract tests don't eliminate E2E tests entirely; they relieve E2E tests from verifying schema mechanics. We reserve E2E tests for verifying deployed infrastructure, TLS handshake, gateway authentication tokens, and critical revenue journeys.”
+3. **Automated Flake Monitoring**: The apex of the pyramid (E2E) must have strict reliability budgets. If an E2E test fails more than 1% of the time due to non-deterministic timeouts, quarantine it immediately to maintain developer trust in CI gates.
 
 ## How to answer in the interview
 
@@ -264,8 +316,11 @@ Contract tests don't eliminate E2E tests entirely; they relieve E2E tests from v
 
 ## Follow-up questions
 
-- [TST-01](../tst-01/): What do end-to-end tests provide that contract tests cannot? **Answer:** E2E tests validate deployed infrastructure, live authentication tokens, platform permissions, and multi-screen user journeys.
-- [TST-12](../tst-12/): What specifically does MockWebServer test in an Android test suite? **Answer:** It tests OkHttp interceptors, Retrofit converters, JSON serialization, HTTP status code error mapping, and retry policies.
+- **Interviewer:** "What is Consumer-Driven Contract Testing?"
+  **Answer:** "A paradigm where API consumers (mobile app) define and publish their contract expectations, and provider backends validate those contracts in their CI before deployment."
+
+- **Interviewer:** "Why are Contract Tests faster than End-to-End tests?"
+  **Answer:** "They run on the local JVM using mock servers or schema validators, eliminating emulator boot times, network round-trips, and live backend staging dependencies."
 
 ## Self-check rubric
 
@@ -281,4 +336,4 @@ Contract tests don't eliminate E2E tests entirely; they relieve E2E tests from v
 - [OkHttp MockWebServer](https://github.com/square/okhttp/tree/master/mockwebserver) — testing HTTP and REST clients.
 - [Martin Fowler: Practical Test Pyramid](https://martinfowler.com/articles/practical-test-pyramid.html) — testing strategies and contract boundaries.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

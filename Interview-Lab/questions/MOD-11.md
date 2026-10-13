@@ -24,11 +24,50 @@ How do you manage dependency injection across modules?
 
 ## Explanation in Arabic
 
-في multi-module Hilt، module تملك implementation قد تعلن `@Binds` أو `@Provides` لها، والعقد يعيش في API مناسب يراه feature. `:app` يجب يرى modules/constructor-injected types اللازمة وقت component generation، فراجع Gradle dependencies وvariant. لا تجعل كل feature تقدم binding لنفس interface بلا qualifier، ولا ترفع screen state إلى Singleton. dynamic feature حالة خاصة لأن base لا ترى classes داخلها أثناء compilation؛ استخدم entry point/component dependency أو factory boundary كما توثق Hilt. اختبر assemble/app graph، لا تكتفِ باختبار isolated feature.
+كيف تدير حقن التبعيات (Dependency Injection) عبر موديولات Gradle المتعددة؟
+
+1. القاعدة المعمارية للـ DI في الـ Multi-Module:
+   - **فصل العقد عن التنفيذ (Contract vs. Implementation Separation)**:
+     * موديول الـ API أو الـ Domain يعرف الواجهة (`interface CartRepository`).
+     * موديول الـ Data أو الـ Feature Impl يحتوي على الكلاس الملموس (`class CartRepositoryImpl @Inject constructor(...)`).
+     * يوفر موديول الـ Data موديول Hilt معلّم بـ `@InstallIn(SingletonComponent::class)` يحتوي على `@Binds` يربط الواجهة بالتنفيذ.
+
+2. التجميع المركزي في Hilt (Decentralized Aggregation in `:app`):
+   - موديول `:app` يعتمد على جميع موديولات التطبيق.
+   - يقوم Hilt في وقت التجميع بجمع (Aggregate) جميع الـ Modules المعلمة بـ `@InstallIn` عبر جميع موديولات Gradle ودمجها في شجرة Dagger Graph واحدة متكاملة ومتحقق منها.
+
+3. إدارة الـ Scopes عبر الموديولات:
+   - تجنب وضع `@Singleton` عشوائياً في موديولات الـ Features.
+   - استخدم `@ViewModelScoped` لمنطق الشاشات في موديولات الـ Feature Impl، واحتفظ بـ `@Singleton` فقط للموارد المشتركة في موديولات الـ Core والـ Data.
 
 ## Practical walkthrough
 
-Hilt يعمل عبر regular Gradle modules إذا app ترى transitive bindings، لكن dynamic feature dependency direction مختلف وقد تحتاج Dagger component dependency. لا تضع كل binding في app لمجرد compiler يراه؛ feature تملك modules الخاصة وعقودها. راجع scopes: Singleton لا يحتفظ Activity. اختبر production graph بعد test substitutions؛ test fake قد يخفي missing binding.
+هيكل تنظيم الـ Hilt Modules عبر الموديولات المختلفة:
+```kotlin
+// 📁 في موديول ':domain:payment' (موديول Kotlin نقي):
+interface PaymentGateway {
+    suspend fun pay(orderId: String, amount: Double): Result<TransactionReceipt>
+}
+
+// 📁 في موديول ':data:payment' (يحتوي على التنفيذ الفعلي وموديول Hilt):
+class StripePaymentGateway @Inject constructor(
+    private val stripeClient: StripeClient
+) : PaymentGateway { /* ... */ }
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class PaymentDataModule {
+    @Binds @Singleton
+    abstract fun bindPaymentGateway(impl: StripePaymentGateway): PaymentGateway
+}
+
+// 📁 في موديول ':feature:checkout':
+@HiltViewModel
+class CheckoutViewModel @Inject constructor(
+    private val paymentGateway: PaymentGateway // يعتمد على الواجهة فقط من :domain:payment!
+) : ViewModel()
+// موديول :app يقوم بتجميع PaymentDataModule وحقنه تلقائياً في CheckoutViewModel!
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +91,27 @@ Maintain an injection graph inventory of contract, binding module, qualifier, sc
 
 ## Interview answer — short
 
-“I keep contracts feature-visible, bindings implementation-owned and app variants able to aggregate them; scopes and qualifiers stay explicit, with a bridge for dynamic features.”
+Manage multi-module DI by keeping interfaces in domain/api modules, implementations and @InstallIn Hilt binding modules in data/impl modules, and letting the :app module aggregate the graph at compile time. Feature modules inject interfaces without depending on implementation modules.
 
 ## Interview answer — structured
 
-“A feature depends on a repository interface; its data module supplies a Hilt binding and the app composition graph includes that implementation. I check compile visibility because generated Hilt components only know reachable modules. I match scope to lifetime, use qualifiers for genuine multiple implementations, and build each variant. Dynamic features need their documented entry-point/component-dependency path. An integrated graph test confirms wiring that a unit test cannot.”
+Managing dependency injection cleanly in a multi-module architecture relies on Hilt's decentralized compilation model:
+
+1. **Contract Definition**: Domain and API modules define pure interfaces (e.g. `AuthRepository`) without depending on Hilt or Android frameworks.
+
+2. **Implementation & Module Packaging**: Data and implementation modules contain the concrete class with an `@Inject constructor`. Alongside the implementation, the module includes a Hilt `@Module` annotated with `@InstallIn(SingletonComponent::class)` using `@Binds` to bind the interface to the concrete class.
+
+3. **Consumer Decoupling**: Feature modules inject the interface into their `@HiltViewModel` constructors, depending only on the interface module. They have zero compile-time dependencies on the implementation module.
+
+4. **Root Aggregation**: The `:app` module aggregates all implementation modules at compile time, resolving the full Dagger graph with zero manual component wiring.
 
 ## Interview answer — deep senior
 
-“DI across modules is the intersection of the module DAG and object lifetime. I place the repository contract where the feature can compile without importing data internals, then keep the binding close to the implementation or at a deliberate app selection point. The final app variant must have compile visibility of the Hilt modules and injectable classes that generated components aggregate. That is why a feature compiling alone does not prove the app graph will resolve. I review qualifiers and scopes alongside edges: a Singleton binding cannot own an Activity callback just because the compiler can construct it, and two unqualified implementations should not be installed together. Tests keep direct constructor seams for logic, plus a small Hilt integration path that replaces the right qualified binding and proves actual Android injection. Dynamic features need special treatment because their dependency direction prevents the base app from seeing feature-only classes during its Hilt generation; a narrow entry point and feature Dagger component or explicit factory bridges it. CI assembles debug and release variants and reports missing bindings early. The result is explicit composition without feature-to-implementation coupling.”
+A critical pitfall in multi-module DI is **Accidental Dependency Leakage via Hilt Aggregation**.
+
+Because Hilt aggregates modules across the entire classpath of `:app`, if two feature modules accidentally bind the same interface without qualifiers, Dagger fails at the root `:app` compilation level with a `DuplicateBindingException`, even though both feature modules compiled individually without errors!
+
+Furthermore, for **Dynamic Feature Modules (Play Feature Delivery)**, standard Hilt `@InstallIn` cannot be resolved because `:app` does not depend on dynamic feature modules. To provide dependencies into dynamic features, developers must use `@EntryPoint` to explicitly retrieve base graph dependencies from the `applicationContext`.
 
 ## How to answer in the interview
 
@@ -76,9 +127,11 @@ Discuss contracts, aggregation, variant graph, qualifiers, scope, dynamic featur
 
 ## Follow-up questions
 
-- Why can isolated feature compilation pass while app assembly fails? **Answer:** the final graph may lack a visible binding or have duplicates.
-- Does Hilt compile success prove no Activity leaks? **Answer:** no; transitive callbacks and manual providers can violate ownership.
-- How does dynamic delivery alter DI? **Answer:** base-generated Hilt components cannot aggregate feature-only classes directly.
+- **Interviewer:** "Can a Hilt module in a library module be installed in `ActivityComponent`?"
+  **Answer:** "Yes. `@InstallIn(ActivityComponent::class)` works in any library module, scoping those dependencies to Activities in the consuming application."
+
+- **Interviewer:** "How do you test a feature module's ViewModel in isolation without compiling the whole Hilt graph?"
+  **Answer:** "In JVM unit tests, bypass Hilt completely. Instantiate the ViewModel directly using its constructor and pass a Fake implementation of the interface."
 
 ## Self-check rubric
 
@@ -89,4 +142,4 @@ Draw binding visibility, choose scope and qualifier, and test one normal and one
 - [Hilt in multi-module apps](https://developer.android.com/training/dependency-injection/hilt-multi-module) — visibility and dynamic features.
 - [Hilt on Android](https://developer.android.com/training/dependency-injection/hilt-android) — scopes and modules.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Variant graph must be verified in the actual build.
+Technically reviewed against primary documentation on 2026-10-13.

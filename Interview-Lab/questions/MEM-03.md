@@ -24,11 +24,35 @@ Compare stack and heap at a high level. What lives on each?
 
 ## Explanation in Arabic
 
-كل thread لها call stack فيها frames لاستدعاءات الدوال: return addresses، local slots وبيانات التنفيذ. الـmanaged heap فيه objects وarrays اللي عمرها قد يمتد بعد انتهاء الدالة. المتغير المحلي ممكن يكون reference في stack frame يشير إلى object في heap؛ ولا يصح نقول “كل primitive على stack وكل object على heap” كقاعدة حرفية لأن compiler وruntime ممكن يعملوا optimization. الـstack تنمو مع الاستدعاء المتكرر، والـheap تتأثر بالـallocations والـretention. `StackOverflowError` من recursion عميق مختلف عن `OutOfMemoryError` بسبب heap أو موارد أخرى.
+المقارنة الجوهرية بين الـ Stack والـ Heap في إدارة الذاكرة: ما الذي يعيش على كل منهما؟
+
+1. الـ Stack (ذاكرة الاستدعاء السريعة):
+   - **طبيعتها:** ذاكرة سريعة جداً وخاصة بكل خيط معالجة (Per-Thread Memory) تعمل بنظام LIFO (Last-In, First-Out).
+   - **ما الذي يعيش عليها؟**
+     * إطارات استدعاء الدوال (Stack Frames).
+     * المتغيرات المحلية الأولية (Primitive types: `int`, `boolean`, `long`, `float`).
+     * مراجع المؤشرات للكائنات (Reference Pointers) التي تشير إلى أماكن الكائنات في الـ Heap.
+   - **إدارة الذاكرة:** تدار تلقائياً بواسطة المعالج (CPU)؛ بمجرد خروج التنفيذ من الدالة، يتم مسح الـ Stack Frame فوراً وبدون أي تدخل من الـ GC.
+   - **المشكلة الشائعة:** `StackOverflowError` لو حدث استدعاء ذاتي لا نهائي (Infinite Recursion).
+
+2. الـ Heap (ذاكرة الكائنات المشتركة):
+   - **طبيعتها:** مساحة ذاكرة ضخمة مشتركة بين جميع خيوط التطبيق (Shared across all threads).
+   - **ما الذي يعيش عليها؟**
+     * **جميع الكائنات (All Objects):** كلاسات، Strings، Arrays، Bitmaps، كائنات الـ Coroutines (Continuations)، والـ Collections.
+   - **إدارة الذاكرة:** تدار حصرياً بواسطة مجمع النفايات (Garbage Collector).
+   - **المشكلة الشائعة:** `OutOfMemoryError` لو امتلاء الـ Heap بالكامل.
 
 ## Practical walkthrough
 
-لو recursive parser دخل في payload بعمق غير متوقع، ممكن يعمل `StackOverflowError` حتى لو heap فاضية. ولو cache ماسكة `Photo` objects بعد ما دالة render ترجع، الـobjects تفضل على heap لأن فيه reference من cache. في profiler ركّز على stack trace للـrecursion مقابل retained graph للـheap؛ متبنيش الحل على جملة إن كل primitive بتتخزن في stack، لأن ART والـcompiler بيعملوا optimizations.
+تحليل سطر كود واحد لمعرفة ما يذهب للـ Stack وما يذهب للـ Heap:
+```kotlin
+fun calculate() {
+    val age = 25              // 1. القيمة 25 مخزنة على الـ Stack مباشرة (Primitive)
+    val name = "Mohamed"      // 2. المؤشر name على الـ Stack، وكائن String نفسه على الـ Heap!
+    val user = User(age, name)// 3. المؤشر user على الـ Stack، وكائن User بالكامل على الـ Heap!
+}
+```
+بمجرد انتهاء دالة `calculate()`: المتغيرات `age`, `name`, `user` تمسح فوراً من الـ Stack في جزء من النانو-ثانية. وكائن `User` يظل في الـ Heap حتى يأتي الـ GC ويمسحه.
 
 ## Why it matters and how it works
 
@@ -52,15 +76,38 @@ When a production crash reports stack overflow, inspect the recursive call path 
 
 ## Interview answer — short
 
-“A thread stack holds active call frames and local execution state. The heap holds managed objects whose lifetime can outlast one call. A local reference may point to a heap object, so the primitive-versus-object slogan is too simplistic.”
+Stack is fast, thread-local LIFO memory holding primitive local variables, function frames, and object reference pointers, cleaned up immediately on function return. Heap is large, shared memory holding all instantiated objects, arrays, and closures, managed asynchronously by the Garbage Collector.
 
 ## Interview answer — structured
 
-“Each thread has a stack of frames for active calls, including local slots and return flow. Managed objects and arrays generally live in the heap and are reclaimed when unreachable. A stack local may hold a reference to a heap object; a callback or cache can keep that object alive after the method returns. Deep recursion threatens stack space, while retained objects and large allocations threaten heap or process memory. Runtime optimizations mean I use this as a reasoning model, not a strict byte-placement rule.”
+The Stack and Heap represent the two foundational memory areas in Android runtime execution:
+
+**The Stack**:
+
+- **Scope & Lifecycle**: Thread-local. Every OS thread has its own dedicated call stack.
+- **What lives here**: Function call frames, local primitive variables (`int`, `boolean`, `double`), and reference pointers pointing to objects in the heap.
+- **Management**: Managed directly by CPU instruction pointer registers in a LIFO order. Memory allocation and deallocation happen in O(1) instant time when functions are pushed and popped. Zero GC involvement.
+
+**The Heap**:
+
+- **Scope & Lifecycle**: Globally shared across all threads within the app process.
+- **What lives here**: All instantiated objects (`class`, `data class`), arrays, collections, boxed primitives (`Integer`), coroutine state machines, and string contents.
+- **Management**: Dynamically allocated and asynchronously reclaimed by the Garbage Collector.
 
 ## Interview answer — deep senior
 
-“I explain stack and heap in terms of lifetime and ownership. A thread's stack represents nested execution; returning from a function removes its frame. The managed heap supports objects that can survive that function, depending on references from live frames, static fields, and other roots. A reference stored in a frame can keep an object reachable for the call, but a singleton or long-lived callback can retain it far longer. Recursion depth can exhaust stack space; a heap OOM has a different diagnostic path, and native/thread memory also affects the process. ART optimizations may elide allocations or change representation, so I do not claim every primitive always sits on stack. I use crash stacks and heap/thread profiles to decide whether to bound recursion, release retained graphs, or limit thread creation. A maliciously deep tree is a concrete stack-risk case: I put a depth bound on recursive traversal or use an explicit queue. That queue moves pressure into heap, so it needs an item or byte cap as well. This is why stack and heap fixes are related but not interchangeable.”
+Understanding Stack vs Heap allocation boundaries is essential for optimization. For example, Kotlin's **Value Classes (`@JvmInline value class`)** leverage this distinction: When a function accepts an unboxed value class (like `@JvmInline value class UserId(val id: Long)`), the compiler inlines the `Long` directly onto the call stack as a 64-bit primitive rather than allocating a wrapper object on the heap.
+
+Conversely, when local variables inside a function are captured by an escaping lambda or coroutine:
+
+```kotlin
+fun track() {
+    var count = 0
+    button.setOnClickListener { count++ } // Escapes stack frame!
+}
+```
+
+Because the lambda outlives the `track()` function's stack frame, the compiler promotes `count` from the stack to the heap, wrapping it in a heap-allocated `Ref.IntRef` object. This is known as **Variable Escaping**.
 
 ## How to answer in the interview
 
@@ -76,9 +123,14 @@ Discuss frames, references, object lifetime, compiler optimization, recursion de
 
 ## Follow-up questions
 
-- Does returning from a function immediately destroy an object it created? **Answer:** no; the object can remain reachable through another reference and GC timing is not immediate.
-- Can a local reference keep a heap object alive? **Answer:** yes while it is considered live by the runtime; another owner may keep it longer.
-- Is `StackOverflowError` the same as heap OOM? **Answer:** no; it normally indicates excessive call-stack depth, though both are memory-related failures.
+- **Interviewer:** "What causes a `StackOverflowError`?"
+  **Answer:** "A `StackOverflowError` occurs when the execution stack exhausts its allocated memory limit (typically ~1MB), almost always caused by unbounded or deep recursive function calls without tail-call optimization (`tailrec`)."
+
+- **Interviewer:** "Can objects live on the Stack in Java/Kotlin?"
+  **Answer:** "No. In the standard JVM and ART specifications, all object instances are allocated on the Heap. Only primitive values and object reference pointers live on the Stack."
+
+- **Interviewer:** "Why is Stack access faster than Heap access?"
+  **Answer:** "Stack memory operations operate on contiguous memory mapped directly into CPU L1/L2 cache lines with zero pointer indirection, while Heap memory involves dynamic pointer lookups and cache misses."
 
 ## Self-check rubric
 
@@ -89,4 +141,4 @@ Define a frame, explain a local-to-heap reference, reject the primitive slogan, 
 - [JVM runtime data areas](https://docs.oracle.com/en/java/javase/26/docs/specs/jvms/jvms-2.html#jvms-2.5) — stacks and heap conceptual model.
 - [Android memory overview](https://developer.android.com/topic/performance/memory-overview) — ART process and heap behavior.
 
-Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The Kotlin examples are illustrative.
+Technically reviewed against primary documentation on 2026-10-13.

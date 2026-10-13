@@ -23,11 +23,45 @@ Compare arrays, linked lists, stacks, queues, hash maps, and sets.
 
 ## Explanation in Arabic
 
-Array/`ArrayList` random access سريع O(1) ونقل عناصر عند insert في النص O(n). Linked list insert قرب node O(1) لكن الوصول لمكانها O(n) وmemory/cache أسوأ غالبًا. Stack LIFO، queue FIFO؛ استخدم `ArrayDeque` مناسب في Kotlin. HashMap key→value وHashSet membership متوقع O(1) لكن memory إضافية وhash quality مهمة.
+قارن بين هياكل البيانات الأساسية: Arrays، Linked Lists، Stacks، Queues، HashMaps، و Sets من حيث الأداء وحالات الاستخدام في أندرويد؟
+
+1. مقارنة شاملة للتعقيد (Time & Space Complexity):
+   - **Array / ArrayList**:
+     * Access by Index: $O(1)$
+     * Insert/Delete at end: $O(1)$ amortized
+     * Insert/Delete in middle: $O(n)$ (يتطلب إزاحة العناصر)
+     * الذاكرة: ممتازة جداً (Contiguous Memory) وموفرة ومثالية للـ CPU Cache.
+   - **LinkedList**:
+     * Access by Index: $O(n)$ (يجب المرور من البداية عقدة بعقدة)
+     * Insert/Delete at head/tail: $O(1)$
+     * الذاكرة: سيئة في أندرويد؛ كل عنصر يخصص كائن `Node` إضافي مع مؤشرين، مما يسبب تجزئة الذاكرة وضعف الكاش.
+   - **Stack (LIFO - Last In First Out)**:
+     * Push/Pop: $O(1)$
+     * استخدام أندرويد: إدارة شاشات التنقل (BackStack) وإلغاء العمليات (Undo buffer).
+   - **Queue (FIFO - First In First Out)**:
+     * Enqueue/Dequeue: $O(1)$
+     * استخدام أندرويد: معالجة الرسائل والمهام في الـ `Looper` و `MessageQueue` وجدولة WorkManager.
+   - **HashMap / HashSet**:
+     * Search/Insert/Delete: $O(1)$ average ($O(n)$ worst-case)
+     * الذاكرة: تستهلك حجماً إضافياً للـ Buckets وعقد الـ Entry.
 
 ## Practical walkthrough
 
-اختيار structure حسب operations: array/list لفهرسة وتصفح، linked list لinsert/delete مع node معلوم، stack للرجوع، queue للشغل بالترتيب، map للlookup بمفتاح، set للmembership. في Kotlin `List` interface لا يضمن random access لكل implementation. لو عندك product feed، غالبًا `ArrayList` للعرض وmap جانبية للـID أفضل من البحث الخطي لكل row.
+جدول مقارنة الأداء ومثال عملي لاختيار الهيكل الأنسب في أندرويد:
+```kotlin
+// جدول التعقيد السريع:
+// Structure   | Read by Key/Index | Insert Head | Insert Tail | Memory Efficiency
+// Array       | O(1)              | O(n)        | O(1)        | High (Contiguous)
+// LinkedList  | O(n)              | O(1)        | O(1)        | Low (Node objects)
+// HashMap     | O(1) (Key)        | O(1)        | O(1)        | Medium (Buckets)
+// HashSet     | O(1) (Contains)   | O(1)        | O(1)        | Medium
+
+// مثال: استخدام ArrayDeque بدلاً من Stack أو LinkedList (أسرع وأوفر في الذاكرة):
+val navigationStack = ArrayDeque<String>()
+navigationStack.addLast("home_screen") // Push O(1)
+navigationStack.addLast("profile_screen")
+val currentScreen = navigationStack.removeLast() // Pop O(1)
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +85,33 @@ For Android choose structures from actual access pattern, profile allocation/jan
 
 ## Interview answer — short
 
-“Arrays/lists favor indexed access; linked lists favor local link edits; stacks are LIFO, queues FIFO; hash maps/sets favor expected fast keyed lookup or membership. I choose by operations and memory.”
+Arrays offer O(1) indexed access with optimal cache locality but O(n) middle insertions. LinkedLists provide O(1) head/tail insertions but O(n) search and poor memory overhead. Stacks (LIFO) and Queues (FIFO) provide O(1) push/pop. HashMaps and Sets provide average O(1) lookups via hashing at the cost of higher memory overhead.
 
 ## Interview answer — structured
 
-“I compare costs for the operation the feature actually performs. An array-backed list gives constant indexed access but middle insert shifts elements. A linked list can relink in constant time only after locating the node. A stack serves LIFO, a queue FIFO, and hash maps/sets provide expected constant lookup with memory and collision caveats. On Android, allocations, locality, concurrency and persistence may outweigh textbook complexity.”
+Selecting the correct data structure balances computational time complexity against memory and cache efficiency:
+
+1. **Arrays and ArrayLists**:
+   - Constant $O(1)$ random access by index. Insertion at end is amortized $O(1)$, while arbitrary insertions require $O(n)$ element shifting. Stored contiguously in memory, yielding optimal CPU cache locality and zero node overhead.
+
+2. **LinkedLists**:
+   - Constant $O(1)$ insertion and deletion given a node reference, but $O(n)$ indexed access. In Android, `LinkedList` is generally discouraged because each entry allocates a separate `Node` object, causing memory bloat, GC churn, and cache misses.
+
+3. **Stacks and Queues**:
+   - Stack enforces LIFO; Queue enforces FIFO. Both operate with $O(1)$ enqueue/dequeue operations. In modern Kotlin/Android, `ArrayDeque` is the preferred implementation for both, outperforming legacy `java.util.Stack` and `LinkedList`.
+
+4. **HashMaps and Sets**:
+   - Provide average-case $O(1)$ search, insertion, and deletion via hash tables. They trade increased memory overhead (bucket arrays, load factors, collision nodes) for fast key-based retrieval.
 
 ## Interview answer — deep senior
 
-“I choose a data structure from the operations the feature performs. An array-backed list supports efficient indexed reads and iteration but insertion in the middle shifts elements. A linked list can splice a known node cheaply yet finding that node and indexing are expensive and each node costs memory. A stack gives last-in-first-out behavior for undo, a queue gives first-in-first-out behavior for pending work, a hash map maps IDs to values with expected fast lookup, and a set represents membership or uniqueness. I do not assume Kotlin’s `List` interface implies one physical structure or O(1) indexed access. For a product feed, I might keep a list for display order and a map for lookup by stable ID, accepting extra memory to avoid repeated per-row scans. For financial operations, an in-memory set is not durable deduplication. I state time and space costs for the actual operations, define mutation and concurrency ownership, then test edge cases and measure on target devices.”
+From an Android internals and memory allocation perspective, standard Java collections present hidden traps:
+
+1. **The Vector / Stack Synchronization Penalty**: The legacy `java.util.Stack` inherits from `Vector`, meaning every single push and pop synchronizes on a monitor lock. In single-threaded Android UI backstack operations, this introduces pointless synchronization overhead. Always prefer `ArrayDeque`.
+
+2. **Android Primitive Sparse Collections**: Storing a mapping of `Int` to `User` in `HashMap<Int, User>` requires boxing every primitive key into a `java.lang.Integer` object, allocating 16 to 24 bytes per key on the heap. Android's native `SparseArray<User>` uses two parallel arrays (`int[]` and `Object[]`) with binary search lookup ($O(\log n)$), eliminating all autoboxing and significantly slashing GC pressure.
+
+3. **Circular ArrayDeque Performance**: `ArrayDeque` uses a circular array buffer that automatically resizes without shifting elements on remove. It serves as both stack and queue with virtually zero garbage creation compared to linked implementations.
 
 ## How to answer in the interview
 
@@ -75,8 +127,11 @@ Prompt for operation matrix, locating linked node, hash caveat, durable queue ve
 
 ## Follow-up questions
 
-- [DSA-08](../dsa-08/): Which structure detects duplicates? **Answer:** HashSet with expected O(n) scan.
-- [DSA-10](../dsa-10/): Which combination builds LRU? **Answer:** map plus recency order structure.
+- **Interviewer:** "Why is `ArrayDeque` preferred over `LinkedList` for queue and stack implementations in Android?"
+  **Answer:** "Because `ArrayDeque` uses a contiguous resizable circular array, avoiding the per-element `Node` object allocations and cache misses of `LinkedList`."
+
+- **Interviewer:** "What memory optimization does Android's `SparseArray` provide over `HashMap<Int, V>`?"
+  **Answer:** "It avoids autoboxing primitive integer keys into `Integer` wrapper objects, storing keys in a raw `int[]` to reduce memory and GC overhead."
 
 ## Self-check rubric
 
@@ -87,4 +142,4 @@ Choose array, linked list, stack, queue, map or set for one Android data-flow ne
 - [Kotlin collections overview](https://kotlinlang.org/docs/collections-overview.html) — standard collections.
 - [Kotlin ArrayDeque API](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.collections/-array-deque/) — deque semantics.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

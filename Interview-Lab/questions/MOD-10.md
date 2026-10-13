@@ -24,11 +24,55 @@ How do navigation contracts work across modules?
 
 ## Explanation in Arabic
 
-Feature يمكنها إعلان public destination contract مثل route/type ومعلمات صغيرة (`orderId`) في API module، بينما implementation تعرف Composable أو Fragment. app shell تجمع graph وتربط contract بالتنفيذ؛ feature أخرى تطلب navigation للـcontract دون استيراد screen class. للـdeep link اختبر validation/auth وفشل ID مفقود؛ لا تمرر domain object كامل. العقد نفسه public API يحتاج versioning إذا تغير argument أو route. في dynamic feature يجب التأكد من install قبل فتح destination.
+كيف تعمل عقود التنقل (Navigation Contracts) عبر موديولات أندرويد المتعددة؟
+
+1. طبيعة المشكلة:
+   - في Jetpack Navigation أو Compose Navigation العادي، تقوم بكتابة: `navController.navigate(ProfileRoute(userId))`.
+   - في مشروع نمطي، إذا كان كلاس `ProfileRoute` وشاشة `ProfileScreen` موجودين في موديول `:feature:profile`، فإن موديول `:feature:feed` لا يستطيع كتابة هذا السطر لأن `:feature:feed` لا يرى `:feature:profile` في وقت التجميع!
+
+2. الحلول المعمارية لعقود التنقل عبر الموديولات:
+   - **الحل الأول: نمط `:api` الموديول (API Route Contracts)**:
+     * يتم وضع كلاس المسار (`@Serializable data class ProfileRoute(val id: String)`) داخل موديول خفيف `:feature:profile-api`.
+     * يستطيع `:feature:feed` استيراد `ProfileRoute` والتنقل إليه بأمان نوعي كامل (Type-Safe Navigation).
+     * موديول `:app` فقط هو من يجمع `:feature:profile-impl` ويربط الشاشة بالمسار داخل `NavHost`.
+   - **الحل الثاني: واجهة موجه التنقل المجردة (Navigation Interface Delegate)**:
+     * واجهة `interface FeedNavigator { fun navigateToProfile(userId: String) }` يتم حقنها في `FeedViewModel`.
+     * يتم تنفيذ الواجهة داخل موديول `:app` واستدعاء `navController.navigate(...)` هناك.
 
 ## Practical walkthrough
 
-Navigation contract بين modules يمرر stable ID/route typed ومعروف، لا Parcelable ضخمة من feature أخرى. Destination تعيد data من repository وتتحقق session/authorization، و`:app` ينسق graph. Deep link والnotification قد يبدأوا cold process، لذا route لا تفترض ViewModel موجود. اختبر back stack وmissing feature وprocess recreation.
+تطبيق Navigation Contracts في Compose Multi-Module باستخدام الـ API Module:
+```kotlin
+// 📁 في موديول ':feature:profile-api' (موديول عقود خفيف جداً):
+@Serializable
+data class ProfileDestination(val userId: String)
+
+// 📁 في موديول ':feature:feed' (يستورد فقط profile-api):
+@Composable
+fun FeedScreen(onNavigateToProfile: (String) -> Unit) {
+    Button(onClick = { onNavigateToProfile("user_42") }) { Text("View Profile") }
+}
+
+// 📁 في موديول ':feature:profile-impl' (يحتوي على الشاشة الفعلية):
+fun NavGraphBuilder.profileScreen() {
+    composable<ProfileDestination> {
+        ProfileRoute() // الشاشة الفعلية
+    }
+}
+
+// 📁 في موديول ':app' (يجمع كل الميزات ويربط مسارات الـ NavHost):
+@Composable
+fun AppNavHost(navController: NavHostController) {
+    NavHost(navController, startDestination = FeedDestination) {
+        composable<FeedDestination> {
+            FeedScreen(onNavigateToProfile = { userId ->
+                navController.navigate(ProfileDestination(userId)) // آمن نوعياً 100%!
+            })
+        }
+        profileScreen() // تسجيل شاشة البروفايل من الموديول الفعلي
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +96,27 @@ Version and test public routes, deep links, argument parsing, app graph assembly
 
 ## Interview answer — short
 
-“Expose a small stable destination contract, let app or graph composition bind it to feature UI, and pass validated IDs rather than implementation classes or large objects.”
+Navigation contracts decouple screen transitions in multi-module apps. Route destinations are placed in lightweight :api modules using Kotlin Serialization types, allowing callers to navigate with full type-safety. The :app module hosts the NavHost, registering destinations and linking screen composables from feature implementation modules.
 
 ## Interview answer — structured
 
-“I keep the destination's public identity separate from its Composable implementation. Orders may expose a typed route with `orderId`; checkout asks the app navigator to open it, and app graph registration maps it to Orders UI. The destination validates arguments and authorization and reloads data. I test deep links, process recreation and route compatibility. For an on-demand feature, installation is part of the navigation precondition.”
+In multi-module applications, features cannot reference peer screen classes directly. Navigation contracts solve this by decoupling the destination definition from the screen implementation:
+
+1. **Contract in `:feature:*:api`**: We define the navigation target as a serializable route type (`@Serializable data class UserProfileRoute(val id: String)`) inside a lightweight API module. Any feature needing to navigate to the profile imports only this tiny API contract.
+
+2. **Implementation in `:feature:*:impl`**: The feature implementation module exposes an extension function on `NavGraphBuilder` (e.g. `fun NavGraphBuilder.userProfileScreen(...)`) registering the composable entry.
+
+3. **Assembly in `:app`**: The `:app` module imports both modules and configures the top-level `NavHost`. When feature `A` triggers navigation, it passes the typed contract from `feature-b-api` to the controller. The destination matches without feature `A` ever knowing how the destination screen is implemented or tested.
 
 ## Interview answer — deep senior
 
-“A navigation contract is a public API between feature boundaries. It should describe a destination and minimal arguments, not expose the other feature's screen class or ViewModel. I might place `OrderDetails(orderId)` in a small Orders API module and let the app composition root register the actual Orders UI. Checkout or a notification can request that contract without knowing how Orders renders. The route uses a stable identifier so the back stack and deep link can be restored; the Orders owner reloads data and enforces authorization, because a crafted link can supply any ID. I consider route changes like API changes: renaming a path or parameter can break notifications, bookmarks or other modules, so compatibility and tests matter. A graph-contribution mechanism can avoid a giant app file, but it must keep dependency direction visible. With dynamic delivery, a navigator first resolves installation state and only then opens the destination. I test the assembled graph, deep-link parsing, missing/deleted IDs, back-stack behavior and eligible process restoration.”
+With modern **Type-Safe Compose Navigation (Navigation 2.8+)**, navigation contracts achieve compile-time safety without raw string URLs.
+
+Under the hood, routes are typed Kotlin classes serialized via `kotlinx.serialization`. However, when architecting navigation contracts across modules, two runtime constraints must be respected:
+
+1. **Serializable Model Independence**: Never include complex domain models inside navigation route arguments (e.g. `data class CheckoutRoute(val cart: CartDomainModel)`). Large objects violate Android's `Bundle` size limits (risking `TransactionTooLargeException`) and violate encapsulation. Route arguments must strictly be lightweight primitives (IDs, keys, or query tokens). The destination screen fetches full data from its own repository.
+
+2. **State Restoration Across Process Death**: Type-safe navigation routes automatically serialize into the `SavedStateHandle`. When Android OS terminates the process in the background and restores it, Compose Navigation deserializes the route arguments flawlessly without manual bundle parsing.
 
 ## How to answer in the interview
 
@@ -76,9 +132,11 @@ Cover route API, app mapping, typed versus string routes, deep-link security, ve
 
 ## Follow-up questions
 
-- Should a route carry an entire Order entity? **Answer:** generally no; pass a stable ID and reload it.
-- Who enforces deep-link authorization? **Answer:** the destination/domain boundary, not trust in route formatting.
-- What changes for a dynamic feature? **Answer:** install availability must be checked before entering its code.
+- **Interviewer:** "What is the consequence of passing large objects via Navigation route arguments?"
+  **Answer:** "It risks crashing the app with `TransactionTooLargeException` during state saving and couples the two screens to an identical data model."
+
+- **Interviewer:** "Can you navigate between features using Android Deep Links?"
+  **Answer:** "Yes. Deep links decouple modules via URI strings (`app://user/{id}`), but sacrifice compile-time type checking compared to serialization contracts."
 
 ## Self-check rubric
 
@@ -89,4 +147,4 @@ Define a destination contract, show graph mapping, and cover deep link, restorat
 - [Navigation with Compose](https://developer.android.com/develop/ui/compose/navigation) — routes and arguments.
 - [Android modularization patterns](https://developer.android.com/topic/modularization/patterns) — graph composition.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The navigation facade is a design option.
+Technically reviewed against primary documentation on 2026-10-13.

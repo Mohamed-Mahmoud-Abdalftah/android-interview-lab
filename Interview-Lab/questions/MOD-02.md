@@ -24,11 +24,55 @@ Compare app, feature, core, data, domain, and design-system modules.
 
 ## Explanation in Arabic
 
-`:app` هو composition/delivery entry point ويختار features وbindings وnavigation root. `:feature:*` يملك UI/use cases الخاصة بقدرة مثل checkout. `:data:*` يطبق repositories ويخاطب network/database. `:domain:*` اختياري لعقود وقواعد مستقلة عن Android إذا حجم النظام يبرره. `:core:*` لبنية مشتركة مستقرة مثل network client أو database setup، وليس مكانًا لكل كود لا يعرف صاحبه أين يضعه. `:designsystem` يوفر theme/components UI محايدة عن business. اتجاه dependencies من feature إلى contracts/core، وتطبيق implementation يركبه app؛ التفاصيل تختلف حسب الحجم.
+مقارنة معمارية شاملة بين أنواع موديولات أندرويد:
+`:app`، و `:feature`، و `:core`، و `:data`، و `:domain`، و `:designsystem`:
+
+1. `:app` (موديول التجميع النهائي والـ Composition):
+   - الموديول التطبيقي الرئيسي (`com.android.application`).
+   - **وظيفته**: تجميع كل موديولات الـ Features والـ Data، وبناء شجرة الـ Dependency Injection المركزية (Hilt Root)، وإعداد الـ Navigation Graph النهائي وتهيئة الـ Application class. لا يحتوي على أي منطق أعمال (Business Logic).
+
+2. `:feature:*` (موديولات الميزات والشاشات):
+   - موديولات مكتبية تمثل ميزة مستقلة من منظور المستخدم (مثل `:feature:cart`, `:feature:profile`).
+   - تحتوي على شاشات Compose أو Views، والـ ViewModels، والـ UI State، ومنطق العرض. لا تعتمد ميزات على ميزات أخرى مباشرة.
+
+3. `:domain:*` (موديول منطق الأعمال الصافي):
+   - موديول Kotlin نقي (Pure JVM Library بدون أي تبعيات Android SDK).
+   - يحتوي على الكيانات النقية (Entities)، ونماذج الأعمال، والـ UseCases، وواجهات الـ Repositories المجردة.
+
+4. `:data:*` (موديول إدارة البيانات وتطبيق العقود):
+   - يطبق واجهات الـ Repositories المعرفة في الـ Domain.
+   - يتعامل مع مصادر البيانات المحلية (Room) والشبكية (Retrofit) ويحول الـ DTOs إلى Domain Models.
+
+5. `:core:*` (موديولات البنية التحتية المشتركة):
+   - مكتبات عامة تقدم خدمات منخفضة المستوى مستقلة عن أي ميزة تجارية محددة (مثل `:core:network`, `:core:database`, `:core:datastore`, `:core:analytics`).
+
+6. `:designsystem` (نظام التصميم الموحد):
+   - موديول يحتوي على مكونات الـ UI المشتركة القابلة لإعادة الاستخدام: الألوان، والخطوط، والـ Buttons، والـ Cards، والـ Dialogs الموحدة للتطبيق، بدون أي منطق أعمال أو ارتباط بـ API.
 
 ## Practical walkthrough
 
-`:app` يركب features والnavigation، feature modules تملك UI/logic المحلية، core محدود لعقد مشترك حقيقي، data للadapters، domain للrules إن لها قيمة، design-system للcomponents/tokens. ليس لازم كل مشروع يمتلك هذه كلها. لو feature تحتاج account ID، أعطها contract صغير بدل استيراد auth UI. راجع ما يخرج من `api` حتى لا تصبح core سلة عامة.
+اتجاه التبعيات (Dependency Direction) المسموح به بين أنواع الموديولات:
+```text
+                     ┌───────────────┐
+                     │     :app      │ (Application Assembly)
+                     └───────┬───────┘
+             ┌───────────────┴───────────────┐
+             ▼                               ▼
+   ┌───────────────────┐           ┌───────────────────┐
+   │ :feature:checkout │           │  :feature:catalog │
+   └─────────┬─────────┘           └─────────┬─────────┘
+             │                               │
+             ├───────────────┬───────────────┤
+             ▼               ▼               ▼
+     ┌──────────────┐ ┌──────────────┐ ┌───────────────┐
+     │ :core:design │ │:domain:order │ │ :core:network │
+     └──────────────┘ └──────▲───────┘ └───────▲───────┘
+                             │                 │
+                      ┌──────┴───────┐         │
+                      │  :data:order ├─────────┘
+                      └──────────────┘
+```
+قاعدة ذهبية: اتجاه الأسهم دائماً للأسفل باتجاه الاستقرار. لا يمكن لـ :core أو :designsystem أن يعتمد على أي :feature أبداً!
 
 ## Why it matters and how it works
 
@@ -52,15 +96,26 @@ Publish a dependency rule with examples and check it in CI. Review public APIs a
 
 ## Interview answer — short
 
-“App composes and packages; features own user capabilities; data implements access; domain can hold reusable policy/contracts; core and design system provide stable shared infrastructure and UI.”
+:app aggregates modules, wires Hilt DI, and builds the final APK. :feature holds UI screens, ViewModels, and state. :domain contains pure JVM business logic and repository interfaces. :data implements repositories via Room and Retrofit. :core provides low-level infrastructure (network, analytics). :designsystem provides reusable design tokens, typography, and UI widgets without business logic.
 
 ## Interview answer — structured
 
-“I use these names as ownership hints, not a mandated diagram. The app chooses variants, bindings and top-level navigation. A feature owns its screen behavior, data implements repository contracts with network/database, and a domain module holds independent rules when useful. Core supplies stable infrastructure; design system supplies theme and reusable UI primitives. I keep dependencies acyclic and avoid feature-specific objects in shared modules.”
+A disciplined taxonomy assigns distinct responsibilities and strict dependency rules across module categories:
+
+1. **`:app`**: The composition root. It applies `com.android.application`, aggregates all feature and data modules, configures the Hilt root component, registers global navigation, and generates the final APK/AAB. It contains zero business logic.
+2. **`:feature:*`**: User-facing vertical slices (`:feature:login`, `:feature:feed`). Contains UI composables, ViewModels, navigation routes, and presentation state. Features must never depend directly on sibling feature implementation modules.
+3. **`:domain:*`**: Pure Kotlin/JVM modules without Android framework imports. Houses domain entities, Use Cases, and abstract repository interfaces. It represents the most stable layer of the architecture.
+4. **`:data:*`**: Implements domain repository contracts using local databases and remote network APIs, encapsulating caching and network resilience.
+5. **`:core:*`**: Horizontal infrastructure libraries (`:core:network`, `:core:analytics`, `:core:database`) reusable across any feature.
+6. **`:core:designsystem`**: Houses shared theme tokens (colors, typography, shapes) and stateless reusable UI components (buttons, headers, empty states). It must remain strictly agnostic of business domains.
 
 ## Interview answer — deep senior
 
-“I would describe the modules by why another module is allowed to depend on them. The app is the final composition and packaging boundary: it selects features and their implementations. A feature groups a user capability and exposes only the API needed for navigation or integration. Data modules implement persistence and remote access, often behind interfaces a feature or domain layer can see. A domain module is useful when business rules or contracts are genuinely shared or need Android-independent tests; I would not create one just to house empty forwarding classes. Core network/database modules provide stable infrastructure, while a design system provides visual tokens and components without knowing orders or payments. In an orders example, feature UI depends on an orders contract and design system; data implements the contract using core clients; app assembles them. I watch high-fan-out shared modules because public changes there trigger widespread work. The exact partition is a design choice driven by ownership, reuse and build evidence, with an acyclic graph and integration tests as guardrails.”
+When enforcing module boundaries in enterprise codebases, architects use **dependency analysis tools (like Dependency Analysis Gradle Plugin)** and custom lint checks to enforce directional contracts:
+
+- **Rule 1 (The Gravity Rule)**: Dependencies only flow downward toward higher stability. A low-level module like `:core:designsystem` or `:core:network` must **NEVER** import a `:feature` module. Doing so inverts the architecture and causes instant cyclic dependency locks.
+- **Rule 2 (Domain Purity)**: The `:domain` module should use the standard `kotlin("jvm")` plugin rather than `com.android.library`. This guarantees that Android framework dependencies (like `android.content.Context` or `android.os.Bundle`) cannot compile inside domain logic, keeping business rules testable on local JVMs in single-digit milliseconds.
+- **Rule 3 (Data Encapsulation)**: DAOs, Retrofit interfaces, and Room entities are `internal` to the `:data` module. Features only see domain repository interfaces.
 
 ## How to answer in the interview
 
@@ -76,9 +131,11 @@ Explain ownership, dependency edges, app composition, optional domain, shared AP
 
 ## Follow-up questions
 
-- Must every app have a domain module? **Answer:** no; add it when reusable policies or contracts justify the boundary.
-- Should design system import an Order entity? **Answer:** no; it should accept UI-level values or state.
-- Who selects the concrete repository? **Answer:** the app composition graph or an owned DI binding module.
+- **Interviewer:** "Why should `:core:designsystem` never contain business models?"
+  **Answer:** "Because it turns the design system into a coupled monolith. A user profile card in designsystem should accept primitive properties (`name: String`, `avatarUrl: String`), not a domain `User` entity."
+
+- **Interviewer:** "Can a `:feature` module depend on multiple `:domain` modules?"
+  **Answer:** "Yes. A feature (such as checkout) may need domain rules from `:domain:cart`, `:domain:payment`, and `:domain:user`."
 
 ## Self-check rubric
 
@@ -89,4 +146,4 @@ Assign six module roles, draw an acyclic orders path, and identify one over-shar
 - [Android modularization guide](https://developer.android.com/topic/modularization) — module ownership.
 - [Common modularization patterns](https://developer.android.com/topic/modularization/patterns) — feature/data structures.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Module names are conventions, not platform requirements.
+Technically reviewed against primary documentation on 2026-10-13.

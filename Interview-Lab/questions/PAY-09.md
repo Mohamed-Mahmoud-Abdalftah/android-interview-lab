@@ -23,11 +23,64 @@ How do you isolate a hardware/EMV SDK behind a clean interface?
 
 ## Explanation in Arabic
 
-Hardware/EMV SDK يتغير حسب vendor والجهاز، فلا نخلي UI أو ViewModel يفهم raw callbacks وerror codes. نعمل interface صغير لعمليات `start/cancel/status` ونتائج domain واضحة، وadapter يترجم SDK events ويربطها بـoperation ID. لكن interface ما يلغي شروط certification ولا يخلي callback دليل نهائي على issuer outcome.
+كيف تقوم بعزل حزم الـ SDK الخاصة بالعتاد وقراءة البطاقات الذكية (Hardware / EMV SDKs) وراء واجهة برمجية نظيفة وقابلة للاختبار؟
+
+1. طبيعة الـ EMV SDKs التجارية السيئة:
+   - حزم الـ SDK الخاصة بماكينات الدفع (مثل Pax, Verifone, Ingenico, Sunmi) غالباً ما تملك أسوأ تصميم برمجي ممكن:
+     * تعتمد على كائنات أحادية ثابتة عامة (`TerminalHelper.getInstance()`).
+     * تستخدم استدعاءات C/C++ معقدة (JNI) ومصفوفات بايت خام (TLV - Tag Length Value).
+     * تستخدم Callbacks قديمة وغير متزامنة وتسبب تسريبات ذاكرة.
+     * يستحيل تشغيلها على محاكي أندرويد العادي لعدم وجود هاردوير حقيقي، مما يعطل كتابة الـ Unit Tests.
+
+2. نمط التصميم المعماري للعزل (The Hardware Adapter Pattern):
+   - **1. واجهة نظيفة معتمدة على الكوتلن (Domain Interface)**:
+     * تعريف `CardReaderManager` تتعامل مع نماذج نظيفة (`CardData`, `ReaderEvent`) وتستخدم Kotlin `Flow` للأحداث المتدفقة.
+   - **2. محول العتاد الحقيقي (Concrete Hardware Adapter)**:
+     * كلاس `PaxCardReaderAdapter` هو الوحيد الذي يرى الـ SDK، ويقوم بتحويل الـ Callbacks إلى `callbackFlow` مع إدارة آمنة للـ Coroutine Scope وحذف المستمعات عند الإغلاق.
+   - **3. قارئ وهمي كامل للاختبارات (FakeCardReaderManager)**:
+     * يتيح للمطورين محاكاة تمرير البطاقة، وإدخال الـ PIN، ومحاكاة أعطال العتاد بضغطة زر داخل المحاكي دون الحاجة لماكينة حقيقية.
 
 ## Practical walkthrough
 
-خلي UI تقول `authorize(intent)` وتستقبل domain outcome، والـadapter وحده يعرف أسماء callbacks وerror codes بتاعة vendor. لو SDK رجّعت transport error، map إلى `Unknown` مش `Declined` من غير دليل. اعمل fake adapter لاختبار race وlate callbacks، واختبر adapter الحقيقي على hardware المعتمد لأن abstraction مش بديل certification.
+كود معماري يوضح عزل الـ EMV SDK وراء Kotlin Flow و Interface نظيف:
+```kotlin
+// 1. الواجهة العامة في طبقة الـ Domain (نظيفة 100% وخالية من كود العتاد):
+sealed interface CardReaderEvent {
+    object WaitingForCard : CardReaderEvent
+    object CardInserted : CardReaderEvent
+    object PinRequired : CardReaderEvent
+    data class CardReadSuccess(val cardToken: String, val maskedPan: String) : CardReaderEvent
+    data class ReaderError(val errorCode: Int, val message: String) : CardReaderEvent
+}
+
+interface CardReaderManager {
+    fun startCardInteraction(amountCents: Long): Flow<CardReaderEvent>
+    suspend fun cancelInteraction()
+}
+
+// 2. المحول الفعلي الذي يعزل الـ SDK الخبيثة باستخدام callbackFlow:
+class VendorEmvCardReaderAdapter(private val vendorSdk: ProprietaryVendorSdk) : CardReaderManager {
+    override fun startCardInteraction(amountCents: Long): Flow<CardReaderEvent> = callbackFlow {
+        val listener = object : ProprietaryEmvListener {
+            override fun onCardDetected() { trySend(CardReaderEvent.CardInserted) }
+            override fun onPinRequested() { trySend(CardReaderEvent.PinRequired) }
+            override fun onEmvComplete(tlvData: ByteArray) {
+                val parsedToken = parseTlvToToken(tlvData)
+                trySend(CardReaderEvent.CardReadSuccess(parsedToken, "4111****1111"))
+                close()
+            }
+            override fun onError(code: Int, msg: String) {
+                trySend(CardReaderEvent.ReaderError(code, msg))
+                close()
+            }
+        }
+        vendorSdk.registerListener(listener)
+        vendorSdk.startTransaction(amountCents)
+        awaitClose { vendorSdk.unregisterListener(listener); vendorSdk.abort() }
+    }
+    override suspend fun cancelInteraction() { vendorSdk.abort() }
+}
+```
 
 ## Why it matters and how it works
 
@@ -67,15 +120,31 @@ Run contract tests against fake adapter plus hardware test matrix by model, ABI 
 
 ## Interview answer — short
 
-“I put an explicit payment port between the domain and vendor SDK. The adapter owns callback translation, threading, and cancellation, while the domain keeps operation identity and treats ambiguous transport outcomes as Unknown.”
+Isolate proprietary hardware and EMV SDKs behind an abstract domain interface (CardReaderManager) using the Adapter pattern. Bridge legacy C/JNI callbacks into idiomatic Kotlin Coroutines Flows via callbackFlow, and provide a full-fidelity Fake implementation for unit testing and emulator-based development.
 
 ## Interview answer — structured
 
-“The UI should request a payment intent, not call vendor callbacks directly. A TerminalGateway adapter translates SDK methods, threading and error codes into approved, declined or unknown domain outcomes tied to a stable operation ID. A repository persists state and handles process death; backend/provider reconciliation settles ambiguous results. I test the interface with a fake and still run real hardware/certification tests for SDK-specific behavior. The adapter translates a vendor disconnect into Unknown unless the provider proves a decline.”
+Proprietary POS hardware and EMV chip-reader SDKs exhibit severe architectural anti-patterns that require strict isolation:
+
+1. **Defects of Commercial Payment SDKs**:
+   - Vendor SDKs (Pax, Verifone, Sunmi, Ingenico) frequently mandate static singletons, untyped byte arrays (EMV TLV tags), blocking native JNI calls, and undocumented lifecycle memory leaks. Leaking vendor classes into UI or domain modules irreparably couples the application to specific hardware revisions.
+
+2. **The Hardware Adapter Pattern**:
+   - **Pure Domain Abstraction**: Define a clean `CardReaderManager` interface exposing idiomatic Kotlin sealed interfaces (`CardReaderEvent.WaitingForCard`, `CardReaderEvent.PinRequired`, `CardReaderEvent.Success`).
+   - **Reactive Bridge via `callbackFlow`**: The adapter encapsulates vendor callbacks into a cold Kotlin `Flow`. Using `awaitClose { vendorSdk.abort() }` guarantees hardware teardown and unregisters memory-leaking listeners when the subscriber cancels.
+
+3. **Decoupled Testability via In-Memory Fakes**:
+   - Because proprietary native `.so` binaries fail to link on host JVMs or standard Android x86 emulators, an in-memory `FakeCardReaderManager` is essential. It enables full UI automated testing and CI verification without requiring physical $500 hardware terminals.
 
 ## Interview answer — deep senior
 
-“I draw the boundary around what the application controls: intent identity, state persistence, cancellation semantics and observability. The adapter may wrap callbacks into a suspend API, but cancellation of a coroutine does not imply an in-flight EMV authorization was canceled. I map each SDK event to a state transition with original references, handle duplicate/late callbacks and device disconnection, and expose Unknown when evidence is insufficient. The abstraction stays honest about provider-specific void/reversal capabilities. Contract tests validate mapping; hardware matrices cover firmware, ABI and release builds. Certification constraints are documented. I keep certification and hardware matrix work explicit; a clean Kotlin interface alone does not validate EMV behavior. I would keep the domain port small: authorize, cancel if supported, and status, with explicit Approved, Declined, and Unknown outcomes carrying only safe references. The adapter handles vendor callbacks, timeout, threading, and any JNI or device lifecycle details. It maps vendor codes through a reviewed table and never treats a disconnect as an issuer decline without evidence. The repository commits an attempt before invoking the port and owns reconciliation. A fake adapter makes deterministic race tests possible, while a hardware test matrix checks firmware-specific callback order and device disconnects. The interface is an engineering seam, not proof that the implementation meets EMV certification or acquirer rules.”
+From an EMV Level 2 kernel compliance and POS threading perspective, adapter implementation requires systems discipline:
+
+1. **Threading and JNI Isolation**: Vendor EMV kernels often invoke callbacks directly from arbitrary OS native POS threads. The adapter must sanitize thread contexts, dispatching events onto controlled background coroutine dispatchers (`Dispatchers.IO`) before touching Android framework state.
+
+2. **Hardware Re-Entrancy & Mutexes**: Most physical EMV readers crash or lock up permanently if `startTransaction` is invoked while a previous card read session is in progress. The adapter must wrap hardware invocations in an internal `Mutex` with timeout protection to prevent concurrent native state collisions.
+
+3. **Multi-Vendor Dependency Injection**: In white-label POS applications supporting multiple hardware vendors (e.g. running on both Pax A920 and Sunmi V2s), use Dagger/Hilt qualifier annotations or build flavor bindings to inject the matching adapter dynamically based on device build manufacturer (`Build.MANUFACTURER`).
 
 ## How to answer in the interview
 
@@ -91,8 +160,11 @@ Prompt for narrow port, cancellation versus payment cancellation, duplicate call
 
 ## Follow-up questions
 
-- [PAY-11](../pay-11/): How test timeout/disconnect? **Answer:** fake callback schedules plus real device drills.
-- [PAY-12](../pay-12/): What survives power loss? **Answer:** durable operation identity and backend record.
+- **Interviewer:** "Why is `callbackFlow` the ideal Kotlin construct for wrapping hardware SDK callbacks?"
+  **Answer:** "Because it converts asynchronous multi-event callbacks into a reactive Flow while ensuring guaranteed hardware cleanup via `awaitClose` upon cancellation."
+
+- **Interviewer:** "How do you run automated UI tests for POS flows without physical payment terminals?"
+  **Answer:** "By injecting a `FakeCardReaderManager` that simulates card taps, chip reads, and timeouts programmatically in memory on standard emulators."
 
 ## Self-check rubric
 
@@ -103,4 +175,4 @@ Can I design an SDK port without erasing provider-specific constraints or confla
 - [Android app architecture data layer](https://developer.android.com/topic/architecture/data-layer) — repository/data-source boundaries.
 - [Kotlin cancellation](https://kotlinlang.org/docs/cancellation-and-timeouts.html) — cooperative cancellation.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

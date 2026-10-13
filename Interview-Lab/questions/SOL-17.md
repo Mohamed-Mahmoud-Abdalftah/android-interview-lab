@@ -22,7 +22,51 @@ Recognize a likely LSP violation while allowing legitimately optional contracts.
 
 ## Explanation in Arabic
 
-`UnsupportedOperationException` من subclass لmethod موجودة في base علامة قوية إن subtype مش قادرة تلتزم بالcontract. لو `Storage.save()` promised للكل و`ReadOnlyStorage.save()` ترمي، caller لازم يعرف النوع ويتجنب method؛ substitution فشلت. ممكن الحل `ReadableStorage` و`WritableStorage` منفصلين (ISP) أو composition/Capability flag واضح. لكن لو base contract مصرح صراحة إن العملية optional أو method default ممكن ترمي لمدخلات معينة، الحكم يعتمد على الوعد الحقيقي؛ ما تقولش كل throw في subtype LSP violation تلقائيًا.
+عندما يضطر كلاس فرعي (Subclass) لرمي `UnsupportedOperationException` لتجاهل سلوك مفروض عليه من الكلاس الأساسي: ما هو المبدأ الذي تم انتهاكه؟ وكيف يُعالج؟
+
+1. المبدأ المنتهك حتماً: مبدأ لسكوف للاستبدال (Liskov Substitution Principle - LSP):
+   - رمي `UnsupportedOperationException` هو الدليل القاطع والجريمة المشهودة على انتهاك **LSP**!
+   - الكلاس الأساسي (Superclass) قطع وعداً بأن هذه العملية مدعومة ومتاحة. عندما يقوم الكلاس الفرعي بنقض هذا الوعد ورمي استثناء، فإنه **يضعف الشروط اللاحقة (Weakens Postconditions)** ويفشل في العمل كبديل صالح لكلاسه الأساسي.
+
+2. ما هي الآثار الجانبية لهذا الانتهاك؟
+   - انهيار البرنامج في وقت التشغيل (Runtime Crashes)؛ الكود المستدعي الذي يتعامل مع الكلاس الأساسي لا يتوقع هذا الاستثناء، مما يفجر أخطاء غير معالجة.
+   - إجبار الكود الخارجي على عمل `if (instance is SpecificSubclass)` قبل الاستدعاء، مما يكسر مبدأ Polymorphism تماماً!
+
+3. كيف يُعالج هندسياً؟
+   - **إزالة السلوك من الكلاس الأساسي**: الكلاس الأساسي يجب أن يحتوي فقط على القاسم المشترك الأعظم (Greatest Common Divisor) للسلوكيات الحقيقية لجميع الأبناء دون استثناء.
+   - **استبدال الوراثة بالتركيب (Composition)**: فصل السلوك غير المشترك في واجهة مستقلة (Capability Interface) أو Delegate خارجي.
+
+## Practical walkthrough
+
+تصحيح انتهاك LSP الذي يرمي UnsupportedOperationException:
+```kotlin
+// ❌ انتهاك صارخ لـ LSP: طائر لا يستطيع الطيران يرمي استثناء في دالة موروثة!
+open class Bird {
+    open fun fly(): Altitude = Altitude(1000)
+}
+
+class Penguin : Bird() {
+    override fun fly(): Altitude {
+        // 💥 يكسر LSP: المستدعي يتوقع طيراناً، والبطريق يرمي Crash!
+        throw UnsupportedOperationException("Penguins cannot fly!")
+    }
+}
+
+// ✅ الحل المعماري السليم: تقسيم الشجرة أو استخدام Composition:
+open class Bird // طائر عام (يأكل، ينام، يتكاثر)
+
+interface Flyable {
+    fun fly(): Altitude
+}
+
+class Eagle : Bird(), Flyable {
+    override fun fly(): Altitude = Altitude(2000)
+}
+
+class Penguin : Bird() {
+    // لا ينفذ Flyable؛ الكود الذي يبحث عن طيران لن يستدعيه، ولن يحدث أي استثناء!
+}
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +75,6 @@ LSP is judged by behavioral expectations for valid calls. An unsupported operati
 ## Worked example
 
 Conceptual Kotlin: `interface Reader { suspend fun read(id: String): Data? }` and `interface Writer { suspend fun save(data: Data) }`; a read-only cache implements only `Reader`. A writable store implements both. Callers needing `save` depend on `Writer`, not a broad `Storage`.
-
-## Practical walkthrough
-
-لو `ReadOnlyStorage` وارث `Storage.save()` وبيعمل `UnsupportedOperationException`، غالبًا العقد الأساسي أو inheritance غلط: caller متوقع save متاح. افصل `Reader` و`Writer`، وخلي read-only ينفذ الأول فقط. لكن لو العقد مكتوب صراحة إن العملية قد تفشل بنتيجة typed مثل `NotSupported` لكل implementations، throw مش تلقائي دليل LSP؛ راجع وعد الـAPI. اختبر كل implementation بنفس inputs وfailure semantics. في production خليك واضح مع caller قبل التنفيذ، بدل runtime crash لما المستخدم يدوس حفظ.
 
 ## Trade-offs and decision criteria
 
@@ -50,15 +90,29 @@ A document app has read-only shared files and editable local files. It exposes r
 
 ## Interview answer — short
 
-A subclass throwing `UnsupportedOperationException` for a valid base operation is a likely LSP violation: callers can no longer substitute it safely. I narrow the contract or split capabilities, while checking what the base actually promises.
+The Liskov Substitution Principle (LSP) is violated. Subclasses must be substitutable for their superclass without breaking behavioral contracts. Throwing `UnsupportedOperationException` breaks caller expectations. Fix it by removing the unsupported behavior from the base class and extracting it into a separate interface or composable delegate.
 
 ## Interview answer — structured
 
-LSP is about behavior, not signatures. If callers are promised that any `Storage` can save, a read-only subclass that throws for every save breaks that promise. The caller now needs a subtype check, which signals the abstraction is wrong. I would separate read and write capabilities or use composition so clients request only supported behavior. I also inspect the documented contract; an operation explicitly optional for all implementations changes the analysis. One option is to model the operation as a result such as `Unsupported` for all implementations, if unsupported is genuinely part of the domain contract. Otherwise, capability interfaces make compile-time promises stronger: a caller needing save accepts `Writer` only.
+Throwing `UnsupportedOperationException` from an overridden subclass method is the textbook signature of a **Liskov Substitution Principle (LSP)** violation.
+
+When a superclass declares a public method, it establishes an explicit behavioral contract with calling code: *'Any instance of this type or its subtypes can execute this operation and will return a valid result without throwing unexpected state errors.'*
+
+When a subclass overrides that method with `throw UnsupportedOperationException()`, it violates this contract:
+1. It is no longer substitutable for its parent type.
+2. Any generic polymorphic collection processing instances of the superclass (`birds.forEach { it.fly() }`) crashes at runtime upon reaching this subtype.
+3. It forces calling code to write defensive `if (item !is Penguin)` type checks, which recursively violates the Open/Closed Principle (OCP).
+
+**The Architectural Resolution**:
+- Prune the method from the superclass hierarchy.
+- Segregate optional capabilities into dedicated interfaces (`Flyable`, `Editable`, `Shareable`).
+- Use **Composition over Inheritance**: rather than inheriting a base class with unwanted baggage, inject only the specific behaviors required.
 
 ## Interview answer — deep senior
 
-The strongest clue is that a client must ask “which subclass did DI give me?” before making a valid call. That means the base type no longer captures a reliable behavior. I write contract tests against each implementation with valid inputs, cancellation and failure paths. If one cannot support a method, I split the interface by capabilities or return an explicit domain outcome when unavailability is a legitimate case. I do not automatically label every thrown exception an LSP violation: invalid input or a documented transient failure may be part of the contract. `UnsupportedOperationException` for a normally valid operation is different. In Android, this matters for provider adapters and screen base classes, where hidden special cases cause production-only crashes. An unsupported override is a strong signal that the subtype cannot honor the base contract. If `Storage` promises `save`, a read-only subclass that throws for every save is not substitutable for callers using that promise. I would split reading and writing capabilities and inject `Writer` only where saving is required. I would also inspect the documented contract: a typed unsupported outcome may be a valid part of it, so the conclusion depends on the promise, not the exception's name alone. Contract tests should run against each implementation. In production, the UI should not expose a save action based on a broad type that might crash at runtime.
+In Android architecture, this appears in repositories and storage implementations. Suppose a base `interface CacheStorage<T>` declares `read()`, `write()`, and `clear()`. A read-only `AssetStorage` implementation backed by the APK's read-only assets directory throws `UnsupportedOperationException("Cannot write to APK assets")` inside `write()`.
+
+The resolution requires applying ISP and LSP together: split the contract into `ReadableStorage<T>` and `WritableStorage<T>`. `AssetStorage` implements only `ReadableStorage`, ensuring that clients requiring write operations can never accidentally be passed an un-writable storage instance at compile time.
 
 ## How to answer in the interview
 
@@ -74,8 +128,11 @@ Contrast invalid input failure with unsupported valid operation; design capabili
 
 ## Follow-up questions
 
-- [SOL-04](../sol-04/): What is the behavioral test? **Answer:** every subtype honors valid base expectations.
-- [SOL-05](../sol-05/): Which other principle helps? **Answer:** ISP can split read and write capabilities.
+- **Interviewer:** "How does throwing UnsupportedOperationException force calling code to violate OCP?"
+  **Answer:** "Callers are forced to add `if (item is SpecificClass)` checks to skip the unsupported operation. Every time a new non-supporting subclass is created, callers must be modified with new `if/else` checks, violating OCP."
+
+- **Interviewer:** "Can Java's Collections API be criticized for this exact LSP violation?"
+  **Answer:** "Yes! `java.util.Collections.unmodifiableList()` returns a `List` whose `add()` method throws `UnsupportedOperationException`, which is a famous language-level violation of LSP in the standard Java library."
 
 ## Self-check rubric
 
@@ -86,4 +143,4 @@ State the base promise, classify a thrown case correctly, and redesign a read-on
 - [Liskov and Wing, A Behavioral Notion of Subtyping](https://www.cs.columbia.edu/~wing/publications/LiskovWing94.pdf) — substitution.
 - [Kotlin inheritance](https://kotlinlang.org/docs/inheritance.html) — override mechanics.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

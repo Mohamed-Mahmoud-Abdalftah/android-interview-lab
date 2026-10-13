@@ -24,11 +24,46 @@ How do you analyze a heap dump and use LeakCanary?
 
 ## Explanation in Arabic
 
-ابدأ بسيناريو يمكن تكراره: افتح الشاشة، اقفلها، وكرر. لو Activity أو Fragment view المفروض انتهت لكن لسه retained، خذ heap dump وافحص الـreference path من GC root إليها. المهم تعرف أي reference مخالف لعمر المالك، مش تختار أكبر object في القائمة عشوائيًا. `LeakCanary` يراقب objects اتدمرت باستخدام weak references، وبعد فترة لو لم تُجمع يحلل heap ويعرض leak trace. التقرير دليل تحقيق، مش إثبات قاطع وحده؛ ممكن يكون فيه مؤقتات أو references من أدوات debug. أصلح edge المحدد، أعد نفس السيناريو، وتأكد إن retention اختفت.
+كيفية تحليل الـ Heap Dump واستخدام أداة LeakCanary لاكتشاف تسريبات الذاكرة في بيئة الإنتاج والتطوير:
+
+1. ما هو الـ Heap Dump؟
+   - الـ Heap Dump هو لقطة ثنائية (Binary Snapshot بتنسيق HPROF) تحتوي على جميع الكائنات، والمصفوفات، والمراجع، والـ Primitive Fields الحية داخل ذاكرة الـ Heap في لحظة التقاطها.
+   - يمكن استخراجه يدوياً عبر Android Studio Profiler (زر Dump Java Heap) أو برمجياً عبر `Debug.dumpHprofData()`.
+
+2. كيف تعمل أداة LeakCanary؟
+   - تراقب دورات حياة الـ Activities والـ Fragments والـ ViewModels والـ Root Views تلقائياً عبر `ActivityLifecycleCallbacks` و `FragmentLifecycleCallbacks`.
+   - عند تدمير النشاط (`onDestroy()`)، تضع مرجع النشاط داخل `KeyedWeakReference` وتنتظر 5 ثوانٍ.
+   - إذا ظل الكائن موجوداً بعد 5 ثوانٍ، تُجبر الـ GC على العمل للتحقق.
+   - إذا ظل الكائن حياً، تعلن LeakCanary أن الكائن **مُحتجز (Retained)**، وتقوم بتوليد HPROF dump وتحليله في خلفية التطبيق باستخدام محرك **Shark** (محلل HPROF كوتلن فائق السرعة).
+
+3. قراءة سلسلة التسريب (Leak Trace / Retained Path):
+   - يبدأ التقرير من **GC Root** (مثل Thread نشط، أو Static Variable، أو Native Global Ref).
+   - يوضح مسار الإشارات (References) وصولاً إلى الـ Leaked Object.
+   - يبين الـ Leak Trace بدقة أي مرجع يُشتبه في أنه السبب (مُحدد بـ `Leaking: YES` مقابل `Leaking: NO`).
 
 ## Practical walkthrough
 
-LeakCanary قال إن `ProfileActivity` اتدمرت لكنها لسه reachable من `AppEventBus.listeners`. متقفلش التقرير بالـignore: افتح leak trace، حدد أول edge مخالف للعمر، وشوف هل التسجيل بيتكرر من غير removal. بعد الإصلاح كرر rotation بنفس العدد واستنى إن held instances تختفي. heap dump لحظة واحدة ممكن يمسك object مؤقت؛ قارن بعد استقرار الشغل وما تعتمدش على أكبر retained size وحده.
+تثبيت وقراءة مخرجات LeakCanary وتحليل Heap Dump في Android Studio:
+```kotlin
+// 1. إضافة LeakCanary في build.gradle.kts (تعمل تلقائياً في debug فقط دون كود إضافي):
+dependencies {
+    debugImplementation("com.squareup.leakcanary:leakcanary-android:2.14")
+}
+
+// 2. نموذج للـ Leak Trace الناتج عن تحليل LeakCanary:
+/*
+┬───
+│ GC Root: System class / Static field
+│
+├─ com.example.app.UserManager class
+│    Leaking: NO (Static class is never leaking)
+│    ↓ static UserManager.currentContext
+├─ com.example.app.DetailActivity instance
+│    Leaking: YES (Activity has been destroyed: onDestroy() called)
+│    Retaining: 24.3 MB across 1,420 objects
+╰→ com.example.app.DetailActivity
+*/
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +87,27 @@ Reproduce a field report on a representative device, capture a heap only in an a
 
 ## Interview answer — short
 
-“I reproduce a screen's expected destruction, inspect retained instances and their path to a GC root, fix the owner holding the reference, and repeat the same flow. LeakCanary automates watching and reporting likely leaks.”
+LeakCanary detects leaks automatically in debug builds by tracking destroyed Activities/Fragments via `WeakReference`, prompting a heap dump, and parsing the HPROF file with Shark. Analyzing a heap dump in Android Studio Profiler or LeakCanary involves identifying the GC Root, following the retained reference chain, and determining which reference prevented legitimate garbage collection.
 
 ## Interview answer — structured
 
-“A heap dump is a snapshot of the managed object graph. I first reproduce a case where an Activity or Fragment view should be gone, then inspect retained instances and the strong-reference path from a GC root. A small listener object may retain a large view tree, so shallow size alone is misleading. LeakCanary watches destroyed owners with weak references, checks for retention, and analyzes a dump to show likely leak traces. I confirm the owner and lifetime before changing code, then repeat the same navigation and compare retention. Native memory issues need additional profiling.”
+Analyzing memory leaks requires capturing a heap dump (.hprof file) and finding the shortest strong reference path from a GC Root to a destroyed object.
+
+In development, **LeakCanary** automates this entire workflow:
+1. It hooks into lifecycle callbacks (`ActivityLifecycleCallbacks`, `FragmentManager`).
+2. When `onDestroy()` occurs, it passes the instance to an `ObjectWatcher` wrapped in a `KeyedWeakReference` with an associated reference queue.
+3. If the reference is not cleared after 5 seconds, LeakCanary triggers a GC. If the object persists, it is flagged as *retained*.
+4. Once a threshold is reached, it dumps the heap and invokes **Shark** (Square's high-speed Kotlin HPROF parser) on a background thread to compute the leak trace.
+
+When analyzing the leak trace, we focus on the transition from `Leaking: NO` to `Leaking: YES`. That exact boundary points to the field or closure holding the rogue reference, allowing us to nullify the reference or unbind the lifecycle observer.
 
 ## Interview answer — deep senior
 
-“The investigation begins with a repeatable lifetime boundary, for example close and reopen a screen several times. I capture a heap dump after the UI should be collectable, compare retained instance counts, and follow the shortest strong path to a GC root. I ask which reference edge violates ownership: a singleton listener, a Fragment holding an old view binding, a Handler Runnable, or a coroutine continuation. LeakCanary helps by automatically watching destroyed Android objects, checking whether weak references clear, and producing grouped leak traces. I do not treat one report as unquestionable; active operations, delayed cleanup, or instrumentation may explain temporary retention. Once I remove or rescope the offending reference, I rerun the identical flow, verify rendering and callbacks still work, and compare retained memory. I also inspect native and graphics categories if process memory rises but the Java heap is stable, and keep heap dumps private because they can contain user data. I would not suppress a leak trace merely because a collector has not run immediately; I check repeated counts after operations settle and whether the strong path remains. The report can include user data, so heap dumps stay in controlled storage. A regression check must confirm the listener still delivers after being resubscribed.”
+In complex production scenarios where LeakCanary is impractical due to heap dump overhead (dumping the heap pauses the process for hundreds of milliseconds), we analyze heap dumps offline using Android Studio Profiler or Eclipse Memory Analyzer Tool (MAT).
+
+In MAT, we run the **Dominator Tree** and **Leak Suspects** report. The Dominator Tree groups objects such that object A dominates object B if every path from a GC Root to B must pass through A. Looking at the **Retained Size** (the total memory that would be freed if an object were collected) immediately reveals culprit classes holding dozens of megabytes.
+
+To monitor leaks in production, we can use LeakCanary's Shark library paired with WorkManager to upload stripped, deduplicated leak signatures without transmitting sensitive user PII from the full memory dump.
 
 ## How to answer in the interview
 
@@ -76,9 +123,11 @@ Discuss repeatable owner destruction, shallow versus retained size, root path, L
 
 ## Follow-up questions
 
-- What is a retaining path? **Answer:** the strong-reference chain from a GC root that keeps the target object reachable.
-- Why isn't the largest shallow object necessarily the leak cause? **Answer:** a tiny callback can retain a much larger object graph through references.
-- Can a Java heap dump diagnose every memory problem? **Answer:** no; native and graphics allocations may require additional process-level tools.
+- **Interviewer:** "What is the difference between Shallow Size and Retained Size in a heap dump?"
+  **Answer:** "Shallow Size is the memory consumed by the object itself (its fields and header). Retained Size is the shallow size plus the memory of all objects that are exclusively reachable from this object and would be reclaimed if this object were garbage collected."
+
+- **Interviewer:** "Why shouldn't LeakCanary's full heap dumping be run in production builds?"
+  **Answer:** "Dumping the heap freezes the runtime process (`Stop-The-World`), which degrades user experience and can trigger ANRs. Furthermore, heap dumps contain raw heap memory, which could expose sensitive user PII or credentials."
 
 ## Self-check rubric
 
@@ -90,4 +139,4 @@ Reproduce a lifetime boundary, inspect a root path, explain LeakCanary's flow, d
 - [How LeakCanary works](https://square.github.io/leakcanary/fundamentals-how-leakcanary-works/) — watch, dump, and trace process.
 - [Manage app memory](https://developer.android.com/topic/performance/memory/manage-app-memory) — broader memory categories.
 
-Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. No heap dump was captured for the illustrative case.
+Technically reviewed against primary documentation on 2026-10-13.

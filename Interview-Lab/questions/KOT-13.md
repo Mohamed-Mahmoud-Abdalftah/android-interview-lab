@@ -22,7 +22,29 @@ Distinguish stored versus inlined lambdas, forbidden non-local returns, and runt
 
 ## Explanation in Arabic
 
-داخل `inline` function، lambda العادية ممكن تتنسخ في call site وتعمل `return` من function اللي نادتها (non-local return) لو control flow يسمح. `noinline` يمنع نسخ lambda معينة ويخليها function value ينفع تتخزن أو تتبعت؛ وبالتالي non-local return منها غير مسموح. `crossinline` تمنع non-local return مع بقاء إمكانية inlining، وده مهم لما lambda تتنفذ في سياق تاني زي object method. `reified T` يتيح `T::class` و`is T` داخل inline لأن النوع الفعلي معروف في call site؛ مش معناه إن generic collection elements اتعمل لها runtime validation.
+المفاهيم الأربعة دي بتكمل فهمك العميق للـ `inline` functions في Kotlin:
+
+1. Non-local Return:
+   في الـ inline function، لما تكتب `return` جوه الـ lambda، الـ return دي بترجع من **الدالة الكبيرة المحيطة بيها بالكامل** مش بس من الـ lambda! ده لأن الكود اتنسخ مباشرة في الـ call site زي حلقة `for` عادية.
+
+2. `crossinline`:
+   لو الـ lambda بتتنادى جوه سياق تاني (Execution Context مختلف زي `Runnable` أو Coroutine أو Thread تاني)، الـ Non-local return بيكون مستحيل فيزيائياً لأن الدالة الأصلية ممكن تكون خلصت خلاص!    هنا المترجم بيجبرك تحط `crossinline` علشان يمنع الـ non-local return ويسمح بـ inlining لباقي الكود بأمان.
+
+3. `noinline`:
+   لو الدالة بتاخد كذا lambda، وعايز تعمل inline لواحدة وتخزن التانية في متغير أو تمررها لدالة عادية، بتحط على التانية `noinline`. المترجم هيتعامل معاها كـ Function object عادي.
+
+4. `reified` Type Parameters:
+   بسبب الـ Type Erasure في الـ JVM، الـ Generics بتتمسح وقت التشغيل (`List<String>` بتبقى `List`). لكن مع `inline fun <reified T>`، لأن الكود بيتنسخ في الـ Call site،    المترجم بيعرف النوع الفعلي وبيسيبه في الـ Bytecode، وتقدر تكتب `T::class.java` بدون ما تمرر `Class<T>` كـ parameter!
+
+## Practical walkthrough
+
+في كود أندرويد اليومي:
+- استخدام `reified` في Navigation أو Serialization:
+  `inline fun <reified T : Activity> Context.startActivity() = startActivity(Intent(this, T::class.java))`
+  الاستدعاء بيبقى ساحر: `startActivity<DetailActivity>()` بدل كتابة `DetailActivity::class.java` في كل مكان.
+- استخدام `crossinline` عند تمرير Callback لـ View listener:
+  `inline fun setupButton(crossinline onClick: () -> Unit) { button.setOnClickListener { onClick() } }`
+  هنا `crossinline` إلزامي لأن `onClick` هتتنفذ مستقبلاً من الـ Android OS لما المستخدم يضغط، مش وقت استدعاء `setupButton`.
 
 ## Why it matters and how it works
 
@@ -41,10 +63,6 @@ fun main() {
 }
 ```
 
-## Practical walkthrough
-
-`inline fun around(block: () -> Unit)` يسمح `return` من caller لو lambda اتنفذت مباشرة في موقع الاستدعاء. لو هتخزنها في object أو تمررها لfunction عادية، `noinline` يبقيها function object ويمنع non-local return. `crossinline` يمنع return ده لكن يسمح نقل جسمها لموضع زي `Runnable { action() }`؛ لازم تنفيذ callback في السياق المسموح حسب التصميم. `reified` يديك type token على call site، لكن generic arguments المتداخلة لسه تخضع لـtype erasure؛ `value is List<String>` مش فحص آمن لكل عنصر. خلي كل modifier مربوط بعقد API واضح بدل إضافته لإسكات compiler.
-
 ## Trade-offs and decision criteria
 
 Use `noinline` only when a lambda must be a first-class stored value; use `crossinline` when invoking from a different execution context forbids caller return. Prefer ordinary explicit type tokens for non-inline public APIs or Java callers. Reified helpers can improve ergonomics but may enlarge bytecode.
@@ -59,17 +77,27 @@ A navigation registry stores callbacks, so its registration function uses ordina
 
 ## Interview answer — short
 
-`noinline` keeps a lambda as a function value, so it can be stored or passed on. `crossinline` disallows a non-local return when the lambda runs from another execution context. `reified` exposes an inline type parameter at a call site, within JVM erasure limits.
+Non-local returns allow a lambda inside an inline function to return from the enclosing function. crossinline forbids non-local returns when the lambda is executed in a different execution context like a callback or thread. noinline prevents inlining for specific lambda parameters, and reified preserves generic type parameters at runtime by copying type information into the call site.
 
 ## Interview answer — structured
 
-I start with the callback’s lifetime. A normal inlined lambda can use a non-local return to leave the caller because it is expanded at that call site. If I must store or pass that lambda as a value, I mark it `noinline`. If I invoke it from another context such as a `Runnable`, `crossinline` prevents a return that cannot safely jump out of the caller. `reified` applies to an inline type parameter and allows checks such as `value is T`, but it does not fully reify nested generic arguments. I choose these modifiers to express execution behavior, not to silence a compiler error.
+These keywords fine-tune inlining behavior:
+
+A non-local return allows a return statement inside an inlined lambda to exit the outer enclosing function directly, behaving like a native language loop.
+
+crossinline is used when an inlined lambda is passed into a nested execution context—like an Android View click listener or a background thread. Because that context might execute after the outer function finishes, a non-local return is impossible. crossinline forbids non-local returns while keeping the lambda inlined.
+
+noinline disables inlining for a specific lambda parameter if you need to store it in a field or pass it to non-inlined code.
+
+Finally, reified is a massive productivity feature: because an inline function's bytecode is copied to the call site, the compiler knows the exact generic type argument and preserves it, allowing expressions like T::class.java without passing explicit Class tokens.
 
 ## Interview answer — deep senior
 
-I would inspect callback lifetime before selecting these modifiers. A delayed callback cannot jump back into a stack frame that has returned, so `noinline` or `crossinline` blocks that control flow. `noinline` preserves the lambda object; `crossinline` can still be substituted but prevents non-local return. Reification substitutes type information at each call site, which is convenient for serializers and class lookup, but type erasure remains relevant to nested generic contents. I keep wrappers small and document whether callbacks are immediate or deferred. A normal inlined lambda may use an unqualified `return` to exit the enclosing caller because its instructions are placed there. Once a callback can be stored or called later, that return has no valid stack frame to target.
+On the JVM, generic type arguments are erased at compile time (type erasure). Writing isInstance<T>() or T::class.java in standard methods is a compiler error because T is erased to Object. With inline functions, kotlinc eliminates type erasure via reification. At each call site, the compiler knows the concrete type (e.g., Gson.fromJson<UserProfile>()) and replaces T in the inlined bytecode with the actual bytecode representation of UserProfile.class. This enables clean JSON deserialization and dependency injection APIs without reflection.
 
-Imagine an API that returns a `Runnable` to invoke a callback later. Allowing an unqualified `return` from the caller inside that callback would be nonsensical after the caller has returned, so `crossinline` communicates the restriction. If the callback itself must be stored as a value, `noinline` is the right contract. For a small JSON convenience API, `reified T` can supply a top-level class token, but it cannot prove that every element of a `List<T>` has type T after erasure. I would keep the wrapper small and let the serializer validate nested shape and report errors.
+The distinction between inline, noinline, and crossinline is about lifecycle and escape analysis. An inlined lambda parameter cannot escape its calling scope unless it is non-inlined. If you attempt to assign an inlined lambda to a property or pass it to a non-inlined function, the compiler blocks you. Marking it noinline compiles it into a standard FunctionN reference, allowing it to escape.
+
+If the lambda is executed inside a local object or asynchronous callback, marking it crossinline permits inlining for performance while prohibiting non-local return statements, preventing illegal stack unwinding.
 
 ## How to answer in the interview
 
@@ -85,8 +113,14 @@ Show legal non-local return from an inline lambda, contrast labeled local return
 
 ## Follow-up questions
 
-- [KOT-12](../kot-12/): What is the code-size price of these features? **Answer:** inline body duplication at call sites.
-- [KOT-14](../kot-14/): Does `reified` replace variance? **Answer:** no; variance controls subtype relationships in generic APIs.
+- **Interviewer:** "Why does `reified` only work with `inline` functions?"
+  **Answer:** "Because the JVM does not support reified generics at the bytecode instruction level. The only way Kotlin can provide reified types is by inlining the function body directly into the call site, where the compiler already knows the concrete type argument and can hardcode its `Class` reference directly into the calling bytecode."
+
+- **Interviewer:** "What happens if you try to use `return` inside a `crossinline` lambda?"
+  **Answer:** "The compiler produces an error: 'return is not allowed here'. You can only return from the lambda itself using labeled return syntax (`return@functionName`), which prevents attempting to unwind an outer stack frame that may have already returned."
+
+- **Interviewer:** "When would you deliberately use `noinline` on one lambda in an inline function with two lambdas?"
+  **Answer:** "When one lambda is executed immediately in a hot loop (and should be inlined for speed), but the second lambda is stored in a collection or passed to a worker thread for asynchronous execution. You mark the second lambda `noinline` so the compiler generates a heap-allocated `Function` reference for it."
 
 ## Self-check rubric
 
@@ -96,4 +130,4 @@ Explain each modifier, describe one prohibited non-local return, and state a lim
 
 - [Kotlin inline functions](https://kotlinlang.org/docs/inline-functions.html) — `noinline`, `crossinline`, non-local returns, and reified.
 
-Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against primary documentation on 2026-10-13.

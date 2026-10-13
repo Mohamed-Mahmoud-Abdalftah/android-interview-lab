@@ -22,11 +22,53 @@ Enforce meaningful dependencies with modules, visibility and tests while minimiz
 
 ## Explanation in Arabic
 
-Boundary يعني قرار مين يعرف مين، مش عدد interfaces. في app متوسطة، Gradle modules تقدر تمنع `feature:ui` من استيراد Retrofit أو data implementation؛ `internal` يحدّ surface، وarchitecture tests/static checks تراقب imports. اعمل interfaces ضيقة عند seams حقيقية: domain policy محتاجة repository contract، أو provider متعدد. Concrete class داخل feature واحد ممكن يفضل concrete وتحقنه Hilt عادي. استخدم DTO/domain mapping لما contract مختلف، لكن ما تخلقش `FooApi/FooImpl/FooUseCase` لكل سطر. راجع dependency graph في CI وعالج violations بأمثلة حقيقية.
+كيف تفرض وتضبط حدود المعمارية (Architectural Boundaries) بصرامة دون الغرق في أطنان من الواجهات العقيمة (Boilerplate Interfaces)؟
+
+1. المعضلة: Interface Boilerplate مقابل الحدود الرخوة (Loose Boundaries):
+   - يعتقد بعض المطورين أن الطريقة الوحيدة لفرض Clean Architecture هي كتابة `interface` لكل كلاس في التطبيق، مما يضاعف عدد الملفات ويصيب الفريق بالإرهاق (Interface Exhaustion).
+   - على الجانب الآخر، إلغاء الواجهات بالكامل يفتح الباب لتسريب التبعيات وتشابك الكود (Spaghetti Code).
+
+2. الحلول الهندسية الحديثة لفرض الحدود بذكاء:
+   - **فرض الحدود على مستوى الـ Gradle Modules (Compiler-Enforced Boundaries)**:
+     * تقسيم المشروع إلى موديولات مستقلة: `:feature:checkout` و `:core:data`.
+     * الـ Compiler هو الشرطي الذي يمنع التجاوز: يستحيل على كود الـ UI استدعاء كود الـ Database إذا لم يكن هناك `implementation(project(...))` في ملف `build.gradle.kts`!
+   - **استخدام الـ Kotlin Visibility Modifiers (`internal`)**:
+     * داخل الموديول، اجعل الكلاسات الملموسة `internal` واكشف فقط نقطة الدخول العامة.
+   - **أتمتة الفحص عبر Konsist / ArchUnit (Architecture Testing)**:
+     * كتابة اختبارات آلية تفحص قواعد المعمارية في CI/CD وتمنع دمج أي PR يخالف القواعد دون الحاجة لـ Interfaces يدوية في كل مكان!
 
 ## Practical walkthrough
 
-Enforce boundaries بأقل آليات: Gradle module dependencies للاتجاه، API visibility، static checks للimports المحظورة، وtests للعقود. لا تخلق interface واحد لكل implementation؛ ضع interface عند crossing متغير أو external dependency. مثال domain `PaymentPolicy` pure، data adapter يخاطب backend، UI تستهلك result. راجع dependency graph دوريًا بدل الاعتماد على naming conventions فقط.
+فرض قواعد المعمارية آلياً باستخدام مكتبة Konsist في الـ Unit Tests:
+```kotlin
+// اختبار Konsist يعمل في CI للتحقق من أن الـ ViewModels لا تستورد Room أو Retrofit أبداً:
+class ArchitectureBoundaryTest {
+    @Test
+    fun viewModels_mustNotDependOn_dataOrNetwork() {
+        Konsist.scopeFromProject()
+            .classes()
+            .withNameEndingWith("ViewModel")
+            .withoutName("ArchitectureBoundaryTest")
+            .assertNot {
+                it.hasImportWithText { import ->
+                    import.startsWith("retrofit2") ||
+                    import.startsWith("androidx.room") ||
+                    import.contains(".data.")
+                }
+            }
+    }
+
+    @Test
+    fun useCases_mustHaveSinglePublicMethod_invoke() {
+        Konsist.scopeFromProject()
+            .classes()
+            .withNameEndingWith("UseCase")
+            .assert {
+                it.numPublicDeclarations() == 1 && it.hasFunctionWithText { f -> f.contains("operator fun invoke") }
+            }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -50,15 +92,26 @@ A growing marketplace keeps feature modules independent, core contracts small, a
 
 ## Interview answer — short
 
-I enforce boundaries with module dependencies, visibility and architecture checks, and introduce narrow interfaces only at real variation or policy seams. Boilerplate interface count is not evidence of decoupling.
+Enforce architectural boundaries without boilerplate interfaces by leveraging Gradle multi-module compilation isolation, Kotlin `internal` visibility modifiers to encapsulate implementation details, and automated architectural linting rules via Konsist or ArchUnit in CI.
 
 ## Interview answer — structured
 
-First I draw the allowed dependency graph. Gradle modules can prevent UI from importing data implementations, `internal` keeps helper APIs local, and automated architecture checks catch forbidden imports. I use a repository interface when domain policy needs a stable contract or there are multiple implementations. A small pure formatter can remain concrete and directly tested. I also inspect public types so a `Response<Dto>` does not leak through a supposedly clean boundary. For example, I can make a UI module unable to depend on Retrofit, keep data implementations `internal`, and expose one narrow repository contract. A simple formatter remains concrete and tested directly. That enforces a real boundary with fewer files than an interface-per-class rule.
+Enforcing architectural boundaries does not require suffocating codebases under 1-to-1 boilerplate interfaces (`Foo` / `FooImpl`). Modern Android engineering employs structural, compiler-enforced, and automated tooling mechanisms.
+
+1. **Compiler-Enforced Gradle Boundaries**: The strongest boundary is compilation failure. By splitting code into independent Gradle modules (`:feature:home`, `:core:domain`, `:core:database`), the build graph physically prevents forbidden calls. If a developer attempts to call a Room DAO from a ViewModel in a feature module that has no dependency on `:core:database`, the project will not compile.
+
+2. **Kotlin `internal` Visibility Modifiers**: Within a module, mark concrete classes, network DTOs, and helper mappers as `internal`. Expose only the required public entry point or interface. Consuming modules cannot access internal types even if they depend on the module.
+
+3. **Automated Architecture Tests (Konsist / ArchUnit)**: Rather than relying on manual code reviews, we write executable unit tests using **Konsist** that verify architectural invariants across the entire repository in CI.
 
 ## Interview answer — deep senior
 
-A boundary must survive an implementation change and be enforced by the build, not just a package name. I use a small number of Gradle modules around features and volatile adapters, with explicit allowed edges and narrow shared contracts. Kotlin visibility limits accidental public API growth; lint or architecture tests catch prohibited dependencies such as Compose importing Retrofit DTOs. Interfaces are reserved for genuine consumer contracts, provider variation, or test substitution at important seams. A one-to-one interface per class adds navigation cost while leaving coupling untouched if types still leak. I periodically review build time, module graph, and change locality to see whether the structure pays for itself. For a small app, a documented UI/data split and a few checks may be enough; for a larger team, stronger module enforcement becomes valuable. I would audit the graph in CI, but also inspect the types that cross it. A domain-facing interface returning `Response<Dto>` is still coupled to transport even if Gradle edges look clean. I add contracts only where a consumer needs independent variation or a test seam, and I review whether shared modules are growing into catch-all dependencies. Architecture checks, visibility and focused tests give stronger evidence than naming conventions. As team and feature count change, I revisit module granularity and measure build and navigation cost.
+Tools like **Konsist** revolutionize architectural governance. In just 5 lines of Kotlin test code, an engineering team can enforce contracts such as:
+- *'No class in `:presentation` may import anything from `androidx.room` or `retrofit2`.'*
+- *'Every Repository implementation must reside inside the `data` package.'*
+- *'All UseCases must reside in `:domain` and expose only `operator fun invoke()`.'*
+
+If any developer violates these rules, the test fails in local builds and blocks GitHub Actions CI. This eliminates the need for speculative interface wrapping while maintaining ironclad architectural discipline across large distributed teams.
 
 ## How to answer in the interview
 
@@ -74,8 +127,11 @@ Audit module graph, exported types, `internal` helpers, interface necessity and 
 
 ## Follow-up questions
 
-- [ARC-03](../arc-03/): What should the dependency graph enforce? **Answer:** source dependencies toward stable contracts/policy.
-- [ARC-15](../arc-15/): When is a concrete class enough? **Answer:** when no independent variation or stable boundary is needed.
+- **Interviewer:** "What is Konsist, and how does it differ from Android Lint?"
+  **Answer:** "Konsist is a Kotlin-first static analysis and architecture linter that allows writing unit tests asserting package structure, class inheritance, import rules, and naming conventions using an idiomatic Kotlin DSL."
+
+- **Interviewer:** "How does `internal` visibility enhance multi-module architecture?"
+  **Answer:** "`internal` restricts class visibility strictly to the declaring Gradle compilation module, preventing external modules from depending on concrete implementation details."
 
 ## Self-check rubric
 
@@ -86,4 +142,4 @@ Design an allowed module graph and identify one meaningful interface and one avo
 - [Android modularization guide](https://developer.android.com/topic/modularization) — module boundaries.
 - [Android architecture recommendations](https://developer.android.com/topic/architecture/recommendations) — adaptable architecture practices.
 
-Technically reviewed against the linked official Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

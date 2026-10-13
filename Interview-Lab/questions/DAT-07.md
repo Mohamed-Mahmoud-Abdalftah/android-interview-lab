@@ -22,7 +22,42 @@ Define offline-first read/write paths, local truth, sync and conflict behavior.
 
 ## Explanation in Arabic
 
-Offline-first يعني التطبيق يقدم وظيفة مفيدة من local data حتى لو الشبكة ضعيفة أو غايبة. UI تقرأ من Room كـlocal source of truth، والremote refresh تكتب فيها؛ writes تتسجل pending محليًا وتتصالح مع server لاحقًا. ده مش مجرد cache: لازم freshness, conflict policy, retry, process-death recovery وأمان البيانات يتحددوا بوضوح.
+ما هو التطبيق القائم على مبدأ العمل في وضع عدم الاتصال أولاً (Offline-First Application)، وكيف تصمم مسارات القراءة والكتابة الخاصة به؟
+
+1. المفهوم المعماري الجوهري:
+   - التطبيق الـ Offline-First لا يعتبر انقطاع الشبكة حالة استثنائية (Error State)؛ بل يعتبر وضع عدم الاتصال حالة طبيعية أساسية في تشغيل الموبايل.
+   - **قاعدة ذهبية**: التطبيق يجب أن يفتح فوراً، ويعرض بيانات مفيدة، ويتيح للمستخدم تنفيذ العمليات (مثل حفظ مسودة أو تعديل ملف) حتى لو كان الهاتف في وضع الطيران (Airplane Mode).
+
+2. مسار القراءة (Read Path - Local Source of Truth):
+   - **الشاشة (UI) تقرأ حصرياً وبشكل دائم من قاعدة البيانات المحلية (Room)** عبر `Flow`.
+   - الـ UI لا تنتظر ولا تستمع مباشرة لرد السيرفر!
+   - يقوم الـ Repository في الخلفية بطلب تحديث البيانات من الـ Network (Remote API) وكتابتها داخل Room. بمجرد الكتابة في Room، يتولى الـ Flow تحديث الـ UI تلقائياً وبسلاسة.
+
+3. مسار الكتابة (Write Path - Optimistic Writes & Sync Queue):
+   - **الكتابة المتفائلة (Optimistic Write)**: عند ضغط المستخدم على 'حفظ'، يتم حفظ التعديل محلياً في Room فوراً كـ Pending Operation مع توليد معرف محلي فريد (UUID).
+   - يتم إبلاغ المستخدم بالنجاح في الـ UI فوراً خلال 5 ميلي ثانية!
+   - تتولى خدمة خلفية موثوقة (مثل `WorkManager`) مراقبة توفر الشبكة وإرسال العمليات المعلقة إلى السيرفر لاحقاً، مع معالجة النزاعات وحالات انقطاع الاتصال بأمان.
+
+## Practical walkthrough
+
+المخطط المعماري الكامل لمساري القراءة والكتابة في تطبيق Offline-First:
+```text
+📖 مسار القراءة (Read Path):
+┌───────────────┐                  ┌───────────────┐
+│  UI / Screen  │◄──(observe Flow)─┤ Room Database │ ◄── [Single Source of Truth]
+└───────────────┘                  └───────▲───────┘
+                                           │ (write to DB)
+                                   ┌───────┴───────┐
+                                   │  Network API  │ (Background Sync)
+                                   └───────────────┘
+
+✍️ مسار الكتابة (Write Path):
+1. User taps 'Create Note'
+2. Note saved immediately to Room with status = PENDING_SYNC
+3. UI updates instantly in 5ms
+4. WorkManager triggers SyncWorker when NETWORK_CONNECTED constraint met
+5. SyncWorker calls Server -> on 200 OK -> updates Room status = SYNCED
+```
 
 ## Why it matters and how it works
 
@@ -43,10 +78,6 @@ interface OfflineNotes {
 // editLocally commits Note plus pending operation in one local transaction.
 ```
 
-## Practical walkthrough
-
-offline-first معناها القراءة من local source شغال حتى الشبكة غايبة، مش مجرد cache على جنب. Notes app: UI تراقب Room `Flow`, edit يتحفظ محليًا مع outbox row في transaction، worker يرفع لما network تسمح، وserver يرد version/canonical state. لو request وصل والack ضاع، worker يعيد بنفس operation ID/idempotency contract؛ ما يخلقش duplicate note. conflicts لازم policy: per-field merge أو user resolution حسب المنتج. اعرض freshness/pending sync/error بوضوح، وما تقولش “synced” قبل server ack. payments أو stock authority ما ينفعش تتعامل كأن optimistic local write نهائي.
-
 ## Trade-offs and decision criteria
 
 Local-first reads improve startup and resilience but add sync complexity and storage/security responsibility. Network-first can be simpler for non-critical ephemeral data. Conflicts require domain rules: server-wins, merge, or user resolution, not a blanket last-write-wins assumption.
@@ -61,17 +92,34 @@ A field-inspection app saves forms and attachments locally with Pending status, 
 
 ## Interview answer — short
 
-“Offline-first reads from a local source of truth, persists user edits as pending operations, and synchronizes with server authority when possible. It must define freshness, conflicts and retry recovery, not merely cache responses.”
+An offline-first application treats local persistence (Room) as the single source of truth for all UI reads. The UI observes local databases via Flow, background sync workers fetch remote data and update Room, and writes are saved locally first as pending operations and synchronized to the server asynchronously via WorkManager.
 
 ## Interview answer — structured
 
-“I design the read and write paths separately. The UI observes Room so it can open instantly offline; refresh downloads versioned data and commits it to Room. A user edit is saved locally with a pending operation ID before the UI acknowledges it. WorkManager can send pending operations under network constraints, with idempotent server handling. I surface stale and pending status and choose conflict rules from the domain, because blindly overwriting local or remote data can lose user work.”
+An offline-first architecture treats network connectivity as an intermittent enhancement rather than a prerequisite for app operation:
+
+1. **Read Pipeline (Single Source of Truth)**:
+   - The presentation layer never queries the network directly. UI screens observe Room database entities via reactive Kotlin `Flow`.
+   - Network fetches occur asynchronously in the background. Fresh payloads are written directly into Room. Room's invalidation triggers automatic UI updates.
+
+2. **Write Pipeline (Optimistic Local Writes)**:
+   - User mutations (e.g. creating a comment or editing an order) are immediately committed to Room with a local status (`SyncStatus.PENDING`) and a deterministic client UUID.
+   - The UI reflects the change in single-digit milliseconds, eliminating network spinners.
+   - A durable background synchronizer (`WorkManager`) observes network constraints, queues pending mutations, and submits them to the backend with idempotency headers.
+
+3. **Resilience Across Process Death**: Because pending edits live in persistent SQLite storage, killing the app or rebooting the phone does not lose user changes; syncing resumes automatically when connectivity restores.
 
 ## Interview answer — deep senior
 
-Offline-first is an end-to-end consistency design. The local database is the UI’s current source, but the backend remains authoritative for shared data. I use stable IDs, server versions/cursors and transactional local writes so a user action and its pending sync record cannot diverge. Workers can retry after process death, which requires server idempotency and reconciliation of ambiguous responses. I explicitly model freshness and conflicts; text notes might merge or ask the user, while payment balances cannot be client-merged. I test airplane mode, reconnect, duplicate worker runs, out-of-order responses and app crashes at each state transition.
+The foundational engineering challenge of offline-first systems is **Reconciliation and Conflict Resolution**.
 
-I describe offline-first as a data-flow contract. Reads come from the local database so the screen can render without network; refresh and sync update that source, and UI observes it. A note edit and its outbox record commit together locally, then a persistent worker sends it with stable identity. The backend remains authoritative for shared state, so versions and conflict rules are part of the design. A lost acknowledgement can cause another HTTP attempt, which must reuse the same logical operation identity if the server supports deduplication. I expose pending and conflict states to users rather than claiming an offline edit has already synchronized. For money or inventory I defer the final decision to the server.
+When multiple devices edit the same entity offline, local and remote states inevitably diverge. A production offline-first engine must define an explicit conflict resolution policy:
+
+- **Server-Wins / Timestamp-based (Last-Write-Wins - LWW)**: Simple but risks silent data loss if device clocks drift.
+- **Entity Version Vectors / ETags**: The client sends its base version. If the server's version has advanced, the server rejects the write with HTTP 409 Conflict.
+- **Field-Level 3-Way Merging**: Merging non-overlapping field edits (e.g., Device A updated `shippingAddress`, Device B updated `phoneNumber`).
+
+Furthermore, for financial or inventory transactions, offline actions cannot be treated as definitive; they are modeled as **Intentions/Drafts** pending backend settlement.
 
 ## How to answer in the interview
 
@@ -87,8 +135,11 @@ Draw local read, pending write and server reconciliation paths, including confli
 
 ## Follow-up questions
 
-- [DAT-15](../dat-15/): How sync offline edits? **Answer:** durable pending operations with stable IDs and conflict/version handling.
-- [DAT-16](../dat-16/): Who resolves divergence? **Answer:** domain-specific version and merge policy.
+- **Interviewer:** "Why shouldn't you cache network responses directly in memory instead of Room?"
+  **Answer:** "In-memory caches are wiped when the Android OS kills the process in the background, breaking the offline contract and losing pending user edits."
+
+- **Interviewer:** "What is an optimistic UI update?"
+  **Answer:** "Updating the UI immediately assuming the network operation will succeed, rolling back or marking as failed only if the server explicitly rejects the transaction."
 
 ## Self-check rubric
 
@@ -98,4 +149,4 @@ Can I name local and server authority, persist pending work and define freshness
 
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — local source and queued writes.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

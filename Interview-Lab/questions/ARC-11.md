@@ -22,11 +22,47 @@ Model mutually exclusive loading/content/empty/error states and avoid losing cac
 
 ## Explanation in Arabic
 
-للشاشة البسيطة، sealed `Loading`, `Content(items)`, `Empty`, `Error(reason)` يخلي الحالات المتنافرة واضحة. لكن offline-first screen عندها cached content مع refresh شغال أو error؛ هنا state مركّبة زي `items + isRefreshing + refreshError` أنسب من sealed واحدة تمنع coexistence. Empty لازم تعني data load ناجح لكن مفيش عناصر، مش network error اتخبى. ViewModel يشتق الحالة من repository stream ويحدد retry action؛ الـUI ترسم فقط. بعد process death ارجع للمصدر الدائم بدل افتراض إن الـViewModel state باقية.
+كيف تعرض وتصمم حالات التحميل (Loading)، المحتوى (Content)، القائمة الفارغة (Empty)، والخطأ (Error) باحترافية؟
+
+1. معضلة الحالات المتضاربة (The Multiple-Boolean Anti-Pattern):
+   - الخطأ الكلاسيكي هو استخدام متغيرات منفصلة في الـ ViewModel:
+     `val isLoading = MutableStateFlow(false)` و `val error = MutableStateFlow<String?>(null)` و `val items = MutableStateFlow<List<Item>>(emptyList())`.
+   - النتيجة: قد يكون `isLoading = true` و `error != null` في نفس اللحظة! مما يربك الـ Composable ويجعله يعرض Spinner فوق رسالة خطأ!
+
+2. الحل المعماري الأول: الـ Sealed Interface (للحالات الحصرية):
+   - ممتاز للشاشات الكاملة التي تنتقل بين حالات واضحة متنافية:
+     * `data object Loading : FeedUiState`
+     * `data object Empty : FeedUiState`
+     * `data class Success(val items: ImmutableList<FeedItem>) : FeedUiState`
+     * `data class Error(val message: String) : FeedUiState`
+   - الميزة: مستحيل تمثيل حالة غير منطقية (Illegal States are Unrepresentable).
+
+3. الحل المعماري الثاني: الـ Combined Data Class (للتحديث الجزئي / Pull-to-Refresh):
+   - عندما تحتاج الشاشة لعرض القائمة القديمة مع وجود مؤشر تحميل خفيف في الأعلى (Pull-to-refresh) أو Snackbar خطأ دون مسح المحتوى:
+     * `data class FeedUiState(val items: ImmutableList<FeedItem>, val isRefreshing: Boolean, val error: String?)`.
 
 ## Practical walkthrough
 
-UiState sealed/immutable تجعل Loading/Content/Empty/Error واضحة، لكن بعض الحالات متزامنة: content قد يبقى مع refresh spinner أو error banner. لا تمسح data فور network failure لو cache صالح. اعرض retry action من event واضح، وتأكد StateFlow initial value مفهومة. اختبر transitions لا snapshot النهائية فقط، خصوصًا slow request/cancellation.
+تطبيق النمطين باحترافية في Jetpack Compose:
+```kotlin
+// النمط 1: Sealed Interface للشاشات الكاملة المتبادلة حصرياً:
+sealed interface ProductListUiState {
+    data object Loading : ProductListUiState
+    data object Empty : ProductListUiState
+    data class Success(val products: ImmutableList<Product>) : ProductListUiState
+    data class Error(val message: String) : ProductListUiState
+}
+
+@Composable
+fun ProductListScreen(uiState: ProductListUiState, onRetry: () -> Unit) {
+    when (uiState) {
+        is ProductListUiState.Loading -> FullScreenLoadingSpinner()
+        is ProductListUiState.Empty -> EmptyStatePlaceholder("No products found")
+        is ProductListUiState.Success -> ProductList(uiState.products)
+        is ProductListUiState.Error -> ErrorBanner(uiState.message, onRetry = onRetry)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -60,15 +96,30 @@ A news feed observes Room, refreshes in background, and displays stale articles 
 
 ## Interview answer — short
 
-I model loading, content, empty, and error as explicit UI state, but I choose the shape by whether they can coexist. Cached content plus refresh failure is different from an initial-load error, and Empty means a successful empty result.
+Expose loading, content, empty, and error states using either a Sealed Interface for mutually exclusive full-screen transitions (making illegal states unrepresentable) or an Immutable Data Class when retaining content during background refresh or transient error snackbars.
 
 ## Interview answer — structured
 
-For a screen without cached data, a sealed state gives exhaustive Loading, Content, Empty, and Error rendering. In an offline-first screen, content may remain visible while refresh is running or failing, so I use an immutable state with items plus refresh metadata. The ViewModel maps repository data and errors into that snapshot. I do not clear valid content on a network failure or treat an outage as an empty list. Tests cover initial, refresh, offline, and retry paths. I would test the transition from cached content into refreshing and then a failed refresh: the list should remain visible with a recoverable message. A successful empty response has different meaning and should display the empty state.
+Modeling screen states requires choosing the correct abstraction between mutually exclusive transitions and persistent content overlays.
+
+1. **The Sealed Interface Pattern (Mutually Exclusive)**:
+   - Ideal for screen-level states where only one visual representation can exist at a time (e.g. initial load, fatal error, empty catalog, or success grid).
+   - By defining `sealed interface UiState { Loading, Empty, Success(data), Error(msg) }`, the compiler enforces exhaustive `when` expressions in Compose.
+   - It makes invalid states—such as showing a full-screen loading spinner and an error message simultaneously—structurally impossible to represent.
+
+2. **The Consolidated Data Class Pattern (Overlay / Partial Updates)**:
+   - Ideal for screens supporting pull-to-refresh, pagination, or non-fatal errors.
+   - When a user pulls to refresh, wiping the screen to show a full-screen spinner is terrible UX. Instead, a data class retaining `items`, `isRefreshing = true`, and `transientError = null` keeps existing items visible while displaying a top progress bar.
+
+Both patterns avoid the legacy anti-pattern of exposing multiple independent reactive booleans that easily desynchronize.
 
 ## Interview answer — deep senior
 
-The key is to model legal combinations, not merely list four labels. A sealed hierarchy is strong when states are exclusive. If a feed can show cached articles during refresh, one `Content` case may include refresh status and a recoverable error; a flat set of booleans without invariants can create nonsense combinations. I distinguish initial loading from background refresh and successful empty data from failure. The data layer remains source of truth; after process death the screen reconstructs from persisted data and reload status. Error text is mapped for the UI without leaking raw exception messages. I test transitions rather than isolated snapshots, especially refresh failing after content and retry succeeding. The design should also account for accessibility and interaction. A screen reader should know when loading completes, and a retry control should be available only when retry is meaningful. The ViewModel owns state production, while the composable renders that state and sends events. I avoid combining `isLoading`, `isEmpty`, and `hasError` booleans without invariants because contradictory combinations become possible. State shape follows legal product states, including whether content can coexist with a refresh error.
+Under the hood, in Compose, transitioning between sealed interface branches requires smooth visual coordination. Using `AnimatedContent(targetState = uiState)` enables seamless crossfade or slide transitions between `Loading`, `Content`, and `Error` states without jarring screen flashes.
+
+When dealing with `Empty` states specifically, senior architects differentiate between a **true empty list** (the query returned zero records) and an **uninitialized state** (the query has not started). Modeling `data object Empty : UiState` provides dedicated UI real estate (illustration, helper text, clear filter button) that encourages user engagement.
+
+In unit testing, testing a sealed interface is remarkably expressive: asserting `assertThat(state).isInstanceOf<UiState.Success>()` provides instant, type-safe validation of state progression.
 
 ## How to answer in the interview
 
@@ -84,8 +135,11 @@ Compare exclusive and coexisting states; show a cached-content refresh transitio
 
 ## Follow-up questions
 
-- [ARC-09](../arc-09/): Is loading a business fact? **Answer:** usually it is UI state about current work.
-- [ARC-19](../arc-19/): How do cached items survive refresh failure? **Answer:** keep local source of truth and represent refresh error separately.
+- **Interviewer:** "Why shouldn't you clear the existing items list when a refresh fails?"
+  **Answer:** "Clearing the list replaces visible content with a blank error screen. Keeping cached data and displaying a transient snackbar error ensures the user can continue reading offline content."
+
+- **Interviewer:** "How do you handle pagination loading vs initial screen loading?"
+  **Answer:** "Initial loading uses a full-screen state or skeleton loader. Pagination loading is modeled as a footer append state (`isAppendingPage = true`) at the end of the existing content list."
 
 ## Self-check rubric
 
@@ -96,4 +150,4 @@ Predict UI after initial failure, successful empty response, and failed refresh 
 - [Android UI state holders](https://developer.android.com/topic/architecture/ui-layer/stateholders) — screen UI state.
 - [Android offline-first guide](https://developer.android.com/topic/architecture/data-layer/offline-first) — local data during network failure.
 
-Technically reviewed against the linked official Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

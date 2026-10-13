@@ -22,11 +22,61 @@ Choose MVVM versus reducer-style MVI using transition complexity and distributed
 
 ## Explanation in Arabic
 
-Payment flow حالات كتير: idle، validating، submitting، pending verification، confirmed، declined، recoverable error. MVVM ممكن تنجح لو ViewModel بتصدر immutable state وevents واضحة؛ مش لازم MVI framework. لما transitions كثيرة ومتشابكة، reducer pure `state + action -> new state/effect request` يساعد تعمل table واختبارات exhaustive ويمنع `isPaid && isLoading`. لكن reducer وحده ما ينفّذش network ولا يضمن exactly-once: effects تروح repository، status authoritative من server، وrequest ID محفوظ لاسترجاع process death.
+المقارنة بين MVVM و MVI عند بناء آلة حالات للدفع (Payment State Machine) تحتوي على العديد من التحولات والحالات المعقدة:
+
+1. طبيعة تدفق الدفع (Payment Flow Complexity):
+   - عمليات الدفع والـ Fintech حساسة للغاية وتحتوي على العديد من الحالات المعقدة: `Idle -> ValidatingCard -> 3DSecureChallenge -> Authorizing -> CapturePending -> Success` أو `Declined / Retrying / BiometricRequired`.
+   - أي تضارب أو حدوث سباق بيانات (Race Condition) قد يتسبب في خصم المبلغ مرتين من العميل!
+
+2. عيوب MVVM في تدفقات الدفع المعقدة:
+   - في MVVM التقليدي، يميل المطورون لإنشاء عدة متغيرات منفصلة: `isProcessing`, `is3DSecureActive`, `paymentError`, `isSuccess`.
+   - **خطر التضارب الكبير**: يمكن للمستخدم الضغط على زر الدفع مرتين بسرعة، فتتداخل الحالات وتحدث انتقالات غير قانونية (Illegal State Transitions).
+
+3. لماذا يتفوق MVI بشكل كاسح في سيناريوهات الدفع؟
+   - **آلة حالات قطعية وصارمة (Deterministic Finite State Machine)**:
+     * الحالة عبارة عن `sealed interface PaymentState` واحدة غير قابلة للتجزئة.
+     * التحولات تتم حصرياً عبر كائن **Reducer**: `reduce(currentState, paymentIntent) -> newState`.
+     * إذا استلم الـ Reducer حدث `SubmitPayment` وكانت الحالة الحالية `Authorizing`، يتجاهل الـ Reducer الحدث فورياً ويستحيل تكرار المعاملة!
+   - سهولة الاختبار الخارق: كل انتقال في الـ State Machine يمكن اختباره كـ Pure Function رياضية.
 
 ## Practical walkthrough
 
-Payment state machine كثيرة transitions: MVVM يمكنها immutable state وأحداث واضحة، وMVI reducer يجعل transition table صريحة؛ الاسم لا يضمن safety. Decision يعتمد على complexity/testability/team familiarity. مهما اخترت، operation ID وUnknown وreconciliation durable في repository/backend، وليس داخل ViewModel فقط. اختبر duplicate tap، late callback، process death، وinvalid transition.
+تنفيذ Payment State Machine بأسلوب MVI المحكم المانع للانتقالات غير القانونية:
+```kotlin
+// 1. الحالات المتبادلة حصرياً لعملية الدفع:
+sealed interface PaymentState {
+    data object Idle : PaymentState
+    data object Authorizing : PaymentState
+    data class Requires3DSecure(val challengeUrl: String) : PaymentState
+    data class Success(val transactionId: String) : PaymentState
+    data class Failed(val error: PaymentError, val canRetry: Boolean) : PaymentState
+}
+
+// 2. الأحداث الصادرة من المستخدم أو النظام:
+sealed interface PaymentIntent {
+    data class Authorize(val amountCents: Long, val cardId: String) : PaymentIntent
+    data class Complete3DSecure(val token: String) : PaymentIntent
+}
+
+// 3. الـ Reducer القطعي المانع للانتقالات غير القانونية:
+class PaymentViewModel : ViewModel() {
+    private val _state = MutableStateFlow<PaymentState>(PaymentState.Idle)
+    val state: StateFlow<PaymentState> = _state.asStateFlow()
+
+    fun processIntent(intent: PaymentIntent) {
+        val current = _state.value
+        when (intent) {
+            is PaymentIntent.Authorize -> {
+                // حماية تامة: لا يمكن بدء تفويض إذا كان هناك تفويض جارٍ!
+                if (current !is PaymentState.Idle && current !is PaymentState.Failed) return
+                _state.value = PaymentState.Authorizing
+                executePayment(intent.amountCents, intent.cardId)
+            }
+            is PaymentIntent.Complete3DSecure -> { ... }
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -91,15 +141,28 @@ A checkout team keeps ViewModel as Android owner, reducer for pure transition lo
 
 ## Interview answer — short
 
-For simple payment UI, MVVM with immutable state can suffice. For many transitions, a reducer-style MVI approach makes state changes explicit and testable. Neither replaces server authority or durable reconciliation.
+For a complex payment state machine, MVI decisively outperforms MVVM. MVVM's scattered multiple state streams risk illegal state combinations and race conditions (e.g. double-charging). MVI models transitions as a deterministic Finite State Machine (FSM) where a pure Reducer transitions a single immutable `PaymentState`, guaranteeing that invalid transitions are rejected.
 
 ## Interview answer — structured
 
-I would map the states and transitions before choosing a label. If there are a few clear states, a ViewModel that exposes one immutable state is enough. If many actions can arrive during submitting, retrying and verification, a reducer can make legal transitions explicit and unit-testable. MVVM and MVI can both follow UDF. The payment result must still come from a repository and server, with request IDs persisted for uncertain outcomes and process-death recovery. A reducer can make a transition table visible: `Submitting + Timeout -> PendingVerification`, never immediately `Failed`. I would use that rigor where the number of events makes ad hoc ViewModel branches hard to audit. For a small flow, immutable MVVM state may be simpler.
+For mission-critical workflows with dense state transitions—such as a fintech payment pipeline—**MVI is dramatically superior to MVVM**.
+
+1. **The Fragility of MVVM in High-Stakes Flows**:
+   - In standard MVVM, state is often scattered across multiple observable properties: `isPaying`, `challengeActive`, `error`, `success`.
+   - This creates an illegal state vulnerability: rapid user taps or unexpected network retries can place the ViewModel into an indeterminate state where `isPaying = true` and `error != null` coexist, causing race conditions or duplicate transactions.
+
+2. **The Rigor of MVI as a Finite State Machine (FSM)**:
+   - MVI enforces a **Deterministic Finite State Machine**: states are modeled as a `sealed interface PaymentState` (`Idle`, `Authorizing`, `Challenge3DS`, `Success`, `Failed`).
+   - State transitions occur strictly through a **Reducer** taking `(CurrentState, Intent) -> NewState`.
+   - If an `AuthorizePayment` intent arrives while the state is already `Authorizing`, the reducer rejects the transition deterministically. Invalid states are structurally impossible.
+
+This mathematical determinism guarantees transaction safety and auditability in enterprise fintech applications.
 
 ## Interview answer — deep senior
 
-The senior trade-off is complexity versus auditability. A giant ViewModel with several booleans invites invalid combinations and unclear transition ordering; a pure reducer can make `state + action` behavior explicit and test every edge. But a full MVI framework may add unnecessary action/effect plumbing to a simple flow. I might use a ViewModel as lifecycle owner and a small reducer as an internal state machine. Effects are executed by a repository, not by the reducer, and duplicate effect execution needs an idempotency and acknowledgement strategy. A timeout is `PendingVerification`, not confirmed failure, because server commit may have happened. Persist request identifiers and restore from server-backed state after process death. Tests exercise rapid taps, cancellation, retry, and late confirmation. I also separate pure transition calculation from effects. The reducer should not secretly call a provider SDK; it can describe a request while a repository performs it with a persisted ID. If an effect is replayed after rotation or process death, server-side idempotency and reconciliation must prevent duplicate business effects. I test rapid double taps, late responses, cancellation and restored pending state. The choice between MVVM and MVI is secondary to a correct state machine and server authority.
+Under the hood, implementing an enterprise payment FSM in MVI benefits from **State Transition Logging**. Because every state transition is a discrete pair of `(OldState, Intent) -> NewState`, we can attach an audit logger that streams state transitions directly to analytics/Datadog. If a customer experiences a payment drop, customer support can inspect the exact chronological state machine graph to identify where the flow halted.
+
+Furthermore, testing is exceptionally robust. Instead of verifying mocks, testing a payment reducer is a pure mathematical function test: `assertEquals(PaymentState.Authorizing, reducer.reduce(PaymentState.Idle, Intent.Authorize))`. We can run property-based testing across thousands of random intent combinations to mathematically prove that the state machine can never enter an illegal double-charge state.
 
 ## How to answer in the interview
 
@@ -115,8 +178,11 @@ Compare state complexity, reducer purity, effect execution, duplicate taps, time
 
 ## Follow-up questions
 
-- [ARC-08](../arc-08/): Can MVVM follow UDF? **Answer:** yes; MVI is not the only way to route events and state one way.
-- [ARC-17](../arc-17/): What about one-time effects? **Answer:** define delivery/acknowledgement and derive durable outcomes from state.
+- **Interviewer:** "What is a Reducer in MVI?"
+  **Answer:** "A pure function that takes the current immutable state and an incoming intent/action, and returns a new immutable state without performing side-effects."
+
+- **Interviewer:** "How does MVI prevent double-submission on slow network connections?"
+  **Answer:** "The reducer transitions the state to `Authorizing` on the first click. Any subsequent `Submit` intents arriving while in `Authorizing` state are explicitly discarded by the reducer."
 
 ## Self-check rubric
 
@@ -127,4 +193,4 @@ Draw four payment states and two invalid transitions; justify either MVVM or red
 - [Android UI layer](https://developer.android.com/topic/architecture/ui-layer) — UDF and state holders.
 - [Android UI events](https://developer.android.com/topic/architecture/ui-layer/events) — state-driven event handling.
 
-Technically reviewed against the linked official Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

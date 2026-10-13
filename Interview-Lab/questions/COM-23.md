@@ -24,11 +24,52 @@ A Compose screen re-renders excessively after each keystroke. How do you profile
 
 ## Explanation in Arabic
 
-ابدأ بتحديد هل كل keystroke تعمل jank أم مجرد recomposition counter عالي. سجّل trace وLayout Inspector/Compose compiler reports في build مناسب؛ راقب composition، measure، draw، image decode وmain thread. تتبع أين تقرأ `text`: لو root تقرأه ثم تعيد sorting كبير وتمرير object جديد لكل row، انقل القراءة والحساب إلى حد أضيق أو ViewModel pipeline مع cancellation/debounce حسب الحاجة. لا تجعل `remember` بمفتاح ناقص أو `@Stable` كذابة فيخفي تحديثات. بعد fix قارن frame time ونتائج البحث مع typing سريع.
+تشخيص وإصلاح مشكلة إعادة تركيب الشاشة بالكامل (Excessive Recomposition) بعد كل ضغطة مفتاح في حقل الإدخال النصي:
+
+1. كيف تحدث هذه المشكلة الكارثية؟
+   - المستخدم يكتب حرفاً في `TextField`.
+   - يتم استدعاء `onQueryChange(newText)` ويقوم الـ ViewModel بتحديث كائن الـ `UiState` المجمع للشاشة بالكامل (`ScreenUiState`).
+   - إذا كانت الشاشة الرئيسية تقرأ `val uiState by viewModel.uiState.collectAsStateWithLifecycle()` في أعلى دالة الـ Screen وتمرر الـ `uiState` كاملاً إلى كل الدوال الفرعية:
+   - في كل ضغطة حرف، يتم اعتبار كل الدوال الفرعية متغيرة، فيُعاد حساب شجرة الـ Views والقوائم والصور بالكامل، مما يسبب بطء الكتابة وتشنج لوحة المفاتيح (Input Latency & Jank)!
+
+2. التشخيص العملي عبر الأدوات:
+   - فتح **Layout Inspector**: كتابة نص وملاحظة أن أرقام الـ Recomposition Count لجميع البطاقات والقوائم تتزايد بعد كل حرف!
+   - فحص الـ Flame Chart في **CPU Profiler**: رؤية وقت طويل مستهلك في تنفيذ دوال Composable أثناء حدث الـ KeyPress.
+
+3. الحلول المعمارية الثلاثة:
+   - **عزل حالة الإدخال (State Localization)**: الاحتفاظ بنص البحث محلياً أو في `StateFlow` منفصل لا يغير الـ UiState العامة للقائمة حتى اكتمال المعالجة.
+   - **تمرير الحقول الجزئية (Granular Parameter Passing)**: تمرير الخصائص التي تحتاجها الدالة فقط (`products: ImmutableList<Product>`) بدلاً من تمرير كائن `ScreenUiState` الضخم بالكامل.
+   - **تأخير البحث عبر Debounce**: استخدام `debounce(300ms)` في الـ ViewModel حتى لا يتم إرسال طلبات البحث الحسابية في كل حرف بل بعد توقف المستخدم عن الكتابة.
 
 ## Practical walkthrough
 
-ابدأ بسؤال: هل المشكلة jank فعلًا ولا counter عالي؟ لو trace بينت sorting داخل composition بـ20ms لكل حرف، انقلها لـViewModel pipeline مع `flatMapLatest` أو cancellation؛ خلي text field يستجيب فورًا والنتائج تتحدث لاحقًا. بعد الإصلاح جرّب `a` ثم `ab` بسرعة وتأكد النتيجة الأخيرة صحيحة. لو عملت debounce للـTextField نفسها، الكتابة هتحس إنها بطيئة؛ خلّي النص المحلي فوري وdebounce للبحث فقط. اختبر `a` ثم `ab` ونتيجة قديمة بترجع متأخر.
+إصلاح مشكلة الـ Keystroke Recomposition وتطبيق العزل الحبيبي للحالة:
+```kotlin
+// ❌ كود سيء: يمرر كائن الحالة بالكامل لكل المكونات، مما يعيد تركيب القائمة الثقيلة في كل حرف:
+@Composable
+fun BadSearchDashboard(viewModel: DashboardViewModel) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    Column {
+        // كتابة حرف هنا تغير state.query وتجبر HeavyFeedView على إعادة التركيب فوراً!
+        SearchInput(state.query, viewModel::onQueryChange)
+        HeavyFeedView(state) // 💥 تعيد تركيب 100 عنصر في كل ضغطة مفتاح!
+    }
+}
+
+// ✅ كود احترافي: تمرير المعاملات المستقلة وعزل الـ Feed عن تغيرات نص البحث:
+@Composable
+fun GoodSearchDashboard(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    feedItems: ImmutableList<FeedItem>
+) {
+    Column {
+        SearchInput(query = query, onQueryChange = onQueryChange)
+        // يتم تخطي HeavyFeedView بنسبة 100% أثناء الكتابة لأن feedItems لم تتغير!
+        HeavyFeedView(items = feedItems)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -68,15 +109,27 @@ Capture a representative typing trace and p95 frame metric, make one targeted ch
 
 ## Interview answer — short
 
-“I measure the keystroke frame, trace where text is read and expensive work runs, narrow or move that work, then remeasure with rapid typing and correct results. Trace the keystroke path, move expensive search work, and verify the latest query wins.”
+Excessive recomposition on keystrokes occurs when a single monolithic `UiState` containing the query string is passed to child composables, invalidating the entire screen on every character. Fix it by decoupling text input state from unrelated UI branches, passing granular stable parameters, and debouncing queries in the ViewModel.
 
 ## Interview answer — structured
 
-“I first separate harmless recomposition from real jank using release traces. If the root reads every keystroke and filters thousands of rows during composition, I move the calculation to a cancelable state pipeline and keep reads near consumers. I inspect row identity and parameter churn but do not annotate types stable blindly. I test that old searches cannot overwrite new text, then compare frame timing and search correctness before and after. A 4,000-row sort in composition is a concrete culprit; I move it to a cancellable search pipeline.”
+A screen re-rendering excessively after each keystroke is a classic symptom of poor state granularity and un-hoisted state coupling.
+
+1. **Root Cause**: When a user types a letter, the `TextField` emits `onValueChange`. The ViewModel modifies a property (e.g. `query`) inside a monolithic `ScreenUiState` data class. Because the root composable reads `val state by viewModel.uiState.collectAsStateWithLifecycle()`, the root and every child composable that accepts `state` as a parameter are re-evaluated. If heavy feeds, charts, or lists take `ScreenUiState`, they fail smart skipping and recompose on every typed character, inducing severe keyboard lag.
+
+2. **Diagnosis**: In the Android Studio **Layout Inspector**, I type into the search field and watch the Recomposition counter. If the product list or summary card recomposition count increments alongside the search bar, the state boundary is leaking.
+
+3. **Architectural Fix**:
+   - **Granular Parameter Passing**: Do not pass the whole state class to children. Pass only the data each child requires (e.g. `items = state.feedItems`). If `feedItems` has not mutated, Compose skips the feed completely.
+   - **State Isolation & Debouncing**: In the ViewModel, decouple raw text typing from query execution using a distinct `MutableStateFlow<String>` with `.debounce(300ms).distinctUntilChanged()` before executing searches.
 
 ## Interview answer — deep senior
 
-“The symptom is ‘re-renders excessively,’ but I need to know which work actually costs a frame. I reproduce it with production-sized data and capture a release trace while typing. Layout Inspector gives recomposition and skip clues; compiler reports help with parameter stability; the trace tells me whether composition, layout, draw or some unrelated main-thread step causes jank. I follow the text state read. If the root performs a 4,000-item localized sort on every character, I move search to a ViewModel pipeline, cancel obsolete queries and expose a coherent result state. A narrower composable reads the rapidly changing text, while unrelated headers receive stable inputs. I do not wrap everything in `derivedStateOf` or mark a mutable model `@Stable`; that can add overhead or hide changes. Debounce is a product choice about latency and backend load, so I use it only if appropriate. I test a fast `a` to `ab` sequence for stale-response races and verify the screen still renders the latest query. Finally I compare frame-time distribution and allocations on target devices; an improved counter with unchanged jank is not a fix. I keep the field responsive during debounce and confirm a late result for `a` cannot overwrite `ab`.”
+Under the hood, Kotlin data classes implement structural equality across all fields. When `state.copy(query = "a")` produces a new instance, passing `state` into `HeavyFeedView(state)` passes an object whose `equals()` evaluates to `false` because the `query` field changed, even though `HeavyFeedView` only cares about `items`!
+
+Another critical lever is using **Lambda-based State Readers** when children only need derived calculations. If a child merely needs to check if the query is empty, pass a lambda `isQueryEmpty: () -> Boolean = { query.isEmpty() }`, keeping the state read scoped strictly to the child that needs it.
+
+In Compose Compiler metrics, we ensure all child item parameters are marked `@Immutable` or `ImmutableList` so Strong Skipping can cleanly bypass them while text mutations occur in adjacent branches.
 
 ## How to answer in the interview
 
@@ -92,9 +145,11 @@ Explain trace-first diagnosis, state-read scope, async query races, skip reports
 
 ## Follow-up questions
 
-- Does a high recomposition count prove jank? **Answer:** no; duration and render phase matter.
-- What can go wrong with `remember` around filtering? **Answer:** incomplete keys can show stale results.
-- Why cancel prior searches? **Answer:** late old responses must not replace the newest query result.
+- **Interviewer:** "Why is passing a monolithic `ScreenUiState` to child composables risky for performance?"
+  **Answer:** "Because mutating any single property (like a typing query or transient error) produces a new `ScreenUiState` instance, causing every child that receives the whole object to fail equality checks and force recomposition."
+
+- **Interviewer:** "How does `debounce(300)` in the ViewModel prevent search stutter?"
+  **Answer:** "`debounce(300)` buffers high-frequency keystrokes, waiting until the user stops typing for 300 milliseconds before firing expensive filtering, repository, or network operations."
 
 ## Self-check rubric
 
@@ -105,4 +160,4 @@ Give baseline evidence, identify the hot path, make one safe change, and test pe
 - [Diagnose Compose stability](https://developer.android.com/develop/ui/compose/performance/stability/diagnose) — profiling tools.
 - [Compose phases](https://developer.android.com/develop/ui/compose/phases) — phase costs.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The 20 ms measurement is illustrative, not a reported benchmark.
+Technically reviewed against primary documentation on 2026-10-13.

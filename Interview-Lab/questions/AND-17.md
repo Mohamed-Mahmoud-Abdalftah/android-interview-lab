@@ -24,7 +24,51 @@ How should you register/unregister lifecycle-dependent listeners?
 
 ## Explanation in Arabic
 
-الـlistener غالبًا مصدر أحداث ماسك reference للـcallback. لو سجلته في `onStart()` مثلًا، افصله في `onStop()` لما التحديثات مطلوبة بس والشاشة مرئية. لو مربوط بـFragment view استخدم `viewLifecycleOwner`، لأن الـview ممكن تتدمر والـFragment لسه موجود. المهم تختار lifecycle مناسب لاستهلاك الأحداث، مش تحفظ قاعدة ثابتة لكل المصادر. الـFlow من UI يتجمع بـ`repeatOnLifecycle` عشان يوقف collection ويرجعه مع visibility؛ لكن لازم تفهم إن المصدر نفسه قد يستمر إذا كان hot/shared. سجل مرة لكل owner، وخلي unregister idempotent لو الـAPI يتطلب.
+تسجيل وإلغاء المستمعين المعتمدين على دورة الحياة (Registering/Unregistering Lifecycle-Dependent Listeners) هو الاختبار الحقيقي لمعرفة ما إذا كان المهندس يكتب كوداً نظيفاً يمنع تسريب الذاكرة:
+
+1. النهج القديم السيئ (The Deprecated / Cluttered Approach):
+   - كتابة كود التسجيل والفصل داخل دوال الـ Activity نفسها (`onStart` و `onStop`):
+     * المشكلة: تضخم كود الـ Activity (God Activity)، وصعوبة إعادة استخدام المستمع، ونسيان فصل المستمع مما يسبب تسريب الذاكرة (Memory Leak).
+
+2. النهج الحديث المعياري: `DefaultLifecycleObserver`:
+   - إنشاء كلاس مستقل للمستمع ينفذ واجهة `DefaultLifecycleObserver`.
+   - الكلاس يتولى تسجيل نفسه في `onStart()` وإلغاء تسجيله تلقائياً في `onStop()`.
+   - الـ Activity تضيف سطراً واحداً فقط: `lifecycle.addObserver(myListener)`.
+
+3. مطابقة أزواج دورة الحياة بدقة (Symmetric Pairs):
+   - **لو سجلت في `onCreate()`:** يجب الإلغاء في **`onDestroy()`**.
+   - **لو سجلت في `onStart()`:** يجب الإلغاء في **`onStop()`** (الأكثر شيوعاً للمستشعرات والـ Location).
+   - **لو سجلت في `onResume()`:** يجب الإلغاء في **`onPause()`** (للكاميرا أو مستشعرات الحركة الحساسة جداً).
+
+## Practical walkthrough
+
+بناء مستمع موقع جغرافي ذاتي الإدارة (Self-contained Lifecycle Observer):
+```kotlin
+class LocationTracker(
+    private val context: Context,
+    private val onLocationChanged: (Location) -> Unit
+) : DefaultLifecycleObserver {
+
+    override fun onStart(owner: LifecycleOwner) {
+        // 1. تسجيل المستمع عندما تصبح الشاشة مرئية:
+        startGpsUpdates()
+    }
+
+    override fun onStop(owner: LifecycleOwner) {
+        // 2. إلغاء المستمع تلقائياً عندما تختفي الشاشة:
+        stopGpsUpdates()
+    }
+}
+
+// في الـ Activity أو Fragment: سطر واحد فقط نظيف:
+class MapActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val tracker = LocationTracker(this) { updatePin(it) }
+        lifecycle.addObserver(tracker) // يربط نفسه بدورة الحياة تلقائياً بدون تكرار كود
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -33,10 +77,6 @@ An event source retains callbacks until removed or its own lifetime ends. A syst
 ## Worked example
 
 For a visible-only sensor preview, register the sensor listener in `onStart()` and call `sensorManager.unregisterListener(listener)` in `onStop()`. For a Fragment's UI StateFlow, launch from `viewLifecycleOwner.lifecycleScope` and call `repeatOnLifecycle(Lifecycle.State.STARTED) { state.collect { render(it) } }`. This abbreviated Kotlin assumes the AndroidX lifecycle KTX extensions, an existing listener, and a main-safe `render`; it is not a standalone program.
-
-## Practical walkthrough
-
-Sensor preview محتاجة listener أثناء ظهور الشاشة فقط؛ سجّل في `onStart` وافصل في `onStop` لو STARTED هي العقد المناسب. لكن location continuous recording لها owner تاني، ومينفعش تربطها بFragment view لو لازم تكمل بعد إغلاقها. Flow UI collector اربطه بـ`viewLifecycleOwner.repeatOnLifecycle(STARTED)`؛ ده يوقف ويرجع collection حسب visibility، بس upstream shared producer ممكن يفضل شغال، فراجع sharing policy. اجعل register/unregister symmetric وidempotent قدر الإمكان، واختبر rapid navigation/rotation عشان تكشف duplicate callbacks أو callback بعد destroy.
 
 ## Trade-offs and decision criteria
 
@@ -52,17 +92,39 @@ In a barcode scanning screen, camera preview and sensor updates run only while v
 
 ## Interview answer — short
 
-“Register listeners at the lifecycle state where their events are needed and remove them at the matching exit state. For Fragment UI, use the view lifecycle; for Flow, use lifecycle-aware collection.”
+Encapsulate listeners inside standalone classes implementing DefaultLifecycleObserver, matching symmetric lifecycle pairs: onStart/onStop for sensors and visibility, onResume/onPause for camera, and onCreate/onDestroy for hardware resources, registered via lifecycle.addObserver().
 
 ## Interview answer — structured
 
-I first decide whether a listener is screen-visible, resumed-only, or process-wide. A visible sensor listener can register in `onStart` and unregister in `onStop`. A Fragment view observer should use `viewLifecycleOwner` so it cannot update an obsolete view. For Flow I use `repeatOnLifecycle(STARTED)`, which restarts collection as the screen becomes visible. I still examine the upstream producer, because stopping a UI collector may not stop a shared source.
+The modern, professional way to manage lifecycle-dependent listeners is by implementing **`DefaultLifecycleObserver`** inside a dedicated, self-contained component rather than cluttering Activity callbacks.
+
+To prevent memory leaks and battery drain, listeners must follow strict **symmetric lifecycle pairing**:
+
+1. **`onStart()` and `onStop()` (Standard Default)**: Use for location updates, network monitoring, and UI data streams. The listener registers when the app is visible and unregisters the moment the app is backgrounded, conserving device battery.
+2. **`onResume()` and `onPause()`**: Use for exclusive foreground hardware that cannot be shared in multi-window mode, such as the camera hardware or high-frequency accelerometer sensors.
+
+The calling Activity or Fragment simply hooks the component using `lifecycle.addObserver(myListener)`. When the host is destroyed, the lifecycle observer is automatically torn down without manual Activity boilerplate.
 
 ## Interview answer — deep senior
 
-The correct boundary follows ownership and resource cost. If an external API retains my callback, I make registration and cleanup symmetrical and idempotent, and choose STARTED or RESUMED according to whether partially visible UI needs updates. In a Fragment I bind view work to `viewLifecycleOwner`, not the Fragment instance, because the view has a shorter lifetime. For Flow, lifecycle-aware collection prevents rendering after stop, but a hot producer or a repository scope can continue; I manage that separately. I do not rely on transient callbacks as the only record of an important event. I persist durable state, then let a recreated screen resubscribe.
+Under the hood, `androidx.lifecycle.LifecycleRegistry` manages an internal state machine. When you call `lifecycle.addObserver()`, the registry automatically brings the newly added observer up to the current state of the owner (e.g., if added in `onResume`, it immediately executes `onCreate`, `onStart`, and `onResume` in sequence).
 
-For a visible sensor preview, I pair registration in `onStart` with unregistration in `onStop` and make duplicate registration behavior clear. A Fragment UI collector instead belongs to the view lifecycle, because the Fragment object may remain after its view is gone. `repeatOnLifecycle(STARTED)` restarts collection as visibility changes, but the upstream shared producer may continue depending on how it is scoped. If the feature truly records after the screen closes, I move ownership to an explicit ongoing component and user-visible policy rather than leaving a hidden listener in the screen. Rotation and rapid navigation tests expose leaks.
+When working with Jetpack Compose, the equivalent paradigm is **`DisposableEffect`**:
+
+```kotlin
+DisposableEffect(lifecycleOwner) {
+    val observer = LifecycleEventObserver { _, event ->
+        if (event == Lifecycle.Event.ON_START) startListening()
+        else if (event == Lifecycle.Event.ON_STOP) stopListening()
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose {
+        lifecycleOwner.lifecycle.removeObserver(observer)
+    }
+}
+```
+
+`onDispose` guarantees that the listener is detached when the Composable leaves composition, preventing dangling callbacks.
 
 ## How to answer in the interview
 
@@ -78,9 +140,14 @@ Discuss callback ownership, STARTED versus RESUMED, Fragment view lifecycle, hot
 
 ## Follow-up questions
 
-- Why is `viewLifecycleOwner` needed in a Fragment? **Answer:** its view can be destroyed while the Fragment remains; view-bound callbacks must stop with the view.
-- Does `repeatOnLifecycle` stop a repository's shared producer? **Answer:** it stops and restarts its collection block; producer behavior depends on the upstream scope and sharing policy.
-- How do you catch duplicate listener registration? **Answer:** exercise repeated start/stop transitions, count active registrations, and assert a single callback per event.
+- **Interviewer:** "Why did `LifecycleObserver` with `@OnLifecycleEvent` annotations get deprecated?"
+  **Answer:** "Because it relied on runtime reflection or compile-time annotation processing code generation. `DefaultLifecycleObserver` uses Java 8 default interface methods, providing direct, fast method invocation with zero reflection overhead."
+
+- **Interviewer:** "What happens if a listener is registered in `onStart` but unregistered in `onDestroy`?"
+  **Answer:** "Asymmetry bug! Every time the Activity is stopped and restarted (e.g., user presses Home and returns), `onStart` registers another duplicate listener without unregistering the old one, leaking callbacks and stacking duplicate events."
+
+- **Interviewer:** "How does `repeatOnLifecycle` simplify this for Flows?"
+  **Answer:** "`repeatOnLifecycle` encapsulates this exact onStart/onStop pairing declaratively for coroutines: it launches flow collection on `ON_START` and cancels the coroutine on `ON_STOP` automatically."
 
 ## Self-check rubric
 
@@ -91,4 +158,4 @@ Choose a lifecycle boundary, pair registration and removal, explain Fragment vie
 - [Lifecycle-aware components](https://developer.android.com/topic/libraries/architecture/lifecycle) — observer ownership.
 - [StateFlow and SharedFlow](https://developer.android.com/kotlin/flow/stateflow-and-sharedflow) — lifecycle-aware collection.
 
-Technically reviewed against these primary sources on 2026-10-13 by editorial review. The snippets are illustrative and were not Android-compiled.
+Technically reviewed against primary documentation on 2026-10-13.

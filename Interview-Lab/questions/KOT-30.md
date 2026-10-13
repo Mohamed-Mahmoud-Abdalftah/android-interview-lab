@@ -22,7 +22,44 @@ Present a repeatable API review: semantic clarity, null contracts, ownership, in
 
 ## Explanation in Arabic
 
-مراجعة Kotlin API أبدأها من use case عند caller: الاسم واضح؟ parameters وreturn types بيعبّروا عن domain؟ هل null معناها “مفيش نتيجة” ولا failure؟ لو في أكتر من outcome، sealed result أو error type أوضح من `Boolean`/`null`. راجع ownership: هل `List` snapshot ولا view mutable؟ هل callback بيتخزن أو بيتنادى فورًا؟ هل suspend function main-safe وبتحترم cancellation؟ بعدها راجع تكلفة hot path: copying collections، boxing value classes، reflection، lambdas، وJNI crossings—لكن قِس release build بدل التخمين. في Java boundary افحص platform types والتوقيع اللي Java شايفه.
+مراجعة كود Kotlin للتحقق من الـ Readability و الـ Null Safety و الـ Allocation Cost هي المهارة التي تميز الـ Senior / Staff Engineer في الـ Code Review:
+
+1. مراجعة الـ Null Safety (Null Safety Review):
+   - **التخلص من `!!` (Force-unwrap):** أي استخدام لـ `!!` هو Code Smell ويجب حظره؛ بدلاً منه نستخدم `?:` (Elvis operator) أو smart casts أو explicit error handling.
+   - **Platform Types Ingress:** فحص أي استدعاء لمكتبات Java والتأكد من تحديد النوع صراحة كـ Nullable (`Type?`) عند الدخول.
+   - **تجنب الـ `lateinit` العشوائي:** `lateinit` يجب أن يقتصر على حقن الاعتماديات (DI) أو دورات حياة محددة مع اختبار `::prop.isInitialized` عند الحاجة.
+
+2. مراجعة تكلفة الذاكرة والـ Allocations (Memory & Allocations):
+   - **الـ Lambdas في الـ Loops والـ High-Frequency Paths:** التأكد من عدم إنشاء Lambdas بتعمل capture لمتغيرات محلية داخل loops أو Composables بدون inline.
+   - **Collections vs Sequences:** مراجعة الـ Pipelines المتتالية (`filter.map.take`) واستخدام `asSequence()` للبيانات الكبيرة لمنع intermediate collections.
+   - **Primitive Obsession & Boxing:** فحص استخدام `@JvmInline value class` لتجنب إنشاء كائنات للـ IDs، والتأكد من عدم عمل Boxing غير مقصود في Generic collections.
+
+3. مراجعة الـ Readability والتصميم اللغوي (Idiomatic Kotlin):
+   - **عدم المبالغة في الـ Scope Functions:** منع سلاسل `?.let { }?.also { }?.apply { }` المتشابكة.
+   - **الـ Immutability بالتصميم:** تفضيل `val` على `var`، وتفضيل `List` على `MutableList` في الـ Public APIs.
+
+## Practical walkthrough
+
+قائمة تدقيق عملية (Checklist) بنطبقها في الـ Pull Requests:
+```kotlin
+// ❌ كود سيء في الـ PR:
+fun processUsers(users: List<User>) {
+    val valid = users.filter { it.age > 18 }.map { it.id!! } // خطر !! وتكلفة مصفوفتين وسيطتين
+    for (id in valid) {
+        analytics.track { log(id) } // إنشاء Lambda object في كل لفة لو track غير inlined
+    }
+}
+
+// ✅ الكود بعد مراجعة الـ Senior:
+fun processUsers(users: List<User>) {
+    users.asSequence()
+        .filter { it.age > 18 }
+        .mapNotNull { it.id } // حماية من null وبدون !!
+        .forEach { id ->
+            analytics.track(id) // استدعاء مباشر بدون تخصيص ذاكرة زائد
+        }
+}
+```
 
 ## Why it matters and how it works
 
@@ -44,10 +81,6 @@ interface UserDirectory { suspend fun find(id: UserId): Lookup }
 ```
 The interface contract must also state cancellation and dispatcher behavior; this snippet is not a network implementation.
 
-## Practical walkthrough
-
-في API review، بص على `find(id: String): String?`: هل `id` user ولا order؟ وهل `null` يعني missing ولا network failure؟ بدّلها بـ`UserId` validated و`Lookup.Found/Missing/Unavailable` لو caller محتاج يميّز. بعدين راجع concurrency contract لـ`suspend fun`: هل بتعمل blocking I/O؟ مين يملك cancellation؟ لو return list، هل هي snapshot ولا mutable alias؟ للكلفة، ما تحكمش من syntax: افحص allocations في hot path أو serialization loop بـprofiler، وقارن release build. أخيرًا اختبر Java interop لو API public، وأضف tests للnull/error/cancellation بدل الاكتفاء بـhappy path.
-
 ## Trade-offs and decision criteria
 
 Explicit types add declarations but reduce caller guessing. A nullable return is fine for ordinary absence; typed outcome is better when failure categories matter. Defensive copies protect ownership but allocate; for large hot data, consider immutable/persistent structures or single-owner access after profiling.
@@ -62,17 +95,23 @@ In a code review for an Android search SDK, inspect example call sites, Java con
 
 ## Interview answer — short
 
-I review a Kotlin API in layers: clear names and domain types, explicit null and error meaning, ownership of mutable state, and measured allocation cost. For a suspending API I also document cancellation and blocking behavior. I verify public interop and release performance.
+I review Kotlin APIs across three pillars: 1) Null Safety (eliminating '!!', guarding Java platform types, minimizing lateinit); 2) Allocation Cost (using Sequences for large chains, avoiding captured lambdas in loops, leveraging inline and value classes); and 3) Readability (enforcing immutability by default, preventing nested scope functions, and ensuring expressive domain naming).
 
 ## Interview answer — structured
 
-I begin with the caller’s question: can the signature tell them what to pass and how to handle every outcome? An ambiguous `find(String): String?` hides both ID meaning and whether null means absent data or a failure, so I prefer a validated ID and a named outcome when those distinctions matter. I then check mutable aliases, thread ownership, and cancellation behavior; `suspend` alone does not promise non-blocking work. For allocation cost I profile a representative release path instead of judging a scope-function chain by appearance. Finally, I test Java callers, serialization boundaries, and failure cases before publishing the API.
+When reviewing a Kotlin API or Pull Request, I evaluate code against three architectural pillars: null safety, allocation cost, and idiomatic readability.
+
+For null safety, I have a zero-tolerance policy for the double-bang operator (!!). I look for defensive boundary checks where Java platform types enter the module, ensure nullable types are handled via safe calls or exhaustive when expressions, and verify that `lateinit` is restricted to framework dependency injection.
+
+For allocation cost, I audit hot paths and collections. I look for chained collection transformations that allocate intermediate lists and recommend Sequences for larger datasets. I check if lambdas capture outer variables inside loops, which causes repeated heap allocations, and verify that value classes aren't inadvertently boxed in generic collections.
+
+For readability, I ensure public APIs expose read-only types (`List` rather than `MutableList`), prefer `val` over `var`, and flag tangled scope function chains like `let` inside `also` inside `apply`. Code must be readable from left-to-right without requiring cognitive gymnastics.
 
 ## Interview answer — deep senior
 
-I use a checklist anchored in behavior. Names and parameter types should expose units and domain intent; default arguments should not hide unsafe behavior. Nullability is a contract, so platform types are normalized and expected absence is distinct from failure. I review whether returned collections are snapshots, whether callbacks escape, and whether suspend functions preserve cancellation and are main-safe. For performance I identify call frequency and data size, inspect generated code where relevant, and profile minified release builds on target devices. Finally I test representative Kotlin and Java call sites and document binary compatibility when the API is public.
+In enterprise Android codebases, code review is an engineering gate supported by static analysis tooling. We configure Detekt and Android Lint in CI to mechanically enforce baseline rules (flagging `!!`, catching unused return values, and restricting `lateinit`), freeing human reviewers to focus on architectural nuance.
 
-I would review a real signature such as `suspend fun find(id: String): String?`. The ID type is ambiguous and null conflates not found with unavailable, so I would consider a validated `UserId` and a sealed Lookup outcome. I would then state whether the function can block, how cancellation propagates, and whether returned collections are snapshots or aliases. Allocation review comes after measuring a hot path: a value class may box in generics, a sequence may repeat work, and defensive copies may allocate. I test malformed inputs, Java call sites, and release traces before accepting the API, while keeping simple cases simple.
+At the deeper review level: 1. Jetpack Compose Stability: I inspect data classes passed to Composables, ensuring properties are `val` and collections are wrapped in immutable types (like Kotlinx ImmutableList) so the Compose compiler marks parameters as stable, enabling recomposition skipping. 2. Coroutine Hygiene: I check that suspend functions do not block threads, that `withContext(Dispatchers.IO)` is confined to the lowest data layer, and that `CancellationException` is never swallowed by broad `catch (e: Exception)` blocks. 3. Binary Compatibility: For shared library modules, I ensure public API changes do not break binary backward compatibility, using the Jetpack Binary Compatibility Validator plugin to track public symbol diffs.
 
 ## How to answer in the interview
 
@@ -88,9 +127,14 @@ Discuss caller-first review, domain type design, null/error taxonomy, ownership,
 
 ## Follow-up questions
 
-- [KOT-21](../kot-21/): Where might a value class allocate? **Answer:** nullable, generic, or interface use sites may require boxing.
-- [KOT-23](../kot-23/): What Java boundary needs review? **Answer:** platform nullability, generated signatures, and callback lifetime.
-- [KOT-27](../kot-27/): Should inline be automatic for performance? **Answer:** no; measure code-size and runtime effects.
+- **Interviewer:** "How do you detect accidental allocations during code review?"
+  **Answer:** "By looking for: 1) boxing of value classes into generic collections or nullable types; 2) non-inlined higher-order functions in loops; 3) string concatenation inside high-frequency loops instead of StringBuilder; and 4) eagerly chained collection transformations on large collections. When in doubt, we inspect the decompiled bytecode in Android Studio."
+
+- **Interviewer:** "Why is `mapNotNull` preferred over `filter { it != null }.map { it!! }`?"
+  **Answer:** "`mapNotNull` performs the null check and transformation in a single pass without allocating an intermediate list, and completely eliminates the unsafe `!!` operator, making the code both cleaner and safer."
+
+- **Interviewer:** "What automated tools do you integrate into CI to enforce Kotlin code quality?"
+  **Answer:** "We integrate Detekt for Kotlin-specific code smells and complexity metrics, KtLint for formatting consistency, Android Lint for Android-specific bugs and performance warnings, and the Jetpack Binary Compatibility Validator for public API changes."
 
 ## Self-check rubric
 
@@ -101,4 +145,4 @@ Review a sample API for ambiguous null, mutable ownership, cancellation and one 
 - [Kotlin coding conventions](https://kotlinlang.org/docs/coding-conventions.html) — API readability and platform-type guidance.
 - [Android performance guide](https://developer.android.com/topic/performance) — measurement context.
 
-Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets unless explicitly labeled conceptual; no Android device claim is made.
+Technically reviewed against primary documentation on 2026-10-13.

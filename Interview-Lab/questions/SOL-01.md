@@ -22,7 +22,38 @@ Name all five principles and explain their shared goal as change control, not cl
 
 ## Explanation in Arabic
 
-SOLID اختصار لـSingle Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion. هي heuristics لتقليل ripple effect لما requirements تتغير، مش قوانين تفرض interface لكل class. SRP تجمع اللي يتغير لسبب واحد، OCP تحمي policy من تعديلات متكررة بإضافة behavior، LSP تمنع subtype يكسر وعود base، ISP تمنع clients تعتمد على methods مش محتاجاها، DIP تخلي high-level policy مستقلة عن low-level details. في Android ده يظهر في ViewModel صغيرة، repository boundary، provider strategies، وinterfaces ضيقة. لكن abstractions غير مبررة تزود التعقيد.
+ما هي مبادئ SOLID الخمسة ولماذا تُعد حجر الأساس في هندسة تطبيقات Android الاحترافية؟
+
+1. ما الذي ترمز إليه حروف SOLID؟
+   - **S - Single Responsibility Principle (SRP)**: كل كلاس يمتلك مسؤولية واحدة فقط وسبباً واحداً للتغيير.
+   - **O - Open/Closed Principle (OCP)**: الكيانات البرمجية مفتوحة للتوسيع (Extension) ومغلقة للتعديل (Modification).
+   - **L - Liskov Substitution Principle (LSP)**: الكلاسات الفرعية يجب أن تحل محل الكلاسات الأساسية دون كسر صحة وسلوك البرنامج.
+   - **I - Interface Segregation Principle (ISP)**: تقسيم الواجهات الضخمة إلى واجهات صغيرة محددة؛ لا تُجبر كوداً على تنفيذ دوال لا يحتاجها.
+   - **D - Dependency Inversion Principle (DIP)**: الوحدات العليا لا تعتمد على الوحدات الدنيا؛ كلاهما يعتمد على التجريدات (Abstractions).
+
+2. لماذا تُعتبر حيوية في Android الحديث؟
+   - بدون SOLID، يتحول المشروع إلى **كود هش (Fragile Code)**: أي تعديل في شاشة يكسر شاشة أخرى، وتتضخم الـ Activities إلى God Classes يستحيل اختبارها.
+   - تطبيق SOLID يضمن: سهولة الصيانة، قابلية الاختبار بنسبة 100% على الـ JVM، وسهولة تقسيم المشروع إلى Gradle Modules مستقلة.
+
+## Practical walkthrough
+
+نظرة سريعة على كود ينتهك SOLID وكود يعتمد عليها في Android:
+```kotlin
+// ❌ انتهاك صارخ لمبادئ SOLID: God Activity تجمع كل شيء:
+class MonolithicProfileActivity : AppCompatActivity() {
+    // تنتهك SRP: تجمع الرسم، واستدعاء Retrofit، وحفظ SQLite، والـ Validation!
+    // تنتهك OCP: إضافة نوع مستخدم جديد يتطلب تعديل if/else في 5 دوال.
+    // تنتهك DIP: تعتمد على كائنات ملموسة مباشرة new Retrofit().
+}
+
+// ✅ تطبيق SOLID: تفكيك المسؤوليات إلى مكونات متماسكة ومعزولة:
+class ProfileViewModel @Inject constructor(
+    private val getProfile: GetProfileUseCase, // DIP & SRP
+    private val analytics: AnalyticsTracker // ISP & OCP
+) : ViewModel() {
+    val uiState: StateFlow<ProfileUiState> = ...
+}
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +62,6 @@ The principles address cohesion, extension, substitutability, client-specific co
 ## Worked example
 
 Conceptual Android example: checkout policy depends on `PaymentGateway` rather than a specific SDK (DIP), accepts new provider adapters without editing the policy (OCP), and every adapter must honor the same result/cancellation contract (LSP). UI does not depend on unrelated gateway methods (ISP), while rendering stays separate from provider I/O (SRP).
-
-## Practical walkthrough
-
-في مقابلة على تطبيق checkout، ابدأ من change request حقيقي: مزود دفع جديد. اسأل: هل هتعدل شاشة الدفع والـpolicy والـSDK mapping مع بعض؟ لو آه، عندك أكثر من سبب للتغيير وانتشار واسع. خلي قرار الأهلية في policy، والتعامل مع الـSDK في adapter، والعقد بينهما صغير وواضح. بعدها اختبر إن كل adapter يرجع نفس أنواع النتائج ويلتزم بالإلغاء والـretry. ما تحولش كل class إلى interface؛ احسب عدد أماكن التغيير قبل وبعد. وافتكر إن SOLID ما يضمنش نجاح المعاملة: تأكيد السيرفر وidempotency لازمين برضه.
 
 ## Trade-offs and decision criteria
 
@@ -50,15 +77,32 @@ A multi-provider payment app isolates provider SDKs behind a narrow contract and
 
 ## Interview answer — short
 
-SOLID is five design principles for keeping change local: single responsibility, open/closed, substitutability, interface segregation, and dependency inversion. I use them as review questions, not a mandate to add interfaces everywhere.
+SOLID stands for Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, and Dependency Inversion. In Android, these principles prevent monolithic God Activities, isolate business rules from framework churn, enable pure JVM unit testing, and maintain high code cohesion in multi-module codebases.
 
 ## Interview answer — structured
 
-I explain SOLID by asking what happens when a requirement changes. SRP keeps unrelated reasons to change apart. OCP makes stable policy extensible through a suitable seam. LSP requires substitutes to honor the contract. ISP keeps clients from depending on unused operations. DIP makes high-level policy depend on a stable abstraction rather than a specific SDK. In Android, a checkout rule and provider adapter illustrate several of them together.
+SOLID represents five foundational object-oriented design principles aimed at creating maintainable, testable, and scalable software systems.
+
+1. **Single Responsibility (SRP)**: A class should have one, and only one, reason to change.
+2. **Open/Closed (OCP)**: Software entities should be open for extension (adding new features via polymorphism or composition) but closed for modification (not editing existing tested code).
+3. **Liskov Substitution (LSP)**: Subtypes must be substitutable for their base types without altering program correctness or throwing unexpected exceptions.
+4. **Interface Segregation (ISP)**: Clients should not be forced to depend on interfaces they do not use; prefer many fine-grained interfaces over one fat interface.
+5. **Dependency Inversion (DIP)**: High-level business policies should not depend on low-level infrastructure details; both should depend on abstractions.
+
+In Android, violating SOLID leads to fragile 'God Activities', tight coupling to SDK lifecycles, and impossible unit testing. Adhering to SOLID keeps domain logic decoupled from framework churn.
 
 ## Interview answer — deep senior
 
-These principles are most useful as a diagnosis of change pain. If adding a provider edits ten unrelated classes, OCP and DIP suggest a strategy seam. If an SDK implementation throws for a method that the contract promises, LSP and ISP are being strained. If a ViewModel renders UI, parses JSON, and decides payment policy, SRP suggests multiple reasons to change. But a proliferation of one-to-one interfaces is not the goal; it can make a small feature less readable and harder to evolve. I test substitution behavior, inspect dependency direction, and measure whether new requirements stay local. For critical Android flows I also consider lifecycle, cancellation, process death, and server authority, which the acronym itself does not solve. For example, I would trace one new provider request through the checkout code and mark every changed file. The useful seams are the ones that keep eligibility rules stable while provider mapping changes. A contract test can run against every adapter to check rejected, pending, cancelled, and network-uncertain outcomes. A UI-only fake is insufficient if the real SDK has different cancellation behavior. I would keep server confirmation and idempotency outside the acronym because interface design cannot make a payment exactly once. If the feature has only one stable implementation, a concrete class may be clearer until variation appears.
+Under the hood, SOLID principles are not dogmatic laws—they are tools to manage **coupling and cohesion**. High cohesion means code that changes together stays together; loose coupling means changes in one module do not ripple into others.
+
+In modern Android architectures (Clean Architecture + Jetpack Compose + Kotlin Coroutines), SOLID principles manifest concretely:
+- SRP drives the separation between ViewModels, Use Cases, Repositories, and DataSources.
+- OCP enables feature extensions via Strategy patterns and polymorphic sealed classes.
+- LSP eliminates rigid, deeply nested inheritance hierarchies like bloated `BaseActivity` classes in favor of composable delegates.
+- ISP creates focused repository interfaces (`UserReader`, `UserWriter`) rather than monolithic CRUD interfaces.
+- DIP powers inversion of control where the Domain layer defines repository contracts implemented by the Data layer.
+
+We balance SOLID against the YAGNI principle to prevent speculative overengineering in early-stage features.
 
 ## How to answer in the interview
 
@@ -74,8 +118,11 @@ Map each letter to one concrete Android failure and an appropriate refactor; dis
 
 ## Follow-up questions
 
-- [SOL-07](../sol-07/): Is DI the same as DIP? **Answer:** no; DI is wiring, DIP is dependency direction and contract design.
-- [SOL-13](../sol-13/): Must each class have an interface? **Answer:** no; introduce one for meaningful variation or boundary.
+- **Interviewer:** "Which SOLID principle is most commonly violated in legacy Android codebases?"
+  **Answer:** "The Single Responsibility Principle (SRP), typically resulting in massive 'God Activities' or 'God Fragments' managing UI inflation, network calls, SQLite transactions, and business calculations in a single file."
+
+- **Interviewer:** "How does Kotlin's language design support SOLID out of the box?"
+  **Answer:** "Kotlin promotes SOLID via first-class composition (delegation via `by`), pure functions, interface default implementations, immutability by default (`val`), and sealed hierarchies for type-safe extension."
 
 ## Self-check rubric
 
@@ -87,4 +134,4 @@ Expand all five letters, give an Android example for two, and explain one overen
 - [Robert C. Martin on SRP](https://blog.cleancoder.com/uncle-bob/2014/05/08/SingleReponsibilityPrinciple.html) — reasons to change.
 - [Robert C. Martin on OCP](https://blog.cleancoder.com/uncle-bob/2014/05/12/TheOpenClosedPrinciple.html) — extension and dependency direction.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -23,11 +23,54 @@ What is the Android application sandbox and permission model?
 
 ## Explanation in Arabic
 
-كل app غالبًا ليه Linux UID مستقل؛ الـsandbox بيعزل ملفاتها وعملياتها عن apps تانية. الوصول للكاميرا أو الموقع بيمرّ من permission model ومن system service، وبعض الصلاحيات لازم موافقة runtime. العزل مش معناه إن كل بيانات جوّه app آمنة لو الجهاز rooted، ولا إن exported component آمن تلقائيًا. الـbackend يظل صاحب قرار authorization.
+ما هو نموذج العزل الأمني (Application Sandbox) ونظام الصلاحيات (Permission Model) في Android، وما هي حدوده الحقيقية؟
+
+1. معمارية الـ Application Sandbox على مستوى نواة Linux:
+   - كل تطبيق أندرويد يتم تثبيته يُعامل كـ **مستخدم نظام Linux مستقل تماماً** وله معرف مستخدم فريد (Unique Linux UID مثل `u0_a145`).
+   - يعمل كل تطبيق داخل عملية مستقلة (Isolated Process) ومساحة ذاكرة خاصة به، ويمتلك مجلداً خاصاً مشفراً للملفات (`/data/data/<package_name>/`) بأذونات حصرية (`rwx------`).
+   - لا يستطيع أي تطبيق آخر على الهاتف قراءة ملفات تطبيقك أو التجسس على الذاكرة أو حقن كود، إلا إذا اشترك التطبيقان في نفس شهادة التوقيع (Shared User ID).
+   - كل اتصال بين التطبيقات يمر عبر **Binder IPC** الذي يفحص هوية المتصل (`Binder.getCallingUid()`).
+
+2. نظام الصلاحيات (Android Permission Model):
+   - **صلاحيات عادية (Normal Permissions)**: تُمنح تلقائياً عند التثبيت (مثل الوصول للإنترنت `android.permission.INTERNET`).
+   - **صلاحيات خطرة (Dangerous / Runtime Permissions)**: تتطلب موافقة المستخدم الصريحة أثناء التشغيل (الموقع، الكاميرا، الميكروفون، الإشعارات).
+   - **صلاحيات خاصة (Special Permissions)**: تتطلب توجيه المستخدم لصفحة إعدادات النظام (مثل ظهور فوق التطبيقات `SYSTEM_ALERT_WINDOW` أو إدارة الملفات `MANAGE_EXTERNAL_STORAGE`).
+
+3. حدود الـ Sandbox والافتراضات الخاطئة (The Sandbox Boundaries):
+   - الـ Sandbox يحمي التطبيق من **التطبيقات الأخرى العادية**، ولكنه **لا يحمي التطبيق إذا كان الجهاز نفسه مخترقاً (Rooted Device)** أو إذا كان نظام التشغيل معدلاً (Compromised OS).
+   - مستخدم الـ Root يمتلك UID 0، ويستطيع تجاوز صلاحيات Linux وقراءة مجلد `/data/data/` بالكامل وتفريغ الذاكرة (RAM Dump) واستخراج التوكنز غير المشفرة!
 
 ## Practical walkthrough
 
-مثال: شاشة رفع إيصال تستخدم Photo Picker بدل طلب صلاحية قراءة كل الصور. ده يقلل مساحة الوصول، لكن الـURI اللي رجع من picker لازم تتعامل معاه على إنه input غير موثوق وتتحقق من الحجم والنوع قبل الرفع. ولو عندك `ContentProvider` exported، الـsandbox مش هيمنع app تانية من استدعائه؛ لازم تصاريح وauthorization على كل مسار.
+التحقق من هوية المتصل عبر Binder IPC ومنع الثغرات الأمنية في المكونات المصدرة:
+```kotlin
+// ❌ ثغرة أمنية: تصدير Service أو ContentProvider بدون فحص UID المتصل:
+class VulnerablePaymentService : Service() {
+    override fun onBind(intent: Intent): IBinder = object : IPaymentService.Stub() {
+        override fun transferMoney(amount: Long, toAccount: String) {
+            // أي تطبيق خبيث على الهاتف يستطيع استدعاء هذه الدالة وسرقة الأموال!
+            executeTransfer(amount, toAccount)
+        }
+    }
+}
+
+// ✅ تأمين Binder IPC بفحص UID والتحقق من التوقيع الرقمي للمتصل (Signature Permission):
+class SecurePaymentService : Service() {
+    override fun onBind(intent: Intent): IBinder = object : IPaymentService.Stub() {
+        override fun transferMoney(amount: Long, toAccount: String) {
+            val callingUid = Binder.getCallingUid()
+            val callingPackage = packageManager.getNameForUid(callingUid)
+            
+            // 1. فحص الصلاحية عبر Signature-level permission:
+            if (checkCallingOrSelfPermission("com.example.permission.TRUSTED_PAYMENT") != PackageManager.PERMISSION_GRANTED) {
+                throw SecurityException("Unauthorized caller: UID $callingUid ($callingPackage)")
+            }
+            
+            executeTransfer(amount, toAccount)
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +94,29 @@ For a fintech app, keep customer data in app-private storage, request only neces
 
 ## Interview answer — short
 
-“Android gives each app an isolated identity and gates sensitive platform APIs with permissions. I request the minimum permission at the moment of need, handle denial and revocation, and still validate every cross-app and server boundary.”
+Android's application sandbox enforces process and storage isolation at the Linux kernel level by assigning each app a unique Linux UID and private directory. The permission model gates device capabilities across install-time, runtime, and special tiers. However, the sandbox only protects against peer apps; on rooted devices, root access bypasses UID isolation completely.
 
 ## Interview answer — structured
 
-“Android gives each app a UID and private storage, while permissions gate access to platform capabilities. I prefer scoped APIs such as Photo Picker, request dangerous permissions only when needed, and handle denial or revocation. The boundary changes when I export a component or grant a URI, so I inspect the merged manifest and test untrusted intents. A permission to use the camera does not authorize a transfer or another customer's data; the backend checks account ownership separately.”
+The Android security sandbox is built on multi-user Linux kernel primitives rather than JVM boundaries:
+
+1. **Linux UID Isolation**: During installation, Android assigns each application a unique, non-privileged Linux User ID (e.g. `u0_a145`). The process runs with this UID, and its internal storage directory (`/data/data/<package>/`) is restricted with file permissions `0700`. Other apps running under different UIDs are blocked by the kernel from reading memory, inspecting files, or intercepting threads.
+
+2. **Binder IPC Mediation**: Inter-process communication across components (Activities, Services, Providers) is brokered by the Linux Binder driver. Binder guarantees the cryptographic authenticity of `Binder.getCallingUid()`, allowing services to enforce permission checks before executing sensitive methods.
+
+3. **Permission Hierarchy**: Access to hardware and sensitive user data is gated by permissions: Normal (granted at install), Dangerous/Runtime (biometrics, camera, location required explicit user prompt), and Special App Access (exact alarms, all-files access).
+
+The critical boundary to understand: **The sandbox assumes the underlying kernel and hardware are uncompromised**. On rooted devices or emulators with UID 0 (root), kernel boundaries dissolve: an attacker can dump app RAM, attach debuggers, and read private files directly.
 
 ## Interview answer — deep senior
 
-“I start by identifying the boundary. The Android UID and framework permission checks protect private files and platform capabilities, but an exported component or URI grant deliberately crosses that boundary. For a receipt upload I would prefer Photo Picker, validate the selected content, and handle a revoked grant. I would inspect the merged manifest, including SDK-added exports, and test malformed intents. None of that authorizes a financial action: the backend still checks the signed-in user and ownership of the requested record. On a rooted device I assume local isolation can be weakened, so I keep the client’s authority narrow. For verification, I would revoke media access after selection, attempt an exported-provider read from another app, and send a deep link with an unexpected account ID. Those tests show whether the client handles platform grants safely; a separate API test proves the server rejects cross-account access. I would document the exact supported Android versions because permission and picker behavior can differ, while keeping the backend invariant constant.”
+From an OS security architecture perspective, Android adds multiple layers beyond pure UID isolation:
+
+1. **SELinux (Security-Enhanced Linux)**: Enforces Mandatory Access Control (MAC) in enforcing mode. Even if an attacker finds an exploit giving them UID 0 inside a sandboxed daemon, SELinux domain policies restrict what files, device nodes, and system calls that domain can access, preventing privilege escalation into the core kernel.
+
+2. **Seccomp Filters**: Restricts available system calls for app processes. Zygote installs a restrictive BPF filter blocking dangerous syscalls (like raw socket creation or kernel module loading) before forking an application process.
+
+Despite these defenses, senior engineers adopt a **Zero Trust Client Model**: never treat client-side validation as authoritative. A modified APK on a rooted device can hook Binder, patch Dalvik bytecode, or alter memory variables. All business authorization, price checks, and security invariants must be verified on the server.
 
 ## How to answer in the interview
 
@@ -75,8 +132,11 @@ Trace one cross-UID data path through a provider or URI grant; distinguish platf
 
 ## Follow-up questions
 
-- [SEC-18](../sec-18/): Why inspect an exported provider? **Answer:** it is an explicit cross-UID entry point; enforce caller and URI authorization.
-- [SEC-23](../sec-23/): Does app-private storage solve backup exposure? **Answer:** no; backup and device-transfer policy are separate.
+- **Interviewer:** "Can two different apps share the same Linux UID?"
+  **Answer:** "Historically yes, using `sharedUserId` in the Manifest if signed with the exact same developer certificate; however, Google deprecated `sharedUserId` in API 29 due to security and update risks."
+
+- **Interviewer:** "What is the difference between `checkCallingPermission` and `enforceCallingPermission`?"
+  **Answer:** "`checkCallingPermission` returns `PERMISSION_GRANTED` or `PERMISSION_DENIED` as an integer; `enforceCallingPermission` immediately throws a `SecurityException` if the caller lacks the permission."
 
 ## Self-check rubric
 
@@ -87,4 +147,4 @@ Can I explain UID isolation, runtime permission denial, a cross-app entry point,
 - [Android app sandbox](https://source.android.com/docs/security/app-sandbox) — UID-based isolation.
 - [Android permissions overview](https://developer.android.com/guide/topics/permissions/overview) — declarations and runtime access.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

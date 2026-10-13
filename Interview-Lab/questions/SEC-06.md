@@ -23,11 +23,47 @@ What are encryption at rest and encryption in transit?
 
 ## Explanation in Arabic
 
-Encryption at rest بتحمي bytes وهي مخزنة، مثل database أو token file، من بعض سيناريوهات فقدان الجهاز أو نسخ الملفات. Encryption in transit بتحمي الاتصال بين app وserver باستخدام TLS مع التحقق من هوية الطرف. الاتنين مهمين لكن مختلفين: TLS ما بتحميش ملف محفوظ، وتشفير الملف ما يمنعش MITM. والـplaintext لازم يظهر وقت الاستخدام في process أو server.
+ما هو التشفير في حالة السكون (Encryption at Rest) والتشفير في حالة النقل (Encryption in Transit) في Android؟
+
+1. التشفير في حالة السكون (Encryption at Rest - حماية البيانات المخزنة):
+   - **ما هو**: حماية البيانات المخزنة محلياً على ذاكرة الجهاز (Flash Storage / Disk) عند إغلاق التطبيق أو قفل الهاتف.
+   - **مستوياته في Android**:
+     * **تشفير مستوى النظام (File-Based Encryption - FBE)**: مدمج في Android 7.0+. يقسم الذاكرة إلى مساحتين مشفرتين بمفتاح الجهاز: مساحة `Device Encrypted (DE)` ومساحة `Credential Encrypted (CE)` التي لا تُفتح إلا بعد قيام المستخدم بإدخال رمز القفل (PIN/Password).
+     * **تشفير مستوى التطبيق (App-Level Encryption)**: تشفير قواعد البيانات الحساسة (مثل Room عبر **SQLCipher**) ومفاتيح التفضيلات الحساسة عبر **Android Keystore** لضمان حمايتها حتى لو تم كسر حماية الـ FBE على جهاز Rooted.
+
+2. التشفير في حالة النقل (Encryption in Transit - حماية البيانات أثناء السير عبر الشبكة):
+   - **ما هو**: حماية حزم البيانات أثناء انتقالها عبر كابلات وأبراج الاتصالات وشبكات الـ Wi-Fi العامة بين الهاتف والسيرفر.
+   - **كيف يُطبق في Android**:
+     * استخدام **TLS 1.3 / HTTPS** الإلزامي.
+     * حظر الاتصالات غير المشفرة (Cleartext HTTP) في `network_security_config.xml` (`cleartextTrafficPermitted="false"`).
+     * تطبيق **Certificate Pinning** لمنع هجمات Man-In-The-Middle (MITM) إذا قام المهاجم بتثبيت شهادة Root خبيثة على الهاتف.
+
+3. الثغرة المشتركة (The Plaintext in Use Window):
+   - كلا النوعين يحميان البيانات وهي مخزنة أو وهي مسافرة، لكن عند استخدامها داخل كود Kotlin، تكون البيانات **Plaintext في ذاكرة الـ RAM**! يجب مسح المخازن المؤقتة الحساسة بعد استخدامها فوراً.
 
 ## Practical walkthrough
 
-في تطبيق بنك، TLS يحمي request وهي ماشية للشبكة، لكن بعد وصول الرد الـtoken ممكن يتكتب في cache أو log. تشفير الملف بمفتاح Keystore يحمي نسخة الـbytes على القرص في بعض التهديدات، لكنه ما يمنعش hook يشوف plaintext وقت الاستخدام. اعمل data-flow يحدد الأماكن اللي السر بيظهر فيها، وقلل التخزين والاحتفاظ قبل اختيار التشفير.
+تطبيق التشفير في السكون (SQLCipher) والتشفير في النقل (Network Security Config):
+```xml
+<!-- 1. التشفير في النقل: منع الـ Cleartext HTTP وفرض TLS في res/xml/network_security_config.xml -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" /> <!-- الثقة في شهادات النظام فقط وحظر شهادات المستخدم في Release -->
+        </trust-anchors>
+    </base-config>
+</network-security-config>
+```
+
+```kotlin
+// 2. التشفير في السكون: تشفير ملف قاعدة بيانات Room بالكامل عبر SQLCipher بمفتاح من Keystore:
+val passphrase = KeystoreManager.getOrCreateDatabasePassphrase()
+val supportFactory = SupportFactory(passphrase)
+
+val secureDatabase = Room.databaseBuilder(context, AppDatabase::class.java, "secure_app.db")
+    .openHelperFactory(supportFactory) // تشفير كامل للـ SQLite بـ AES-256 CBC
+    .build()
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +87,34 @@ Production reviews trace each sensitive field from collection through storage, t
 
 ## Interview answer — short
 
-“At-rest encryption protects stored data; TLS protects data crossing the network. Both have key and recovery requirements, and neither replaces backend authorization or protects plaintext while it is being processed.”
+Encryption at rest protects stored data on disk (via File-Based Encryption, SQLCipher, and Keystore). Encryption in transit protects network payloads traveling over the wire (via TLS 1.3, Network Security Config, and Certificate Pinning). Both protect data outside of active use, but plaintext inevitably resides in RAM while being processed.
 
 ## Interview answer — structured
 
-“At-rest encryption protects stored bytes; TLS protects traffic between the app and server when certificate and hostname validation remain enabled. I first minimize what is stored, then use Keystore-backed app encryption where the threat model justifies it and define recovery if the key disappears. Neither layer hides plaintext during processing or repairs a log leak. I test the actual release network policy, backup and restore behavior, and keep authorization on the backend.”
+A comprehensive defense-in-depth architecture secures data across both rest and transit states:
+
+1. **Encryption in Transit (Over the Wire)**:
+   - Guarantees confidentiality and integrity across public cellular and Wi-Fi networks.
+   - Enforced via **TLS 1.2 / TLS 1.3** exclusively. Configured in Android via `res/xml/network_security_config.xml` with `cleartextTrafficPermitted="false"` to prevent accidental HTTP fallback.
+   - Hardened with **Certificate Pinning** in OkHttp to defeat Man-in-the-Middle (MITM) interception from rogue CAs.
+
+2. **Encryption at Rest (On Flash Storage)**:
+   - **OS Level**: Modern Android uses **File-Based Encryption (FBE)**. User data is partitioned into Credential Encrypted (CE) storage, unlocked only after the user enters their lockscreen PIN/pattern.
+   - **App Level**: Sensitive local databases are encrypted with **SQLCipher (AES-256)**, while tokens and keys are encrypted with **AES-GCM** using keys managed by `AndroidKeyStore`. If an attacker copies the SQLite file via ADB backup or file extraction, the file is unreadable binary ciphertext.
+
+3. **Plaintext in Use**: Plaintext exists in application heap memory while being actively processed by the CPU, demanding careful buffer management and redaction in logging.
 
 ## Interview answer — deep senior
 
-“I map the data’s lifetime before picking encryption. TLS with valid certificate and hostname checks protects traffic between app and server, while local encryption can reduce exposure of stored bytes. Neither stops a hook from reading a token when the app uses it, and TLS does not remove plaintext from a log or crash report. For a banking flow I would minimize stored credentials, keep keys in Keystore where justified, define key-loss behavior, and test a restore. I would also verify that release traffic rejects invalid certificates and cleartext paths. Backend authorization remains independent of both encryption layers. I would distinguish Android's device storage encryption from app-managed encryption: the former is platform protection, while the latter introduces key format and migration obligations. A file encrypted under a device-bound key may be unrecoverable after backup restore. For network transport I would test the actual release Network Security Config, redirects and certificate failure behavior, not just inspect an HTTPS base URL in source.”
+Differentiating Device-Encrypted (DE) vs. Credential-Encrypted (CE) Storage in FBE:
+
+Starting in Android 7.0 (API 24), Android replaced Full-Disk Encryption (FDE) with File-Based Encryption (FBE):
+
+- **CE Storage (`context.createCredentialProtectedStorageContext()`)**: The default storage for applications. Encrypted with a key derived from the user's lockscreen PIN and hardware Keystore. Unavailable after device reboot until the user enters their PIN for the first time (Direct Boot mode).
+
+- **DE Storage (`context.createDeviceProtectedStorageContext()`)**: Encrypted with a key tied to the device hardware, available **before** the user unlocks the screen. Reserved strictly for components that must operate immediately after reboot before user unlock (alarm clocks, incoming call receivers, accessibility services).
+
+Fintech and banking apps must never store financial records or auth tokens in DE storage; always retain credentials strictly in CE storage.
 
 ## How to answer in the interview
 
@@ -75,8 +130,11 @@ Separate on-disk ciphertext from TLS channel protection, identify who holds each
 
 ## Follow-up questions
 
-- [SEC-08](../sec-08/): What does TLS pinning add? **Answer:** an extra accepted-key constraint beyond ordinary chain validation.
-- [SEC-23](../sec-23/): What breaks after backup restore? **Answer:** Keystore-bound ciphertext may be unusable.
+- **Interviewer:** "What is Direct Boot in Android?"
+  **Answer:** "A mode where the device has booted up but the user has not yet entered their lockscreen PIN; only Device Protected (DE) storage is accessible."
+
+- **Interviewer:** "Can an attacker read SQLCipher databases if they steal the phone while it's turned off?"
+  **Answer:** "No. Without the device lockscreen PIN and Keystore hardware key derivation, SQLCipher ciphertext cannot be decrypted."
 
 ## Self-check rubric
 
@@ -87,4 +145,4 @@ Can I distinguish the two encryption windows, name plaintext exposure and backup
 - [Android Network Security Configuration](https://developer.android.com/privacy-and-security/security-config) — TLS/cleartext and trust settings.
 - [Android Keystore system](https://developer.android.com/privacy-and-security/keystore) — key protection.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

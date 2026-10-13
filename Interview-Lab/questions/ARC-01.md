@@ -233,31 +233,25 @@ In a production banking or enterprise Android app:
 
 ## Interview answer — short
 
-“Clean Architecture isolates core business policy from volatile external frameworks like UI, network, and storage. In Android, it establishes an inward dependency flow where UI and Data layers depend on a pure Kotlin Domain layer through interfaces. This ensures business rules remain easily testable without Android mocks and resilient against backend or UI library refactors.”
+Clean Architecture isolates core business policy from volatile external frameworks like UI, network, and storage. In Android, it establishes an inward dependency flow where UI and Data layers depend on a pure Kotlin Domain layer through interfaces. This ensures business rules remain easily testable on the JVM without Android mocks and resilient against backend or UI library refactors.
 
 ## Interview answer — structured
 
-“Clean Architecture organizes a codebase around business value rather than technology frameworks:
-1. **Core Problem Solved:** It prevents business logic from being scattered across Activities, ViewModels, or network adapters, eliminating cascading bugs when frameworks change.
-2. **Layering & Inward Dependencies:**
-   - **Domain Layer:** Pure Kotlin containing entities, Use Cases, and repository interfaces.
-   - **Data Layer:** Implements repository contracts, managing Retrofit DTOs, Room persistence, and data mapping.
-   - **UI Layer:** ViewModels project domain outcomes into observable UI state consumed by Jetpack Compose.
-3. **Dependency Inversion (DIP):** The domain defines what data operations it needs via interfaces; the data layer supplies the concrete implementation.
-4. **Pragmatic Application:** According to official Android guidelines, the domain layer is optional. I introduce Use Cases when complex rules, validation, or multi-repository orchestration exist, avoiding pass-through classes for simple CRUD.
-5. **Testing Advantage:** Critical business policies can be tested at lightning speed on the JVM without mocking the Android SDK.”
+For me, Clean Architecture is mainly about keeping business rules independent from details that change, like Retrofit, Room, or the UI framework. I don't think it means every project must have exactly three layers or an interface for every class.
+
+For example, if I'm implementing transfer eligibility, I'd keep that rule in a use case that depends on a repository contract. Retrofit and Room stay behind the data implementation. That lets me unit-test the rule without Android dependencies and change the API without rewriting the business logic.
+
+The trade-off is extra abstractions and mapping code. For a simple CRUD feature I might keep the design lighter; I introduce additional boundaries when they solve a real change or testing problem.
 
 ## Interview answer — deep senior
 
-“A senior engineer views Clean Architecture not as a dogma of packages and interfaces, but as a discipline of boundary control and change isolation.
+When I think about Clean Architecture in a large Android codebase, it is really about boundary control and change isolation, not about dogmatically creating interfaces for every class.
 
-The primary problem it solves is coupling to volatile delivery mechanisms. Over the lifespan of an enterprise Android app, you will replace Java with Kotlin, synthetic views with Jetpack Compose, RxJava with Coroutines, and REST with GraphQL. If business rules—such as transfer limits, fraud checks, or loan calculations—are mixed into UI controllers or HTTP callbacks, every tech migration requires rewriting product logic.
+Over the lifespan of an enterprise app, frameworks change constantly. You might move from Views to Jetpack Compose, replace RxJava with Coroutines, or migrate from REST to GraphQL. If critical business policies—like loan calculations, transfer limits, or KYC verification—are tangled up inside ViewModels or Retrofit callbacks, every tech migration risks breaking core business logic.
 
-In my architecture, the Domain layer is a pure Kotlin module with zero Android or library dependencies. The domain defines business contracts: entities, Use Cases, and repository interfaces. The Data layer implements these interfaces via Dependency Inversion. Crucially, I treat DTOs and Room entities as adapter models, mapping them to immutable domain entities at the boundary. If the backend renames a JSON property from `balance_amount` to `cents`, the mapping changes in one place in `:core:data`; the Domain and UI layers remain untouched.
+By keeping the Domain layer pure Kotlin with zero Android SDK dependencies, the business logic remains the stable center of the app. The Data layer implements repository contracts via Dependency Inversion, mapping backend DTOs into domain entities. If the backend changes a JSON field name, only the data mapper changes; Domain and UI remain untouched.
 
-However, I avoid over-engineering. In simpler apps or pure CRUD features, introducing a Use Case for every single call produces boilerplate with negative ROI. I follow official Android guidance: UI talks to Repository directly for basic CRUD, and we introduce Use Cases when there is genuine policy—such as multi-source orchestration, validation, or reusable computations.
-
-To enforce this in a team, I use Gradle module boundaries where the feature module only depends on `:core:domain`. CI checks run pure JVM unit tests on Use Cases in sub-seconds. This structure turns architecture from a set of naming conventions into an enforceable compile-time guarantee.”
+However, you have to be pragmatic. If a feature is just simple CRUD where a Use Case only does `return repository.getItems()`, it adds pure boilerplate without architectural value. In those cases, having the ViewModel call the Repository directly is completely aligned with official Android guidance. We introduce Use Cases when there is genuine policy, validation, or multi-repository coordination to orchestrate.
 
 ## How to answer in the interview
 
@@ -276,8 +270,14 @@ To enforce this in a team, I use Gradle module boundaries where the feature modu
 
 ## Follow-up questions
 
-- [ARC-03](../arc-03/): Which direction do source code dependencies point in Clean Architecture? **Answer:** Inward toward stable domain policies; outer data and UI modules depend on inner domain interfaces.
-- [ARC-13](../arc-13/): When is the Domain layer strictly necessary versus optional? **Answer:** It is optional for simple CRUD passthroughs and justified when complex business rules, validations, or multi-repository coordination are required.
+- [ARC-03](../arc-03/): **Interviewer:** "Which direction do source code dependencies point in Clean Architecture, and how is that enforced?"
+  **Answer:** "Dependencies strictly point inward toward the domain layer. The UI layer depends on Domain Use Cases, and the Data layer depends on Domain repository interfaces by implementing them via Dependency Inversion. In our Gradle setup, we enforce this at compile time: the `:core:domain` module is a pure Kotlin library with no Android plugin, so it's physically impossible for someone to accidentally import `Context` or Retrofit annotations inside domain logic."
+
+- [ARC-13](../arc-13/): **Interviewer:** "When is the Domain layer strictly necessary versus when is it unnecessary overhead?"
+  **Answer:** "The Domain layer is justified when there is real business logic to protect—such as complex client-side validations, financial eligibility rules, or coordination between multiple repositories like local database plus remote sync. If a screen is just reading a list of items and displaying them without any business logic, creating a pass-through Use Case is wasteful boilerplate. In that case, having the ViewModel talk directly to the Repository is cleaner and faster."
+
+- **Interviewer:** "What happens if a backend team decides to redesign their entire API schema? How does Clean Architecture protect you?"
+  **Answer:** "It confines the blast radius entirely to the Data layer. Because the Domain and UI layers only know about immutable Domain entities, only the Retrofit DTOs and the mapper functions inside the Data layer need to be updated. Not a single line of business policy or Jetpack Compose code has to change, and all our domain unit tests continue to pass."
 
 ## Self-check rubric
 

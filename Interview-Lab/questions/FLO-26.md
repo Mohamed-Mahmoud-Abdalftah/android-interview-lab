@@ -22,11 +22,35 @@ Choose a current-state stream for rotation while distinguishing ViewModel retent
 
 ## Explanation in Arabic
 
-بعد rotation عادي، UI جديدة محتاجة آخر snapshot فورًا؛ `StateFlow` في ViewModel مناسبة لأنها hot وعندها `value` وآخر state للcollector الجديد. الـViewModel غالبًا بيعيش configuration change، لكن process death يمسحه، فلازم نعيد بناء state من SavedStateHandle للمدخلات الصغيرة ومن Room/server للبيانات المهمة. `SharedFlow(replay=0)` مش بديل لحالة حالية.
+عرض أحدث حالة للواجهة بعد تدوير الشاشة (Displaying the most recent state after rotation) هو الوظيفة الأساسية التي صُمم من أجلها `StateFlow`:
+
+1. ما هو نوع الـ Stream المطلوب ولماذا؟
+   - **النوع المطلوب هو: `StateFlow<UiState>`**.
+   - **السبب 1 (State Retention):** الـ StateFlow يحتفظ دائماً بآخر قيمة تم إصدارها في الذاكرة (`.value`). عندما يتم تدوير الشاشة وتدمير الـ Activity القديمة وإنشاء Activity جديدة، تشترك الـ Activity الجديدة في الـ StateFlow فتستلم القيمة الأخيرة فوراً في نفس الفريم (Instantaneous restore).
+   - **السبب 2 (No Re-execution):** لأنه Hot Stream، لا يعيد تشغيل استعلام قاعدة البيانات أو طلب الشبكة من الصفر (على عكس Cold Flow الذي سيبدأ من البداية عند كل تدوير).
+   - **السبب 3 (Conflation):** لو الحالة لم تتغير، لن يسبب Recomposition غير ضروري.
+
+2. لماذا لا نستخدم SharedFlow أو Cold Flow؟
+   - Cold Flow سيعيد إرسال طلب الشبكة عند كل تدوير للشاشة!
+   - SharedFlow بـ `replay = 0` لن يرسل أي شيء للشاشة الجديدة بعد التدوير، وستظل الشاشة فارغة أو بيضاء!
 
 ## Practical walkthrough
 
-بعد rotation، Screen الجديدة محتاجة آخر `Loading/Ready/Error` فورًا؛ `StateFlow` من ViewModel تعطي current value طالما ViewModel نفس owner وعاشت configuration change. لكن process death مختلف: ViewModel هتتبني تاني، فلازم ID في SavedStateHandle/repository وتعيد تحميل. لا تستخدم SharedFlow(replay=0) لو المطلوب current state.
+النمط المتبع في الـ Production:
+```kotlin
+class DashboardViewModel(private val repository: DashboardRepository) : ViewModel() {
+    
+    // نحول تدفق البيانات إلى StateFlow يحتفظ بالحالة عبر التدوير:
+    val uiState: StateFlow<DashboardUiState> = repository.observeDashboardData()
+        .map { DashboardUiState.Success(it) }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L), // 5 ثوانٍ تكفي التدوير وزيادة
+            initialValue = DashboardUiState.Loading
+        )
+}
+```
+عندما يدور المستخدم الهاتف من عمودي لأفقي: يتم إغلاق الـ Activity القديمة، وإنشاء الجديدة، وتشترك في `uiState`، فتستلم `DashboardUiState.Success` المحفوظ في الكاش في صفر ثانية بدون أي شاشة تحميل أو وميض.
 
 ## Why it matters and how it works
 
@@ -71,15 +95,32 @@ A feed ViewModel exposes Room-backed UI state. Rotation resubscribes and gets cu
 
 ## Interview answer — short
 
-“I use StateFlow in a ViewModel for the latest UI snapshot because a new collector immediately receives the current value. The ViewModel generally survives rotation, but process death requires reconstruction from saved or durable data.”
+Use StateFlow. Because StateFlow is a hot stream that retains its latest value (.value) in memory and replays it immediately to new subscribers, the newly recreated Activity/Composable after rotation receives the exact current UI state instantly without re-fetching from the network or database.
 
 ## Interview answer — structured
 
-“After rotation, a new view collector should not wait for another event to know what to draw. StateFlow stores a current value and replays it immediately. I expose it from a ViewModel that survives ordinary configuration changes and collect with lifecycle awareness. I make the initial state truthful, such as Loading, rather than assuming empty means loaded. For process death, I restore small navigation inputs from SavedStateHandle and rebuild persistent state from Room or the backend.”
+To display the most recent UI state immediately after screen rotation, the required stream primitive is **`StateFlow`**.
+
+When an Android device rotates, the Activity is destroyed and recreated. Because the ViewModel survives configuration changes, any state retained in the ViewModel is preserved in memory.
+
+StateFlow is tailor-made for this scenario:
+
+1. It is a **hot stream** that holds the most recent state in its `.value` property.
+2. When the newly created Activity or Composable subscribes, StateFlow immediately replays that latest cached state, allowing the UI to render the complete screen instantly on its very first frame.
+
+If you used a plain cold Flow, the new Activity would trigger a fresh execution of the flow, repeating database reads or network calls. If you used a SharedFlow with `replay = 0`, the new Activity would receive nothing and render an empty blank screen.
 
 ## Interview answer — deep senior
 
-“The guarantee is layered. StateFlow provides in-memory latest-state replay to a new collector. ViewModel retention across a normal configuration change keeps the producer and its state, but it does not preserve arbitrary process death. A Room-backed repository provides durable local data, and SavedStateHandle can restore lightweight query/selection inputs; the server remains authoritative where appropriate. `stateIn` can share a cold DAO Flow within the ViewModel, with WhileSubscribed to avoid repeated work. I test rotation for immediate current rendering and process recreation separately for reconstruction. One-shot navigation effects are not modeled as the same replayed state unless consumption is explicitly designed. I would choose StateFlow because the requirement is a current snapshot for a new collector. The ViewModel survives an ordinary configuration change under the correct owner, so the newly created screen can subscribe and immediately observe the latest value. A plain cold Flow might restart expensive work, and a zero-replay SharedFlow has no current state to hand over. I would model Loading, Ready, and Error explicitly and collect with lifecycle awareness. I also draw the boundary around process death: the ViewModel and StateFlow instance are recreated, so a saved ID and durable repository data must rebuild the state. I test rotation and eligible process recreation separately, because success in one does not prove the other.”
+Architecturally, pairing `StateFlow` with `SharingStarted.WhileSubscribed(5000)` in `stateIn()` is what makes this robust: During rotation, the old Activity's `repeatOnLifecycle` or `collectAsStateWithLifecycle` unbinds, dropping `subscriptionCount` to 0. The 5-second buffer prevents the ViewModel from cancelling the upstream repository flow. When the new Activity binds within a few hundred milliseconds, `subscriptionCount` jumps back to 1. StateFlow delivers the cached state immediately without missing a beat.
+
+In Jetpack Compose, the UI consumes it via:
+
+```kotlin
+val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+```
+
+Compose reads the cached value on initial composition, preventing any flash of an empty state or loading spinner.
 
 ## How to answer in the interview
 
@@ -95,8 +136,14 @@ Distinguish stream replay, ViewModel retention and durable source reconstruction
 
 ## Follow-up questions
 
-- [FLO-05](../flo-05/): Why initial value? **Answer:** StateFlow always has readable current state.
-- [FLO-27](../flo-27/): Should navigation be in latest state? **Answer:** only with explicit consumed/destination semantics.
+- **Interviewer:** "What if the process is killed by the OS due to low memory instead of a rotation?"
+  **Answer:** "StateFlow in memory is lost on process death. For states that must survive process death (like draft forms or navigation arguments), persist critical fields into `SavedStateHandle` using `savedStateHandle.getStateFlow(key, initialValue)`."
+
+- **Interviewer:** "Can you use `SharedFlow(replay = 1)` instead of `StateFlow`?"
+  **Answer:** "Conceptually yes, but `StateFlow` is superior for UI state because it enforces non-nullable initial state, provides synchronous `.value` access, and includes built-in equality suppression via `equals()`."
+
+- **Interviewer:** "Why is `LiveData` also capable of surviving rotation?"
+  **Answer:** "Because `LiveData` also caches its latest value (`mValue`) in memory and dispatches it to active observers upon lifecycle start. However, StateFlow is preferred because it is pure Kotlin Multiplatform and integrates with coroutines seamlessly."
 
 ## Self-check rubric
 
@@ -107,4 +154,4 @@ Can I guarantee rotation snapshot, identify process-death gap and choose saved v
 - [Kotlin StateFlow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-state-flow/) — latest-value replay.
 - [Android ViewModel saved state](https://developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-savedstate) — recreation limits.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

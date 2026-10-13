@@ -23,11 +23,57 @@ Explain BFS versus DFS and their typical applications.
 
 ## Explanation in Arabic
 
-BFS بيزور graph مستوى بمستوى باستخدام queue، مناسب لأقصر مسار بعدد edges في graph غير موزون. DFS يدخل عميق باستخدام stack/recursion، مناسب traversal، cycle checks أو backtracking حسب algorithm. الاتنين O(V+E) مع visited set على adjacency list، لكن BFS queue قد تكبر بعرض graph وDFS stack بعمقه.
+اشرح الفرق الجوهري بين خوارزميتي BFS و DFS، وما هي تطبيقاتهما العملية الشائعة في هندسة تطبيقات أندرويد؟
+
+1. البحث بالعرض أولاً (Breadth-First Search - BFS):
+   - الاستراتيجية: يستكشف العقد مستوى بمستوى (Level by Level)، ويزور جميع الجيران المباشرين قبل التعمق للأسفل.
+   - هيكل البيانات: يعتمد على **طابور (Queue - FIFO)**.
+   - التعقيد الزمني: **$O(V + E)$** (حيث $V$ العقد و $E$ الحواف).
+   - التعقيد المكاني: **$O(W)$** حيث $W$ هو أقصى عرض للشجرة/الرسم البياني.
+   - الاستخدام الأبرز: **إيجاد أقصر مسار (Shortest Path)** في الرسوم البيانية غير الموزونة.
+
+2. البحث بالعمق أولاً (Depth-First Search - DFS):
+   - الاستراتيجية: يتعمق في مسار واحد حتى يصل إلى النهاية (Leaf)، ثم يتراجع (Backtracks) لاستكشاف المسارات الأخرى.
+   - هيكل البيانات: يعتمد على **مكدس (Stack - LIFO)** أو التكرار الذاتي (Recursion).
+   - التعقيد الزمني: **$O(V + E)$**.
+   - التعقيد المكاني: **$O(H)$** حيث $H$ هو أقصى عمق للشجرة (Call Stack Height).
+   - الاستخدام الأبرز: **اكتشاف الدورات المغلقة (Cycle Detection)** والترتيب الطوبولوجي (Topological Sort).
+
+3. تطبيقات أندرويد الواقعية:
+   - **DFS**: اكتشاف الاعتماديات الدائرية (Circular Dependencies) في مكتبات حقن التبعيات (Dagger/Hilt)، وحساب عمق شجرة الواجهة (View Hierarchy Depth) لكشف التداخلات المفرطة.
+   - **BFS**: البحث في شجرة الـ View للعثور على أول عنصر يطابق شرطاً معيناً بأقل عمق ممكن، وحساب أقصر مسار تنقل بين الشاشات في شجرة الـ Navigation.
 
 ## Practical walkthrough
 
-BFS queue تصل لأقصر عدد edges في graph غير موزون، وDFS stack/recursion مناسبة للاستكشاف أو backtracking لا تضمن أقصر مسار. ضع visited عند enqueue كي لا تكرر cycle، واختبر disconnected node. لو edges لها أوزان، BFS لا يحل shortest weighted path؛ استعمل Dijkstra بشروطه. في Android مثال dependency graph أو navigation graph محدود الحجم.
+تطبيق خوارزميتي BFS و DFS لفحص شجرة الـ Android View للعثور على زر معين:
+```kotlin
+// نموذج شجرة الواجهة المبسط:
+class ViewNode(val id: String, val children: List<ViewNode> = emptyList())
+
+// 1. BFS باستخدام Queue (الأفضل للعثور على أقرب عنصر سطحي):
+fun findViewBfs(root: ViewNode, targetId: String): ViewNode? {
+    val queue = ArrayDeque<ViewNode>()
+    queue.addLast(root)
+    while (queue.isNotEmpty()) {
+        val current = queue.removeFirst()
+        if (current.id == targetId) return current
+        for (child in current.children) {
+            queue.addLast(child)
+        }
+    }
+    return null
+}
+
+// 2. DFS باستخدام Recursion (الأفضل لفحص العمق واكتشاف المسارات):
+fun findViewDfs(current: ViewNode, targetId: String): ViewNode? {
+    if (current.id == targetId) return current
+    for (child in current.children) {
+        val found = findViewDfs(child, targetId)
+        if (found != null) return found
+    }
+    return null
+}
+```
 
 ## Why it matters and how it works
 
@@ -80,15 +126,31 @@ In production, expose graph traversal as pure Kotlin logic and test with synthet
 
 ## Interview answer — short
 
-“BFS uses a queue and finds shortest paths in an unweighted graph; DFS uses a stack or recursion and explores depth. Both are O(V+E) with visited tracking, but their memory patterns differ.”
+BFS traverses nodes level-by-level using a FIFO Queue, making it ideal for finding the shortest path in unweighted graphs. DFS explores branches deeply using a LIFO Stack or recursion, making it ideal for cycle detection, topological sorting of dependency graphs, and exhaustive tree traversal. Both run in O(V + E) time.
 
 ## Interview answer — structured
 
-“I choose BFS when levels or fewest-edge paths matter, and DFS for traversal or cycle/backtracking tasks. With adjacency lists and visited set both visit vertices/edges once, O(V+E). BFS may hold a wide frontier; DFS holds the current depth and can stack overflow if recursive. The shortest-path claim does not apply to weighted costs.”
+BFS and DFS are fundamental graph and tree traversal algorithms with distinct structural properties:
+
+1. **Breadth-First Search (BFS)**:
+   - **Mechanism**: Explores all neighbors at the current depth level before progressing to deeper tiers, driven by an explicit FIFO queue (`ArrayDeque`).
+   - **Complexity**: $O(V + E)$ time; $O(W)$ auxiliary space where $W$ is the maximum graph width.
+   - **Primary Use Cases**: Shortest-path discovery in unweighted graphs (e.g. shortest navigation hops between app screens), shallow UI tree inspections, and peer-to-peer network discovery.
+
+2. **Depth-First Search (DFS)**:
+   - **Mechanism**: Plunges along each branch to leaf terminations before backtracking, driven by call-stack recursion or an explicit LIFO stack.
+   - **Complexity**: $O(V + E)$ time; $O(H)$ auxiliary space where $H$ is the maximum graph depth.
+   - **Primary Use Cases**: Cycle detection in dependency injection graphs (Dagger), topological sorting of Gradle module compilation dependencies, and deep syntax tree evaluations.
 
 ## Interview answer — deep senior
 
-“BFS expands nodes in layers with a queue, so in an unweighted graph the first time it reaches a target gives the fewest edges. DFS follows one path with a stack or recursion and backtracks; it is useful for reachability or exhaustive exploration but does not generally give the shortest route. Both traverse each reachable vertex and edge at most a constant number of times with a visited set, giving O(V + E) work. Memory differs: BFS may hold a broad frontier, while DFS holds a path/stack and visited set. I mark a node visited when it enters the BFS queue to avoid repeated enqueues in cycles. If edges have weights, ordinary BFS is the wrong shortest-path algorithm; I would choose a weighted algorithm such as Dijkstra only when nonnegative weights satisfy its contract. In an Android feature, a dependency graph or navigation graph may be small enough that clarity matters more than micro-optimization. I test cycles, disconnected nodes, start equals target and graph size limits.”
+From an Android systems engineering angle, stack safety and tree bounds dictate choices:
+
+1. **Call Stack Overflow Risks with Recursive DFS**: In deep Android View trees or complex JSON object graphs, recursive DFS can exceed the thread's stack limit, throwing a fatal `StackOverflowError`. Recursive DFS must either be transformed into an iterative DFS utilizing an explicit heap-allocated `ArrayDeque`, or guarded with depth bounds.
+
+2. **Compose Semantic Node Trees**: Jetpack Compose test assertions (`onNodeWithText`, `printToLog`) use BFS traversal under the hood to find matching semantic layout nodes closest to the tree root, prioritizing shallow surface nodes over deeply nested implementation composables.
+
+3. **Graph Cycle Detection in Build Tooling**: Gradle and Hilt use Tarjan's or Kosaraju's DFS-based algorithms to detect Strongly Connected Components (cycles) during annotation processing. If module A depends on B and B depends on A, DFS back-edge detection halts compilation with a circular dependency error.
 
 ## How to answer in the interview
 
@@ -104,8 +166,11 @@ Prompt for queue/stack, V+E, unweighted shortest path, recursion limit and cycle
 
 ## Follow-up questions
 
-- [DSA-05](../dsa-05/): Which structures support traversal? **Answer:** queue for BFS, stack for DFS.
-- [DSA-14](../dsa-14/): Where should heavy graph work run? **Answer:** off main thread with measured data size.
+- **Interviewer:** "Why is BFS guaranteed to find the shortest path in an unweighted graph while DFS is not?"
+  **Answer:** "Because BFS explores nodes in order of their exact distance (number of edges) from the root, encountering the target at the earliest possible depth."
+
+- **Interviewer:** "What is the primary operational risk of using recursive DFS on Android?"
+  **Answer:** "Deep recursion on large trees exhausts the thread stack size, triggering an unrecoverable `StackOverflowError`."
 
 ## Self-check rubric
 
@@ -116,4 +181,4 @@ Trace the frontier order for BFS and DFS on a small graph; choose BFS for unweig
 - [Kotlin ArrayDeque](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.collections/-array-deque/) — queue/stack implementation.
 - [Android performance](https://developer.android.com/topic/performance) — main-thread costs.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

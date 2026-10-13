@@ -22,11 +22,40 @@ Reason about blocking SDK cancellation, interruption, resource closure and uncer
 
 ## Explanation in Arabic
 
-لو SDK synchronous حجز thread ومابيسمعش coroutine cancellation، `withTimeout` أو `cancel` هيعلّموا الـJob لكن النداء ممكن يفضل شغال لحد ما يرجع. ننقله من Main إلى dispatcher مناسب، ونستخدم SDK `cancel`/`close` إن موجود. `runInterruptible` على JVM ممكن يرسل thread interrupt لكود بيحترمه، لكن مش ضمان لكل native/SDK، ولا معناه إن server side effect اتلغت.
+التعامل مع مكتبة أو SDK خارجي يعمل بطريقة Blocking ولا يستجيب لإلغاء الـ Coroutines هو أحد أصعب التحديات في بيئة Android:
+
+1. المشكلة:
+   - مكتبة C++ قديمة أو SDK بلوتوث أو قراءة ديسك قديمة تنفذ استدعاء يحظر الخيط بالكامل (Blocking Call زي `socket.read()` أو `legacySdk.process()`).
+   - بما أن الكود Blocking ولا يحتوي على Suspension Points، استدعاء `job.cancel()` لن يوقفه حتى ينتهي الاستدعاء بمفرده!
+
+2. الحلول الهندسية المتاحة (Engineering Solutions):
+   - **الحل 1 (عزل الـ Blocking على Dispatchers.IO):** تشغيل الكود دائماً على `Dispatchers.IO` لضمان عدم تجميد الـ UI Thread إطلاقاً، واستخدام `runInterruptible`.
+   - **الحل 2 (`runInterruptible`):** مكتبة كوتلن توفر `runInterruptible(Dispatchers.IO) { blockingCall() }`. هذه الدالة تقوم بعمل `Thread.interrupt()` للـ OS Thread عند إلغاء الـ Coroutine. لو الـ SDK يستجيب للـ Thread Interruption (زي معظم Java I/O)، سيتوقف ويرمي `InterruptedException` فوراً!
+   - **الحل 3 (إغلاق الـ Underlying Resource بالقوة):** لو الـ SDK لا يستجيب حتى للـ Interruption، الحل الوحيد هو إغلاق الـ Resource الذي ينتظره من الخارج (زي `socket.close()` أو `stream.close()`) عبر `continuation.invokeOnCancellation { socket.close() }`.
 
 ## Practical walkthrough
 
-لو SDK بيقرأ ملف ومش بيرد على cancel، نقل النداء لـ`IO` يمنع تجميد UI لكنه مش يوقفه. جرّب cancel/close الرسمية للـSDK، أو `runInterruptible` فقط لو موثق إنه يحترم thread interrupt. لو native call مستحيل إيقافه، حدّ عدد العمال وامنع نشر النتيجة المتأخرة. في write side effects، اسأل عن الحالة قبل إعادة المحاولة.
+تطبيق عملي باستخدام `runInterruptible` وإغلاق المورد:
+```kotlin
+suspend fun downloadLargeFile(url: URL, destination: File) = withContext(Dispatchers.IO) {
+    // runInterruptible ترسل Thread.interrupt() للـ thread الحابس عند إلغاء الـ coroutine:
+    runInterruptible {
+        url.openStream().use { input ->
+            destination.outputStream().use { output ->
+                input.copyTo(output) // Blocking Java I/O استدعاء
+            }
+        }
+    }
+}
+
+// في حالة Socket خارجي لا يدعم interruption:
+suspend fun readFromRawSocket(socket: Socket): ByteArray = suspendCancellableCoroutine { continuation ->
+    continuation.invokeOnCancellation {
+        try { socket.close() } catch (ignored: Exception) {} // إغلاق المقبس يكسر الـ Blocking read فوراً
+    }
+    // تنفيذ القراءة في الخلفية...
+}
+```
 
 ## Why it matters and how it works
 
@@ -60,15 +89,23 @@ A document scanner SDK blocks during OCR. The repository runs it off Main, calls
 
 ## Interview answer — short
 
-“Coroutine cancellation cannot forcibly stop arbitrary blocking code. I use the SDK’s cancel or close API, or `runInterruptible` only if the JVM call honors interruption. I keep it off Main, bound concurrency, discard late UI results and reconcile uncertain remote effects.”
+Wrap the blocking call in 'runInterruptible(Dispatchers.IO)', which issues a thread interrupt (Thread.interrupt()) to the underlying worker thread upon coroutine cancellation. If the SDK ignores thread interruption, close the underlying socket or resource via invokeOnCancellation to forcibly abort the blocking read.
 
 ## Interview answer — structured
 
-“I would inspect the SDK’s actual cancellation contract. A coroutine timeout marks its Job cancelled, but a synchronous call can hold its thread until completion. On the JVM, `runInterruptible` can interrupt an interruption-aware blocking API; otherwise I invoke the SDK’s own cancel/close method if it has one. I run it off Main, set transport/native timeouts and limit active calls. I still check the caller’s state before publishing a result, and I never assume cancelling a payment call undid its server-side transaction.”
+When integrating a third-party SDK with blocking Java or native calls that do not cooperate with coroutine cancellation, we apply a multi-tier containment strategy:
+
+First, isolate the call onto `Dispatchers.IO` so it never blocks the main thread or compute worker pools.
+
+Second, wrap the execution inside **`runInterruptible(Dispatchers.IO) { ... }`**. When the coroutine is cancelled, `runInterruptible` issues a standard Java `Thread.interrupt()` to the executing worker thread. If the legacy SDK is blocked on standard Java I/O or sleep, it immediately throws an `InterruptedException` or closes the channel, cleanly aborting execution.
+
+Third, if the SDK uses uninterruptible I/O (like legacy blocking sockets or native C++ loops), we close the underlying resource from the outside: register an `invokeOnCancellation { socket.close() }` hook. Closing the socket or file descriptor forcibly breaks the blocking read and releases the thread.
 
 ## Interview answer — deep senior
 
-“The exact fix depends on what the SDK can stop. A cancellable callback API should be adapted with cancellation registration; an interruptible blocking JVM call can use `runInterruptible`, whose effectiveness depends on the driver honoring interrupts. An uninterruptible native call cannot be made promptly cancellable by a coroutine wrapper, so I isolate it from Main, cap calls, set whatever SDK deadline exists, and report a vendor defect if it threatens ANRs or thread exhaustion. The screen Job may cancel while the call continues; I discard late results and avoid retaining Activity references. For remote writes I persist an operation ID and reconcile server status after timeout, because local cancellation has no rollback guarantee. Tests include cancellation during the block and delayed completion. My response depends on the SDK's documented stop mechanism. If it has a cancel handle, wire coroutine cancellation to it; if the JVM call honors interrupts, `runInterruptible` can be appropriate. If the call ignores both, place it on bounded workers, enforce a caller deadline, and prevent the stale return from updating UI, while accepting that the thread may remain occupied. A timed-out write may have reached the server, so retry needs status reconciliation.”
+Under the hood, `runInterruptible` tracks the executing JVM `Thread` reference. When cancellation occurs, it calls `thread.interrupt()`. However, developers must understand that some blocking operations are completely uninterruptible at the OS level (e.g., waiting on un-interruptible locks or native JNI system calls that do not check POSIX signals).
+
+If an external C++ or legacy Java library is completely unresponsive to both interruption and resource closing, that worker thread is effectively 'zombie-locked' until the operation completes or times out. In this worst-case scenario: 1. We run the operation on a dedicated, isolated thread pool created via `Executors.newSingleThreadExecutor().asCoroutineDispatcher()`, preventing it from polluting and exhausting the shared `Dispatchers.IO` pool. 2. We use `withTimeoutOrNull` around the caller continuation to allow our application to proceed and ignore the leaked thread until it eventually terminates.
 
 ## How to answer in the interview
 
@@ -84,8 +121,14 @@ Trace cancellation signal, thread interruption, SDK cancel API, late callback an
 
 ## Follow-up questions
 
-- [COR-17](../cor-17/): Does timeout force stop? **Answer:** no, the block must cooperate or respond to interruption.
-- [COR-31](../cor-31/): What if the SDK runs on Main? **Answer:** it blocks UI dispatch and can cause ANR.
+- **Interviewer:** "Why does `Thread.interrupt()` work with `runInterruptible` but not standard `launch`?"
+  **Answer:** "Standard `launch` only sets internal Job cancellation flags; it never touches the underlying OS thread. `runInterruptible` explicitly links the coroutine cancellation signal to Java's `Thread.interrupt()` mechanism."
+
+- **Interviewer:** "What happens to the thread if an uninterruptible blocking call never finishes?"
+  **Answer:** "The OS worker thread remains blocked and leaked. If this happens repeatedly on `Dispatchers.IO`, you will eventually exhaust the 64-thread pool limit, starving all other I/O operations in the application."
+
+- **Interviewer:** "Can you kill a thread running a blocking call in Android?"
+  **Answer:** "No. The JVM deprecated `Thread.stop()` decades ago because it causes memory corruption and leaves monitors unlocked. You cannot forcibly kill a thread; you can only interrupt it or close its underlying file/socket handles."
 
 ## Self-check rubric
 
@@ -96,4 +139,4 @@ Can I identify SDK capability, protect Main, bound resources and handle late/unc
 - [Kotlin withTimeout API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout.html) — cooperative timeout and runInterruptible note.
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — main safety.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

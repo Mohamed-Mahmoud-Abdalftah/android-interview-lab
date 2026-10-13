@@ -23,11 +23,57 @@ How do you implement certificate pinning with a rotation/recovery strategy?
 
 ## Explanation in Arabic
 
-Pinning لو اتعمل بpin واحد ممكن شهادة جديدة تقطع كل مستخدمين النسخ القديمة. الخطة: أجهّز backup public key مستقلة، أشحنها في app قبل أي server switch، أختبر overlap، وبعد انتشار النسخ أبدّل certificate/keys تدريجيًا. متابعة errors وrollback مدروس. ما نعملش trust-all fallback؛ ده يهدم الهدف.
+كيف تنفذ تثبيت الشهادات (Certificate Pinning) وما هي استراتيجية التدوير والإنعاش لتجنب تعطيل التطبيق (Bricking)؟
+
+1. ما هو تثبيت الشهادات (Certificate Pinning) ولماذا نستخدمه؟
+   - الوضع الافتراضي في HTTPS يعتمد على سلسلة الثقة (Chain of Trust) من الـ Certificate Authorities (CAs). إذا تم اختراق أي CA حول العالم أو تثبيت شهادة مزيفة في الهاتف، يمكن للمهاجم فك تشفير اتصالات التطبيق.
+   - الـ Pinning يحدد بصمة تشفيرية صريحة (SHA-256 Hash لـ Subject Public Key Info - SPKI) يقبلها التطبيق فقط للخادم المطلوب، ويرفض أي شهادة أخرى حتى لو كانت موقعة من CA معتمد.
+
+2. كارثة التثبيت العشوائي (The Bricking Hazard):
+   - إذا انتهت صلاحية شهادة الخادم أو تم اختراق السيرفر واضطر فريق البنية التحتية لتغيير الشهادة بسرعة، فإن جميع إصدارات التطبيق المثبتة لدى المستخدمين ستفشل في الاتصال فوراً برمي `SSLPeerUnverifiedException`!
+   - التطبيق يصبح "معطلاً كلياً (Bricked)" ولن يستطيع حتى الاتصال بالسيرفر لمعرفة التحديث الجديد إلا إذا قام المستخدم بتحديث التطبيق يدوياً من Google Play!
+
+3. استراتيجية التدوير والإنعاش الآمنة (Rotation & Recovery Strategy):
+   - **تثبيت الـ Public Key وليس الشهادة بالكامل**: تثبيت الـ SPKI يسمح بتجديد الشهادة طالما تم الحفاظ على نفس الـ Key Pair.
+   - **تضمين مفاتيح احتياطية (Backup Pins)**: تثبيت بصمة المفتاح الأساسي + بصمة مفتاح احتياطي أو اثنين يتم الاحتفاظ بهما في خزنة أمنية مشفرة (Hardware Security Module).
+   - **تاريخ انتهاء الصلاحية في Network Security Config**: تحديد خاصية `<pin-set expiration="YYYY-MM-DD">` في أندرويد. إذا انتهى هذا التاريخ، يعود النظام تلقائياً للتحقق الطبيعي عبر الـ CAs بدلاً من إيقاف التطبيق نهائياً.
 
 ## Practical walkthrough
 
-خطة pinning تبدأ قبل انتهاء certificate بشهور: شحن current SPKI ومعاه backup key مختلفة في التطبيق، ثم اختبار أقدم نسخة مدعومة مع server chain الجديدة. `expiration` في Network Security Config بيوقف pinning بعد التاريخ، فده fallback availability له ثمن أمني؛ قراره لازم واعي. لو فشل rollout، ما تفتحش trust-all، بل استخدم backup/تحديث signed مضبوط ومراقبة أخطاء.
+تنفيذ Certificate Pinning متقدم مع مفاتيح احتياطية عبر OkHttp وملف Network Security Config:
+```xml
+<!-- 1. التثبيت عبر res/xml/network_security_config.xml مع تاريخ انتهاء لمنع تعطيل التطبيق -->
+<network-security-config>
+    <domain-config>
+        <domain includeSubdomains="true">api.example.com</domain>
+        <!-- تحديد تاريخ انتهاء؛ بعد هذا التاريخ يعود النظام لفحص الـ CAs الطبيعي ولا يعطل التطبيق -->
+        <pin-set expiration="2026-12-31">
+            <!-- المفتاح الأساسي الفعال حالياً في الإنتاج -->
+            <pin digest="SHA-256">k2oTX1jqhUxMwVTmrttBm2LocGaHGebWZmc85yfYXO8=</pin>
+            <!-- المفتاح الاحتياطي للطوارئ المخزن في الـ HSM -->
+            <pin digest="SHA-256">YW63uKGCRvrVAqhJ6usDxn7NUOwG+KpgMUizDG4Nk2U=</pin>
+        </pin-set>
+    </domain-config>
+</network-security-config>
+```
+
+```kotlin
+// 2. تطبيق التثبيت عبر OkHttp CertificatePinner في كود Kotlin كطبقة حماية إضافية:
+fun createPinnedOkHttpClient(): OkHttpClient {
+    val certificatePinner = CertificatePinner.Builder()
+        .add(
+            "api.example.com",
+            "sha256/k2oTX1jqhUxMwVTmrttBm2LocGaHGebWZmc85yfYXO8=", // Primary Pin
+            "sha256/YW63uKGCRvrVAqhJ6usDxn7NUOwG+KpgMUizDG4Nk2U="  // Disaster Recovery Pin
+        )
+        .build()
+
+    return OkHttpClient.Builder()
+        .certificatePinner(certificatePinner)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .build()
+}
+```
 
 ## Why it matters and how it works
 
@@ -51,15 +97,27 @@ Assign owners to pin inventory, certificate expiry, signing/release process and 
 
 ## Interview answer — short
 
-“I deploy current and backup pins before changing server keys, test old clients and monitor the rollout. A trust-all fallback is unacceptable; pinning needs an availability and recovery plan from day one.”
+Pin the Subject Public Key Info (SPKI) SHA-256 hash rather than the leaf certificate, and always include at least one secure offline backup pin. Configure an expiration date in Android's network_security_config.xml so that expired pins degrade safely to standard CA validation rather than permanently bricking user connectivity.
 
 ## Interview answer — structured
 
-“Pinning constrains which server keys an app accepts beyond ordinary TLS validation. I choose public-key pins, maintain a separately controlled backup, ship both before server rotation, and verify old supported releases against the new chain. Then I stage server activation and monitor failures. Because an old app cannot fetch a new pin after pin failure, I plan overlap, update adoption and rollback beforehand. The backend still validates every financial request. ”
+Certificate pinning secures network channels against fraudulent Certificate Authorities, but poor rotation strategies risk catastrophic app bricking:
+
+1. **Pin the Public Key (SPKI), Not the Certificate**: Pin the SHA-256 hash of the Subject Public Key Info. This decouples pinning from certificate expiration dates, allowing site certificates to be re-issued using the existing private key without breaking client pins.
+
+2. **Mandatory Backup Pins**: Never release an app with only a single pin. Always configure at least one active pin and one or two cold-storage backup pins (generated and stored securely in an enterprise HSM). If the primary certificate is compromised, ops can deploy the backup key on servers without releasing an app update.
+
+3. **Expiration Safeguard**: In Android's `network_security_config.xml`, specify `<pin-set expiration="YYYY-MM-DD">`. Once the timestamp elapses, the Android framework automatically ceases pin enforcement and falls back to standard system CA validation, ensuring older app versions remain functional even if scheduled rotations miss target release windows.
 
 ## Interview answer — deep senior
 
-“I treat pins as distributed configuration with a lead time longer than certificate renewal. I maintain a matrix of app versions, accepted SPKI hashes, backend certs and sunset dates. I test staging and production canaries through real TLS stacks, including old devices and alternate endpoints, and ensure backup key custody is independent. If the main key is compromised, I can move to the prepublished backup; if both are unusable, recovery may require an app update through another channel, not a silent trust-all path. I decide whether this outage risk is justified before adopting pinning. This is an operational example.  The recovery strategy should be written before rollout: who holds the backup key, how old binaries are tested, what telemetry triggers a pause, and which app versions still need support. I would simulate the primary key being unavailable and verify that the backup chain works through the real TLS stack. Pin expiration is an availability fallback that turns off pinning after its date; it should be a conscious risk decision, never a hidden substitute for rotation.”
+From an operational reliability perspective, senior architects design dynamic recovery mechanisms for pinned endpoints:
+
+1. **Intermediate vs. Leaf Pinning**: Pinning the leaf certificate's public key provides maximum security but highest rotation risk. Pinning the Intermediate CA certificate of a dedicated enterprise PKI provides easier server-side rotation at the cost of trusting all certificates issued under that intermediate.
+
+2. **Dynamic Remote Pin Fallbacks**: High-assurance financial apps often maintain a dedicated unpinned or multi-CDN fallback domain (`fallback-config.example.com`). If all pinned API calls fail with `SSLPeerUnverifiedException`, the app queries this hardened secondary endpoint to retrieve an authenticated, cryptographically signed pin configuration update.
+
+3. **Telemetry & Audit Logging**: Implement OkHttp's `EventListener` to log pinning failures with exact peer certificate chain hashes. This provides real-time alerting on potential MITM attacks or configuration drift before certificates expire.
 
 ## How to answer in the interview
 
@@ -75,8 +133,11 @@ Prompt for prepublished backup key, oldest-client test, cert/key distinction, em
 
 ## Follow-up questions
 
-- [SEC-08](../sec-08/): What does pinning add? **Answer:** accepted-key restriction after normal TLS validation.
-- [SEC-28](../sec-28/): How do you avoid bricking old clients? **Answer:** overlap current and backup pins before rotation.
+- **Interviewer:** "Can certificate pinning prevent attackers using Frida on rooted devices from sniffing traffic?"
+  **Answer:** "No; dynamic instrumentation tools hook TrustManager.checkServerTrusted() or OpenSSL verification functions directly in memory, bypassing pins effortlessly."
+
+- **Interviewer:** "Why should you avoid pinning the Root CA?"
+  **Answer:** "Pinning the Root CA offers little security advantage over standard PKI validation because root CAs sign millions of certificates, negating specific domain identity verification."
 
 ## Self-check rubric
 
@@ -87,4 +148,4 @@ Can I draw the deployment order and describe failure/recovery without weakening 
 - [Android Network Security Configuration](https://developer.android.com/privacy-and-security/security-config) — pin sets and expiration.
 - [OWASP MASVS network](https://mas.owasp.org/MASVS/controls/MASVS-NETWORK-2/) — endpoint identity.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against primary documentation on 2026-10-13.

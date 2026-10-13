@@ -22,11 +22,52 @@ Design cache/server synchronization with a source of truth, stale policy, confli
 
 ## Explanation in Arabic
 
-Data layer تقرر مين المصدر اللي UI تراقبه. في offline-first app، Room غالبًا local SSOT: repository تعرض Flow من DAO، والnetwork refresh يكتب في Room transaction؛ UI ما تعرضش raw response بشكل منفصل. لازم تعرف freshness، invalidation، conflict resolution، وretry. لو server عنده authority زي balance، cache للعرض فقط وما تعتبرش optimistic local change نهائي. كمان تعامل مع concurrent refreshes عشان response قديم ما يكتبش فوق أحدث data؛ استخدم version/timestamp policy موثوقة أو serialize updates.
+كيف تدير تحديثات الكاش (Cache) والسيرفر (Server) داخل طبقة البيانات (Data Layer) باحترافية؟
+
+1. استراتيجيات مزامنة البيانات الشائعة:
+   - **Network-Bound Resource (Offline-First / Cache-First)**:
+     * نقرأ ونعرض البيانات المحفوظة محلياً في الـ Database فوراً للمستخدم.
+     * في نفس الوقت نطلب أحدث البيانات من السيرفر في الخلفية.
+     * عند نجاح الطلب، نحدث الـ Database محلياً، فتقوم قاعدة البيانات بإطلاق تحديث تلقائي للواجهة.
+   - **Cache-Aside / Read-Through**:
+     * فحص الكاش في الذاكرة أولاً؛ إذا كانت منتهية الصلاحية (Stale)، يتم طلب السيرفر وتحديث الكاش.
+   - **Optimistic Updates (التحديث التفاؤلي)**:
+     * عند اتخاذ المستخدم لإجراء (مثل عمل Like لبوست)، نقوم بتحديث الـ Database المحلية والـ UI فوراً دون انتظار رد السيرفر!
+     * إذا فشل طلب السيرفر لاحقاً، نقوم بالتراجع (Rollback) وإظهار تنبيه للمستخدم.
+
+2. دور الـ Invalidation Tracker وإدارة تضارب التعديلات:
+   - استخدام الـ ETag و `If-None-Match` في طلبات HTTP لتجنب تنزيل البيانات غير المعدلة (304 Not Modified).
+   - إدارة المعاملات في قاعدة البيانات عبر `@Transaction` لضمان كتابة البيانات دفعة واحدة دون تشويه الحالة.
 
 ## Practical walkthrough
 
-Offline-first screen تقرأ Room Flow وتنفذ network refresh في repository، ثم transaction تكتب canonical data؛ UI لا تدمج قائمتين بنفسها. لو user edit pending، refresh لا يمسحه؛ conflict policy تحدد merge. Payment state backend authoritative، وlocal cache projection لا تقول Approved دون receipt. اختبر network loss، concurrent edits، stale responses وrecreation.
+تنفيذ نمط Network-Bound Resource وتحديث الـ Cache في طبقة البيانات:
+```kotlin
+class ProductRepositoryImpl(
+    private val localDao: ProductDao,
+    private val remoteApi: ProductApi
+) : ProductRepository {
+
+    // نمط Offline-First: يقرأ من DB فوراً، ويطلب السيرفر ويحدث DB عند النجاح:
+    override fun getProducts(): Flow<Resource<List<Product>>> = flow {
+        // 1. انبعاث البيانات المتاحة في الكاش فوراً:
+        val cached = localDao.getProductsSync().map { it.toDomain() }
+        emit(Resource.Loading(cached))
+
+        try {
+            // 2. جلب أحدث البيانات من السيرفر:
+            val remoteDtos = remoteApi.fetchProducts()
+            // 3. تحديث قاعدة البيانات داخل Transaction:
+            localDao.updateProductsTransaction(remoteDtos.map { it.toEntity() })
+        } catch (e: Exception) {
+            emit(Resource.Error(e.message ?: "Sync failed", cached))
+        }
+
+        // 4. انبعاث البيانات النهائية المحدثة من الـ DB:
+        emitAll(localDao.observeProducts().map { Resource.Success(it.map { e -> e.toDomain() }) })
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -50,15 +91,32 @@ A delivery app stores route tasks in Room for offline display and queues permitt
 
 ## Interview answer — short
 
-The repository coordinates cache and server. In an offline-first app, UI observes a local source of truth while refresh writes into it. I define freshness, conflicts and failure behavior, and keep server authority for sensitive facts.
+Manage cache and server updates within the data layer using the Offline-First (Network-Bound Resource) pattern: emit local cached data from Room immediately, fetch updates from the network in the background, write payloads into the database inside a transaction, and let Room reactively emit updated state.
 
 ## Interview answer — structured
 
-I expose one observable data path, often Room Flow, and make refresh update that source rather than letting UI mix raw network and cached records. The repository maps DTOs, writes transactionally, and reports refresh status separately so cached content survives an outage. I define stale-data policy and conflict resolution, especially when refreshes overlap. For payments or balances the local database is a display cache; the server decides the final business status. I would choose a local database as the observable source for an offline feed, then write remote updates into it. If a refresh fails, cached items remain and the UI sees a stale/error indicator. For server-authoritative payment state, the cache is only a display projection.
+Managing cache and server synchronization is the primary responsibility of the Data layer, isolating presentation code from networking and storage complexity.
+
+1. **The Offline-First (Network-Bound Resource) Pattern**:
+   - **Immediate Local Emission**: The repository reads from the local database (Room) and emits cached data immediately, providing instantaneous screen loads.
+   - **Background Synchronization**: Concurrently, the repository triggers an asynchronous network fetch.
+   - **Atomic Ingestion**: When the network succeeds, the repository writes the new entities into Room inside a database transaction (`@Transaction`), clearing obsolete records.
+   - **Reactive Propagation**: Room's `InvalidationTracker` detects the write and emits the fresh dataset on the active `Flow`, updating observers automatically.
+
+2. **Optimistic Updates**:
+   - For interactive user mutations (e.g. liking a post or archiving an email), waiting for server roundtrips introduces unacceptable UI latency.
+   - The repository modifies local database state immediately. If the network request fails, the repository rolls back the mutation and surfaces an actionable error.
 
 ## Interview answer — deep senior
 
-The design begins with data authority and offline requirements. If a local database is the app’s observable SSOT, all UI reads go through it and remote updates are validated and committed atomically. The repository owns invalidation, freshness metadata, retries and conflict policy. I test a late older response, partial page failure, offline restart, and process death during sync. Simply writing the last response to arrive can regress state, so I use server versions or ordered reconciliation where available. I keep useful cached content on refresh failure and signal staleness to UI. For sensitive facts, such as account balance, server authority remains explicit even when Room is the local render source. The goal is consistent observation, not an illusion of always-fresh data. The hard cases are ordering and conflict. An old response can arrive after a newer one; device wall-clock timestamps can be unreliable; queued edits can be rejected by the server. I define version or sequence rules with the backend where possible, serialize writes when needed, and test partial failures transactionally. A refresh should not clear the cache before replacement succeeds. The repository should expose enough metadata for UI to communicate freshness without forcing every screen to understand network mechanics.
+Under the hood, HTTP cache headers play a pivotal role. By configuring OkHttp's `Cache` directory and leveraging `ETag` and `If-None-Match` headers, the server can return HTTP `304 Not Modified` with zero body payload. This conserves battery and mobile bandwidth while confirming that local cache is fresh.
+
+For conflict resolution (when both client and server update data concurrently), enterprise repositories employ **Conflict Resolution Policies**:
+- *Server-Wins*: The default in most consumer apps; server timestamps overwrite local modifications.
+- *Client-Wins / Last-Write-Wins (LWW)*: Based on monotonic client timestamps.
+- *Merge Policies*: Employed in collaborative apps where fields are merged individually.
+
+In testing, repository synchronization is verified by asserting that simulated network failures still yield cached data, and network successes overwrite stale database records.
 
 ## How to answer in the interview
 
@@ -74,8 +132,11 @@ Walk cache miss, successful refresh, stale data and racing refresh responses; de
 
 ## Follow-up questions
 
-- [ARC-10](../arc-10/): What is the UI’s local source of truth? **Answer:** often Room in an offline-first design, updated through repository sync.
-- [ARC-11](../arc-11/): What happens on failed refresh? **Answer:** preserve cached content and expose refresh error/staleness.
+- **Interviewer:** "What is an Optimistic Update, and how do you handle rollbacks?"
+  **Answer:** "An optimistic update mutates the local database immediately to provide zero-latency UI feedback. If the subsequent network call fails, the repository executes a compensating transaction to revert the change and notify the UI."
+
+- **Interviewer:** "Why should database writes be wrapped in `@Transaction`?"
+  **Answer:** "Transactions ensure atomicity: either all records are updated or none are. If an error occurs halfway through, the database rolls back, preventing corrupt partial states."
 
 ## Self-check rubric
 
@@ -86,4 +147,4 @@ Describe one observable path, one conflict rule and the UI behavior after networ
 - [Android offline-first guide](https://developer.android.com/topic/architecture/data-layer/offline-first) — local source of truth and sync.
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — repository role.
 
-Technically reviewed against the linked official Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

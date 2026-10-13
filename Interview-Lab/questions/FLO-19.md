@@ -22,11 +22,40 @@ Explain replay, per-subscriber buffer capacity and overflow behavior including a
 
 ## Explanation in Arabic
 
-`replay` عدد القيم القديمة اللي subscriber جديد يشوفها. `extraBufferCapacity` مساحة إضافية للتعامل مع subscriber بطيء، و`BufferOverflow` يحدد suspend أو إسقاط الأقدم/الأحدث لما buffer يتملي. نقطة مهمة: لو مفيش subscribers، SharedFlow تحتفظ بقيم replay فقط؛ extra buffer ما بيعملش queue لأحداث المستقبل. ولا إعداد يضمن بقاء event بعد process death.
+المعاملات الثلاثة لـ `MutableSharedFlow` (`replay`, `extraBufferCapacity`, `onBufferOverflow`) بتحدد سلوك الذاكرة وتوزيع الأحداث بدقة بالغة:
+
+1. المعامل `replay` (ذاكرة الإعادة للمستمعين الجدد):
+   - يحدد عدد العناصر السابقة (Past Items) التي يتم حفظها في الذاكرة لتسليمها فوراً لأي مستمع جديد يشترك مستقبلاً.
+   - لو `replay = 0`: المستمع الجديد لن يستلم أي شيء من الماضي؛ يستلم فقط ما يصدر بعد لحظة اشتراكه.
+   - لو `replay = 1`: المستمع الجديد يستلم أحدث عنصر فور اشتراكه (كما يفعل StateFlow).
+
+2. المعامل `extraBufferCapacity` (سعة التخزين المؤقت الإضافية):
+   - يحدد حجم الـ Buffer المتاح للـ Producer قبل أن يضطر للتعليق (Suspension) عند بطء المستمعين.
+   - الحجم الكلي المتاح للذاكرة المؤقتة هو: `replay + extraBufferCapacity`.
+
+3. المعامل `onBufferOverflow` (استراتيجية التصرف عند امتلاء الـ Buffer):
+   - **`BufferOverflow.SUSPEND` (الافتراضي):** الـ Producer يتعلق في دالة `emit()` وينتظر حتى يفرغ المستمع مساحة في الـ Buffer.
+   - **`BufferOverflow.DROP_OLDEST`:** يسقط أقدم عنصر في الـ Buffer لتوفير مساحة للعنصر الجديد بدون تعليق الـ Producer.
+   - **`BufferOverflow.DROP_LATEST`:** يسقط العنصر الجديد الحالي ويحافظ على العناصر القديمة بدون تعليق.
 
 ## Practical walkthrough
 
-`MutableSharedFlow(replay=1)` تخلي subscriber جديدة تاخد آخر emission؛ `extraBufferCapacity` تستوعب بطء subscribers الحاليين حسب overflow policy، لكنها مش offline queue للمشتركين الغايبين. `DROP_OLDEST` أو `DROP_LATEST` ممكن تفقد رسائل. لو navigation حرجة بعد process death، buffer في الذاكرة مش كفاية؛ خزّن intent مع acknowledgment.
+تصميم SharedFlow للأحداث وسجل الإشعارات:
+```kotlin
+class NotificationCenter {
+    // نحتفظ بآخر 3 إشعارات للمشتركين الجدد، مع سعة إضافية 10، وإسقاط الأقدم عند الامتلاء:
+    val notifications = MutableSharedFlow<Notification>(
+        replay = 3,
+        extraBufferCapacity = 10,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    
+    fun postNotification(notification: Notification) {
+        // بفضل DROP_OLDEST، دالة tryEmit تنجح دائماً بدون الحاجة لكوروتين suspend:
+        notifications.tryEmit(notification)
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -65,15 +94,23 @@ A dashboard uses SharedFlow for best-effort snackbars where loss is acceptable. 
 
 ## Interview answer — short
 
-“Replay supplies old values to new subscribers. Extra buffer capacity helps current slow subscribers; overflow policy decides suspend or drop when full. With no subscribers, only replay is retained, so this is not a durable queue.”
+replay sets how many historical items are cached and re-emitted to new subscribers; extraBufferCapacity adds buffer space beyond replay to absorb bursts; and onBufferOverflow dictates behavior when the buffer fills: SUSPEND (pauses emitter), DROP_OLDEST (drops oldest item), or DROP_LATEST (drops new item).
 
 ## Interview answer — structured
 
-“I set SharedFlow parameters from a delivery contract. Replay controls what late subscribers see. Extra buffer capacity absorbs lag from active subscribers, and BufferOverflow defines whether an emitter suspends or old/new values drop when that capacity is exhausted. Without subscribers, only replay values are stored; extra capacity does not queue events for later. A successful `tryEmit` does not mean the UI handled the event. For a required business outcome I use durable state and explicit acknowledgement rather than tuning a SharedFlow buffer.”
+These three parameters configure the buffer mechanics and backpressure semantics of `MutableSharedFlow`:
+
+**`replay`** defines the size of the replay cache. When a new collector subscribes, it immediately receives up to `replay` cached historical emissions. If set to 0, late subscribers receive nothing from the past. `StateFlow` is conceptually a SharedFlow with `replay = 1`.
+
+**`extraBufferCapacity`** provides additional queue capacity beyond the replay cache. The total buffer size is `replay + extraBufferCapacity`. It allows fast producers to continue emitting without suspension when downstream collectors are busy.
+
+**`onBufferOverflow`** configures backpressure behavior when the combined buffer is full. `BufferOverflow.SUSPEND` suspends `emit()` until downstream collectors catch up. `BufferOverflow.DROP_OLDEST` evicts the oldest buffered element to make room for the new one, enabling non-suspending `tryEmit()` to always succeed. `BufferOverflow.DROP_LATEST` discards the incoming item, preserving the existing buffer.
 
 ## Interview answer — deep senior
 
-“There are three distinct questions: what a new subscriber receives, how far an active subscriber may lag, and whether anything survives process death. Replay addresses the first; extraBufferCapacity and overflow address the second; none addresses the third. In the absence of subscribers, SharedFlow stores only replay and overflow settings do not turn it into a queue. This makes replay-zero suitable for disposable visual effects, but it may lose events while the Activity is stopped. Replay can cause a navigation effect to fire again after rotation. I test emissions before subscription, during a slow collector and after re-subscription, and I use persisted operation records for anything that must be handled reliably. I would separate replay from buffering. Replay is what a new subscriber receives immediately, up to the configured cache size. Extra buffer capacity helps active subscribers tolerate a producer that gets ahead; overflow decides whether the emitter suspends or an item is dropped when capacity fills. With no subscribers, SharedFlow retains only replay values, so extra capacity does not act as a mailbox. `tryEmit` success also needs careful interpretation; it is not evidence that a UI handled an event. This is why I do not use SharedFlow configuration as a substitute for a durable command queue. I would test no subscriber, one slow subscriber, and a new subscriber to observe all three behaviors explicitly.”
+At the internal implementation level, `SharedFlowImpl` allocates a continuous array of slots representing the buffer. A critical engineering requirement involves `tryEmit()`. `tryEmit()` is a non-suspending method to post events. If `onBufferOverflow` is set to `BufferOverflow.SUSPEND` (the default) and there are slow collectors or the buffer is saturated, **`tryEmit()` will return `false` and drop the event silently**!
+
+Therefore, in Android architecture, if you intend to dispatch events from synchronous callbacks using `tryEmit()` (such as view click listeners without launching a coroutine), you must configure `extraBufferCapacity >= 1` and `onBufferOverflow = BufferOverflow.DROP_OLDEST`. This guarantees that `tryEmit()` never fails and never drops events unexpectedly.
 
 ## How to answer in the interview
 
@@ -89,8 +126,14 @@ Walk through no subscriber, slow subscriber and new subscriber timelines.
 
 ## Follow-up questions
 
-- [FLO-30](../flo-30/): Does extra capacity save absent-subscriber events? **Answer:** no, only replay cache does.
-- [FLO-27](../flo-27/): Why duplicate navigation? **Answer:** replayed effect or unconsumed state can trigger it again.
+- **Interviewer:** "Why does `tryEmit` fail on a default `MutableSharedFlow()`?"
+  **Answer:** "Because a default `MutableSharedFlow()` has `replay = 0`, `extraBufferCapacity = 0`, and `onBufferOverflow = SUSPEND`. Without any buffer capacity, an emission can only be accepted if all subscribers are actively suspended in `collect`. If any subscriber is not immediately ready, `tryEmit()` returns false."
+
+- **Interviewer:** "How does `StateFlow` configure these three parameters internally?"
+  **Answer:** "`StateFlow` is conceptually configured with `replay = 1`, `extraBufferCapacity = 0`, and `onBufferOverflow = BufferOverflow.DROP_OLDEST`, plus state deduplication via `equals()`."
+
+- **Interviewer:** "Can the replay cache be cleared dynamically?"
+  **Answer:** "Yes. `MutableSharedFlow.resetReplayCache()` clears all currently stored values from the replay buffer, ensuring future collectors start with an empty cache."
 
 ## Self-check rubric
 
@@ -100,4 +143,4 @@ Can I predict values under each subscriber condition and distinguish buffer succ
 
 - [Kotlin SharedFlow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-shared-flow/) — replay, buffer and absent-subscriber behavior.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

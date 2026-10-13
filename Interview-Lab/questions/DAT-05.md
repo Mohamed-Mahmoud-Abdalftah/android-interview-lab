@@ -22,7 +22,61 @@ Choose structured relational storage versus small preferences, including migrati
 
 ## Explanation in Arabic
 
-`Room` فوق SQLite للبيانات المنظمة والعلاقات والqueries/transactions وFlow observation. `DataStore` مناسب preferences أو typed small settings بشكل asynchronous وtransactional updates؛ مش قاعدة relational كبيرة. `SharedPreferences` API قديمة synchronous access ممكن تعمل jank وتحتاج حذر في التزامن؛ للـnew settings غالبًا DataStore أفضل. ولا واحد منهم secret vault تلقائيًا.
+المقارنة المعمارية الدقيقة بين خيارات تخزين البيانات المحلية في Android:
+Room و DataStore و SharedPreferences:
+
+1. SharedPreferences (الخيار القديم المهمل):
+   - **كيف يعمل**: يحفظ البيانات كملف XML بسيط في ذاكرة الجهاز.
+   - **العيوب القاتلة في الإنتاج**:
+     * استدعاء `getSharedPreferences()` يقرأ الملف بالكامل في الـ Main Thread بشكل متزامن (Synchronous IO)، مما يسبب UI Jank و ANR Crashes!
+     * دالة `apply()` تكتب في الخلفية ولكن قد تعلق في `Activity.onStop()`، بينما `commit()` تحجب الـ Main Thread.
+     * لا يدعم التفاعل مع Kotlin Coroutines أو تدفق البيانات (No Flow support).
+     * عرضة للـ Runtime ClassCastExceptions ولا يضمن الأمان المالي أو الذري.
+
+2. DataStore (البديل الحديث للـ Key-Value والإعدادات):
+   - **كيف يعمل**: مبني بالكامل على Kotlin Coroutines و Flow لإدارة البيانات غير المتزامنة.
+   - **نوعان**:
+     * **Preferences DataStore**: بديل مباشر لـ SharedPreferences ولكن بمعالجة غير متزامنة تماماً ودعم للـ Flow ومعالجة الأخطاء.
+     * **Proto DataStore**: تخزين منظم بـ Protocol Buffers يضمن Type-Safety كامل وتوليد كلاسات في وقت التجميع.
+   - **متى يُستخدم**: لإعدادات التطبيق، وحالة الجلسة (Session tokens)، وتفضيلات المستخدم البسيطة.
+
+3. Room (قاعدة البيانات العلائقية المهيكلة):
+   - **كيف يعمل**: طبقة تجريد فوق SQLite توفر فحص استعلامات SQL في وقت التجميع (Compile-time verification).
+   - **متى يُستخدم**: للبيانات المنظمة والمعقدة، والبحث والفلترة، والعلاقات بين الجداول (Foreign Keys)، والمعاملات الذرية (`@Transaction`)، والتخزين المؤقت للبيانات الضخمة (Offline-first caching).
+
+## Practical walkthrough
+
+المقارنة العملية بالكود بين DataStore و Room للتخزين المحلي:
+```kotlin
+// 1. DataStore: مثالي لتفضيلات المستخدم وحالة الجلسة عبر Flow غير المتزامن:
+class UserPreferencesStore(private val dataStore: DataStore<Preferences>) {
+    private val THEME_KEY = booleanPreferencesKey("dark_mode_enabled")
+    
+    // قراءة آمنة في الخلفية عبر Flow:
+    val isDarkMode: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[THEME_KEY] ?: false
+    }
+    
+    // تعديل ذري غير متزامن بدون حجب الـ Main Thread:
+    suspend fun setDarkMode(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[THEME_KEY] = enabled }
+    }
+}
+
+// 2. Room: مثالي للبيانات المنظمة والعلاقات والمعاملات المعقدة:
+@Entity(tableName = "orders")
+data class OrderEntity(
+    @PrimaryKey val id: String,
+    val customerId: String,
+    val totalAmountCents: Long
+)
+
+@Dao
+interface OrderDao {
+    @Query("SELECT * FROM orders WHERE customerId = :userId ORDER BY totalAmountCents DESC")
+    fun observeUserOrders(userId: String): Flow<List<OrderEntity>> // استعلام SQL متحقق منه في التجميع!
+}
+```
 
 ## Why it matters and how it works
 
@@ -44,10 +98,6 @@ interface ArticleDao {
 // Settings uses DataStore; Article rows use Room.
 ```
 
-## Practical walkthrough
-
-لو عندك orders/items بعلاقات وqueries وtransaction، Room فوق SQLite مناسبة؛ Entity/DAO ومigrations جزء من contract. Theme أو onboarding flag صغيرة ممكن تتحفظ في Preferences DataStore، وtyped config في Proto/typed DataStore حسب schema. DataStore بتدي Flow وupdate transactionally لكن مش relational DB ولا partial row updates. SharedPreferences موجودة في legacy apps، لكن كثرة synchronous reads/writes ومشاكل consistency تخلي migration لـDataStore منطقيًا حسب الحاجة؛ لا تنقل order table لها. راجع backup/restore خصوصًا لdata حساسة أو key لا ينتقل، وفرق بين storage persistence وبين حماية encryption.
-
 ## Trade-offs and decision criteria
 
 Room gives relational power but needs schema evolution. DataStore simplifies small key/value settings but not joins or large datasets. SharedPreferences can be pragmatic for legacy code, but migration should be tested and avoid main-thread I/O.
@@ -62,17 +112,25 @@ An offline news app stores articles and remote keys in Room, theme preference in
 
 ## Interview answer — short
 
-“Room fits structured relational data and transactions; DataStore fits small asynchronous preferences; SharedPreferences is mainly a legacy key/value API. Storage choice does not automatically encrypt secrets or solve migration.”
+SharedPreferences is legacy synchronous storage prone to UI thread blocking and ANRs. DataStore is modern asynchronous storage built on Coroutines and Flow, ideal for app settings and user preferences. Room is an SQLite abstraction with compile-time query verification, transactions, and relational queries, designed for structured offline-first domain data.
 
 ## Interview answer — structured
 
-“I use Room when I need tables, indexed queries, relationships, transactions and observable rows. DataStore is a good fit for small settings with asynchronous Flow reads and atomic updates. SharedPreferences may already exist in a legacy app, but I would migrate carefully rather than expanding it for new complex data. I avoid putting a large dataset into one preference blob, and I treat sensitive tokens separately because neither Room nor DataStore is an automatic secret vault.”
+Modern Android applications eliminate SharedPreferences entirely, choosing between DataStore and Room based on data structure complexity:
+
+1. **SharedPreferences (Legacy / Deprecated Practice)**: Reads entire XML files into memory synchronously on the UI thread, causing frames drops and ANRs. Write calls (`commit` blocks the main thread; `apply` blocks `onStop` in the Activity lifecycle). It lacks transactional safety, type safety, and reactive observation.
+
+2. **DataStore (Modern Preferences)**: Built on Kotlin Coroutines and Flow. It operates strictly off the main thread (`Dispatchers.IO`), provides atomic transactional updates via ACID file snapshots, handles disk IO corruption gracefully, and offers compile-time type safety via Proto DataStore. It is ideal for user settings, feature flags, and auth tokens.
+
+3. **Room (Structured Relational Storage)**: An enterprise SQLite abstraction. Provides compile-time SQL query validation, multi-table joins, relational indexing, schema migrations, and reactive `Flow` emissions triggered by database invalidation. It is the mandatory engine for complex offline-first data, feeds, and shopping carts.
 
 ## Interview answer — deep senior
 
-The decision is driven by data shape and invariants. Room provides SQLite-backed structured storage, compile-time query checks and transactions, but schema migrations need versioned tests. DataStore provides asynchronous, transactional preference updates and is excellent for theme, onboarding or small typed configuration; it cannot replace relational queries. SharedPreferences is useful for interoperability with legacy code, but synchronous patterns and migration risk make it a poor foundation for new complex storage. For an offline-first feed I store entities and remote keys in Room and observe them through Flow, while DataStore holds a small user preference. I test migration on real old files and explicitly design encryption/backup/session invalidation for sensitive material.
+Neither Room nor DataStore encrypt data on disk by default:
 
-For an order history I need indexed queries, relationships, and atomic multi-row changes, so I choose Room. For a small theme preference I use DataStore, whose Flow and transactional update API suit configuration without building a database schema. SharedPreferences may remain at a legacy boundary, but I would plan migration rather than spreading synchronous access. DataStore is not a relational store and Room is more work than a single preference deserves. The failure case is using key-value storage for hundreds of records or treating persistence as encryption. I review backup rules and sensitive-data policy separately, then test migration and process restart before declaring the change safe.
+- SharedPreferences and Preferences DataStore store plain text on disk under `/data/data/com.example/`. On rooted devices or via ADB backup, sensitive data can be read trivially.
+
+- For **Sensitive Credentials (Auth Tokens, Cryptographic Keys)**, neither standard DataStore nor standard Room is sufficient. Secure architectures utilize **EncryptedSharedPreferences / Jetpack Security**, or store Master Keys in the **Android Keystore System** to encrypt DataStore payloads via Proto DataStore serialization, or configure **SQLCipher** for Room.
 
 ## How to answer in the interview
 
@@ -88,8 +146,11 @@ Compare query complexity, transaction scope, migration and security/backup assum
 
 ## Follow-up questions
 
-- [DAT-06](../dat-06/): What does Room add? **Answer:** entity/DAO/schema checks, transactions, migrations and Flow queries.
-- [DAT-11](../dat-11/): How protect old data? **Answer:** versioned migration tests and rollback/recovery strategy.
+- **Interviewer:** "Can DataStore replace Room for caching a list of 5,000 products?"
+  **Answer:** "No. DataStore reads and writes the entire payload atomically on every update; storing thousands of items causes massive IO thrashing and lacks indexing and pagination."
+
+- **Interviewer:** "How do you migrate existing SharedPreferences to DataStore?"
+  **Answer:** "DataStore provides a built-in `SharedPreferencesMigration(context, PREF_NAME)` parameter passed into the DataStore builder that automatically imports keys on first read."
 
 ## Self-check rubric
 
@@ -100,4 +161,4 @@ Can I pick storage by shape, name migration risk and reject automatic secret pro
 - [Android Room guide](https://developer.android.com/training/data-storage/room) — structured storage.
 - [Android DataStore guide](https://developer.android.com/topic/libraries/architecture/datastore) — small settings and migration.
 
-Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.
+Technically reviewed against primary documentation on 2026-10-13.

@@ -24,11 +24,44 @@ Compare Gradle api and implementation dependencies.
 
 ## Explanation in Arabic
 
-`implementation` dependency تستخدمها module داخليًا، ولا تعرض types الخاصة بها على compile classpath للمستهلكين كجزء من API. `api` تصدّر dependency للمستهلكين؛ تحتاجها لو public method أو superclass/interface في module يكشف type من تلك المكتبة. مثلًا لو `:core:ui` public function تأخذ `SomeLibraryType` فالمستهلك يحتاج المكتبة عند compilation. استخدم `implementation` افتراضيًا و`api` عند عقد فعلي؛ الإفراط في `api` يكبر classpath ويجعل تغييرات أكثر تعيد compilation. الحكم يتأثر بـGradle/AGP variant model وABI الفعلي.
+المقارنة الجوهرية بين `api` و `implementation` في Gradle وكيف تؤثران على وقت البناء والـ ABI:
+
+1. ما هو الفرق الأساسي؟
+   - **`implementation` (خاص بالداخل)**: التبعية متاحة فقط للموديول الحالي أثناء التجميع (Compile Classpath). الموديولات التي تعتمد على هذا الموديول **لا ترى** هذه التبعية ولا تستطيع استيرادها.
+   - **`api` (مكشوف للجميع - Transitive Exposure)**: التبعية مكشوفة في الواجهة العامة للـ Module (الـ Public ABI). أي موديول يعتمد على هذا الموديول يرث هذه التبعية تلقائياً في الـ Compile Classpath الخاص به.
+
+2. الأثر الكارثي لـ `api` على وقت البناء (Build Fan-out):
+   - لنفترض أن Module C يعتمد على B، و B يعتمد على A.
+   - إذا استخدم B كلمة `implementation(A)`: عند تغيير كود داخلي في A، يقوم Gradle بتجميع A ثم B فقط. الموديول C لا يعاد تجميعه لأن الـ ABI الخاص بـ B لم يتغير!
+   - إذا استخدم B كلمة `api(A)`: أي تغيير في A يكسر الـ ABI الخاص بـ B، مما يجبر Gradle على إعادة تجميع B و C وجميع الموديولات التابعة لهما في المشروع بالكامل!
+
+3. القاعدة الذهبية لمهندس البرمجيات الأول (Senior Rule of Thumb):
+   - **اجعل `implementation` هو الخيار الافتراضي دائماً في 99% من الحالات**.
+   - استخدم `api` فقط وفقط إذا كانت كلاسات ودوال الموديول الحالي تُرجع أو تقبل كائنات من التبعية في دوالها العامة (Public Functions or Return Types).
 
 ## Practical walkthrough
 
-في Gradle Kotlin DSL، `implementation(project(":core:network"))` يبقي dependency داخلية، و`api(project(...))` يعرّضها للمستهلكين compile classpath. استخدم `api` فقط لو public API للmodule يكشف types منها؛ غير كده يوسع rebuild impact. بعد تغيير `api` إلى `implementation` شغّل consumer compile؛ ربما signatures كانت تعتمد عليها.
+المقارنة العملية لتأثير `api` مقابل `implementation` على الـ Classpath ووقت البناء:
+```kotlin
+// 📁 في موديول ':data:user' build.gradle.kts:
+dependencies {
+    // ✅ استخدام implementation: Retrofit تفصيل داخلي لا يجب أن يراه الـ UI:
+    implementation(libs.retrofit)
+    
+    // لو استخدمنا api(libs.retrofit):
+    // أي موديول يعتمد على :data:user سيستورد Retrofit تلقائياً،
+    // ولو غيرنا نسخة Retrofit، سيعيد تجميع كل الـ Feature Modules في التطبيق!
+}
+
+// 📁 متى يكون استخدام api مبرراً وإلزامياً؟
+// في موديول ':core:designsystem' build.gradle.kts:
+dependencies {
+    // بما أن موديول الـ Design System يُصدر Composables تعتمد مباشرة على Compose UI:
+    api(libs.androidx.compose.ui)
+    api(libs.androidx.compose.material3)
+}
+// هنا مبرر لأن أي شاشة تستخدم DesignSystem تحتاج تلقائياً كائنات Compose UI في شاشاتها.
+```
 
 ## Why it matters and how it works
 
@@ -52,15 +85,28 @@ Inspect public ABI and dependency insight reports, enforce explicit direct depen
 
 ## Interview answer — short
 
-“`api` exports a dependency on the consumer compile classpath; `implementation` keeps it internal. I use `api` only when its types are part of my public ABI.”
+implementation keeps a dependency private to the module's compile classpath, hiding internal transitive types and preventing downstream recompilations when internals change. api exposes the dependency transitively to all consumers, polluting their classpaths and forcing costly rebuild cascades across all downstream modules.
 
 ## Interview answer — structured
 
-“If my module uses OkHttp privately, I declare `implementation`; the app gets it at runtime without compiling against OkHttp as my module's API. If a public function exposes `okhttp3.Response`, consumers need that type and an `api` declaration, though I may redesign the API to avoid transport leakage. Narrow implementation classpaths improve encapsulation and can reduce recompilation. I verify the actual public signatures and published metadata rather than flipping configurations by habit.”
+The difference between `api` and `implementation` in Gradle determines whether a dependency leaks into the consumer's compile classpath:
+
+1. **`implementation` (Default Choice)**: The dependency is present on the compile classpath of the current module and on the runtime classpath of consumers, but **hidden from the compile classpath of consumers**. If module `B` uses `implementation(A)`, module `C` depending on `B` cannot reference types from `A`. This enforces strict encapsulation and dramatically accelerates incremental compilation.
+
+2. **`api` (Public ABI Exposure)**: Transitively exposes the dependency to any module that depends on this module. If `B` declares `api(A)`, `C` can import symbols from `A` directly.
+
+The golden architectural rule: use `implementation` by default. Only promote a dependency to `api` if its types appear directly in the module's public function parameters, return types, or inherited interfaces (part of its public Application Binary Interface - ABI).
 
 ## Interview answer — deep senior
 
-“I frame `api` and `implementation` as a compile-contract decision. A library's public ABI may include parameters, return types, supertypes or annotations from another dependency; in that case consumers must see the dependency on their compile classpath, so `api` is appropriate. If the dependency only helps implement private behavior, `implementation` keeps it off that consumer compile classpath while preserving runtime availability. For an image module using OkHttp internally, I prefer a stable image result type and `implementation` for the client. Publicly returning an OkHttp Response would make the network library part of every consumer's contract, complicating replacement and widening recompilation. I do not use `implementation` to hide a type that genuinely appears in public signatures, because consumers can fail to compile. I inspect Gradle's dependency graph and published metadata, add direct dependencies rather than leaning on accidental transitive exposure, and measure incremental build impact. The default is a narrow API, but correctness of the ABI comes first.”
+Under the hood, Gradle distinguishes between a module's **Compile Classpath** and its **Runtime Classpath**, optimizing builds via **ABI (Application Binary Interface) hashing**.
+
+When Gradle compiles a module, it generates an ABI hash representing only public and protected method signatures, return types, and fields. Method implementation bodies (private logic inside a function) do not change the ABI hash.
+
+- When module `B` uses `implementation(A)`, Gradle excludes `A` from `C`'s compile classpath. If a developer changes private code inside `A`, `A` recompiles, but `B`'s ABI remains unchanged, and Gradle completely skips recompiling `C`.
+- When `B` uses `api(A)`, `A` is part of `B`'s public interface. Any ABI change in `A` invalidates the ABI of `B`, triggering a massive recompile cascade across the entire downstream dependency tree.
+
+Using `implementation` isolates compile boundaries, maximizes Gradle's `UP-TO-DATE` task checks, and keeps developer build loops lightning-fast.
 
 ## How to answer in the interview
 
@@ -76,9 +122,11 @@ Discuss ABI, consumer classpath, runtime availability, POM metadata, transitive 
 
 ## Follow-up questions
 
-- Does `implementation` mean absent at runtime? **Answer:** no; it is internal to the consumer compile API, not necessarily missing at runtime.
-- When is `api` required? **Answer:** when the dependency's types are exposed in the public ABI.
-- Why wrap an OkHttp response? **Answer:** to avoid leaking a transport library into a stable feature contract.
+- **Interviewer:** "What happens if you use a type from an `implementation` dependency in a public function?"
+  **Answer:** "The Kotlin/Java compiler will throw an error or warning because downstream consumers cannot resolve the public signature on their compile classpath."
+
+- **Interviewer:** "Does `implementation` reduce APK final size compared to `api`?"
+  **Answer:** "No. Both configurations bundle the library into the final APK's runtime classpath. The advantage of `implementation` is strictly compile-time isolation and build speed."
 
 ## Self-check rubric
 
@@ -89,4 +137,4 @@ Classify two dependencies, inspect a public signature, and explain consumer reco
 - [Gradle Java Library Plugin](https://docs.gradle.org/current/userguide/java_library_plugin.html) — API/implementation separation.
 - [Android modularization patterns](https://developer.android.com/topic/modularization/patterns) — module dependencies.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Android variant behavior should be checked in the project toolchain.
+Technically reviewed against primary documentation on 2026-10-13.

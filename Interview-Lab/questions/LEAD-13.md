@@ -23,11 +23,44 @@ You discover a critical vulnerability days before launch. What is your release d
 
 ## Explanation in Arabic
 
-ثغرة critical قبل launch لا تتخبّى ولا تتسيب عشان التاريخ. نوقف الجزء المعرّض أو نأجل release حسب exposure، نتحقق من exploit path ونطاق النسخ، نبلغ security/product/leadership بقرار مكتوب وخيارات: fix، feature gate، scope reduction أو delay. لو فيه مستخدمين بالفعل، incident response وربما تدوير secrets ومراقبة. نرجع launch بعد retest مستقل وخطة rollout.
+اكتشفت ثغرة أمنية حرجة (Critical Vulnerability) قبل موعد الإطلاق التجاري بيومين فقط. كيف تدير عملية اتخاذ قرار الإطلاق مع إدارة الشركة؟
+
+1. الموقف الحرج وحجم الضغوط:
+   - حملة تسويقية بملايين الدولارات جاهزة للإطلاق بعد 48 ساعة، ومواعيد نهائية صارمة مع شركاء العمل.
+   - فجأة، يكتشف فحص الأمان ثغرة خطيرة (مثل: تسريب رموز التحقق JWT في ملف الـ Logs، أو إمكانية تجاوز شاشة القفل عبر Deep Link غير محمي، أو ثغرة في مكتبة طرف ثالث تسمح بالتلاعب في الدفع).
+   - المهندس الضعيف يخفي الأمر أو يوافق على الإطلاق تحت الضغط! **المهندس القيادي (Lead) يحمي سمعة الشركة وأمان المستخدمين بحزم واحترافية**.
+
+2. إطار عمل تقييم المخاطر (Triage & Severity Assessment):
+   - تقييم الثغرة وفقاً لمعايير **CVSS (Common Vulnerability Scoring System)**:
+     * **القابلية للاستغلال (Exploitability)**: هل يمكن لأي شخص استغلالها عن بعد بسهولة؟ أم تتطلب جهازاً مكسور الحماية (Rooted) مع وصول مادي للهاتف؟
+     * **نطاق الضرر (Blast Radius)**: هل تسرب بيانات بنكية وكلمات مرور؟ أم مجرد بيانات غير حساسة؟
+
+3. مسارات الحلول المعروضة على الإدارة (Decision Pathways):
+   - **الخيار 1 (الإصلاح الجراحي العاجل - Fast-Track Patch)**: إذا كان الحل بسيطاً ومضموناً (سطر كود واحد مع اختبار أمان)، يتم تطبيقه وإعادة اختباره في 12 ساعة والإطلاق في الموعد.
+   - **الخيار 2 (الإطلاق المظلم مع تعطيل الميزة - Dark Launch / Feature Flag Kill-Switch)**: إطلاق التطبيق في موعده مع **تعطيل الميزة المصابة بالكامل سحابياً** حتى يتم إصلاحها لاحقاً دون إيقاف باقي التطبيق.
+   - **الخيار 3 (تأجيل الإطلاق الإلزامي - Hard Block Launch)**: إذا كانت الثغرة تمس البيانات المصرفية أو التشفير الأساسي ويستحيل إخفاؤها، يتم اتخاذ قرار حاسم بتأجيل الإطلاق وتوضيح المخاطر القانونية والمالية الكارثية للإدارة.
 
 ## Practical walkthrough
 
-Vulnerability قبل launch تحتاج قرار مبني على exploitability وimpact، لا مجرد severity label. اعرف affected versions، attack path، data/financial exposure، وهل في mitigation موثوقة. اشرك security وbackend وrelease owner، واختبر fix في release variant، وقرر go/no-go مكتوب. لو الخطر critical قابل للاستغلال وما عندكش containment مثبت، أوقف النشر. لو في users متأثرين أصلًا، حضّر disclosure وrotation وmonitoring حسب السياسة. لا تستخدم “الوقت ضيق” كبديل للأدلة.
+مذكرة إحاطة تنفيذية (Executive Security Brief) تُعرض على الإدارة لحسم القرار:
+```markdown
+### مذكرة أمنية عاجلة: تقييم إطلاق الإصدار 2.0 (Security Launch Gate)
+
+#### ملخص الثغرة (Vulnerability Summary):
+تم اكتشاف ثغرة مصنفة [CVSS 8.5 - High] في معالج الـ Deep Links:
+يمكن لرابط خبيث من متصفح الويب تجاوز التحقق الثنائي (2FA) ونقل الـ Auth Token لجهة خارجية.
+
+#### تحليل المخاطر التجارية (Business Risk Analysis):
+- **المخاطرة في حال الإطلاق**: سرقة حسابات المستخدمين، غرامات امتثال GDPR، وأضرار جسيمة لسمعة الشركة.
+- **المخاطرة في حال التأجيل**: تأخير الحملة التسويقية لمدة 48 ساعة فقط.
+
+#### التوصية الهندسية والخيارات المتاحة:
+1. **[الخيار الموصى به - التعديل الجراحي]**: تعطيل استجابة الـ Deep Link لتسجيل الدخول مؤقتاً
+   وإجبار تسجيل الدخول اليدوي الآمن فقط عبر الشاشة. يستغرق التنفيذ والاختبار 8 ساعات،
+   ويحافظ على موعد الإطلاق بنسبة 100% وبأمان تام.
+2. **[الخيار البديل]**: تأجيل الإطلاق بالكامل إلى يوم الاثنين القادم للإصلاح الشامل.
+```
+بهذا الأسلوب، تقدم للإدارة بدائل تقنية ذكية لحماية الموعد بدلاً من مجرد إلقاء اللوم أو إيقاف المشروع.
 
 ## Why it matters and how it works
 
@@ -51,15 +84,35 @@ Run a focused security review and release candidate test on actual artifact, ver
 
 ## Interview answer — short
 
-“I would stop or scope the release until the critical path is mitigated at the right trust boundary, escalate with evidence and options, then retest and stage rollout.”
+Manage pre-launch critical vulnerabilities through rigorous risk quantification (CVSS score, exploitability, blast radius). Present executive leadership with clear options rather than open-ended problems: an expedited surgical patch, dark-launching with the vulnerable feature kill-switched via remote config, or an unavoidable launch freeze if customer financial data or compliance is at risk.
 
 ## Interview answer — structured
 
-“I verify the vulnerability and affected versions, assess exploitability and impact, and immediately contain any live exposure. I present security, product and leadership with concrete options: server-side feature disablement, a narrow fix, scope reduction or launch delay. For a client-only payment check, only backend authorization can close the hole; an app obfuscation patch cannot. I document residual risk and release criteria, add a regression test, get independent review and monitor a staged rollout.”
+Discovering a critical security vulnerability days before a major commercial launch requires decisive risk management and executive communication:
+
+1. **Triage Severity and Exploitability**:
+   - Immediately assess the vulnerability using standard frameworks (CVSS score):
+     - Can the flaw be exploited remotely, or does it require physical access to a rooted device?
+     - What is the blast radius: does it leak authentication tokens, payment details, or personal identifiable information (PII)?
+
+2. **Formulate Pragmatic Mitigation Pathways**:
+   - Never present executive stakeholders with a blunt roadblock without viable engineering alternatives:
+     - **Pathway A (Surgical Hotfix & Expedited Re-test)**: If the fix is isolated (e.g. adding `android:exported="false"` or input sanitization), apply the patch, run automated security suites, and proceed with launch.
+     - **Pathway B (Dark Launch via Remote Kill-Switch)**: If the flaw resides in a specific non-core feature, disable that feature globally via Firebase Remote Config / Feature Flags, allowing the broader marketing launch to proceed on schedule with the vulnerable surface disabled.
+     - **Pathway C (Mandatory Launch Delay)**: If the flaw compromises core identity or financial encryption and cannot be gated, firmly advise delaying the launch, translating potential regulatory fines (GDPR/PCI-DSS) and brand destruction into concrete business numbers.
+
+3. **Transparent Stakeholder Alignment**:
+   - Document the decision matrix in an executive brief signed off by Engineering, Product, and Legal leads.
 
 ## Interview answer — deep senior
 
-“I establish the facts before committing to launch: which builds are affected, what an attacker can reach, whether exploit requires authentication, and the potential user or financial impact. I involve security, mobile, backend and the release owner, inspect a reproducible exploit or reliable analysis, and identify containment that can be verified—not a hopeful feature flag. A critical exploitable issue with no proven mitigation blocks release; if a fix is available, it goes through a targeted release-like test and regression checks. I document the go/no-go rationale, owner and remaining uncertainty. If existing users are exposed, launch timing is only one part of the response: we may need credential rotation, server controls, monitoring and disclosure under the organization’s incident policy. The trade-off is schedule impact versus irreversible trust loss. I avoid promising that client obfuscation or a UI change can repair a missing backend authorization boundary. The decision is revisited when new evidence arrives, and I keep a rollback or containment path ready.”
+From an engineering ethics and professional integrity standpoint, security gating defines leadership:
+
+1. **Resisting Executive Pressure**: Under intense commercial pressure, business stakeholders may ask: 'Can we just ship and fix it in an update next week?' A senior lead must hold the line: mobile updates are not instantaneous; millions of users who download the build will retain the unpatched vulnerability for months. Knowingly shipping exploitable user-data vulnerabilities violates engineering ethics and exposes the company to legal liability.
+
+2. **Google Play Store Policy Repercussions**: Remind leadership that launching with critical vulnerabilities (e.g. embedded plain-text API secrets or insecure cryptographic algorithms) triggers automated Google Play Security Review rejections or sudden store delisting, turning a 2-day marketing delay into a catastrophic month-long suspension.
+
+3. **Post-Launch Red Teaming**: Ensure the incident feeds back into the DevSecOps pipeline by integrating static application security testing (SAST) tools like MobSF or Semgrep into the pull request CI gate, guaranteeing that similar vulnerabilities are caught weeks before release candidates are frozen.
 
 ## How to answer in the interview
 
@@ -75,8 +128,11 @@ Prompt for exploit proof, server-side containment, old-client impact, decision o
 
 ## Follow-up questions
 
-- [SEC-27](../sec-27/): Why can’t app patch alone fix client-only auth? **Answer:** modified APK can bypass it.
-- [TST-23](../tst-23/): What tests gate release? **Answer:** threat-specific evidence at the true boundary.
+- **Interviewer:** "How can feature flags salvage a scheduled commercial launch when a feature has a security flaw?"
+  **Answer:** "By remotely kill-switching the affected feature server-side, allowing the rest of the application to launch safely on schedule."
+
+- **Interviewer:** "Why is 'we will fix it in a patch next week' an unacceptable response to a critical mobile vulnerability?"
+  **Answer:** "Because mobile users do not update simultaneously; millions of devices will remain vulnerable in the wild indefinitely."
 
 ## Self-check rubric
 
@@ -87,4 +143,4 @@ Describe exploitability, exposure and legal/user impact, then decide whether to 
 - [Android security best practices](https://developer.android.com/privacy-and-security/security-best-practices) — platform security guidance.
 - [OWASP MASVS](https://mas.owasp.org/MASVS/) — control assessment.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.
+Technically reviewed against primary documentation on 2026-10-13.

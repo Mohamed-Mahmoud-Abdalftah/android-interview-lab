@@ -22,11 +22,27 @@ Distinguish a stream of asynchronous values from a single suspend result, includ
 
 ## Explanation in Arabic
 
-`Flow<T>` سلسلة قيم asynchronous بتطلع مع الوقت؛ `suspend fun ...: T` بترجع نتيجة واحدة أو error. Flow العادية غالبًا cold: الكود يبدأ مع `collect` وكل collector ممكن يشغّل المصدر من جديد. نستخدم suspend call لطلب profile واحد، وFlow لمتابعة تغييرات Room أو query مستمرة. الاتنين بيراعوا cancellation لكن stream يحتاج سياسة collection/lifecycle.
+المقارنة بين `Flow` ودالة `suspend` عادية بتحدد الفرق بين استرجاع قيمة واحدة (One-shot) واسترجاع تدفق مستمر من البيانات (Continuous Stream):
+
+1. الدالة المعلقة العادية (`suspend fun`):
+   - تمثل **Single Asynchronous Value** (1:1).
+   - تبدأ، تنفذ طلباً غير متزامن (زي جلب تفاصيل مستخدم من API أو قراءة إعدادات من DataStore)، وترجع قيمة واحدة فقط ثم تنتهي دورة حياتها.
+   - لا يمكنها إرسال تحديثات تالية لنفس الاستدعاء.
+
+2. الـ `Flow` (Reactive Stream):
+   - يمثل **Asynchronous Data Stream** يبث عدة قيم عبر الزمن (1:N) بطريقة معلقة (Asynchronously emits multiple values).
+   - مبني بالكامل على Coroutines، ويدعم Backpressure تلقائياً.
+   - مناسب جداً للبيانات المتغيرة بمرور الوقت: زي مراقبة جدول في قاعدة بيانات Room، تتبع الموقع الجغرافي بالـ GPS كل ثانية، أو استقبال رسائل WebSocket.
 
 ## Practical walkthrough
 
-في شاشة catalog، `refresh()` طلب واحد للـAPI، بينما `observeProducts()` من Room يطلع snapshot جديدة مع كل تعديل. لو جمعت cold Flow مرتين وفي جسمها API call، ممكن تبعت طلبين؛ الحل إن المصدر المحلي يبقى واضح أو تشارك الـupstream في scope محددة. في production جرّب دخول وخروج الشاشة وراقب عدد الطلبات، لأن مجرد وجود Flow لا يعني caching.
+في شاشة الملف الشخصي والرصيد البنكي:
+- **متى نستخدم `suspend fun`؟**
+  `suspend fun updateNickname(name: String): Result<Unit>`
+  عملية إرسال وحيدة (One-shot)؛ نرسل الاسم وننتظر نجاح أو فشل التعديل.
+- **متى نستخدم `Flow`؟**
+  `fun observeBalance(): Flow<BigDecimal>`
+  تدفق مستمر؛ كلما أودع المستخدم أموالاً أو أجرى عملية شراء، قاعدة البيانات تصدر (emit) الرصيد الجديد، وشاشة التطبيق تحدث العرض تلقائياً بدون أن يضطر المستخدم لسحب الشاشة للتحديث (Pull to refresh).
 
 ## Why it matters and how it works
 
@@ -61,15 +77,24 @@ A repository exposes `suspend fun refresh()` to trigger one remote fetch and `Fl
 
 ## Interview answer — short
 
-“A suspend function returns one result; Flow represents a sequence of values over time. A cold Flow starts its upstream when collected, so multiple collectors can repeat work. I use it for changing data such as a Room table and collect with lifecycle awareness.”
+A suspend function computes and returns a single value asynchronously (one-shot). A Flow is an asynchronous data stream that emits multiple values sequentially over time, supporting backpressure, reactive operators, and lifecycle-aware observation.
 
 ## Interview answer — structured
 
-“I pick the abstraction from the data contract. A one-shot API call is naturally a suspend function returning one value. A Flow can emit multiple snapshots and complete, or be shared as a hot state stream. Cold Flow intermediate operators are lazy; terminal collection starts work, and each collector may run upstream again. For an offline-first screen I expose Room rows as Flow and use a separate suspend refresh operation. I then share or collect it according to screen lifetime and avoid accidental duplicate network fetches.”
+The fundamental difference is cardinality: a suspend function models a single asynchronous value (one-shot), while a Flow models a sequence of asynchronous values emitted over time (stream).
+
+I use a suspend function when an operation has a discrete beginning and end that produces a single result—such as submitting an order, logging in, or reading a configuration flag. Once the function returns, its execution finishes.
+
+I use Flow when the UI needs to observe continuous state or event changes over time—such as observing real-time Room database changes, streaming GPS location updates, or listening to WebSocket push notifications. Flow is cold by default, handles backpressure automatically through coroutine suspension, and provides rich transformation operators like map, filter, and combine.
 
 ## Interview answer — deep senior
 
-“Flow describes asynchronous stream behavior and context preservation, not automatic caching. Its ordinary cold pipeline executes on collection; map/filter are lazy and terminal operators trigger it. That gives a clean way to observe database changes and propagate cancellation, but two collectors can duplicate expensive upstream work unless `stateIn`/`shareIn` creates an explicitly scoped shared source. A suspend function is simpler for a single request/response. In Android I define whether the repository returns ongoing local state or a one-shot operation result, then choose ViewModel sharing and lifecycle-aware collection. I test repeated collectors, cancellation and upstream error handling rather than assuming Flow solves those choices. I would draw the contract first: a single remote refresh returns once, while Room rows are an ongoing stream. The distinction is not about which syntax looks modern; it is about how many values the caller expects and who owns collection. A cold builder does no work until a terminal operator, so a second collector can repeat network or database setup. When several UI consumers need the same expensive source, I share it deliberately in a ViewModel with `stateIn` or `shareIn` and a start policy, rather than assuming `Flow` is shared. I also explain completion and errors: a finite Flow can end, while a `StateFlow` keeps a current value and normally does not complete. On Android I collect under the visible lifecycle and test both a second collector and cancellation.”
+Under the hood, `Flow` is defined as a clean interface with a single method: `suspend fun collect(collector: FlowCollector<T>)`. Because `collect` is a suspending function, the entire lifecycle of a Flow is executed within the caller's CoroutineContext. This gives Flow a massive advantage over older reactive frameworks like RxJava:
+
+1. **Zero Thread Hopping Overhead:** Flow does not need complex schedulers; it cooperatively suspends on the collector's thread.
+2. **Built-in Backpressure:** Emission via `emit()` is a suspending function. If the collector is slow or doing heavy rendering, the emitter's coroutine is suspended until the collector finishes processing the previous element. No special buffer strategy is required for basic safety.
+
+3. **Structured Concurrency:** If the collector coroutine is cancelled (e.g., the user rotates the screen and the ViewModel clears), the Flow's upstream emitter is automatically cancelled immediately without any manual disposal boilerplate.
 
 ## How to answer in the interview
 
@@ -85,8 +110,14 @@ Trace lazy operators, terminal collection, multiple collectors and the transitio
 
 ## Follow-up questions
 
-- [FLO-02](../flo-02/): What does cold mean? **Answer:** each collector starts its own upstream execution unless shared.
-- [FLO-08](../flo-08/): How share an expensive source? **Answer:** `stateIn` or `shareIn` with explicit scope and start policy.
+- **Interviewer:** "Can a Flow emit an infinite sequence of values?"
+  **Answer:** "Yes. A Flow can emit indefinitely as long as its coroutine scope remains active (e.g., a timer flow or continuous socket listener). It only terminates when the emitter completes, throws an exception, or the collector cancels its scope."
+
+- **Interviewer:** "How does Flow backpressure compare to RxJava's Flowable?"
+  **Answer:** "RxJava requires complex backpressure strategies (like BUFFER, DROP, or LATEST) because non-suspending threads must manage unread items in memory. Kotlin Flow handles backpressure naturally through coroutine suspension: emit() simply suspends until collect() is ready for the next item."
+
+- **Interviewer:** "Can a suspend function return a Flow?"
+  **Answer:** "Usually, no. Returning a cold Flow should be an immediate, non-suspending function call (e.g., `fun observeData(): Flow<Data>`). The work inside the Flow should only begin when `collect()` is invoked, not during the method call itself."
 
 ## Self-check rubric
 
@@ -97,4 +128,4 @@ Can I choose single versus stream, identify a terminal operator, predict two col
 - [Kotlin Flow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-flow/) — cold pipelines and collection.
 - [Android Flow guide](https://developer.android.com/kotlin/flow) — Android repository use.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

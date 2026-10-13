@@ -22,11 +22,72 @@ Map typed domain/data failure categories into actionable UI behavior without lea
 
 ## Explanation in Arabic
 
-Data layer تعرف `IOException`, HTTP status، database failure؛ domain ممكن تعبّر عنها كـ`Offline`, `Unauthorized`, `Validation(field)`, `Conflict`, `Unknown` حسب contract. Presentation تحوّل category إلى message localized وaction: retry، login، تصحيح field، أو انتظار sync. ما تعرضش `exception.message` مباشرة: ممكن يكون غير مفهوم أو يحتوي sensitive data. وما تحولش كل error إلى “حصل خطأ” لو user يقدر يتصرف. في payment timeout لازم `PendingVerification` مش “Failed” مؤكدة، لأن السيرفر ممكن يكون نفّذ الطلب.
+كيف يتم تحويل أخطاء طبقتي النطاق والبيانات (Domain / Data Errors) إلى أخطاء واجهة مستخدم مفهومة وقابلة للتنفيذ (Actionable UI Errors)؟
+
+1. المشكلة في تسريب استثناءات الطبقات الخارجية (Leaking Raw Exceptions):
+   - عرض نصوص مثل `java.net.SocketTimeoutException` أو `HTTP 502 Bad Gateway` للمستخدم هو تجربة مستخدم كارثية وغير مفهومة، وتسريب لمعلومات النظام التقنية.
+   - كما أن طبقة الـ UI لا يجب أن تفحص كود أخطاء HTTP (مثل فحص `code == 401`).
+
+2. رحلة تحويل الأخطاء عبر الطبقات الثلاث:
+   - **في طبقة الـ Data**: التقاط `HttpException` أو `IOException` وتحويلها إلى **Typed Domain Errors** (مثل `AppError.NetworkTimeout`, `AppError.Unauthorized`).
+   - **في طبقة الـ Domain**: اتخاذ قرارات الأعمال (مثل محاولة إعادة الطلب Retry أو توجيه المستخدم لتسجيل الدخول).
+   - **في طبقة الـ Presentation**: تحويل الـ Domain Error إلى **Actionable UI Error** يحمل:
+     * رسالة مترجمة واضحة (`UiText.StringResource(R.string.network_timeout_msg)`).
+     * زر تصحيحي قابل للتنفيذ (Actionable button: مثل زر "إعادة المحاولة Retry" أو "تسجيل الدخول").
+
+3. نمط `UiText` لمنع تسريب الـ Android Context إلى الـ ViewModel:
+   - استخدام Sealed Class يسمى `UiText` يمثل إما نصاً ثابتاً (`UiText.DynamicString`) أو معرف مورد (`UiText.StringResource(R.string.xyz)`).
+   - يتيح للـ ViewModel تحديد المورد دون الحاجة لـ Context، وتقوم دالة الـ Composable بقراءته عبر `uiText.asString()`.
 
 ## Practical walkthrough
 
-Data errors الخام مثل 401/409/timeout لا تذهب UI كنص backend. Repository يصنف transport/auth/conflict، domain يحدد معنى business، ViewModel يحولها لفعل: login, retry, resolve conflict, or Unknown status. Cancellation تظل cancellation. لا تعرض “فشل الدفع” عند timeout غير محسوم؛ اعرض pending واستعلم status.
+نمط UiText وتحويل الأخطاء التقنية إلى أخطاء واجهة قابلة للإصلاح:
+```kotlin
+// 1. DOMAIN LAYER: تصنيف الأخطاء كـ Domain Errors نقية:
+sealed interface DomainError {
+    data object NetworkOffline : DomainError
+    data object SessionExpired : DomainError
+    data class ServerError(val code: Int) : DomainError
+}
+
+// 2. PRESENTATION HELPER: تمثيل النصوص المترجمة دون الحاجة لـ Context في ViewModel:
+sealed interface UiText {
+    data class Dynamic(val value: String) : UiText
+    data class Resource(@StringRes val resId: Int, val args: List<Any> = emptyList()) : UiText
+
+    @Composable
+    fun asString(): String = when (this) {
+        is Dynamic -> value
+        is Resource -> stringResource(resId, *args.toTypedArray())
+    }
+}
+
+// 3. PRESENTATION LAYER: نموذج خطأ تفاعلي قابل للتنفيذ:
+data class ActionableUiError(
+    val message: UiText,
+    val actionLabel: UiText,
+    val onAction: () -> Unit
+)
+
+// في الـ ViewModel: التحويل من DomainError إلى ActionableUiError:
+fun mapError(error: DomainError): ActionableUiError = when (error) {
+    is DomainError.NetworkOffline -> ActionableUiError(
+        message = UiText.Resource(R.string.error_no_internet),
+        actionLabel = UiText.Resource(R.string.retry),
+        onAction = { retryLastAction() }
+    )
+    is DomainError.SessionExpired -> ActionableUiError(
+        message = UiText.Resource(R.string.error_session_expired),
+        actionLabel = UiText.Resource(R.string.login_again),
+        onAction = { navigateToLogin() }
+    )
+    is DomainError.ServerError -> ActionableUiError(
+        message = UiText.Resource(R.string.error_server_generic),
+        actionLabel = UiText.Resource(R.string.dismiss),
+        onAction = { clearError() }
+    )
+}
+```
 
 ## Why it matters and how it works
 
@@ -50,15 +111,27 @@ An account app gives offline users a retry with cached data, unauthorized users 
 
 ## Interview answer — short
 
-I map low-level failures into stable domain categories, then into localized UI messages and actions. I preserve diagnostic context privately, propagate cancellation, and represent uncertain server outcomes explicitly.
+Map technical errors into actionable UI errors through layer boundaries: Data maps raw IO/HTTP exceptions into typed Domain errors (e.g. `NetworkOffline`, `SessionExpired`). The ViewModel maps Domain errors into `ActionableUiError` containing localized `UiText` resource references and executable recovery callbacks (e.g. Retry, Login).
 
 ## Interview answer — structured
 
-The repository should translate network and storage exceptions into a small domain error taxonomy, such as offline, auth required, validation, or unknown. The ViewModel maps that into what the user can do: retry, sign in, correct a field, or wait for verification. I do not pass raw exception messages to Compose because they are unstable and may leak details. I keep cancellation out of the error path and treat payment timeouts as uncertain rather than rejected. A 401 can lead to reauthentication; a validation response can point to a field; an offline read may show cached data with retry. A generic error card for all three loses useful information. But raw server text can also be unsafe or unstable.
+Transforming raw technical failures into actionable user experiences is a benchmark of enterprise architecture.
+
+1. **Data Layer Translation**: Data sources catch raw platform exceptions (`HttpException`, `SocketTimeoutException`, `SQLiteConstraintException`) and convert them into strongly typed **Domain Errors** (e.g. `DataError.Network.Timeout`, `DataError.Auth.Unauthorized`). Raw stack traces and HTTP status codes must never cross into presentation.
+
+2. **Presentation Layer Mapping**: The ViewModel maps domain errors into a presentation-centric model: the **Actionable UI Error**:
+   - **Localized Message**: Encapsulated using a `UiText` wrapper (`UiText.StringResource(R.string.error_no_internet)`), allowing the ViewModel to stay pure and Context-free while supporting instant language changes.
+   - **Recovery Action**: Every error must empower the user with an actionable recourse—such as a 'Retry' button, 'Re-authenticate' redirect, or 'Check Settings' link.
+
+This ensures users are never greeted with incomprehensible raw exceptions while decoupling the UI from backend status codes.
 
 ## Interview answer — deep senior
 
-I design errors from recovery behavior. HTTP status alone is not the domain contract; different endpoints may have different meanings. Data maps transport failures and preserves safe diagnostic context, while domain outcomes express stable product categories. Presentation turns them into localized text and available actions. I test every mapping, including malformed responses and unknown codes. A cancelled coroutine must remain cancelled. A payment timeout can follow a committed server operation, so the UI shows pending verification and repository reconciles before enabling a retry. Logs use correlation IDs and scrub sensitive payloads. This avoids both extremes: leaking raw infrastructure exceptions into UI and collapsing actionable failures into a generic message. I define error categories at a boundary where transport details are understood, then preserve a safe code and correlation ID for diagnostics. UI chooses localized text and action, not a parser of exception messages. I test unknown codes and malformed responses, because a new server status should not silently become success. For network writes, an uncertain timeout deserves verification rather than an automatic retry that could duplicate effects. Cancellation passes through the coroutine hierarchy as control flow.
+The `UiText` pattern is vital for ViewModel testability. If a ViewModel injects Android `Context` or `Resources` merely to call `getString(R.string.error)`, it breaks pure JVM unit test isolation and requires mocking Android framework objects. With `UiText.Resource(R.string.error_id)`, the ViewModel returns a lightweight data class holding the integer resource ID. Unit tests simply assert `assertThat(state.error.message.resId).isEqualTo(R.string.error_id)` in sub-millisecond JVM tests.
+
+In Compose, extracting the string is seamless: composables call `error.message.asString()` which internally invokes `stringResource()`, reacting to configuration changes automatically.
+
+For production telemetry, the raw technical exception is logged to Crashlytics or Datadog in the Data layer before being sanitized, ensuring engineers have stack traces while users receive friendly, actionable prompts.
 
 ## How to answer in the interview
 
@@ -74,8 +147,11 @@ Trace an IOException, 401, validation response and uncertain payment timeout thr
 
 ## Follow-up questions
 
-- [KOT-28](../kot-28/): Why use typed errors? **Answer:** callers can choose recovery without parsing exception text.
-- [ARC-11](../arc-11/): Can error coexist with content? **Answer:** yes, a refresh error can coexist with cached content.
+- **Interviewer:** "Why shouldn't ViewModels call `context.getString(resId)` directly?"
+  **Answer:** "Holding `Context` in ViewModels risks memory leaks and destroys pure JVM unit testability. Using the `UiText` abstraction defers string resolution to the Composable rendering phase."
+
+- **Interviewer:** "What is an 'actionable' error versus a passive error?"
+  **Answer:** "A passive error simply displays 'An error occurred'. An actionable error explains what happened and provides a concrete recovery mechanism, such as 'Connection lost. [Retry]' or 'Card expired. [Update Payment]'."
 
 ## Self-check rubric
 
@@ -86,4 +162,4 @@ Can you map four failures to different user actions and explain where localizati
 - [Android UI events](https://developer.android.com/topic/architecture/ui-layer/events) — state-driven UI actions.
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — data boundary.
 
-Technically reviewed against the linked official Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

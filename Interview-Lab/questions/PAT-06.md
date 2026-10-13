@@ -22,7 +22,51 @@ Position Repository as data boundary, not a GoF catalog entry or a pure DAO alia
 
 ## Explanation in Arabic
 
-Repository pattern في Android data layer بتقدّم app data وتخفي sources: Room، network، cache. هي أقرب architectural/data-access pattern، مش واحدة من GoF 23. Repository ممكن تدير source of truth، sync، conflict، error mapping، وmain safety. مجرد class اسمها `UserRepository` تنادي `dao.getUser()` بنفس entity من غير contract ولا policy ممكن تكون wrapper بلا قيمة. ViewModel تعتمد على repository أو use case، مش DTO/DAO مباشرة. Offline-first DB تكون local source، لكن server يفضل authority لمعاملات حساسة.
+أين يقع نمط المستودع (Repository Pattern) كنمط معماري ونمط وصول للبيانات (Architectural / Data-Access Pattern)؟
+
+1. موقع الـ Repository في البناء المعماري (Architectural Placement):
+   - يقع الـ Repository عند **الحد الفاصل (Boundary) بين طبقة النطاق (Domain) وطبقة البيانات (Data)**.
+   - في Clean Architecture:
+     * **الواجهة (Interface)** تقع في قلب طبقة الـ Domain.
+     * **التنفيذ الفعلي (Implementation)** يقع في طبقة الـ Data.
+
+2. دوره كنمط وصول للبيانات (Data-Access Pattern):
+   - يعمل كـ **وسيط مجرد (Mediator)** يتصرف وكأنه مجموعة كائنات محفوظة في الذاكرة (In-memory collection).
+   - يخفي تفاصيل كيفية استرجاع البيانات ومصادرها (SQLite, Retrofit, Preferences, Cache).
+   - يوحد منطق إدارة الكاش والـ Offline-first.
+
+3. لماذا لا نضع الـ Repository في طبقة الـ Presentation أو ككلاس مستقل في UI؟
+   - لأن وظيفته خدمة قواعد الأعمال، وليس الواجهات.
+   - عزل الـ Repository يتيح إعادة استخدامه عبر شاشات متعددة، وفي Background Workers، ومع الإشعارات دون تكرار كود التخزين والشبكة.
+
+## Practical walkthrough
+
+تموضع الـ Repository في كود Clean Architecture عبر الطبقات:
+```kotlin
+// 1. في طبقة DOMAIN: العقد المجرد للبيانات:
+interface UserRepository {
+    fun observeUser(id: String): Flow<User>
+    suspend fun refreshUser(id: String): Result<Unit>
+}
+
+// 2. في طبقة DATA: تنفيذ الـ Repository وإدارة مصادر البيانات والكاش (SSOT):
+class UserRepositoryImpl @Inject constructor(
+    private val localDao: UserDao,       // مصدر بيانات محلي
+    private val remoteApi: UserApi       // مصدر بيانات خارجي
+) : UserRepository {
+    override fun observeUser(id: String): Flow<User> = localDao.getUser(id).map { it.toDomain() }
+    override suspend fun refreshUser(id: String): Result<Unit> = runCatching {
+        val networkDto = remoteApi.fetchUser(id)
+        localDao.insert(networkDto.toEntity())
+    }
+}
+
+// 3. في طبقة PRESENTATION: ViewModel يستهلك الـ Repository دون معرفة أي تفاصيل تخزين:
+@HiltViewModel
+class ProfileViewModel @Inject constructor(
+    private val userRepository: UserRepository
+) : ViewModel() { ... }
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +75,6 @@ Repositories expose application data and centralize updates while abstracting da
 ## Worked example
 
 Conceptual API: `observeOrders(): Flow<List<Order>>` reads Room; `refresh()` fetches and writes validated entities; `submit(requestId)` persists pending status and queries server outcome. UI observes the same local path. Room entity and Retrofit DTO stay internal.
-
-## Practical walkthrough
-
-Repository في Android data layer بتدي UI/domain API ثابتة مثل `observeOrders()` و`refresh()`؛ جواها تقرر Room مصدر العرض وnetwork للتحديث، وتعمل DTO mapping/conflict/freshness policy. مش مجرد interface بتكرر DAO method بنفس الاسم من غير سياسة أو boundary. لو ViewModel تنادي Retrofit وRoom بنفسها، lifecycle/UI بتبقى مسؤولة عن cache consistency، وtests تتبعثر. في payment submit، repository تحفظ pending attempt قبل إرسال request وتعرض status من server بدل Boolean بسيط. لكن لو feature صغيرة بمصدر واحد، implementation ممكن تفضل بسيطة جدًا؛ الحدود أهم من عدد wrappers.
 
 ## Trade-offs and decision criteria
 
@@ -50,17 +90,27 @@ A delivery app uses a task repository to merge remote assignments into Room, pre
 
 ## Interview answer — short
 
-Repository is a data-access architecture pattern, not a GoF pattern. It exposes app data and coordinates sources, often including source-of-truth and refresh rules, so UI does not know Retrofit or Room details.
+The Repository pattern sits at the boundary between Domain and Data layers. In Clean Architecture, its interface lives in Domain (defining what data the business requires) and its implementation lives in Data (coordinating Room, Retrofit, and caching). It abstracts data storage behind an in-memory collection facade.
 
 ## Interview answer — structured
 
-I use a repository when the app needs a stable way to obtain and update a kind of data. It may coordinate local database and network, map external models, and define how refresh affects observable state. Android guidance places repositories in the data layer. That is a broader data-boundary pattern than the GoF object patterns. I would not call a one-line DAO forwarder valuable merely because it is named Repository; its contract should hide actual data-source decisions or protect callers from schema churn.
+The Repository pattern operates simultaneously as an architectural boundary and a specialized data-access design pattern.
+
+1. **Architectural Placement (The Clean Boundary)**:
+   - Sits squarely at the demarcation line between **Domain and Data layers**.
+   - In adherence with the Dependency Inversion Principle, the **Repository Interface** resides in the Domain layer as an abstract business requirement.
+   - The **Repository Implementation** (`RepositoryImpl`) resides in the Data layer, depending on the Domain interface and concrete DataSources (Room, Retrofit, Datastore).
+
+2. **Data-Access Responsibilities (The Mediating Facade)**:
+   - Mediates between the domain and multiple raw data sources, masquerading as an in-memory collection (`Flow<T>`, `save()`, `delete()`).
+   - Implements the **Single Source of Truth (SSOT)**: managing offline-first persistence, cache invalidation, and background synchronization policies.
+   - Maps raw technical DTOs and SQLite entities into clean Domain Entities before emitting them upward.
 
 ## Interview answer — deep senior
 
-The repository’s important responsibilities are consistency and ownership. For an offline-first feature I usually let a local database provide the observable stream, then write validated network refreshes into it so screens agree. The repository also reports refresh errors and staleness without discarding useful cached data. It maps DTOs and entities to app-facing models and makes expensive operations main-safe. This is not the same as a UseCase, which expresses a product action or reusable rule, nor is it a GoF pattern from the original catalog. A local cache remains only a display source for server-authoritative facts such as payment status; reconciliation is needed after uncertainty. I test races, process death and conflict policy rather than just DAO method forwarding.
+A frequent question is whether each database table or API endpoint requires its own Repository. The answer is no. Under Domain-Driven Design (DDD) principles, a Repository should be modeled around an **Aggregate Root**.
 
-I place Repository at the data boundary, which is broader than a GoF class pattern. The UI asks for domain data rather than orchestrating Room and Retrofit itself. A repository can make Room the local source of truth, map wire DTOs, decide when to refresh, and expose a Flow that updates when the database changes. That hides storage details without hiding important freshness or error states. For a payment write, it can persist a pending attempt and later reconcile with the backend, but server authority remains outside the client. I would avoid a repository that merely forwards every DAO method with no policy or test seam. The boundary can be small in a one-source feature and grow when variation appears.
+For example, in an e-commerce app, an `Order` aggregate root might involve `orders`, `order_items`, and `delivery_addresses` tables across SQLite, alongside two distinct REST APIs. A single `OrderRepository` orchestrates all these underlying tables and network endpoints, providing a unified `Order` entity to the domain. Creating a separate repository for each individual database table leaks database schema boundaries into business code.
 
 ## How to answer in the interview
 
@@ -76,8 +126,11 @@ Distinguish repository from DAO and UseCase; explain local SSOT versus server au
 
 ## Follow-up questions
 
-- [ARC-04](../arc-04/): Repository versus UseCase? **Answer:** data ownership/source coordination versus business action.
-- [ARC-10](../arc-10/): What is SSOT? **Answer:** a defined authoritative owner for each app data type.
+- **Interviewer:** "What is an Aggregate Root in the context of Repositories?"
+  **Answer:** "An entity that acts as the gateway to a cluster of associated objects (e.g. `Order` owns `OrderItem`). The Repository is created for the Aggregate Root, not for each internal child table."
+
+- **Interviewer:** "Why shouldn't a ViewModel query a DataSource directly?"
+  **Answer:** "Because DataSources represent raw individual I/O channels (one API or one DAO). The Repository provides caching, orchestration, error translation, and SSOT guarantees that DataSources lack."
 
 ## Self-check rubric
 
@@ -88,4 +141,4 @@ Give two responsibilities beyond DAO forwarding and explain why Repository is no
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — repository responsibilities.
 - [GoF pattern catalog](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — original 23-pattern catalog.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.

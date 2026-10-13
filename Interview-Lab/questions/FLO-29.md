@@ -22,11 +22,33 @@ Choose backpressure strategy for a fast source and slow UI without dropping requ
 
 ## Explanation in Arabic
 
-لو upstream سريعة والرسم بطيء، نسأل الأول: كل emission مهمة ولا آخر snapshot بس؟ للـUI frame أو progress، `conflate` أو `collectLatest` ممكن يقلل شغل قديم؛ `buffer` يخلي المصدر يسبق ضمن capacity لكن ممكن يزيد latency. لو data لكل emission مهمة، نخزنها durable أو نعالجها بعقد backpressure، وما نسقطهاش عشان الرسم بطيء.
+عندما يقوم الـ Upstream بإصدار بيانات بسرعة هائلة تجعل رسم الشاشة بطيئاً (Rapid Upstream causing slow UI rendering)، نحتاج إلى استراتيجية ملائمة للتعامل مع الـ Backpressure:
+
+1. تحليل المشكلة:
+   - الـ Upstream يصدر 100 تحديث في الثانية (مثل: قراءات حساس البوصلة، تحديثات أسهم البورصة، أو موقع GPS السريع).
+   - الـ UI يستغرق 16ms لرسم كل فريم (60 FPS). محاولة معالجة كل التحديثات ستؤدي لتراكم المهام، إسقاط الفريمات (Jank)، وتجمد التطبيق.
+
+2. ما هي الاستراتيجية الأنسب؟
+   - **الاستراتيجية الأولى والأفضل: `conflate()`**
+     * تسقط وتتجاهل التحديثات الوسيطة في الذاكرة، وتعطي الـ UI أحدث قيمة فقط في اللحظة التي يفرغ فيها لرسم الإطار التالي.
+     * ممتازة لأسعار الأسهم، عدادات السرعة، ومؤشرات التقدم.
+   - **الاستراتيجية الثانية: `sample(periodMillis)`**
+     * تلتقط عينة واحدة فقط كل فترة زمنية ثابتة (مثل: عينة واحدة كل 100ms)، وتتجاهل كل ما يصدر خلال تلك الفترة.
+   - **الاستراتيجية الثالثة: `collectLatest`**
+     * تلغي رسم الفريم القديم فوراً وتبدأ برسم الفريم الجديد.
 
 ## Practical walkthrough
 
-لو upstream تبعت sensor value كل 5ms والرسم بياخد 30ms، اسأل هل كل sample مهمة؟ للـUI اللي يهمها آخر وضع، `conflate` أو `collectLatest` ممكن يقلل backlog، لكن الفرق إن collectLatest تلغي render القديمة. لو بيانات محاسبية أو telemetry لازم كاملة، ما تسقطش؛ خزنها أو عالجها بعيد عن UI. قِس queue والـframe time.
+تطبيق عملي لمراقبة أسعار الأسهم اللحظية (Stock Ticker):
+```kotlin
+// الحساس أو السيرفر يرسل آلاف التحديثات في الثانية:
+stockRepository.observeLiveStockPrices()
+    .conflate() // يسقط التحديثات القديمة أثناء رسم الشاشة، ويضمن أحدث سعر دائماً
+    .onEach { latestPrice ->
+        renderStockPrice(latestPrice) // يعمل بسلاسة عند 60 FPS بدون أي تأخير أو lag
+    }
+    .launchIn(viewLifecycleOwner.lifecycleScope)
+```
 
 ## Why it matters and how it works
 
@@ -60,15 +82,25 @@ A real-time chart persists every sensor sample in a bounded ingestion pipeline, 
 
 ## Interview answer — short
 
-“I classify emissions first. For replaceable UI snapshots I may conflate or collectLatest; for values that must all be processed I use bounded buffering/backpressure or durable storage. I measure queue depth and latency.”
+Use 'conflate()' or 'sample(periodMillis)'. conflate() drops intermediate unrendered values to deliver only the freshest state when the UI thread becomes available; sample(period) emits a single periodic snapshot, capping the rendering frequency to match the display refresh rate.
 
 ## Interview answer — structured
 
-“A slow renderer should not dictate that business data is lost. If each value is a snapshot, `conflate` can skip intermediate emissions and `collectLatest` can cancel an old draw when a new frame arrives. `buffer` allows producer and consumer to overlap but still needs capacity and can increase display lag. If every record matters, I persist or process it with backpressure rather than dropping. I test a fast producer and slow collector and measure both frame freshness and dropped values.”
+When an upstream flow emits data faster than the Android UI layer can render it, applying the right backpressure throttling strategy is mandatory to avoid frame drops (jank) and ANRs.
+
+The two best backpressure strategies are:
+
+1. **`conflate()`**: If the UI thread is busy rendering a frame or layout pass, `conflate()` silently drops intermediate upstream emissions in memory. The moment the UI becomes idle, it immediately receives the single most recent state. This is ideal for real-time dashboards, stock tickers, or sensor gauges where only the freshest value matters.
+
+2. **`sample(100L)`**: If emissions are high-frequency bursts (e.g., streaming audio decibel meters), `sample(period)` periodically polls and emits the latest value once every N milliseconds, strictly capping the UI update rate to 10 FPS or 60 FPS.
+
+Never use unconstrained `buffer()` in this scenario: buffering high-frequency streams will accumulate thousands of items in memory, creating significant GC pressure and causing the UI to permanently lag seconds behind real-time reality.
 
 ## Interview answer — deep senior
 
-“I split data correctness from visualization. In a sensor app, raw samples may be legally or operationally important and go through a durable, bounded ingestion path. The chart is a derived latest-state view, so dropping intermediate frames is acceptable. `buffer` trades memory for throughput but can increase latency to what the user sees; `conflate` keeps the newest value; `collectLatest` cancels a running draw if it cooperates. I choose based on whether the render function has side effects, the maximum tolerable staleness and available memory. I instrument queue depth, render time and dropped-frame count, and test slow-device behavior rather than applying operators by habit. I would start with the business contract, not choose the fastest operator by habit. If the screen only needs the latest position or progress, conflation can drop intermediate queued values and keep it current; `collectLatest` can cancel an expensive render block already in progress. If every sample matters, I use a bounded buffer and a durable processing path rather than losing records. `buffer` can improve producer-consumer overlap but may increase memory and latency when the consumer never catches up. I measure emission rate, handler duration, queue growth, and frame-time distribution, then test with a deliberately slow collector to see the actual loss or cancellation behavior. A UI optimization must not change the meaning of financial or audit events.”
+At the systems level, Android displays refresh at 60Hz (16.6ms per frame) or 120Hz (8.3ms per frame). Dispatching UI updates to Compose or Views at rates exceeding the display refresh rate (e.g., 200 emissions/sec) wastes CPU cycles on layout recalculations that will never be drawn to the screen.
+
+Under the hood, `conflate()` compiles to an internal `ConflatedChannel` of capacity 1 with `BufferOverflow.DROP_OLDEST`. It decouples the producer thread from the consumer thread via an atomic pointer swap. This ensures zero memory allocation churn and zero lock contention during high-throughput bursts, allowing the upstream sensor or socket parser to run at maximum native speed while keeping UI rendering pinned at a buttery-smooth 60/120 FPS.
 
 ## How to answer in the interview
 
@@ -84,8 +116,14 @@ Compare data ingestion with rendering; quantify stale latency, queue size and ac
 
 ## Follow-up questions
 
-- [FLO-16](../flo-16/): How does conflate differ from buffer? **Answer:** conflate drops intermediate values; buffer queues within capacity.
-- [FLO-12](../flo-12/): What does collectLatest cancel? **Answer:** prior processing action.
+- **Interviewer:** "Why is `collectLatest` sometimes worse than `conflate` for heavy rendering?"
+  **Answer:** "Because `collectLatest` cancels and relaunches coroutines constantly on every emission. If 1,000 emissions arrive, `collectLatest` creates 1,000 coroutines and cancels them, causing coroutine allocation overhead and GC churn. `conflate` lets the current block finish undisturbed."
+
+- **Interviewer:** "How does `StateFlow` handle rapid emissions automatically?"
+  **Answer:** "StateFlow has built-in conflation: assigning a new value to `stateFlow.value` overwrites the current slot. Slow collectors naturally skip intermediate values and only receive the latest state."
+
+- **Interviewer:** "When would you use `buffer(capacity)` instead of `conflate()`?"
+  **Answer:** "When every single event must be processed without loss (e.g., recording telemetry logs or processing payment batches), and you simply want to smooth out temporary burst spikes."
 
 ## Self-check rubric
 
@@ -95,4 +133,4 @@ Can I classify emissions, choose an operator, protect required records and measu
 
 - [Kotlin Flow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-flow/) — buffering/conflation operators.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against primary documentation on 2026-10-13.

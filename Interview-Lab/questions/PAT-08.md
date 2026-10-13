@@ -22,7 +22,57 @@ Identify Android examples while separating framework implementation details from
 
 ## Explanation in Arabic
 
-Singleton مثالها Kotlin `object` أو Hilt `@Singleton` scope، لكن ده per running process/graph مش permanent state. Adapter يظهر لما تلف legacy callback SDK وتقدم suspend/domain API. Observer يظهر في LiveData وFlow-like streams للـUI state، لكن LiveData عندها lifecycle-aware observation وFlow لازم collection owner واضح. الثلاثة ممكن يشتغلوا معًا: singleton-scoped repository، adapter للخدمة، UI تلاحظ state. ما تخزنش Activity في singleton، وما تعتبرش observer event durable بعد process death.
+أين تظهر أنماط Singleton و Adapter و Observer بشكل طبيعي في مكونات وأطر عمل Android؟
+
+1. نمط الكائن الأحادي (Singleton Pattern in Android):
+   - **أين يظهر؟**:
+     * كائنات `object` في Kotlin.
+     * مدير قاعدة بيانات **Room Database** عبر `Room.databaseBuilder()` الموجه كـ Singleton.
+     * عميل شبكة **OkHttpClient** و **Retrofit**؛ مشاركة connection pool و cache عبر التطبيق.
+     * خدمات نظام أندرويد (System Services مثل `getSystemService(Context.CONNECTIVITY_SERVICE)`).
+
+2. نمط المحول (Adapter Pattern in Android):
+   - **أين يظهر؟**:
+     * **`RecyclerView.Adapter`**: يحول قائمة كائنات بيانات غير متوافقة مع الـ Views إلى `ViewHolders` تفهمها شجرة العرض.
+     * **`ArrayAdapter`** في الـ Spinners و AutoCompleteTextViews.
+     * محولات التنسيق في Retrofit: **`Converter.Factory`** (Moshi / Gson / Kotlinx Serialization) التي تحول HTTP ResponseBody إلى Kotlin Data Classes.
+
+3. نمط المراقب (Observer Pattern in Android):
+   - **أين يظهر؟**:
+     * **Kotlin Flow & StateFlow & SharedFlow**: اشتراك تفاعلي يراقب انبعاثات البيانات.
+     * **`LiveData`** ومراقبتها في الـ UI عبر `observe(lifecycleOwner)`.
+     * **`BroadcastReceiver`**: مراقبة أحداث نظام التشغيل (مثل انقطاع الإنترنت أو شحن البطارية).
+     * **`SnapshotState`** في Jetpack Compose؛ يعيد تشغيل الـ Composable فور تغير الحالة المراقبة.
+
+## Practical walkthrough
+
+توضيح ظهور الأنماط الثلاثة داخل دورة حياة تطبيق Android:
+```kotlin
+// 1. SINGLETON: قاعدة بيانات Room واحدة مشتركة عبر Hilt:
+@Module
+@InstallIn(SingletonComponent::class)
+object DatabaseModule {
+    @Provides
+    @Singleton // نمط Singleton يضمن حجز DB واحدة فقط في الذاكرة
+    fun provideDatabase(@ApplicationContext context: Context): AppDatabase {
+        return Room.databaseBuilder(context, AppDatabase::class.java, "app.db").build()
+    }
+}
+
+// 2. ADAPTER: تحويل بيانات إلى ViewHolders في RecyclerView:
+class UserAdapter : RecyclerView.Adapter<UserViewHolder>() {
+    // يحول الـ Data Object إلى Android View layout
+}
+
+// 3. OBSERVER: مراقبة الـ StateFlow بنمط مراقب حديث مرتبط بدورة الحياة:
+viewLifecycleOwner.lifecycleScope.launch {
+    viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+        viewModel.uiState.collect { state -> // Observer Pattern
+            renderUi(state)
+        }
+    }
+}
+```
 
 ## Why it matters and how it works
 
@@ -31,10 +81,6 @@ Android APIs often embody pattern intent but add lifecycle and process constrain
 ## Worked example
 
 Scenario: `object CurrencyFormatter` is stateless; `LegacyLocationAdapter` converts callback results; `ProfileViewModel.state: StateFlow<ProfileUiState>` is collected by a lifecycle-aware screen. The formatter is not a session store, and the state stream is not a payment event queue.
-
-## Practical walkthrough
-
-في Android app، Singleton قد يكون app-scoped OkHttp client أو stateless formatter؛ ما يمسكش Activity. Adapter ينفع مع legacy location SDK callback وتحويله لـsuspend/Flow contract مع cancellation/unregister. Observer في ViewModel `StateFlow` يخلي UI تراقب state، لكن collection لازم تتربط بـlifecycle (`repeatOnLifecycle` أو Compose lifecycle-aware API). لو callbackFlow اتفتح لكل collector بدون قصد، ممكن تسجل listeners كتير؛ حدد sharing/ownership. بعد process death singleton تتولد من جديد، فdata المهمة ترجع من repository. ده ربط patterns بplatform lifetimes بدل أسماء محفوظة.
 
 ## Trade-offs and decision criteria
 
@@ -50,17 +96,32 @@ A delivery app wraps a vendor GPS callback API with an adapter, injects the repo
 
 ## Interview answer — short
 
-Android uses singleton-like scoped objects, adapters for incompatible SDK APIs, and observer-style state APIs such as LiveData. I review lifecycle, process death and delivery semantics rather than assuming the pattern name guarantees safety.
+Singleton appears in Room database instances, OkHttpClient, and Android System Services. Adapter appears in `RecyclerView.Adapter`, `ArrayAdapter`, and Retrofit Converter Factories. Observer appears in `StateFlow`, `LiveData`, `BroadcastReceiver`, and Jetpack Compose's Snapshot state system.
 
 ## Interview answer — structured
 
-A Kotlin `object` or Hilt singleton can hold one in-process instance, but it should not hold an Activity or be treated as durable storage. An Adapter can convert a callback SDK to a domain-facing interface. LiveData explicitly follows an observer pattern, and StateFlow can feed UI state with lifecycle-aware collection. Those are useful pattern examples, but Android adds recreation, cancellation and process death, so I choose the actual API and scope based on behavior.
+These three Gang of Four patterns are deeply woven into the fabric of the Android Operating System and Jetpack libraries:
+
+1. **Singleton Pattern in Android**:
+   - **Room Database**: Creating multiple database instances causes database lock contention and memory thrashing; Room requires a single process-level instance.
+   - **OkHttpClient**: Shares an HTTP connection pool, thread pool, and disk cache across the application.
+   - **Android System Services**: System managers retrieved via `context.getSystemService()` (e.g. `NotificationManager`, `ConnectivityManager`) act as system-wide service singletons.
+
+2. **Adapter Pattern in Android**:
+   - **`RecyclerView.Adapter`**: Converts raw application domain collections (`List<Item>`) into Android UI nodes (`ViewHolder` and `View`).
+   - **Retrofit Converter Factories**: Adapts raw HTTP byte streams from OkHttp into structured Kotlin data classes via Moshi or Kotlinx Serialization.
+
+3. **Observer Pattern in Android**:
+   - **Reactive Streams (`StateFlow` / `LiveData`)**: Observables emit state updates to observing UI controllers.
+   - **`BroadcastReceiver`**: The OS acts as the Subject broadcasting system events (battery status, network changes) to registered receiver Observers.
+   - **Jetpack Compose Runtime**: Compose's Snapshot system registers composable scopes as observers of `State<T>` properties, re-executing functions upon mutation.
 
 ## Interview answer — deep senior
 
-In a production Android app, the three patterns often appear in one path. A data repository may be application-scoped for shared access, an adapter translates a vendor callback and normalizes errors, and a ViewModel exposes state observed by the screen. Each boundary has different lifetime. A singleton-like object is only one per process or DI graph, so it cannot be the sole store for a login session. A callback adapter must unregister or cancel with its owner, and UI observers should stop with the lifecycle. LiveData supplies lifecycle-aware observation; Flow/StateFlow need explicit collection strategy. I test rotation, process recreation, duplicate callbacks and stale results, rather than relying on GoF labels to imply those guarantees.
-
-I would point to three different Android boundaries. A reusable OkHttp client may be application-scoped for connection pooling, while a stateless formatter can simply be an `object`; neither should retain an Activity. An Adapter can convert a legacy location listener into a domain event API and unregister it when its owner stops or the Flow closes. Observer appears when the ViewModel exposes StateFlow and the UI collects it with lifecycle awareness. The risks are hidden: a per-collector callbackFlow may register duplicate listeners, a global singleton can hold stale account state, and an observer may keep rendering into a destroyed view. I would test rotation, cancellation, and process recreation for each.
+Under the hood, understanding how the OS implements these patterns avoids common bugs:
+- A non-scoped Singleton holding an Activity Context produces a severe memory leak, which is why Android Singletons must strictly bind to `applicationContext`.
+- In `RecyclerView.Adapter`, calling `notifyDataSetChanged()` is an unoptimized observer broadcast invalidating the whole layout; using `ListAdapter` with `DiffUtil` applies granular observer updates (`notifyItemInserted`, `notifyItemMoved`).
+- In Compose, the Snapshot observer system operates at the microsecond level, tracking exact property reads within the Slot Table to skip recomposition of unobserved UI branches.
 
 ## How to answer in the interview
 
@@ -76,8 +137,11 @@ Map object scope, SDK adaptation and observation; distinguish LiveData/Flow life
 
 ## Follow-up questions
 
-- [PAT-17](../pat-17/): Why can a global singleton harm tests? **Answer:** shared mutable state survives between test cases in one process.
-- [PAT-13](../pat-13/): How do observers relate to Flow? **Answer:** both propagate updates, but collection and lifecycle contracts differ.
+- **Interviewer:** "Why does OkHttpClient need to be a Singleton?"
+  **Answer:** "Each OkHttpClient instance creates its own connection pool, thread pool, and cache. Creating multiple instances wastes memory, exhausts file descriptors, and prevents HTTP/2 multiplexing across requests."
+
+- **Interviewer:** "How does DiffUtil improve upon standard RecyclerView.Adapter updates?"
+  **Answer:** "DiffUtil calculates the minimal list mutations on a background thread using Myers' diff algorithm, dispatching precise structural adapter updates rather than redrawing the whole screen."
 
 ## Self-check rubric
 
@@ -88,4 +152,4 @@ Give one Android example of each pattern and one lifecycle failure for Singleton
 - [Kotlin object declarations](https://kotlinlang.org/docs/object-declarations.html) — object lifetime syntax.
 - [Android LiveData overview](https://developer.android.com/topic/libraries/architecture/livedata) — observer behavior.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.
+Technically reviewed against primary documentation on 2026-10-13.
