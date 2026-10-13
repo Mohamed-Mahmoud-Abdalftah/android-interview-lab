@@ -24,7 +24,7 @@ Compare latest-pair combination with positional pairing.
 
 `combine` بيطلع قيمة جديدة لما أي upstream يطلع بعد ما كل مصدر قدّم قيمة أولى؛ يستخدم أحدث قيمة من كل واحد. `zip` يقرن الأولى بالأولى والتانية بالتانية وينتظر pairs؛ لو واحد خلص من غير شريك يقف. UI state من Room + filter غالبًا `combine`؛ pairing خطين من نتائج متطابقة بالترتيب قد يناسب `zip`.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو `priceFlow` و`currencyFlow` بيتغيروا بسرعات مختلفة، `combine` يطلع آخر price مع آخر currency بعد ما الاتنين يطلعوا أول قيمة؛ كل تغيير بعد كده يحدث النتيجة. `zip` يطابق أول مع أول وثاني مع ثاني وينتهي حسب اكتمال أحد المصدرين؛ مناسب pairing محدود، مش شاشة dashboard حية. جرب emissions غير متساوية في test.
 

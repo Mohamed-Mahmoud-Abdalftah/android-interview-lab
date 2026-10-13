@@ -25,7 +25,7 @@ You inherit a legacy app with low test coverage and frequent bugs. What is your 
 
 أول 90 يوم في legacy app: أول شهر أفهم product وincidents، build/release، hotspots، crash/ANR، security، وأعمل baseline. الشهر التاني أضيف safety nets لأكثر flow بيتكسر، أصلح blocker صغير، وأعمل seams للtests. الشهر التالت أحسن جزء واحد end-to-end وأقيس defect rate/lead time. ما أعلنش rewrite ضخم قبل فهم constraints ولا أركز على coverage percentage بلا معنى.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 أول 90 يوم في legacy app: أول أسبوعين افهم release pipeline وأهم crashes وslow builds وpayment/data incidents، واتفق على baseline. بعدها اختار vertical slice واحد متكرر العطل، أضف characterization tests عند boundary حقيقي واصلح السبب. في الشهر الثاني اعمل ownership أوضح وCI gate صغيرة موثوقة؛ الشهر الثالث وسع النمط للمنطقة التالية بعد قياس defect/lead time. تجنب big rewrite أو هدف coverage 80% من غير معرفة risk. احفظ migration/rollback لكل خطوة.
 

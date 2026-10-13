@@ -25,7 +25,7 @@ How do you automate versioning, changelog, and tagging?
 
 Versioning automation لازم تربط كل release بـcommit وartifact. `versionCode` يزيد ولا يتكرر لتطبيق Play، `versionName` للعرض، changelog يتولد من merged PRs مع مراجعة بشرية للمعنى، وtag يتعمل بعد تثبيت artifact/قبول release حسب policy. ما نوسمش branch tip وبعدين نبني binary مختلف.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Versioning مش مجرد زيادة رقم تلقائي. في Android `versionCode` لازم يتقدم للنسخة المنشورة ضمن نفس package، و`versionName` للمستخدم، وrelease notes تشرح behavior والتغييرات المؤثرة. خلي tag يشير للـcommit الذي خرج منه الـAAB فعلًا، وخزّن digest وmapping. لو hotfix من branch قديم، لازم pipeline تمنع تكرار versionCode أو tag باسم موجود. changelog من PR titles وحدها ممكن يخفي migration أو permission جديدة؛ راجعه مع product وQA.
 

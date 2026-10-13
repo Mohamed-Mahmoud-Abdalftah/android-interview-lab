@@ -26,7 +26,7 @@ Design a multi-module structure for a large app.
 
 لتطبيق كبير مثل commerce، ابدأ بـ`:app` كـcomposition root، ثم `:feature:catalog`, `:feature:checkout`, `:feature:orders` حول قدرات المستخدم. ضع عقود مستقرة في `:domain:*` أو `:feature:*:api` عند حاجة حقيقية، وimplementations في `:data:*`. `:core:network`, `:core:database`, `:designsystem` للبنية المشتركة ذات owner واضح. feature لا تستورد implementation feature أخرى؛ app يربط navigation/DI. حافظ على DAG، اختبر compile variants وintegration، وقِس build configuration/incremental time. لا تجعل الهيكل رسمًا جميلًا بلا حدود API.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في app كبيرة، ارسم feature ownership وdata contracts قبل رسم أسماء modules. `:app` composition، `:feature:catalog` و`:feature:checkout` بواجهات صغيرة، shared account contract في core/domain مناسب، adapters في data modules. امنع direct feature-to-feature import، واجعل navigation عند app. ابدأ بfeature واحدة واختبر build impact قبل نقل 100 module دفعة واحدة.
 

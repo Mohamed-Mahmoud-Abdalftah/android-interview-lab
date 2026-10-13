@@ -25,7 +25,7 @@ You discover a critical vulnerability days before launch. What is your release d
 
 ثغرة critical قبل launch لا تتخبّى ولا تتسيب عشان التاريخ. نوقف الجزء المعرّض أو نأجل release حسب exposure، نتحقق من exploit path ونطاق النسخ، نبلغ security/product/leadership بقرار مكتوب وخيارات: fix، feature gate، scope reduction أو delay. لو فيه مستخدمين بالفعل، incident response وربما تدوير secrets ومراقبة. نرجع launch بعد retest مستقل وخطة rollout.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Vulnerability قبل launch تحتاج قرار مبني على exploitability وimpact، لا مجرد severity label. اعرف affected versions، attack path، data/financial exposure، وهل في mitigation موثوقة. اشرك security وbackend وrelease owner، واختبر fix في release variant، وقرر go/no-go مكتوب. لو الخطر critical قابل للاستغلال وما عندكش containment مثبت، أوقف النشر. لو في users متأثرين أصلًا، حضّر disclosure وrotation وmonitoring حسب السياسة. لا تستخدم “الوقت ضيق” كبديل للأدلة.
 

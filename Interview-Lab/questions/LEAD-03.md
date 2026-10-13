@@ -25,7 +25,7 @@ What is technical debt, and how do you prioritize it?
 
 Technical debt مش كل code قديم؛ هو قرار أو حالة بتخلّي التغيير القادم أغلى أو أخطر. نصنف debt: bug/security risk، build pain، architecture coupling، tests missing، migrations. الأولوية حسب impact واحتمال وقوع المشكلة وتكرار لمس الكود وتكلفة الإصلاح. Debt في payment retry أو secret handling أعلى من تنسيق file نادر.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Technical debt مش كل code قديم. لو module قديمة لكن مستقرة ومش بتتغير، مش لازم rewrite. الدين الحقيقي مثل build كل تعديل يكسر خمس flavors، أو retry logic مكررة وتنتج defects. سجّل تكلفة التأخير: incidents، وقت build، onboarding، أو vulnerability. رتّب الإصلاح حسب likelihood × impact × effort والفرصة المتاحة، وحط migration صغير بقياسات قبل وبعد. تجنّب “هنعيد كتابة التطبيق كله” بلا baseline أو خطة rollback.
 

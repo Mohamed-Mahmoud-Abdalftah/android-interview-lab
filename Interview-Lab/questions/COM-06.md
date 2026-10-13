@@ -26,7 +26,7 @@ What is Unidirectional Data Flow in Compose?
 
 في UDF، الـowner مثل ViewModel يخرج `UiState` للـscreen، والـcomposable ترسمه وتُرجع actions عبر callbacks مثل `onRetry`. الـViewModel يعالج الحدث، يحدث state، وقد يطلب من repository عملًا؛ ثم state الجديدة تنزل للواجهة. بهذه الطريقة سبب التغيير واضح واختباره أسهل. لا تعمل screen نسخة mutable موازية لنفس البيانات. أحداث مثل navigation أو Snackbar تحتاج contract واضح: state مستهلكة مرة مع acknowledgment أو event stream بخصائص delivery معلومة، لا مجرد Boolean يعاد تشغيله بعد rotation.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في checkout، الزر يبعت `Pay` للـViewModel. الـViewModel ينقل `Ready → Submitting → Success/Error` بعد نتيجة repository، والـScreen ترسم المرحلة الحالية؛ كده عندك مسار واحد للتغيير. الـnavigation تحتاج contract استهلاك واضح عشان `Success` ما يودّيش لنفس الوجهة مرتين بعد rotation. لو `Pay` اتبعت مرتين قبل ما الزر يتعطل، UDF وحدها مش ضمان؛ owner لازم يحرس العملية. اختبر transition من كل حالة، خصوصًا retry وعودة الشاشة بعد نتيجة الدفع.
 

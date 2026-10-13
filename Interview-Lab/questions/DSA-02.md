@@ -25,7 +25,7 @@ Explain O(1), O(log n), O(n), O(n log n), and O(n²).
 
 `O(1)` ثابت بالنسبة لـn، `O(log n)` بيقلل البحث بنسبة ثابتة كل خطوة، `O(n)` مرور واحد، `O(n log n)` زي sort comparison غالبًا، و`O(n²)` كل عنصر يقارن بكل عنصر. Big O حد نمو مش وقت بالثواني؛ O(1) operation ممكن تكون غالية وO(n) على 10 عناصر سريعة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في Android، قراءة قيمة من map متوقعة `O(1)`، binary search على sorted array `O(log n)`، scan `O(n)`، sort `O(n log n)`، والمقارنة بين كل زوج `O(n²)`. اشرح كل فئة بمقدار العمل عند مضاعفة n، ولا تخلط expected hash performance بضمان worst case. لو العملية في recomposition أو binding، حتى `O(n)` قد تتكرر كثيرًا.
 

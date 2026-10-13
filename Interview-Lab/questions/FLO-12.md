@@ -24,7 +24,7 @@ Compare full collection, cancellation of previous action and one-value extractio
 
 `collect` يعالج كل emission بالتتابع لحد ما Flow تخلص أو تتلغى. `collectLatest` لما value جديدة تيجي يلغي processing القديمة ويبدأ الأحدث، فمناسب search preview أو rendering قابل للإلغاء، مش كتابة مالية لازم تكتمل. `first` يستنى أول قيمة تطابق الشرط ويرجعها، وبعدها يوقف collection.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 `collect` يعالج كل emission بالترتيب وقد يبطّئ upstream، `collectLatest` تلغي شغل block القديمة عند قيمة جديدة، و`first` ترجع أول قيمة وتوقف collection. بحث سريع يناسب `collectLatest` لو عرض النتائج القديمة يمكن إلغاؤه، لكن كتابة مالية أو حفظ ملف لا تلغيها لمجرد emission أحدث. `first` على StateFlow ترجع القيمة الحالية فورًا غالبًا؛ لو عايز Ready استخدم `filterIsInstance<Ready>().first()`.
 

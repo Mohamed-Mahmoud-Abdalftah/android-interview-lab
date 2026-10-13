@@ -26,7 +26,7 @@ How do you correctly implement Snackbar, navigation, and callbacks?
 
 الـcomposable ترسل event للمالك مثل `onSave` بدل أن تغير NavController أو repository في جسم الرسم. Snackbar هي UI operation: `SnackbarHostState.showSnackbar()` suspend، فتطلقها من callback عبر `rememberCoroutineScope` أو effect مملوكة للشاشة. Navigation ينفذ عند نتيجة صالحة، وليس كل recomposition لــ`success=true`. صمّم one-shot delivery أو state مع acknowledgment كي لا يتكرر بعد rotation، وانتبه أن event stream قد يفوت عندما lifecycle متوقفة. callback داخل effect طويلة قد تصبح قديمة؛ استخدم key مناسب أو `rememberUpdatedState`.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في Save، الـbutton يعمل `onSave()` بس. نتيجة الـViewModel لازم تكون event/transition لها ID أو acknowledgment؛ route تنفذ navigation مرة وتعلم إنها اتعالجت. لو فشل، الـroute تعرض snackbar من coroutine مرتبطة بالشاشة؛ لا تكتب `navController.navigate()` في body لما `success` تبقى true. لو event stream غير replayable والشاشة متوقفة، ممكن رسالة النجاح تضيع؛ ولو success Boolean دائمة، navigation ممكن تتكرر. اختار delivery/acknowledgment واضح واختبر rotation والتطبيق في background.
 

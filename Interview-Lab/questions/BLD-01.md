@@ -26,7 +26,7 @@ Explain Gradle, Android Gradle Plugin (AGP), and Kotlin compiler roles.
 
 Gradle هو build system ينفذ task graph وdependency resolution/cache/configuration. Android Gradle Plugin يضيف Android-specific model/tasks: variants، manifest/resource processing، DEX، shrink/package/sign حسب المهمة. Kotlin compiler يترجم Kotlin source إلى bytecode ويفرض semantics اللغة، وCompose compiler plugin يضيف تحويلات Compose عند استخدامه. فشل Kotlin type error غير manifest merge conflict وغير Gradle dependency resolution. الإصدارات بينها compatibility matrix؛ ثبتها وراجع release notes عند upgrade، ولا تفترض أن تحديث Gradle وحده يحل AGP/Java/Kotlin تعارض.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Gradle ينسق task graph وdependencies، AGP يضيف Android variants وpackaging/manifest merge، وKotlin compiler يحول Kotlin source إلى bytecode/metadata. لو release crash، لا تقول “Gradle bug” دون تحديد المرحلة: compile أم R8 أم packaging. شغّل task المحددة وراجع output/variant، وثبّت نسخ plugins المناسبة. مثال `compileReleaseKotlin` فشل يختلف عن `bundleRelease` الذي يفتقد native library.
 

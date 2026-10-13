@@ -25,7 +25,7 @@ Build a rate limiter or deduplication map for requests. What data structure fits
 
 Rate limiter ممكن يستخدم `HashMap<key, bucket>` يخزن tokens/time window لكل user، مع priority queue أو timer لتنظيف expiries. Dedup map يخزن operation ID→result/status مدة محددة، ولازم atomic check-and-set على server لو أكثر من process. Local Android map يمنع double tap في UI فقط؛ ما يضمنش عدم duplicate charge بعد restart أو جهاز تاني.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Rate limiter المحلي في المثال يوقف تكرار search خلال window، لكنه لا يضمن منع دفع مكرر عبر جهازين أو بعد process kill. عرف key، clock monotonic، window، eviction وسياسة concurrent calls. للعمليات المالية استخدم operation ID durable وserver idempotency؛ للـUI debounce أو token bucket حسب UX. اختبر الحد عند 999/1000ms وليس فقط happy path.
 

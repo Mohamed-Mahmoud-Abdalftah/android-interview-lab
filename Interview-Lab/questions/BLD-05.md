@@ -26,7 +26,7 @@ What are build cache, configuration cache, and incremental compilation?
 
 Build cache تعيد استخدام outputs لمهمة إذا inputs المعلنة ونوع المهمة متطابقان، محليًا أو من remote cache. Configuration cache تحفظ نتيجة configuration/task graph لتتجنب إعادة تكوين build في invocation لاحقة عندما المدخلات المعنية لم تتغير. Incremental compilation تقلل ما يعيد compiler ترجمته بعد تغيير source/ABI. الثلاثة مستويات مختلفة وقد تفشل لأسباب مختلفة. Task تقرأ ملفًا غير معلن أو environment secret أثناء configuration قد تفسد reproducibility/compatibility؛ افحص Gradle reports وbuild scan، ولا تفترض أن تشغيل cache يجعل كل build سريعًا.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Build cache يعيد task outputs عند مطابقة inputs، configuration cache يعيد نتيجة configuration، incremental compilation يقلل إعادة compile عند تغير جزء من الكود. قس Build Scan قبل تفعيل toggles عشوائيًا؛ plugin غير متوافق قد يعطل cache، وtask لا يعلن input صحيحًا قد يعطي stale output. قارن cold/warm وCI runner ثابت، وراقب cache hit وcorrectness.
 

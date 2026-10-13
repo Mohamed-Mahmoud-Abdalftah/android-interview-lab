@@ -25,7 +25,7 @@ A production hotfix is needed while feature branches have diverged. Explain your
 
 لو production محتاج hotfix وfeature branches اختلفت، أبدأ من tag/commit اللي اتشحن فعلًا، أعمل minimal fix مع test، وأطلع release candidate منفصل. بعدها أنقل نفس المنطق لـmain/feature branches بـmerge أو cherry-pick مدروس، وأتحقق من conflicts. ما أدمجش features غير جاهزة في hotfix. لو schema/backend اتغيروا لازم نفحص compatibility مع النسخ المثبتة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Production hotfix يبدأ من tag أو commit النسخة المنشورة، مش من feature branch متباعد. اعزل أقل تعديل يصلح incident، اختبر release variant والمسار المتأثر، ثم انشر versionCode أعلى تدريجيًا. بعدين انقل الإصلاح لـmain وبقية release branches بـmerge أو cherry-pick مع فحص conflicts semantic. لو main فيها refactor يجعل نفس patch غير صحيح، اكتب equivalent fix واختبره. احتفظ بالحادثة والـartifact والcommit المرتبطين.
 

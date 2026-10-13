@@ -26,7 +26,7 @@ How do you implement a reusable design system and themes?
 
 ابدأ بـdesign tokens دلالية: ألوان roles (surface, primary, error)، typography، spacing، shapes، ثم Compose theme توفرها عبر MaterialTheme أو CompositionLocals بحذر. ابنِ components مثل AppButton وPriceCard بعقود state/events واضحة و`Modifier` من caller، بدل نسخ style في كل feature. اختبر light/dark، dynamic color عندما المنتج يسمح، RTL، font scaling وcontrast. لا تجعل design-system module يعتمد على feature business types؛ استخدم UI primitives. قد تحتاج versioning ومراجعة migration إذا التغييرات تكسر screens.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 ابدأ بـroles دلالية زي `primary`, `surface`, `error` بدل ألوان hex موزعة في features. `AppButton` تتعامل مع loading وenabled والـsemantics، وتقبل `modifier` من caller. اختبر light/dark وRTL وfont scale؛ component مشتركة غلط ممكن تنشر accessibility bug في كل التطبيق. لو component تفرض ارتفاع ثابت، النص العربي المكبّر ممكن يتقصّ في كل feature مرة واحدة. اختبر حالات loading وRTL وfont scale في gallery قبل نشر تغيير token أو component.
 

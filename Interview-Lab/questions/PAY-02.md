@@ -26,7 +26,7 @@ What is idempotency, and why does it matter for financial transactions?
 
 Idempotency معناها إن تكرار نفس العملية بالـidentity نفسها ما يعملش أثر مالي جديد كل مرة. الـnetwork ممكن تبعت request والـserver تنفذها وبعدين الرد يضيع؛ العميل يشوف timeout لكنه ما يعرفش هل الدفع نجح. لو رجّع request بمفتاح جديد، ممكن يخصم مرتين. عشان كده العميل يحتفظ بـoperation ID ثابت ويعيده، والـserver يطبّق سياسة idempotency ومعاها status lookup وreconciliation. ده يدي at-least-once delivery مع business effect محمي، مش وعد إن الـHTTP request اتنفذت مرة واحدة بالضبط.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 مثال عملي: العميل ضغط Pay مرة، الـserver نفذت charge لكن response ضاعت. قبل retry، العميل يقرأ intent المحفوظة ويرجع بنفس key ونفس amount/currency، مش UUID جديدة. لو provider dedupe window انتهت، نفس key وحدها مش ضمان؛ status lookup وledger reconciliation لازم يسبقوا إعادة الإرسال. في Stripe API v1 تحديدًا أول نتيجة محفوظة ممكن تكون `500`، فمتفسرش replay كنجاح.
 

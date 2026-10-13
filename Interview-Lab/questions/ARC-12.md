@@ -24,7 +24,7 @@ Map typed domain/data failure categories into actionable UI behavior without lea
 
 Data layer تعرف `IOException`, HTTP status، database failure؛ domain ممكن تعبّر عنها كـ`Offline`, `Unauthorized`, `Validation(field)`, `Conflict`, `Unknown` حسب contract. Presentation تحوّل category إلى message localized وaction: retry، login، تصحيح field، أو انتظار sync. ما تعرضش `exception.message` مباشرة: ممكن يكون غير مفهوم أو يحتوي sensitive data. وما تحولش كل error إلى “حصل خطأ” لو user يقدر يتصرف. في payment timeout لازم `PendingVerification` مش “Failed” مؤكدة، لأن السيرفر ممكن يكون نفّذ الطلب.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Data errors الخام مثل 401/409/timeout لا تذهب UI كنص backend. Repository يصنف transport/auth/conflict، domain يحدد معنى business، ViewModel يحولها لفعل: login, retry, resolve conflict, or Unknown status. Cancellation تظل cancellation. لا تعرض “فشل الدفع” عند timeout غير محسوم؛ اعرض pending واستعلم status.
 

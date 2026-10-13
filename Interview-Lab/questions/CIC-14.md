@@ -25,7 +25,7 @@ How do you use staged rollout, crash-rate gates, and rollback plans?
 
 Staged rollout ينزل النسخة لنسبة صغيرة ثم يزيدها حسب crashes/ANRs وbusiness metrics مثل payment unknown rate، login failure وreversal backlog. لو metric تعدّت threshold نوقف توزيع جديد، لكن الأجهزة اللي ثبتت النسخة تظل عليها؛ rollback الحقيقي غالبًا feature gate أو fix-forward compatible. Database migration لازم تشتغل مع النسخ القديمة والجديدة أثناء rollout.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Staged rollout يعرّض نسبة صغيرة أولًا، لكن نسبة قليلة مش معناها risk قليل لو payments أو login مكسورين. حدد قبل النشر gates مثل crash/ANR، auth failure، payment unknown rate، support tickets، مع baseline وthreshold ووقت مراقبة. لو gate فشل، أوقف توسيع النسبة، عطّل feature من server إن كان آمنًا، وجهّز build جديد بـversionCode أعلى؛ Android المستخدم الذي حدّث لا يرجع تلقائيًا للقديم. راقب pending operations عند rollback حتى ما تضيعش reconciliation.
 

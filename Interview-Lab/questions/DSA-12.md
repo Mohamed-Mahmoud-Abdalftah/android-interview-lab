@@ -25,7 +25,7 @@ How do you identify an accidental O(n²) transformation in a RecyclerView/Compos
 
 RecyclerView/Compose list ممكن تبقى O(n²) لو لكل item نعمل `others.find { id == ... }` أو `filter` على list كلها. الـUI يظهر كويس مع 20 item ويهنّج مع آلاف، خصوصًا لو transformation تتعاد في recomposition. نعمل lookup map مرة لكل snapshot أو join في data layer، ونقيس allocations والframe time.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو كل RecyclerView bind أو Compose item يعمل `allProducts.find { id == ... }` على n عنصر، rendering كل القائمة قد يصبح `O(n²)`. احسب product map مرة في ViewModel/repository ومرر item جاهز أو keyed lookup. لكن لا تحرك state mutable إلى composable بدون observation؛ ستستبدل freeze بـstale UI. استخدم profiler يميز time في transform عن layout/draw.
 

@@ -24,7 +24,7 @@ Choose among cold Flow, StateFlow, SharedFlow and LiveData with lifecycle and in
 
 `Flow` interface لstream async وغالبًا cold، كل collector يشغّل upstream. `StateFlow` hot وبها قيمة حالية؛ `SharedFlow` hot broadcast مع replay/buffer قابلين للضبط. `LiveData` lifecycle-aware observable من AndroidX مناسبة للتعامل مع code قديم، لكنها أقل ملاءمة لعمليات Flow الغنية خارج UI. نوع الـstream وحده لا يوقف collection في UI؛ نحتاج lifecycle-aware collector.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو شاشة قديمة بـLiveData وشاشة Compose جديدة، ما تعملش migration لمجرد الاسم. `Flow` cold pipeline، `StateFlow` hot current state، `SharedFlow` broadcast configurable، وLiveData lifecycle-aware observation على Android. في migration خلّي source of truth في repository واحدة، وحوّل على boundary، بدل نسختين state بيحدثوا بشكل مختلف. اختبر rotation وinactive observer وerror model.
 

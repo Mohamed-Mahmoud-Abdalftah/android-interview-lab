@@ -26,7 +26,7 @@ When are dynamic feature modules inappropriate because of offline/runtime constr
 
 On-demand dynamic feature غير مناسبة إذا user يحتاجها فورًا بدون شبكة: عرض تذكرة سفر مخزنة، استعادة payment/status، أو إجراء safety/identity لازم في لحظة. حتى مع اتصال، download قد يفشل/يتأخر أو يُلغى، والfeature غير موجودة قبل install. لو requirements تقول must work offline، ضعها في base أو install-time delivery وتأكد أنها متاحة في القناة المدعومة. لو feature كبيرة ونادرة ولها fallback مقبول، on-demand قد تستحق. قرر من contract المنتج وقياس size/usage/failure، لا من الرغبة في مزيد modules.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Dynamic feature تنزيلها مش مضمون فورًا: المستخدم offline، Play delivery failure، storage قليل، أو process death أثناء install. لو POS يحتاج reversal أو auth أساسي بدون شبكة، لا تجعلها on-demand. استخدم regular module أو install-time delivery لcritical path، وعالج optional feature missing بfallback. اختبر device offline update، install cancellation وdeep link قبل availability.
 

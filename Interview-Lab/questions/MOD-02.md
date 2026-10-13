@@ -26,7 +26,7 @@ Compare app, feature, core, data, domain, and design-system modules.
 
 `:app` هو composition/delivery entry point ويختار features وbindings وnavigation root. `:feature:*` يملك UI/use cases الخاصة بقدرة مثل checkout. `:data:*` يطبق repositories ويخاطب network/database. `:domain:*` اختياري لعقود وقواعد مستقلة عن Android إذا حجم النظام يبرره. `:core:*` لبنية مشتركة مستقرة مثل network client أو database setup، وليس مكانًا لكل كود لا يعرف صاحبه أين يضعه. `:designsystem` يوفر theme/components UI محايدة عن business. اتجاه dependencies من feature إلى contracts/core، وتطبيق implementation يركبه app؛ التفاصيل تختلف حسب الحجم.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 `:app` يركب features والnavigation، feature modules تملك UI/logic المحلية، core محدود لعقد مشترك حقيقي، data للadapters، domain للrules إن لها قيمة، design-system للcomponents/tokens. ليس لازم كل مشروع يمتلك هذه كلها. لو feature تحتاج account ID، أعطها contract صغير بدل استيراد auth UI. راجع ما يخرج من `api` حتى لا تصبح core سلة عامة.
 

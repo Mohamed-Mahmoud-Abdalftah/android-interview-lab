@@ -25,7 +25,7 @@ How do you configure PR checks for lint, static analysis, and tests?
 
 نضبط branch protection إن PR ما يندمجش إلا بعد compile، Android Lint، static analysis المختارة، JVM tests وcontract tests. Device tests حسب affected area أو release gate. كل check يطلع report واضح ويفشل عند threshold متفق عليه. مش نخلط warning جديد مع baseline debt؛ baseline مؤقتة لها owner وخطة تقليل.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 PR checks لازم ترتبط بمخاطر التغيير: compile للـvariants الأساسية، Android Lint، static analysis، unit tests، contract tests، ومع feature حساس نفّذ release-like test أو emulator. Branch protection يمنع الدمج قبل required checks ومراجعة مستقلة. لا تجعل PR من fork يستخدم signing secrets. فرّق بين test فشل بسبب code وemulator تعطل؛ أظهر artifacts والlogs وخلي owner واضح. التغطية المئوية وحدها مش بوابة جودة.
 

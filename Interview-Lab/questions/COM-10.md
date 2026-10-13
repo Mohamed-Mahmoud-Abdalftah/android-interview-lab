@@ -26,7 +26,7 @@ What are LaunchedEffect, DisposableEffect, SideEffect, and rememberCoroutineScop
 
 `LaunchedEffect(keys)` يطلق coroutine مرتبطة بوجود composable؛ تغيير key يلغي القديمة ويبدأ جديدة. `DisposableEffect(keys)` يسجل resource/listener ويستدعي `onDispose` عند تغيير key أو خروج composable. `SideEffect` ينفذ بعد successful recomposition لنشر state إلى object خارج Compose، وليس لتشغيل طلب طويل. `rememberCoroutineScope()` يعطي scope مرتبطة بالـcomposition لتطلق coroutine من callback مثل الضغط على زر. اختَر حسب lifetime؛ لا تضع registration في body ولا تستخدم `LaunchedEffect(Unit)` لكل user action.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 اختار الـeffect من عمر الشغل: `LaunchedEffect(id)` لشغل coroutine مربوط بالـUI وبهوية id؛ `DisposableEffect` لأي listener له unregister؛ `SideEffect` لنشر قيمة بعد composition ناجحة؛ و`rememberCoroutineScope` لحدث زر زي snackbar. لو التسجيل في body هيتكرر، ولو request مهمة بعد مغادرة الشاشة فالـViewModel أرجح. لو key اتغيرت غلط، listener هيتسجل تاني أو coroutine هتتلغي في نص الشغل. في production اكتب اختبار لدخول الشاشة وتغيير key والخروج منها؛ لازم كل register يقابله unregister.
 

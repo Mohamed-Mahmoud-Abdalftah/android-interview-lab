@@ -26,7 +26,7 @@ What is NavHost, and how is state restored after process death?
 
 في Navigation Compose، `NavHost` يربط NavController بالـnavigation graph وdestinations؛ لكل back-stack entry lifecycle وsaved state وViewModel ownership مناسب. عند system-initiated process death قد يعيد Android/Navigation حفظ back stack والarguments الصغيرة، لكن ViewModel instance لا تعيش؛ أعد إنشاءها واسترجع ID من `SavedStateHandle` ثم حمّل البيانات من repository. `rememberSaveable` لحالة UI صغيرة داخل destination. لا تعتمد على object كبير أو singleton in-memory وحده. تأكد من الإعدادات والنسخة وتجربة kill/recreate فعليًا.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 `NavHost` تعرض destination من back stack. لو Android رجّع task بعد process death، الـViewModel جديدة؛ استخدم `articleId` المحفوظ في args/`SavedStateHandle` لتحميل المقال من repository. `rememberSaveable` يصلح لتبويب صغير؛ لو المقال اتحذف، اعرض error بدل محاولة استرجاع object قديم من الذاكرة. استرجاع route لا يضمن إن المقال ما زال موجودًا؛ لازم Error واضحة لو ID اتحذف أو user فقد الصلاحية. اختبر eligible process death بالـID وبحالة data اتغيرت.
 

@@ -26,7 +26,7 @@ What is a dependency graph? Why must it be acyclic?
 
 Dependency graph تمثل modules كعُقد والأسهم “A يحتاج B ليُترجم/يعمل”. في Gradle project dependencies لازم تكون DAG حتى توجد topological order للبناء؛ لو A يعتمد على B وB على A لا يوجد ترتيب، كما أن ownership تختلط. مثال `:feature:orders` يحتاج شاشة login و`:feature:auth` يحتاج order badge: لا تربطهما مباشرة ذهابًا وإيابًا؛ استخرج contract أو navigation destination صغير في module أدنى، أو app ينسق التفاعل. لا تعالج cycle بنقل كل شيء إلى `:core:common` بلا تصميم.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Dependency graph فيها module nodes وأسهم import. لو `:feature:pay` يعتمد `:feature:account` والعكس، Gradle قد يرفض cycle أو architectural coupling يصبح صعب الاختبار. استخرج contract مشترك صغير باتجاه واحد أو composition في app module. احذر cycle منطقي عبر service locator حتى لو Gradle graph acyclic. CI ترسم/تفحص graph عند تغيير dependencies.
 

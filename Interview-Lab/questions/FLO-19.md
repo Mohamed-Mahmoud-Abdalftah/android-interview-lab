@@ -24,7 +24,7 @@ Explain replay, per-subscriber buffer capacity and overflow behavior including a
 
 `replay` عدد القيم القديمة اللي subscriber جديد يشوفها. `extraBufferCapacity` مساحة إضافية للتعامل مع subscriber بطيء، و`BufferOverflow` يحدد suspend أو إسقاط الأقدم/الأحدث لما buffer يتملي. نقطة مهمة: لو مفيش subscribers، SharedFlow تحتفظ بقيم replay فقط؛ extra buffer ما بيعملش queue لأحداث المستقبل. ولا إعداد يضمن بقاء event بعد process death.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 `MutableSharedFlow(replay=1)` تخلي subscriber جديدة تاخد آخر emission؛ `extraBufferCapacity` تستوعب بطء subscribers الحاليين حسب overflow policy، لكنها مش offline queue للمشتركين الغايبين. `DROP_OLDEST` أو `DROP_LATEST` ممكن تفقد رسائل. لو navigation حرجة بعد process death، buffer في الذاكرة مش كفاية؛ خزّن intent مع acknowledgment.
 

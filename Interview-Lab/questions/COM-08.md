@@ -26,7 +26,7 @@ How do you model UI state with StateFlow?
 
 ViewModel يحتفظ بـ`MutableStateFlow<UiState>` داخليًا ويعرض `StateFlow<UiState>` للواجهة. `UiState` يصف ما تحتاجه الشاشة كـloading/data/error/permissions بدل flags متناقضة. `StateFlow` hot وله قيمة حالية، ويعمل conflation بالقيمة؛ لا تعتمد عليه كـqueue لكل event لحظي. Compose تجمعه بـ`collectAsStateWithLifecycle()` حيث متاح، فيتوقف الجمع عندما lifecycle متوقف. استخدم `update` عند تعديل state اعتمادًا على القديمة، واحمِ ترتيب النتائج إذا طلب قديم رجع بعد بحث جديد.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 اعمل state واحدة للشاشة بدل `isLoading` و`hasError` و`items` اللي ممكن يطلعوا متناقضين. الـViewModel يعرّض `StateFlow` read-only ويعمل update ذرّي لما يبدأ load أو ينجح. في search، ألغِ أو تجاهل نتيجة query القديمة عشان `a` ما تغطيش نتيجة `ab`. `StateFlow` تحتفظ بآخر قيمة، لكنها مش queue لكل Snackbar أو navigation. في production افصل state المستمرة عن actions ذات الاستهلاك المحدد، واختبر طلبين بحث نتائجهم ترجع بعكس الترتيب.
 

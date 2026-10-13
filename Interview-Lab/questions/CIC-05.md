@@ -25,7 +25,7 @@ Compare git reset --soft versus --hard.
 
 `git reset --soft <commit>` يرجّع HEAD للcommit المطلوب ويترك index وworking tree كما هما؛ تغييرات commits الملغاة تبقى staged. `git reset --hard <commit>` يرجّع HEAD ويطابق index وworking tree للهدف، فممكن يضيّع uncommitted changes. الاتنين يغيروا branch history لو branch منشور، فلا تستخدمهم على main المشترك بدون تنسيق.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 `git reset --soft HEAD~1` يرجّع مؤشر HEAD خطوة لكنه يترك تغييرات الـcommit في staging، مناسب لو بتعيد صياغة commit محلي. `git reset --hard HEAD~1` يغيّر HEAD والـindex والـworking tree، وقد يزيل شغل غير محفوظ؛ استخدمه فقط وأنت عارف حالة الفرع والملفات. في shared release branch، بدل reset لcommit منشور استخدم `revert` بحيث يبقى سبب التراجع ظاهرًا. قبل أي reset اعرض `git status` و`git log` وخذ نسخة لو فيه تغييرات مهمة.
 

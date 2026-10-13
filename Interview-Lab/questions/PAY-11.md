@@ -25,7 +25,7 @@ How would you test SDK callback timeout and device disconnection?
 
 لازم نختبر SDK timeout/disconnect كـunknown financial outcome، مش بس exception في UI. Fake adapter يتحكم في callback order والوقت: success بعد timeout، callback مرتين، disconnection أثناء authorization، process kill. وhardware tests تفصل الجهاز أو الشبكة فعلًا؛ fake وحده ما يثبتش behavior بتاع firmware/acquirer.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في fake SDK اعمل clock قابلة للتحكم: timeout ييجي الأول وبعده callback Approved، أو callback مرتين، أو disconnect والعملية لسه remote pending. اختبر إن local state ما تتحولش Declined تلقائيًا وإن restart يعمل lookup بنفس ID. بعد unit tests لازم hardware test: firmware ممكن تعمل callbacks بترتيب مختلف عن fake.
 

@@ -24,7 +24,7 @@ Explain read-only exposure without claiming it makes underlying objects immutabl
 
 بنخلي `MutableStateFlow` private ونعرّض `StateFlow` عبر `asStateFlow()` علشان المستهلك يقدر يقرأ ويعمل collect لكن ما يقدرش يغيّر `value` مباشرة. الـViewModel يفضل owner للتحديثات. ده بيحمي API surface، لكنه مش بيحوّل list mutable جوه state إلى immutable، ولا يمنع reference قديم من تغيير نفس object.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 الـViewModel تحتفظ بـ`MutableStateFlow` private وتطلع `asStateFlow()` للـUI. ده يمنع Screen تعمل `_state.value = ...` وتكسر invariants؛ الأحداث ترجع methods زي `onRetry()`. لكن read-only interface مش أمان مطلق لو سربت mutable object جوا `UiState` نفسها، فلازم values غير قابلة للتعديل أو نسخ واضحة.
 

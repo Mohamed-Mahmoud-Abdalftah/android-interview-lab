@@ -24,7 +24,7 @@ Explain required initial StateFlow value, readable current state and explicit lo
 
 `MutableStateFlow` لازم تبدأ بـvalue لأن عقدها إن أي collector جديد يقدر يشوف current state فورًا، و`state.value` متاحة بشكل synchronous. لو البيانات لسه ما اتحملتش، نعبّر عن ده بـ`Loading` أو sealed UI state بدل fake empty value ملتبسة. تغيير القيمة يحدّث آخر snapshot، ومافيش completion عادي للـStateFlow.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 الشاشة لازم تعرف ترسم إيه قبل أول network response؛ عشان كده `MutableStateFlow` تطلب قيمة أولية زي `Loading` أو `Empty`، مش انتظار مبهم. بعد rotation collector جديدة تقرأ آخر قيمة. لو مش عارف الحالة بعد، عرّفها صراحة كـ`Uninitialized`/`Loading` بدل `null` تفسرها كل شاشة بطريقة.
 

@@ -25,7 +25,7 @@ How do you avoid duplicate payment requests after UI timeout?
 
 الـUI timeout معناه إن الرد ما وصلش، مش إن الدفع فشل. ممكن issuer وافق قبل انقطاع الاتصال. نخلي نفس operation ID ونظهر pending/unknown، نسأل backend/provider عن status، ونمنع زر “ادفع تاني” ينشئ charge جديد قبل حل النتيجة. لو retry مسموح نستخدم نفس idempotency key والparameters تحت عقد provider.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو شاشة الدفع قالت timeout، رجّع حالة `Checking` لنفس `operationId` بدل تفتح زر Pay جديد فورًا. Repository تسأل status؛ لو unknown بعد كده، خلي checkout معلّقة وابدأ reconciliation. حتى لو UI اختفت ورجعت، ID من التخزين ترجع نفس العملية بدل charge جديدة.
 

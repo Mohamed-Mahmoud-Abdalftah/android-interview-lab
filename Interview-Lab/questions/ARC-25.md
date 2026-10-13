@@ -24,7 +24,7 @@ Choose MVVM versus reducer-style MVI using transition complexity and distributed
 
 Payment flow حالات كتير: idle، validating، submitting، pending verification، confirmed، declined، recoverable error. MVVM ممكن تنجح لو ViewModel بتصدر immutable state وevents واضحة؛ مش لازم MVI framework. لما transitions كثيرة ومتشابكة، reducer pure `state + action -> new state/effect request` يساعد تعمل table واختبارات exhaustive ويمنع `isPaid && isLoading`. لكن reducer وحده ما ينفّذش network ولا يضمن exactly-once: effects تروح repository، status authoritative من server، وrequest ID محفوظ لاسترجاع process death.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Payment state machine كثيرة transitions: MVVM يمكنها immutable state وأحداث واضحة، وMVI reducer يجعل transition table صريحة؛ الاسم لا يضمن safety. Decision يعتمد على complexity/testability/team familiarity. مهما اخترت، operation ID وUnknown وreconciliation durable في repository/backend، وليس داخل ViewModel فقط. اختبر duplicate tap، late callback، process death، وinvalid transition.
 

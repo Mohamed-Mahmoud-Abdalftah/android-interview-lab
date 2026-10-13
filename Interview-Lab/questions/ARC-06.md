@@ -24,7 +24,7 @@ Assign transport, persistence, domain and rendering models to boundaries and exp
 
 DTO شكل network contract وبيعيش جنب Retrofit/service في data. Room entity شكل الجدول وعلاقاته وبيعيش في persistence/data. Domain model يمثّل business meaning من غير HTTP أو SQL annotations، وUI model يمثّل اللي الشاشة محتاجاه بالضبط، زي formatted amount وenabled button. ساعات model واحدة تكفي في app صغير، لكن ما تستخدمش DTO كـUI model لمجرد تقليل mapping؛ تغيّر اسم field في API ممكن يكسر Compose ويكشف nullable transport noise. Mapper يعمل validation ومعالجة version/schema بوضوح.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 DTO تمثل wire schema وقد تحتوي fields nullable، Room entity تمثل storage schema، domain model يمثل invariant، وUiModel يمثل العرض. مثال price cents: لا تسمح DTO string غير صالحة تصبح domain amount بلا validation. تغيير API name أو DB column لا يجب أن يغير Compose screen. إذا موديل واحد يكفي لتطبيق صغير ومستقر، لا تنسخ classes بلا حاجة.
 

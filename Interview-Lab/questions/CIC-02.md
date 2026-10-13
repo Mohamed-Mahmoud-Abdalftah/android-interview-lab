@@ -25,7 +25,7 @@ What are typical stages in an Android CI pipeline?
 
 Android CI المعتاد: checkout مضبوط، dependency resolution، format/lint/static checks، compile، JVM tests، instrumentation/device tests حسب risk، build AAB/APK، security/artifact checks، signing محمي، internal track، ثم staged production ومراقبة. لازم نختبر release-like variant لأن R8/flavor/ABI ممكن يغير السلوك.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 مثال pipeline واقعي: checkout لcommit ثابت، Gradle wrapper وJDK معروفين، dependency verification، compile لكل variant مهم، lint وstatic analysis، JVM tests، وبعدها Android tests للعقود اللي تحتاج emulator. لا تخلط secret signing في job بتشغّل code من PR غير موثوق. release job يبني AAB مرة من tag/commit محدد، يحتفظ بـmapping والـtest report والـhash، ثم يرفع internal track. لو فشل instrumentation بسبب جهاز CI، عالج بيئة الاختبار ولا تعتبر إعادة المحاولة دليل نجاح.
 

@@ -25,7 +25,7 @@ How do you publish builds to internal testing and Play Console?
 
 بعد build/test للـrelease AAB، نرفعها بـPlay Console أو Publishing API لinternal testing track مع versionCode فريد وrelease notes مناسبة، ونتأكد testers/environment صح. بعد smoke/QA نرقّي نفس version إلى closed/open أو production staged rollout حسب policy. Credentials في protected CI job فقط، والـbackend endpoints ما تتبدلش بالغلط بسبب flavor.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 بعد signed AAB من commit محدد، ارفع النسخة لـinternal testing track مع versionCode صحيح وrelease notes، وثبّت نتيجة smoke test على نفس الـartifact. بعدها closed testing ثم production staged rollout حسب سياسة المنتج؛ راقب crashes وANR وpayment conversion قبل زيادة النسبة. Play upload ممكن يقبل bundle لكنه لا يثبت إن feature شغالة على الأجهزة، لذلك جرّب install/update لنسخة release ومراجعة device matrix. لا تعيد بناء الـbundle بين track والتاني لو تريد ضمان نفس البايتات.
 

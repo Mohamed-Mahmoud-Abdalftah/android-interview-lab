@@ -24,7 +24,7 @@ Design shared session ownership without feature-to-feature imports or a process-
 
 Account/session state تخص أكتر من feature، فحط contract ضيق في shared core/session module: `SessionRepository.observeSession()` و`signOut()`. implementation في data/app module تتعامل مع token storage وserver refresh، وfeatures تعتمد على contract بدل checkout يستورد profile أو العكس. UI state لكل feature مشتقة من session stream، وما تخزنش Activity في singleton. بعد process death ارجع من persisted session مع revalidation؛ local token مش دليل server authorization. logout يمسح local credential ويبلّغ server حسب policy، مع race handling للطلبات الجارية.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Account/session state بين features لا تترك كل feature يملك mutable copy. عرّف contract صغير مثل `SessionRepository` في core module لا يعتمد على features، والauth implementation تحقنه. Features تراقب identity/version وتعيد تحميل data عند switch/logout. لا تضع Activity Context أو navigation في singleton. اختبر logout أثناء request والعودة من notification لحساب مختلف.
 

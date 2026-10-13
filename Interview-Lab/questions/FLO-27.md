@@ -24,7 +24,7 @@ Investigate duplicate navigation through replay, collector duplication and consu
 
 لو navigation حصلت مرتين بعد rotation، نفتش: هل `StateFlow<Boolean>` لسه true فـcollector جديد أعاد الفعل؟ هل `SharedFlow(replay=1)` رجّعت command؟ هل عندنا collectors اتنين أو lifecycle restart؟ الحل يعتمد على العقد: نخزن destination/current screen كـstate، أو effect بمعرّف مع acknowledgment، ونخلي business completion durable. ما نعتبرش Channel حل سحري لكل race.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو `navigate=true` في StateFlow، rotation ترجع true وتتكرر navigation. لو SharedFlow replay=0، event وقت الشاشة STOPPED ممكن تضيع. قبل اختيار Channel/SharedFlow، اسأل هل النتيجة نفسها دائمة: مثل payment saved ID، خلي destination state محفوظة أو event ID مع acknowledgment. اختبر collector واحدة واتنين، rotation، background، وprocess death.
 

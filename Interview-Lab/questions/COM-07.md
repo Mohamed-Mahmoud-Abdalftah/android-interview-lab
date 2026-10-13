@@ -26,7 +26,7 @@ What does Modifier do, and why does ordering matter?
 
 `Modifier` سلسلة مرتبة من عناصر تضيف layout constraints، رسم، input، semantics وغيرها للـcomposable. الترتيب يغير أي مساحة تُقاس وتُرسم وأي منطقة تستقبل الضغط: `padding(16.dp).background(color)` يعطي background للمساحة بعد padding بطريقة مختلفة عن `background(color).padding(16.dp)`. كذلك `clickable` قبل أو بعد padding يؤثر على hit target. اقرأ السلسلة من الخارج للداخل بحسب دور كل modifier، واختبر النتيجة بصريًا وبـsemantics؛ لا تفترض أن كل modifier مجرد style مستقل.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 خد chip ملونة: لو `background` قبل `padding` فاللون يشمل الـpadding؛ لو بعدها اللون يغطي المحتوى الداخلي بس. ولو `clickable` قبل `padding` فالـhit area مختلفة عن عكس الترتيب. اشرح السلسلة كـwrappers من برّه لجوه، واختبر touch target والـsemantics بدل screenshot فقط. لو padding برّه clickable، جزء ظاهر من chip ممكن لا يستقبل الضغط، وده مشكلة استخدام وaccessibility. قِس مساحة اللمس الفعلية على الجهاز وتأكد الـlabel مقروءة مع تكبير الخط.
 

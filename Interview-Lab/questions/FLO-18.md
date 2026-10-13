@@ -24,7 +24,7 @@ Compare upstream catch, retry/retryWhen predicates and completion observation.
 
 `catch` تمسك exceptions من upstream اللي فوقها، وتقدر تطلع fallback؛ ما تمسكش خطأ `collect` اللي تحتها. `retry` و`retryWhen` يعيدوا collection للمصدر بعد failure حسب predicate، وده ممكن يعيد side effects في cold Flow. `onCompletion` يلاحظ النهاية/الخطأ/الإلغاء لكنه مش بدل catch. لازم `CancellationException` تفضل خارجة، والretry للقراءات أو operations idempotent فقط.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في repository Flow، `catch` تمسك errors من upstream قبلها، مش exception من collector اللي بعدها؛ `retry` و`retryWhen` يعيدوا subscription للمصدر حسب شرط. لو network call غير idempotent، retry عمياء ممكن تكرر أثر؛ ولو `CancellationException` اتبلعت، شغل ملغي يرجع. `onCompletion` للملاحظة أو cleanup من غير ما تحول failure إلى success. اختبر IOException ثم نجاح، وcancellation منفصلة.
 

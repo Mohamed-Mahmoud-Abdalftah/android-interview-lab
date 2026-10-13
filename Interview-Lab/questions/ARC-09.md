@@ -24,7 +24,7 @@ Separate durable business facts from screen-specific rendering and interaction s
 
 Domain state حقيقة تخص business زي `OrderStatus.Paid` من server أو `AccountBalance` validated. UI state هي snapshot الشاشة: loading، displayed text، selected tab، enablement، snackbar/permission prompt visibility. نفس domain value ممكن يترندر بشكل مختلف حسب locale والشاشة. UI state أحيانًا ephemeral وتختفي بعد recreation، لكن business state لازم مصدرها data layer وتترجع بعد process death. ما تعتبرش `success = true` في ViewModel دليل إن payment اتسجل؛ السيرفر مصدر الحقيقة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 UI state فيها loading, selected tab, error banner؛ business state مثل payment Approved/Unknown لا يجب يختفي مع Activity. UI يمكن تعرض Unknown كرسالة، لكن source of truth في repository/backend. لو تعيد UI state من saveable وحدها بعد process death، ممكن تعرض success قديم. فرّق ephemeral presentation عن durable domain outcome واختبر restart.
 

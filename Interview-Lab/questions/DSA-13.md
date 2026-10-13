@@ -25,7 +25,7 @@ How can Kotlin collection chaining create temporary allocations?
 
 Kotlin `list.filter().map().sorted()` على Iterable غالبًا تعمل intermediate collections؛ كل مرحلة تزور عناصر وتخصص memory. `asSequence()` يخلي filter/map lazy ويقلل intermediates، لكن `sorted()` materializes لأن الترتيب يحتاج كل العناصر. Sequence مش دايمًا أسرع للlists الصغيرة بسبب overhead؛ نقيس. `Flow` للasync stream مش بديل تلقائي لكل collection chain.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 سلسلة `filter().map().sortedBy()` على List تنشئ intermediate collections، وقد تزيد allocations وGC حتى لو Big O واحدة. `asSequence()` تؤخر بعض المراحل لكنها ليست سحرًا؛ ترتيب operations وterminal call وعدد العناصر يحدد الفائدة، وsorting تحتاج تجميع. لو UI تتحدث كل keystroke، انقل transformation خارج recomposition وقيّس heap/CPU قبل التعديل.
 

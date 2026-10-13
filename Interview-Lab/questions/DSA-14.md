@@ -25,7 +25,7 @@ A product list freezes on low-end devices. How do you distinguish rendering bott
 
 Product list بتجمد على جهاز ضعيف؟ نجيب trace/frame metrics ونشوف: CPU في data transform أو `find` متكرر؟ Compose recomposition/bind؟ bitmap decode كبيرة؟ GC بسبب allocations؟ GPU overdraw؟ نجرب input sizes مختلفة: لو الوقت يقفز مع n² فغالبًا algorithm، لو مرتبط بصور/رسم فمسار rendering. ما نغيّرش architecture بالتخمين.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في freeze لproduct list، خذ trace لمعرفة هل Main في `find`/sort متكرر أم في Compose measure/draw أو image decoding. اعمل baseline للعدد والزمن والـallocations، ثم جرّب pre-index أو paging أو image sizing حسب السبب. ما تنقل كل شيء لـIO عميانيًا؛ لو UI تربط 10k items أو keys غير ثابتة سيظل jank. اختبر على low-end release build.
 

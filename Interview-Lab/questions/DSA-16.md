@@ -25,7 +25,7 @@ How do you optimize an algorithm while keeping code maintainable and correct?
 
 تحسين algorithm يبدأ بتحديد input range وقياس hot path، مش تحويل كل code لـlow-level loops. نثبت behavior باختبارات للحالات الحدية، نشتق complexity، نغير خطوة واحدة زي preindexing أو batching، ونقيس على جهاز ممثل. نراجع memory، concurrency وreadability؛ أسرع code مش مكسب لو بيكسر correctness أو يصعب صيانته.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 قبل optimization اثبت bottleneck بمقياس. اكتب contract واختبارات edge cases، ثم غير algorithm في جزء واحد: مثل بدل nested scan أنشئ map واحدة. قارن output قبل وبعد على بيانات صغيرة وكبيرة، راقب memory/GC، وخلي code مفهوم لفريق Android. لو improvement 2ms لكن صعّب debugging ووضع state، قد لا يستحق؛ وثّق الافتراضات وأعد القياس في release.
 

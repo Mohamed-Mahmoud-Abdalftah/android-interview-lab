@@ -24,7 +24,7 @@ Enforce meaningful dependencies with modules, visibility and tests while minimiz
 
 Boundary يعني قرار مين يعرف مين، مش عدد interfaces. في app متوسطة، Gradle modules تقدر تمنع `feature:ui` من استيراد Retrofit أو data implementation؛ `internal` يحدّ surface، وarchitecture tests/static checks تراقب imports. اعمل interfaces ضيقة عند seams حقيقية: domain policy محتاجة repository contract، أو provider متعدد. Concrete class داخل feature واحد ممكن يفضل concrete وتحقنه Hilt عادي. استخدم DTO/domain mapping لما contract مختلف، لكن ما تخلقش `FooApi/FooImpl/FooUseCase` لكل سطر. راجع dependency graph في CI وعالج violations بأمثلة حقيقية.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Enforce boundaries بأقل آليات: Gradle module dependencies للاتجاه، API visibility، static checks للimports المحظورة، وtests للعقود. لا تخلق interface واحد لكل implementation؛ ضع interface عند crossing متغير أو external dependency. مثال domain `PaymentPolicy` pure، data adapter يخاطب backend، UI تستهلك result. راجع dependency graph دوريًا بدل الاعتماد على naming conventions فقط.
 

@@ -25,7 +25,7 @@ What is a payment state machine (initiated, processing, approved, declined, unkn
 
 Payment state machine بتحدد انتقالات مسموحة: `initiated` قبل الإرسال، `processing` أثناء محاولة، `approved` أو `declined` بعد رد موثوق، `unknown` لما الرد ضاع، و`reversed` بعد تأكيد إلغاء الأثر وفق بروتوكول الـprovider. الـtimeout مش `declined`؛ ممكن issuer وافق والرد ما وصلش. كل transition لازم مربوط بـoperation ID ثابت ويتسجل durably.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في كاشير POS، terminal تبعت authorization برقم `operationId` وتفصل الشبكة قبل الرد. اكتب `Unknown` بدل `Declined`، وخلّي التطبيق بعد restart يعمل status lookup لنفس الهوية. لو callback قديمة وصلت بعد تأكيد أحدث، transition guard تمنع الرجوع لحالة غير صحيحة. أسماء الحالات دي domain model؛ provider الحقيقي ممكن يستخدم حالات تانية ولازم mapping موثق.
 

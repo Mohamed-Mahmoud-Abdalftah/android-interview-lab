@@ -26,7 +26,7 @@ A release bundle was signed with the wrong key. How do you contain it and correc
 
 أوقف upload/promotion فورًا واعرف الحالة: AAB محلية فقط، Play رفضها لأن upload certificate غلط، أم تم قبول/توزيع artifact في قناة معينة؟ احفظ hash/logs بدون نشر secrets. قارن certificate fingerprint مع upload key المسجل، وميّزها عن app-signing key التي يستخدمها Play للأجهزة. لو مجرد wrong upload key، أصلح protected CI secret/config وأعد build أو signing من source/toolchain موثوق مع versionCode صالح، ثم افحص fingerprint قبل الرفع واختبر internal track. لو key مشبوهة أو artifact وُزع بالفعل، اتبع incident/Play recovery والـrollout halt. لا “تصلح” signed AAB بتعديل bytes يدويًا.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Wrong key: أوقف promotion أولًا، وحدد هل upload اترفض أم وصل track وأي users تأثروا. قارن fingerprint مع expected upload/app signing roles؛ مسارات recovery تختلف. راجع secret reference والworkflow والartifact digest، ثم ابنِ من commit موثوق بمفتاح صحيح وفق حالة Play/versionCode. لا تفترض إن تغيير certificate بسيط؛ احتفظ بـincident log وراجع access.
 

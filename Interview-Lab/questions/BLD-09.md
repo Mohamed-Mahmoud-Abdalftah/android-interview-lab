@@ -26,7 +26,7 @@ How do you decide R8 keep rules for reflection, serialization, JNI, and SDKs?
 
 لا تبدأ بــ`-keep class ** { *; }`. افحص كيف runtime يصل للكود: `Class.forName` يحتاج اسم class وربما constructor، JSON serializer قد يحتاج field names أو generic Signature، JNI قد يربط أسماء methods/classes، وSDK قد تشحن consumer rules جاهزة. حدّد هل المطلوب منع shrinking أو renaming أو الاحتفاظ بعضو/attribute فقط، واكتب أضيق rule. لو المكتبة تملك reflection داخلي، هي مسؤولة عن `consumerProguardFiles`؛ app تضيف قواعد لسلوك خاص بها. اختبر minified release ومسار التحميل الفعلي، وافحص أثر rule على الحجم.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Keep rules للreflection/JNI/serializer تبنى على contract: أي class/member يُبحث عنه بالاسم runtime؟ راجع vendor rules وR8 usage output، واكتب أصغر rule تسمح بالسلوك. لكل rule test يعمل في minified consumer app، خصوصًا native callbacks وserialized names. rule واسعة تقلل shrinking وتخفي unsupported SDK behavior؛ لا تعتمد على `@Keep` بلا فهم propagation.
 

@@ -24,7 +24,7 @@ Model mutually exclusive loading/content/empty/error states and avoid losing cac
 
 للشاشة البسيطة، sealed `Loading`, `Content(items)`, `Empty`, `Error(reason)` يخلي الحالات المتنافرة واضحة. لكن offline-first screen عندها cached content مع refresh شغال أو error؛ هنا state مركّبة زي `items + isRefreshing + refreshError` أنسب من sealed واحدة تمنع coexistence. Empty لازم تعني data load ناجح لكن مفيش عناصر، مش network error اتخبى. ViewModel يشتق الحالة من repository stream ويحدد retry action؛ الـUI ترسم فقط. بعد process death ارجع للمصدر الدائم بدل افتراض إن الـViewModel state باقية.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 UiState sealed/immutable تجعل Loading/Content/Empty/Error واضحة، لكن بعض الحالات متزامنة: content قد يبقى مع refresh spinner أو error banner. لا تمسح data فور network failure لو cache صالح. اعرض retry action من event واضح، وتأكد StateFlow initial value مفهومة. اختبر transitions لا snapshot النهائية فقط، خصوصًا slow request/cancellation.
 

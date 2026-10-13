@@ -26,7 +26,7 @@ What is consumerProguardFiles for Android libraries?
 
 `consumerProguardFiles` في Android library تشير إلى R8/ProGuard rules تُشحن مع AAR وتطبق أثناء optimization للتطبيق الذي يستخدم المكتبة. لو SDK يستدعي class عبر reflection أو JNI، مؤلف المكتبة يعرف هذه الحاجة ويضع rule دقيقة بدل إجبار كل app على نسخها. هذا يختلف عن `proguardFiles` الخاصة بتحسين build المكتبة/التطبيق المحلي بحسب plugin. لكن rule واسعة من SDK واحدة قد تمنع R8 من تحسين جزء كبير من app؛ اختبر AAR داخل consumer app بـminified release وافحص القواعد الفعلية.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Library فيها reflection تحتاج consumer rules تصل للتطبيق المستهلك، مش proguard config داخلي للlibrary فقط. مثال SDK يبحث عن annotated adapters؛ لو R8 شالها في app، library test قد تنجح وapp release تفشل. أضف `consumerProguardFiles` دقيقة، واعمل sample consumer minified build في CI. راجع rule على كل version لتجنب إبقاء classes غير ضرورية.
 

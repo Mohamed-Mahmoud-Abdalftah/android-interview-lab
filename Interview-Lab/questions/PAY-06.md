@@ -25,7 +25,7 @@ How do you ensure atomic persistence of transaction status and reversal intent?
 
 لو status اتكتب `unknown` لكن reversal intent ما اتكتبش بسبب crash، العملية ممكن تفضل approved عند issuer من غير متابعة. اكتب تغيير الحالة والـoutbox row في نفس Room/SQLite transaction، بحيث يا الاتنين موجودين يا الاتنين لا. بعدها worker يرسل reversal بالـoriginal operation ID ويتابع acknowledgment. ده atomic محلي فقط؛ provider يحتاج dedup/status reconciliation.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 عند timeout يستوجب reversal، `attempt.state=REVERSAL_PENDING` وoutbox row لازم ينجحوا أو يفشلوا مع بعض. استخدم transaction محلية ثم شغّل worker بعد commit؛ متستناش الشبكة جوّه transaction. لو حصل crash بعد send وقبل acknowledgment، worker ممكن يعيد؛ لذلك reversal ID ثابت وlookup قبل اعتبار العملية مكتملة.
 

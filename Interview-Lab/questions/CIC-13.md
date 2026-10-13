@@ -25,7 +25,7 @@ How do you deal with flaky tests, retries, and quarantine policies?
 
 Flaky test يفشل أحيانًا بنفس code؛ ممكن يكشف race حقيقي أو test harness timing. نسجل first attempt والenvironment، نعيد للتشخيص، ونصلح السبب. Retries محدودة ومعلنة، quarantine لها owner وdeadline وبديل يغطي risk؛ مش نحول test red إلى green بصمت. Payment/security gate لا يُشال لمجرد إنه مزعج.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 الـflaky test يمر مرة ويفشل مرة لنفس الكود؛ اعرف الأول هل race في التطبيق، sleep في test، shared DB، emulator load، أو external service. ثبّت seed والclock والresponses وخد first failure logs/screenshot. retry ممكن يساعد تشخيص مؤقت، لكنه لو خلّى failure أخضر بصمت فقدنا الإشارة. quarantine يكون باسم owner، issue، deadline، وبديل يغطي المسار؛ security/payment tests الحرجة لا تتشال من gate بلا بديل. قس flake rate منفصل عن product failures.
 

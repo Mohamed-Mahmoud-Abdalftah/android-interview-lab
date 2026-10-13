@@ -26,7 +26,7 @@ How would you safely roll out and then roll back a bad Android release?
 
 ابدأ internal/closed test للـAAB الفعلية، ثم staged rollout بنسبة صغيرة مع gates محددة مسبقًا: crash-free/ANR، startup، login/payment success، backend errors، حسب حجم العينة. زوّد النسبة تدريجيًا بعد وقت كافٍ، مع owner يملك قرار الإيقاف. لو ظهر bug، أوقف rollout/حلّل scope، واستخدم kill switch/remote config آمنة للميزة إن وجدت. Play قد يتيح halt لإصدار staged أو كامل وفق القناة، لكن هذا لا يزيل النسخة من الأجهزة التي ثبتتها بالفعل. “Rollback” الحقيقي لهؤلاء يحتاج غالبًا forward fix بـversionCode أعلى أو mitigation server-side؛ downgrade عادي ليس خطة موثوقة. راجع migration/data compatibility قبل النشر حتى يمكن التعافي.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Staged rollout يخفف التعرض لكنه لا يرجع التطبيق المثبت فورًا. قبل النشر حدد crash/ANR/payment/login metrics وthreshold وخطة توقف. لو نسخة سيئة، halt rollout، استخدم feature flag آمن عند الإمكان، ثم build مصحح بـversionCode أعلى. حافظ على schema backward compatibility والpending transactions أثناء containment؛ لا توقف reconciliation مع feature. راقب الأجهزة/ABI المتأثرة والتواصل مع support.
 

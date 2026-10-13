@@ -25,7 +25,7 @@ What is time complexity versus space complexity?
 
 Time complexity تقيس نمو عدد العمليات لما input size `n` يكبر، وspace complexity تقيس memory إضافية تستخدمها الخوارزمية. ممكن algorithm أسرع لكن محتاجة `HashSet` بحجم `n`، وممكن أقل memory لكنها تعمل nested scan بوقت `n²`. لازم نحدد هل بنحسب auxiliary space فقط ولا output نفسه، وإيه معنى `n` في المشكلة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو عندك list فيها آلاف المنتجات، اسأل هل bottleneck حسابي ولا رسم UI. `O(n)` loop ممكن يكون مقبول لو مرة واحدة خارج Main، و`O(n²)` على كل scroll كارثة. Space complexity تحسب الـextra memory، مثل `HashSet` لتجنب scan متكرر. اذكر حجم الإدخال الفعلي، التخصيصات، وتأثير GC؛ Big O يصف النمو لا زمنًا مطلقًا.
 

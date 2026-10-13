@@ -26,7 +26,7 @@ When is a new feature module justified, and when is it unnecessary complexity?
 
 Feature module مبررة عندما قدرة لها owner واضح، public entry صغير، استقلال تطوير/اختبار مفيد، أو delivery/build impact مقاس. لو تطبيق صغير وفريق واحد، تقسيم شاشة واحدة إلى module مستقلة قد يزيد Gradle configuration وDI/navigation wiring دون فائدة. لا تعتمد على عدد classes وحده. اسأل: هل تغيراتها تتسبب في إعادة بناء أجزاء كثيرة؟ هل فرق تعمل بالتوازي؟ هل الميزة قابلة للتوصيل مستقلة؟ ابدأ بpackage boundary ثم استخرج module عند وجود seam مستقرة واختبارات تقيس أثرها.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Feature module مبررة لما تملك فريق، release/test boundary، أو dependency set مستقل مؤثر. لو مجرد شاشة واحدة تستورد معظم app وcore، module جديدة قد تزيد Gradle work ولا تعزل شيئًا. اسأل كم تغيير يعبر boundary، هل build time يتحسن، ومن يملك API؟ ابدأ package-by-feature ثم استخرج module عندما pressure حقيقي.
 

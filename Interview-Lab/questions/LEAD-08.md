@@ -25,7 +25,7 @@ What metrics tell you whether a refactor was successful?
 
 Refactor نجاحها يتقاس بهدفها: لو فصلنا data layer عشان bugs أقل، نقيس escaped defects ووقت إضافة feature واختبارات. لو الهدف build speed، نقيس cold/incremental p50/p95. لو UI، frame time وcrash/ANR. نحط baseline قبل التغيير وguardrails للأداء/الأمان، ونقارن cohorts؛ عدد files أو classes مش metric نجاح.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 نجاح refactor يتقاس على الهدف لا على قلة الملفات. لو فصلت repository لأن tests صعبة، قس وقت إضافة use case، test flakiness، defect rate، build time وربما allocations للـUI بعده. خد baseline قبل التغيير، وراقب release metrics بعده. احذر metric مضللة: زيادة coverage مع tests سطحية، أو تقليل LOC على حساب state machine غامضة. لو التحسن محلي لكن release crashes زادت، القرار يحتاج مراجعة.
 

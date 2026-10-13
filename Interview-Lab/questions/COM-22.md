@@ -26,7 +26,7 @@ How do you support accessibility, screen readers, and adaptive layouts?
 
 في Compose، semantics تقدم معنى العنصر لخدمات accessibility والاختبارات: label، role، state، action. أي icon-only button يحتاج وصف مفهوم؛ decorative icon يمكن إخفاؤه من القراءة إذا parent يشرح الوظيفة. رتّب focus منطقيًا، لا تدمج semantics بشكل يمحو actions، ووفّر touch targets مناسبة. التصميم المتكيف يعتمد على مساحة النافذة الفعلية (window size classes) وليس “tablet” من model name؛ اختبر split-screen، foldable، font scaling وRTL عربي. UI تنقل المعلومات النصية بوضوح حتى لو اللون لا يُرى.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 زرار أيقونة بس لازم يبقى له وصف مفهوم للـTalkBack، والـdecorative icon ما تتقرأش مرتين. في layout كبيرة استخدم المساحة المتاحة، مش اسم الجهاز؛ split-screen ممكن يخلي tablet ضيق. اختبر Arabic RTL و200% font وتاب keyboard وترتيب القراءة، لأن screenshot سليمة مش كفاية. لو icon بتعمل action مختلفة عن الصف، دمج semantics كله ممكن يخفيها من TalkBack. جرّب swipe order وkeyboard focus على نافذة ضيقة مع font كبير قبل اعتماد التصميم.
 

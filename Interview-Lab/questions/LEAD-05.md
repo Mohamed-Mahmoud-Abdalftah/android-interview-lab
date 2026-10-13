@@ -25,7 +25,7 @@ How do you mentor junior developers and improve team engineering practice?
 
 Mentoring junior مش مجرد review comments أو pair programming مرة. نعرف مستوى الشخص وهدفه، ندي مهمة بحدود واضحة ومساحة قرار، نعمل pair في نقطة صعبة، وfeedback محدد على reasoning/tests. نرفع المسؤولية تدريجيًا ونبني team practice زي design review، test examples، incident learning. ما نخليش mentoring يتحول لاعتماد دائم على senior.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 الmentoring مش إن senior يكتب الكود بدل junior. خليه يشرح invariant في PR، مثل “لا نكرر charge بعد timeout”، ثم اعمل pair على test يثبت failure، وبعدها سيبه ينفذ مع feedback محدد. اكتب decision record أو مثال repo عشان المعرفة تبقى للفريق. قيّم التقدم باستقلالية القرار وجودة tests وتقليل إعادة العمل، مش بعدد التعليقات. لو الخطأ يمس security/payment، تدخل مباشرة لحماية المستخدم مع شرح السبب والتعلم.
 

@@ -24,7 +24,7 @@ Predict repeated execution for two cold-flow collectors and choose sharing delib
 
 الـcold Flow مش بتبدأ upstream غير وقت collection. لو اتنين عملوا `collect` لنفس `flow {}`، block هيتنفذ مرتين، فلو فيه HTTP call ممكن تبقى طلبين. ده مفيد لو كل collector عايز execution مستقلة، لكنه مكلف لو المصدر واحد؛ ساعتها نشارك بـ`shareIn` أو `stateIn` داخل scope مملوكة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو repository رجّعت `flow { emit(api.fetch()) }`، كل `collect` جديد يشغّل `fetch` من الأول، حتى لو نفس Flow object. ده ينفع لو عايز fresh execution، لكنه مكلف لو كل tab تجمعه. لو عايز قيمة مشتركة، استخدم sharing في scope مالكها واضح، وحدد هل subscriber الجديد يستقبل آخر قيمة ولا يستنى التالية.
 

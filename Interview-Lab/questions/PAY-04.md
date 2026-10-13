@@ -25,7 +25,7 @@ What risks arise when a local payment record is not durably committed?
 
 لو terminal بعت authorization قبل ما يحفظ operation ID وstatus بشكل durable، البطارية ممكن تفصل بعد issuer approval وقبل كتابة السجل؛ بعد restart التطبيق ما يعرفش يسأل عن العملية أو يعكسها. لذلك نسجل intent والهوية والparameters الآمنة في transaction محلية قبل الإرسال، ثم نحدّث state atomically حسب الرد. الحفظ المحلي وحده مش كفاية لو الدليل ضاع؛ backend/provider reconciliation لازم موجود.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 افترض الجهاز فصل بين `sendAuthorization()` و`insertAttempt()`: issuer ممكن يكون وافق لكن local DB فاضية. الحل write-ahead intent قبل النداء الخارجي، وبعد restart افحص كل محاولة غير نهائية. حتى مع Room transaction، DB محلية والـprovider نظام تاني؛ مفيش atomic commit بينهم، فbackend ledger لازم تكشف الفجوات.
 

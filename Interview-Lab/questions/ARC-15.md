@@ -24,7 +24,7 @@ Choose interfaces for meaningful polymorphism, boundaries and tests, not one per
 
 Interface مفيدة لما consumer محتاج contract مستقل عن implementation: repository له offline/server adapters، payment provider strategies، أو module boundary محتاج fake. لكن `Foo` و`FooImpl` لكل class من غير alternative أو سبب تغيّر بيزود navigation وboilerplate. Concrete implementation ممكن تكون كفاية داخل feature صغير، وتقدر تختبرها بحقن dependencies بتاعتها. الأهم public types ما تسرّبش Retrofit/Room لو هدفك عزلها. DI tool يقدر يحقن concrete class؛ interface قرار design مش شرط Hilt.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Interface مفيدة عند boundary متغير أو له بديل اختبار/feature implementation؛ مثل `PaymentGateway` مع sandbox/vendor. لا تكتب `FooInterface` لكل class final لمجرد DI؛ Hilt يمكن يحقن concrete. ابدأ concrete داخل feature وextract contract عند الحاجة. اختبر behavior لا mock call order فقط؛ adapter الحقيقي يحتاج integration test.
 

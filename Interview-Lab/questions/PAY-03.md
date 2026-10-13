@@ -25,7 +25,7 @@ What are authorization, reversal, void, refund, and reconciliation?
 
 Authorization طلب موافقة وحجز/اعتماد حسب rail؛ reversal رسالة لإلغاء أثر authorization غير محسوم أو لم يكتمل ضمن قواعد الشبكة؛ void يلغي عملية قبل settlement حسب provider؛ refund يرجّع مال بعد عملية مكتملة؛ reconciliation يطابق سجلات terminal/backend/provider ويكشف الفروق. الأسماء والتوقيت مش universal؛ لازم نلتزم بعقد acquirer.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو authorization approved ولسه مش captured، void/cancel أو reversal ممكن ينفع حسب rail والنافذة الزمنية؛ بعد settlement refund غالبًا workflow جديدة. متستخدمش الأسماء كأنها API موحدة لكل acquirer. في المقابلة اربط كل operation بـoriginal reference، حالة التسوية، deadline، ودليل نهائي من provider.
 

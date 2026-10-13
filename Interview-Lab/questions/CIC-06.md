@@ -25,7 +25,7 @@ When is revert safer than reset on shared branches?
 
 على branch مشترك أو release branch، `revert` بيضيف commit يعكس change قديم من غير ما يغير hashes اللي الناس سحبتها. `reset` ينقل branch pointer وforce-push ممكن يكسر شغل الآخرين ويضيّع provenance. لكن revert مش زر سحري: لو commits أحدث معتمدة على القديم، هتظهر conflicts أو behavior مكسور لازم يتراجع ويُختبر.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو commit نازل على `main` وكل الفريق بنا عليه، `reset` وforce push هيغيّروا التاريخ اللي عندهم. `revert` يضيف commit جديد يلغي الأثر بدون تغيير identities القديمة. لكن revert مش زر سحري: لو فيه commits لاحقة تعتمد على API الذي أُلغي، هيظهر conflict أو build failure يحتاج تعديل. راجع diff النهائي وشغّل tests للـvariant المتأثر، وبعدها أصلح forward branches أو release branches حسب السياسة.
 

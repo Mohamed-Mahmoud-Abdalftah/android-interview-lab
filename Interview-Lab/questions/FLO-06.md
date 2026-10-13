@@ -26,7 +26,7 @@ What is conflation, and how does StateFlow use equality to suppress repeated sta
 
 الـconflation معناها إن المتابع البطيء مش لازم يشوف كل قيمة وسيطة؛ المهم توصله أحدث state. `StateFlow` ساخنة، عندها قيمة حالية لازم تكون موجودة من البداية، وبتستخدم `equals` علشان ما تبعتش state جديدة لو مساوية للقديمة. ده مناسب لـUI state زي `Loading` أو `Profile(name)`. لكن لو بتعدّ clicks أو transaction events، إسقاط القيم الوسيطة ممكن يضيّع معنى مهم؛ اختار event contract مختلف. ولو عدّلت نفس mutable object في مكانه، ممكن الـUI ما تشوفش emission مفيدة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو السعر اتغير من 10 لـ11 بس `equals` بتقول القيمتين متساويتين غلط، `StateFlow` ممكن تسكت والتطبيق يعرض سعر قديم. وبالعكس لو بتبعت نسخة مساوية فعلًا، collector مش لازم تستقبل emission جديدة. هي تحتفظ بآخر قيمة للـslow collector، مش queue لكل transition؛ لذلك عدّاد الأحداث أو navigation لا يناسبها. استخدم immutable UI state واختبر equality.
 

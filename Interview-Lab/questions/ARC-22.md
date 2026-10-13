@@ -24,7 +24,7 @@ Identify transport-schema coupling, null/error leakage and UI churn from direct 
 
 Repository بترجع `UserDto` لـCompose يعني UI بقت مرتبطة بأسماء JSON fields، nullable transport fields، وAPI version. أي server rename أو تغيير units ينتقل للشاشة، وممكن `null` يتعرض كقيمة أو يعمل crash. كمان DTO غالبًا لا تمثل cache freshness ولا domain validation. الأحسن repository تعمل mapping لـdomain model أو app data contract، وViewModel يطلع UI model للعرض. لكن ما تعملش models متطابقة بلا سبب؛ اعزل boundaries اللي احتمال تغييرها أو فيها invariants حقيقية.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو Repository يرجع DTO لـCompose، nullable fields وHTTP enum strings تنتشر في UI، ويتغير rendering مع wire schema. اعمل mapper عند boundary إلى domain/UI model مع validation؛ unknown status لا يتحول Approved. قد يكون model واحد مقبول في feature صغيرة لو contracts متطابقة ومقيدة، لكن وضح السبب واختبر API drift. لا تضف تحويلات شكلية بلا معنى.
 

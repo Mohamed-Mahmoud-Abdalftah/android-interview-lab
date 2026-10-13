@@ -24,7 +24,7 @@ Place UI state/lifecycle, reusable policy, and data-source coordination with the
 
 ViewModel شاشة: تستقبل UI events، تنادي domain/data، وتطلع `UiState` مناسب للعرض؛ ما تمسكش View/Activity reference وما تعملش blocking I/O على Main. UseCase، لو موجودة، لقاعدة business أو workflow معاد استخدامها أو معقدة، من غير Android UI types. Repository لداتا التطبيق: local/remote، cache، merge، error mapping من transport. مثال: ViewModel يحوّل `Balance` لعملة معروضة؟ formatting المحلي للـUI عند presentation؛ التحقق من حد التحويل في domain؛ جلب balance وحفظه في data.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 ViewModel يحول events إلى UiState ويمسك scope للشاشة؛ UseCase ينفذ business decision قابل للاستخدام خارج الشاشة؛ Repository يتعامل مع cache/network/DB. لو ViewModel فيها JSON parsing وretry/payment rule، ابدأ بنقل rule مع test ثم adapter، لا rewrite كامل. UI state بعد process death يعاد من durable ID. راقب إن ViewModel لا تحتفظ بـActivity.
 

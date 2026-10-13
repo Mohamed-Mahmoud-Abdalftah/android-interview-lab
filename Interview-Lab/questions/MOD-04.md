@@ -26,7 +26,7 @@ What is high cohesion and low coupling?
 
 High cohesion تعني عناصر module تخدم مسؤولية/قدرة واضحة وتتغير غالبًا لنفس السبب. Low coupling تعني علاقتها بالآخرين عبر عقود صغيرة ومستقرة، فلا يحتاج feature معرفة تفاصيل implementation داخل غيره. مثلًا `:feature:checkout` يملك checkout UI/state/use cases المتصلة، لكنه لا يملك كل HTTP client للتطبيق. لو class واحدة مشتركة انتقلت إلى `:core:common` فذلك لا يقلل coupling تلقائيًا؛ قد يجعل عشرات modules تعتمد على API واسعة. قيّم أسباب التغيير واتجاه dependencies ووقت إعادة البناء.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 High cohesion: feature payment تجمع ما يخص payment lifecycle؛ low coupling: لا تستورد شاشة profile لمجرد قراءة account ID. افحص “لماذا يتغير هذا module؟” و“من يتأثر؟”. لو model shared يتغير لأجل API جديد ويعيد compile 20 feature، ربما contract واسع. لا تفصل classes مترابطة فقط للحصول على dependency graph جميلة.
 

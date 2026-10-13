@@ -26,7 +26,7 @@ What is modularization, and what trade-offs does it introduce?
 
 Modularization تقسيم التطبيق إلى Gradle modules لها dependencies وpublic APIs محددة، مثل app/features/core. الهدف عزل المسؤوليات، تسهيل ownership وإعادة الاستخدام، وربما تحسين incremental build حين تكون الحدود صحيحة. لكنه ليس مجانيًا: كل module تضيف Gradle configuration، API maintenance، DI/navigation wiring واختبارات تكامل. لو قسمت حسب كل class، ستخلق graph معقدة وبطء configuration بدون فائدة. قِس سبب التقسيم أولًا، واختَر حدودًا حول feature أو capability مستقرة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Module تقسم ownership والبناء، لكن كل module جديدة تزيد Gradle configuration وAPI maintenance. لو فريق checkout وفريق catalog يغيروا نفس core باستمرار، التقسيم الحالي قد لا يحمي الاستقلالية. ابدأ boundary واضح لحاجة تتغير مستقلة وتملك tests، وقس build time وchange coupling بعد الفصل. لا تجعل عدد modules هدفًا بحد ذاته.
 

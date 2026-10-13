@@ -25,7 +25,7 @@ How do you run an incident postmortem without blame?
 
 Postmortem بدون لوم مش معناه مفيش مسؤولية؛ معناه نفهم system سمح إزاي بالخطأ ونصلح controls. نجمع timeline factual من logs وقرارات، impact، detection، mitigation، root/contributing factors، what worked، actions بowners/dates وverification. نتجنب “المهندس نسي” كسبب وحيد؛ نسأل ليه CI/review/rollout ما كشفوش.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 بعد incident، ما تكتبش “فلان نسي check”. اعمل timeline بالأدلة: أول symptom، detection، mitigation، recovery، ومتى اتأكدنا إن المستخدمين رجعوا طبيعي. اسأل لماذا النظام سمح للخطأ بالمرور: gate ناقصة؟ metric متأخرة؟ ownership غامض؟ لكل action حدد owner وموعد واختبار أو alert يثبت الإصلاح. شارك impact بصدق ومن غير بيانات حساسة، وراجع action بعد فترة بدل إغلاق المستند فور الاجتماع.
 

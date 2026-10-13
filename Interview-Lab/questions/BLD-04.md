@@ -26,7 +26,7 @@ What is the difference between debug and release signing?
 
 Debug build غالبًا يوقع تلقائيًا بـdebug keystore للتطوير، وهو ليس هوية نشر موثوقة. Release يحتاج signing config بمفتاح محمي؛ update لنفس package يعتمد على signing identity المتوافقة. مع Play App Signing، ترفع AAB موقعة بـupload key، وGoogle Play يوقع APKs التي تصل للمستخدم بمفتاح app signing المُدار؛ لا تخلط الاثنين. احفظ release/upload key في protected CI secrets أو نظام مفاتيح مناسب، لا في Git أو logs، واختبر شهادة artifact قبل upload. فقدان upload key له إجراء reset مختلف عن فقدان app-signing key.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Debug key للتطوير ولا تستخدمها لمسار نشر. Release upload key مربوط بصلاحية رفع، وPlay App Signing قد يدير app signing key منفصلة؛ فرّق بينهما. خزّن credentials في protected release job، وراجع fingerprint قبل upload. خطأ key قد يمنع update أو يسبب incident؛ لا تحاول إصلاحه بforce key change بلا فهم سياسة المتجر.
 

@@ -26,7 +26,7 @@ What are build types, product flavors, variants, and source sets?
 
 Build type مثل `debug`/`release` يحدد خصائص البناء كـdebuggable وminification/signing. Product flavor يمثل إصدار منتج/بيئة مثل `demo`/`full` أو `staging`/`prod` ضمن flavor dimensions. Variant هي تركيب build type مع flavor من كل dimension: `demoRelease`. Source sets مثل `src/main`, `src/demo`, `src/release`, `src/demoRelease` توفر code/resources/manifest للتركيب، مع merge priority موثقة. لا تضع secrets حقيقية في flavor source؛ APK قابل للفحص. اختبر release variant التي ستُنشر، وليس debug فقط.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Build type مثل debug/release يحدد debuggable/minify/signing، flavor مثل demo/prod يحدد منتج أو بيئة، والvariant حاصل تركيبهما. Source sets لها precedence؛ `src/debug` قد يحوي provider غير موجود في release. في CI اختبر productionRelease نفسه وافحص merged manifest وendpoint. لا تضع secret backend داخل `BuildConfig` وتعتبره آمنًا.
 

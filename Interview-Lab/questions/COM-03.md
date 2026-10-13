@@ -26,7 +26,7 @@ What triggers recomposition, and what can be skipped?
 
 Compose يعيد composition عندما state مقروءة في scope تتغير، أو parent يعيد الاستدعاء بمدخلات مختلفة، أو عوامل أخرى تتطلب تحديث الـcomposition. لكنه يستطيع تجاوز child calls إذا parameters ومعايير الـcompiler تسمح. `mutableStateOf` مرصود؛ تغيير property داخل plain mutable object دون observable wrapper قد لا يظهر. ونقل قراءة state إلى child ضيق يحدّ invalidation، لكن قراءة value في parent الكبير توسع العمل. عدد recompositions وحده ليس دليل بطء؛ قياس frame time مهم.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو `query` مقروءة في root كبيرة، كل حرف ممكن يرجّع scope واسع؛ لو القراءة داخل جزء البحث، أثرها أضيق. لكن child ممكن يتعمله skip حسب inputs وcompiler configuration، فمتقولش إن كل parent recomposition تعني كل child اشتغل. جرّب تغيّر `query` وراقب trace قبل أي refactor. لو النتيجة بطّيئة، ابدأ بـtrace للـframe وشوف القراءة حصلت فين بدل ما تقسّم كل Text. لو السبب image decode أو layout، نقل state read وحده مش هيحل المشكلة.
 

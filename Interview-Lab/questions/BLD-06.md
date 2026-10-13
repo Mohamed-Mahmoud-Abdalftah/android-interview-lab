@@ -26,7 +26,7 @@ What are R8, shrinking, optimization, and obfuscation?
 
 R8 أداة تحسين code في Android release pipeline. Shrinking تحذف code غير مستخدمة حسب reachability؛ optimization تغير/تدمج code لتحسين الحجم أو الأداء؛ obfuscation تعيد تسمية symbols، ما يصعّب قراءة stack traces وبعض runtime name lookups. Resource shrinking مسار مرتبط بإزالة resources غير المطلوبة حسب إعداد AGP. Keep rules تحدد entry points التي لا تراها static analysis، مثل reflection/JNI/serialization؛ broad `-keep class ** { *; }` يقتل الفائدة. اختبر release minified artifact واحتفظ بـmapping file المطابقة لكل build حتى تستطيع retrace crash.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 R8 يزيل code غير مستخدم ويصغّر/يعيد تسمية classes حسب rules، وقد يكسر reflection/JNI/serialization إن contract غير ظاهر للتحليل. اختبر minified release variant، احفظ mapping، واكتب keep rule ضيقة مع سبب. لا تعالج crash بـ`-keep class **` لأنها تخفي المشكلة وترفع الحجم. قارن startup/size/crash قبل وبعد.
 

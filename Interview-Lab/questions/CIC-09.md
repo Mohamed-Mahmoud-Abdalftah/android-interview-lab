@@ -25,7 +25,7 @@ How do you protect signing material and CI secrets?
 
 Android signing key لو اتسرب attacker يقدر يوقّع artifacts حسب منظومة التوزيع؛ CI secrets زي Play API credentials برضه خطيرة. نخلي release signing في protected job/environment، صلاحيات أقل ما يمكن، approvals/audit، وuntrusted PR/fork jobs من غير secrets. ما نطبعش قيم في logs أو artifacts، ونستخدم managed key storage/Play App Signing حسب release setup.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Signing key وPlay credentials أسرار نشر، مش input لأي PR. خزنها في secret manager أو protected CI environment بمبدأ أقل صلاحية، وحدد من يقدر يشغّل release job ومن يقدر يوافقه. استخدم ephemeral/OIDC credentials لو provider يدعم، وراجع log masking لأنه مش يمنع كل تسريب؛ PR خبيث ممكن يبعث السر للشبكة لو job شغّل كوده بنفس الصلاحيات. اعمل rotation/revocation plan وتابع audit logs، وافصل upload key عن app signing key حسب نموذج Play.
 

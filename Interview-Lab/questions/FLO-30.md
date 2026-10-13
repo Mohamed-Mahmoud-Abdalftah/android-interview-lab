@@ -24,7 +24,7 @@ State precise absent-subscriber SharedFlow replay/buffer guarantees.
 
 لو `SharedFlow` أصدرت event ومفيش subscriber، اللي يتخزن للوافدين الجدد هو آخر `replay` قيم فقط. `extraBufferCapacity` مخصص للـsubscribers البطيئين الموجودين، مش backlog وقت الغياب؛ `BufferOverflow` ما يشتغلش أصلًا في حالة مفيش subscribers. `tryEmit` ممكن يرجع success رغم إن محدش استلم. ولو process اتقفل، replay in-memory تضيع.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 `SharedFlow(replay=0, extraBufferCapacity=64)` ومعاها zero subscribers مش معناها 64 event مستنيين UI؛ من غير subscribers اللي يفضل هو replay cache فقط، وهنا صفر. حتى `emit` الناجحة لا تعني navigation اتنفذت. لو حدث لازم يوصل بعد ما التطبيق يرجع، خزّنه في state/durable store مع ID وack؛ replay=1 قد تعيد حدث قديم وتكرر action.
 

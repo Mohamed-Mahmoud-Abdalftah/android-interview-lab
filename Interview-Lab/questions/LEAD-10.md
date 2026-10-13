@@ -25,7 +25,7 @@ How do you decide build versus buy for third-party libraries/SDKs?
 
 قرار build vs buy يعتمد على قيمة الميزة، وقت الوصول، security/compliance، جودة SDK، التحديثات، lock-in، cost وteam capability. SDK مدفوعات أو biometric لازم نفهم certifications والدعم وABI/OS matrix؛ بناء بديل داخلي ممكن يبقى غير واقعي أو غير مسموح. بنعمل proof صغير، threat review، وexit plan لو vendor فشل.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو محتاج crash reporting أو payment SDK، اعمل build-vs-buy على capability المطلوبة: time-to-market، maintenance، security، privacy، Android/ABI support، vendor SLA، exit cost. لا تدخل SDK لمجرد أن demo نجح؛ جرّبه في minified release على الأجهزة المستهدفة، راجع permissions وdata flow وoffline/timeout. ولو تبني بنفسك، احسب بروتوكولات وعمليات support طويلة الأجل. حدد adapter وحدود ownership عشان تقدر تستبدل vendor لاحقًا.
 

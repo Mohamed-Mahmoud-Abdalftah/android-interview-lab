@@ -24,7 +24,7 @@ Compare eager, lazy and subscriber-driven sharing including restart and resource
 
 `Eagerly` يبدأ upstream فور إنشاء shared stream حتى لو مفيش subscribers؛ `Lazily` يبدأ مع أول subscriber ويفضل شغال بعده طول عمر الـscope؛ `WhileSubscribed` يبدأ مع أول subscriber ويوقف بعد آخر واحد بtimeout قابل للضبط، وممكن يبدأ من جديد. الـtimeout القصير يوفر battery لكن rotation السريعة ممكن تعمل restart/network reconnect.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 `Eagerly` يبدأ upstream فور إنشاء shared flow، حتى من غير شاشة؛ `Lazily` يبدأ مع أول subscriber وغالبًا يفضل شغال حتى scope تنتهي؛ `WhileSubscribed` يوقف بعد آخر subscriber مع timeout اختياري. لو location sensor مكلف، Eagerly ممكن تستهلك battery. لو Room state محتاجة تفضل دافئة بين rotation قصير، stop timeout مناسب. اختبر subscriber تخرج وترجع قبل/بعد المهلة.
 

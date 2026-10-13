@@ -26,7 +26,7 @@ How do you configure signing keys and Play App Signing safely?
 
 فعّل Play App Signing حسب سياسة التطبيق: app-signing key توقع APKs الموزعة، upload key توقع AAB المرفوعة إلى Play. خزّن upload keystore/password في secret manager أو protected release CI، لا في repo أو `gradle.properties` مشتركة؛ وفّرها فقط لمهمة التوقيع بعد مراجعة source/tests. افحص certificate fingerprint وversionCode وartifact hash قبل الرفع، واستخدم نفس AAB عبر tracks. جهز rotation/reset procedures حسب نوع المفتاح، وقيّد صلاحيات Play Console. لو key اتسرب، تعامل معها كincident وليس مجرد تغيير password.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Signing secrets لا تدخل repository أو PR job. Play App Signing يحتفظ بمفتاح التطبيق وفق النموذج، وpipeline تستخدم upload key محفوظة في protected environment. تحقق certificate fingerprint وpackage/version قبل الرفع، وفصل من يملك approval عن من يغير workflow. حضّر recovery لو upload key اتعرضت أو ضاعت، وسجل audit. لا تعتبر log masking ضمانًا ضد malicious build script.
 

@@ -24,7 +24,7 @@ Distinguish fan-in, queued buffering, dropped intermediate values and cancellati
 
 `merge` يجمع عدة flows في stream واحدة وemissions ممكن تتداخل. `buffer` يفصل producer عن collector بقناة buffer لكن لا يعني إسقاط القيم افتراضيًا. `conflate` يحتفظ بالأحدث لما المستهلك بطيء ويسقط intermediates. `collectLatest` يلغي شغل معالجة القيمة السابقة عند وصول أحدث. اختيار الإسقاط أو الإلغاء لازم يبقى آمن لنوع البيانات.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 `merge` تجمع streams مستقلة، مش backpressure strategy بحد ذاتها. `buffer` تفصل producer/consumer بقناة وتسمح upstream تسبق؛ `conflate` تسقط intermediate وتبقي الأحدث؛ `collectLatest` تلغي معالجة القيمة القديمة. في telemetry مالية لا تسقط أحداث، لكن preview صورة متغيرة بسرعة ممكن latest ينفع. قِس memory والـlatency وما تستخدمش buffer بلا حد.
 

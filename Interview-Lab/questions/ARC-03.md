@@ -24,7 +24,7 @@ Explain compile-time source dependencies versus runtime control flow and where i
 
 Dependency Rule في Clean Architecture بتقول source-code dependencies تتجه ناحية policies الأكثر ثباتًا، مش ناحية UI/framework details. Domain ما يستوردش Retrofit DTO ولا `Activity`. لو domain محتاج data، يعرف contract مناسب له، وdata implementation تنفّذه؛ DI في composition root تربطهم. وقت التشغيل call ممكن يمشي من UI إلى use case إلى repository implementation ثم network، وده مش تناقض: source dependency direction غير runtime call direction. Android official architecture بتعرّف domain اختيارية، وفي رسمها الـdomain تعتمد على data repositories؛ ده اصطلاح مختلف عن Clean Architecture الكلاسيكية اللي بتحط policy contract جوّه. وضّح أي model بتستخدمه بدل ما تخلط الرسمين.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Dependency Rule: كود policy الداخلي لا يستورد Android/Retrofit details. UseCase يعتمد على interface مثل `PaymentRepository`، والـdata implementation تحقن خلفه. لكن dependency direction في source لا تعني flow of control؛ التنفيذ ينزل للadapter runtime. لو domain module يستورد Room entity، سيصير migration مؤثرًا على policy. افحص Gradle dependencies أيضًا، مش packages فقط.
 

@@ -24,7 +24,7 @@ Distinguish a stream of asynchronous values from a single suspend result, includ
 
 `Flow<T>` سلسلة قيم asynchronous بتطلع مع الوقت؛ `suspend fun ...: T` بترجع نتيجة واحدة أو error. Flow العادية غالبًا cold: الكود يبدأ مع `collect` وكل collector ممكن يشغّل المصدر من جديد. نستخدم suspend call لطلب profile واحد، وFlow لمتابعة تغييرات Room أو query مستمرة. الاتنين بيراعوا cancellation لكن stream يحتاج سياسة collection/lifecycle.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في شاشة catalog، `refresh()` طلب واحد للـAPI، بينما `observeProducts()` من Room يطلع snapshot جديدة مع كل تعديل. لو جمعت cold Flow مرتين وفي جسمها API call، ممكن تبعت طلبين؛ الحل إن المصدر المحلي يبقى واضح أو تشارك الـupstream في scope محددة. في production جرّب دخول وخروج الشاشة وراقب عدد الطلبات، لأن مجرد وجود Flow لا يعني caching.
 

@@ -26,7 +26,7 @@ Compare remember, rememberSaveable, and ViewModel state.
 
 `remember` يحتفظ بقيمة أثناء وجود نفس composition، لكنه لا يحميها من Activity recreation. `rememberSaveable` يستخدم saved instance state للأنواع القابلة للحفظ، فيناسب text أو selected tab صغيرة عبر rotation وإعادة إنشاء process عندما يوفر النظام state restoration. ViewModel يملك screen/business state ويبقى عادة عبر configuration change، لكنه يتكون من جديد بعد process death؛ `SavedStateHandle` يحتفظ بحد أدنى من keys/IDs لإعادة تحميل البيانات. لا تخزن response كبير أو token حساس في Bundle.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو المستخدم فتح filters وبعدين لفّ الموبايل، `remember` وحده هيضيع القيمة؛ `rememberSaveable` مناسب لـtab أو text صغير. `ViewModel` مناسب لحالة الشاشة والطلبات لكنه بيتبني من جديد بعد process death؛ احفظ ID أو query في `SavedStateHandle` وحمّل البيانات تاني. ما تحطش response كبير أو secret في saved-state Bundle. بعد process death النظام قد يرجّع UI state الصغيرة، لكن repository data لازم تتعاد من مصدر دائم. جرّب قتل العملية من أدوات الاختبار بدل الاكتفاء بتدوير الشاشة.
 

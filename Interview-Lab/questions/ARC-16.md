@@ -24,7 +24,7 @@ Compare navigation, cohesion, ownership and Gradle module implications of two pa
 
 Package-by-layer زي `ui/`, `domain/`, `data/` على مستوى app سهلة في البداية لكن feature واحدة بتتوزع على folders بعيدة. Package-by-feature زي `checkout/ui`, `checkout/data` تجمع الملفات اللي بتتغير مع بعض وتساعد ownership. في app كبيرة ممكن تعمل feature modules ومعاها shared core modules لعقود حقيقية؛ ما تعملش `core` garbage dump. تنظيم packages وحده ما يفرضش compile-time boundaries؛ Gradle module dependencies وvisibility/tests هي اللي تمنع imports غلط.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Package-by-layer تجمع كل ViewModels بعيدًا عن feature data، فيصعب تتبع change؛ package-by-feature يضع feature code قريبًا، لكن shared contracts تحتاج مكان واضح. في مشروع كبير، ابدأ feature modules أو packages بحدود dependency ومنع cycles. لا تنقل الملفات فقط وتعتبر coupling حُل؛ راجع Gradle graph وAPI exposure واختبارات كل feature.
 

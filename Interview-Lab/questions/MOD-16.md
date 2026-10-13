@@ -26,7 +26,7 @@ How do you test and publish a reusable Android library/SDK module?
 
 Android library غالبًا تنتج AAR، لكن release ليست ملف AAR وحده: public API، dependency metadata، resources/manifest merge، consumer R8 rules، minSdk ونسخ التوافق كلها عقود للمستهلك. اختبر logic على JVM، platform behavior على جهاز/محاكي، ثم sample consumer app يبني debug/release مع minification للتأكد من التبعيات والـmanifest/keep rules. انشر artifact وmetadata عبر Gradle publishing إلى repository موثوق، وثبت version semantic قدر الإمكان، واحتفظ بrelease notes وchecksums/signing إن لزم.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Android library reusable تحتاج public API واضح، consumer R8 rules، manifest merging آمن، versioning وsample consumer minified build. اختبر Kotlin/JVM logic، instrumentation للAndroid contract، وخروج AAR/Maven metadata. SDK يملك transitive deps بحذر، وينشر changelog وmigration. لا تعتبر module tests وحدها إثبات compatibility مع app حقيقية.
 

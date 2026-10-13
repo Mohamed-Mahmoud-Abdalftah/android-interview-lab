@@ -25,7 +25,7 @@ What are git stash, cherry-pick, and fork?
 
 `stash` يخزن working-tree/index changes مؤقتًا بعيد عن commit الحالي؛ `cherry-pick` ينسخ أثر commit محدد لفرع آخر بcommit جديد؛ `fork` نسخة repository تحت حساب آخر غالبًا لcontribution. دول بيحلوا مشاكل مختلفة: تنضيف workspace مؤقت، نقل hotfix، أو فصل صلاحيات التعاون.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 `stash` رف مؤقت لتغييرات غير جاهزة، لكنه مش backup دائم؛ سميه وراجع محتواه قبل `apply`/`pop`. `cherry-pick` ينسخ أثر commit محدد لفرع تاني بهوية commit جديدة، مفيد hotfix بين release وmain مع مراجعة conflicts. `fork` نسخة repository تحت حساب/مساحة منفصلة لساهم خارجي، وتحتاج sync مع upstream. مثال: لا تعمل cherry-pick لسطر security fix وتنسى test أو migration الذي جاء في commit آخر.
 

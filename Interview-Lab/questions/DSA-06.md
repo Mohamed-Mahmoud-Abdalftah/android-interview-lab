@@ -25,7 +25,7 @@ What are average and worst-case HashMap lookup complexities?
 
 `HashMap` lookup غالبًا expected O(1) مع hash distribution كويس وload factor مناسب. Worst case ممكن يوصل O(n) لو collisions كثيرة أو adversarial keys، مع اختلاف implementation الداخلية. Resize/rehash بيعمل spike حتى لو average/amortized جيد. استخدام map لكل عنصر في Compose list ممكن يوفر scan لكن يزود memory وallocations.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 HashMap lookup عادة expected `O(1)` مع hash distribution مناسبة، لكن collisions/resizing/hostile keys تؤثر في worst case وlatency. Kotlin `Map` interface لا يضمن implementation بعينها. لا تخزن mutable object كمفتاح ثم تغير حقول equality/hashCode؛ lookup ممكن يفشل. في production قس عدد العناصر وحجم الذاكرة واستخدم stable immutable key مثل product ID.
 

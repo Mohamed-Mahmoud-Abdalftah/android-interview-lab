@@ -26,7 +26,7 @@ How do you debug crashes that occur only in release builds?
 
 أولًا اجمع artifact ID/version/variant، stack trace وdevice/ABI، ثم استخدم mapping file المطابقة لـretrace. شغّل نفس minified release أو AAB-derived APK على جهاز مماثل؛ debug مختلف في R8، source sets، manifest، signing/config. قارن merged manifest وbuild config/dependencies، واستخدم R8 reports لتحديد class/field أزيل أو تغير اسمه. جرّب تعطيل minification مؤقتًا لتضييق السبب، لكن لا تجعل “الحل” إيقاف R8 نهائيًا بلا فهم. أضف keep rule دقيقة أو صحح SDK/serialization، ثم اختبر release artifact في CI.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Release-only crash؟ ثبت artifact والdevice والstack، اعمل retrace بالmapping المطابقة، ثم قارن minify/resource shrinker/signing/manifest/ABI. شغّل release-like build محليًا على نفس device، لا تعطل R8 فورًا وتعتبر root cause معروف. لو crash مالي أو login، أوقف rollout وراقب المستخدمين الذين حدّثوا. بعدها test regression على packaged artifact.
 

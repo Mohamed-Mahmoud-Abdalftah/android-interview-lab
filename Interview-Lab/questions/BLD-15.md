@@ -26,7 +26,7 @@ How do you investigate dependency version conflicts and build-speed regressions?
 
 في version conflict، ابدأ بالـconfiguration والvariant المتأثرين؛ `dependencies` و`dependencyInsight --dependency ... --configuration ...` يبينان من طلب كل نسخة ولماذا اختار Gradle نسخة. راجع BOM/constraints وmetadata، وتحقق من runtime behavior لا compilation فقط. لبُطء build قارن baseline مع build scan/profile: configuration، dependency downloads، codegen، Kotlin compile، R8، tests. لا تفترض أن آخر library أضفتها هي السبب؛ جرّب تغييرًا مضبوطًا وحدد critical path/cache misses. تجنب `force` عشوائي يخفي binary incompatibility.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Dependency conflict قد يظهر duplicate class أو runtime `NoSuchMethodError`؛ افحص dependency graph والconstraints، لا تضف force version قبل معرفة من يطلبها. Build slowdown قد يأتي من plugin upgrade أو task invalidation؛ قس before/after بـBuild Scan. قفل النسخ والتحقق من dependencies يقلل surprise. اختبر release/minified variant بعد align لأنه قد يكشف native/R8 differences.
 

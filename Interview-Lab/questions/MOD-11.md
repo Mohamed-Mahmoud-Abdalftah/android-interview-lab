@@ -26,7 +26,7 @@ How do you manage dependency injection across modules?
 
 في multi-module Hilt، module تملك implementation قد تعلن `@Binds` أو `@Provides` لها، والعقد يعيش في API مناسب يراه feature. `:app` يجب يرى modules/constructor-injected types اللازمة وقت component generation، فراجع Gradle dependencies وvariant. لا تجعل كل feature تقدم binding لنفس interface بلا qualifier، ولا ترفع screen state إلى Singleton. dynamic feature حالة خاصة لأن base لا ترى classes داخلها أثناء compilation؛ استخدم entry point/component dependency أو factory boundary كما توثق Hilt. اختبر assemble/app graph، لا تكتفِ باختبار isolated feature.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Hilt يعمل عبر regular Gradle modules إذا app ترى transitive bindings، لكن dynamic feature dependency direction مختلف وقد تحتاج Dagger component dependency. لا تضع كل binding في app لمجرد compiler يراه؛ feature تملك modules الخاصة وعقودها. راجع scopes: Singleton لا يحتفظ Activity. اختبر production graph بعد test substitutions؛ test fake قد يخفي missing binding.
 

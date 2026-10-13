@@ -26,7 +26,7 @@ What are state, snapshot state, and state hoisting?
 
 State هي القيمة التي تصف ما يظهر الآن؛ Compose snapshot state مثل `mutableStateOf` تجعل القراءة والكتابة مرصودتين عند الـruntime. عند تغير القيمة، scopes التي قرأتها قد تتحدث. State hoisting يعني نقل ملكية state للـcaller بدل أن يحتفظ child بنسخة مخفية: child يأخذ `value` و`onValueChange`. انقلها إلى أقل owner مشترك بين من يقرأ ويعدل؛ لا ترفع كل checkbox إلى ViewModel بلا سبب. إذا business logic أو مشاركة عدة أجزاء تحتاجها، ViewModel قد يكون المالك المناسب.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 حقل بحث ونتائجه محتاجين نفس `query`؛ خليه عند أقرب owner مشترك وخلي `SearchField` تستقبل `value` و`onValueChange`. لو checkbox محلية لا تؤثر غير في صف واحد، سيبها محلية. التمييز هنا ملكية الـstate ومن يقدر يغيّرها، مش مجرد مكان كتابة `remember`. لو child احتفظت بنسخة من query، ممكن تعرض قيمة مختلفة عن النتائج بعد back navigation. في production اختبر إن الكتابة والمسح والرجوع للشاشة يطلعوا نفس القيمة من owner واحد.
 

@@ -26,7 +26,7 @@ A LazyColumn scroll position resets after data refresh. What should you inspect?
 
 أولًا اسأل: هل المطلوب البقاء عند نفس item أم العودة للأول بعد query جديدة؟ افحص `rememberLazyListState()` هل موجود في call site ثابت أم Screen تُزال/تتغير key فيُنشأ state جديد. ثم keys للعناصر: IDs ثابتة وفريدة تساعد Compose يتتبع item بعد insertion/reorder؛ index keys تجعل الصفوف تتبدل هويتها. راجع هل refresh تستبدل list بنفس IDs أم تولد IDs جديدة، وهل code يستدعي `scrollToItem(0)` في effect بكل emission. `LazyListState` له saveable behavior، لكن restoration تعتمد على owner وبقاء saved state.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 اسأل الأول: refresh المفروض يحافظ على نفس post ولا يرجع لأول القائمة؟ بعدين افحص `rememberLazyListState` هل في call site ثابت، وkeys هل IDs حقيقية ولا index، وهل effect بتعمل `scrollToItem(0)` مع كل data emission. عالج السبب المناسب؛ تغيير refreshToken في root key ممكن يمسح state كلها. لو query جديدة، الرجوع لأول القائمة ممكن يكون صحيح، لكن refresh لنفس query لازم غالبًا يحافظ على post الحالي. اختبر الحالتين منفصلتين مع insert/reorder ومع restoration.
 

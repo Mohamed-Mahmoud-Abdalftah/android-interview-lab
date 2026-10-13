@@ -24,7 +24,7 @@ Design cache/server synchronization with a source of truth, stale policy, confli
 
 Data layer تقرر مين المصدر اللي UI تراقبه. في offline-first app، Room غالبًا local SSOT: repository تعرض Flow من DAO، والnetwork refresh يكتب في Room transaction؛ UI ما تعرضش raw response بشكل منفصل. لازم تعرف freshness، invalidation، conflict resolution، وretry. لو server عنده authority زي balance، cache للعرض فقط وما تعتبرش optimistic local change نهائي. كمان تعامل مع concurrent refreshes عشان response قديم ما يكتبش فوق أحدث data؛ استخدم version/timestamp policy موثوقة أو serialize updates.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Offline-first screen تقرأ Room Flow وتنفذ network refresh في repository، ثم transaction تكتب canonical data؛ UI لا تدمج قائمتين بنفسها. لو user edit pending، refresh لا يمسحه؛ conflict policy تحدد merge. Payment state backend authoritative، وlocal cache projection لا تقول Approved دون receipt. اختبر network loss، concurrent edits، stale responses وrecreation.
 

@@ -26,7 +26,7 @@ A user taps Save twice while a request is in flight. How do you make UI and doma
 
 في UI اعرض `Saving` وعطّل زر Save أو امنع taps إضافية، لكن لا تعتبر هذا ضمانًا: callbacks قد تصل مرتين، screen تتعاد، أو request يعاد بعد timeout. ViewModel/use case يعمل single-flight أو state machine يرفض transition ثانية لنفس العملية. لو Save يكتب محليًا، transaction/unique key تمنع duplicate. لو API مالية أو create operation، استخدم idempotency key ثابت لنفس intent والـserver يطبّقه ويرجع نفس النتيجة؛ عند timeout لا تفترض الفشل بل استعلم عن status. بعد process death استعد pending operation من durable source حسب أهمية العملية.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 تعطيل Save في UI يحسن التجربة، بس مش ضمان ضد event متكرر أو retry بعد timeout. الـViewModel يحرس transition لـSubmitting؛ والـserver يستخدم idempotency key ثابت لنفس العملية. لو الاتصال وقع بعد commit، اسأل عن status أو أعد بنفس key، ما تنشئش عملية جديدة. لو timeout حصل بعد commit على السيرفر، إظهار “فشل” قطعي أو key جديدة ممكن يعمل duplicate. احفظ operation ID واتأكد من status؛ UI disabled مجرد أول طبقة حماية.
 

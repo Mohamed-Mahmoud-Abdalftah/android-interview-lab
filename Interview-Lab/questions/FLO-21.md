@@ -24,7 +24,7 @@ Adapt multi-shot callback APIs with callbackFlow, awaitClose and channel capacit
 
 `callbackFlow` بيحوّل listener بيطلع قيم متعددة إلى cold Flow. كل collector يسجّل callback، و`trySend` ينقل القيم إلى channel بتاعة الـFlow. `awaitClose` يخلي block عايشة ويعمل unregister عند cancel أو close؛ من غيره listener ممكن يتسرب أو الـFlow تقفل فورًا. لازم نختار buffer/overflow يناسب هل كل update مهم.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لما SDK بتسجل listener وتبعت callbacks، `callbackFlow` تعمل bridge لـFlow. داخلها `trySend` للحدث و`awaitClose { unregister(listener) }` لازم تتنفذ عشان release لما collector تلغي أو تنتهي. لو callback مصدرها thread مختلف، channel تحمي إرسال events بشكل مناسب؛ لكن لازم تحدد capacity/drop policy، وما تعتبر `trySend` الناجحة دليل إن UI استهلكت.
 

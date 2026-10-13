@@ -26,7 +26,7 @@ How do you use retrace with mapping files?
 
 R8 تغير أسماء classes/methods في release، فيظهر stack trace مثل `a.b.c`. `mapping.txt` الناتجة من نفس build تربط الأسماء المحولة بالأصلية؛ استخدم Retrace tool أو crash platform يرفع لها mapping بنفس version/build ID. لا تستخدم map من release أخرى، حتى لو versionName نفسه؛ mappings تختلف. احتفظ بها آمنًا مرتبطة بـartifact hash، versionCode، source commit وvariant. Retrace يعيد أسماء/مواضع حيث تتوفر معلومات، لكنه لا يثبت root cause وحده؛ راجع سياق الجهاز والسبب.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Obfuscated stack لا يفيد بدون mapping المطابقة للـversionCode/variant. خزّن mapping كـartifact محمي، ارفعها لـcrash tool بالنسخة الصحيحة، واستخدم retrace على stack وملف mapping من نفس AAB. لو ملف غلط، هتطلع أسماء مضللة. native crashes تحتاج symbols منفصلة؛ retrace لا يحل native frames. لا تنشر mapping علنًا بلا داعٍ.
 

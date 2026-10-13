@@ -26,7 +26,7 @@ Compare Gradle api and implementation dependencies.
 
 `implementation` dependency تستخدمها module داخليًا، ولا تعرض types الخاصة بها على compile classpath للمستهلكين كجزء من API. `api` تصدّر dependency للمستهلكين؛ تحتاجها لو public method أو superclass/interface في module يكشف type من تلك المكتبة. مثلًا لو `:core:ui` public function تأخذ `SomeLibraryType` فالمستهلك يحتاج المكتبة عند compilation. استخدم `implementation` افتراضيًا و`api` عند عقد فعلي؛ الإفراط في `api` يكبر classpath ويجعل تغييرات أكثر تعيد compilation. الحكم يتأثر بـGradle/AGP variant model وABI الفعلي.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في Gradle Kotlin DSL، `implementation(project(":core:network"))` يبقي dependency داخلية، و`api(project(...))` يعرّضها للمستهلكين compile classpath. استخدم `api` فقط لو public API للmodule يكشف types منها؛ غير كده يوسع rebuild impact. بعد تغيير `api` إلى `implementation` شغّل consumer compile؛ ربما signatures كانت تعتمد عليها.
 

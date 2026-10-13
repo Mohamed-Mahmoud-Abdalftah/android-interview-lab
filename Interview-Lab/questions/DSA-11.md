@@ -25,7 +25,7 @@ Explain BFS versus DFS and their typical applications.
 
 BFS بيزور graph مستوى بمستوى باستخدام queue، مناسب لأقصر مسار بعدد edges في graph غير موزون. DFS يدخل عميق باستخدام stack/recursion، مناسب traversal، cycle checks أو backtracking حسب algorithm. الاتنين O(V+E) مع visited set على adjacency list، لكن BFS queue قد تكبر بعرض graph وDFS stack بعمقه.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 BFS queue تصل لأقصر عدد edges في graph غير موزون، وDFS stack/recursion مناسبة للاستكشاف أو backtracking لا تضمن أقصر مسار. ضع visited عند enqueue كي لا تكرر cycle، واختبر disconnected node. لو edges لها أوزان، BFS لا يحل shortest weighted path؛ استعمل Dijkstra بشروطه. في Android مثال dependency graph أو navigation graph محدود الحجم.
 

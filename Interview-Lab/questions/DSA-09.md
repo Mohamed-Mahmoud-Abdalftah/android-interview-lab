@@ -25,7 +25,7 @@ How do you calculate complexity for nested loops with dependent bounds?
 
 Nested loops مش دائمًا O(n²): لو الداخلي من 0 لحد i، عدد التكرارات `1+2+…+n = n(n+1)/2` وبالتالي O(n²). لو j بيتضاعف كل مرة داخل outer n، الداخلي O(log n) فالمجموع O(n log n). ولو outer والداخل بيمشوا pointer واحد للأمام، ممكن O(n) إجمالي. نعد العمليات الفعلية أو نكتب summation.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Nested loops مش دائمًا `O(n²)`: لو inner يبدأ من i، مجموع 1+2+...+n ما زال quadratic؛ لو pointer يتحرك للأمام مرة واحدة عبر كل outer iterations قد يكون linear. اكتب عدد تكرارات inner كـsum بدل ضرب آلي. مثال `for each row { items.find(...) }` في Compose list يصنع scan لكل row؛ اعمل index مرة خارج render.
 

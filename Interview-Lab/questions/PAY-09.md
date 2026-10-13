@@ -25,7 +25,7 @@ How do you isolate a hardware/EMV SDK behind a clean interface?
 
 Hardware/EMV SDK يتغير حسب vendor والجهاز، فلا نخلي UI أو ViewModel يفهم raw callbacks وerror codes. نعمل interface صغير لعمليات `start/cancel/status` ونتائج domain واضحة، وadapter يترجم SDK events ويربطها بـoperation ID. لكن interface ما يلغي شروط certification ولا يخلي callback دليل نهائي على issuer outcome.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 خلي UI تقول `authorize(intent)` وتستقبل domain outcome، والـadapter وحده يعرف أسماء callbacks وerror codes بتاعة vendor. لو SDK رجّعت transport error، map إلى `Unknown` مش `Declined` من غير دليل. اعمل fake adapter لاختبار race وlate callbacks، واختبر adapter الحقيقي على hardware المعتمد لأن abstraction مش بديل certification.
 

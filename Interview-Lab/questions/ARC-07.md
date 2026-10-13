@@ -24,7 +24,7 @@ Explain mapping as boundary validation and change isolation, with costs and avoi
 
 Mapper مش بس `dto.name -> model.name`؛ دي فرصة تتأكد من units، required fields، enum unknown values، وتفصل schema خارجي عن domain. `UserDto(id: String?)` ممكن يبقى `UserId` validated أو error واضح بدل `id ?: ""` اللي يعمل object باطل. Mapper بين domain وUI يضيف localized text أو presentation flags من غير ما يلوث domain. بس لو كل layer بتعمل copy متطابق من غير اختلاف حقيقي، ده boilerplate؛ اختار boundaries لها سبب تغيير مستقل.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Mapper يترجم ويطبّع بين schemas، وليس copy لكل field فقط. مثال backend يرسل amount minor units وstatus string؛ mapper يرفض unknown status أو يحافظ عليه كUnknown بدل افتراض Approved. ضع conversion عند data boundary واختبر null/overflow/new enum. كثرة mapper بلا اختلاف semantics تضيف boilerplate؛ حدد لماذا كل تحويل موجود.
 

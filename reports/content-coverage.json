@@ -1372,7 +1372,7 @@
       "topic": "ARC",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "ARC-02": {
       "topic": "ARC",
@@ -2908,7 +2908,7 @@
       "topic": "TST",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "TST-08": {
       "topic": "TST",

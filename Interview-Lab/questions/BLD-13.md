@@ -26,7 +26,7 @@ How do you manage versionCode/versionName and release notes?
 
 `versionCode` رقم داخلي يستخدمه Android/Play لترتيب updates؛ إصدار جديد لنفس package يحتاج code أعلى وفق قواعد التوزيع. `versionName` نص يظهر للمستخدم مثل `3.4.1`، ليس أساس قرار التحديث. اجعل CI يخصص versionCode فريدًا/متزايدًا للـrelease variants ويمنع إعادة استخدامه، واربطه بـcommit وAAB hash وmapping file. Release notes تشرح تغييرات المستخدم ومخاطر migration/known issues، وتُراجع قبل التوزيع. لا تعتمد على versionName وحده لتتبع hotfix؛ rollback على Android غالبًا يعني نشر build مصحح بـversionCode أعلى أو إيقاف rollout حسب القناة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 `versionCode` للترتيب والترقية في Android، `versionName` نص يظهر للمستخدم. CI لازم تولّد code فريد أعلى من المنشور لكل package/track، حتى hotfix من branch قديم. release notes تصف user-visible changes والمخاطر، وليست dump لعناوين commits. اربط tag والAAB والmapping والnotes بـcommit واحد، واختبر update من نسخة قديمة لا clean install فقط.
 

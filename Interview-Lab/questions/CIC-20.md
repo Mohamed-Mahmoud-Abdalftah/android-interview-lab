@@ -25,7 +25,7 @@ The CI pipeline takes 40 minutes. How would you profile and prioritize optimizat
 
 Pipeline 40 دقيقة؟ نقيس أولًا queue time، dependency download، Gradle configuration/tasks، JVM tests، emulator startup، instrumentation shards، upload. نطلع critical path لأن tasks parallel، مش نجمع كل CPU minutes. بعدين نصلح أكبر bottleneck: cache compatible، shard tests، reuse emulator، affected-module selection، أو تقليل flaky retries. نقارن p50/p95 بعد كل خطوة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو arm64 شغّال وABI تاني بيفشل، حدد الجهاز و`Build.SUPPORTED_ABIS` والstack/native load error، وافحص الـAAB/APK splits هل `.so` المطلوبة موجودة بنفس الاسم والـABI. راجع dependencies transitive والـvendor SDK support؛ ممكن ABI مدعومة في Gradle لكن مكتبة vendor نفسها مش متوفرة. اختبر install من Play-generated split أو bundletool، مش debug universal APK فقط. لا تضف `abiFilters` عشوائيًا فتخفي أجهزة من التوزيع.
 

@@ -26,7 +26,7 @@ When should you avoid derivedStateOf because its overhead exceeds the benefit?
 
 `derivedStateOf` مفيد عندما source state تتغير كثيرًا لكن القيمة المعروضة نادرًا ما تتغير، مثل `firstVisibleItemIndex > 0` أثناء scroll. لكنه يضيف state object وتتبع dependencies؛ إذا النتيجة تتغير مع كل input أو الحساب بسيط مثل `firstName + lastName`، فالكتابة المباشرة أو `remember` keyed حسب الحالة أوضح وأرخص غالبًا. لا تستخدمه كـcache عام لتحويل بيانات business كبيرة؛ انقل ذلك للـowner المناسب. قِس recomposition/frame cost قبل وبعد، ولا تنسَ صحة dependencies.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 `derivedStateOf` مش default لكل calculated value. لو `fullName` بتتغير تقريبًا مع كل edit، tracking إضافي ومفيش recomposition متوفرة. استخدمها لما source تتحرك كتير والنتيجة نادرًا، زي scroll index يفضل أكبر من صفر؛ وقِس قبل وبعد لأن تكلفة المراقبة نفسها حقيقية. لو حولت `fullName` إلى derived state، غالبًا هتزود overhead من غير أي updates متوفرة. خلّي التعبير مباشر، وقارن frame cost في حالة scroll threshold قبل ما تعتبر optimization ناجح.
 

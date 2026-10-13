@@ -25,7 +25,7 @@ How do you explain architectural trade-offs clearly in an interview?
 
 في interview ما تقولش “MVVM أحسن” من غير سياق. ابدأ بالمشكلة والconstraints: حجم team، offline، lifecycle، testability، deadlines. اعرض 2–3 options، معيار القرار، trade-offs، وامتى تغير رأيك. مثال: Repository مع Room يزيد code لكنه يحمي offline state بعد process death. الأهم إن interviewer يشوف reasoning قابل للتقييم، مش شعار architecture.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو interviewer سأل “ليه MVVM هنا؟” ما تردش باسم pattern فقط. ابدأ بالمشكلة: مثل شاشة طلبات تحتاج offline cache وloading/error منفصلين. اعرض بديلين، كلفة كل واحد على ownership والاختبار والهجرة، ثم القرار والمعيار الذي سيغيّره. استخدم مثال فشل: ViewModel يحتفظ بـActivity أو retry يكرر payment. اختم بقرار production قابل للقياس، مثل وضوح state وتغطية process death، بدل “ده best practice”.
 

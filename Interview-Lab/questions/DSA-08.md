@@ -25,7 +25,7 @@ How would you detect duplicates efficiently in a large list?
 
 للكشف عن duplicate في list كبيرة، نمشي مرة ونحط كل key في `HashSet`؛ لو `add` رجعت false لقينا تكرار. الوقت expected O(n)، والذاكرة O(n). لو memory ضيقة ومسموح نغير الترتيب، sort O(n log n) وبعدها مقارنة المتجاورين. لازم نحدد معنى “نفس العنصر”: ID ثابت ولا object equality؟
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لإيجاد أول duplicate في ترتيب الإدخال، `HashSet.add` يرجع false عند التكرار؛ المتوقع `O(n)` وقت و`O(n)` ذاكرة. sorting يستهلك وقت أكثر وقد يغير order، وnested loops `O(n²)`. مع stream لا نهائي، set تكبر بلا حد؛ عرّف window أو durable index. لو IDs مالية، local set لا تمنع duplicate business effect على server.
 

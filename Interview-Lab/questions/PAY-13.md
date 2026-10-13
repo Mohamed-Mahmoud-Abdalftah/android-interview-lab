@@ -25,7 +25,7 @@ A timeout handler exits the UI before enqueueing a reversal. How do you redesign
 
 لو timeout handler يقفل UI قبل ما يضيف reversal للqueue، process death أو navigation ممكن يضيّع الالتزام المالي. نخلي repository/use case يملك state: في DB transaction يغيّر payment لـ`REVERSAL_PENDING` ويكتب outbox row، وبعد commit يطلع state للـUI فتقدر تقفل. Worker مستقل عن Activity يرسل ويؤكد. UI مجرد observer.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 الترتيب الصح: timeout event يدخل use case، DB transaction تحفظ `Unknown` وreversal obligation لو القواعد تطلبها، وبعد commit الـUI تتنقل. لو navigation حصلت قبل commit، Activity تختفي ومعاها coroutine ويمكن الالتزام يضيع. worker من DB، وstartup scan يصلح missed scheduling.
 

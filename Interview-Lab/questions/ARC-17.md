@@ -24,7 +24,7 @@ Handle transient UI actions without event loss or repetition across lifecycle an
 
 في UDF، user events تدخل state holder ونتيجتها state جديدة. Snackbar أو navigation غالبًا “one-time effect”، لكن channel/SharedFlow بس ممكن تضيع event لو UI مش بتجمع، وreplay ممكن تعيدها بعد rotation. Android guidance تفضّل تمثّل ViewModel event كـUI state قابل للملاحظة؛ مثل `showLoginRequired` ومعاه acknowledgement لما UI تنفذ action. Navigation trigger لازم مرتبط بbusiness state أو state flag واضح، مش payment effect يتنفّذ اعتمادًا على emission عابر. لو العملية لازم تنجو من process death، persist الحالة أو request ID؛ effect stream في الذاكرة لا يكفي.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 One-time effect مثل navigation/snackbar لا تعامله كـstate دائم يعاد بعد rotation بلا قصد، لكن event channel بلا replay قد يضيع لو UI متوقفة. حدد semantics: navigation كنتيجة user action؟ أم business state يمكن اشتقاقها؟ للدفع لا تجعل Approved مجرد event؛ خزّنه state. اختبر collector توقف/رجوع وprocess death، واظهر action pending بوضوح.
 

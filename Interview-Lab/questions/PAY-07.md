@@ -25,7 +25,7 @@ How do you design a reversal queue that survives a battery removal?
 
 Reversal obligation لازم تتكتب durably قبل ما UI تختفي أو battery تتشال. نخزن outbox row فيها original transaction reference، reversal ID ثابت، state وattempt metadata آمنة؛ WorkManager ينفذ لما الشبكة ترجع. لو الرد ضاع، ما نعملش reversal جديد بهوية مختلفة: نستعلم عن الحالة أو نعيد بنفس idempotency contract. ما نعتبرش enqueue وحده ضمان نهائي.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 نزع البطارية يقتل process والـworker، لكنه ما يمسحش row اتكتبت فعلًا في DB. عند reboot اعمل scan للـPENDING rows وجدول شغل جديد لو scheduling نفسه اتفوت. لا تمسح row عند `Result.retry()` أو timeout؛ امسحها/اقفلها بعد تأكيد provider أو حوّلها escalation عند deadline.
 

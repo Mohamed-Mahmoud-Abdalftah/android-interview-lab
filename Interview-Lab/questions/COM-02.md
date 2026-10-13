@@ -26,7 +26,7 @@ What is a @Composable function? What is recomposition?
 
 `@Composable` يعلّم function تشارك في Composition؛ compiler/runtime يتتبع مكان استدعائها والـstate التي تقرأها. عندما تتغير observable state، Compose يحدد scopes تحتاج إعادة تنفيذ؛ هذه recomposition وليست بالضرورة إعادة بناء الشاشة كلها. ممكن يستدعي function ثانية أو يتجاوزها إذا inputs مناسبة للـskip. لذلك composable يجب يكون تقريبًا وصفًا للـUI، وليس مكانًا لإرسال API request أو تعديل repository في كل استدعاء.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 خد counter بسيط: الـcomposable تقرأ `count` وتعرضه، والضغط يبعت event. تغيير الرقم يخلي الجزء اللي قرأه محتاج recomposition؛ ده مش معناه إن Android View hierarchy كلها اتبنت تاني ولا إن كل frame اتعمل لها draw. لو عندك حساب مكلف، قِس تكلفته بدل ما تحكم من عدد الاستدعاءات. المثال ده يبان تافه، لكنه يكشف bug شائع: تعديل state أثناء الرسم ممكن يعمل loop. اختبر نفس الشاشة مع تغيير سريع للقيمة وتأكد مفيش request أو listener بيتكرر.
 

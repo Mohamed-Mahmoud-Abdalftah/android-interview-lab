@@ -26,7 +26,7 @@ An app installs in debug but crashes on launch in release due to renamed classes
 
 ابدأ بالـcrash stack وartifact/version/variant، ثم retrace بالماب المطابقة. لو `ClassNotFoundException` أو reflection/JNI load في launch، افحص class name المتوقع وهل R8 أزال/غيّر الاسم؛ راجع `mapping.txt`, `usage.txt` وmerged rules. تجربة release مؤقتة بدون minify قد تدعم الفرضية، لكنها ليست إثباتًا وحدها لأن builds اختلفت أيضًا. أثبت بإعادة إنتاج crash في minified artifact، إضافة keep rule دقيقة أو إصلاح SDK، ثم تشغيل نفس launch path بنجاح مع R8. احتفظ بتغطية release startup في CI.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو debug يعمل وrelease ينهار بسبب class renamed، اثبت: stack retraced، dependency تعمل reflection بالاسم، R8 usage/mapping، وتجربة rule ضيقة تعيد السلوك على minified build. لا تكتفِ بإطفاء minify؛ ده يثبت ارتباطًا جزئيًا لا root cause. أضف consumer rule أو adapter بدون reflection إن مناسب، واختبر sample app release. احتفظ بحجم/أداء قبل وبعد.
 

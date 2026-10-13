@@ -25,7 +25,7 @@ What are CI, Continuous Delivery, and Continuous Deployment?
 
 CI معناها كل change يتبني ويتفحص باختبارات متكررة بعد دمجه أو على PR. Continuous Delivery يخلي artifact صالح للنشر في أي وقت لكن ممكن خطوة production تبقى بموافقة. Continuous Deployment ينشر production تلقائيًا بعد gates. المصطلحات مش مجرد GitHub Actions؛ لازم pipeline موثوق، tests، signing، rollout ومراقبة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في فريق Android، أول PR لازم يطلع منه compile وlint وunit tests ونتيجة واضحة قبل الدمج؛ ده CI. بعد الدمج، pipeline تنتج AAB موقّع ومربوط بالـcommit وتجهزه لاختبار داخلي؛ ده Continuous Delivery حتى لو شخص يضغط زر النشر. لو نفس الـpipeline ترفعه تلقائيًا للمستخدمين بعد بوابات الجودة، ده Continuous Deployment. الفرّق هنا قرار الإفراج، مش مجرد وجود GitHub Actions. فشل اختبار في CI لازم يمنع دمج النسخة، وفشل بوابة crash بعد النشر يوقف زيادة rollout.
 

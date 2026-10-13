@@ -26,7 +26,7 @@ What are rememberUpdatedState, derivedStateOf, and snapshotFlow?
 
 `rememberUpdatedState` تعطي effect طويلة أحدث value/callback بدون إعادة تشغيلها لمجرد أن المرجع تغير. `derivedStateOf` ينتج State مشتقة ويمنع updates عندما المدخلات تتغير كثيرًا لكن النتيجة المهمة لم تتغير؛ له تكلفة، فلا تستخدمه لأي string concatenation بسيطة. `snapshotFlow { ... }` يقرأ snapshot state ويصدرها كـFlow عند التغير، مناسب لتحويل scroll threshold إلى pipeline تحليل أو operators مثل `distinctUntilChanged`. الثلاثة ليست بدائل عامة للـViewModel ولا تخزين دائم؛ افهم أولًا من يقرأ ومن يملك collection.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في splash timer، callback ممكن تتغير لكن الـtimer مش لازم يبدأ من الأول؛ `rememberUpdatedState` تحافظ على أحدث callback. في scroll، `derivedStateOf` مناسبة لو القيمة `showTop` بتتغير أقل بكتير من offset. ولو محتاج analytics كـFlow، `snapshotFlow` داخل effect مع `distinctUntilChanged`، والـcollector يتلغي مع الشاشة. `snapshotFlow` مش تخزين دائم؛ لو collector اتلغى، analytics اللحظية ممكن تفوت حسب contract. اختبر threshold وlatest callback وخروج الشاشة، وقِس تكلفة derived state قبل الاحتفاظ بها.
 

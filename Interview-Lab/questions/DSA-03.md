@@ -25,7 +25,7 @@ Why are constants and lower-order terms omitted in asymptotic analysis?
 
 لو `T(n)=4n²+30n+200`، مع n كبير `n²` هي اللي تسيطر؛ لذلك Big O نكتب O(n²) ونسقط constants والterms الأقل. ده ما يقولش إنهم غير مهمين في app حقيقية: على list من 20 عنصر، allocation أو database call ثابتة ممكن تكون أغلى من اختلاف class التعقيد.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لما تقول `3n + 20` يصبح `O(n)`، أنت بتوصف السلوك مع n كبيرة، لكن في شاشة فيها 10 عناصر قد تكون تكلفة 20 أو allocation أهم. لا تستخدم حذف constants لتبرير API ثقيل أو عمل على Main. اعرض asymptotic class أولًا، ثم benchmark وmemory profile بالحجم الواقعي والجهاز الأقل قدرة.
 

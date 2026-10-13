@@ -25,7 +25,7 @@ A release-only native dependency fails on some hardware ABIs. What is your inves
 
 Release-only native SDK failure ممكن يكون missing `.so` لـABI معيّن، R8/JNI name issue، ABI split packaging، أو firmware/hardware incompatibility. نبدأ بـcrash signature وdevice/ABI matrix، نعيد المشكلة على minified release build، نفحص APK/AAB outputs والـvendor compatibility. Rollout تدريجي مع kill switch للعمليات الجديدة، لكن pending payments لازم تكمل reconciliation.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 اعمل matrix لـABI/device/firmware/SDK version من crash reports، وبعدين شغّل نفس minified release variant على الجهاز المصاب. افتح APK splits وشوف `.so` والـtransitive dependencies، وراجع R8/JNI keep rules بس من crash evidence؛ متضيفش blanket keep rules. وقف authorizations الجديدة للجهاز المصاب مع بقاء status/reversal/reconciliation شغالين.
 

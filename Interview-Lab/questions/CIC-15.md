@@ -25,7 +25,7 @@ What Git conflicts can a revert of an older commit cause?
 
 `git revert` لcommit قديم بيحاول يعكس patch على code الحالي. لو commits بعده عدّلت نفس السطور ممكن conflict نصي؛ ولو اعتمدت على behavior القديم ممكن revert ينجح Git لكن يكسر build أو runtime. Revert merge commit يحتاج mainline parent. ولا تنسى migration اتطبقت بالفعل على devices؛ عكس code لا يعكس data.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Revert لcommit قديم ممكن يتصادم مع commits لاحقة نقلت الملف، غيرت API، أو بنت على schema/behavior الذي ستزيله. Git قد يعطي conflict نصي واضح، لكن الأخطر semantic conflict: revert ينجح ويكسر feature تعتمد على التغيير. راجع commits بعد الهدف، اعمل revert في branch، افحص diff، compile للvariants المعنية، وشغّل regression tests. لو كان merge commit، حدد mainline parent عن فهم بدل تجربة أمر عشوائي.
 

@@ -26,7 +26,7 @@ What are Dynamic Feature Modules / Play Feature Delivery?
 
 Dynamic Feature Module جزء من Android App Bundle يمكن لـGoogle Play يوصله عند التثبيت أو عند الطلب حسب إعداد delivery. الهدف تقليل initial install أو توصيل قدرة قليلة الاستخدام لاحقًا، لكن runtime الآن يجب يتحمل download/progress/failure/cancel/offline. ليست مجرد Gradle module جديدة: اتجاه dependencies مختلف والـbase app لا يرى كود feature أثناء compilation بنفس الطريقة، وDI/navigation تحتاج bridge. لو ميزة حرجة يجب تعمل offline فورًا، on-demand غالبًا قرار سيئ؛ install-time أو base قد يناسب أكثر. اختبر على مسار توزيع حقيقي وليس IDE فقط.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Dynamic Feature Module تنزل عند الطلب من Play، فتقلل initial download لبعض features، لكن availability offline وزمن install والDI/navigation أصعب. لو شاشة checkout لازمة في محطة POS بدون اتصال، on-demand delivery اختيار خطر. عرّف fallback عند module missing، اختبار install/failure/process recreation، وتحقق Play delivery support. لا تستخدم dynamic لمجرد تقليل source module count.
 

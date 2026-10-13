@@ -26,7 +26,7 @@ How do you analyze APK/AAB size and bundled native ABIs?
 
 ابدأ baseline واضحة: download size لكل device profile، install size وفرق version، لا حجم AAB وحده. Android Studio APK Analyzer أو bundletool يفصل DEX/resources/assets و`lib/<abi>/*.so`. Native SDK قد يضيف عدة ABIs، لكن Play يرسل device-targeted APKs؛ افحص ما يصل لكل ABI وما إذا كانت .so موجودة في split الصحيح. راجع unused resources، R8/resource shrinking، صورة/asset resolution، وdependency graph. لا تحذف ABI لمجرد تقليل الحجم لو ما زال لديك مستخدمون يحتاجونه؛ اختبر compatibility واستراتيجية توزيع.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 حلل AAB/APK حسب ABI/resources/dex/assets بدل النظر للحجم الكلي. APK Analyzer أو bundletool يبين هل `.so` لكل ABI وما سيصل لجهاز معين. Large native SDK قد يضخم الحجم، لكن إزالة ABI غير مدعومة تغير device eligibility؛ قرار product ودعم hardware. قس download/install size وstartup بعد التعديل، واختبر split على الجهاز المتأثر.
 

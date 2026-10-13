@@ -24,7 +24,7 @@ Apply Android guidance that domain is optional and articulate evidence that just
 
 Domain layer مش واجب في كل Android app. لو عندك ViewModel بسيطة بتنادي repository لقراءة شاشة واحدة، UseCase `GetItemsUseCase` اللي تعمل `repo.getItems()` بس بتضيف indirection. لما logic بقى معقد أو reused بين شاشات—زي eligibility، combine accounts/orders، أو transaction workflow—use case تعطي اسم واضح، tests مستقلة، وتحمي ViewModel من التضخم. افتكر إن Android docs تسمي domain optional وبينها وبين تعريف Clean Architecture الكلاسيكي فرق طفيف؛ اختار boundary حسب المشكلة الحقيقية.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Domain layer منفصلة مفيدة لو rules مشتركة بين عدة screens أو فيها invariants واختبارات مستقلة عن Android. لو app صغيرة وrepository واحدة pass-through، layer إضافية قد تشتت الفهم. ابدأ direct VM->repository، ثم استخرج use case عندما يتكرر قرار أو يتطلب transaction/coordination. المعيار هو فصل policy الحقيقي، لا اتباع رسم ثابت.
 

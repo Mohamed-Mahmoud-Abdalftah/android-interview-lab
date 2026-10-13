@@ -25,7 +25,7 @@ How do you estimate an unfamiliar feature and communicate risk?
 
 ميزة غير مألوفة ما تتقدرش برقم دقيق من أول دقيقة. نفصل discovery، API/backend contract، Android UI/state، security، tests، rollout. نحدد assumptions والمجهول الكبير ونقترح spike قصير لخفض uncertainty. نعطي range وثقة وتواريخ checkpoints، ونحدّث estimate لما نتعلم. ما نخلطش estimate بالتزام ثابت من غير scope.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو feature مجهولة مثل offline checkout، لا تقول “أسبوعين” من UI mockup. فكّك unknowns: backend contract، payment status، Room migration، SDK device، auth، QA matrix وPlay release. اعمل spike قصير للجزء الأعلى مخاطرة، وقدم range مع assumptions ومراحل evidence. عرف ما الذي يمكن قصّه من scope وما الذي لا يمكن قصّه مثل idempotency. بلّغ المخاطر بدري وحدث التقدير عند ظهور نتيجة الـspike بدل الدفاع عن رقم أولي.
 

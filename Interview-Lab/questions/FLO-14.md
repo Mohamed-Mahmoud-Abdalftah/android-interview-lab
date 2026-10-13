@@ -24,7 +24,7 @@ Compare switching, sequential and concurrent flattening of inner flows.
 
 `flatMapLatest` يلغي inner Flow القديم لما upstream تطلع قيمة جديدة؛ مناسب query search. `flatMapConcat` يكمّل inner الأولى ثم يبدأ التالية بالترتيب؛ مناسب خطوات لازم تتعالج بالتتابع. `flatMapMerge` يجمع عدة inner flows بالتوازي مع concurrency limit، والنتائج ممكن تتداخل. الاختيار لازم يعكس هل القديم مهم وهل الترتيب لازم محفوظ.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Search query `a` وبعدها `ab`: `flatMapLatest` تلغي collection القديمة وتبدأ الجديدة؛ ده يمنع نتيجة `a` المتأخرة من استبدال `ab` لو API متعاونة مع cancellation. `flatMapConcat` تنفذ واحد وراء واحد لو الترتيب مطلوب، و`flatMapMerge` تشغّل بالتوازي لنتائج مستقلة. لا تستخدم merge على search وتفترض ترتيب النتائج؛ اختبر late response.
 

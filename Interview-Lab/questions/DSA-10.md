@@ -25,7 +25,7 @@ How do you design and analyze an LRU cache?
 
 LRU cache تطرد الأقل استخدامًا لما capacity تتملي. تصميم O(1) تقليدي: HashMap من key إلى node، وdoubly linked list ترتيب recency؛ `get` ينقل node للمقدمة، `put` يحدث أو يضيف، وعند overflow نشيل tail. في Android فيه `LruCache` لmemory cache، لكن لازم تحدد `sizeOf` إن الحجم بالbytes مهم، وتتعامل مع thread-safety/eviction.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 LRU تحتاج map للlookup وorder للrecency، وكل hit ينقل العنصر إلى most recent؛ عند زيادة budget يخرج least recent. Android `LruCache` يغني عن pointer bugs، لكن `sizeOf` مهم للصور لأن 100 bitmap ليست حجمًا ثابتًا. cache قابلة للفقد بعد process death، فلا تخزن فيها payment status كمصدر وحيد. راقب hit rate وGC وmemory pressure.
 

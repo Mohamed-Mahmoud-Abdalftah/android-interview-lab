@@ -25,7 +25,7 @@ Does Big O necessarily describe the worst case? Explain upper bounds versus case
 
 Big O رياضيًا upper bound للنمو، مش تلقائيًا worst case. لازم تقول “worst-case O(n)” أو “average-case O(1)” وتحدد توزيع/assumptions. مثل linear search أفضل حالة O(1)، أسوأ O(n)، ومتوسط O(n) لو العنصر موزع بشكل مناسب. تقدر تقول worst-case O(n²) لعملية O(n) لكنه bound ضعيف وغير مفيد.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Big O upper bound، وليس مرادفًا تلقائيًا للـworst case إلا لو قلت “worst-case O(...)”. مثال hash lookup expected `O(1)` لكن pathological collisions تغير الصورة؛ binary search best case `O(1)` لو المنتصف يطابق، worst `O(log n)`. في المقابلة حدد case والافتراضات وdata distribution، ثم اربطها بـSLA/latency بدل رقم بلا سياق.
 

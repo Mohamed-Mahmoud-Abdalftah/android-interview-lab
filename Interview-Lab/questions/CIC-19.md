@@ -25,7 +25,7 @@ The app release pipeline deploys the wrong flavor. How do you prevent recurrence
 
 لو pipeline نشر wrong flavor، أولًا نوقف rollout ونفهم هل التطبيق اتصل بbackend غلط أو حمل keys/permissions غير مناسبة. بعدين نفحص variant task، artifact metadata، applicationId، signing cert، host وPlay track. الإصلاح مش تغيير اسم job فقط؛ CI لازم تعمل assertion على الـbuilt AAB قبل upload، وتربط target environment بmetadata موثوقة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو AAB اتوقّع بمفتاح غلط، أوقف promotion واعرف هل upload اترفض أم وصل track وأي مستخدم استلمه. فرّق بين upload key وapp signing key في Play App Signing؛ إجراءات الاسترداد مختلفة ولا ينفع تفترض استبدال مفتاح تطبيق منشور ببساطة. راجع CI secret reference وfingerprint قبل الرفع، اعزل credential الخطأ، ثم ابنِ artifact صحيح بهوية source/version مناسبة حسب حالة الرفع. لازم incident log يحفظ ماذا نُشر فعلًا.
 

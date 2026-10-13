@@ -26,7 +26,7 @@ How do you avoid circular dependencies and giant core/common modules?
 
 ارسم DAG مسموحة وامنع reverse imports في CI. إذا ميزتان تحتاجان بعضهما، افصل العقد المشترك الأصغر في owner مناسب أو اجعل app تنسق، وأحيانًا ادمجهما لو هما قدرة واحدة. لا ترمِ code داخل `:core:common` لمجرد إزالة cycle؛ common تصبح high-fan-out، وكل تعديل API يعيد بناء نصف التطبيق. ضع criteria لقبول code مشتركة: استخدام حقيقي متعدد، semantics مستقرة، owner واضح. راجع dependencies والشيفرة العامة دورياً.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Circular dependency تعني ownership مختلطة. اسحب contract صغير لطبقة أقل أو خلي `:app` ينسق، لا تنقل كل شيء إلى `:core:common`. Giant core يعيد compile الجميع عند كل تغيير ويصبح بلا owner. افحص `api` surface وdependency graph دوريًا، وضع rule يمنع feature-to-feature import إن التصميم يتطلب. أعد تسمية ownership قبل نقل الملفات.
 

@@ -26,7 +26,7 @@ Compare APK and Android App Bundle (AAB).
 
 APK هو package قابل للتثبيت على جهاز Android. AAB صيغة نشر تجمع code/resources/modules؛ Play أو distributor يحولها إلى APKs مناسبة للجهاز، مثل base/configuration/feature splits. لا يمكنك تثبيت AAB مباشرة مثل APK؛ استخدم bundletool أو Play testing لإنتاج APK set واختبار ما سيصل لجهاز معين. AAB تساعد في تقليل download عبر استبعاد موارد/ABIs غير اللازمة وقد تدعم dynamic delivery، لكن عليك اختبار packaging/لغة/ABI وsigning في مسار النشر الفعلي.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 APK حزمة install مباشرة، AAB حزمة نشر يشتق منها المتجر split APKs حسب الجهاز. نجاح universal debug APK لا يثبت إن ABI أو resources وصلت في Play split. خذ bundle المنتج، افحص splits باستخدام أدوات رسمية، وجرّب install/update على device matrix. احتفظ بالmapping وnative symbols لنفس artifact؛ حجم الـAAB وحده ليس حجم تنزيل المستخدم.
 

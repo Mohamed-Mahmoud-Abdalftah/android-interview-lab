@@ -24,7 +24,7 @@ Design deterministic runTest and Turbine assertions for emissions, cancellation 
 
 `runTest` بيخلينا نتحكم في virtual time لاختبار `debounce` و`delay` من غير `Thread.sleep`. Turbine تدي `awaitItem`, `expectNoEvents`, `cancelAndIgnoreRemainingEvents` علشان نثبت sequence ونقفل collection. StateFlow عندها initial value وconflation، فلا نفترض إن كل update سريع هيتشاف؛ نتحكم في scheduler أو نختبر آخر state حسب العقد.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في Flow test، `runTest` تتحكم في virtual time للـdelay/debounce لو dispatchers متضبطة، وTurbine `awaitItem()` و`cancelAndIgnoreRemainingEvents()` تساعدك تختبر emissions. `StateFlow` لها initial value فتوقعها أولًا، وبعدها update. لو `stateIn` بدأ في scope مختلفة أو app dispatcher حقيقية، virtual time ممكن ما تتحكمش فيه؛ inject dispatchers/scope واختبر cancellation.
 

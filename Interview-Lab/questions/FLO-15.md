@@ -24,7 +24,7 @@ Explain debouncing and equality suppression for search without promising cancell
 
 في search box، `debounce` تستنى فترة هدوء قبل ما تطلع query، فبتقلل requests أثناء الكتابة. `distinctUntilChanged` تمنع نفس query بعد normalization من إعادة الطلب. بعدها `flatMapLatest` يلغي collection القديمة لما query جديدة تجي. لازم نعالج blank query، loading/error لكل query، ونعرف إن cancel قد لا يوقف HTTP call أو server processing بالفعل.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في search box، خلي TextField تعرض الحروف فورًا، وبعدها `debounce` على query Flow عشان تقلل API calls؛ `distinctUntilChanged` تمنع نفس query تتبعت مرتين متتاليتين. ترتيب operators مهم حسب هل trim/normalization قبل distinct. `debounce` ممكن ما تصدرش أي intermediate لو المستخدم يكتب باستمرار؛ لا تستخدمها لحدث لازم يتسجل كله.
 

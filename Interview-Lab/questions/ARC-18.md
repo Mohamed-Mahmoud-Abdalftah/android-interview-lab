@@ -24,7 +24,7 @@ Explain main-safe boundaries, scope ownership, injected dispatchers, immutable s
 
 ViewModel يفضل يستقبل main-safe suspend APIs من data/domain؛ لو repository عنده blocking I/O أو CPU heavy، هو اللي يستخدم dispatcher مناسب بـ`withContext`، مش ViewModel ترش `Dispatchers.IO` على كل call بلا فهم. ViewModel يطلق screen work في `viewModelScope` ويكشف immutable `StateFlow<UiState>`، ويتعامل مع cancellation والـerrors من غير swallowing. اختبارات ViewModel تحقن fake repo وtest dispatcher/scheduler، وتتحقق من state transitions. لو شغل لازم يكمل بعد خروج الشاشة، استخدم durable scheduling/persistence بدل ViewModel scope.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 ViewModel main-safe يعني لا تحبس Main بـDB/parse ثقيل، وتحقن dispatchers بدل hard-coded `Dispatchers.IO`. Repository suspend APIs تحدد execution مناسب، وViewModel يطلق في `viewModelScope` ويتعامل cancellation وstale request. اختبر بـ`runTest` fake repository وvirtual time، ثم Android integration لسلوك lifecycle. لا تترك mutable UI state مكشوفة.
 

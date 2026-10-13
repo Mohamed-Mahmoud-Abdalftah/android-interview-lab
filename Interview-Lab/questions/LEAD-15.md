@@ -25,7 +25,7 @@ How would you push back on a requirement that conflicts with mobile OS/security 
 
 لو requirement يخالف Android/security، ما نقولش “مستحيل” وخلاص. نفهم user outcome، نشرح constraint بدليل: background work limits، permission policy، process death، أو إن client secret مش سري. نقترح بدائل تحقق الغرض: WorkManager لdeferrable sync، server-issued scoped token بدل private key في APK، أو UX يوضح pending. نسجل trade-off ونجرب prototype صغير لو فيه شك.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو product طلب background location طول الوقت “عشان UX”، اشرح قيود Android والخصوصية بلغة الهدف: هل نحتاج موقع لحظي فعلًا أم تحديث وقت استخدام التطبيق؟ اعرض بديل: foreground action مع permission عند الحاجة، أو WorkManager لشغل مؤجل، أو server notification حسب الحالة. اذكر أثر كل اختيار على battery، consent، reliability وPlay policy، واختبره على target SDK. لو المطلوب غير آمن أو غير مسموح، وثّق القرار وقدم UX يحقق معظم الهدف بدون وعد كاذب.
 

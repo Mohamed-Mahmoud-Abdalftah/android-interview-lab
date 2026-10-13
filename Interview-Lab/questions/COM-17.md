@@ -26,7 +26,7 @@ How do you optimize a long list and expensive calculations?
 
 `LazyColumn` ينشئ العناصر المطلوبة قرب viewport بدل بناء آلاف rows دفعة واحدة، لكن لا يحل وحده sorting/filtering مكلف على main thread أو image decode سيئ. استخدم keys ثابتة، `contentType` عندما layouts مختلفة، وPaging للبيانات الكبيرة/المستمرة. ضع calculation ثقيلة في data/ViewModel layer أو cache بمفاتيح صحيحة، وألغِ البحث القديم عند query جديدة. `remember` مناسب لحساب UI محلي صغير عند صحة keys، وليس بديلًا لحساب domain واسع. قِس release frames، allocation وscroll.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 قائمة 10,000 منتج لازم تجمع بين lazy rendering وبين تجهيز data صح. `LazyColumn` توفر rows خارج viewport، لكن sorting 10,000 item داخل body كل حرف هيوقف main thread. خلي البحث في ViewModel/repository مع cancellation وPaging لو البيانات ضخمة، ومرر ID ثابت لكل row؛ جرب كتابة سريعة مع scroll. لو الصور بتتفكّك بحجمها الأصلي أثناء scroll، lazy list مش هتمنع jank أو memory pressure. قِس allocation وframe time مع بيانات حقيقية، وحمّل صورة بحجم مناسب للعرض.
 

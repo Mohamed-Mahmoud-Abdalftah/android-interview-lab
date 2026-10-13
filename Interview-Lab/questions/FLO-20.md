@@ -24,7 +24,7 @@ Compare Channel queue/receive semantics with SharedFlow broadcast and acknowledg
 
 `Channel` بيوزع كل element عادة لمستقبل واحد من receivers متنافسين، و`SharedFlow` broadcast لكل subscribers النشطين حسب replay/buffer. Channel ممكن تحتفظ بعناصر في buffer أثناء غياب receiver داخل نفس process، لكن لو process مات ضاعت؛ و`receive` مش ضمان إن UI نفذت الفعل بعد ما استلمته. SharedFlow replay صفر ممكن يضيّع event بدون subscriber، وreplay موجب ممكن يعيدها.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 `Channel` غالبًا point-to-point: كل element تروح لواحد من receivers، بينما `SharedFlow` broadcast للمشتركين الحاليين حسب replay. الاتنين في الذاكرة ومش ضمان إن UI نفذت navigation فعلًا؛ send ناجحة لقناة لا تعني handling تم قبل crash. لو لازم effect تعيش rotation/process death، خزّن event ID في state/durable layer واعمل acknowledgment.
 

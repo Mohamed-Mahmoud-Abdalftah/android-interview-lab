@@ -26,7 +26,7 @@ Compare LaunchedEffect(Unit) and LaunchedEffect(key).
 
 `LaunchedEffect(Unit)` key ثابت: effect يبدأ عند دخول call site للـcomposition، لا يبدأ لمجرد recomposition عادية، لكنه يتوقف عندما يخرج ويرجع يبدأ إذا دخل من جديد. `LaunchedEffect(userId)` يتوقف ويبدأ عند تغير `userId`، فيمنع طلب بيانات ID قديم من الاستمرار كأنه الحالي. استخدام Unit مع قيمة متغيرة داخل block قد يقرأ قيمة قديمة؛ إما اجعل القيمة key إذا تغيرها يغير هوية العمل، أو `rememberUpdatedState` إذا تريد أحدث callback دون restart. لا تعتمد على effect composable لعمل لازم يكمل بعد مغادرة الشاشة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو نفس `ArticleScreen` بتعرض A وبعدين B، `LaunchedEffect(articleId)` تلغي شغل A وتبدأ B؛ `Unit` مش هتعمل restart وهي في نفس call site. عكس كده، intro animation بدون input identity ممكن تستخدم `Unit`. لو التحميل لازم يكمل حتى لو الشاشة خرجت، حطه في owner مناسب بدل effect. استخدام `Unit` لتحميل article متغير يخلّي محتوى A يظهر على B أو الطلب القديم يكمل. اختبر تغيير ID والشاشة لسه في نفس destination، وحدد هل التحميل ملك UI ولا ViewModel.
 

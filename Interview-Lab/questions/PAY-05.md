@@ -25,7 +25,7 @@ What is a transaction correlation ID, and why is it needed?
 
 Transaction correlation ID رقم opaque يربط logs والأحداث لنفس محاولة الدفع عبر terminal/backend/acquirer. يساعد التحقيق في timeout من غير PAN/PIN. ممكن يتطابق مع operation ID لو contract يسمح، لكن correlation للتتبع وidempotency لضبط أثر retry مفهومين مختلفين. لازم يكون ثابت للمحاولة، unique بما يكفي، وما يكشفش بيانات شخصية.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 اختار opaque correlation ID قبل أول إرسال، وخلي كل log آمن في terminal وbackend والـreversal queue يشير لنفسه. لو acquirer ترجع reference مختلفة، خزّن mapping محدود الصلاحية. correlation تسهّل التحقيق، لكنها مش idempotency بذاتها؛ ممكن نفس ID في logs والـserver يكرر charge لو ما عندوش dedupe.
 

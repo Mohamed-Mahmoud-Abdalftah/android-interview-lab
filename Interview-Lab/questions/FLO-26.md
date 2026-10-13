@@ -24,7 +24,7 @@ Choose a current-state stream for rotation while distinguishing ViewModel retent
 
 بعد rotation عادي، UI جديدة محتاجة آخر snapshot فورًا؛ `StateFlow` في ViewModel مناسبة لأنها hot وعندها `value` وآخر state للcollector الجديد. الـViewModel غالبًا بيعيش configuration change، لكن process death يمسحه، فلازم نعيد بناء state من SavedStateHandle للمدخلات الصغيرة ومن Room/server للبيانات المهمة. `SharedFlow(replay=0)` مش بديل لحالة حالية.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 بعد rotation، Screen الجديدة محتاجة آخر `Loading/Ready/Error` فورًا؛ `StateFlow` من ViewModel تعطي current value طالما ViewModel نفس owner وعاشت configuration change. لكن process death مختلف: ViewModel هتتبني تاني، فلازم ID في SavedStateHandle/repository وتعيد تحميل. لا تستخدم SharedFlow(replay=0) لو المطلوب current state.
 

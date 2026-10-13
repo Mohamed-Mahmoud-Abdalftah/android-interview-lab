@@ -26,7 +26,7 @@ How do you handle previews, permissions, and navigation?
 
 خلّي Screen composable تأخذ state/callbacks فتقدر تعرض preview لحالات loading/error/permission بدون Hilt أو Activity حقيقية. Route تربط ViewModel وNavController وpermission launcher عبر Activity Result API، وتعرض rationale عندما يلزم وتتعامل مع رفض أو تغيير الإذن من Settings. لا تطلب permission أثناء كل recomposition؛ الطلب ينطلق من user action أو effect مضبوط. Navigation تمرر ID صغير أو route typed حسب API المستخدمة، وتعيد تحميل data من repository؛ لا ترسل object كبير أو sensitive في route.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Preview ما عندهاش Activity Result launcher حقيقي؛ اعرض Screen بحالة fake، وخلي Route هي اللي تسجل launcher وتقرر متى تطلب permission. طلبها يكون بسبب user action، وبعدين تعامل مع grant/deny/revoke، مش كل recomposition. عند navigation مرر draft ID صغير، لا تمرر Bitmap أو object حساس. لو المستخدم رفض location، البحث اليدوي لازم يفضل شغال؛ وإلا الإذن بقى باب مقفول بلا داعٍ. قبل كل استخدام للموقع راجع grant الحالية، وللصور استخدم Photo Picker بدل طلب access واسع إذا كان مناسب.
 

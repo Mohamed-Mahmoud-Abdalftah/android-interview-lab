@@ -26,7 +26,7 @@ A Compose screen re-renders excessively after each keystroke. How do you profile
 
 ابدأ بتحديد هل كل keystroke تعمل jank أم مجرد recomposition counter عالي. سجّل trace وLayout Inspector/Compose compiler reports في build مناسب؛ راقب composition، measure، draw، image decode وmain thread. تتبع أين تقرأ `text`: لو root تقرأه ثم تعيد sorting كبير وتمرير object جديد لكل row، انقل القراءة والحساب إلى حد أضيق أو ViewModel pipeline مع cancellation/debounce حسب الحاجة. لا تجعل `remember` بمفتاح ناقص أو `@Stable` كذابة فيخفي تحديثات. بعد fix قارن frame time ونتائج البحث مع typing سريع.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 ابدأ بسؤال: هل المشكلة jank فعلًا ولا counter عالي؟ لو trace بينت sorting داخل composition بـ20ms لكل حرف، انقلها لـViewModel pipeline مع `flatMapLatest` أو cancellation؛ خلي text field يستجيب فورًا والنتائج تتحدث لاحقًا. بعد الإصلاح جرّب `a` ثم `ab` بسرعة وتأكد النتيجة الأخيرة صحيحة. لو عملت debounce للـTextField نفسها، الكتابة هتحس إنها بطيئة؛ خلّي النص المحلي فوري وdebounce للبحث فقط. اختبر `a` ثم `ab` ونتيجة قديمة بترجع متأخر.
 

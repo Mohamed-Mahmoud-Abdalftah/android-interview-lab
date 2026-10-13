@@ -26,7 +26,7 @@ How do api/implementation influence compilation boundaries and rebuilds?
 
 `api` تصدر dependency للمستهلك على compile classpath؛ لو public ABI تعتمد على type منها، هذا لازم. `implementation` تخفي dependency كـتفصيل داخلي من compile classpath للمستهلك، ما قد يقلل recompilation عند تغيير implementation. لكن تأثير build ليس قانونًا ثابتًا: تغيير public ABI، annotation processors، Kotlin inline functions، resource/variant tasks أو configuration قد يوسع العمل. قِس Gradle task execution/build scan قبل وبعد، ولا تحول `api` إلى `implementation` إذا consumer يحتاج type في signature.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 تغيير public type في `api` dependency يمكن يعيد compile مستهلكين كثيرين؛ `implementation` يخفي التفاصيل إن public signatures لا تسرّبها. قس Gradle task invalidation وcompile classpath قبل/بعد، ولا تعد بسرعة دون Build Scan. لو نقلت dependency إلى implementation ثم consumer فشل compile، فهذا دليل API boundary تحتاج تعديل أو `api` مبررة.
 

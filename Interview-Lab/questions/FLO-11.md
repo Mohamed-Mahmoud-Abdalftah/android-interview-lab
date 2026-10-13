@@ -24,7 +24,7 @@ Explain lazy transformations and the terminal nature of launchIn.
 
 `map` يحوّل كل value، و`filter` يعدّي اللي يحقق شرط، و`transform` ممكن يطلع صفر أو أكثر لكل input، و`onEach` side effect زي logging من غير تغيير القيمة. كل دول intermediate وlazy في cold Flow. `launchIn(scope)` terminal: يبدأ collection في scope ويرجع Job لازم owner يتحكم فيه.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في pipeline منتجات، `map` تحول DTO لـUI model، `filter` تشيل غير المتاح، `transform` ممكن تطلع صفر أو أكتر لكل input، و`onEach` للمراقبة أو side effect صغيرة، لكن لا تبدأ collection. `launchIn(viewModelScope)` terminal operator يبدأ جمع في Job؛ لو كررتها في init مرتين يبقى عندك collectors اتنين. راقب exception والـscope.
 

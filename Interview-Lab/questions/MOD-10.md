@@ -26,7 +26,7 @@ How do navigation contracts work across modules?
 
 Feature يمكنها إعلان public destination contract مثل route/type ومعلمات صغيرة (`orderId`) في API module، بينما implementation تعرف Composable أو Fragment. app shell تجمع graph وتربط contract بالتنفيذ؛ feature أخرى تطلب navigation للـcontract دون استيراد screen class. للـdeep link اختبر validation/auth وفشل ID مفقود؛ لا تمرر domain object كامل. العقد نفسه public API يحتاج versioning إذا تغير argument أو route. في dynamic feature يجب التأكد من install قبل فتح destination.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Navigation contract بين modules يمرر stable ID/route typed ومعروف، لا Parcelable ضخمة من feature أخرى. Destination تعيد data من repository وتتحقق session/authorization، و`:app` ينسق graph. Deep link والnotification قد يبدأوا cold process، لذا route لا تفترض ViewModel موجود. اختبر back stack وmissing feature وprocess recreation.
 

@@ -24,7 +24,7 @@ Explain continued offscreen collection, view retention and cold-source cost.
 
 لو UI عملت `lifecycleScope.launch { flow.collect { ... } }` مرة واحدة، coroutine ممكن تفضل بتجمع وهي STOPPED لحد DESTROYED. ده يستهلك network/battery، ويحدث view مش ظاهرة، أو يحتفظ reference لview اتدمرت في Fragment لو استخدمنا owner غلط. نستخدم `repeatOnLifecycle` أو Compose lifecycle-aware collection، ونشوف هل المصدر cold هيبدأ من جديد.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو Activity عملت `lifecycleScope.launch { flow.collect { render(it) } }` من غير repeat، Job ممكن يفضل شغال وهي STOPPED؛ تستهلك DB/network وتحدث view غير ظاهرة، وخصوصًا Fragment view ممكن تكون اتدمرت. الحل اربط collection بالـSTARTED وراجع upstream sharing، مش بس أضف `launchIn` في scope أطول.
 

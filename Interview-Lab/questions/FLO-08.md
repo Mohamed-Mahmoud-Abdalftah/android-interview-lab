@@ -24,7 +24,7 @@ Explain conversion of cold streams into hot shared state or broadcast, including
 
 `stateIn` و`shareIn` بيحوّلوا cold upstream إلى hot stream مشتركة داخل `CoroutineScope` معينة. `stateIn` يرجّع `StateFlow` بقيمة ابتدائية وآخر snapshot، مناسب UI state. `shareIn` يرجّع `SharedFlow` مع عدد replay تختاره، مناسب shared subscription. اختيار scope و`SharingStarted` يحدد عمر الاتصال وبداية/توقف الجمع؛ ما ينفعش نحط session data في scope أطول من الجلسة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 عندك cold Flow من Room و3 أجزاء في الشاشة عايزينها. `stateIn` تشاركها وتحتفظ بآخر قيمة مع initial state؛ `shareIn` تشارك emissions بقدر replay تختاره من غير current `.value`. الاتنين يحتاجوا scope عمرها مناسب: لو استخدمت global scope هتفضل query شغالة بعد الشاشة؛ لو scope قصيرة جدًا هتفقد sharing. اختبر وقت بدء ووقف upstream.
 

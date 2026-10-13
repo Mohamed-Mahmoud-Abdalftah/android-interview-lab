@@ -24,7 +24,7 @@ Explain hot StateFlow/SharedFlow lifetime, current state versus configurable bro
 
 `StateFlow` و`SharedFlow` hot: الـinstance موجودة وبتستقبل updates حتى من غير collector، على عكس `flow {}` العادية. `StateFlow` عندها `value` ابتدائية وآخر state، وتمنع القيم المتساوية؛ `SharedFlow` broadcast قابل لضبط replay/buffer ومن غير قيمة ابتدائية مفروضة. ولا واحدة منهم queue مضمونة عبر process death.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 `StateFlow` مناسبة لـscreen state لأن لها `value` حالية ولازم initial value؛ collector جديدة تشوف آخر state. `SharedFlow` broadcast أعمّ: تختار replay وbuffer وممكن ما يكونش لها current value. الاتنين hot بمعنى object موجودة بعيدًا عن subscribers، لكن upstream المشترك من `stateIn/shareIn` ممكن يبدأ أو يقف حسب `SharingStarted`. متستخدمش StateFlow لحدث navigation كل مرة لأن القيمة القديمة ممكن ترجع بعد rotation.
 

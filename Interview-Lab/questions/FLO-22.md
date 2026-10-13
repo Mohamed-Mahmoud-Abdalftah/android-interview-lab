@@ -24,7 +24,7 @@ Compare lifecycle-aware View collection with Compose state collection and restar
 
 في Views، `repeatOnLifecycle(STARTED)` يشغّل block لما LifecycleOwner يوصل STARTED ويلغيه لما ينزل STOPPED، وبيرجع يشغّله عند الرجوع. في Compose، `collectAsStateWithLifecycle()` يحوّل Flow/StateFlow إلى Compose State ويراعي lifecycle تحت الغطاء. لازم نستخدم `viewLifecycleOwner` في Fragment view، ونفهم إن restart ممكن يعيد cold upstream أو replay آخر StateFlow value.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في Fragment View، `repeatOnLifecycle(STARTED)` تشغّل collection لما view owner يبدأ وتلغيها لما يقف، ثم ترجعها. في Compose Android، `collectAsStateWithLifecycle()` تختصر Flow→Compose State بنفس lifecycle owner المناسب. لو collect من Activity lifecycle بدل `viewLifecycleOwner` في Fragment، ممكن تحدث View مدمرة؛ ولو جمعت hot flow خارج lifecycle، شغلها يستمر وهي مخفية.
 

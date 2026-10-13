@@ -25,7 +25,7 @@ How do you handle multiple environments and flavors?
 
 Product flavors بتحدد variants زي dev/staging/prod، وbuild types زي debug/release بتحدد debuggability/minification/signing. مش كل combination لازم ينشر. نخلي `applicationId`، backend URL، Play app وsigning policy صريحة ومتحققة في CI؛ لا نحط private secrets في `BuildConfig` لأن APK قابل للفحص.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Flavors مفيدة لبيئات backend أو branding، لكن لا تخلي `debug` يروح production endpoint أو `release` يحتفظ staging key. عرّف endpoint وapplication ID وfeature gates في source set/config واضح، واعمل assertions على كل variant حرج. Secrets الحقيقية لا تدخل `BuildConfig` في client على إنها سر؛ أي قيمة في APK قابلة للاستخراج. اختبر minified release flavor للـproduction، وCI تمنع نشر package/endpoint غلط. كثرة flavors تضرب build time واحتمال combinations غير مختبرة.
 

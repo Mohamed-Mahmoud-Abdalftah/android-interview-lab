@@ -24,7 +24,7 @@ Choose backpressure strategy for a fast source and slow UI without dropping requ
 
 لو upstream سريعة والرسم بطيء، نسأل الأول: كل emission مهمة ولا آخر snapshot بس؟ للـUI frame أو progress، `conflate` أو `collectLatest` ممكن يقلل شغل قديم؛ `buffer` يخلي المصدر يسبق ضمن capacity لكن ممكن يزيد latency. لو data لكل emission مهمة، نخزنها durable أو نعالجها بعقد backpressure، وما نسقطهاش عشان الرسم بطيء.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو upstream تبعت sensor value كل 5ms والرسم بياخد 30ms، اسأل هل كل sample مهمة؟ للـUI اللي يهمها آخر وضع، `conflate` أو `collectLatest` ممكن يقلل backlog، لكن الفرق إن collectLatest تلغي render القديمة. لو بيانات محاسبية أو telemetry لازم كاملة، ما تسقطش؛ خزنها أو عالجها بعيد عن UI. قِس queue والـframe time.
 

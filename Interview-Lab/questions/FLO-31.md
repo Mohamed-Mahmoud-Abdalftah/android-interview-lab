@@ -24,7 +24,7 @@ Choose SharingStarted using battery cost, freshness and subscriber transitions.
 
 لو upstream sensor/socket غالية، `WhileSubscribed` توقفها بعد آخر UI subscriber وتوفر battery، مع grace قصيرة للrotation. لو لازم cache تبقى دافئة قبل أول شاشة، `Eagerly` قد يناسب مع cost واضح. `Lazily` يبدأ عند أول subscriber لكن يفضل شغال حتى نهاية scope. نختبر restart والفجوة في data، ونحدد replay expiration/session logout بدل إعداد ثابت لكل streams.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو repository Flow بتفتح location updates، `Eagerly` قد تفضل شغالة من غير UI؛ `WhileSubscribed(5_000)` توفر battery بعد خروج الشاشة وتتفادى restart سريع أثناء rotation. لكن لو sync مهمة مالية لازم تكمل حتى UI مخفية، ما تربطش شغلها بعدد subscribers؛ انقلها worker/repository owner. راقب replay expiration لأن cache ممكن ترجع initial value.
 

@@ -25,7 +25,7 @@ How do you review code for correctness, security, readability, and testability?
 
 Code review تبدأ بالـbehavior والحدود: requirement اتحققت؟ هل في race، cancellation، auth bypass، data leak أو migration risk؟ بعدين API design، testability، readability وstyle. اكتب comment محدد بسبب وتأثير واقتراح أو سؤال؛ ما تحولش review لمنافسة preferences. في payment code لازم تشوف unknown outcome وidempotency قبل اسم variable.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في PR فيه payment retry، ابدأ correctness: هل timeout `unknown` ولا failure نهائي؟ هل ID ثابت؟ بعدين security: logs فيها card data؟ exported component اتغير؟ بعدين readability: state transitions مسماة؟ وبعدها testability: هل في fake clock وintegration test للbackend؟ خليك محدد بالسطر والسلوك، وافصل blocking issue عن suggestion. اسأل عن contract لو ناقص، وما تحول review لمجرد formatting أو عدد tests.
 

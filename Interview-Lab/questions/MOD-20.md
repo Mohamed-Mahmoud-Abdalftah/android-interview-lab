@@ -26,7 +26,7 @@ How do you migrate a monolith to modules without blocking feature delivery?
 
 ابدأ audit للdependencies وbuild times وأماكن ownership. ضع module rules وأول seam مستقرة، ثم استخرج feature واحدة كاملة مع API صغيرة بدل نقل كل `utils` إلى core. أثناء النقل حافظ على public behavior، اختبارات/فakes وnavigation، واجعل app composition تدمج القديم والجديد. امنع cycle بإصلاح العقد لا بإخفائها، وشغّل full variant build. الفريق يواصل features عبر migration تدريجية وflag/adapter محدود العمر. قِس build/CI ووقت تعديل feature قبل وبعد، واحذف مسار قديم بعد انتقال كل callers.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Migration monolith تبدأ من slice لها boundary واضحة، مثل feature catalog، مع characterization tests وCI baseline. استخرج API صغير، انقل code تدريجيًا مع adapter/compatibility، وقس build time والfeature delivery كل خطوة. لا تنقل 100 package في PR واحدة، ولا تكسر imports لكل الفرق. لو ظهر cycle، أصلح ownership بدل service locator يخفيه.
 

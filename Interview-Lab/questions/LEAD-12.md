@@ -25,7 +25,7 @@ Tell me about a production incident you owned and how you prevented recurrence.
 
 السؤال behavioral؛ لازم المرشح يحكي حادثة حقيقية من خبرته، مش ينسب لنفسه قصة متخيلة. نرتب Situation، Task، Actions، Result، Learning: impact بالأرقام لو متاح، قرار تحت ضغط، التعاون، ما الذي تغير في system. لو ما حصلتش production incident، قول ده بوضوح واستخدم near miss أو incident شاركت فيه مع توضيح دورك.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 السؤال شخصي: اختار حادثة حصلت فعلًا، ووضح دورك من غير ما تنسب لنفسك شغل الفريق. استخدم STAR مع timestamps وأثر معروف، ثم لماذا قررت halt rollout أو feature flag أو hotfix. لو مثال payment، فرّق وقف محاولات جديدة عن متابعة unknown/reversal الموجودة. اختم بإصلاح systemic له owner واختبار، واذكر ما لا تعرفه أو ما كان ممكن تعمله أفضل. لو ما عندكش incident حقيقي، قل ده واستخدم near miss بشفافية.
 

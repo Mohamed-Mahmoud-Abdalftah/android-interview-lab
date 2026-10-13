@@ -26,7 +26,7 @@ What belongs in :core:network, :core:database, :core:ui, and feature modules?
 
 `:core:network` قد يملك HTTP client configuration، auth interceptor العام وserialization infrastructure؛ ليس checkout endpoint policy كلها. `:core:database` يملك Room setup، migration infrastructure وshared transaction primitives، لكن feature-owned tables/DAOs قد تبقى في data feature حسب graph. `:core:ui` أو design system يملك theme، tokens ومكونات عامة لا تعرف business entities. feature module يملك screen, state, events, navigation entry، وقواعد العمل الخاصة به أو تنسيق use case. السؤال الحاسم: لو feature واحدة تغيرت، هل يجب تعديل core؟ لو نعم دائمًا، core صارت مكبًا للتفاصيل.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 `:core:network` يوفر HTTP client/config وليس product API DTO لكل feature؛ `:core:database` يوفر DB infrastructure/shared tables؛ `:core:ui` tokens/components لا feature business. Feature تملك screen, state, policy خاص بها. لو core يستورد feature model فهذا عكس الاتجاه. افصل shared contract فقط عندما يوجد أكثر من مستهلك وسلوك ثابت.
 

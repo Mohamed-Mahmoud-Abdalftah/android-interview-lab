@@ -25,7 +25,7 @@ A team disagrees about MVVM vs MVI. How do you lead a decision based on constrai
 
 خلاف MVVM/MVI ما يتحسمش بعدد المقالات. نحدد المشكلة: state معقدة؟ events؟ offline؟ حجم team؟ testability؟ ونقارن implementation صغير لنفس الشاشة، نقيس cognitive load، bugs وspeed. ممكن MVVM بStateFlow واحد يكفي؛ MVI يفيد لو transitions كثيرة وتحتاج reducer واضح لكنه يزيد ceremony. نوثق قرار قابل للمراجعة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 خلاف MVVM/MVI غالبًا خلاف على حدود state/event، مش اسم pattern. اختار شاشة واقعية فيها loading، user edits، retry وprocess death؛ ارسم event -> state -> side effect، وشوف أين يحدث duplication أو stale data. اعمل prototype صغير واختبارات، وقارن كلفة تعليم الفريق والتغيير والتشخيص. ممكن MVVM مع reducer واضح يحقق المطلوب بدون framework جديد، وممكن MVI يساعد لو state transitions معقدة. سجّل القرار وقواعد الاستثناء.
 

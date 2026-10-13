@@ -24,7 +24,7 @@ Explain runCatching swallowing cancellation and how to preserve structured shutd
 
 `runCatching` في Kotlin بتمسك `Throwable`، وده يشمل `CancellationException`. لو لفّينا cancellable Flow/coroutine operation بيها من غير إعادة رمي الإلغاء، هنحوّل خروج الشاشة إلى `Result.failure` عادي؛ ممكن retry تشتغل أو UI تعرض error قديم. نستخدم `try/catch` واضح: نعيد رمي cancellation ونمسك expected domain exceptions فقط.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في search pipeline، query جديدة تلغي القديمة بـ`flatMapLatest`. لو repository عملت `runCatching { api.search(old) }` والتقطت `CancellationException` كـfailure، ممكن تبعت Error للـquery القديمة أو retry غلط. استخدم `try/catch` يرجّع cancellation فورًا، وبعدها امسك IOException أو domain errors فقط. اختبر cancel أثناء `delay` وتأكد لا emission ولا API retry.
 

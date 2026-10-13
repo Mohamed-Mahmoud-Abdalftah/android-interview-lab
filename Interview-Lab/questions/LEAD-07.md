@@ -25,7 +25,7 @@ How do you align mobile, backend, QA, and security teams on an API contract?
 
 اتفاق API مش JSON happy path فقط. mobile وbackend يتفقوا على ownership، auth، states، timeout=unknown، idempotency key، error codes، pagination/versioning وbackward compatibility. QA تبني contract tests وsecurity تراجع trust boundary/data classification. نحط examples للnormal والفشل، ونحدد مين يملك التغيير وموعد deprecation.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 عقد API للدفع مثلًا لازم يشمل أكثر من JSON success: operation ID، idempotency key، معنى timeout/unknown، status endpoint، error codes، retries، auth، وschema evolution. اجمع mobile/backend/QA/security على مثال lost response وبعده process death. اكتب sequence وما الذي يملكه كل طرف، ثم contract tests وsandbox evidence. لو backend يقول “كرر request” بدون dedup واضح، توقف وتصحح العقد قبل UI؛ Android وحدها لا تضمن أثر مالي واحد.
 

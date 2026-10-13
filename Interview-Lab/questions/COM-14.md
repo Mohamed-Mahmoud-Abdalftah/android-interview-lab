@@ -26,7 +26,7 @@ What are stable keys and content types in LazyColumn?
 
 في `LazyColumn.items`، `key` يحدد هوية العنصر عبر insert/reorder/refresh، مثل `product.id` الفريد والثابت. بدون key مناسبة يعتمد Compose غالبًا على position، فينتقل remembered row state إلى item آخر أو يبدو scroll غير مستقر بعد تغير القائمة. `contentType` شيء مختلف: يحدد شكل/نوع المحتوى، مثل product row أو ad row، ليس ID فريد؛ يساعد إعادة استخدام composition بين عناصر من نفس النوع. keys على Android يجب تكون قابلة للحفظ في Bundle إذا احتجت حفظ state. لا تستخدم index عندما العناصر تتحرك.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في feed فيها article وad، `key` لازم تكون هوية item ثابتة وفريدة زي `article:42`؛ `contentType` تكون شكل row مثل `article` أو `ad`. عند إدراج item فوق، key تساعد state والموضع يرتبطوا بالعنصر الصح. لو استخدمت index، checkbox المفتوحة ممكن تروح لصف تاني. لو backend بيولّد ID جديدة مع كل refresh، key صحيحة في الكود مش هتنقذ state. ثبّت هوية البيانات من المصدر واختبر إدراج صفوف فوق المستخدم وهو فاتح row.
 

@@ -24,7 +24,7 @@ Design offline-first cache plus remote refresh with one local source of truth.
 
 لو Room data مع remote refresh، الـUI تقرأ من Room Flow كمصدر محلي للحقيقة المعروضة. الـrefresh تجيب remote ثم تكتب Room داخل transaction؛ Room تطلع snapshot جديدة. ما نعملش `combine` مباشر لقائمتين مختلفتين ونخلي UI تخمّن مين الأصح. السيرفر يفضل authoritative لبياناته، ومع النزاعات نحتاج version/ETag وقواعد merge محددة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في offline-first list، Room هي source of truth المعروضة؛ remote refresh تجيب data وتكتبها transaction في Room، وبعدها Room Flow تصدر snapshot جديدة. لو UI جمعت remote response مباشرة وفي نفس الوقت Room، ممكن تعرض ترتيبين أو data قديمة. احتفظ بـsync status منفصلة، وحدد conflict policy ووقت refresh. اختبر offline ثم reconnect.
 

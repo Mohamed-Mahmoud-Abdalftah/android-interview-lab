@@ -24,7 +24,7 @@ Design debounced search with stale-request cancellation, query ownership and UI 
 
 نحفظ text كـStateFlow في ViewModel، نعمل normalize ثم debounce ثم distinct، وبعدها `flatMapLatest` لنتائج query الحالية. blank query تعرض اقتراحات/empty state متعمدة. كل emission تحمل query أو generation علشان UI ما تعرضش نتيجة قديمة لو client تجاهل cancel. Network errors تبقى state مرتبطة بالquery، و`CancellationException` ما تتحولش error.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 الـTextField تتحدث فورًا من `query`، لكن API request تتأخر `debounce(250)` بعد آخر حرف. `distinctUntilChanged` بعد normalization تمنع نفس بحث يتكرر؛ `flatMapLatest` تلغي collection القديمة، وstate تعرض Loading/Ready/Error للquery الحالية. لو backend request ما بتتلغيش فعليًا، tag كل response بـquery وتأكد قبل commit عشان نتيجة `a` ما تغطيش `ab`.
 

@@ -26,7 +26,7 @@ How do you set up reproducible builds and dependency verification?
 
 ثبّت Gradle wrapper، AGP/Kotlin/JDK/NDK وAndroid SDK inputs قدر الإمكان، وتجنب dynamic/changing versions غير مضبوطة. Gradle dependency locking تثبت النسخ المحلولة بما فيها transitive؛ dependency verification تتحقق من checksums/signatures للملفات القادمة من repositories، وهما وظيفتان مختلفتان. احفظ lock/verification metadata في Git وراجع تغييراتها. اجعل tasks تعلن inputs/outputs ولا تستخدم timestamps عشوائية في artifact؛ سجل commit/variant/toolchain/hash. “نفس inputs تنتج نفس bytes” ادعاء يحتاج تجربتين نظيفتين ومقارنة hashes، ولا يكفي أن build نجحت مرتين.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Reproducible build تعني نفس source/dependencies/toolchain/config تنتج artifact يمكن تفسيره ومقارنته، مع مراعاة timestamps/signing وغيرها. استخدم Gradle wrapper، pinned plugin/dependency versions، dependency verification، ثابت JDK، وsource-controlled configs. قارن clean build داخل بيئة مماثلة واحفظ digest/provenance؛ cache لا تعني reproducibility. PR خبيث يغير dependency مصدرها يحتاج review وverification.
 

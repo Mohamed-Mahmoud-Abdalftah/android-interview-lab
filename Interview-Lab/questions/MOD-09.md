@@ -26,7 +26,7 @@ How should feature modules communicate without direct coupling?
 
 لا تجعل `:feature:checkout` يستدعي class داخلي في `:feature:catalog`. لو يحتاج data، اعتمد على domain/API contract صغير وتطبيقه في data أو app composition. لو يحتاج فتح شاشة، استخدم navigation contract/route ID بدون استيراد UI implementation. لو يحتاج نتيجة من feature ثانية، عرّف result contract وlifecycle/delivery semantics بدل global event bus مبهم. أحيانًا app shell هو المكان الذي ينسق الميزتين. لا تجعل shared ViewModel أو singleton mutable حلًا تلقائيًا؛ حدّد source of truth واستمراره بعد process death.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Feature A لا تستدعي ViewModel Feature B مباشرة. استخدم interface صغير event/navigation contract أو shared state owner في طبقة أدنى، و`:app` يربط التنفيذ. مثال checkout تحتاج customer ID لا whole profile screen object. state بين features يجب تظل واحدة authoritative، وlogout يبطل requests القديمة. اختبر contract في isolation ثم app wiring.
 

@@ -25,7 +25,7 @@ How do you reduce Gradle cold-build and CI execution times?
 
 Cold build مفيش cache دافئة، فقياسه مختلف عن incremental build. نعمل Gradle build scan/profile ونقسم الوقت: dependency download، configuration، Kotlin/Java compilation، KSP/KAPT، Android resources، tests. بعد القياس: configuration cache لو compatible، build cache، parallel modules، تقليل annotation processors، وdependencies محلية/locked. مش نفعّل flags عشوائي.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو CI بطيئة، قس أولًا وقت queue وconfiguration وdependency resolution وcompile وtests والإيموليتر؛ ما تفترضش إن cache هي العلاج. اعمل Build Scan أو profile ومقارنة cold/warm على runner مماثل. configuration cache يقلل configuration إذا plugins متوافقة، build cache يعيد task outputs عندما inputs مطابقة، وincremental compilation يعتمد على scope التغيير. cache خاطئة ممكن تخفي missing input؛ راجع reproducibility. وزّع tests حسب تكلفة وخطر، ولا تنقل اختبارات payment الحرجة لnightly بس عشان رقم الـPR يتحسن.
 

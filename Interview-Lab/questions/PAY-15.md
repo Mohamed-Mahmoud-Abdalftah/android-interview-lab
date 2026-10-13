@@ -25,7 +25,7 @@ The server is unreachable when a reversal is due. How do you guarantee eventual 
 
 لو server unreachable وقت reversal، ما نرميش الطلب ولا نعمل reversal جديدة كل retry. نخزن intent وهوية ثابتة في outbox، نعيد بمواعيد/backoff لما الاتصال يرجع، ونستعلم عن status لو الرد ضاع. لكن لو الجهاز ما رجعش online أو provider retention انتهت، ما ينفعش نعد “guaranteed delivery” مطلق؛ لازم backend reconciliation وoperations escalation.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو terminal offline أسبوع، WorkManager مش هتقدر تبعت حاجة؛ لذلك قُل ضمان مشروط: row محفوظة، جهاز يرجع online، والـprovider لسه يقبل operation. كرر بنفس reversal ID مع backoff، ولو response ضاعت اسأل status. بعد deadline أو جهاز مفقود، backend reconciliation وoperations escalation لازم يغطوا الفجوة.
 

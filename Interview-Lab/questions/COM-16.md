@@ -26,7 +26,7 @@ How do you identify avoidable recomposition?
 
 ابدأ بمشكلة محسوسة: typing متقطع أو scroll jank، ثم قِس frame timing في release build. Android Studio Layout Inspector يبين recomposition/skip counts، وCompose compiler reports تكشف stability، وsystem trace يوضح أين وقت frame. لا تعتبر أي recomposition خطأ: إذا تغير نص ظاهر، تحديثه ضروري. ابحث عن scope واسعة تقرأ state سريعة، calculation ثقيلة داخل body، أو parameters تتغير هويتها بلا سبب. بعد تغيير صغير قِس من جديد وتأكد أن UI ما بقتش قديمة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو عدّاد recomposition زاد، ده مؤشر للتحقيق مش إثبات bottleneck. سجل trace في release/profileable build، اعرف الوقت رايح composition ولا measure/draw ولا image decode. بعدين شوف compiler stability report والـstate read scope؛ غير حاجة واحدة وقارن frame time ونتيجة UI. مثال sort يوضح إن تكلفة واحدة داخل scope أهم من مئات Text رخيصة. بعد نقل الحساب قارن p95 frame time وتأكد إن ترتيب النتائج لم يتغير.
 

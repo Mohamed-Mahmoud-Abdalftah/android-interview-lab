@@ -25,7 +25,7 @@ How do you write an RFC/ADR for a major architecture change?
 
 RFC للمناقشة قبل القرار، وADR يسجل قرار اتاخد وسياقه. اكتب المشكلة والconstraints، الخيارات، evidence، القرار، consequences، rollout/migration، security/testing، وامتى نراجعه. خلّي ownership واضح واطلب feedback من mobile/backend/QA/security لو interfaces هتتأثر. القرار مش “نستخدم MVI” فقط؛ لازم يحدد state/events وحدود الـAPI.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 RFC/ADR لتغيير architecture لازم يربط القرار بمشكلة قابلة للفحص. مثال نقل data layer لـoffline-first: اكتب current failures، constraints، options، لماذا اخترت strategy، migration slice، data compatibility، rollback، وmetrics. اذكر ما ليس في scope، ومن يملك backend/API/testing. ADR يسجل قرارًا وسببًا وتاريخًا، ويمكن استبداله بقرار لاحق؛ ما تخليش المستند إعلانًا أن pattern “أفضل” بلا trade-offs أو خطة تنفيذ.
 

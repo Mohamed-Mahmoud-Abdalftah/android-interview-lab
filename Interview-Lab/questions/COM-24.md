@@ -26,7 +26,7 @@ A listener keeps working after a composable leaves composition. Which effect is 
 
 أول احتمال: listener اتسجل في body أو `LaunchedEffect` بدون unregister، أو اتسجل عبر scope عمرها أطول من composable. لو listener يجب يعيش فقط مع composable، `DisposableEffect(ownerOrSource)` تسجله و`onDispose` تلغيه عند خروج composable أو تغير key. لو callback يتغير لكن المصدر لا، `rememberUpdatedState` يضمن أحدث callback دون إعادة التسجيل. إذا السلوك مطلوب حتى بعد اختفاء UI، فالمالك ربما ViewModel أو service ويحتاج سياسة lifetime واضحة؛ وجود listener مستمر ليس خطأ تلقائيًا قبل تحديد owner.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو listener اتسجل في body، كل recomposition ممكن تضيف listener جديد؛ لو اتسجل في owner طويل، هيفضل بعد خروج UI. اربط register/unregister بنفس `DisposableEffect(source)`؛ ولو المفروض يشتغل بس في `STARTED`، راقب lifecycle كمان. اختبر عدد التسجيلات والإزالة، مش بس إن الشاشة اختفت. لو `onReading` اتبدلت لكن listener القديمة ماسكة callback قديمة، البيانات تروح لمالك غلط. استخدم أحدث callback، وتأكد unregister حصل عند تبديل source والخروج من composition.
 

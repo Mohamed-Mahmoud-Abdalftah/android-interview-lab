@@ -24,7 +24,7 @@ Assign responsibilities to UI, optional domain, and data without confusing polic
 
 Presentation بتاخد data وتحوّلها لـUI state، تستقبل user events، وتتعامل مع lifecycle/navigation. Domain اختيارية للـbusiness operations المشتركة أو المعقدة، زي حساب eligibility أو تنسيق workflow، من غير معرفة Compose أو DTO. Data layer فيها repositories، local/remote data sources، caching، conflict resolution، ومصدر الحقيقة. ViewModel مش مكان network mapping أو SQL؛ وRepository مش مكان snackbar text. الحدود تبقى واضحة في types: DTO عند transport، entity عند persistence، domain model في policy، UI model عند الشاشة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Presentation يعرض UiState ويستقبل events، Domain يملك rule مستقل عن Android إن كان مفيدًا، Data ينسق Room/Retrofit/cache. مثال account balance: UI لا تقرر أن timeout يعني declined؛ domain يعبّر عن Unknown، data تطلب status من backend. لا تخلط DTO مع UiState لأن API field قد يتغير. اختبر كل طبقة حسب contract.
 

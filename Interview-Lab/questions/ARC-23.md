@@ -24,7 +24,7 @@ Balance architecture benefit against complexity for a small app, preserving clea
 
 تطبيق صغير بشاشة أو اتنين وAPI واحدة ممكن يشتغل كويس بـViewModel + Repository واضحة من غير domain module، DTO/domain/UI copies متطابقة، أو interface لكل class. Clean Architecture تصبح overengineering لما وقت التنقل بين طبقات واختبارات forwarding أكبر من خطر التغيير الفعلي. لكن “صغير” مش مبرر تحط Retrofit في Compose أو تخبّي secret في APK؛ احتفظ بحدود data وUI وبـmain safety، واستخرج domain لما rules تتكرر أو workflow يعقد.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 App صغيرة: لو screen واحدة وrepository بسيطة، 5 modules وinterface لكل class قد تضيف navigation cost أكبر من فائدتها. استخدم State owner واضح، repository إذا فيه data policy، واختبارات للrisks الفعلية. لما rules تتكرر أو SDK تتبدل، extract domain boundary تدريجيًا. Clean Architecture مبدأ dependency/ownership، مش عدد مجلدات ثابت.
 

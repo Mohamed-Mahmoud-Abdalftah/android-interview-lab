@@ -25,7 +25,7 @@ A malicious pull request tries to access signing secrets. How do you prevent lea
 
 PR خبيث ممكن يضيف Gradle task أو test يقرأ environment secrets ويبعتها لخارج CI. إخفاء secret في logs مش كفاية. شغّل fork/unreviewed PRs في job بدون signing keys أو Play token وبـread-only permissions؛ privileged release job يشتغل فقط من protected branch/artifact بعد review، وما ينفذش PR head code بسياق secrets.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Manifest merge يجمّع declarations من app والـlibraries والـflavors؛ debug manifest ممكن يخفي provider ناقص في release. في CI ابْنِ release variant وافحص merged manifest النهائي، وتحقق `authorities` المطلوبة، `exported` وpermissions وplaceholder values. شغّل release smoke test يحاول الوصول للـprovider، لأن وجود declaration وحده لا يثبت URI behavior. احتفظ بالmerge report عشان تقدر تعرف أي dependency أو source set غيّر العقد.
 

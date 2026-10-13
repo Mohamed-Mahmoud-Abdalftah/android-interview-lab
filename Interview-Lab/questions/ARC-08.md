@@ -24,7 +24,7 @@ Compare responsibility for state and events across patterns without asserting on
 
 MVC بيفصل model/view/controller لكن في Android القديم Activity كتير بقت controller ضخمة. MVP يخلي Presenter يتعامل مع View interface، يسهل بعض tests لكن wiring lifecycle يدوي. MVVM يستخدم ViewModel يعرض observable UI state والـView ترندر؛ Android lifecycle integration مناسب. MVI عادة intents/actions تدخل reducer لتولّد state موحدة وeffects واضحة، وUDF principle أوسع: events لأعلى وstate لأسفل. المصطلحات بتختلف بين الفرق؛ قيّم data flow، ownership، testability، وcomplexity بدل اختيار acronym.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 MVC/MVP/MVVM/MVI/UDF أسماء لتنظيم ownership. في شاشة payment، الأهم state transitions وside effects وrecreation: هل Button tap ينتج event؟ هل Unknown محفوظ؟ هل UI تعمل request مباشرة؟ اختبر representative flow بدل تفضيل pattern بالاسم. MVVM مع immutable UiState قد يكفي، وreducer MVI يفيد transitions المعقدة بتكلفة ceremony.
 

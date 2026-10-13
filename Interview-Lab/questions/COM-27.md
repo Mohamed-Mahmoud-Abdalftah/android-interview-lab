@@ -26,7 +26,7 @@ How do you test a screen with loading, error, success, and permission states?
 
 عرّف `UiState` واضحة ثم اختبر Screen composable ببيانات fake لكل حالة: Loading يعلن progress، Error رسالة وRetry action، Success البيانات، PermissionRequired شرح وطلب access. Compose UI test يستخدم semantics nodes وأفعال حقيقية بدل البحث عن implementation details. ViewModel unit tests تتحقق من transitions وretry. Permission dialog نفسها منصة Android؛ اختبرها في instrumented test/وسيلة مناسبة للـActivity Result، مع denial وrevocation من Settings. Previews تساعد بصريًا لكنها ليست assertions.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 اختبر Screen بحالات injected بدل ما تحاول تضبط network وpermission حقيقية لكل assertion. `Loading` لازم progress واضح، `Error` فيها Retry يعمل callback مرة، و`PermissionRequired` فيها rationale؛ `Success` تعرض البيانات. بعد كده اختبر Route على emulator للـpermission dialog والعودة من Settings والـlifecycle. Preview تعرض الشكل فقط؛ مش هتكشف callback مكررة أو permission dialog حقيقية. غطّ كل state باختبار semantics، ثم Route على emulator للرفض والعودة من Settings.
 

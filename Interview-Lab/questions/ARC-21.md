@@ -24,7 +24,7 @@ Show a safe incremental refactor with characterization tests, seam extraction an
 
 ViewModel 1000 سطر ما تتقصّش في PR واحدة عمياء. أولًا اعمل inventory: network calls، DTO mapping، business rules، UI state transitions، Android lifecycle. ثبّت behavior باختبارات characterization للحالات المهمة، خصوصًا errors وcancellation. بعدين اطلع network/Room coordination لـRepository main-safe، وموديلات/mappers عند data boundary. لو business rule معقدة أو reused اطلع UseCase. خلي ViewModel مسؤولة عن event -> state بس. غيّر vertical slice واحدة، قارن outputs، واتأكد إن retry/process-death semantics ما اتغيروش بالخطأ.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 ViewModel فيها 1000 سطر: اعمل characterization tests للمسارات الحرجة، ثم استخرج DTO mapping إلى data، business validation/use case، وnetwork/cache إلى repository على مراحل. لا تغير architecture والbehavior معًا بلا checkpoints. احتفظ UiState/event API مؤقتًا حتى UI لا تنكسر، ثم قلل dependencies. قس defects/test time ولا تجعل refactor توقف release.
 

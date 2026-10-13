@@ -25,7 +25,7 @@ What is binary search, and what precondition does it require?
 
 Binary search بيقسم search range كل خطوة، فـO(log n)، لكن لازم data مرتبة بنفس comparator المستخدم. على random-access list بنمسك `low/high` ونقارن middle؛ لو أقل نروح يمين وإلا شمال. لو unsorted النتيجة غلط حتى لو code شغال. للduplicates لازم نحدد هل عايزين أي عنصر ولا أول/آخر occurrence.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 قبل binary search، أثبت إن collection مرتبة بنفس comparator وأن الوصول بالindex سريع. لو sorted by name وتبحث ID، النتيجة غير صحيحة مهما كان الكود. مع duplicates حدد أول occurrence كما في المثال، واختبر empty/missing/bounds. لو مرة واحدة على unsorted data، scan `O(n)` أوفر من sort `O(n log n)`.
 

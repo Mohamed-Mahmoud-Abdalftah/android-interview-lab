@@ -26,7 +26,7 @@ A shared model change forces recompilation of many modules. How would you shrink
 
 افحص build scan/task graph: هل shared model public ABI لعدد كبير؟ هل `api` dependency تصدّر types أوسع من اللازم؟ هل Kotlin inline/generated code يزيد أثر التغيير؟ بدلاً من `CommonUserModel` ضخمة تستخدمها 15 feature، قد تحتاج عقود صغيرة مستقرة (`UserId`, `DisplayName`) وfeature UI models محلية؛ data mapping تحوّل بينها. لا تنسخ domain invariant بين modules لمجرد تسريع compile. قِس قبل وبعد incremental build، وتأكد أن تغيير schema أو serialization ما زال ينتقل للمستهلكين الصحيحين.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Shared model في `:core` عام جدًا يجعل تعديل field يعيد compile feature كثيرة. افصل stable public contract من DTO/storage representation، قلل `api` exposure، ومرر narrow IDs/value objects. راجع Build Scan لمعرفة invalidated tasks؛ لا تفترض module split وحدها تكفي. اختبر mapping والمستهلكين بعد تقليل surface حتى لا تتغير semantics.
 

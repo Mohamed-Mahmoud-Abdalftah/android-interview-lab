@@ -26,7 +26,7 @@ What is Compose? Compare declarative Compose and XML Views.
 
 Jetpack Compose toolkit لبناء Android UI بـKotlin. في XML Views غالبًا تنشئ hierarchy ثم تغير widgets بأوامر مثل `textView.text = ...`؛ في Compose تصف الـUI المطلوبة بناءً على state، والإطار يعيد تنفيذ الأجزاء اللازمة عندما تتغير state المرصودة. هذا لا يلغي lifecycle ولا business logic ولا يحل performance تلقائيًا. يمكن دمج `ComposeView` داخل View screen أو `AndroidView` لعنصر قديم، وبالتالي النقل تدريجي. المهم يكون مصدر state واضح وتبعد side effects عن جسم composable.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في شاشة تسجيل دخول حقيقية، خلي `LoginUiState` هي المصدر الوحيد لقيمة الإيميل والتحميل والخطأ. الـ`ViewModel` يستقبل `onEmailChange` و`onSubmit` ويغيّر الـstate؛ الـUI لا تستدعي الشبكة وهي بتترسم. وقت النقل من XML، اختار شاشة كاملة أو component بحدود ownership واضحة، وتأكد إن نفس الحقل مش متخزن مرتين. لو خليت XML وCompose يكتبوا نفس قيمة الإيميل، هتظهر race وحالة قديمة بعد rotation. في production اعمل event contract واحد واختبر شاشة النقل قبل تعميمه.
 

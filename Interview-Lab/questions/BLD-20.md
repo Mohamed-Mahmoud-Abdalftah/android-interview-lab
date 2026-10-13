@@ -26,7 +26,7 @@ A feature works on arm64 but fails on another ABI. How do you debug packaging?
 
 سجّل ABI المتأثرة و`UnsatisfiedLinkError`/crash كاملة، version/variant وطريقة التثبيت. استخرج APKs من AAB للـdevice spec بـbundletool، وقارن `lib/arm64-v8a` مع `lib/x86_64` أو ABI المعنية: أسماء .so، transitive dependencies، checksum وpackaging rules. لو .so ناقصة، افحص AAR/NDK build و`abiFilters`; لو موجودة لكن loader يرفضها، ابحث عن symbols/STL/minSdk/CPU instructions. لا تنقل arm64 binary إلى مجلد ABI أخرى. أصلح vendor SDK/build config أو أعلن عدم دعم ABI بعد تقييم المستخدمين، ثم اختبر release split على جهاز/محاكي مناسب.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 arm64 يعمل وABI تانية لا: افحص `SUPPORTED_ABIS` والerror، ثم native inventory للـAAB/split والجهاز. قد تكون `.so` vendor غير متاحة أو ABI filter/resource packaging حذفها. اختبر Play-generated split للـrelease minified، وقارن firmware/device support. لو لا يوجد دعم رسمي، امنع install أو capability بوضوح بدل crash. راقب crash segment حسب ABI أثناء staged rollout.
 

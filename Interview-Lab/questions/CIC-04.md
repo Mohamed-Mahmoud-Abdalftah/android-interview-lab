@@ -25,7 +25,7 @@ Compare Git merge, rebase, squash, revert, and reset.
 
 `merge` يضم تاريخ فرعين ويحتفظ بالbranch topology؛ `rebase` يعيد تشغيل commits فوق base جديد فيغيّر hashes؛ `squash` يجمع commits؛ `revert` يعمل commit عكسي؛ `reset` ينقل branch pointer وقد يمسح working changes حسب mode. على shared branch نفضل revert للتراجع عشان التاريخ ما يتكتبش من جديد.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في hotfix: `merge` يحتفظ بتاريخ الفرعين ويصنع merge commit؛ `rebase` يعيد كتابة commits فرعك فوق base أحدث؛ `squash` يجمع تغييرات قبل الدمج؛ `revert` يصنع commit عكسي يحافظ على تاريخ shared branch؛ `reset` ينقل مؤشر branch وقد يرمي تغييرات حسب mode. ما تعملش force push على branch مشترك عشان تتخلص من release سيئ. لو hotfix لازم يروح `main` وrelease branch، cherry-pick أو merge حسب السياسة مع اختبار كل نسخة.
 

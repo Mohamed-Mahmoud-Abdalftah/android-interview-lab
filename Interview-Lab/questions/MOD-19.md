@@ -26,7 +26,7 @@ Two feature teams need the same business logic. Where should it live?
 
 لو logic هي rule حقيقية مثل حساب أهلية خصم أو رسوم، اجعل لها owner واحد في domain/use-case module أو capability service يرى الفريقان عقدها؛ لا تنسخها فتختلف النتائج. لكن “نفس” تنسيق text أو UI behavior قد لا يكون نفس semantics، فلا ترفع كل تشابه إلى core. اكتب invariants والأمثلة وحدد inputs/outputs بعيدًا عن Android UI، ثم اختبار مشترك وconsumer integration. الفريقان يتفقان على ownership وAPI evolution، والتطبيق يربط implementation. لو اختلاف المتطلبات قريب، صمم extension واضح بدل `if (featureA)` داخل common.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Logic مشتركة بين ميزتين: إن كانت invariant business واحدة مثل eligibility، ضعها في domain/core feature-neutral module مع owner واختبارات. إن التشابه سطحي والقرارين قد يختلفان، التكرار الصغير أفضل من abstraction قسرية. لا تجعل Feature A تعتمد Feature B فقط لتستعير helper. اكتب contract والاختلافات قبل استخراجها، وراقب changes القادمة.
 

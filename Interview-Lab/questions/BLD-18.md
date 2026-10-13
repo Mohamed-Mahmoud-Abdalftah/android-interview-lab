@@ -26,7 +26,7 @@ A release manifest merge drops a required ContentProvider authority. What CI che
 
 CI تبني `prodRelease` وتفحص merged manifest الناتجة بعد كل source sets وAAR manifests و`tools:` merge rules؛ assert على `provider android:name` و`android:authorities` المتوقعة (مع applicationId suffix)، وربما `exported`, permissions وgrantUri حسب contract. مجرد فحص `src/main/AndroidManifest.xml` لا يكفي؛ release source set أو library قد تغير/تحذف العقدة. استخدم manifest merger report لتفسير من غيّرها، ثم APK/AAB-derived manifest أو instrumented smoke test يؤكد ما شُحن. لا تحل المشكلة بإضافة authority ثابتة قد تصطدم بين flavors.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 في CI ابنِ `productionRelease` وافحص merged manifest النهائي أو packaged manifest: authority الصحيحة، exported flag، permission وplaceholder values. لو provider من library تغير مع manifest merger، source file وحده لا يكفي. أضف smoke test ل`ContentResolver` وURI grant إن الفعل مهم، واحتفظ بتقرير merger. افحص unexpected exports كذلك لأنها security boundary.
 

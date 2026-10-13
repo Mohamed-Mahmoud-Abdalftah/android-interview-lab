@@ -24,7 +24,7 @@ Explain flowOn upstream context preservation and why it does not move downstream
 
 `flowOn(Dispatchers.IO)` بيغيّر context للoperators والمصدر اللي فوقه فقط؛ الـcollector والoperators اللي تحته يفضلوا في context بتاع المستدعي. ده يسمح repository تعمل blocking read بعيد عن Main وتسيب rendering على Main. ما ينفعش نستخدم `withContext(IO)` حوالين `emit` داخل `flow {}` ونكسر invariant بتاع Flow.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 `flowOn(Dispatchers.IO)` يأثر على operators اللي قبله upstream، مش `collect` ولا الكود بعده. لو Room query سريعة و`map` فيها parsing ثقيل، حط flowOn بعد الـmap اللي عايز تنقلها، لكن متغيّرش UI state من IO مباشرة. لاحظ إنه يعمل context boundary وقد يضيف buffer وسلوك cancellation؛ اختبر thread عند كل مرحلة بدل افتراض pipeline كلها في IO.
 

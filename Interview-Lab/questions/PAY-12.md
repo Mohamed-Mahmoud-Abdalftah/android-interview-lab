@@ -25,7 +25,7 @@ A POS transaction is approved by issuer but the terminal loses power before savi
 
 ده أسوأ crash window: issuer وافق، terminal اتطفت قبل ما تحفظ approval. لو حفظنا intent والـoperation ID قبل الإرسال نقدر بعد reboot نسأل backend/provider. لو حتى intent ما اتحفظتش، terminal وحدها ما تقدرش تثبت النتيجة؛ لازم backend/acquirer ledger وbatch reconciliation يطابقوا العملية. ما نعيدش charge بهوية جديدة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 دي فجوة بين commit عند issuer وcommit محلي. لو write-ahead intent موجودة، بعد reboot اسأل بالـoperation ID وسجل النتيجة؛ لو مفيش intent، terminal وحدها لا تعرف تثبت مين اتوافق عليه. backend/acquirer ledger وتقارير batch لازم يحددوا العملية، وبعدها قرار completion أو reversal حسب protocol. متطلعش receipt Approved قبل دليل محفوظ.
 

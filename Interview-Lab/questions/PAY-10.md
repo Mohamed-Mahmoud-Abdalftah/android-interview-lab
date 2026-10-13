@@ -25,7 +25,7 @@ How do you make a payment workflow observable without logging PAN/PIN or secrets
 
 نعمل telemetry للـpayment workflow باستخدام opaque operation ID، state transition، timestamp، duration، SDK version وsafe error code. ممنوع PAN/PIN/CVV، raw ISO message، token أو request body. هدف logs يعرفنا العملية واقفة فين وهل reversal اتبعت، من غير ما يحول monitoring system لمخزن card data.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 سجل `intent_persisted → sent → unknown → lookup → confirmed` مع operation ID ومدة ونسخة SDK، من غير request body أو raw ISO message. حتى exception من SDK ممكن تحتوي card data؛ اعمل redaction قبل Crashlytics/monitoring. خليك واضح إن PAN نفسها تخضع لمتطلبات حماية لو اتعاملت معاها، وPIN/CVV لا تتخزن بعد authorization وفق PCI DSS.
 

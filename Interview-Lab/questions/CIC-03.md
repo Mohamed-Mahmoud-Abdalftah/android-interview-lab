@@ -25,7 +25,7 @@ What are build artifacts and release tracks?
 
 Build artifact هو الناتج القابل للتوزيع أو التشخيص: APK للتثبيت، AAB لـPlay delivery، mapping file لفك obfuscated crashes، native symbols وتقارير tests. Release tracks في Play بتحدد مين يستقبل النسخة: internal، closed، open أو production. المهم نفس artifact المجرّب يترقّى، مع versionCode فريد وsigning صحيح.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 الـartifact مش مجرد ملف نحمّله: AAB/APK، mapping file، native symbols، test reports، SBOM أو provenance لو مستخدمينها، وكلها مرتبطة بالـcommit والـvariant والـversionCode. Internal track للتجربة داخل الفريق، closed/open testing لشرائح أوسع، production rollout تدريجي. الخطأ الشائع إنك تعيد build عند كل track فتتغير البايتات؛ الأفضل تروّج نفس الـartifact الذي اختبرته. لو ظهر crash، لازم تقدر تحدد أي mapping وsource أنتج النسخة فعلاً.
 

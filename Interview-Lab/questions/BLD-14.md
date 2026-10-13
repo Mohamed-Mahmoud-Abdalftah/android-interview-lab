@@ -26,7 +26,7 @@ How do you diagnose missing native libraries or ABI incompatibility?
 
 اجمع `UnsatisfiedLinkError` الكامل، device `SUPPORTED_ABIS`، version/variant وطريقة التوزيع. افحص APK/AAB-derived split: هل `/lib/<abi>/libname.so` موجودة للـABI المختارة؟ وهل dependencies native الأخرى مبنية لنفس architecture/NDK/STL؟ راجع `abiFilters`, packaging options وAAR dependencies. قد يعمل arm64 لكن x86 emulator يفشل لأن vendor SDK لا يقدم x86. لا تستخدم `pickFirst` لتخفي نسختين مختلفتين دون فهم؛ ولا تعلن دعم ABI لا تستطيع اختبارها. تأكد من load order والسيمبولات إذا الملف موجود ولكن loader يرفضه.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 `UnsatisfiedLinkError` قد يكون `.so` ناقصة، ABI غير مدعومة، transitive dependency، أو JNI symbol تغير بـR8. حدد الجهاز وABI والartifact الحقيقي، افحص split delivered من AAB، وقارن vendor support matrix. شغّل minified release على الجهاز المتأثر، لا debug universal APK فقط. لو vendor لا تدعم ABI، غيّر eligibility بقرار واضح بدل crash بعد install.
 

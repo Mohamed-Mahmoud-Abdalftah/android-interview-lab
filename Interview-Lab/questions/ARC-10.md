@@ -24,7 +24,7 @@ Define one authoritative owner per data type and distinguish local cache from se
 
 SSOT يعني لكل نوع data في التطبيق مصدر authoritative واضح، والتحديثات تمرّ عليه بدل كل شاشة تمسك copy mutable وتتنافس. في offline-first app، Room ممكن تكون local source of truth اللي UI تراقبه، والnetwork refresh يكتب فيها. لكن لمدفوعات أو account balance السيرفر يفضل authority النهائي حتى لو DB هي مصدر العرض المحلي. “واحد” مش معناها server واحد لكل شيء؛ بعض UI element state محلي للشاشة. المهم تعرف مين يحسم التعارض وكيف تتعامل مع stale/offline data.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 SSOT معناها مكان authoritative لكل معلومة، مش “استخدم Room دائمًا”. Offline notes قد تكون Room هي مصدر UI مع sync backend؛ payment status authority عند backend والـRoom local projection. حدد write path وconflict policy، وخلي UI تراقب stream واحدة بدل cache منفصلة في ViewModel. اختبر اختلاف local/remote ولا تمسح pending edits عند refresh.
 

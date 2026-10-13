@@ -24,7 +24,7 @@ Define repository as data abstraction/source coordination and use case as busine
 
 Repository interface أو class بتقدّم app data وتخفي هل جت من Room أو network أو cache، وكمان تحدد refresh/conflict/source-of-truth policy. UseCase بيمثل فعل business محدد زي `PlaceOrder` أو `ObserveEligibleOffers`، وممكن يجمع أكتر من repository أو يطبق rule. مش كل repository method محتاجة UseCase wrapper؛ لو الـViewModel بس بيقرأ products من repo بسيط، wrapper فارغ يزوّد ملفات من غير فائدة. Repository ما يسرّبش DTOs للـUI، وUseCase ما يتحوّلش لمكان لكل logic بلا ownership.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Repository يمثل data contract مثل `observeOrders()` مع سياسة cache/server، وUseCase يمثل action أو policy مثل `SubmitOrder` أو `GetEligibleOffers`. مش كل DAO يحتاج repository wrapper فارغ، ومش كل getter يحتاج UseCase. لو payment retry له قواعد، ضعه في use case/domain، بينما request mapping والstatus endpoint في repository. اجعل الاختبار يثبت القرار والأثر.
 

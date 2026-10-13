@@ -25,7 +25,7 @@ Compare arrays, linked lists, stacks, queues, hash maps, and sets.
 
 Array/`ArrayList` random access سريع O(1) ونقل عناصر عند insert في النص O(n). Linked list insert قرب node O(1) لكن الوصول لمكانها O(n) وmemory/cache أسوأ غالبًا. Stack LIFO، queue FIFO؛ استخدم `ArrayDeque` مناسب في Kotlin. HashMap key→value وHashSet membership متوقع O(1) لكن memory إضافية وhash quality مهمة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 اختيار structure حسب operations: array/list لفهرسة وتصفح، linked list لinsert/delete مع node معلوم، stack للرجوع، queue للشغل بالترتيب، map للlookup بمفتاح، set للmembership. في Kotlin `List` interface لا يضمن random access لكل implementation. لو عندك product feed، غالبًا `ArrayList` للعرض وmap جانبية للـID أفضل من البحث الخطي لكل row.
 

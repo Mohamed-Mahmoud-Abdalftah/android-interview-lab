@@ -24,7 +24,7 @@ Define independent tests for UI transitions, business rules and data consistency
 
 Presentation test تحقن fake repository/use case وتتحقق من `UiState` بعد events، loading، error، cancellation، من غير network. Domain use case test تحقن fake contracts وتتحقق من rules وedge cases. Data test تستخدم fake service وin-memory Room أو test DB لتتأكد من mapping، transactions، cache/server ordering؛ وinstrumented test لما Android behavior مهم. ما تكتفيش mocks بتأكد إن method اتنادت؛ اختبر observable behavior. ولا تسمّي JVM tests إثبات lifecycle/device behavior؛ Compose UI أو Room على الجهاز تحتاج suite مناسبة.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Presentation test يرسل event ويتحقق من UiState، Domain test يثبت rule/edge case، Data integration test يختبر Room migration/HTTP mapping. Fakes مفيدة لحدود، لكنها لا تثبت SQL أو wire contract. مثال timeout payment: VM يعرض Unknown، use case لا يكرر key جديد، backend contract يضمن one effect. اربط كل test بما يستطيع إثباته.
 

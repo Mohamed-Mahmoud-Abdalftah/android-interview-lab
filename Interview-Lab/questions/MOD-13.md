@@ -26,7 +26,7 @@ When should a module depend on an interface versus a concrete type?
 
 اعتمد على interface عندما consumer يحتاج قدرة مستقرة وimplementation تختلف أو تعيش في module لا ينبغي استيرادها: `CheckoutRepository` عقد يراه checkout وتطبقه data module. هكذا app يختار implementation، والاختبار يمرر fake. لكن لو class محلية داخل feature، لا توجد بدائل ولا boundary، فـinterface لها طريقة واحدة وimplementation واحدة قد تكون عبئًا بلا قيمة. القرار عن ملكية العقد: من يحتاجه يحدد السلوك، ولا تجعل implementation تفرض تفاصيل Retrofit/Room في API.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 Module تعتمد interface عند boundary متغيرة، مثل `PaymentGateway` يستبدل vendor، أو network client عبر data implementation. لو class بسيطة داخل feature ولا بديل واقعي، concrete dependency أوضح وأسهل. لا تنشئ `IUserMapper` لكل mapper. حدد لماذا interface موجودة، من يملكها، وهل test fake يثبت behavior أم يخفي adapter broken.
 

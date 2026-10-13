@@ -26,7 +26,7 @@ What are Route Composable and Screen Composable?
 
 Route composable هي boundary للتطبيق: تستخرج navigation arguments، تحصل على ViewModel بالـowner الصحيح، تجمع state مع lifecycle، وتوصل callbacks/navigation. Screen composable تأخذ `UiState` وevents/`Modifier` كمدخلات وتعرض UI بدون معرفة NavController أو Hilt. هذا pattern تنظيمي وليس API إلزامي من Compose. فائدته previews واختبارات UI أسهل وإعادة استخدام الشاشة؛ لو الشاشة بسيطة جدًا قد يكون فصلها إلى ملفين زائدًا، لكن لا تخلط load/network مباشرًا في body.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 الـRoute تعرف nav argument وViewModel والـlifecycle، والـScreen تعرف `UiState` وcallbacks. ده يخليك تعمل preview للـloading والـerror من غير Hilt أو NavController. انتبه للـViewModel owner: لو scoped لوجهة غلط، ممكن تعيش أو تختفي في وقت مختلف من المطلوب. لو Route استخدمت ViewModel scoped للـgraph بدل destination دون قصد، state ممكن تعيش بعد خروج الشاشة. ثبّت owner المقصود واختبر back navigation وprocess recreation.
 

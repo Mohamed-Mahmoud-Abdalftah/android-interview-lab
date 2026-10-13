@@ -24,7 +24,7 @@ Separate durable/current state from one-time UI effects and define delivery sema
 
 الـstate هي حقيقة حالية ينفع UI جديد يشوفها تاني، زي `isLoggedIn` أو `paymentStatus=Pending`. الـtransient event فعل لحظي زي إظهار snackbar أو navigation command، وإعادته بعد rotation ممكن تكرر الفعل. لكن لو الحدث مهم تجاريًا، ما نخزّنش بس في SharedFlow؛ نخزن outcome في مصدر durable ونخلي UI تشتق التأثير مع acknowledgment واضح.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 `UiState.Success` بتوصف الشاشة وتستحق إعادة العرض بعد rotation؛ `NavigateToReceipt` أمر لحظي لا لازم يتكرر بنفس الطريقة. لو حطيت navigation كـBoolean في StateFlow، collector الجديدة تشوف true وتتنقل تاني. ولو SharedFlow بدون replay ومافيش subscriber وقت الإرسال، الحدث ممكن يضيع. قرر هل الحدث ephemeral فعلًا ولا نتيجة دائمة تستحق saved-state/acknowledgment.
 

@@ -26,7 +26,7 @@ What does collectAsStateWithLifecycle() solve?
 
 `collectAsStateWithLifecycle()` يحوّل Flow أو StateFlow إلى Compose `State` بحيث UI تعيد composition للقيمة الحالية، لكنه يجمع فقط عندما LifecycleOwner يصل عادة إلى `STARTED`، ويتوقف تحتها ثم يبدأ ثانية. ده يمنع UI مخفية من استهلاك emissions وعمل عرض بلا داعٍ. لا يعني أنه أوقف كل upstream دائمًا: `viewModelScope` أو `stateIn` sharing policy قد تواصل الشغل. API تخص Android lifecycle؛ في Compose متعدد المنصات قد تستخدم `collectAsState()` مع ownership مختلف.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لما الشاشة تروح background، collector بتاع `collectAsStateWithLifecycle()` يقف تحت `STARTED` ويرجع يجمع لما ترجع؛ الـScreen تشوف آخر قيمة من `StateFlow`. لكن لو repository شغالة في `viewModelScope` أو application scope، ده مش بيوقفها تلقائيًا. راجع sharing policy ومصدر الـFlow لو عايز توفر battery أو network. لو الـUI وقفت collection والـupstream لسه بتعمل location updates، البطارية مش هتتحسن. راقب scope و`SharingStarted` في production واختبر الرجوع للشاشة بعد background.
 

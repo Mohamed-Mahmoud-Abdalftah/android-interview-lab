@@ -26,7 +26,7 @@ What does stability mean for Compose types and parameters?
 
 Compose تعتبر type stable عندما يمكنها معرفة إذا value تغيرت بين recompositions؛ immutable value أو mutable properties ترسل إشعارًا مرصودًا. `@Immutable`/`@Stable` وعود من المطور، وليست أدوات سحرية لتسريع أي class. مثلًا `var name` عادية داخل class معلّم `@Stable` دون observable state قد تجعل UI قديمة. Kotlin `List` interface قد تعتبر غير مستقرة لأن محتواها قابل للتغير؛ وفي إصدارات compiler الحديثة strong skipping يغيّر شروط تجاوز calls وكيف تُقارن parameters. افحص compiler reports وقياس الأداء الفعلي قبل وضع annotations.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو `ProductRow` بياخد model فيها `var price` عادية، Compose ممكن ما تعرفش إن القيمة اتغيرت؛ و`@Stable` هنا وعد كاذب. خلّي UI model immutable أو خلي التغييرات Observable. راجع compiler report الأول: سلوك skipping بيتأثر بإصدار compiler وstrong skipping؛ متوعدش إن annotation وحدها هتحل jank. وعد `@Stable` الكاذب ممكن يخلي السعر على الشاشة قديم رغم إن object اتغيرت داخليًا. افحص correctness أولًا، وبعدها compiler report وframe timing على نسخة المشروع الفعلية.
 

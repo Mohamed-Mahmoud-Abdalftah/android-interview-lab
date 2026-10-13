@@ -24,7 +24,7 @@ Explain why direct UI-to-data-source coupling hurts consistency, lifecycle and t
 
 لو Compose أو ViewModel نادوا Retrofit service أو Room DAO مباشرة، الشاشة هتعرف HTTP DTOs أو database entities، وتبدأ هي تقرر refresh، retry، وmapping. ده يكبّر Presentation ويخلق شاشتين كل واحدة بتتعامل مع cache بشكل مختلف. Repository تحدد contract لـdata، source of truth، main safety، وتنقل transport details بعيد عن UI. مش معناه لازم UseCase لكل call؛ ViewModel ممكن تنادي repository مباشرة. DAOs/services تفضل داخل data layer مع tests.
 
-### Practical walkthrough in Egyptian Arabic
+## Practical walkthrough
 
 لو Composable تستدعي Retrofit، recomposition قد تعيد request، والUI صارت تعرف HTTP schema وlifecycle. لو ViewModel تستدعي DAO مباشرة، cache/server merge والسياسة تتوزع بين الشاشات. دع UI ترسل event، VM تدير UiState، repository تنسق data. لا يعني ذلك أن كل DB read يحتاج خمس طبقات؛ احمِ boundary التي تحمل state/side effects.
 
