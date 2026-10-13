@@ -24,6 +24,10 @@ Compare eager, lazy and subscriber-driven sharing including restart and resource
 
 `Eagerly` يبدأ upstream فور إنشاء shared stream حتى لو مفيش subscribers؛ `Lazily` يبدأ مع أول subscriber ويفضل شغال بعده طول عمر الـscope؛ `WhileSubscribed` يبدأ مع أول subscriber ويوقف بعد آخر واحد بtimeout قابل للضبط، وممكن يبدأ من جديد. الـtimeout القصير يوفر battery لكن rotation السريعة ممكن تعمل restart/network reconnect.
 
+### Practical walkthrough in Egyptian Arabic
+
+`Eagerly` يبدأ upstream فور إنشاء shared flow، حتى من غير شاشة؛ `Lazily` يبدأ مع أول subscriber وغالبًا يفضل شغال حتى scope تنتهي؛ `WhileSubscribed` يوقف بعد آخر subscriber مع timeout اختياري. لو location sensor مكلف، Eagerly ممكن تستهلك battery. لو Room state محتاجة تفضل دافئة بين rotation قصير، stop timeout مناسب. اختبر subscriber تخرج وترجع قبل/بعد المهلة.
+
 ## Why it matters and how it works
 
 `SharingStarted` controls the sharing coroutine, not whether a hot flow instance exists. With WhileSubscribed, stop timeout reduces churn; replay expiration can reset replay cache, and stateIn resets to its initial value when configured expiration elapses. Match policy to freshness, connection cost and security/session scope.
@@ -68,7 +72,15 @@ A live score screen uses WhileSubscribed with a short grace window to survive ro
 
 ## Interview answer — deep senior
 
-“I would measure source cost and correctness needs before picking a policy. A persistent in-memory derived state may justify eager collection. A cold expensive source that is only needed on visible screens usually favors WhileSubscribed, with a grace interval to avoid reconnecting on configuration changes. Lazy sharing avoids work before first use but can keep an upstream alive longer than expected. WhileSubscribed may restart the upstream and replay old data or reset state according to replay-expiration settings, so the UI must model freshness. I test two subscribers, last unsubscribe, quick resubscribe and session invalidation. Battery savings are meaningful only if the source actually stops when sharing stops.”
+“I would measure source cost and correctness needs before picking a policy. A persistent in-memory derived state may justify eager collection. A cold expensive source that is only needed on visible screens usually favors WhileSubscribed, with a grace interval to avoid reconnecting on configuration changes. Lazy sharing avoids work before first use but can keep an upstream alive longer than expected. WhileSubscribed may restart the upstream and replay old data or reset state according to replay-expiration settings, so the UI must model freshness. I test two subscribers, last unsubscribe, quick resubscribe and session invalidation. Battery savings are meaningful only if the source actually stops when sharing stops. I would tie each policy to a concrete resource. `Eagerly` starts the sharing coroutine as soon as it is created, which can be appropriate for a truly application-wide source but expensive for a screen-only sensor. `Lazily` waits for the first subscriber, then typically keeps collecting until the scope ends. `WhileSubscribed` starts on demand and stops after the last subscriber, optionally waiting through a brief configuration-change gap. The stop timeout is a resource decision, and replay expiration is a separate setting that can reset cached state. I would test a zero-subscriber period, rotation shorter than the timeout, and a longer background interval. Correctness still depends on the source of truth: stopping collection must not lose a required business operation.”
+
+## How to answer in the interview
+
+- **Why:** start policy controls upstream lifetime and resource use.
+- **How:** compare zero-subscriber and return paths.
+- **Trade-off:** battery versus warm state and restart cost.
+- **Failure case:** Eagerly runs a sensor offscreen or WhileSubscribed stops required work.
+- **Production solution:** measure starts and test rotation gaps.
 
 ## Deep-dive talking points
 

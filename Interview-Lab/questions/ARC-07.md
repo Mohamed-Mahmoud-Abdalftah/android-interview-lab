@@ -24,6 +24,10 @@ Explain mapping as boundary validation and change isolation, with costs and avoi
 
 Mapper مش بس `dto.name -> model.name`؛ دي فرصة تتأكد من units، required fields، enum unknown values، وتفصل schema خارجي عن domain. `UserDto(id: String?)` ممكن يبقى `UserId` validated أو error واضح بدل `id ?: ""` اللي يعمل object باطل. Mapper بين domain وUI يضيف localized text أو presentation flags من غير ما يلوث domain. بس لو كل layer بتعمل copy متطابق من غير اختلاف حقيقي، ده boilerplate؛ اختار boundaries لها سبب تغيير مستقل.
 
+### Practical walkthrough in Egyptian Arabic
+
+Mapper يترجم ويطبّع بين schemas، وليس copy لكل field فقط. مثال backend يرسل amount minor units وstatus string؛ mapper يرفض unknown status أو يحافظ عليه كUnknown بدل افتراض Approved. ضع conversion عند data boundary واختبر null/overflow/new enum. كثرة mapper بلا اختلاف semantics تضيف boilerplate؛ حدد لماذا كل تحويل موجود.
+
 ## Why it matters and how it works
 
 Mappings decouple schemas and make invalid external states explicit. They let persistence, network, business and UI evolve independently. The mapper should state failure behavior rather than silently manufacture valid-looking values.
@@ -64,6 +68,14 @@ I use a mapper where two models have different contracts. A network DTO may have
 ## Interview answer — deep senior
 
 The most valuable mapper is a validation boundary. It can reject malformed IDs, convert units, handle unknown enum values, and preserve safe error context. I do not let `orEmpty()` or zero defaults conceal a failed transfer amount, because that can create plausible but false state. I test representative server payloads, schema migrations, and UI formatting separately. I also watch allocation and maintenance cost: deep copying a huge object graph on every frame is not justified by theoretical purity. Mapping belongs near the source or target boundary, with clear ownership and one place to update when contracts evolve. The goal is to keep business invariants stable while transport and presentation details change. Mapping also defines an error contract. If validation fails, I decide whether to reject the record, keep previous cached data, or surface a typed failure; I do not bury the cause in a default. For large datasets I consider where mapping runs and measure allocation, but correctness comes first for business-critical fields. I keep locale formatting out of the network mapper and server DTOs out of Compose. That separation lets transport evolve without changing every screen.
+
+## How to answer in the interview
+
+- **Why:** schema drift must not leak into UI.
+- **How:** validate and convert at boundary.
+- **Trade-off:** extra code versus safer evolution.
+- **Failure case:** unknown enum silently maps to success.
+- **Production solution:** boundary tests for malformed payload.
 
 ## Deep-dive talking points
 

@@ -40,6 +40,10 @@ fun main() {
 }
 ```
 
+## Practical walkthrough
+
+`List<T>` في Kotlin read-only API: caller ما عندوش `add` من النوع ده، لكن ممكن تكون view فوق `MutableList` متشاركة؛ `val view: List<Int> = mutable` مش snapshot. `MutableList` تضيف mutation API، و`ArrayList` implementation معينة تدي random access سريع غالبًا لكن insert في النص مكلف. `Sequence` pipeline lazy بتتستهلك عند terminal operation؛ مش collection محفوظة تلقائيًا، وممكن تعيد شغلها كل مرة. في UI state ابعت `toList()` snapshot لو محتاج ثابت، وجرّب أداء eager List مقابل Sequence حسب حجم input ووجود short-circuit.
+
 ## Trade-offs and decision criteria
 
 Return `List` for a stable, finite result; use a defensive copy when callers require a snapshot. Keep `MutableList` private unless mutation is part of the contract. Prefer eager collection operations for small data or repeated reads; sequence can help long chains and early termination on large inputs.
@@ -54,15 +58,25 @@ A paged product repository emits immutable page snapshots as `List<Product>`. A 
 
 ## Interview answer — short
 
-`List` is read-only to callers, `MutableList` allows mutation, `ArrayList` is a concrete mutable implementation, and `Sequence` is a lazy processing abstraction. I choose based on API ownership, snapshot needs, and measured pipeline cost.
+`List` exposes read operations; `MutableList` adds mutation. `ArrayList` is one mutable implementation. `Sequence` describes a lazy pipeline that runs when consumed. A read-only reference is not necessarily an immutable snapshot, so I choose by ownership and workload.
 
 ## Interview answer — structured
 
-I expose `List` when callers should read elements, but I remember the backing object may still be mutable. `MutableList` is a mutation contract; `ArrayList` is one implementation with array-backed trade-offs. `Sequence` builds a lazy pipeline and runs it at a terminal operation, often avoiding intermediate collections but adding overhead. For small UI lists, eager operations are usually clearer; for large one-pass pipelines, I measure both. For example, I would return a `List<Product>` from a repository because callers should not mutate its result, but if it aliases my mutable cache, I still need to decide whether that is a live view or a snapshot. An `ArrayList` is a useful concrete implementation for indexed access, not an ideal public return type by default. A `Sequence` is a pipeline rather than stored data and can repeat work when consumed again.
+I distinguish API surface from storage. Kotlin `List` prevents mutation through that reference, but another alias may still mutate the backing collection. `MutableList` exposes writes, and `ArrayList` is a concrete resizable array with different costs for indexed reads and middle insertions. A `Sequence` is an intermediate lazy view: operations run when a terminal operation consumes it, and repeating consumption can repeat work. For stable UI state I keep mutation private and publish a snapshot. For a large filter-map-first pipeline I consider a sequence; for small collections, direct list operations can be simpler and faster after measurement.
 
 ## Interview answer — deep senior
 
-The key question is whether the API promises a stable snapshot or merely a read-only view. Kotlin read-only collections are not deep immutable, and aliases can mutate backing storage. ArrayList offers fast indexed access but shifting costs for middle inserts. Sequence fuses stages per element and can stop early, yet repeated consumption reruns the pipeline, and stateful steps like sorting still buffer. In Android I keep mutable storage private, publish snapshots, and profile large transformations on representative devices. I review these types along two axes: mutation rights and evaluation strategy. `List` removes mutation methods from the caller's view, yet a different alias can still mutate the backing data. `Sequence` defers operators until a terminal operation, often fusing stages and allowing early termination. It is not necessarily faster: small lists may pay more iterator overhead, a sorted sequence buffers, and iterating twice can recompute. For Android UI state I generally publish an immutable snapshot with a stable equality contract; for a large one-pass import I may use a sequence and measure memory and latency. API type choice should document ownership, not leak a mutable implementation accidentally.
+The key question is whether the API promises a stable snapshot or merely a read-only view. Kotlin read-only collections are not deep immutable, and aliases can mutate backing storage. ArrayList offers fast indexed access but shifting costs for middle inserts. Sequence fuses stages per element and can stop early, yet repeated consumption reruns the pipeline, and stateful steps like sorting still buffer. In Android I keep mutable storage private, publish snapshots, and profile large transformations on representative devices. I review these types along two axes: mutation rights and evaluation strategy. `List` removes mutation methods from the caller's view, yet a different alias can still mutate the backing data. `Sequence` defers operators until a terminal operation, often fusing stages and allowing early termination.
+
+For a product list shown in UI, I would keep an `ArrayList` or other mutable implementation private and publish a copied `List` only when the screen needs a stable snapshot. A `List` typed property alone could still point to that same mutable backing object, and nested mutable products could still change. A `Sequence` is not a replacement collection: it runs its pipeline on consumption and may rerun expensive mapping on the next traversal. I would choose it for a large filter-map-first search with early termination, while preferring ordinary eager operations for small lists unless profiling shows a real gain.
+
+## How to answer in the interview
+
+- **Why:** Select the right collection abstraction for mutability contracts, performance, and memory consumption.
+- **How:** Use `List` for read-only interfaces, `MutableList`/`ArrayList` for mutable buffers, and `Sequence` for multi-step lazy transformations.
+- **Trade-offs:** Standard `Iterable` chains allocate intermediate collections at each step; `Sequence` avoids intermediate allocations but introduces iterator overhead for small lists.
+- **Failure cases:** Casting an external `List` to `MutableList` and modifying it, breaking caller immutability assumptions and causing concurrency bugs.
+- **Production solution:** Expose read-only `List` publicly, use `toPersistentList()` or defensive copies for state emissions, and switch to `Sequence` only for large or unbounded datasets.
 
 ## Deep-dive talking points
 
@@ -82,4 +96,4 @@ Differentiate all four types, explain a snapshot versus view, and give one case 
 - [Kotlin collections overview](https://kotlinlang.org/docs/collections-overview.html) — collection interfaces.
 - [Kotlin sequences](https://kotlinlang.org/docs/sequences.html) — lazy processing.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.

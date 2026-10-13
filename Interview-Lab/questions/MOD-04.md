@@ -26,6 +26,10 @@ What is high cohesion and low coupling?
 
 High cohesion تعني عناصر module تخدم مسؤولية/قدرة واضحة وتتغير غالبًا لنفس السبب. Low coupling تعني علاقتها بالآخرين عبر عقود صغيرة ومستقرة، فلا يحتاج feature معرفة تفاصيل implementation داخل غيره. مثلًا `:feature:checkout` يملك checkout UI/state/use cases المتصلة، لكنه لا يملك كل HTTP client للتطبيق. لو class واحدة مشتركة انتقلت إلى `:core:common` فذلك لا يقلل coupling تلقائيًا؛ قد يجعل عشرات modules تعتمد على API واسعة. قيّم أسباب التغيير واتجاه dependencies ووقت إعادة البناء.
 
+### Practical walkthrough in Egyptian Arabic
+
+High cohesion: feature payment تجمع ما يخص payment lifecycle؛ low coupling: لا تستورد شاشة profile لمجرد قراءة account ID. افحص “لماذا يتغير هذا module؟” و“من يتأثر؟”. لو model shared يتغير لأجل API جديد ويعيد compile 20 feature، ربما contract واسع. لا تفصل classes مترابطة فقط للحصول على dependency graph جميلة.
+
 ## Why it matters and how it works
 
 Modules with cohesive responsibilities have fewer unrelated internal reasons to change. Narrow public APIs reduce how much consumer code knows and must rebuild when internals evolve. Coupling is not zero—features must collaborate—but it should be intentional, directional and testable. A highly abstract API can itself create cognitive and maintenance cost.
@@ -57,6 +61,14 @@ Review module change history, API surface and dependency graph. Ask whether one 
 ## Interview answer — deep senior
 
 “Cohesion is about why code changes together; coupling is about how much one unit must know about another. A checkout module containing cart validation, payment initiation and confirmation may be cohesive because those pieces support one user capability. It becomes tightly coupled if it reaches into catalog's database DTO or private UI state to obtain a product label. I would expose a narrow contract or share an appropriately owned domain value. I do not chase zero dependencies: a feature still needs other capabilities, but the direction and API should be intentional. I also avoid reflexively extracting every repeated function into `:core:common`. That can make a large number of modules depend on an unstable grab bag and broaden rebuilds. A small duplication may be cheaper until the semantics are truly shared. To assess the architecture, I inspect the graph, public API, change history and team workflow: does a simple internal change require edits across unrelated modules? Do consumers need implementation types? The goal is a boundary that makes expected product changes local while leaving integration explicit and testable.”
+
+## How to answer in the interview
+
+- **Why:** change should stay near its owner.
+- **How:** group related behavior and narrow imports.
+- **Trade-off:** local cohesion versus duplicate utilities.
+- **Failure case:** giant core becomes shared bottleneck.
+- **Production solution:** measure affected modules per change.
 
 ## Deep-dive talking points
 

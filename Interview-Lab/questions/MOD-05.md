@@ -26,6 +26,10 @@ Compare Gradle api and implementation dependencies.
 
 `implementation` dependency تستخدمها module داخليًا، ولا تعرض types الخاصة بها على compile classpath للمستهلكين كجزء من API. `api` تصدّر dependency للمستهلكين؛ تحتاجها لو public method أو superclass/interface في module يكشف type من تلك المكتبة. مثلًا لو `:core:ui` public function تأخذ `SomeLibraryType` فالمستهلك يحتاج المكتبة عند compilation. استخدم `implementation` افتراضيًا و`api` عند عقد فعلي؛ الإفراط في `api` يكبر classpath ويجعل تغييرات أكثر تعيد compilation. الحكم يتأثر بـGradle/AGP variant model وABI الفعلي.
 
+### Practical walkthrough in Egyptian Arabic
+
+في Gradle Kotlin DSL، `implementation(project(":core:network"))` يبقي dependency داخلية، و`api(project(...))` يعرّضها للمستهلكين compile classpath. استخدم `api` فقط لو public API للmodule يكشف types منها؛ غير كده يوسع rebuild impact. بعد تغيير `api` إلى `implementation` شغّل consumer compile؛ ربما signatures كانت تعتمد عليها.
+
 ## Why it matters and how it works
 
 Gradle separates a library's API dependencies from internal implementation dependencies. Consumers compile against exported API classpaths, while runtime still includes required implementation dependencies. Hiding an internal dependency reduces accidental imports and can avoid consumer recompilation when the implementation changes. Publishing metadata conveys the distinction to downstream builds where supported.
@@ -57,6 +61,14 @@ Inspect public ABI and dependency insight reports, enforce explicit direct depen
 ## Interview answer — deep senior
 
 “I frame `api` and `implementation` as a compile-contract decision. A library's public ABI may include parameters, return types, supertypes or annotations from another dependency; in that case consumers must see the dependency on their compile classpath, so `api` is appropriate. If the dependency only helps implement private behavior, `implementation` keeps it off that consumer compile classpath while preserving runtime availability. For an image module using OkHttp internally, I prefer a stable image result type and `implementation` for the client. Publicly returning an OkHttp Response would make the network library part of every consumer's contract, complicating replacement and widening recompilation. I do not use `implementation` to hide a type that genuinely appears in public signatures, because consumers can fail to compile. I inspect Gradle's dependency graph and published metadata, add direct dependencies rather than leaning on accidental transitive exposure, and measure incremental build impact. The default is a narrow API, but correctness of the ABI comes first.”
+
+## How to answer in the interview
+
+- **Why:** dependency exposure affects coupling.
+- **How:** choose api only for public types.
+- **Trade-off:** reuse ease versus recompilation.
+- **Failure case:** implementation hides required public type.
+- **Production solution:** consumer compile and build profile.
 
 ## Deep-dive talking points
 

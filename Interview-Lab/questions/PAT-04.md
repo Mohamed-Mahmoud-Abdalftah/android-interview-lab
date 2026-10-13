@@ -32,6 +32,10 @@ Structural patterns control how objects are composed and presented. Selection de
 
 Conceptual flow: `VendorCallbackAdapter` maps success/error callbacks to `PaymentOutcome`; `CheckoutFacade` exposes `submitAndVerify`; `MetricsGateway` delegates the same `Gateway` API while timing calls; `CachedGatewayProxy` may return fresh cached data. Each needs its own failure and cancellation contract.
 
+## Practical walkthrough
+
+Adapter يغيّر interface: SDK بيرجع `onSuccess(code)` و`onError(Throwable)` وانت تطلع `VerificationOutcome`. Facade تجمع steps معقدة في API سهلة مثل `submitAndVerify` لكن ما تخفيش uncertain outcome. Decorator يضيف metrics/retry policy حول interface مع الحفاظ على نفس contract، وProxy يتحكم في الوصول لobject بعيد أو lazy، غالبًا مع lifecycle/network failure خاص به. مثال `MetricsGateway` لا يجوز يسجل PIN أو يعيد POST دون idempotency. لو wrapper بيغيّر semantics خفية، الاسم “Decorator” مش مبرر. في Kotlin delegation تقلل forwarding boilerplate لكن راجع internal calls وownership.
+
 ## Trade-offs and decision criteria
 
 Wrappers can isolate vendor churn but add stack depth and debugging complexity. A simple adapter is often enough; adding facade/decorator/proxy simultaneously without a real need is ceremony. A proxy cache must define freshness and authority.
@@ -56,6 +60,16 @@ If a third-party SDK exposes callbacks but my domain expects a suspend result, I
 
 The patterns look similar because each can contain another object, so intent is the discriminator. An Adapter makes incompatible APIs work together. A Facade offers a deliberately smaller entry point to a subsystem. A Decorator preserves the same contract while layering behavior; a Proxy also presents the same contract but controls access, location or laziness. In Android, a vendor callback adapter must handle duplicate callbacks and cancellation. A metrics decorator must not log PII, and a cache proxy must not present stale financial status as final server truth. I use contract tests across the wrapped and unwrapped implementations to ensure behavior does not shift unexpectedly. If one wrapper begins doing selection, retry, UI navigation and logging, I split it before the name of a pattern masks the mixed ownership.
 
+I compare these by what the wrapper changes. An Adapter translates a mismatched SDK interface into the domain contract. A Facade offers a simpler entry to several steps while keeping meaningful outcomes visible. A Decorator preserves the interface but adds behavior such as metrics, and a Proxy controls access to another object, perhaps remote or lazy. In a payment integration, I would adapt vendor callbacks once, expose a facade that returns Confirmed, Rejected, or PendingVerification, and decorate that boundary with redacted metrics. I would not hide a timeout by returning success or let a retry decorator replay a POST without server idempotency. Kotlin delegation can reduce forwarding code, but I still test which calls pass through the wrapper.
+
+## How to answer in the interview
+
+- **Why:** Wrappers differ by translation, simplification, added behavior, or access control.
+- **How:** Map one vendor SDK through Adapter, Facade, Decorator and Proxy roles.
+- **Trade-off:** Each layer adds call-path complexity; keep only useful boundaries.
+- **Failure case:** Facade masks unknown payment state or decorator leaks/replays requests.
+- **Production solution:** Contract tests and redacted metrics around the vendor boundary.
+
 ## Deep-dive talking points
 
 Distinguish intent for four wrappers; test outcome preservation, cancellation and cache authority.
@@ -74,4 +88,4 @@ Given a vendor callback, metrics requirement and cache, select wrapper roles and
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — structural patterns.
 - [Kotlin delegation](https://kotlinlang.org/docs/delegation.html) — forwarding mechanics.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

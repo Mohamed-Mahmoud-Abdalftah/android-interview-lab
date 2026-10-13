@@ -25,6 +25,10 @@ A product list freezes on low-end devices. How do you distinguish rendering bott
 
 Product list بتجمد على جهاز ضعيف؟ نجيب trace/frame metrics ونشوف: CPU في data transform أو `find` متكرر؟ Compose recomposition/bind؟ bitmap decode كبيرة؟ GC بسبب allocations؟ GPU overdraw؟ نجرب input sizes مختلفة: لو الوقت يقفز مع n² فغالبًا algorithm، لو مرتبط بصور/رسم فمسار rendering. ما نغيّرش architecture بالتخمين.
 
+### Practical walkthrough in Egyptian Arabic
+
+في freeze لproduct list، خذ trace لمعرفة هل Main في `find`/sort متكرر أم في Compose measure/draw أو image decoding. اعمل baseline للعدد والزمن والـallocations، ثم جرّب pre-index أو paging أو image sizing حسب السبب. ما تنقل كل شيء لـIO عميانيًا؛ لو UI تربط 10k items أو keys غير ثابتة سيظل jank. اختبر على low-end release build.
+
 ## Why it matters and how it works
 
 Profilers and frame traces attribute main-thread work, rendering and allocations. Algorithmic complexity shows growth with input size and often CPU stacks in collection operations. Rendering bottlenecks can persist even when data preparation is precomputed.
@@ -55,7 +59,15 @@ Production test uses representative low-end hardware, thermal state and real cat
 
 ## Interview answer — deep senior
 
-“My investigation has hypotheses and controls. I reproduce on a representative low-end device, record frame time distribution and CPU/allocation traces, and vary list size, image loading and update frequency independently. If transform cost grows superlinearly, I inspect hidden list scans and preindex once per snapshot. If rendering dominates, I inspect image size, keys, invalidations and layout work. Paging and background dispatch can reduce UI pressure, but I still fix pathological complexity and verify data correctness. I monitor production jank after rollout. Optimize the proven stage first.”
+“I do not assume a frozen product list is an algorithm problem. I capture a release-like trace and frame timeline on a lower-end device, then inspect whether Main is spending time in repeated `find` or sort calls, image decode, Compose measure/draw, database I/O or GC. I correlate the problem with item count and scroll or filter actions. If it is quadratic transformation, I pre-index by ID or avoid per-row recomputation; if it is image work, I request appropriately sized images and cache carefully; if it is too many rows, I page and use stable keys. Moving work to a background dispatcher can help blocking CPU or I/O, but does not solve a UI that must compose thousands of expensive rows at once. I establish a baseline for frame time, allocations and memory, make one change at a time, then verify both performance and data correctness. The trade-off may be extra memory for a lookup index or added paging complexity, justified only by measured improvement.”
+
+## How to answer in the interview
+
+- **Why:** different bottlenecks need different fixes.
+- **How:** trace CPU, frames, allocations and data size.
+- **Trade-off:** precompute/paging versus extra memory.
+- **Failure case:** assuming every freeze is algorithmic.
+- **Production solution:** verify release frame timing after fix.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for controlled experiments, scaling signature, profiler attribution, corr
 
 ## Self-check rubric
 
-Can you derive the bound, explain the Android example, identify a trade-off/failure, and answer both follow-ups?
+Separate data transformation time, main-thread blocking, recomposition/layout and image loading with traces; optimize the measured bottleneck and validate on a low-end device.
 
 ## References and reviewed-on date
 
 - [Android rendering performance](https://developer.android.com/topic/performance/rendering) — frame pipeline.
 - [Macrobenchmark overview](https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview) — device measurement.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

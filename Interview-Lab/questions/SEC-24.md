@@ -25,6 +25,10 @@ How can native code/JNI be analyzed or instrumented?
 
 JNI بينقل جزء من المنطق لـ`.so` native library، لكنه بيتشحن للمستخدم داخل APK. ممكن يعملوا disassemble، strings extraction، hook للـJNI boundary أو native function، ويتابعوا plaintext وقت الاستخدام. native code ممكن يصعّب التحليل شوية، لكن ما يخليش API key سرّ ولا يلغي server authorization.
 
+## Practical walkthrough
+
+لو SDK دفع فيه `.so` وفيه فحص `approved`, المهاجم يقدر يhook JNI return أو patch native instruction، مش شرط يعرف كل source. اختبر backend مع result معدّلة ومبلغ متغيّر، ولا تعتمد على native flag كقرار دفع نهائي. native code ممكن يقدم أداء أو integration مع hardware، لكنه يزيد مساحة memory safety وABI compatibility كمان.
+
 ## Why it matters and how it works
 
 Native libraries expose symbols, machine code, constants and calls that can be inspected with reverse-engineering tools. Even if stripped, inputs and outputs cross Java/native boundaries and can be instrumented. Root expands access, but package inspection alone can reveal embedded material.
@@ -55,7 +59,15 @@ Security tests inspect APK libraries, ABI variants and runtime request paths; re
 
 ## Interview answer — deep senior
 
-“I review native code as an additional attack and reliability surface. I inspect packaged ABIs, symbol stripping, memory-safety posture and callback behavior; then I test with a hostile client that changes native return values. A native SDK can provide a certified hardware or EMV integration, but the app must not equate its local callback with final financial truth. Backend reconciliation and idempotent operation identity protect against tampering and crash recovery. Any secret embedded in the `.so` is treated as exposed and rotated if it had privilege.”
+“I review native code as an additional attack and reliability surface. I inspect packaged ABIs, symbol stripping, memory-safety posture and callback behavior; then I test with a hostile client that changes native return values. A native SDK can provide a certified hardware or EMV integration, but the app must not equate its local callback with final financial truth. Backend reconciliation and idempotent operation identity protect against tampering and crash recovery. Any secret embedded in the `.so` is treated as exposed and rotated if it had privilege. In a review I would inventory the packaged ABIs and native dependencies, inspect the JNI boundary for plaintext and privileged calls, and test with a patched return value. I would also check memory-safety updates and crash reporting for the native SDK. If the provider requires certified hardware, I would rely on its attested protocol rather than assuming a `.so` library is equivalent to secure hardware. The backend verifies the final provider status.”
+
+## How to answer in the interview
+
+- **Why:** compiled native code is still distributed to attackers.
+- **How:** inspect JNI boundaries, ABI packages, strings, and runtime hooks.
+- **Trade-off:** native integration adds performance or hardware access with extra safety complexity.
+- **Failure case:** treating a patched native approval as authority.
+- **Production solution:** server/provider confirmation and native crash/security testing.
 
 ## Deep-dive talking points
 
@@ -75,4 +87,4 @@ Can I explain static and dynamic native analysis and why server trust is still n
 - [OWASP MASTG tools](https://mas.owasp.org/MASTG/tools/) — native/static/dynamic assessment tools.
 - [Android JNI tips](https://developer.android.com/training/articles/perf-jni) — JNI boundary mechanics.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

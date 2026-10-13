@@ -26,6 +26,10 @@ What should you know about the deprecated EncryptedSharedPreferences API?
 
 `EncryptedSharedPreferences` كانت convenience API تشفّر keys وvalues، لكنها دلوقتي deprecated في AndroidX Security Crypto؛ ماينفعش أقول إنها الاختيار الحديث الافتراضي من غير مراجعة نسخة المكتبة والـdocs. الـAndroid Keystore بتحمي key material من الاستخراج بقدر ضمانات الجهاز، لكن مش بتخلي البيانات أو الـapp ضد كل هجوم. لو عندك مستخدمين مخزنين بيانات بالطريقة القديمة، migration لازم تراعي إن الـkey ممكن تضيع بعد restore أو تتبطل؛ ساعتها ما نخترعش decrypt ناجح، بل نطلب إعادة authentication أو نسترجع من server آمن حسب نوع البيانات.
 
+## Practical walkthrough
+
+لو فريق عنده ملف `EncryptedSharedPreferences` قديم، ما ينفعش يحذفه أول release فيفقد refresh tokens عند المستخدمين. اعمل migration: اقرأ بالقارئ القديم طول ما key موجودة، اكتب format الجديد، اقرأها للتأكد، وبعدها امسح القديمة. لو restore جاب ciphertext بلا Keystore key، تعامل معها كجلسة انتهت واطلب sign-in. لا تفترض إن deprecation معناها إن البيانات القديمة قابلة للقراءة تلقائيًا.
+
 ## Why it matters and how it works
 
 The library encrypted preference keys and values using a master key, commonly backed by Android Keystore. Its deprecation is an API status, not proof that existing stored values have stopped working. Keystore controls key generation and allowed operations; the app still owns ciphertext format, IV handling, backup policy, rotation, and error recovery. Client storage cannot serve as the trust boundary for authorization or payment decisions. Backup restoration may bring ciphertext without the original Keystore key, so recovery must be designed.
@@ -74,11 +78,19 @@ A banking app upgrades local token storage. It does not silently discard live se
 
 ## Interview answer — structured
 
-“The AndroidX encrypted preferences API is now deprecated. Existing apps may still have ciphertext written with it, so the decision is not simply to swap a dependency. I inventory stored data, decide which values need local encryption at all, and define a versioned migration that reads old values only while the old key is available, verifies the new write, and safely handles key loss. For secrets such as refresh tokens, I can often clear and require re-authentication on unrecoverable key failure. Keystore protects key material subject to device capabilities; the application must still design IVs, backup rules, rotation, and incident handling. I never treat local encryption as server-side trust or a way to hide a bundled API secret.”
+“`EncryptedSharedPreferences` is deprecated, so I would check the current AndroidX guidance before using it in a new design. Existing files still need a migration plan: inventory values, read with the old key while possible, write and verify a new format, then retire the old entry. Restored ciphertext can be unusable because Keystore keys may be absent, so replaceable tokens should lead to reauthentication. Deprecation alone does not justify silent data loss.”
 
 ## Interview answer — deep senior
 
-“I would first classify the data and threat model instead of choosing an encrypted preferences helper by habit. AndroidX Security Crypto's EncryptedSharedPreferences API is deprecated, so an existing app needs an explicit migration rather than a blanket recommendation for new work. Keystore can protect key material subject to device capabilities, while the app still owns authenticated encryption format, IV uniqueness, backup exclusions, versioning, and key-loss recovery. A refresh token can often be revoked and reissued after unrecoverable key invalidation; irreplaceable local data needs a different recovery plan. I would migrate with a read-old/write-new/verify sequence, test restore to a different device and biometric changes, and keep server authorization independent of any device-side ciphertext.”
+“I would first classify the data and threat model instead of choosing an encrypted preferences helper by habit. AndroidX Security Crypto's EncryptedSharedPreferences API is deprecated, so an existing app needs an explicit migration rather than a blanket recommendation for new work. Keystore can protect key material subject to device capabilities, while the app still owns authenticated encryption format, IV uniqueness, backup exclusions, versioning, and key-loss recovery. A refresh token can often be revoked and reissued after unrecoverable key invalidation; irreplaceable local data needs a different recovery plan. I would migrate with a read-old/write-new/verify sequence, test restore to a different device and biometric changes, and keep server authorization independent of any device-side ciphertext. For migration I would test old ciphertext on every supported app upgrade path, not just the latest release. I would make the new write idempotent, verify it before deleting the old entry, and leave a recovery path for process death between steps. Deprecation does not imply the old encrypted file is immediately vulnerable, and it does not justify silently changing storage without a data-loss plan. Device restore without the old key should produce an explicit sign-in state.”
+
+## How to answer in the interview
+
+- **Why:** deprecated storage still exists on user devices.
+- **How:** inventory values and migrate with a verified, crash-safe switch.
+- **Trade-off:** retaining legacy readers temporarily increases code complexity.
+- **Failure case:** restore brings ciphertext without its key.
+- **Production solution:** stage migration and support reauthentication for replaceable tokens.
 
 ## Deep-dive talking points
 
@@ -100,4 +112,4 @@ Score 0–5, one point each: identify current deprecation; explain what Keystore
 - [EncryptedSharedPreferences API reference](https://developer.android.com/reference/androidx/security/crypto/EncryptedSharedPreferences) — deprecation and backup warning.
 - [Android Keystore system](https://developer.android.com/privacy-and-security/keystore) — key material and operation constraints.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. The snippet covers key creation only; the complete encryption format was intentionally omitted because it requires an application-specific threat model and recovery design.
+Technically reviewed against the linked primary documentation on 2026-10-13. The snippet covers key creation only; the complete encryption format was intentionally omitted because it requires an application-specific threat model and recovery design.

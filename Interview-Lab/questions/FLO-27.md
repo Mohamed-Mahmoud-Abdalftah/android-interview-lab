@@ -24,6 +24,10 @@ Investigate duplicate navigation through replay, collector duplication and consu
 
 لو navigation حصلت مرتين بعد rotation، نفتش: هل `StateFlow<Boolean>` لسه true فـcollector جديد أعاد الفعل؟ هل `SharedFlow(replay=1)` رجّعت command؟ هل عندنا collectors اتنين أو lifecycle restart؟ الحل يعتمد على العقد: نخزن destination/current screen كـstate، أو effect بمعرّف مع acknowledgment، ونخلي business completion durable. ما نعتبرش Channel حل سحري لكل race.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو `navigate=true` في StateFlow، rotation ترجع true وتتكرر navigation. لو SharedFlow replay=0، event وقت الشاشة STOPPED ممكن تضيع. قبل اختيار Channel/SharedFlow، اسأل هل النتيجة نفسها دائمة: مثل payment saved ID، خلي destination state محفوظة أو event ID مع acknowledgment. اختبر collector واحدة واتنين، rotation، background، وprocess death.
+
 ## Why it matters and how it works
 
 Replayed state is correct for facts but can be wrong for imperative effects. A new collector may observe the last value, and duplicate collectors may both act. Channel receive can race with view destruction between dequeue and navigation. Instrument event IDs, producer calls and consumer lifecycle to locate duplication before changing primitive.
@@ -64,7 +68,15 @@ For sign-in, the authoritative session state drives the destination so a recreat
 
 ## Interview answer — deep senior
 
-“I would reproduce the exact rotation window and instrument producer emission, collector start/stop and navigation with stable effect IDs. If the producer emits once but two collectors navigate, I fix ownership/lifecycle. If StateFlow stores `navigate=true`, replay is working as designed for state but the model is wrong for an imperative action. A replayed SharedFlow can also repeat; replay zero can lose an event while stopped. Channel one-consumer receive can lose an effect after dequeue but before action. For session-driven destinations I use durable session state and declarative routing. For effects requiring one-time handling I implement a persisted ID and acknowledgement protocol, then test crash windows and accept that UI navigation itself is not an atomic database transaction.”
+“I would reproduce the exact rotation window and instrument producer emission, collector start/stop and navigation with stable effect IDs. If the producer emits once but two collectors navigate, I fix ownership/lifecycle. If StateFlow stores `navigate=true`, replay is working as designed for state but the model is wrong for an imperative action. A replayed SharedFlow can also repeat; replay zero can lose an event while stopped. Channel one-consumer receive can lose an effect after dequeue but before action. For session-driven destinations I use durable session state and declarative routing. For effects requiring one-time handling I implement a persisted ID and acknowledgement protocol, then test crash windows and accept that UI navigation itself is not an atomic database transaction. I would reproduce and identify exactly what is replaying. If navigation is represented by a Boolean in StateFlow, the new collector after rotation receives the same true value and may navigate again. Clearing it immediately can race with lifecycle changes or lose it before handling. Switching blindly to a zero-replay SharedFlow avoids one duplication but creates a loss window when no UI collector is active. I define the event contract: whether the destination follows from durable state, whether one UI owner must acknowledge an event ID, and whether recovery after process death is required. I also guard navigation against duplicate destinations where appropriate, but that is a secondary defense. Tests cover rotation before and after handling, multiple collectors, and a stopped screen.”
+
+## How to answer in the interview
+
+- **Why:** replay and consumption are separate concerns.
+- **How:** reproduce duplicate, identify state/event owner, add acknowledgment.
+- **Trade-off:** replay duplicates; no replay can lose.
+- **Failure case:** clearing Boolean too early or late.
+- **Production solution:** lifecycle-gap and process-death tests.
 
 ## Deep-dive talking points
 

@@ -47,6 +47,10 @@ import androidx.room.Transaction
 }
 ```
 
+## Practical walkthrough
+
+لو checkout local save محتاج header، line items، وoutbox marker، الثلاثة لازم يدخلوا transaction واحدة؛ من غيرها crash ممكن يسيب order ناقصة أو intent sync مفقودة. `@Transaction` على DAO function أو `database.withTransaction` يدي SQLite atomicity داخل DB واحدة، مش network+DB distributed transaction. خليك قصير جوه transaction: insert/update فقط، وخلّي API call بعد commit. لو server call نجحت والack المحلي ضاع، marker لسه pending؛ worker يصالحها بـidempotency key/status query. اختبر exception في نص inserts وتأكد no partial rows، واختبر Flow ما تعرضش حالة half-write للـUI.
+
 ## Trade-offs and decision criteria
 
 One transaction protects consistency but can increase contention if too broad. For a complex repository operation, `RoomDatabase.withTransaction` may coordinate multiple DAOs. Neither approach offers distributed transaction with a payment server.
@@ -69,7 +73,17 @@ An order repository first persists a Pending operation and lines in one Room tra
 
 ## Interview answer — deep senior
 
-“I define the invariant before choosing the transaction boundary. For local order creation, header, lines and pending sync marker should commit together; otherwise a crash can expose a half-written order or lose the intent to sync. Room’s transaction mechanisms give local SQLite atomicity and observable queries update after commit, but a remote API is outside that ACID boundary. Holding a database transaction while awaiting network is harmful and still cannot roll back the server. I split the workflow into local atomic acceptance, remote idempotent execution and authoritative status reconciliation. Tests inject failure after the first insert, process restart before enqueue and duplicate worker execution. Test forced failure between writes. Retrying blindly can duplicate remote operations.”
+I define the invariant before choosing the transaction boundary. For local order creation, header, lines and pending sync marker should commit together; otherwise a crash can expose a half-written order or lose the intent to sync. Room’s transaction mechanisms give local SQLite atomicity and observable queries update after commit, but a remote API is outside that ACID boundary. Holding a database transaction while awaiting network is harmful and still cannot roll back the server. I split the workflow into local atomic acceptance, remote idempotent execution and authoritative status reconciliation. Tests inject failure after the first insert, process restart before enqueue and duplicate worker execution. Test forced failure between writes. Retrying blindly can duplicate remote operations.
+
+I define the invariant before the annotation: an order header, its lines, and a pending-sync row must either all exist or none do. Room can commit those local writes atomically through a DAO transaction or database transaction API. The network request is not inside that SQLite atomic boundary; holding a transaction during I/O would increase contention and still would not make the remote server roll back with it. I commit local intent first, then send through a worker with a stable operation ID. A crash after server success but before local acknowledgement is handled by reconciliation. I inject a failure between inserts to prove rollback and observe the UI only after committed state.
+
+## How to answer in the interview
+
+- **Why:** Prevent partial local orders and lost sync intent.
+- **How:** Put header, lines and outbox row in one Room transaction.
+- **Trade-offs:** Keep network outside the short local transaction.
+- **Failure cases:** Crash between writes or server ack before local acknowledgement.
+- **Production solution:** Rollback test plus idempotent outbox reconciliation.
 
 ## Deep-dive talking points
 
@@ -89,4 +103,4 @@ Can I protect the full local invariant, avoid network inside transaction and def
 - [Android Room transactions](https://developer.android.com/training/data-storage/room/accessing-data#transaction) — transaction API.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — queued writes.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

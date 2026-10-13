@@ -25,6 +25,10 @@ A rooted device can hook your code with Frida. What protections help and what ca
 
 Frida على rooted device تقدر تhook methods، تغيّر return values، تقرأ plaintext قبل encryption أو بعد TLS، وتعدّي root/pin checks. Obfuscation وintegrity signals تزود كلفة الهجوم وتفيد risk engine، لكن مفيش ضمان إن client نظيف. الحماية الأساسية للمال: server authorization، transaction state، idempotency، limits وreconciliation.
 
+## Practical walkthrough
+
+مهاجم بـFrida غيّر `isDeviceTrusted()` إلى true وقرأ token قبل TLS. الـroot detection والـobfuscation قد يزودوا التكلفة وتدخل signals للـrisk engine، لكن لا يثبتوا إن الطلب جاي من client نزيهة. backend يراجع account وamount وbeneficiary وoperation ID والlimits مهما قالت local checks؛ لو signals سيئة استخدم step-up بدل حكم واحد مطلق.
+
 ## Why it matters and how it works
 
 Runtime instrumentation acts within the app process or its environment. Hardware-backed keys may resist extraction, yet an attacker can ask the app to use them or observe input/output. Play Integrity provides server-consumed app/device signals with tiered enforcement; it is not an absolute anti-hook proof.
@@ -55,7 +59,15 @@ Incident telemetry records verdict categories and opaque operation IDs, not card
 
 ## Interview answer — deep senior
 
-“I assume a hostile client can forge any field it sends and can bypass local security checks. My backend verifies account ownership, canonical amount, operation identity and allowed state transitions, and reconciles provider outcomes. For additional friction I may use Play Integrity, short-lived credentials, step-up challenges, anti-tamper checks and anomaly detection, but I test with Frida to make sure bypass does not grant authority. I monitor legitimate-device rejection rates and provide controlled recovery. Keystore key extraction resistance does not stop a hook from observing plaintext or invoking an authorized operation through the app.”
+“I assume a hostile client can forge any field it sends and can bypass local security checks. My backend verifies account ownership, canonical amount, operation identity and allowed state transitions, and reconciles provider outcomes. For additional friction I may use Play Integrity, short-lived credentials, step-up challenges, anti-tamper checks and anomaly detection, but I test with Frida to make sure bypass does not grant authority. I monitor legitimate-device rejection rates and provide controlled recovery. Keystore key extraction resistance does not stop a hook from observing plaintext or invoking an authorized operation through the app. I would demonstrate the threat by hooking a local trust Boolean and modifying an outgoing transfer, then verify the backend recomputes the transaction fields and enforces ownership and limits. Hardware-backed keys can resist extraction yet still be invoked by a compromised app process, so their claim must be precise. Risk signals can trigger challenge or rate limits, with monitoring for legitimate-device false positives, while financial state remains server controlled.”
+
+## How to answer in the interview
+
+- **Why:** hooks can change local decisions and observe plaintext.
+- **How:** treat root/tamper checks as fallible risk signals.
+- **Trade-off:** strict blocking raises false-positive and accessibility costs.
+- **Failure case:** bypassed local flag unlocks a transfer.
+- **Production solution:** backend transaction invariants and risk tiers.
 
 ## Deep-dive talking points
 
@@ -75,4 +87,4 @@ Can I state what each local defense can and cannot protect and identify a backen
 - [OWASP MASTG tools](https://mas.owasp.org/MASTG/tools/) — Frida/dynamic testing.
 - [Play Integrity overview](https://developer.android.com/google/play/integrity/overview) — risk decisions.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

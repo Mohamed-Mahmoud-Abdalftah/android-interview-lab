@@ -26,6 +26,10 @@ How do you model UI state with StateFlow?
 
 ViewModel يحتفظ بـ`MutableStateFlow<UiState>` داخليًا ويعرض `StateFlow<UiState>` للواجهة. `UiState` يصف ما تحتاجه الشاشة كـloading/data/error/permissions بدل flags متناقضة. `StateFlow` hot وله قيمة حالية، ويعمل conflation بالقيمة؛ لا تعتمد عليه كـqueue لكل event لحظي. Compose تجمعه بـ`collectAsStateWithLifecycle()` حيث متاح، فيتوقف الجمع عندما lifecycle متوقف. استخدم `update` عند تعديل state اعتمادًا على القديمة، واحمِ ترتيب النتائج إذا طلب قديم رجع بعد بحث جديد.
 
+### Practical walkthrough in Egyptian Arabic
+
+اعمل state واحدة للشاشة بدل `isLoading` و`hasError` و`items` اللي ممكن يطلعوا متناقضين. الـViewModel يعرّض `StateFlow` read-only ويعمل update ذرّي لما يبدأ load أو ينجح. في search، ألغِ أو تجاهل نتيجة query القديمة عشان `a` ما تغطيش نتيجة `ab`. `StateFlow` تحتفظ بآخر قيمة، لكنها مش queue لكل Snackbar أو navigation. في production افصل state المستمرة عن actions ذات الاستهلاك المحدد، واختبر طلبين بحث نتائجهم ترجع بعكس الترتيب.
+
 ## Why it matters and how it works
 
 A StateFlow always has a current value and shares it with collectors. `MutableStateFlow` is the writable owner; exposing its read-only view protects invariants. Equality-based conflation means rapid equivalent values need not produce distinct emissions. Lifecycle-aware collection reduces off-screen work, while the upstream producer may still run depending on how it was built and its sharing policy.
@@ -33,6 +37,32 @@ A StateFlow always has a current value and shares it with collectors. `MutableSt
 ## Worked example
 
 `CatalogUiState` is a sealed loading/ready/error model. The ViewModel starts at Loading, collects a repository flow, maps valid products to Ready and exceptions to an error with retry action. Typing search starts a new `flatMapLatest` or cancels the previous job so an old result cannot replace the newest query. The UI renders the single state and sends Retry or SearchChanged intents.
+
+### Compose/Kotlin walkthrough
+
+```kotlin
+sealed interface CatalogState {
+    data object Loading : CatalogState
+    data class Ready(val products: List<Product>) : CatalogState
+    data class Failed(val message: String) : CatalogState
+}
+class CatalogViewModel(private val repo: CatalogRepository) : ViewModel() {
+    private val _ui = MutableStateFlow<CatalogState>(CatalogState.Loading)
+    val ui: StateFlow<CatalogState> = _ui.asStateFlow()
+    fun refresh() = viewModelScope.launch {
+        _ui.value = CatalogState.Loading
+        _ui.value = try {
+            CatalogState.Ready(repo.load())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CatalogState.Failed("Could not load products")
+        }
+    }
+}
+// Imports: androidx.lifecycle.ViewModel/viewModelScope, kotlinx.coroutines.flow.*,
+// kotlinx.coroutines.launch, kotlinx.coroutines.CancellationException.
+```
 
 ## Trade-offs and decision criteria
 
@@ -48,15 +78,23 @@ Test state transitions, cancellation/race behavior, and lifecycle restarts. Obse
 
 ## Interview answer — short
 
-“I keep a private `MutableStateFlow<UiState>` in the ViewModel, expose read-only `StateFlow`, and collect it with lifecycle awareness in Compose.”
+“I keep a private `MutableStateFlow<UiState>` in the ViewModel, expose read-only `StateFlow`, and collect it with lifecycle awareness in Compose. Expose one read-only StateFlow of mutually exclusive screen states.”
 
 ## Interview answer — structured
 
-“A screen should receive one coherent model, often a sealed Loading, Ready or Error state, rather than several flags that conflict. The ViewModel owns a mutable StateFlow and exposes only its read-only interface. StateFlow gives new collectors a current value and conflates equal updates, so I use it for state, not an event queue. Compose observes it with `collectAsStateWithLifecycle`; I also cancel obsolete requests so late responses do not overwrite a newer query.”
+“A screen should receive one coherent model, often a sealed Loading, Ready or Error state, rather than several flags that conflict. The ViewModel owns a mutable StateFlow and exposes only its read-only interface. StateFlow gives new collectors a current value and conflates equal updates, so I use it for state, not an event queue. Compose observes it with `collectAsStateWithLifecycle`; I also cancel obsolete requests so late responses do not overwrite a newer query. I would model Loading, Ready, and Failed as distinct states and cancel a stale product search.”
 
 ## Interview answer — deep senior
 
-“I model the screen as a state machine before choosing a Flow type. A sealed loading, ready and error representation can make illegal combinations difficult to express. The ViewModel is the only writer of a private `MutableStateFlow`, and consumers see a `StateFlow` with a current value. I use `update` for transformations based on previous state and make asynchronous request identity explicit so old search results cannot win a race. `StateFlow` conflates values and exposes the latest one, which is excellent for rendering but not a durable log of every one-time navigation or Snackbar event. Compose collects through a lifecycle-aware adapter so work tied to collection pauses off-screen; if the upstream is shared with `stateIn`, I choose a scope and sharing policy that reflect when data should continue loading. For a catalog screen I would test initial loading, empty results, error and retry, rapid query changes, rotation, and the stopped/resumed lifecycle. I would also inspect whether a new collector gets an appropriate current state rather than a stale success after account change. The flow abstraction is only as sound as the state ownership and transition rules around it.”
+“I model the screen as a state machine before choosing a Flow type. A sealed loading, ready and error representation can make illegal combinations difficult to express. The ViewModel is the only writer of a private `MutableStateFlow`, and consumers see a `StateFlow` with a current value. I use `update` for transformations based on previous state and make asynchronous request identity explicit so old search results cannot win a race. `StateFlow` conflates values and exposes the latest one, which is excellent for rendering but not a durable log of every one-time navigation or Snackbar event. Compose collects through a lifecycle-aware adapter so work tied to collection pauses off-screen; if the upstream is shared with `stateIn`, I choose a scope and sharing policy that reflect when data should continue loading. For a catalog screen I would test initial loading, empty results, error and retry, rapid query changes, rotation, and the stopped/resumed lifecycle. I would also inspect whether a new collector gets an appropriate current state rather than a stale success after account change. The flow abstraction is only as sound as the state ownership and transition rules around it. If a response for an older query arrives late, I prevent it from replacing the result for the current text.”
+
+## How to answer in the interview
+
+- **Why:** one current value prevents contradictory flags.
+- **How:** show private mutation and a read-only StateFlow.
+- **Trade-off:** equality conflation makes it unsuitable as a queue of every event.
+- **Failure case:** stale search responses overwrite newer ones.
+- **Production solution:** cancel old requests or tag responses with query identity.
 
 ## Deep-dive talking points
 

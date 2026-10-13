@@ -25,6 +25,10 @@ How do you protect signing material and CI secrets?
 
 Android signing key لو اتسرب attacker يقدر يوقّع artifacts حسب منظومة التوزيع؛ CI secrets زي Play API credentials برضه خطيرة. نخلي release signing في protected job/environment، صلاحيات أقل ما يمكن، approvals/audit، وuntrusted PR/fork jobs من غير secrets. ما نطبعش قيم في logs أو artifacts، ونستخدم managed key storage/Play App Signing حسب release setup.
 
+### Practical walkthrough in Egyptian Arabic
+
+Signing key وPlay credentials أسرار نشر، مش input لأي PR. خزنها في secret manager أو protected CI environment بمبدأ أقل صلاحية، وحدد من يقدر يشغّل release job ومن يقدر يوافقه. استخدم ephemeral/OIDC credentials لو provider يدعم، وراجع log masking لأنه مش يمنع كل تسريب؛ PR خبيث ممكن يبعث السر للشبكة لو job شغّل كوده بنفس الصلاحيات. اعمل rotation/revocation plan وتابع audit logs، وافصل upload key عن app signing key حسب نموذج Play.
+
 ## Why it matters and how it works
 
 Play App Signing separates app signing key management from upload key workflows. CI credentials are granted only to trusted release jobs after required checks, with scoped access and rotation. A masked CI variable is not safe if attacker-controlled code can read it and exfiltrate it.
@@ -55,7 +59,15 @@ Periodic audit reviews who can trigger release, secret access logs, credential e
 
 ## Interview answer — deep senior
 
-“I assume a malicious PR can modify Gradle scripts, tests and workflow inputs. Therefore privileged jobs never check out and execute unreviewed PR code, even if secret values are masked in CI output. I use protected environments, least-privilege short-lived service credentials where possible, audited approvals and separate artifact promotion. Signing identity, upload key and Play service account have distinct compromise paths and rotation playbooks. Reproducible hashes tie tests to the signed release, and operational monitoring detects unauthorized track activity.”
+“My main rule is a trust boundary: a workflow that executes untrusted pull-request code must never receive signing material or publishing credentials. A secret mask in logs is not a security boundary; code with the secret can send it elsewhere. I use protected branches and environments, minimal token permissions, limited reviewers for promotion and separate release jobs that check out a trusted ref. Where supported, short-lived federated credentials reduce stored long-lived secrets. For Android I distinguish the upload key used by our pipeline from the app signing key held under Play App Signing; their recovery and compromise paths differ. I restrict artifact and mapping access too, keep audit logs, and rehearse revocation/rotation. An attacker can hide exfiltration in a build script or dependency, so dependency verification and careful workflow review matter alongside encrypted secret storage. The trade-off is a few controlled steps in the release path for a much smaller blast radius.”
+
+## How to answer in the interview
+
+- **Why:** release credentials can publish hostile builds.
+- **How:** isolate trusted release job and least-privilege secrets.
+- **Trade-off:** convenience versus blast radius.
+- **Failure case:** fork PR build script exfiltrates secret.
+- **Production solution:** protected environments, short-lived credentials, rotation.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for malicious Gradle script, PR versus release isolation, Play upload key
 
 ## Self-check rubric
 
-Can you explain this decision, apply the example, name a trade-off and failure, and answer both follow-ups without relying on a memorized slogan?
+Keep signing credentials out of untrusted PR jobs, scope and rotate secrets, protect workflow permissions and review fork behavior. Explain what a malicious PR could read if the boundary is wrong.
 
 ## References and reviewed-on date
 
 - [Play App Signing](https://developer.android.com/studio/publish/app-signing) — signing and upload key roles.
 - [Android publishing](https://developer.android.com/studio/publish) — release workflow.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

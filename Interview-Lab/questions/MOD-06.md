@@ -26,6 +26,10 @@ What are Dynamic Feature Modules / Play Feature Delivery?
 
 Dynamic Feature Module جزء من Android App Bundle يمكن لـGoogle Play يوصله عند التثبيت أو عند الطلب حسب إعداد delivery. الهدف تقليل initial install أو توصيل قدرة قليلة الاستخدام لاحقًا، لكن runtime الآن يجب يتحمل download/progress/failure/cancel/offline. ليست مجرد Gradle module جديدة: اتجاه dependencies مختلف والـbase app لا يرى كود feature أثناء compilation بنفس الطريقة، وDI/navigation تحتاج bridge. لو ميزة حرجة يجب تعمل offline فورًا، on-demand غالبًا قرار سيئ؛ install-time أو base قد يناسب أكثر. اختبر على مسار توزيع حقيقي وليس IDE فقط.
 
+### Practical walkthrough in Egyptian Arabic
+
+Dynamic Feature Module تنزل عند الطلب من Play، فتقلل initial download لبعض features، لكن availability offline وزمن install والDI/navigation أصعب. لو شاشة checkout لازمة في محطة POS بدون اتصال، on-demand delivery اختيار خطر. عرّف fallback عند module missing، اختبار install/failure/process recreation، وتحقق Play delivery support. لا تستخدم dynamic لمجرد تقليل source module count.
+
 ## Why it matters and how it works
 
 An App Bundle lets Play generate device-targeted APKs and deliver configured feature splits. On-demand installation requires an asynchronous request before code/resources are available. The feature depends on the base app, which affects graph visibility and Hilt integration. Delivery rules and Play environment shape actual availability, so local sideload behavior is insufficient proof.
@@ -57,6 +61,14 @@ Measure feature usage, package size and install success/latency. Test Play deliv
 ## Interview answer — deep senior
 
 “A dynamic feature is a packaging and delivery decision, not merely a code-organization technique. The feature is part of an App Bundle and may be installed with the app or downloaded on demand according to configured Play delivery. An on-demand choice can reduce initial bytes for an infrequent, large capability, but it introduces a new runtime state machine: not installed, requesting, downloading, installed, failed or canceled. The app cannot navigate into unloaded code and must offer an offline/error path. It also changes integration: the feature's dependency direction relative to the base affects Hilt aggregation and requires a documented entry-point or explicit factory boundary. I would keep login, payment recovery or other must-work-offline paths in base or install-time delivery unless product constraints say otherwise. To decide, I measure feature usage, size, install latency and failure rate, then test with bundle delivery, process recreation and updates, not only a debug installation where all modules happen to be present. I also make sure analytics distinguishes a user declining the feature from an installation failure.”
+
+## How to answer in the interview
+
+- **Why:** delivery boundary differs from source boundary.
+- **How:** choose install-time/on-demand by usage.
+- **Trade-off:** smaller initial install versus runtime dependency.
+- **Failure case:** offline user cannot open critical feature.
+- **Production solution:** test delivery and fallback.
 
 ## Deep-dive talking points
 

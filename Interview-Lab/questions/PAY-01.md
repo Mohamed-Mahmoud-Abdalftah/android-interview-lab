@@ -25,6 +25,10 @@ What is a payment state machine (initiated, processing, approved, declined, unkn
 
 Payment state machine بتحدد انتقالات مسموحة: `initiated` قبل الإرسال، `processing` أثناء محاولة، `approved` أو `declined` بعد رد موثوق، `unknown` لما الرد ضاع، و`reversed` بعد تأكيد إلغاء الأثر وفق بروتوكول الـprovider. الـtimeout مش `declined`؛ ممكن issuer وافق والرد ما وصلش. كل transition لازم مربوط بـoperation ID ثابت ويتسجل durably.
 
+### Practical walkthrough in Egyptian Arabic
+
+في كاشير POS، terminal تبعت authorization برقم `operationId` وتفصل الشبكة قبل الرد. اكتب `Unknown` بدل `Declined`، وخلّي التطبيق بعد restart يعمل status lookup لنفس الهوية. لو callback قديمة وصلت بعد تأكيد أحدث، transition guard تمنع الرجوع لحالة غير صحيحة. أسماء الحالات دي domain model؛ provider الحقيقي ممكن يستخدم حالات تانية ولازم mapping موثق.
+
 ## Why it matters and how it works
 
 State transitions are guarded by server/provider evidence and transaction identity. A client callback can report observations, not final financial truth. Unknown is a first-class state that triggers status lookup, reconciliation or reversal under the payment contract. A terminal state should not be rewritten by a stale callback.
@@ -32,6 +36,22 @@ State transitions are guarded by server/provider evidence and transaction identi
 ## Worked example
 
 After sending authorization, the terminal loses network. Persist `unknown(operationId)` and show “checking status”; query backend/provider when connected. If authoritative status says approved, show approved; if a reversal is required, enqueue a durable reversal intent. Never create a new purchase ID for a retry.
+
+### Kotlin/Android sketch
+
+```kotlin
+// Domain model; provider statuses must be mapped under its contract.
+sealed interface PaymentState {
+    data object Initiated : PaymentState
+    data object Processing : PaymentState
+    data object Unknown : PaymentState
+    data class Approved(val providerRef: String) : PaymentState
+    data class Declined(val reasonCode: String) : PaymentState
+    data class Reversed(val reversalRef: String) : PaymentState
+}
+fun onTimeout(current: PaymentState): PaymentState =
+    if (current == PaymentState.Processing) PaymentState.Unknown else current
+```
 
 ## Trade-offs and decision criteria
 
@@ -47,15 +67,23 @@ Keep a transition table with allowed evidence, actor and durable write for each 
 
 ## Interview answer — short
 
-“A payment state machine makes `unknown` explicit after timeout. Only authoritative provider or backend evidence moves a transaction to approved, declined or reversed; retries retain one operation identity.”
+“I would treat Unknown as a real state, not a synonym for Declined. A POS timeout after authorization may hide an approval, so I retain the same operation ID, consult authoritative status, and only then advance the durable state.”
 
 ## Interview answer — structured
 
-“I model initiated, processing, approved, declined, unknown and reversal states with guarded transitions. An authorization response can be lost after issuer approval, so a timeout means unknown. I persist the operation ID and state before sending, then query or reconcile through the backend. UI callbacks display state but do not create financial truth. Late or duplicate callbacks cannot overwrite a newer terminal state. ”
+“I model initiated, processing, approved, declined, unknown and reversal states with guarded transitions. An authorization response can be lost after issuer approval, so a timeout means unknown. I persist the operation ID and state before sending, then query or reconcile through the backend. UI callbacks display state but do not create financial truth. Late or duplicate callbacks cannot overwrite a newer terminal state. For example, losing connectivity after authorization moves the attempt to Unknown, not Declined.”
 
 ## Interview answer — deep senior
 
-“I define each transition with an evidence source, durable commit and replay behavior. The terminal records intent before external I/O, sends a stable operation identity, and treats transport errors as unknown. Reconciliation obtains authoritative provider state and can schedule a protocol-specific reversal. Concurrent duplicate responses converge through an atomic compare-and-set/transaction, and stale callbacks are ignored. The UI observes this state but does not own it. I test lost responses, battery removal, reversal failure and provider disagreement; the operational playbook handles states still unknown after automated lookup.”
+“I define each transition with an evidence source, durable commit and replay behavior. The terminal records intent before external I/O, sends a stable operation identity, and treats transport errors as unknown. Reconciliation obtains authoritative provider state and can schedule a protocol-specific reversal. Concurrent duplicate responses converge through an atomic compare-and-set/transaction, and stale callbacks are ignored. The UI observes this state but does not own it. I test lost responses, battery removal, reversal failure and provider disagreement; the operational playbook handles states still unknown after automated lookup. I would ask the interviewer which response is authoritative and show how late callbacks are rejected after reconciliation. I would draw the transition table on the whiteboard: Initiated becomes Processing only after the local intent is committed; Processing becomes Approved or Declined only with a trusted response; and transport loss becomes Unknown. Reversed is not simply an opposite Boolean of Approved, because the acquirer's reversal acknowledgment and settlement timing determine what it means. Each transition needs a unique original operation ID, source of evidence, and idempotent database update. I would also name an explicit escalation state or operational queue for unresolved Unknown records. This makes it possible to audit why the terminal displayed a result and to repair the state after power loss.”
+
+## How to answer in the interview
+
+- **Why:** timeout leaves financial outcome unknown.
+- **How:** tie every legal transition to evidence and a durable operation ID.
+- **Trade-off:** the model must map richer provider states without inventing equivalence.
+- **Failure case:** a late callback overwrites a reconciled result.
+- **Production solution:** commit intent before I/O, guard transitions, and reconcile nonfinal rows.
 
 ## Deep-dive talking points
 

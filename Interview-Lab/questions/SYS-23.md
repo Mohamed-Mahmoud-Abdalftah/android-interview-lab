@@ -24,6 +24,10 @@ Migrate legacy XML UI to Compose incrementally without breaking behavior.
 
 نبدأ screen أو component صغيرة، نثبت state holder وrepository contract، ونضيف `ComposeView` داخل Fragment أو نستخدم AndroidView لlegacy view عند الحاجة. نبقي navigation, theming, accessibility وtest IDs متسقة، ونقارن behavior/performance قبل نقل بقية الشاشات. Compose recomposition لا تعني إعادة تنفيذ كل شيء دائمًا؛ state immutable وside effects APIs الصحيحة تمنع شغل مكرر.
 
+## Practical walkthrough
+
+ابدأ component صغيرة داخل Fragment ب`ComposeView` وstrategy تتقفل مع view lifecycle، وخلي نفس ViewModel/Repository عشان ما تعملش business state مزدوجة. وحّد theme وnavigation وaccessibility/test tags، وقس startup وscroll jank قبل وبعد. XML وCompose يعيشوا سوا فترة؛ نقل الشاشة كلها مرة واحدة بيزود risk، خصوصًا لو legacy views فيها focus أو accessibility behavior حساس.
+
 ## Why it matters and how it works
 
 Interop enables coexistence of Views and Compose. Move state ownership to ViewModel/Flow, collect lifecycle-aware, and avoid duplicating sources of truth between mutable LiveData/View state/Compose state. Release gradually behind flags; test configuration change, process death, accessibility and performance.
@@ -34,15 +38,20 @@ Conceptual Fragment interop; Compose dependencies/theming and app ViewModel are 
 
 ```kotlin
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
 
 class ProfileFragment : Fragment() {
     override fun onCreateView(inflater: android.view.LayoutInflater,
         container: android.view.ViewGroup?, state: android.os.Bundle?): android.view.View =
-        ComposeView(requireContext()).apply { setContent { ProfileScreen() } }
+        ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
+            )
+            setContent { ProfileScreen() }
+        }
 }
-// ProfileScreen uses existing ViewModel state; production configures
-// appropriate ViewCompositionStrategy for the Fragment view lifecycle.
+// ProfileScreen is the app composable and uses the existing ViewModel state.
 ```
 
 ## Trade-offs and decision criteria
@@ -67,7 +76,15 @@ A large banking app migrates noncritical settings screen first, shares existing 
 
 ## Interview answer — deep senior
 
-“I plan migration as coexistence with one business source of truth. UI can be XML or Compose while ViewModel, repository and durable data contracts remain stable. I build design tokens and navigation adapters, configure ComposeView disposal for Fragment view lifecycle and use lifecycle-aware Flow collection. I replace one screen or reusable component at a time, add visual/accessibility tests, compare startup/recomposition/jank metrics and keep rollback possible. A composable must remain a function of state; network writes belong in event handlers or controlled effects, not in the body. I prioritize low-risk screens, then migrate high-risk checkout only after parity and process-death tests pass.”
+“I would migrate a large XML app as a sequence of compatible slices, starting with a low-risk screen that has clear behavior and accessibility tests. A Fragment can host Compose through `ComposeView`, with `DisposeOnViewTreeLifecycleDestroyed` tying the composition to the Fragment view; the existing ViewModel and repository remain the single source of business state. I would collect state with lifecycle awareness and route user actions through the same event contract as XML, so recomposition cannot accidentally repeat a network write. During coexistence, design tokens, navigation destinations, back behavior, focus order and saved state need adapters and parity checks. I would compare startup, scroll jank, screenshot output and screen-reader behavior on supported devices, then roll out by cohort with a rollback switch. The goal is to replace rendering technology without changing payment or session semantics in the same release. High-risk checkout screens come after the bridge and test strategy have proven stable; an all-at-once rewrite would make regressions much harder to isolate.”
+
+## How to answer in the interview
+
+- **Why:** migration should preserve user behavior while reducing risk.
+- **How:** introduce ComposeView at one seam and retain shared state contracts.
+- **Trade-off:** hybrid UI temporarily duplicates theme/navigation work.
+- **Failure case:** composition outlives Fragment view or accessibility regresses.
+- **Production solution:** release slices, lifecycle strategy, performance and accessibility tests.
 
 ## Deep-dive talking points
 
@@ -85,6 +102,7 @@ Can I migrate incrementally, avoid dual truth and test ComposeView lifecycle?
 ## References and reviewed-on date
 
 - [Android Compose interop](https://developer.android.com/develop/ui/compose/migrate/interoperability-apis) — Views/Compose bridge.
+- [ComposeView in Fragments](https://developer.android.com/develop/ui/compose/migrate/interoperability-apis/compose-in-views) — composition disposal with the view lifecycle.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — state ownership.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

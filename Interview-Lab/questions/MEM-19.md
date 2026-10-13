@@ -26,6 +26,10 @@ What are cold start, warm start, and hot start?
 
 `Cold start` يحصل لما process غير موجودة، فالنظام يبدأها ويهيئ التطبيق وينشئ Activity ويرسم أول frame. `Warm start` عادة process موجودة لكن Activity المستهدفة تحتاج إنشاء/إعادة إنشاء. `Hot start` العملية والـActivity موجودان والتطبيق يرجع للواجهة؛ ده غالبًا أقصر لكن لا يعني صفر عمل. قياس startup لازم يحدد النوع، لأن مقارنة cold قبل التعديل بـhot بعده نتيجة مضللة. `TTID` يقيس ظهور أول frame، و`TTFD` يقيس أن المحتوى أصبح جاهزًا حسب `reportFullyDrawn`؛ شاشة splash سريعة مع بيانات متأخرة لا تساوي تجربة سريعة. تجنّب تهيئة كل SDK في `Application.onCreate` بدون ضرورة.
 
+## Practical walkthrough
+
+لو benchmark قبل التعديل قاس cold launch وبعده قاس hot resume، التحسن وهمي. سجّل حالة process وActivity بوضوح، وقس TTID لأول frame وTTFD لما المحتوى المهم يبقى جاهز. في تطبيق طلبات، splash سريعة تعرض placeholder مش معناها إن قائمة الطلبات جاهزة. استخدم نفس cache/network/auth state، وخلي signal fully drawn عند تحقق الشرط الحقيقي، ثم قارن الرحلات المتطابقة.
+
 ## Why it matters and how it works
 
 Cold launch includes process creation, application initialization, Activity creation, inflation/composition, and first draw. Warm launch avoids process start but still creates an Activity. Hot launch resumes an existing Activity/process, though callbacks and redraw work remain. System and benchmark definitions focus on starting state, so document test setup. Correctness includes restoring route and session after cold launch rather than only minimizing the first-frame metric.
@@ -56,7 +60,15 @@ Track startup metrics by mode, device tier, release, and entry source. Use Macro
 
 ## Interview answer — deep senior
 
-“I first make the starting state reproducible. In cold start the process, Application, and Activity must be created; in warm start the process exists but the Activity must be created; in hot start an existing Activity returns to foreground. I do not compare these modes interchangeably. For each mode I measure TTID and a meaningful fully-drawn signal, with identical device, compilation, cache, account, and network conditions. A fast first frame that cannot accept input or has no order data is not a full user benefit. For a cold-start regression I trace ContentProvider and Application initialization, Activity setup, and first composition or layout, then defer only work that is not required for correctness. I verify deep-link and notification entry, expired session, and process-death restoration after optimization, and watch startup distributions in production rather than one best benchmark run.”
+“I first make the starting state reproducible. In cold start the process, Application, and Activity must be created; in warm start the process exists but the Activity must be created; in hot start an existing Activity returns to foreground. I do not compare these modes interchangeably. For each mode I measure TTID and a meaningful fully-drawn signal, with identical device, compilation, cache, account, and network conditions. A fast first frame that cannot accept input or has no order data is not a full user benefit. For a cold-start regression I trace ContentProvider and Application initialization, Activity setup, and first composition or layout, then defer only work that is not required for correctness. I verify deep-link and notification entry, expired session, and process-death restoration after optimization, and watch startup distributions in production rather than one best benchmark run. A placeholder can make TTID look good while an order list remains unusable; I report the fully-drawn condition in product terms. For auth-protected screens, the first frame must not reveal stale account data. I compare cold with cold, warm with warm, and hot with hot under matched cache and session conditions.”
+
+## How to answer in the interview
+
+- **Why:** Define process and Activity state for each launch mode.
+- **How:** Measure TTID and meaningful TTFD separately.
+- **Trade-off:** Deferral can improve first paint while delaying useful content.
+- **Failure case:** Comparing cold with hot creates a false win.
+- **Production solution:** Control launch conditions and trace the actual critical path.
 
 ## Deep-dive talking points
 
@@ -77,4 +89,4 @@ Define three modes, distinguish TTID and TTFD, configure a fair comparison, and 
 - [App startup time](https://developer.android.com/topic/performance/issues/launch-time) — cold/warm/hot definitions.
 - [Macrobenchmark overview](https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview) — StartupMode measurement.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The benchmark plan has not been device-executed.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The benchmark plan has not been device-executed.

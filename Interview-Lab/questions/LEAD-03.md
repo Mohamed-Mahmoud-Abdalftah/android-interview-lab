@@ -25,6 +25,10 @@ What is technical debt, and how do you prioritize it?
 
 Technical debt مش كل code قديم؛ هو قرار أو حالة بتخلّي التغيير القادم أغلى أو أخطر. نصنف debt: bug/security risk، build pain، architecture coupling، tests missing، migrations. الأولوية حسب impact واحتمال وقوع المشكلة وتكرار لمس الكود وتكلفة الإصلاح. Debt في payment retry أو secret handling أعلى من تنسيق file نادر.
 
+### Practical walkthrough in Egyptian Arabic
+
+Technical debt مش كل code قديم. لو module قديمة لكن مستقرة ومش بتتغير، مش لازم rewrite. الدين الحقيقي مثل build كل تعديل يكسر خمس flavors، أو retry logic مكررة وتنتج defects. سجّل تكلفة التأخير: incidents، وقت build، onboarding، أو vulnerability. رتّب الإصلاح حسب likelihood × impact × effort والفرصة المتاحة، وحط migration صغير بقياسات قبل وبعد. تجنّب “هنعيد كتابة التطبيق كله” بلا baseline أو خطة rollback.
+
 ## Why it matters and how it works
 
 Debt can be deliberate with a repayment plan or accidental. A useful backlog item states evidence, consequence and a bounded intervention; vague “rewrite architecture” is hard to prioritize. Incident rate, lead time and defect escape can measure payoff.
@@ -55,7 +59,15 @@ Keep debt register with owner, impact, evidence and next touchpoint; reserve cap
 
 ## Interview answer — deep senior
 
-“I maintain a portfolio of debt with risk and economic cost. For each item I record the constraint it creates, how often the area changes, customer impact if it fails, remediation size and expected metric. Critical security/payment correctness debt is addressed immediately or blocks rollout; medium debt can be paid when the feature area is touched; low-impact aesthetic debt may wait. I favor seams, test coverage and gradual migration because rewrites reset knowledge and introduce new failure modes. After a repair I compare escaped defects, cycle time, build time or on-call load; if no metric improves, I reassess rather than declare success.”
+“I define technical debt as a choice or accumulated constraint that increases future delivery or operational cost, not simply code that looks old. I quantify symptoms where possible: repeated defects in a shared retry layer, build time, time to change a screen, release incidents and security exposure. I prioritize by impact, likelihood and the cost of delaying a fix, then compare a focused refactor with leaving it alone for now. A legacy feature that rarely changes may deserve monitoring rather than a rewrite; a payment identity bug is urgent even if the surrounding code is aesthetically clean. I prefer a migration slice with tests and a measurable exit condition, such as fewer duplicate-state incidents or faster targeted builds. I tell product and engineering what capacity the work consumes and what risk it retires. The failure mode is an unbounded cleanup that pauses features but never reaches a release-safe state, so I keep rollback and compatibility in the plan.”
+
+## How to answer in the interview
+
+- **Why:** debt consumes future speed or reliability.
+- **How:** measure cost and prioritize by impact.
+- **Trade-off:** cleanup investment versus feature capacity.
+- **Failure case:** large rewrite lacks release slices.
+- **Production solution:** small verified migration with outcome metric.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for definition, impact/frequency scoring, incremental repair and measurab
 
 ## Self-check rubric
 
-Can you state the decision, evidence, affected people, measurable result, risk and both follow-up answers without claiming unearned personal experience?
+Describe debt as a future cost tied to a real constraint; rank it by risk, frequency and migration cost; reserve a measurable slice of delivery for the highest-value item.
 
 ## References and reviewed-on date
 
 - [Android architecture guide](https://developer.android.com/topic/architecture) — maintainable separation.
 - [Gradle performance guide](https://docs.gradle.org/current/userguide/performance.html) — build debt measurement.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

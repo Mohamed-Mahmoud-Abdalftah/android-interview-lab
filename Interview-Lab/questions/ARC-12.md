@@ -24,6 +24,10 @@ Map typed domain/data failure categories into actionable UI behavior without lea
 
 Data layer تعرف `IOException`, HTTP status، database failure؛ domain ممكن تعبّر عنها كـ`Offline`, `Unauthorized`, `Validation(field)`, `Conflict`, `Unknown` حسب contract. Presentation تحوّل category إلى message localized وaction: retry، login، تصحيح field، أو انتظار sync. ما تعرضش `exception.message` مباشرة: ممكن يكون غير مفهوم أو يحتوي sensitive data. وما تحولش كل error إلى “حصل خطأ” لو user يقدر يتصرف. في payment timeout لازم `PendingVerification` مش “Failed” مؤكدة، لأن السيرفر ممكن يكون نفّذ الطلب.
 
+### Practical walkthrough in Egyptian Arabic
+
+Data errors الخام مثل 401/409/timeout لا تذهب UI كنص backend. Repository يصنف transport/auth/conflict، domain يحدد معنى business، ViewModel يحولها لفعل: login, retry, resolve conflict, or Unknown status. Cancellation تظل cancellation. لا تعرض “فشل الدفع” عند timeout غير محسوم؛ اعرض pending واستعلم status.
+
 ## Why it matters and how it works
 
 Error mapping separates transport details from product decisions. Stable categories let UI render guidance and tests assert behavior without parsing strings. Keep diagnostic causes and correlation IDs in protected logs, not public UI text.
@@ -55,6 +59,14 @@ The repository should translate network and storage exceptions into a small doma
 ## Interview answer — deep senior
 
 I design errors from recovery behavior. HTTP status alone is not the domain contract; different endpoints may have different meanings. Data maps transport failures and preserves safe diagnostic context, while domain outcomes express stable product categories. Presentation turns them into localized text and available actions. I test every mapping, including malformed responses and unknown codes. A cancelled coroutine must remain cancelled. A payment timeout can follow a committed server operation, so the UI shows pending verification and repository reconciles before enabling a retry. Logs use correlation IDs and scrub sensitive payloads. This avoids both extremes: leaking raw infrastructure exceptions into UI and collapsing actionable failures into a generic message. I define error categories at a boundary where transport details are understood, then preserve a safe code and correlation ID for diagnostics. UI chooses localized text and action, not a parser of exception messages. I test unknown codes and malformed responses, because a new server status should not silently become success. For network writes, an uncertain timeout deserves verification rather than an automatic retry that could duplicate effects. Cancellation passes through the coroutine hierarchy as control flow.
+
+## How to answer in the interview
+
+- **Why:** error semantics drive safe action.
+- **How:** map transport to domain to UI action.
+- **Trade-off:** precise types versus modeling cost.
+- **Failure case:** timeout shown as decline and user pays again.
+- **Production solution:** typed errors and user-safe recovery.
 
 ## Deep-dive talking points
 

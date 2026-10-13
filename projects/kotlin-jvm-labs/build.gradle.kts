@@ -9,6 +9,7 @@ application { mainClass.set("academy.MainKt") }
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     testImplementation(kotlin("reflect"))
+    testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("app.cash.turbine:turbine:1.2.1")
     testImplementation(platform("org.junit:junit-bom:5.14.4"))
@@ -23,8 +24,9 @@ tasks.test {
 
 // Compile exact JVM Kotlin fences from reviewed Interview Lab records in isolated packages.
 val labSnippetOutput = layout.buildDirectory.dir("generated/interview-lab-snippets")
-val labSnippetIds = listOf("COR-01", "COR-02", "FLO-06", "PAY-02", "TST-09", "TST-19", "TST-20") +
-    (1..28).map { "KOT-%02d".format(it) } + listOf("KOT-30")
+val labSnippetIds = listOf("COR-01", "COR-02", "FLO-06", "PAY-02", "TST-05", "TST-09", "TST-10", "TST-19", "TST-20", "DSA-07", "DSA-08", "DSA-11", "DSA-15", "ARC-04", "ARC-25") +
+    (1..28).map { "KOT-%02d".format(it) } + listOf("KOT-30") +
+    listOf("FLO-01", "FLO-02", "FLO-03", "FLO-05", "FLO-07", "FLO-10", "FLO-11", "FLO-12", "FLO-13", "FLO-14", "FLO-15", "FLO-16", "FLO-17", "FLO-18", "FLO-19", "FLO-20", "FLO-21", "FLO-24", "FLO-27", "FLO-29", "FLO-30", "FLO-32")
 val labSnippetBank = projectDir.resolve("../../Interview-Lab/questions")
 val generateLabSnippets by tasks.registering {
     inputs.files(labSnippetIds.map { labSnippetBank.resolve("$it.md") })

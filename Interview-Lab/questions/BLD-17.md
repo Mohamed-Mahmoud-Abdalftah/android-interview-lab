@@ -26,6 +26,10 @@ An app installs in debug but crashes on launch in release due to renamed classes
 
 ابدأ بالـcrash stack وartifact/version/variant، ثم retrace بالماب المطابقة. لو `ClassNotFoundException` أو reflection/JNI load في launch، افحص class name المتوقع وهل R8 أزال/غيّر الاسم؛ راجع `mapping.txt`, `usage.txt` وmerged rules. تجربة release مؤقتة بدون minify قد تدعم الفرضية، لكنها ليست إثباتًا وحدها لأن builds اختلفت أيضًا. أثبت بإعادة إنتاج crash في minified artifact، إضافة keep rule دقيقة أو إصلاح SDK، ثم تشغيل نفس launch path بنجاح مع R8. احتفظ بتغطية release startup في CI.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو debug يعمل وrelease ينهار بسبب class renamed، اثبت: stack retraced، dependency تعمل reflection بالاسم، R8 usage/mapping، وتجربة rule ضيقة تعيد السلوك على minified build. لا تكتفِ بإطفاء minify؛ ده يثبت ارتباطًا جزئيًا لا root cause. أضف consumer rule أو adapter بدون reflection إن مناسب، واختبر sample app release. احتفظ بحجم/أداء قبل وبعد.
+
 ## Why it matters and how it works
 
 Debug builds often omit R8 transformations, while release may rename or remove classes reached by string lookup. Mapping identifies renamed symbols and usage reports help show removed code. A controlled change to the exact dynamic entry point, with other inputs held constant, establishes causality more strongly than a broad switch that changes many build properties.
@@ -57,6 +61,14 @@ Archive maps and reports per artifact, include minified release startup test on 
 ## Interview answer — deep senior
 
 “To prove causality I control the artifact and the hypothesis. I identify the crashing release variant, version, mapping file and startup exception; an unrelated debug APK is only a comparison. Suppose manifest metadata names a plugin loaded through `Class.forName`. I retrace the release stack and inspect mapping and usage reports to determine whether R8 renamed or removed that configured class or its constructor. I check the merged release manifest too, because an incorrect string there can mimic an R8 issue. I may run a temporary release with minification disabled to narrow the search, but that changes a large set of transformations and is not a final proof. The convincing experiment keeps R8 on and changes only the required dynamic contract—perhaps a targeted rule preserving the class name and constructor, or SDK code that references the class explicitly. If the crash disappears and a minified startup test exercises that lookup, the causal claim is much stronger. I then review rule scope and artifact size, archive mapping with the release, and monitor startup crashes in staged rollout.”
+
+## How to answer in the interview
+
+- **Why:** dynamic lookup can break under R8.
+- **How:** reproduce, retrace and isolate exact rule.
+- **Trade-off:** quick workaround versus targeted fix.
+- **Failure case:** broad keep masks cause.
+- **Production solution:** release regression test with narrow rule.
 
 ## Deep-dive talking points
 

@@ -24,6 +24,10 @@ Compare switching, sequential and concurrent flattening of inner flows.
 
 `flatMapLatest` يلغي inner Flow القديم لما upstream تطلع قيمة جديدة؛ مناسب query search. `flatMapConcat` يكمّل inner الأولى ثم يبدأ التالية بالترتيب؛ مناسب خطوات لازم تتعالج بالتتابع. `flatMapMerge` يجمع عدة inner flows بالتوازي مع concurrency limit، والنتائج ممكن تتداخل. الاختيار لازم يعكس هل القديم مهم وهل الترتيب لازم محفوظ.
 
+### Practical walkthrough in Egyptian Arabic
+
+Search query `a` وبعدها `ab`: `flatMapLatest` تلغي collection القديمة وتبدأ الجديدة؛ ده يمنع نتيجة `a` المتأخرة من استبدال `ab` لو API متعاونة مع cancellation. `flatMapConcat` تنفذ واحد وراء واحد لو الترتيب مطلوب، و`flatMapMerge` تشغّل بالتوازي لنتائج مستقلة. لا تستخدم merge على search وتفترض ترتيب النتائج؛ اختبر late response.
+
 ## Why it matters and how it works
 
 These are flattening operators: each outer value maps to a Flow. Latest cancels prior inner collection, concat serializes, merge allows concurrent inner collections with interleaved output. Cancellation of an inner collector does not guarantee rollback of a previously sent external request.
@@ -33,9 +37,11 @@ These are flattening operators: each outer value maps to a Flow. Latest cancels 
 JVM example uses coroutines-core; `search` returns a Flow of pages and query changes make old pages irrelevant.
 
 ```kotlin
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
 
+@OptIn(ExperimentalCoroutinesApi::class)
 fun results(
     queries: Flow<String>,
     search: (String) -> Flow<List<String>>,
@@ -64,7 +70,15 @@ A product search pipeline debounces normalized query and flatMapLatest to cancel
 
 ## Interview answer — deep senior
 
-“I would ask whether values represent replaceable state or required work. For replaceable search results, latest-only is a good fit, usually after debounce; tests verify slow old responses never replace newer results. For required ordered operations, concat gives sequencing, but a never-completing inner stream can block all subsequent inputs. Merge offers bounded parallelism for independent tasks, yet output order is nondeterministic and concurrency must match server capacity. A payment or upload should not rely on `flatMapLatest` as its completion guarantee. I persist such operations separately, then observe their status as state. The flattening operator governs collection and cancellation, not remote commit semantics.”
+“I would ask whether values represent replaceable state or required work. For replaceable search results, latest-only is a good fit, usually after debounce; tests verify slow old responses never replace newer results. For required ordered operations, concat gives sequencing, but a never-completing inner stream can block all subsequent inputs. Merge offers bounded parallelism for independent tasks, yet output order is nondeterministic and concurrency must match server capacity. A payment or upload should not rely on `flatMapLatest` as its completion guarantee. I persist such operations separately, then observe their status as state. The flattening operator governs collection and cancellation, not remote commit semantics. I would define the inner-flow identity first. For search, each query creates a new request flow and an old result is obsolete; `flatMapLatest` cancels the previous inner collection when a new query arrives. For ordered jobs where every result matters, `flatMapConcat` waits for each inner flow to complete before starting the next. For independent work where concurrency is useful, `flatMapMerge` collects several inner flows concurrently, subject to a concurrency limit, and output order can interleave. Cancellation still depends on a cooperative API boundary; a remote server may have processed an old request even if the client stopped waiting. I would test `a` then `ab` with inverted response delays and assert only current-query UI is shown.”
+
+## How to answer in the interview
+
+- **Why:** inner-flow work may be obsolete, ordered, or independent.
+- **How:** map search, sequential jobs, and parallel fetches.
+- **Trade-off:** latest cancels work; merge reorders.
+- **Failure case:** stale search result appears after newer query.
+- **Production solution:** test inverted response timing and cancellation.
 
 ## Deep-dive talking points
 

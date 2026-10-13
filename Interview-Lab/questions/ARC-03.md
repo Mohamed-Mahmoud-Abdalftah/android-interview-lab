@@ -24,6 +24,10 @@ Explain compile-time source dependencies versus runtime control flow and where i
 
 Dependency Rule في Clean Architecture بتقول source-code dependencies تتجه ناحية policies الأكثر ثباتًا، مش ناحية UI/framework details. Domain ما يستوردش Retrofit DTO ولا `Activity`. لو domain محتاج data، يعرف contract مناسب له، وdata implementation تنفّذه؛ DI في composition root تربطهم. وقت التشغيل call ممكن يمشي من UI إلى use case إلى repository implementation ثم network، وده مش تناقض: source dependency direction غير runtime call direction. Android official architecture بتعرّف domain اختيارية، وفي رسمها الـdomain تعتمد على data repositories؛ ده اصطلاح مختلف عن Clean Architecture الكلاسيكية اللي بتحط policy contract جوّه. وضّح أي model بتستخدمه بدل ما تخلط الرسمين.
 
+### Practical walkthrough in Egyptian Arabic
+
+Dependency Rule: كود policy الداخلي لا يستورد Android/Retrofit details. UseCase يعتمد على interface مثل `PaymentRepository`، والـdata implementation تحقن خلفه. لكن dependency direction في source لا تعني flow of control؛ التنفيذ ينزل للadapter runtime. لو domain module يستورد Room entity، سيصير migration مؤثرًا على policy. افحص Gradle dependencies أيضًا، مش packages فقط.
+
 ## Why it matters and how it works
 
 Compile-time dependencies determine what must change/rebuild when a component changes. Dependency inversion lets a stable policy depend on an abstraction rather than a volatile adapter. The adapter depends on the policy contract and is supplied at runtime.
@@ -55,6 +59,14 @@ I distinguish import direction from execution direction. A use case should not i
 ## Interview answer — deep senior
 
 To audit the rule, I inspect module dependencies and the types in public signatures. A domain module that compiles without Android, Retrofit, or Room is a strong signal, but the contract must also use stable domain concepts. Returning `Response<Dto>` through a domain interface defeats the purpose. The implementation can map DTO and entity models to domain values, while DI resolves the implementation at runtime. If the app is small, Android guidance allows a direct UI-to-data dependency and optional domain layer. The practical objective is to keep high-change details from infecting stable rules and tests. I watch for circular Gradle dependencies and for interfaces placed with the implementation rather than the consumer abstraction needs. The interface should reflect the consumer’s needs rather than mirror every endpoint of the provider. For example, `ObserveAccountStatus` may be a better domain contract than a generic `ApiService` with HTTP details. I would test the policy with a fake contract and the adapter with real payload mappings. If the app is small, direct UI-to-repository use can be acceptable; the dependency rule becomes most valuable where stable policies need insulation from volatile mechanisms.
+
+## How to answer in the interview
+
+- **Why:** business rules should survive framework change.
+- **How:** use inward interfaces with outward implementations.
+- **Trade-off:** abstraction cost versus stable core.
+- **Failure case:** domain imports Room/Android types.
+- **Production solution:** enforce module dependency direction.
 
 ## Deep-dive talking points
 

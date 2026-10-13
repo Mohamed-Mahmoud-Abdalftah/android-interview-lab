@@ -25,6 +25,10 @@ Where should access and refresh tokens be stored and how are they revoked?
 
 Access token قصير العمر غالبًا يتحفظ في memory لو ده مناسب لتجربة المستخدم؛ refresh token أكثر حساسية لأنه يطلع access tokens جديدة. لو لازم يبقى بعد process death، خليه في app-private storage مع حماية حسب threat model وbackup policy واضحة. Logout الحقيقي مش مسح المحلي بس: لازم server يبطل grant/session، والـapp يمسح copies ويوقف refresh jobs.
 
+## Practical walkthrough
+
+لو access token مسروقة، قصر عمرها وscope يقلل الضرر، لكن لازم backend يقدر يبطل refresh token ويكتشف replay حسب session policy. خزّن access token في memory إن أمكن، وrefresh token محمية محليًا فقط لو persistence مطلوبة. عند logout امسح الاثنين محليًا واطلب revocation على السيرفر؛ مسح الهاتف وحده ما يبطل token موجودة عند مهاجم.
+
 ## Why it matters and how it works
 
 Token validity is determined by the issuer, not by local encryption. A refresh endpoint should enforce rotation/reuse detection according to the server design. Concurrent 401 responses can race to refresh and invalidate one another; serialize refresh for one session and recheck the latest token before making a new request.
@@ -51,10 +55,20 @@ Production logout coordinates local clearing, cancellation of pending authentica
 
 ## Interview answer — structured
 
-“Access tokens authorize API calls and can often live in memory. A refresh token persists only if the product needs a durable session; then I use app-private storage, a threat-modelled protection layer and backup exclusions. The server owns expiry, rotation and revocation. I serialize local refresh for one session so parallel 401 responses do not rotate the token twice, and I distinguish a transient network failure from an authoritative invalid grant. Logout clears local state and requests server revocation. I would serialize refresh for one local session and compare a session generation before saving a rotated token. Otherwise parallel 401s or a late response after logout can resurrect credentials. The issuer controls revocation; encrypted local storage only reduces one exposure path. Offline logout should block local use while remote revocation is still pending.”
+“I keep access tokens short-lived and preferably in memory, while protecting a refresh token only if persistent sessions are required. One session owner serializes refresh so concurrent 401 responses do not race token rotation. Logout clears local credentials and asks the backend to revoke the session; local deletion alone cannot invalidate a stolen bearer token. I also test invalid-grant, transient network errors and refresh replay so the UI does not confuse temporary failure with signed-out state.”
+
 ## Interview answer — deep senior
 
-“I model session state as an issuer-controlled grant with replaceable local copies. A single-flight refresh path coordinates parallel requests, persists a successful rotated credential before waking waiters, and compares session generation so an old response cannot resurrect a logged-out session. Process death is handled by durable storage only for the refresh token when required; an unavailable Keystore key forces sign-in. If logout occurs offline, the UI and local requests are blocked immediately while server revocation remains pending and observable. Server expiry, token rotation/reuse policy and per-device session controls limit damage from a copied bearer token. In a production session repository I keep access credentials short-lived and avoid persistence where feasible. A refresh credential persists only if the product needs session continuity, in app-private storage with a key-loss and backup policy. Concurrent requests join one refresh operation; after a successful rotation, the new credential is committed before waiting calls resume. An authoritative invalid-grant response clears state, whereas a transient network failure does not prove revocation. Logout increments the local session generation, cancels pending authenticated work and asks the server to revoke the grant; stale refresh responses cannot overwrite that newer state. On a compromised device tokens may be observed at use time, so sensitive transactions still require backend ownership checks and, where justified, step-up authentication.”
+“I treat access and refresh tokens as bearer credentials with different lifetimes. The access token is short-lived and preferably memory-only; a persistent refresh token is protected locally only when the product needs session continuity. One session owner serializes refresh so concurrent 401 responses do not race token rotation. The backend maintains session identity, revocation and replay policy; clearing local state on logout is necessary but does not invalidate a stolen copy. I would keep tokens out of logs, test refresh failure and key loss, and require step-up for sensitive payments even with a valid access token. I would test two simultaneous requests receiving 401, a rotated refresh token arriving while logout begins, and a stolen refresh token replayed from another device. A process-local mutex prevents duplicate refresh attempts in one app process, but the server must own rotation and replay detection across devices. The UI should treat authoritative invalid-grant as signed out, while a temporary network failure should not accidentally erase a valid session.”
+
+## How to answer in the interview
+
+- **Why:** bearer tokens grant access wherever presented.
+- **How:** minimize access-token life, protect refresh persistence, and rotate/revoke server-side.
+- **Trade-off:** stronger session controls increase reauthentication and refresh traffic.
+- **Failure case:** local deletion without server revocation leaves stolen credentials live.
+- **Production solution:** session IDs, revocation policy, and replay monitoring.
+
 ## Deep-dive talking points
 
 Trace login, refresh rotation, concurrent 401 handling, logout and server-side revocation; describe how a leaked refresh token is invalidated.
@@ -73,4 +87,4 @@ Can I explain token lifetime, storage, single-flight refresh, offline logout and
 - [Android Keystore system](https://developer.android.com/privacy-and-security/keystore) — local key protection.
 - [OWASP MASVS authentication](https://mas.owasp.org/MASVS/controls/MASVS-AUTH-1/) — authentication and session controls.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

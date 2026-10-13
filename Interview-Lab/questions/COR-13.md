@@ -24,6 +24,10 @@ Can the candidate predict ordinary child failure, sibling cancellation, parent f
 
 في شجرة `Job` عادية، child يرمي exception غير `CancellationException` غالبًا يلغي الـparent وباقي الـsiblings. الأب يستنى الأطفال يخلصوا cleanup قبل ما يكتمل بالفشل. ده مناسب لو النتائج لازم تبقى متسقة؛ لكنه غلط لو كل widget مستقل. `SupervisorJob` أو `supervisorScope` تغيّر علاقة فشل الإخوة، مع استمرار إلغاء الـparent لكل الأطفال.
 
+## Practical walkthrough
+
+لو `async` واحد فشل قبل ما تعمل `await` للتاني، parent العادي يبدأ cancel للإخوة فورًا؛ `await` مش الزر اللي يبدأ انتشار الفشل. ده مهم في تجميع بيانات checkout: لا تعرض جزء ناجح وكأنه نتيجة كاملة. أما `CancellationException` الناتجة من إلغاء طلب بسبب خروج المستخدم فهي إلغاء طبيعي، مش business error تكرر بسببه الطلب.
+
 ## Why it matters and how it works
 
 Failure propagates upward through a normal Job, and cancellation flows downward. `CancellationException` represents normal cancellation and does not ordinarily fail a parent. A supervised direct child failure does not cancel siblings, but that child still needs an error path. A failed supervisor block itself cancels its children.
@@ -68,7 +72,15 @@ A checkout screen needs price and tax from one calculation version. Failure of e
 
 ## Interview answer — deep senior
 
-“The exact outcome depends on the boundary. In `coroutineScope`, a child failure is propagated to the scope; siblings receive cancellation and the scope waits for them to finish before throwing. Catching around `await` after the failure may not save the parent because failure propagation already happened. A `CancellationException` usually marks normal cancellation and should be rethrown rather than logged as a defect. `supervisorScope` isolates direct child failure, yet an exception from its own block cancels children. For a production aggregate, I decide whether partial success is valid, design API idempotency and reconciliation separately, and test slow sibling cancellation so the UI does not hang indefinitely.”
+“The exact outcome depends on the boundary. In `coroutineScope`, a child failure is propagated to the scope; siblings receive cancellation and the scope waits for them to finish before throwing. Catching around `await` after the failure may not save the parent because failure propagation already happened. A `CancellationException` usually marks normal cancellation and should be rethrown rather than logged as a defect. `supervisorScope` isolates direct child failure, yet an exception from its own block cancels children. For a production aggregate, I decide whether partial success is valid, design API idempotency and reconciliation separately, and test slow sibling cancellation so the UI does not hang indefinitely. I would draw the Job tree in the interview and mark two different events: explicit cancellation of a child versus failure with an ordinary exception. A child cancelled on purpose does not normally fail the parent, while an ordinary failure does, and siblings are cancelled. The first exception is primary; cleanup failures may be suppressed. For a checkout aggregate I would verify no partial quote is published and that all sibling requests have finished or cancelled before returning.”
+
+## How to answer in the interview
+
+- **Why:** failure propagation starts at the child, not at await.
+- **How:** ordinary child failure cancels its parent and siblings; cancellation of a child alone is not treated as ordinary failure.
+- **Trade-off:** this protects required aggregates but rejects partial success.
+- **Failure case:** a late catch cannot undo parent cancellation.
+- **Production solution:** map failures at an intentional boundary and test sibling cleanup.
 
 ## Deep-dive talking points
 
@@ -88,4 +100,4 @@ Can I predict normal and supervised sibling fate, explain cleanup waiting, and s
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — parent and child failure semantics.
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — structured completion.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

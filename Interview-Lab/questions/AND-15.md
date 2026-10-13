@@ -34,6 +34,10 @@ An Activity is a platform component with its own task semantics and lifecycle. A
 
 A commerce app has one host Activity with Compose destinations for catalog, product, and cart. A verified HTTPS App Link opens `/product/42`; the Activity parses a stable product ID, Navigation creates the destination, and the ViewModel loads the product from a repository. If the user is unauthenticated for a private order route, navigation goes through sign-in and resumes only after authorization. This is an architecture sketch; exact navigation code depends on library version and existing app structure.
 
+## Practical walkthrough
+
+Activity نافذة/task entry، Fragment أو Compose destination طريق لتنظيم content داخلها؛ مش لازم شاشة = Activity جديدة. Navigation graph تحدد routes/back stack، وdeep link مدخل خارجي ممكن يفتح destination من cold start. لو `/orders/{id}` جاية من link، parse ID محدود، اعمل auth gate، وبعدها repository/server authorization للorder؛ route string مش تصريح وصول. فرق Back (يرجع لتاريخ المستخدم) وUp (ينقل parent منطقي)، واختبرهم لما app تتفتح من notification/link، بعد rotation، وبعد process recreation. اختار Fragment/Compose حسب stack الموجودة بدل مزج frameworks بلا سبب.
+
 ## Trade-offs and decision criteria
 
 Multiple Activities can express platform tasks or separate surfaces, but cross-Activity state and transitions take more coordination. Fragments remain appropriate for existing View-based apps and some hosted integrations; observe their view lifecycle correctly. Navigation Compose keeps Compose destination behavior together but requires deliberate argument and state design. Deep links improve reachability while expanding the input surface; prefer stable IDs over serialized objects in URLs.
@@ -52,10 +56,22 @@ Define a route contract per destination, sanitize untrusted URI parameters, and 
 
 ## Interview answer — structured
 
-“An Activity is a platform entry point and task participant. A Fragment lives in an Activity and has a separate view lifecycle. Compose Navigation offers a destination back stack for Compose UI. A deep link can target a destination from outside the app, including on a cold start. I pass stable IDs, restore screen data through ViewModels and repositories, and check authentication and authorization on every external entry. I choose a host structure based on existing UI architecture and task requirements rather than assuming one universal pattern. These concepts operate at different layers: Activity and Fragment are platform UI containers, Compose Navigation manages destinations within an app, and a deep link is an external entry address. I pass stable IDs rather than large mutable objects as route arguments, then reload authorized state. Cold-start links must work without previous screens or singleton state.”
+An Activity is a platform entry point and task participant. A Fragment lives in an Activity and has a separate view lifecycle. Compose Navigation offers a destination back stack for Compose UI. A deep link can target a destination from outside the app, including on a cold start. I pass stable IDs, restore screen data through ViewModels and repositories, and check authentication and authorization on every external entry.
+
 ## Interview answer — deep senior
 
-“I distinguish platform navigation from UI navigation. Android owns Activity launch and task behavior; a FragmentManager or Compose NavHost owns nested destinations. Each has independent state and lifecycle details. For a product deep link, I validate the URI, derive a stable ID, construct the appropriate back stack, and load durable state instead of relying on a previous screen's object. Process death and external launch are normal paths. Security checks live below routing because a crafted deep link or internal call must not bypass authorization. I test Back and Up after cold launch, rotation, restored state, and unauthenticated entry. In a legacy View app, Fragments may be the cleanest choice; in a Compose app, Navigation Compose fits destination state, while additional Activities remain valid for platform-level task boundaries. An Activity has task/back-stack semantics defined by Android; a Fragment has a separate view lifecycle inside its host; Compose Navigation manages destination entries and scoped state. A deep link may target any of these flows from outside, including when the process is dead, so it cannot assume a prior login screen ran. I validate scheme/host/path and ID format, authenticate the user and ask the backend to authorize the referenced resource. Navigation arguments carry a stable key rather than a Parcelable graph that becomes stale or oversized. I test Back behavior after notification and cold-link entry, as well as rotation and process restoration. The UI pattern does not replace durable business state.”
+I distinguish platform navigation from UI navigation. Android owns Activity launch and task behavior; a FragmentManager or Compose NavHost owns nested destinations. Each has independent state and lifecycle details. For a product deep link, I validate the URI, derive a stable ID, construct the appropriate back stack, and load durable state instead of relying on a previous screen's object. Process death and external launch are normal paths. Security checks live below routing because a crafted deep link or internal call must not bypass authorization.
+
+For a verified product link, the Activity may host a Compose NavHost rather than start a new Activity for each page. Navigation carries only a stable product ID; the destination ViewModel fetches product data from a repository. A private order link has an extra gate: authentication followed by server authorization for that order. Verified App Links influence resolution, not access rights. I would design Back and Up behavior for cold external entry, warm navigation, and restored tasks, then test each. The choice between Fragment and Compose destinations should fit the existing UI stack and state ownership.
+
+## How to answer in the interview
+
+- **Why:** Navigation must preserve a predictable task and state across entry paths.
+- **How:** Separate Activity host, UI destination, navigation graph, and external deep link.
+- **Trade-offs:** Keep the existing View/Compose stack coherent and scope ViewModels by destination.
+- **Failure cases:** Mention broken Back stack and treating a route ID as authorization.
+- **Production solution:** Open an order link, authenticate, load authorized data, and test cold Back/Up.
+
 ## Deep-dive talking points
 
 Discuss task stack versus NavHost stack, Fragment view lifecycle, deep-link trust boundaries, state restoration, and stable route arguments.
@@ -76,4 +92,4 @@ Define all four layers; describe a cold deep-link launch, back stack and state r
 - [Navigation with Compose](https://developer.android.com/develop/ui/compose/navigation) — Compose destinations and route arguments.
 - [Create deep links](https://developer.android.com/training/app-links/deep-linking) — external navigation entry.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The commerce flow is illustrative.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The commerce flow is illustrative.

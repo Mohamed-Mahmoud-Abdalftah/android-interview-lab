@@ -25,6 +25,10 @@ How do you design and analyze an LRU cache?
 
 LRU cache تطرد الأقل استخدامًا لما capacity تتملي. تصميم O(1) تقليدي: HashMap من key إلى node، وdoubly linked list ترتيب recency؛ `get` ينقل node للمقدمة، `put` يحدث أو يضيف، وعند overflow نشيل tail. في Android فيه `LruCache` لmemory cache، لكن لازم تحدد `sizeOf` إن الحجم بالbytes مهم، وتتعامل مع thread-safety/eviction.
 
+### Practical walkthrough in Egyptian Arabic
+
+LRU تحتاج map للlookup وorder للrecency، وكل hit ينقل العنصر إلى most recent؛ عند زيادة budget يخرج least recent. Android `LruCache` يغني عن pointer bugs، لكن `sizeOf` مهم للصور لأن 100 bitmap ليست حجمًا ثابتًا. cache قابلة للفقد بعد process death، فلا تخزن فيها payment status كمصدر وحيد. راقب hit rate وGC وmemory pressure.
+
 ## Why it matters and how it works
 
 A map alone gives lookup but not least-recent ordering; a list alone gives ordering but linear lookup. Combined, node removal and move are constant time if each node has previous/next links. Android LruCache provides a library implementation with synchronized operations under its documented contract.
@@ -55,7 +59,15 @@ Profile hit rate, byte use, GC and OOMs; cap by device class and clear on memory
 
 ## Interview answer — deep senior
 
-“I define cache semantics first: byte capacity, key equivalence, expiry, invalidation and concurrency. A map plus linked order supports O(1) average lookup and O(1) node moves; Android’s LruCache avoids hand-written pointer bugs for common cases. I would test overwrite, eviction order, large-item rejection and concurrent access according to the chosen implementation. Cache data is disposable, so a payment status cannot live only there. I measure hit rate against memory/GC costs and respond to low-memory signals. Concurrent get/put without lock corrupts list. Keep repository/network as authoritative source.”
+“An LRU cache needs fast lookup and fast recency updates. A hash map points to entries in a doubly linked recency order; a hit moves its node to the recent end, and an insertion evicts the least recent when the capacity is exceeded. Expected lookup and node moves are constant time, assuming stable hashing. On Android I normally use `LruCache` instead of maintaining pointers myself. I size image entries by bytes, not just count, because one thumbnail and one full-resolution bitmap have very different memory cost. I define invalidation, concurrency, expiry and whether a miss can be reloaded; process death means the memory cache is disposable. The trade-off is better hit latency against heap pressure and GC. A scan-heavy workload can thrash LRU, so I measure hit rate and eviction frequency. I test replacement and eviction order, large-entry behavior and low-memory handling. I would never use an LRU cache as the sole ledger for payment status or other durable business state.”
+
+## How to answer in the interview
+
+- **Why:** cache improves repeated read latency.
+- **How:** describe map plus recency and byte budget.
+- **Trade-off:** hit rate versus memory pressure.
+- **Failure case:** cache mistaken for durable ledger.
+- **Production solution:** use LruCache and monitor eviction.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for map+list mechanics, byte sizing, concurrency, process-death disposal.
 
 ## Self-check rubric
 
-Can you derive the bound, explain the Android example, identify a trade-off/failure, and answer both follow-ups?
+Specify hash map plus doubly linked recency list or a suitable ordered map, show get/put/eviction invariants, and state capacity, synchronization and stale-value policy.
 
 ## References and reviewed-on date
 
 - [Android LruCache](https://developer.android.com/reference/android/util/LruCache) — API and sizing.
 - [Kotlin collection overview](https://kotlinlang.org/docs/collections-overview.html) — map semantics.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

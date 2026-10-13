@@ -23,7 +23,11 @@ What makes a class testable?
 
 ## Explanation in Arabic
 
-Class قابلة للاختبار لما dependencies تدخل من برّه بدل hard-coded singletons، والوقت/dispatcher/IO ممكن التحكم فيهم، والنتيجة تظهر كstate أو return value. مش لازم نخلي كل private method public؛ نفصل pure decision logic عن Android side effects، ونختبر contract. Testability غالبًا نتيجة design واضح.
+الكلاس القابل للاختبار له inputs وoutputs وحدود dependencies واضحة. لو constructor يبدأ network request، يقرأ `System.currentTimeMillis()`، أو يجيب singleton global، الاختبار يصبح معتمدًا على توقيت وبيئة لا نتحكم فيهما. افصل الـclock، repository، dispatcher عند الحاجة، وخلي operation صريحة؛ بعدها fake clock وfake repository يثبتوا policy في وقت ثابت.
+
+## Practical walkthrough
+
+ده مش معناه إضافة interface لكل كلاس: اعزل فقط الحدود اللي تتغير أو لها side effects. الـtest الجيد يثبت result أو state بدل تفاصيل تنفيذ داخلية. ولو المشكلة في serialization أو Room transaction، ما يكفيش fake؛ اكتب integration test للـboundary الحقيقي. قابلية الاختبار عادة علامة على ownership أوضح، لكنها ليست هدفًا يبرر abstraction بلا فائدة.
 
 ## Why it matters and how it works
 
@@ -55,7 +59,15 @@ Code review checks constructor side effects, hidden globals and lifecycle owners
 
 ## Interview answer — deep senior
 
-“A good test seam reflects an architectural boundary. For a payment retry use case I inject a clock, stable ID source and repository; I can simulate timeout, process restart and duplicate triggers without sleeps. The repository contract says what is durable and idempotent, while separate integration tests prove Room and HTTP adapters honor it. I avoid publicizing implementation helpers or mocking every line. If tests require deep knowledge of call order, I revisit responsibility and state ownership rather than add more mocks.”
+“Testability is the ability to control relevant inputs and observe the contract without relying on accidental global state or real time. Consider a session-expiry use case. If it reaches into `System.currentTimeMillis()`, a global Retrofit client and a singleton cache during construction, edge cases are difficult to reproduce. I would pass a `Clock` and repository boundary, make the operation explicit, and test just-before, at and after expiry with fixed instants. I would not create an interface for every data class merely to satisfy a mocking framework; the useful seams are time, I/O and externally owned behavior. I keep concurrency ownership visible as well: a suspend function can inherit its caller’s Job, while a newly created scope in each method makes cancellation and failures hard to assert. The unit test proves policy, not the real database or network adapter. I add integration tests where serialization, transactions or platform lifecycle are the risk. I judge a class testable when a failure points to a business invariant and the test survives reasonable refactoring of internals.”
+
+## How to answer in the interview
+
+- **Why:** hidden time and I/O make behavior hard to reproduce.
+- **How:** inject Clock and repository, then test fixed expiry boundaries.
+- **Trade-off:** useful seams versus needless interfaces.
+- **Failure case:** constructor network work and global state cause flaky tests.
+- **Production solution:** isolate policy and separately test real adapters.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for hidden inputs, clock/dispatcher injection, observable contract and in
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Identify hidden clock, network and dispatcher dependencies in an untestable class; inject them through a small contract; run a deterministic fixed-time case; and explain why constructor side effects make isolation difficult.
 
 ## References and reviewed-on date
 
 - [Android app architecture](https://developer.android.com/topic/architecture) — separation of concerns and testability.
 - [Android test doubles](https://developer.android.com/training/testing/fundamentals/test-doubles) — dependency substitutions.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

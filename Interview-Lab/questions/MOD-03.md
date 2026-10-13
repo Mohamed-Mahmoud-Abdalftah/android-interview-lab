@@ -26,6 +26,10 @@ What is a dependency graph? Why must it be acyclic?
 
 Dependency graph تمثل modules كعُقد والأسهم “A يحتاج B ليُترجم/يعمل”. في Gradle project dependencies لازم تكون DAG حتى توجد topological order للبناء؛ لو A يعتمد على B وB على A لا يوجد ترتيب، كما أن ownership تختلط. مثال `:feature:orders` يحتاج شاشة login و`:feature:auth` يحتاج order badge: لا تربطهما مباشرة ذهابًا وإيابًا؛ استخرج contract أو navigation destination صغير في module أدنى، أو app ينسق التفاعل. لا تعالج cycle بنقل كل شيء إلى `:core:common` بلا تصميم.
 
+### Practical walkthrough in Egyptian Arabic
+
+Dependency graph فيها module nodes وأسهم import. لو `:feature:pay` يعتمد `:feature:account` والعكس، Gradle قد يرفض cycle أو architectural coupling يصبح صعب الاختبار. استخرج contract مشترك صغير باتجاه واحد أو composition في app module. احذر cycle منطقي عبر service locator حتى لو Gradle graph acyclic. CI ترسم/تفحص graph عند تغيير dependencies.
+
 ## Why it matters and how it works
 
 A directed edge imports another module's API and potentially its transitive dependencies. Acyclic graphs permit compilation in dependency order and make layering understandable. A cycle signals that two boundaries are not independent as designed; merely hiding it behind reflection or a global service locator leaves architectural coupling unresolved.
@@ -57,6 +61,14 @@ Visualize and enforce allowed edges in CI, review new dependency changes, and pe
 ## Interview answer — deep senior
 
 “A dependency graph describes compile-time and packaging relationships between modules, with a directed edge from a consumer to the API it uses. Gradle needs an acyclic project graph to order work. Architecturally, a cycle also means neither boundary can evolve independently: changing one may require the other's internals, and ownership becomes ambiguous. I diagnose what crossed the boundary. If Orders needs authentication status, that can be a small stable contract below both features; if Auth wants an order badge in the app shell, the app can compose those contributions rather than Auth importing Orders. Sometimes the features were artificially split and should merge. I avoid a giant common module that merely hides the cycle or a static service locator that moves it to runtime. The extracted API must remain narrow and have an owner; its consumers should not see implementation types. I add a dependency-graph rule in CI and review high-fan-out modules because an acyclic graph can still be badly coupled. Full app assembly then checks that the acyclic pieces actually wire together.”
+
+## How to answer in the interview
+
+- **Why:** cycles block independent build and change.
+- **How:** orient edges toward stable contracts.
+- **Trade-off:** new interface versus direct convenience.
+- **Failure case:** hidden runtime cycle via global registry.
+- **Production solution:** enforce DAG and ownership.
 
 ## Deep-dive talking points
 

@@ -41,6 +41,10 @@ interface FeedTransport {
 // a hint triggers versioned snapshot/sync, not blind UI mutation.
 ```
 
+## Practical walkthrough
+
+اختيار protocol يبدأ من شكل البيانات والتحديث: REST resources مناسبة لcatalog/order APIs واضحة؛ GraphQL يسمح للscreen تطلب fields محتاجاها بس، لكن complexity/cost limit وauth لكل field/server resolver مهمة. WebSocket يفيد live prices أو chat، لكن connection ممكن يتقطع في background؛ لازم reconnect/backoff وsnapshot HTTP عشان ما تضيعش state. في Android app offline-first، Room تفضل مصدر العرض، وWebSocket message تبقى hint لـrefresh أو event له sequence/version، مش source-of-truth وحيد. لا تستخدم socket لشاشة ممكن تتحدث كل دقيقة بـHTTP بسيط وتزوّد battery/network complexity بلا داعي.
+
 ## Trade-offs and decision criteria
 
 REST is often sufficient for CRUD and easier intermediary caching. GraphQL suits heterogeneous reads but complicates cost control. WebSocket is suitable for timely events, not a durable source of truth by itself. Combine snapshot plus push hints when live updates must recover after disconnect.
@@ -63,7 +67,17 @@ A chat app reads cached Room messages, syncs versioned pages via HTTPS and uses 
 
 ## Interview answer — deep senior
 
-“I start with requirements: data shape, update frequency, offline behavior, bandwidth and operational complexity. REST is usually a good baseline for resource APIs and clear retry semantics. GraphQL can reduce over-fetching across many screen shapes but requires query complexity limits and careful normalized caching; authorization cannot be delegated to the client query. WebSocket offers timely two-way updates, but Android lifecycle, Doze and network transitions require reconnect and catch-up. I use server versions/cursors so a missed socket event triggers a reliable HTTPS sync, write authoritative state to Room, and render from local data. Protocol choice does not replace idempotency, conflict resolution or security.”
+I start with requirements: data shape, update frequency, offline behavior, bandwidth and operational complexity. REST is usually a good baseline for resource APIs and clear retry semantics. GraphQL can reduce over-fetching across many screen shapes but requires query complexity limits and careful normalized caching; authorization cannot be delegated to the client query. WebSocket offers timely two-way updates, but Android lifecycle, Doze and network transitions require reconnect and catch-up. I use server versions/cursors so a missed socket event triggers a reliable HTTPS sync, write authoritative state to Room, and render from local data. Protocol choice does not replace idempotency, conflict resolution or security.
+
+I choose from freshness, shape, and operating cost. REST is a clear baseline for resources and ordinary caching. GraphQL can fit screens with varied data needs, but the server must enforce authorization and query cost limits; client-selected fields are not a security boundary. A WebSocket supports low-latency updates, yet a mobile app can disconnect or be backgrounded, so it needs a snapshot and reconciliation path. For a price feed, I would load a versioned snapshot over HTTP, persist it locally, then use socket messages to trigger incremental updates while the app is active. If messages are missed, I resynchronize by version rather than assuming a continuous connection.
+
+## How to answer in the interview
+
+- **Why:** Match transport to shape, freshness and offline requirements.
+- **How:** Contrast REST resources, GraphQL selection and WebSocket streams.
+- **Trade-offs:** Count server complexity, battery and cache design.
+- **Failure cases:** Lost socket events or unbounded GraphQL query cost.
+- **Production solution:** Keep Room/HTTP snapshot authoritative and reconcile stream gaps.
 
 ## Deep-dive talking points
 
@@ -84,4 +98,4 @@ Can I compare all three, name one failure mode each and design missed-event reco
 - [OkHttp documentation](https://lysine.dev/okhttp/) — WebSocket transport support.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — local truth and sync.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-12; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

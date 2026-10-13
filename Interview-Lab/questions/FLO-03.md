@@ -24,6 +24,10 @@ Explain hot StateFlow/SharedFlow lifetime, current state versus configurable bro
 
 `StateFlow` و`SharedFlow` hot: الـinstance موجودة وبتستقبل updates حتى من غير collector، على عكس `flow {}` العادية. `StateFlow` عندها `value` ابتدائية وآخر state، وتمنع القيم المتساوية؛ `SharedFlow` broadcast قابل لضبط replay/buffer ومن غير قيمة ابتدائية مفروضة. ولا واحدة منهم queue مضمونة عبر process death.
 
+### Practical walkthrough in Egyptian Arabic
+
+`StateFlow` مناسبة لـscreen state لأن لها `value` حالية ولازم initial value؛ collector جديدة تشوف آخر state. `SharedFlow` broadcast أعمّ: تختار replay وbuffer وممكن ما يكونش لها current value. الاتنين hot بمعنى object موجودة بعيدًا عن subscribers، لكن upstream المشترك من `stateIn/shareIn` ممكن يبدأ أو يقف حسب `SharingStarted`. متستخدمش StateFlow لحدث navigation كل مرة لأن القيمة القديمة ممكن ترجع بعد rotation.
+
 ## Why it matters and how it works
 
 A `MutableStateFlow` retains current value and emits latest to new collectors; its collection does not complete normally. `MutableSharedFlow` retains configured replay values and can broadcast to active subscribers. The owner scope determines who publishes and for how long; Android UI collectors should still be lifecycle-aware.
@@ -67,7 +71,15 @@ A ViewModel exposes immutable screen state through StateFlow. Toast-like best-ef
 
 ## Interview answer — deep senior
 
-“The design question is the consumer contract. If a recreated UI must immediately render a current snapshot, StateFlow’s always-available value is appropriate; slow collectors can skip intermediate states. SharedFlow lets me set replay and buffering, but those settings have precise subscriber semantics and are not a durable message broker. A replay-zero emission with no subscribers may be lost, while replay can duplicate a one-shot effect after rotation. I keep mutable implementations private, scope producers to ViewModel/session ownership, and persist any business event whose acknowledgement matters. Tests cover subscribers joining late, rotation and no-subscriber windows.”
+“The design question is the consumer contract. If a recreated UI must immediately render a current snapshot, StateFlow’s always-available value is appropriate; slow collectors can skip intermediate states. SharedFlow lets me set replay and buffering, but those settings have precise subscriber semantics and are not a durable message broker. A replay-zero emission with no subscribers may be lost, while replay can duplicate a one-shot effect after rotation. I keep mutable implementations private, scope producers to ViewModel/session ownership, and persist any business event whose acknowledgement matters. Tests cover subscribers joining late, rotation and no-subscriber windows. I would distinguish the data contract before naming an API. A screen state needs a current answer, so `StateFlow` has an initial value, a readable `.value`, equality-based conflation, and a latest value for new subscribers. A `SharedFlow` is a more general broadcast stream whose replay and buffer are chosen explicitly; with zero replay, a new subscriber cannot recover an earlier event. Both are hot instances independent of collection, but a flow converted with `stateIn` or `shareIn` can still control upstream work through `SharingStarted`. I would use StateFlow for loading/content/error and consider a transient event stream only after defining delivery and acknowledgment. I would test a collector joining late and another leaving, because those reveal replay assumptions.”
+
+## How to answer in the interview
+
+- **Why:** state needs a current snapshot; events may not.
+- **How:** compare initial value, replay, equality, and subscribers.
+- **Trade-off:** hot streams need explicit owner and upstream policy.
+- **Failure case:** replaying navigation as state after rotation.
+- **Production solution:** test late collectors and lifecycle gaps.
 
 ## Deep-dive talking points
 

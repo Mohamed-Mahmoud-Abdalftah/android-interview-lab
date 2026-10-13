@@ -34,6 +34,10 @@ An event source retains callbacks until removed or its own lifetime ends. A syst
 
 For a visible-only sensor preview, register the sensor listener in `onStart()` and call `sensorManager.unregisterListener(listener)` in `onStop()`. For a Fragment's UI StateFlow, launch from `viewLifecycleOwner.lifecycleScope` and call `repeatOnLifecycle(Lifecycle.State.STARTED) { state.collect { render(it) } }`. This abbreviated Kotlin assumes the AndroidX lifecycle KTX extensions, an existing listener, and a main-safe `render`; it is not a standalone program.
 
+## Practical walkthrough
+
+Sensor preview محتاجة listener أثناء ظهور الشاشة فقط؛ سجّل في `onStart` وافصل في `onStop` لو STARTED هي العقد المناسب. لكن location continuous recording لها owner تاني، ومينفعش تربطها بFragment view لو لازم تكمل بعد إغلاقها. Flow UI collector اربطه بـ`viewLifecycleOwner.repeatOnLifecycle(STARTED)`؛ ده يوقف ويرجع collection حسب visibility، بس upstream shared producer ممكن يفضل شغال، فراجع sharing policy. اجعل register/unregister symmetric وidempotent قدر الإمكان، واختبر rapid navigation/rotation عشان تكشف duplicate callbacks أو callback بعد destroy.
+
 ## Trade-offs and decision criteria
 
 `STARTED` is suitable for visible UI updates; a resource needed while resumed only may use `RESUMED`. A process-wide observer needs a process or application owner, not a transient screen. Automatic `repeatOnLifecycle` removes manual UI collection bookkeeping, but direct platform listeners still need explicit cleanup or a lifecycle wrapper. Missing interim events is acceptable for state streams but may be wrong for one-off operations that require persistence.
@@ -52,10 +56,22 @@ In a barcode scanning screen, camera preview and sensor updates run only while v
 
 ## Interview answer — structured
 
-“I first decide whether a listener is screen-visible, resumed-only, or process-wide. A visible sensor listener can register in `onStart` and unregister in `onStop`. A Fragment view observer should use `viewLifecycleOwner` so it cannot update an obsolete view. For Flow I use `repeatOnLifecycle(STARTED)`, which restarts collection as the screen becomes visible. I still examine the upstream producer, because stopping a UI collector may not stop a shared source. I test repeated transitions to detect duplicate registrations and leaks. I pair registration and cleanup at the same lifecycle boundary: for visible UI I often use `onStart`/`onStop`, and for a Fragment view I use `viewLifecycleOwner`. A listener source may hold a strong callback reference, so an unbalanced registration can leak a screen or deliver duplicates. Durable events belong in a repository, not a transient callback.”
+I first decide whether a listener is screen-visible, resumed-only, or process-wide. A visible sensor listener can register in `onStart` and unregister in `onStop`. A Fragment view observer should use `viewLifecycleOwner` so it cannot update an obsolete view. For Flow I use `repeatOnLifecycle(STARTED)`, which restarts collection as the screen becomes visible. I still examine the upstream producer, because stopping a UI collector may not stop a shared source.
+
 ## Interview answer — deep senior
 
-“The correct boundary follows ownership and resource cost. If an external API retains my callback, I make registration and cleanup symmetrical and idempotent, and choose STARTED or RESUMED according to whether partially visible UI needs updates. In a Fragment I bind view work to `viewLifecycleOwner`, not the Fragment instance, because the view has a shorter lifetime. For Flow, lifecycle-aware collection prevents rendering after stop, but a hot producer or a repository scope can continue; I manage that separately. I do not rely on transient callbacks as the only record of an important event. I persist durable state, then let a recreated screen resubscribe. Rotation, process recreation, split screen, and rapid background transitions are tests for both leaks and missed updates. The right boundary depends on what the listener does. A sensor preview may need to run only while the screen is visible; a process-wide connectivity monitor may be owned by an application-scoped component. I avoid storing an Activity callback in a singleton without an explicit unregister path. For Flow rendering, `repeatOnLifecycle(STARTED)` restarts collection around visibility, and in a Fragment it uses the view owner so a destroyed binding is not retained. Stop/start may miss transient emissions, so important business state is reloaded from an authoritative repository rather than trusting a one-shot event. Tests repeatedly navigate, rotate and background the app, checking callback counts and heap retention.”
+The correct boundary follows ownership and resource cost. If an external API retains my callback, I make registration and cleanup symmetrical and idempotent, and choose STARTED or RESUMED according to whether partially visible UI needs updates. In a Fragment I bind view work to `viewLifecycleOwner`, not the Fragment instance, because the view has a shorter lifetime. For Flow, lifecycle-aware collection prevents rendering after stop, but a hot producer or a repository scope can continue; I manage that separately. I do not rely on transient callbacks as the only record of an important event. I persist durable state, then let a recreated screen resubscribe.
+
+For a visible sensor preview, I pair registration in `onStart` with unregistration in `onStop` and make duplicate registration behavior clear. A Fragment UI collector instead belongs to the view lifecycle, because the Fragment object may remain after its view is gone. `repeatOnLifecycle(STARTED)` restarts collection as visibility changes, but the upstream shared producer may continue depending on how it is scoped. If the feature truly records after the screen closes, I move ownership to an explicit ongoing component and user-visible policy rather than leaving a hidden listener in the screen. Rotation and rapid navigation tests expose leaks.
+
+## How to answer in the interview
+
+- **Why:** Listeners should exist only while their owner can use events.
+- **How:** Pair registration and cleanup at matching lifecycle transitions.
+- **Trade-offs:** Use view-scoped collection for rendering and a longer owner for genuinely ongoing work.
+- **Failure cases:** Mention duplicate registration and callbacks into a destroyed view.
+- **Production solution:** Test a sensor preview across rotation, navigation, and background transitions.
+
 ## Deep-dive talking points
 
 Discuss callback ownership, STARTED versus RESUMED, Fragment view lifecycle, hot Flow producer scope, and repeat-transition testing.
@@ -75,4 +91,4 @@ Choose a lifecycle boundary, pair registration and removal, explain Fragment vie
 - [Lifecycle-aware components](https://developer.android.com/topic/libraries/architecture/lifecycle) — observer ownership.
 - [StateFlow and SharedFlow](https://developer.android.com/kotlin/flow/stateflow-and-sharedflow) — lifecycle-aware collection.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The snippets are illustrative and were not Android-compiled.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The snippets are illustrative and were not Android-compiled.

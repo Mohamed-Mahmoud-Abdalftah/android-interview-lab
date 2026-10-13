@@ -24,6 +24,10 @@ Explain main-safe boundaries, scope ownership, injected dispatchers, immutable s
 
 ViewModel يفضل يستقبل main-safe suspend APIs من data/domain؛ لو repository عنده blocking I/O أو CPU heavy، هو اللي يستخدم dispatcher مناسب بـ`withContext`، مش ViewModel ترش `Dispatchers.IO` على كل call بلا فهم. ViewModel يطلق screen work في `viewModelScope` ويكشف immutable `StateFlow<UiState>`، ويتعامل مع cancellation والـerrors من غير swallowing. اختبارات ViewModel تحقن fake repo وtest dispatcher/scheduler، وتتحقق من state transitions. لو شغل لازم يكمل بعد خروج الشاشة، استخدم durable scheduling/persistence بدل ViewModel scope.
 
+### Practical walkthrough in Egyptian Arabic
+
+ViewModel main-safe يعني لا تحبس Main بـDB/parse ثقيل، وتحقن dispatchers بدل hard-coded `Dispatchers.IO`. Repository suspend APIs تحدد execution مناسب، وViewModel يطلق في `viewModelScope` ويتعامل cancellation وstale request. اختبر بـ`runTest` fake repository وvirtual time، ثم Android integration لسلوك lifecycle. لا تترك mutable UI state مكشوفة.
+
 ## Why it matters and how it works
 
 Android guidance places main-safety responsibility on suspend callers below the ViewModel and recommends lifecycle-aware scopes for screen work. Injecting dispatchers or abstractions lets tests control execution timing. State holders should not block Main.
@@ -63,6 +67,14 @@ A ViewModel should coordinate screen state, not decide where every database or p
 ## Interview answer — deep senior
 
 Main safety is an API contract. A suspend function is not automatically off Main, so I inspect the operations it performs and place `withContext` around genuinely blocking or CPU-intensive work at the repository boundary. Injected dispatchers permit deterministic tests and avoid hardcoded environment choices. The ViewModel owns UI event handling and immutable state production, with `viewModelScope` cancelling obsolete screen work. It should not hold an Activity or process-wide mutable singleton. I test success, errors, rapid query changes, cancellation and restoration. A network request that must complete after process death needs persisted work and an appropriate scheduler, not a long-lived ViewModel or `GlobalScope`. This keeps both frames and tests predictable. Main safety should be documented and tested at the API boundary. A suspend function may execute entirely on Main, so its implementation must move blocking or heavy work when necessary. The ViewModel owns screen scope and state, but it should not catch cancellation as a normal error or keep an Activity reference. For process-death-sensitive work I persist intent and use suitable durable scheduling. Integration tests still verify the real database/network adapter, because a fake ViewModel test cannot prove those parts.
+
+## How to answer in the interview
+
+- **Why:** Main thread and lifecycle need ownership.
+- **How:** inject dispatchers and expose immutable state.
+- **Trade-off:** test seams versus complexity.
+- **Failure case:** hard-coded IO escapes test scheduler.
+- **Production solution:** unit and lifecycle tests.
 
 ## Deep-dive talking points
 

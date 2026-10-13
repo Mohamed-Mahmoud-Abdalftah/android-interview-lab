@@ -26,6 +26,10 @@ Design a multi-module structure for a large app.
 
 لتطبيق كبير مثل commerce، ابدأ بـ`:app` كـcomposition root، ثم `:feature:catalog`, `:feature:checkout`, `:feature:orders` حول قدرات المستخدم. ضع عقود مستقرة في `:domain:*` أو `:feature:*:api` عند حاجة حقيقية، وimplementations في `:data:*`. `:core:network`, `:core:database`, `:designsystem` للبنية المشتركة ذات owner واضح. feature لا تستورد implementation feature أخرى؛ app يربط navigation/DI. حافظ على DAG، اختبر compile variants وintegration، وقِس build configuration/incremental time. لا تجعل الهيكل رسمًا جميلًا بلا حدود API.
 
+### Practical walkthrough in Egyptian Arabic
+
+في app كبيرة، ارسم feature ownership وdata contracts قبل رسم أسماء modules. `:app` composition، `:feature:catalog` و`:feature:checkout` بواجهات صغيرة، shared account contract في core/domain مناسب، adapters في data modules. امنع direct feature-to-feature import، واجعل navigation عند app. ابدأ بfeature واحدة واختبر build impact قبل نقل 100 module دفعة واحدة.
+
 ## Why it matters and how it works
 
 Separate feature modules can encapsulate screen behavior and team work. Contracts direct dependencies toward stable abstractions; data implementations and app bindings complete the graph. Build performance depends on public ABI changes and Gradle configuration, so a new module must earn its maintenance cost. App-level navigation and DI composition prevent feature-to-feature cycles.
@@ -57,6 +61,14 @@ Write allowed-edge rules, ownership documentation and a module graph check. Trac
 ## Interview answer — deep senior
 
 “I would start with user capabilities and team ownership, then draw a DAG before creating Gradle files. The app packages variants and composes navigation and DI. Catalog, checkout and orders each own their screens and feature logic, exposing only a destination or domain contract required by consumers. Data modules implement repository interfaces using infrastructure from core network and database, while a design-system module supplies UI tokens and components without business models. For checkout I want a stable product identifier and authoritative price check, not a dependency on catalog's internal Composable or DTO. I define allowed edges and decide which types are public; an `api` leak can cause broad rebuilds even in a DAG. I add feature unit/UI tests plus an app assembly and injection smoke path for release variants. Then I measure configuration time, incremental builds and cross-team change history. If a proposed `:core:common` accumulates unrelated helpers, I give the code a real owner or accept small duplication. The architecture should let teams change internals locally while keeping integration explicit and operationally testable.”
+
+## How to answer in the interview
+
+- **Why:** large teams need independent boundaries.
+- **How:** map owners and DAG before splitting.
+- **Trade-off:** parallel work versus configuration overhead.
+- **Failure case:** big-bang split blocks releases.
+- **Production solution:** incremental extraction with build metrics.
 
 ## Deep-dive talking points
 

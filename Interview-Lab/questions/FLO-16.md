@@ -24,6 +24,10 @@ Distinguish fan-in, queued buffering, dropped intermediate values and cancellati
 
 `merge` يجمع عدة flows في stream واحدة وemissions ممكن تتداخل. `buffer` يفصل producer عن collector بقناة buffer لكن لا يعني إسقاط القيم افتراضيًا. `conflate` يحتفظ بالأحدث لما المستهلك بطيء ويسقط intermediates. `collectLatest` يلغي شغل معالجة القيمة السابقة عند وصول أحدث. اختيار الإسقاط أو الإلغاء لازم يبقى آمن لنوع البيانات.
 
+### Practical walkthrough in Egyptian Arabic
+
+`merge` تجمع streams مستقلة، مش backpressure strategy بحد ذاتها. `buffer` تفصل producer/consumer بقناة وتسمح upstream تسبق؛ `conflate` تسقط intermediate وتبقي الأحدث؛ `collectLatest` تلغي معالجة القيمة القديمة. في telemetry مالية لا تسقط أحداث، لكن preview صورة متغيرة بسرعة ممكن latest ينفع. قِس memory والـlatency وما تستخدمش buffer بلا حد.
+
 ## Why it matters and how it works
 
 Merge combines concurrent sources, while buffer, conflate and collectLatest address producer/consumer speed differently. Buffer allows upstream to get ahead within capacity; conflate skips intermediate elements; collectLatest cancels an in-progress collector action. None makes a blocking action cooperatively cancellable by itself.
@@ -65,7 +69,15 @@ A telemetry chart merges two sensor streams and shows only the latest visual fra
 
 ## Interview answer — deep senior
 
-“I start by defining whether each emission is a state snapshot or an irreplaceable occurrence. Merge gives no single total order across sources, so I include source IDs and timestamps when order matters. Buffer can improve throughput by overlapping stages but needs a capacity/memory policy; it is not magical infinite storage. Conflate intentionally loses intermediate values, and collectLatest intentionally abandons prior processing if it cooperates. A blocking or remote side effect may still finish despite cancellation. In production I separate a durable event capture pipeline from a lossy UI render pipeline, measure queue depth and dropped-frame counts, and test a fast producer with a slow consumer to prove the selected behavior.”
+“I start by defining whether each emission is a state snapshot or an irreplaceable occurrence. Merge gives no single total order across sources, so I include source IDs and timestamps when order matters. Buffer can improve throughput by overlapping stages but needs a capacity/memory policy; it is not magical infinite storage. Conflate intentionally loses intermediate values, and collectLatest intentionally abandons prior processing if it cooperates. A blocking or remote side effect may still finish despite cancellation. In production I separate a durable event capture pipeline from a lossy UI render pipeline, measure queue depth and dropped-frame counts, and test a fast producer with a slow consumer to prove the selected behavior. I would first separate combining sources from handling an overloaded consumer. `merge` interleaves emissions from independent flows; it does not make a slow renderer faster. `buffer` lets producer and consumer run more independently up to capacity, trading memory for throughput. `conflate` keeps the latest pending value and drops intermediate ones, appropriate only when every transition is not required. `collectLatest` goes further: it cancels the collector’s work for an old value when a new one arrives. For screen rendering of rapidly changing progress, latest or conflate can be sensible; for payment or audit events, dropping or cancelling is incorrect. I would profile throughput, latency, and memory and test exactly which values are processed under a deliberately slow collector.”
+
+## How to answer in the interview
+
+- **Why:** overload strategies have different loss semantics.
+- **How:** distinguish merge, queue, drop intermediates, and cancel handler.
+- **Trade-off:** memory versus freshness versus completeness.
+- **Failure case:** conflate loses audit events.
+- **Production solution:** load-test slow collector and choose by business contract.
 
 ## Deep-dive talking points
 

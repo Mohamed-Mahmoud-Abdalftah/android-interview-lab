@@ -34,6 +34,10 @@ Rotation changes resources and can recreate UI components. Multi-window changes 
 
 A search screen keeps its query and selected tab in saveable state, search results in a repository/cache, and the active request in a ViewModel with cancellation. On rotation it recreates layout and continues from retained state. If the process dies in background, it restores the query and reloads results. In split screen it adapts width and continues visible updates even when another window has focus. The scenario describes ownership; implementation must be tested for supported API levels.
 
+## Practical walkthrough
+
+multi-window مش مجرد rotation؛ Activity ممكن تكون visible لكنها مش resumed حسب الجهاز والإصدار ووضع النوافذ، فاختار STARTED للrendering اللي لازم يكمل وهي ظاهرة، وRESUMED لو resource حصري محتاج focus. rotation يعيد بناء view/layout حسب configuration؛ background/foreground عادة يوقف ويرجع بدون إعادة إنشاء فورية، لكن process ممكن يموت أثناء الغياب. search query/tab تحفظ كstate صغير، results ترجع من repository، وrequest تتلغى أو تُستأنف حسب owner. جرّب resize وsplit screen والتبديل بين apps، ولا تعتبر emulator rotation وحده تغطية لكل الحالات.
+
 ## Trade-offs and decision criteria
 
 Saving every large result bundle in instance state is expensive and can exceed transaction limits; save keys and reload. Retaining all state only in a ViewModel is simple across rotation but loses it after process death. Persisting every keystroke to disk may be unnecessary; choose durability based on user cost. Prefer responsive layouts over forced orientation to handle device sizes and multi-window.
@@ -52,10 +56,22 @@ For a delivery checkout, save the address draft and idempotency key durably befo
 
 ## Interview answer — structured
 
-“I treat these as different events. A configuration change commonly recreates an Activity, while its ViewModel normally remains for that logical screen. Multi-window can leave a screen visible without focus, so I use lifecycle states appropriate to visibility rather than equating pause with hidden. After background process death, in-memory ViewModels and coroutines are gone; saved instance state can restore small UI keys, and repositories reload durable data. I test each path separately and avoid placing large result objects in a Bundle. Multi-window means paused does not always equal invisible, and the app may be resized without a simple rotation assumption. I classify state by lifetime: transient layout state, ViewModel state, saved reconstruction keys and durable business data. A background transition also opens the possibility of process death, so I test restoration rather than only resume.”
+I treat these as different events. A configuration change commonly recreates an Activity, while its ViewModel normally remains for that logical screen. Multi-window can leave a screen visible without focus, so I use lifecycle states appropriate to visibility rather than equating pause with hidden. After background process death, in-memory ViewModels and coroutines are gone; saved instance state can restore small UI keys, and repositories reload durable data. I test each path separately and avoid placing large result objects in a Bundle.
+
 ## Interview answer — deep senior
 
-“State ownership drives my implementation. Ephemeral view details can be saveable, screen logic can live in a ViewModel, and anything the user must not lose belongs in durable storage or a backend. Rotation recreates views and resources, so side effects must not accidentally duplicate; a ViewModel handles ordinary configuration changes but is rebuilt after process death. Multi-window means STARTED and RESUMED are not interchangeable for visible updates. Background work that must complete cannot depend on an Activity coroutine. On return I restore stable keys, reconcile with current repository state, and avoid replaying a non-idempotent action such as payment. I verify this with resize, rotation, background/foreground, and actual process-kill scenarios. I avoid mapping every lifecycle callback to a single product state. A split-screen Activity can remain visible while paused, while another window has focus; a responsive UI should adapt to dimensions and current capability, not assume portrait/fullscreen. Rotation can recreate the Activity and views while retaining its ViewModel, but a later background process kill removes all in-memory objects. I save compact UI hints with saved state and persist drafts or operation IDs independently. An Activity-scoped coroutine may be canceled on recreation, so durable upload/payment work needs an appropriate repository/scheduler and server status contract. I test resize, rotation, background/foreground and process kill as separate transitions.”
+State ownership drives my implementation. Ephemeral view details can be saveable, screen logic can live in a ViewModel, and anything the user must not lose belongs in durable storage or a backend. Rotation recreates views and resources, so side effects must not accidentally duplicate; a ViewModel handles ordinary configuration changes but is rebuilt after process death. Multi-window means STARTED and RESUMED are not interchangeable for visible updates. Background work that must complete cannot depend on an Activity coroutine. On return I restore stable keys, reconcile with current repository state, and avoid replaying a non-idempotent action such as payment.
+
+A split-screen search page can be visible without being the currently focused window, so I do not equate `onPause` with invisibility for every feature. I choose STARTED collection for results that should update while visible and RESUMED for a resource that needs exclusive interaction. Rotation or resize may recreate views while the process survives; a long background interval may instead lead to process death. I save a small query and selected tab, reload results from the repository, and cancel or continue requests according to their owner. I test resize, rotation, app switching, and restored process separately.
+
+## How to answer in the interview
+
+- **Why:** Visibility and focus can change independently of process lifetime.
+- **How:** Describe resize/rotation recreation, background callbacks, and possible later process loss.
+- **Trade-offs:** Use STARTED for visible collection and RESUMED for focus-sensitive resources when appropriate.
+- **Failure cases:** Name lost query, stale request, and assumptions that pause always means invisible.
+- **Production solution:** Test one search screen in split screen, rotation, and delayed return.
+
 ## Deep-dive talking points
 
 Discuss visible versus focused lifecycle states, configuration change, process death, Bundle limits, durable drafts, and idempotent recovery.
@@ -75,4 +91,4 @@ Contrast rotation, multi-window, and process death; allocate three types of stat
 - [Save UI states](https://developer.android.com/topic/libraries/architecture/saving-states) — state ownership and process recreation.
 - [Multi-window support](https://developer.android.com/develop/ui/views/layout/support-multi-window-mode) — lifecycle and resizing considerations.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The checkout flow is illustrative.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The checkout flow is illustrative.

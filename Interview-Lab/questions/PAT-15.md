@@ -30,7 +30,31 @@ Strategy isolates interchangeable provider behavior; a factory or registry only 
 
 ## Worked example
 
-Conceptual Kotlin: `Map<PaymentMethod, PaymentStrategy>` is injected into a small router. `route(method)` selects a registered strategy or returns an unsupported-method result. Each strategy maps vendor callbacks to `Accepted/Rejected/PendingVerification`; repository persists request ID and queries server status.
+JVM routing core; provider adapters and server verification are app-owned. Each strategy must satisfy the same `SubmitOutcome` contract and the repository persists the attempt identity before calling the router.
+```kotlin
+enum class PaymentMethod { CARD, WALLET }
+sealed interface SubmitOutcome {
+    data class Accepted(val receiptId: String) : SubmitOutcome
+    data class Rejected(val reason: String) : SubmitOutcome
+    data class PendingVerification(val attemptId: String) : SubmitOutcome
+    data object UnsupportedMethod : SubmitOutcome
+}
+interface PaymentStrategy {
+    val method: PaymentMethod
+    suspend fun submit(attemptId: String): SubmitOutcome
+}
+class PaymentRouter(strategies: Set<PaymentStrategy>) {
+    private val byMethod = strategies.associateBy(PaymentStrategy::method)
+    init { require(byMethod.size == strategies.size) { "Duplicate payment method" } }
+    suspend fun submit(method: PaymentMethod, id: String): SubmitOutcome =
+        byMethod[method]?.submit(id) ?: SubmitOutcome.UnsupportedMethod
+}
+```
+The router only selects; authentication, idempotency, redacted telemetry and reconciliation belong to the shared data boundary, with final authority on the server.
+
+## Practical walkthrough
+
+multiple payment providers: UI تبعت `PaymentMethod` وattempt، router صغير يختار `PaymentStrategy` من map محقون؛ كل strategy تنفذ نفس domain contract وتحوّل provider errors لـtyped outcome. Factory لو لازم تنشئ strategy حسب environment/session، لكن ما تخليش factory تعرف auth، UI، analytics، DB، وكل provider details مرة واحدة. shared policies زي idempotency/log redaction/reconciliation في coordinator أو repository boundary، مش copied في كل strategy ولا hidden في router. server يفضل authority. أضف provider جديد باختبار contract مشتركة وtest route unsupported؛ لا تستخدم default provider silently.
 
 ## Trade-offs and decision criteria
 
@@ -56,6 +80,16 @@ I define a narrow `PaymentStrategy` with common result and cancellation semantic
 
 The design has three distinct responsibilities: deciding which provider is allowed, selecting an implementation, and executing provider-specific behavior. I keep the factory or registry limited to selection, with strategies handling SDK details and a repository coordinating durable request status. That prevents a giant class with a branch for every method and provider. I define semantic outcomes carefully: timeout means pending verification if the server may have committed; it is not a confirmed decline. Contract tests run across adapters, and server-side idempotency/reconciliation protects business effects. Adding a provider still needs wiring, security review and integration tests. If one provider cannot honor the common contract, I split capabilities or revise policy rather than hiding special cases in the factory.
 
+I would separate selection from execution. A small router or factory maps a supported payment method to an injected Strategy, and each provider implementation returns the same domain outcomes. Shared rules such as stable operation IDs, server-side idempotency, redacted telemetry and reconciliation belong in a coordinator or repository boundary, not copied across provider classes. A god-factory appears when one object knows every SDK, UI flow, token rule and database detail; I keep it limited to choosing a registered implementation. I fail explicitly for an unsupported method rather than silently falling back to a provider. Contract tests run the same success, rejection and uncertain-outcome cases for each strategy, and the server remains authoritative.
+
+## How to answer in the interview
+
+- **Why:** Provider variation should stay local without centralizing every policy.
+- **How:** Inject strategies, select by method, return one domain outcome type.
+- **Trade-off:** Put shared policy in coordinator, not duplicated strategy code.
+- **Failure case:** God-factory or silent fallback to wrong provider.
+- **Production solution:** Common contract tests plus explicit unsupported-method outcome.
+
 ## Deep-dive talking points
 
 Separate selection, strategy execution, shared policy and server status; test unknown/duplicate registration.
@@ -74,4 +108,4 @@ Sketch a router and one adapter, then name two responsibilities forbidden in the
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — Strategy and Factory patterns.
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — repository coordination.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

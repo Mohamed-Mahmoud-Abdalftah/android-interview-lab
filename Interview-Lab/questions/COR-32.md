@@ -24,22 +24,59 @@ Design deterministic coroutine tests for cancellation, supervision and timeout w
 
 اختبار concurrency بالـ`Thread.sleep` عشوائي وممكن ينجح بالصدفة. `runTest` مع `TestDispatcher` يسمح نتحكم في virtual time، و`CompletableDeferred` أو fake API يحدد ترتيب الأحداث. نختبر إن sibling اتلغى عند فشل required call، وإن supervisor حفظ مستقلين، وإن timeout انتهى عند الزمن المحدد؛ ونفصل ده عن test حقيقي لdriver blocking أو Android lifecycle.
 
+## Practical walkthrough
+
+لو test استخدم `Thread.sleep`، ترتيب children هيبقى حسب ضغط الجهاز وممكن الاختبار يفلّك. استخدم `runTest` وdispatcher محقون على نفس `TestCoroutineScheduler`، و`CompletableDeferred` كحواجز صريحة لتثبت sibling cancellation وsupervision. تقدّم virtual time للـtimeout، وبعدها تأكد إن كل jobs خلصت. اختبارات JVM دي لا تثبت سلوك SDK blocking أو lifecycle على جهاز؛ ليهم integration tests.
+
 ## Why it matters and how it works
 
 `runTest` skips/advances delays under its scheduler. Inject dispatchers so code does not escape to real IO/Default unexpectedly. `advanceTimeBy` moves virtual time and `runCurrent` executes queued tasks; `advanceUntilIdle` drains work. Verify state and cancellation signals rather than only elapsed wall time. Real HTTP and device timing require separate integration tests.
 
 ## Worked example
 
-JVM example requires `kotlinx-coroutines-test`; it checks a timeout without real sleeping.
+JVM example requires `kotlinx-coroutines-test` and `kotlin-test`. It checks required sibling cancellation, supervised independence and a timeout without real sleeping. In production, inject the same test scheduler into dispatchers used by the subject under test.
 
 ```kotlin
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.yield
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
-class TimeoutTest {
+class ConcurrencyTest {
+    @Test fun requiredFailureCancelsSibling() = runTest {
+        var siblingCancelled = false
+        assertFailsWith<IllegalStateException> {
+            coroutineScope {
+                launch {
+                    try { awaitCancellation() }
+                    finally { siblingCancelled = true }
+                }
+                yield() // start sibling before the failure
+                async<String> { error("required source failed") }.await()
+            }
+        }
+        assertTrue(siblingCancelled)
+    }
+
+    @Test fun supervisedFailureKeepsOtherChild() = runTest {
+        supervisorScope {
+            val failing = async<String> { error("optional source failed") }
+            val healthy = async { delay(100); "ready" }
+            assertFailsWith<IllegalStateException> { failing.await() }
+            assertEquals("ready", healthy.await())
+        }
+    }
+
     @Test fun timeoutIsVirtual() = runTest {
         val result = withTimeoutOrNull(1_000) { delay(2_000); "late" }
         assertNull(result)
@@ -69,7 +106,15 @@ A repository suite injects one test scheduler, tests three-call all-or-nothing f
 
 ## Interview answer — deep senior
 
-“I structure the suite around observable invariants. All child jobs must finish or cancel when the operation returns; a failed required call must not publish partial data; independent calls should preserve healthy results; a parent cancellation must stop retries. `runTest` and a shared `TestCoroutineScheduler` let me advance delays and execute queued continuations deterministically. Controlled fakes expose start/cancel signals so I can force interleavings, including a failure just before timeout and cancellation during retry delay. I avoid unconfined production dispatchers in the unit under test or inject them, since real IO escapes the virtual clock. Finally I add focused integration tests for an actual blocking SDK, WorkManager recovery and Android lifecycle, where scheduler simulation is insufficient. `runTest` skips/advances delays under its scheduler.”
+“I structure the suite around observable invariants. All child jobs must finish or cancel when the operation returns; a failed required call must not publish partial data; independent calls should preserve healthy results; a parent cancellation must stop retries. `runTest` and a shared `TestCoroutineScheduler` let me advance delays and execute queued continuations deterministically. Controlled fakes expose start/cancel signals so I can force interleavings, including a failure just before timeout and cancellation during retry delay. I avoid unconfined production dispatchers in the unit under test or inject them, since real IO escapes the virtual clock. Finally I add focused integration tests for an actual blocking SDK, WorkManager recovery and Android lifecycle, where scheduler simulation is insufficient. `runTest` skips/advances delays under its scheduler. My tests would force exact order with fake gates: start two siblings, fail the required third, and assert both siblings run `finally` before the aggregate returns. Under supervision I would fail one optional child and assert healthy values still arrive; then cancel the parent and assert all stop. Virtual time advances retry delays and timeout boundaries without sleeping. I would inject dispatchers so all coroutines share the scheduler, while leaving real SDK interruption and Android lifecycle behavior to targeted integration tests.”
+
+## How to answer in the interview
+
+- **Why:** concurrency tests must control order and time.
+- **How:** runTest controls a shared scheduler; yield and fake barriers force interleavings; virtual delays exercise deadlines.
+- **Trade-off:** virtual time is fast but cannot model native blocking or process death.
+- **Failure case:** hard-coded IO escapes the scheduler or assertions ignore surviving children.
+- **Production solution:** inject dispatchers and add targeted integration tests.
 
 ## Deep-dive talking points
 
@@ -89,4 +134,4 @@ Can I force an interleaving, advance virtual time, assert Job cleanup and name o
 - [Kotlin coroutines test API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/) — virtual-time scheduler and runTest.
 - [Android coroutine testing guidance](https://developer.android.com/kotlin/coroutines/test) — dispatcher injection and Android tests.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

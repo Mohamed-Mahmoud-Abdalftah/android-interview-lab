@@ -24,6 +24,10 @@ Design three concurrent all-or-nothing API calls, cancellation of siblings and o
 
 السؤال بيقول dependent APIs لكن ممكن نعملها parallel فقط لو المقصود إن النتائج الثلاثة كلها مطلوبة للتجميع، ومفيش request محتاج ناتج التاني كـinput. لو B محتاجة ID من A يبقى A تخلص الأول ثم نشغّل المستقلين. في `coroutineScope`، فشل child يلغي الإخوة ونرجّع failure واحدة؛ الإلغاء لا يمسح side effects وصلت للسيرفر.
 
+## Practical walkthrough
+
+كلمة dependent هنا محتاجة توضيح في المقابلة: هل كل API تحتاج output سابقتها؟ لو نعم ما ينفعش الثلاثة parallel. لو الثلاثة reads مستقلة في inputs لكن النتيجة النهائية لازم تجمعهم، شغّلهم بـ`async` داخل `coroutineScope` واعرض aggregate بعد النجاح كله. فشل واحدة يلغي الإخوة، لكن cancel request وصل للسيرفر مش rollback لأي side effect.
+
 ## Why it matters and how it works
 
 Start independent prerequisites with `async` inside `coroutineScope`, await all, then validate a consistent aggregate before publishing. If there are true data dependencies, split into sequential stages. Parent cancellation cancels children; an ordinary child failure cancels siblings. Use a typed domain result at the outer boundary, with cancellation propagated.
@@ -71,7 +75,15 @@ A checkout repository fetches pricing, tax and stock under one request ID, valid
 
 ## Interview answer — deep senior
 
-“For production I separate computational dependency, consistency and side effects. Three reads can overlap if their inputs are known, but a returned quote is committed to UI only after all three succeed and pass version checks. Structured scope failure cancels sibling coroutines, yet remote requests may already have been accepted; I do not claim rollback. If one API is a write, I need idempotency and compensation/reconciliation. I set a deadline, bound parallelism, propagate screen cancellation, and log request IDs rather than sensitive payloads. Tests use controlled fakes to fail each call, verify sibling cancellation, ensure no partial state, and exercise slow cancellation so the UI never remains indefinitely loading.”
+“For production I separate computational dependency, consistency and side effects. Three reads can overlap if their inputs are known, but a returned quote is committed to UI only after all three succeed and pass version checks. Structured scope failure cancels sibling coroutines, yet remote requests may already have been accepted; I do not claim rollback. If one API is a write, I need idempotency and compensation/reconciliation. I set a deadline, bound parallelism, propagate screen cancellation, and log request IDs rather than sensitive payloads. Tests use controlled fakes to fail each call, verify sibling cancellation, ensure no partial state, and exercise slow cancellation so the UI never remains indefinitely loading. I would clarify the word ‘dependent’ before coding. If B needs A's output, A must complete before B; only the independent stage can overlap. If all three reads are input-independent but the final quote needs all results, `coroutineScope` with `async` gives all-or-nothing completion. I would publish nothing until version checks pass. Sibling cancellation only stops client work cooperatively; for any write already accepted by a server, I need idempotency or reconciliation.”
+
+## How to answer in the interview
+
+- **Why:** consistency depends on both input dependencies and output requirements.
+- **How:** sequentially resolve required inputs, then parallelize independent reads inside coroutineScope.
+- **Trade-off:** parallelism saves latency only when APIs can overlap.
+- **Failure case:** publishing a partial checkout quote or assuming cancellation undoes a server write.
+- **Production solution:** validate versions and reconcile any side effects.
 
 ## Deep-dive talking points
 
@@ -91,4 +103,4 @@ Can I parallelize only independent inputs, return one consistent result, test al
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — structured concurrent children.
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — sibling failure propagation.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

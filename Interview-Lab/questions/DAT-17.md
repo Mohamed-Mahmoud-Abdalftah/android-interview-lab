@@ -43,6 +43,10 @@ fun isExpired(row: CachedRow<*>, nowEpochMs: Long, ttlMs: Long): Boolean =
 // Also invalidate on mutation/session switch and revalidate with server version.
 ```
 
+## Practical walkthrough
+
+cache expiration لازم تميز transport cache بـHTTP headers عن domain rows في Room. `Cache-Control/ETag` تقلل network requests، لكن local `fetchedAt`/server version تحدد UX freshness. TTL بالساعة الجهاز ممكن يتأثر بتغيير clock؛ لو محتاج ضمان قوي استخدم server version/validation أو monotonic timing للجلسة، واتعامل مع offline case صراحة. عند write أو logout، invalidate affected keys/account partition بدل `clearAll` عشوائي. لو refresh response قديمة وصلت بعد جديدة، قارن version قبل الكتابة. balance أو permission لا تعتمد على stale row قبل action؛ news headline يمكن تعرضها مع age label.
+
 ## Trade-offs and decision criteria
 
 TTL is simple and available offline but can be wrong after device clock changes. Server validators reduce payload but need endpoint support. Push invalidation is timely but unreliable during disconnect, so periodic/reconnect revalidation remains necessary.
@@ -65,7 +69,17 @@ A catalog caches pages with server versions and fetchedAt, revalidates on app fo
 
 ## Interview answer — deep senior
 
-“I distinguish HTTP transport caching from the app’s Room-backed domain cache. Cache-Control/ETag can reduce network cost, while local rows need explicit freshness metadata and invalidation triggers. A single TTL is too blunt: offline browse may tolerate stale articles, but authorization, stock and money require authoritative checks before action. I partition cache by account, clear or replace it on logout, version rows so older refreshes cannot overwrite newer ones, and revalidate on reconnect/foreground. Device wall clocks can change, so I do not rely on them alone for security decisions. Tests cover clock skew, out-of-order responses, account switch and offline staleness.”
+I distinguish HTTP transport caching from the app’s Room-backed domain cache. Cache-Control/ETag can reduce network cost, while local rows need explicit freshness metadata and invalidation triggers. A single TTL is too blunt: offline browse may tolerate stale articles, but authorization, stock and money require authoritative checks before action. I partition cache by account, clear or replace it on logout, version rows so older refreshes cannot overwrite newer ones, and revalidate on reconnect/foreground. Device wall clocks can change, so I do not rely on them alone for security decisions. Tests cover clock skew, out-of-order responses, account switch and offline staleness.
+
+I separate wire caching from application state. HTTP validators such as ETag can save bandwidth, while Room rows need product-specific freshness metadata and invalidation rules. A single TTL is inadequate: a news card can be shown stale with a label, but a balance or permission must be revalidated before a sensitive action. I partition rows by account, invalidate related data after writes, and reject an older server version arriving after a newer response. Device wall-clock changes also make naïve age checks unreliable, so I test clock skew and offline startup. On refresh failure I keep the last-good snapshot when the feature allows it rather than clearing the screen.
+
+## How to answer in the interview
+
+- **Why:** Freshness is domain-specific and account-specific.
+- **How:** Distinguish HTTP validators from Room metadata and invalidation.
+- **Trade-offs:** Show stale low-risk content, revalidate sensitive actions.
+- **Failure cases:** Clock-skew TTL, old response overwrite, cross-account cache leak.
+- **Production solution:** Version checks, account partitioning and explicit stale UI.
 
 ## Deep-dive talking points
 
@@ -85,4 +99,4 @@ Can I set freshness by domain, invalidate session data and handle out-of-order u
 - [HTTP Semantics RFC 9110](https://httpwg.org/specs/rfc9110.html) — conditional requests.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — cache freshness.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

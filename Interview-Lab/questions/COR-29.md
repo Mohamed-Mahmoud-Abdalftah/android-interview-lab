@@ -24,6 +24,10 @@ Reason about blocking SDK cancellation, interruption, resource closure and uncer
 
 لو SDK synchronous حجز thread ومابيسمعش coroutine cancellation، `withTimeout` أو `cancel` هيعلّموا الـJob لكن النداء ممكن يفضل شغال لحد ما يرجع. ننقله من Main إلى dispatcher مناسب، ونستخدم SDK `cancel`/`close` إن موجود. `runInterruptible` على JVM ممكن يرسل thread interrupt لكود بيحترمه، لكن مش ضمان لكل native/SDK، ولا معناه إن server side effect اتلغت.
 
+## Practical walkthrough
+
+لو SDK بيقرأ ملف ومش بيرد على cancel، نقل النداء لـ`IO` يمنع تجميد UI لكنه مش يوقفه. جرّب cancel/close الرسمية للـSDK، أو `runInterruptible` فقط لو موثق إنه يحترم thread interrupt. لو native call مستحيل إيقافه، حدّ عدد العمال وامنع نشر النتيجة المتأخرة. في write side effects، اسأل عن الحالة قبل إعادة المحاولة.
+
 ## Why it matters and how it works
 
 Cancellation is cooperative at coroutine suspension points. For blocking JVM code, `runInterruptible(Dispatchers.IO)` couples Job cancellation to thread interruption, subject to the call responding correctly. Otherwise isolate the driver, cap concurrent calls, set native/client timeouts, and discard stale results. External writes need idempotency/reconciliation.
@@ -64,7 +68,15 @@ A document scanner SDK blocks during OCR. The repository runs it off Main, calls
 
 ## Interview answer — deep senior
 
-“The exact fix depends on what the SDK can stop. A cancellable callback API should be adapted with cancellation registration; an interruptible blocking JVM call can use `runInterruptible`, whose effectiveness depends on the driver honoring interrupts. An uninterruptible native call cannot be made promptly cancellable by a coroutine wrapper, so I isolate it from Main, cap calls, set whatever SDK deadline exists, and report a vendor defect if it threatens ANRs or thread exhaustion. The screen Job may cancel while the call continues; I discard late results and avoid retaining Activity references. For remote writes I persist an operation ID and reconcile server status after timeout, because local cancellation has no rollback guarantee. Tests include cancellation during the block and delayed completion.”
+“The exact fix depends on what the SDK can stop. A cancellable callback API should be adapted with cancellation registration; an interruptible blocking JVM call can use `runInterruptible`, whose effectiveness depends on the driver honoring interrupts. An uninterruptible native call cannot be made promptly cancellable by a coroutine wrapper, so I isolate it from Main, cap calls, set whatever SDK deadline exists, and report a vendor defect if it threatens ANRs or thread exhaustion. The screen Job may cancel while the call continues; I discard late results and avoid retaining Activity references. For remote writes I persist an operation ID and reconcile server status after timeout, because local cancellation has no rollback guarantee. Tests include cancellation during the block and delayed completion. My response depends on the SDK's documented stop mechanism. If it has a cancel handle, wire coroutine cancellation to it; if the JVM call honors interrupts, `runInterruptible` can be appropriate. If the call ignores both, place it on bounded workers, enforce a caller deadline, and prevent the stale return from updating UI, while accepting that the thread may remain occupied. A timed-out write may have reached the server, so retry needs status reconciliation.”
+
+## How to answer in the interview
+
+- **Why:** cancelling a Job does not forcibly terminate arbitrary blocking code.
+- **How:** use the SDK's cancel API, or runInterruptible for truly interruptible JVM calls.
+- **Trade-off:** isolation and worker caps protect the app while a stuck call may still consume a thread.
+- **Failure case:** timeout mistaken for server rollback.
+- **Production solution:** bounded execution and reconciliation for side effects.
 
 ## Deep-dive talking points
 
@@ -84,4 +96,4 @@ Can I identify SDK capability, protect Main, bound resources and handle late/unc
 - [Kotlin withTimeout API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout.html) — cooperative timeout and runInterruptible note.
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — main safety.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

@@ -24,6 +24,10 @@ Design Home with three independent services and partial failures without swallow
 
 Home عندها ثلاثة cards مستقلة؛ لو واحد فشل، نخلي الاتنين الناجحين ظاهرين مع error/retry على card الفاشلة. `supervisorScope` تعزل فشل الإخوة، وكل child ترجع typed outcome جوهها؛ `CancellationException` تترمي تاني علشان خروج الشاشة يلغي الكل. cached values لازم تتوسم freshness، وmonitoring تعرف أي service متعطلة؛ لو card أساسية للقرار، نغير policy بدل partial success عمياء.
 
+## Practical walkthrough
+
+Home فيها weather وnews وoffers؛ news ممكن تقع والباقي يظهر. كل card ليها state مستقلة Success/Loading/Error/Cached مع timestamp، والـViewModel تملك الطلبات. `supervisorScope` تعزل فشل direct children، لكن `CancellationException` لازم تعدي لما الشاشة تتقفل. لا تستخدم partial success لو الأرقام بتكوّن total مالي واحد. قس failure rate لكل service ووقت stale data.
+
 ## Why it matters and how it works
 
 Start calls concurrently under a ViewModel-owned suspend operation, capture domain failures inside each child and await all. Parent cancellation still cancels supervised children. State model has per-card Loading/Ready/Error/Stale, and retries target only failed dependencies. Bound fan-out/timeouts per service.
@@ -69,7 +73,15 @@ A commerce Home loads offers, order status and support tips independently, each 
 
 ## Interview answer — deep senior
 
-“The product semantics determine supervision. If three services contribute independent cards, partial success is valid; if they form a financial total, it is not. I run each under a ViewModel-owned operation, supervise direct children and catch domain exceptions inside each child, always rethrowing CancellationException. I await every result, attach freshness metadata to cached fallback and set per-service timeout/retry policy with bounded fan-out. The UI presents individual retry affordances rather than one global success flag. Telemetry reports dependency latency/failure separately. Tests fail each service in turn, cancel the parent mid-flight and verify no stale result appears after navigation. Parent cancellation still cancels supervised children. Bare runCatching can swallow cancellation.”
+“I begin with product semantics: three independent Home cards may show partial success, but a financial total assembled from three sources may require all-or-nothing. For independent cards, a ViewModel-owned operation starts three supervised children and converts expected failures to typed per-card outcomes, while rethrowing cancellation. Each result carries a timestamp and source so the UI can distinguish fresh, cached and unavailable values. I would give a critical account card a prominent stale warning, while a recommendation card can use a quieter retry affordance. Timeouts and retry budgets are per dependency and bounded; a failing service must not flood its backend. I would cache only data whose stale use is acceptable, and avoid showing a global ‘success’ state that hides an outage. Tests fail each dependency in turn, then all three, and cancel the parent during an in-flight request to ensure no late state update. Production monitoring groups latency, failure and stale age by card and release cohort so partial rendering does not conceal a systemic problem.”
+
+## How to answer in the interview
+
+- **Why:** independent widgets can provide value through partial failure.
+- **How:** supervise direct children and publish per-card typed outcomes with freshness.
+- **Trade-off:** more UI states and retry controls add complexity.
+- **Failure case:** swallowing cancellation or showing stale data as fresh.
+- **Production solution:** source-specific retry, monitoring, and parent-cancellation tests.
 
 ## Deep-dive talking points
 
@@ -89,4 +101,4 @@ Can I show three outcomes, preserve cancellation and avoid masking an outage?
 - [Kotlin exception handling](https://kotlinlang.org/docs/exception-handling.html) — supervision.
 - [Android UI architecture](https://developer.android.com/topic/architecture/ui-layer) — state holders.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

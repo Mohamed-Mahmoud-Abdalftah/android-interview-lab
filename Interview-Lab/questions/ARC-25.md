@@ -24,6 +24,10 @@ Choose MVVM versus reducer-style MVI using transition complexity and distributed
 
 Payment flow حالات كتير: idle، validating، submitting، pending verification، confirmed، declined، recoverable error. MVVM ممكن تنجح لو ViewModel بتصدر immutable state وevents واضحة؛ مش لازم MVI framework. لما transitions كثيرة ومتشابكة، reducer pure `state + action -> new state/effect request` يساعد تعمل table واختبارات exhaustive ويمنع `isPaid && isLoading`. لكن reducer وحده ما ينفّذش network ولا يضمن exactly-once: effects تروح repository، status authoritative من server، وrequest ID محفوظ لاسترجاع process death.
 
+### Practical walkthrough in Egyptian Arabic
+
+Payment state machine كثيرة transitions: MVVM يمكنها immutable state وأحداث واضحة، وMVI reducer يجعل transition table صريحة؛ الاسم لا يضمن safety. Decision يعتمد على complexity/testability/team familiarity. مهما اخترت، operation ID وUnknown وreconciliation durable في repository/backend، وليس داخل ViewModel فقط. اختبر duplicate tap، late callback، process death، وinvalid transition.
+
 ## Why it matters and how it works
 
 MVVM is a state-holder arrangement; MVI often adds explicit intents and reducers. Both can follow UDF. A complex state machine benefits from explicit transitions, but implementation ceremony must be justified.
@@ -31,6 +35,47 @@ MVVM is a state-holder arrangement; MVI often adds explicit intents and reducers
 ## Worked example
 
 Transition sketch: `Idle + Submit -> Validating`; valid input -> `Submitting(requestId)`; timeout -> `PendingVerification(requestId)`; server status -> `Confirmed(receipt)` or `Declined(code)`. Reducer can be a pure function for local transitions; repository performs I/O and emits authoritative result.
+
+This pure Kotlin reducer makes one critical rule visible: an ambiguous timeout remains `Unknown`, and a repeated tap does not create a fresh attempt. A real app persists the operation ID before send and reconciles against the backend.
+
+```kotlin
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Test
+
+sealed interface PaymentState {
+    data class Processing(val operationId: String) : PaymentState
+    data class Unknown(val operationId: String) : PaymentState
+    data class Approved(val operationId: String) : PaymentState
+}
+sealed interface PaymentEvent {
+    data object TimedOut : PaymentEvent
+    data object PayTapped : PaymentEvent
+    data object Confirmed : PaymentEvent
+}
+
+private fun reduce(state: PaymentState, event: PaymentEvent): PaymentState =
+    when (state) {
+        is PaymentState.Processing -> when (event) {
+            PaymentEvent.TimedOut -> PaymentState.Unknown(state.operationId)
+            PaymentEvent.Confirmed -> PaymentState.Approved(state.operationId)
+            PaymentEvent.PayTapped -> state
+        }
+        is PaymentState.Unknown -> when (event) {
+            PaymentEvent.Confirmed -> PaymentState.Approved(state.operationId)
+            else -> state
+        }
+        is PaymentState.Approved -> state
+    }
+
+class PaymentReducerExampleTest {
+    @Test fun timeoutKeepsIdentityAndBlocksNewTap() {
+        val unknown = reduce(PaymentState.Processing("op-1"), PaymentEvent.TimedOut)
+        assertEquals(PaymentState.Unknown("op-1"), unknown)
+        assertEquals(unknown, reduce(unknown, PaymentEvent.PayTapped))
+        assertEquals(PaymentState.Approved("op-1"), reduce(unknown, PaymentEvent.Confirmed))
+    }
+}
+```
 
 ## Trade-offs and decision criteria
 
@@ -55,6 +100,14 @@ I would map the states and transitions before choosing a label. If there are a f
 ## Interview answer — deep senior
 
 The senior trade-off is complexity versus auditability. A giant ViewModel with several booleans invites invalid combinations and unclear transition ordering; a pure reducer can make `state + action` behavior explicit and test every edge. But a full MVI framework may add unnecessary action/effect plumbing to a simple flow. I might use a ViewModel as lifecycle owner and a small reducer as an internal state machine. Effects are executed by a repository, not by the reducer, and duplicate effect execution needs an idempotency and acknowledgement strategy. A timeout is `PendingVerification`, not confirmed failure, because server commit may have happened. Persist request identifiers and restore from server-backed state after process death. Tests exercise rapid taps, cancellation, retry, and late confirmation. I also separate pure transition calculation from effects. The reducer should not secretly call a provider SDK; it can describe a request while a repository performs it with a persisted ID. If an effect is replayed after rotation or process death, server-side idempotency and reconciliation must prevent duplicate business effects. I test rapid double taps, late responses, cancellation and restored pending state. The choice between MVVM and MVI is secondary to a correct state machine and server authority.
+
+## How to answer in the interview
+
+- **Why:** financial transitions require explicit rules.
+- **How:** compare reducer and VM by state semantics.
+- **Trade-off:** ceremony versus auditability.
+- **Failure case:** UI pattern mistaken for ledger.
+- **Production solution:** durable state machine and transition tests.
 
 ## Deep-dive talking points
 

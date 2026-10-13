@@ -23,7 +23,11 @@ A database migration fails only with old customer data. How do you generate real
 
 ## Explanation in Arabic
 
-Migration اللي تنجح على empty DB ممكن تقع عند مستخدم قديم عنده null، duplicate key، Unicode، rows كثيرة أو enum قديم. نحتفظ exported schemas للإصدارات المنشورة، ونبني fixtures synthetic من شكل بيانات anonymized/aggregated من production من غير نسخ بيانات شخصية. نختبر upgrade من كل version مدعومة ونراجع constraints ونتائج التحويل.
+Migration تفشل مع بيانات قديمة لأن fixture النظيفة لا تمثل الواقع. اجمع shape من schemas التاريخية وtelemetry آمنة بدون PII: null fields، duplicates، missing relations، Unicode/Arabic، long text، قيم enum قديمة. حدّد merge rule قبل الاختبار؛ لو v3 أضاف unique merchant ID والقديم فيه duplicates، مين الصف canonical وأين تذهب references؟ أنشئ DB لكل إصدار مدعوم، شغّل upgrade للمستهدف، ثم assert على row count، chosen values، indexes وforeign keys.
+
+## Practical walkthrough
+
+اختبر transaction rollback عند failure ولا تعتمد على “schema validation passed”. ممكن anonymized fixture لكن لا تنسخ بيانات عميل حقيقية إلى repo. بعد dry run على supported versions، نفّذ rollout تدريجي ورصد migration crash/OOM، وخطة recovery لا تفترض downgrade.
 
 ## Why it matters and how it works
 
@@ -55,7 +59,15 @@ CI archives schema JSON for each release, validates all upgrade paths on represe
 
 ## Interview answer — deep senior
 
-“I inventory old constraints and data distributions before writing migration SQL. If a new unique index meets legacy duplicates, the migration needs an explicit conflict-resolution rule that tests can verify. Fixtures cover partial writes from old versions, nullable fields, non-ASCII text, large row counts and data combinations tied to prior bugs. I test every direct upgrade path to current version, reopen the DB and run representative queries. Privacy-safe synthetic generation lets CI reproduce defects; performance and rollback risks are reported separately.”
+“I reproduce the old data shape, not just the old table definition. I start from exported schemas and supported installed versions, then build fixtures with the kinds of rows that trigger real migrations: null legacy values, duplicate merchant identifiers, orphaned references, Arabic or Unicode names and long text. If a new unique index requires merging duplicates, the product and backend owners must decide the deterministic canonical-row rule before code is written. For each supported upgrade path I run the migration and assert row count, chosen values, foreign-key integrity, indexes and any derived totals. I also inject a failure mid-migration to verify transactional rollback or the documented recovery path. A helper that validates only the final schema cannot tell me whether the wrong customer row survived. I keep fixtures synthetic or anonymized, never raw customer records in source control. Before release I test on a device/emulator with a representative file-backed database and release-like build, stage the rollout, and watch migration failures by source version. A database downgrade after users have opened the new schema is not a safe automatic rollback plan.”
+
+## How to answer in the interview
+
+- **Why:** synthetic clean rows miss legacy data hazards.
+- **How:** seed null, duplicate and Unicode cases for each supported schema path.
+- **Trade-off:** more fixtures take maintenance but protect real migrations.
+- **Failure case:** unique index fails or picks the wrong canonical row.
+- **Production solution:** deterministic merge rule and staged rollout monitoring.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for exported schemas, production shape not raw PII, duplicate resolution,
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Seed every supported old schema with duplicate, null, Arabic/Unicode and long-text cases. Define the merge policy before migration and assert canonical rows, counts and foreign keys after each upgrade path.
 
 ## References and reviewed-on date
 
 - [Room migration testing](https://developer.android.com/training/data-storage/room/migrating-db-versions) — exported schemas and helper.
 - [Room migration overview](https://developer.android.com/training/data-storage/room/migrating-db-versions) — migration paths.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

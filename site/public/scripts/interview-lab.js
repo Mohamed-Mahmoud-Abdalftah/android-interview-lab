@@ -40,21 +40,151 @@ const button = (text, action) => {
 const statusText = { unseen: 'Unseen', learning: 'Learning', practicing: 'Practicing', confident: 'Confident', mastered: 'Mastered' };
 const normalize = (value) => value.toLocaleLowerCase().normalize('NFKD').replace(/[\u064b-\u065f]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي');
 
+const copyText = async (text, btn, originalLabel) => {
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.textContent = originalLabel; }, 2000);
+  } catch {
+    btn.textContent = 'Copy failed';
+    setTimeout(() => { btn.textContent = originalLabel; }, 2000);
+  }
+};
+
+const extractSectionText = (headingId) => {
+  const heading = document.getElementById(headingId);
+  if (!heading) return '';
+  const wrapper = heading.closest('.sl-heading-wrapper') || heading;
+  let text = '';
+  let sibling = wrapper.nextElementSibling;
+  while (sibling && !sibling.classList.contains('sl-heading-wrapper') && !sibling.matches('h2, h3')) {
+    text += sibling.textContent.trim() + '\n\n';
+    sibling = sibling.nextElementSibling;
+  }
+  return text.trim().replace(/^["“](.*)["”]$/s, '$1');
+};
+
+const attachCodeCopy = () => {
+  document.querySelectorAll('.sl-markdown-content pre').forEach((pre) => {
+    if (pre.querySelector('.lab-code-copy-btn')) return;
+    const code = pre.querySelector('code');
+    if (!code) return;
+    const btn = el('button', 'Copy code', 'lab-code-copy-btn');
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Copy code snippet');
+    btn.addEventListener('click', () => copyText(code.textContent, btn, 'Copy code'));
+    pre.style.position = 'relative';
+    pre.append(btn);
+  });
+};
+
 class LabQuestion extends HTMLElement {
   connectedCallback() {
     this.id = this.getAttribute('question-id');
+    this.revealed = false;
     this.render();
     window.addEventListener('lab-state-change', () => this.render());
+    setTimeout(attachCodeCopy, 100);
   }
   render() {
     const state = loadState();
     const record = state.questions[this.id] || {};
     this.replaceChildren();
+
+    // 1. Quick Navigation Pills
+    const navPills = el('nav', '', 'lab-nav-pills');
+    navPills.setAttribute('aria-label', 'Jump to question section');
+    const sections = [
+      ['#what-the-interviewer-evaluates', '📌 Evaluation'],
+      ['#explanation-in-arabic', '📖 الشرح'],
+      ['#practical-walkthrough', '💡 سيناريو'],
+      ['#why-it-matters-and-how-it-works', '⚙️ Mechanics'],
+      ['#worked-example', '💻 Code Lab'],
+      ['#trade-offs-and-decision-criteria', '⚖️ Trade-offs'],
+      ['#production-perspective', '🚀 Production'],
+      ['#interview-answer--short', '🎙️ Spoken answers'],
+      ['#how-to-answer-in-the-interview', '🎯 5 Pillars'],
+      ['.lab-tool', '✍️ Practice Space'],
+    ];
+    for (const [target, labelText] of sections) {
+      if (document.querySelector(target)) {
+        const a = el('a', labelText, 'lab-pill');
+        a.href = target;
+        navPills.append(a);
+      }
+    }
+    this.append(navPills);
+
+    // 2. Active Recall Handling
+    const isRecall = Boolean(record.activeRecall);
+    const answerIds = [
+      'interview-answer--short',
+      'interview-answer--structured',
+      'interview-answer--deep-senior',
+      'how-to-answer-in-the-interview',
+      'deep-dive-talking-points'
+    ];
+    answerIds.forEach((id) => {
+      const h = document.getElementById(id);
+      if (h) {
+        const wrap = h.closest('.sl-heading-wrapper') || h;
+        wrap.classList.add('lab-hidden-answer');
+        let sib = wrap.nextElementSibling;
+        while (sib && !sib.classList.contains('sl-heading-wrapper') && !sib.matches('h2')) {
+          sib.classList.add('lab-hidden-answer');
+          sib = sib.nextElementSibling;
+        }
+      }
+    });
+
+    const isHidden = isRecall && !this.revealed;
+    document.body.classList.toggle('lab-recall-active', isHidden);
+
+    if (isHidden) {
+      const banner = el('div', '', 'lab-reveal-banner');
+      banner.append(el('strong', '🎯 Active Recall Mode'));
+      banner.append(el('p', 'Spoken answers are hidden so you can formulate your response in the practice space first.', 'lab-muted'));
+      const revealBtn = button('👁️ Reveal Model Answers', () => {
+        this.revealed = true;
+        this.render();
+      });
+      revealBtn.className = 'academy-button';
+      banner.append(revealBtn);
+      this.append(banner);
+    }
+
+    // 3. Practice Panel
     const panel = el('section', '', 'lab-tool');
     const title = el('h2', 'Your practice space');
     panel.append(title);
     const disclosure = el('p', 'Your notes and self ratings stay in this browser. No answer is scored automatically.', 'lab-muted');
     panel.append(disclosure);
+
+    // Mode Bar
+    const modeBar = el('div', '', 'lab-mode-bar');
+    const modeLabel = el('span', isRecall ? 'Mode: Active Recall (hidden answers)' : 'Mode: Full Reading (answers visible)', 'lab-muted');
+    const toggleBtn = button(isRecall ? 'Switch to Full Study Mode' : 'Switch to Active Recall Mode', () => {
+      const next = loadState();
+      next.questions[this.id] = { ...next.questions[this.id], activeRecall: !isRecall };
+      this.revealed = false;
+      saveState(next);
+    });
+    toggleBtn.className = 'lab-mode-btn';
+    modeBar.append(modeLabel, toggleBtn);
+    panel.append(modeBar);
+
+    // Copy Answers Bar
+    const copyBar = el('div', '', 'lab-copy-actions');
+    const copy30 = button('Copy 30s Answer', () => copyText(extractSectionText('interview-answer--short'), copy30, 'Copy 30s Answer'));
+    copy30.className = 'lab-copy-btn';
+    const copy90 = button('Copy 90s Structured', () => copyText(extractSectionText('interview-answer--structured'), copy90, 'Copy 90s Structured'));
+    copy90.className = 'lab-copy-btn';
+    const copySenior = button('Copy Deep Senior', () => copyText(extractSectionText('interview-answer--deep-senior'), copySenior, 'Copy Deep Senior'));
+    copySenior.className = 'lab-copy-btn';
+    copyBar.append(copy30, copy90, copySenior);
+    panel.append(copyBar);
+
     const row = el('div', '', 'lab-controls');
     const label = el('label', 'Progress: ');
     const select = document.createElement('select');
@@ -73,6 +203,7 @@ class LabQuestion extends HTMLElement {
     bookmark.setAttribute('aria-pressed', String(Boolean(record.bookmarked)));
     row.append(bookmark);
     panel.append(row);
+
     const noteLabel = el('label', 'Private note / your answer');
     const textarea = document.createElement('textarea');
     textarea.rows = 6;

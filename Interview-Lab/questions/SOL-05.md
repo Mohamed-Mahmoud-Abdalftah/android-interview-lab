@@ -38,6 +38,10 @@ class AccountMenu(private val signOut: SignOut)
 ```
 A read-only widget does not need to depend on sign-out or payment methods. Shared implementation may implement both interfaces.
 
+## Practical walkthrough
+
+لو widget عايز يعرض اسم المستخدم فقط، متدّيلوش `AccountService` فيها logout وtoken refresh وحذف الحساب. خليه يعتمد على `SessionReader` صغيرة، وشاشة الإعدادات على `SignOut`. نفس implementation ممكن ينفذ الاتنين. لما يتغير logout flow، widget مش محتاج إعادة بناء معرفي أو fake ضخم في اختباره. لكن متقسّمش interface إلى getter لكل field؛ دور على مجموعات calls اللي clients فعلاً بتستخدمها. اعمل جدول client مقابل methods، واتبع dependencies الحقيقية قبل الrefactor.
+
 ## Trade-offs and decision criteria
 
 Over-splitting creates interface clutter and wiring. Group operations that change together for one client. A cohesive repository API can have several methods without violating ISP; size alone is not the criterion.
@@ -60,7 +64,15 @@ If a profile screen only needs to observe session status, it should not depend o
 
 ## Interview answer — deep senior
 
-I would inspect which methods each consumer actually calls and which changes cause cascading edits. A broad `AccountService` can tie settings, checkout and analytics to one signature set; even a fake for one screen must stub unrelated operations. Splitting into `SessionReader`, `SignOut`, and `PaymentStatusSource` lets each feature depend on its own capability and makes contract tests precise. But I do not split every method into a separate interface if several operations form one cohesive client use case. On Android, narrower contracts also help modularization and prevent accidental imports of provider-specific or security-sensitive methods. The implementation can still share a repository internally; ISP is about what clients see. I would build a client-method matrix before splitting anything. If two screens use disjoint subsets and unrelated additions keep forcing both to recompile, a capability boundary is justified. I would also review security and permissions: a broad interface can expose sensitive operations to modules that have no reason to see them. Yet a single cohesive `ProfileEditor` may have several operations; creating one interface per method just moves complexity into DI wiring. ISP is about client relevance and substitutability, not an arbitrary size target.
+I would inspect which methods each consumer actually calls and which changes cause cascading edits. A broad `AccountService` can tie settings, checkout and analytics to one signature set; even a fake for one screen must stub unrelated operations. Splitting into `SessionReader`, `SignOut`, and `PaymentStatusSource` lets each feature depend on its own capability and makes contract tests precise. But I do not split every method into a separate interface if several operations form one cohesive client use case. On Android, narrower contracts also help modularization and prevent accidental imports of provider-specific or security-sensitive methods. The implementation can still share a repository internally; ISP is about what clients see. I would build a client-method matrix before splitting anything. ISP is about the consumer's contract rather than the implementation's class size. I would map which operations each caller actually uses; a read-only UI component should not import token rotation or account deletion capabilities. Small role interfaces let one implementation serve several consumers while tests provide focused fakes. A sign-out change should not force a read-only widget to update its mock. The risk is splitting too far into dozens of one-method interfaces that obscure the workflow. I would group methods by stable client role and migrate one caller at a time, checking dependency graphs and tests for accidental access to unrelated operations.
+
+## How to answer in the interview
+
+- **Why:** Describe the client's unused methods.
+- **How:** draw client-method matrix.
+- **Trade-offs:** note interface proliferation.
+- **Failure cases:** cite giant mocks as a symptom.
+- **Production solutions:** propose role interfaces and focused fakes..
 
 ## Deep-dive talking points
 
@@ -80,4 +92,4 @@ Identify two clients using different method subsets, propose capability interfac
 - [Robert C. Martin, A Little Architecture](https://blog.cleancoder.com/uncle-bob/2016/01/04/ALittleArchitecture.html) — interface segregation and dependency direction.
 - [Android modularization guide](https://developer.android.com/topic/modularization) — module boundaries.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

@@ -26,6 +26,10 @@ What does stability mean for Compose types and parameters?
 
 Compose تعتبر type stable عندما يمكنها معرفة إذا value تغيرت بين recompositions؛ immutable value أو mutable properties ترسل إشعارًا مرصودًا. `@Immutable`/`@Stable` وعود من المطور، وليست أدوات سحرية لتسريع أي class. مثلًا `var name` عادية داخل class معلّم `@Stable` دون observable state قد تجعل UI قديمة. Kotlin `List` interface قد تعتبر غير مستقرة لأن محتواها قابل للتغير؛ وفي إصدارات compiler الحديثة strong skipping يغيّر شروط تجاوز calls وكيف تُقارن parameters. افحص compiler reports وقياس الأداء الفعلي قبل وضع annotations.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو `ProductRow` بياخد model فيها `var price` عادية، Compose ممكن ما تعرفش إن القيمة اتغيرت؛ و`@Stable` هنا وعد كاذب. خلّي UI model immutable أو خلي التغييرات Observable. راجع compiler report الأول: سلوك skipping بيتأثر بإصدار compiler وstrong skipping؛ متوعدش إن annotation وحدها هتحل jank. وعد `@Stable` الكاذب ممكن يخلي السعر على الشاشة قديم رغم إن object اتغيرت داخليًا. افحص correctness أولًا، وبعدها compiler report وframe timing على نسخة المشروع الفعلية.
+
 ## Why it matters and how it works
 
 Stability information helps Compose determine whether a recomposed parent can skip a child call with unchanged parameters. Stable values use equality semantics under documented compiler modes; unstable values may be compared by identity with strong skipping. Compiler settings and versions matter, so an absolute claim that any unstable type always recomposes is unsafe. Skipping has comparison and bookkeeping cost; correctness requires that changes affecting UI be observable.
@@ -33,6 +37,19 @@ Stability information helps Compose determine whether a recomposed parent can sk
 ## Worked example
 
 `UserCard(model: UserUiModel)` receives a data class with immutable `id` and `displayName`; equivalent updates may be skipped depending on compiler inference. A `MutableUser` class changes `displayName` in place without Compose state: annotating it `@Stable` can suppress an update while showing stale text. Instead emit a new immutable UI model or use observable state in a carefully owned state holder.
+
+### Compose/Kotlin walkthrough
+
+```kotlin
+// Immutable UI input; a changed price creates a new instance.
+data class ProductUi(val id: String, val title: String, val priceLabel: String)
+@Composable
+fun ProductRow(product: ProductUi) {
+    Text("${product.title} · ${product.priceLabel}")
+}
+// Owner: ui.value = ui.value.copy(product = old.product.copy(priceLabel = "EGP 120"))
+// Avoid: @Stable class ProductUi(var priceLabel: String) with an unobserved var.
+```
 
 ## Trade-offs and decision criteria
 
@@ -48,15 +65,23 @@ Diagnose measured jank first, inspect compiler stability reports for the affecte
 
 ## Interview answer — short
 
-“Stability is Compose's contract that parameter changes can be detected reliably. It influences skipping, but annotations must reflect observable behavior and current compiler rules.”
+“Stability is Compose's contract that parameter changes can be detected reliably. It influences skipping, but annotations must reflect observable behavior and current compiler rules. Stability is a correctness promise that may enable skipping, not a speed switch.”
 
 ## Interview answer — structured
 
-“I distinguish stable data from a type merely labeled stable. Immutable values are easy to reason about; mutable stable types must notify Compose whenever UI-relevant data changes. Stability affects whether Compose can skip a child with unchanged inputs, but strong skipping and comparison rules are compiler-version-sensitive. I use reports and traces to identify a real problem. I would never annotate a plain mutable object `@Stable` just to silence a warning, because that can produce stale UI.”
+“I distinguish stable data from a type merely labeled stable. Immutable values are easy to reason about; mutable stable types must notify Compose whenever UI-relevant data changes. Stability affects whether Compose can skip a child with unchanged inputs, but strong skipping and comparison rules are compiler-version-sensitive. I use reports and traces to identify a real problem. I would never annotate a plain mutable object `@Stable` just to silence a warning, because that can produce stale UI. I contrast an immutable ProductUi replacement with an unobserved mutable price field marked @Stable.”
 
 ## Interview answer — deep senior
 
-“Stability tells Compose whether it can trust parameter comparisons when deciding to skip a call during parent recomposition. A deeply immutable UI model has a straightforward contract. A mutable stable model is possible, but every property that affects rendering must change observably; a naked `var` modified in place breaks that promise. `@Stable` and `@Immutable` are therefore semantic assertions, not performance switches. In modern compiler configurations, strong skipping can make restartable functions with unstable parameters skippable, often comparing unstable values by instance identity. That makes blanket statements about unstable classes wrong, and adding a supposedly stable wrapper can even replace a cheap identity check with a costlier equality comparison. I begin with a user-visible frame issue, inspect recomposition and compiler reports for the specific call, then verify which state read or parameter causes work. If a model change is justified, I prefer immutable UI values or an explicitly observable mutable state holder and test that every field update renders. I compare release benchmarks before and after. Correctness wins over a prettier skip count, and the exact optimization advice must match the project's Compose compiler version.”
+“Stability tells Compose whether it can trust parameter comparisons when deciding to skip a call during parent recomposition. A deeply immutable UI model has a straightforward contract. A mutable stable model is possible, but every property that affects rendering must change observably; a naked `var` modified in place breaks that promise. `@Stable` and `@Immutable` are therefore semantic assertions, not performance switches. In modern compiler configurations, strong skipping can make restartable functions with unstable parameters skippable, often comparing unstable values by instance identity. That makes blanket statements about unstable classes wrong, and adding a supposedly stable wrapper can even replace a cheap identity check with a costlier equality comparison. I begin with a user-visible frame issue, inspect recomposition and compiler reports for the specific call, then verify which state read or parameter causes work. If a model change is justified, I prefer immutable UI values or an explicitly observable mutable state holder and test that every field update renders. I compare release benchmarks before and after. Correctness wins over a prettier skip count, and the exact optimization advice must match the project's Compose compiler version. I check this project’s compiler reports because strong-skipping behavior can change the optimization advice.”
+
+## How to answer in the interview
+
+- **Why:** skipping relies on knowing whether inputs changed.
+- **How:** contrast immutable replacement with an unobserved mutable field.
+- **Trade-off:** equality checks and annotations also have cost.
+- **Failure case:** a false @Stable promise leaves stale UI.
+- **Production solution:** inspect compiler reports under the project’s Compose version, then profile frames.
 
 ## Deep-dive talking points
 

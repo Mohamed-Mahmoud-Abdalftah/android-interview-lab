@@ -38,7 +38,7 @@ body { font-size: 1.04rem; line-height: 1.85; background-image: radial-gradient(
 main:has(.academy-hero) > .content-panel:first-child { display: none; }
 .sl-markdown-content { max-width: 78ch; }
 .sl-markdown-content p[lang='ar'], .sl-markdown-content li[lang='ar'] { line-height: 2; }
-.sl-markdown-content code, .sl-markdown-content pre, [dir='ltr'], bdi { unicode-bidi: isolate; }
+.sl-markdown-content code, .sl-markdown-content pre, [dir='ltr'], bdi { direction: ltr; unicode-bidi: isolate; }
 .sl-markdown-content pre { direction: ltr; text-align: left; border: 1px solid color-mix(in srgb, var(--sl-color-gray-4) 45%, transparent); border-radius: .9rem; overflow-x: auto; }
 .sl-markdown-content table { display: table; inline-size: 100%; border-collapse: separate; border-spacing: 0; border-radius: .8rem; overflow: hidden; }
 .sl-markdown-content th { background: color-mix(in srgb, var(--sl-color-accent-low) 55%, var(--sl-color-bg)); }
@@ -123,7 +123,19 @@ lab-topic { display: block; margin-block: 1rem 1.5rem; }
 .lab-topic-progress { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .6rem; padding: .8rem 1rem; border: 1px solid var(--sl-color-gray-4); border-radius: .7rem; background: var(--sl-color-bg-nav); }
 body:has(lab-question, lab-dashboard, lab-explorer, lab-review, lab-practice, .lab-topic-marker) .sl-markdown-content { direction: ltr; text-align: left; }
 body:has(lab-question, lab-dashboard, lab-explorer, lab-review, lab-practice, .lab-topic-marker) h1#_top { direction: ltr; text-align: left; }
-body:has(lab-question) .sl-markdown-content .sl-heading-wrapper:has(#explanation-in-arabic) + p { direction: rtl; text-align: right; line-height: 2; }
+body:has(lab-question) .sl-markdown-content .sl-heading-wrapper:has(#explanation-in-arabic, #practical-walkthrough) ~ p:has(~ .sl-heading-wrapper:has(#why-it-matters-and-how-it-works)) { direction: rtl; text-align: right; line-height: 2; }
+.lab-nav-pills { display: flex; flex-wrap: wrap; gap: .4rem; margin-block: .8rem 1.2rem; }
+.lab-pill { display: inline-flex; align-items: center; padding: .25rem .6rem; border: 1px solid var(--sl-color-gray-4); border-radius: 2rem; background: var(--sl-color-bg-nav); font-size: .82rem; text-decoration: none; color: var(--sl-color-gray-1); transition: border-color .15s, background .15s; }
+.lab-pill:hover { border-color: var(--sl-color-accent); color: var(--sl-color-text); }
+.lab-mode-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; padding: .6rem .85rem; margin-block-end: .9rem; border: 1px solid var(--sl-color-gray-4); border-radius: .7rem; background: var(--sl-color-bg-nav); }
+.lab-mode-btn { min-height: 2.2rem !important; font-size: .85rem !important; cursor: pointer; }
+.lab-copy-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: .7rem .4rem; }
+.lab-copy-btn { min-height: 2.2rem; padding: .35rem .7rem; border: 1px solid var(--sl-color-gray-4); border-radius: .5rem; background: var(--sl-color-bg); font-size: .82rem; cursor: pointer; color: var(--sl-color-text); }
+.lab-copy-btn:hover { border-color: var(--sl-color-accent); }
+.lab-code-copy-btn { position: absolute; top: .5rem; right: .5rem; padding: .25rem .55rem; font-size: .75rem; border: 1px solid var(--sl-color-gray-4); border-radius: .4rem; background: var(--sl-color-bg-nav); color: var(--sl-color-gray-2); cursor: pointer; }
+.lab-code-copy-btn:hover { border-color: var(--sl-color-accent); color: var(--sl-color-text); }
+.lab-reveal-banner { padding: 1.25rem; margin-block: 1.25rem; border: 2px dashed var(--sl-color-accent); border-radius: .85rem; background: var(--sl-color-bg-nav); text-align: center; display: grid; gap: .6rem; justify-items: center; }
+body.lab-recall-active .lab-hidden-answer { display: none !important; }
 .lab-tool, .lab-result { padding: 1rem; border: 1px solid var(--sl-color-gray-4); border-radius: .85rem; background: var(--sl-color-bg-nav); }
 .lab-tool h2 { margin-block: 0 .6rem; }
 .lab-tool label { display: block; font-weight: 700; }
@@ -144,3 +156,4 @@ body:has(lab-question) .sl-markdown-content .sl-heading-wrapper:has(#explanation
 .lab-timer { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 1.4rem; }
 .lab-prompt { padding: 1rem; border-inline-start: 4px solid var(--sl-color-accent); background: var(--sl-color-bg-nav); }
 .lab-summary { padding: .8rem; border-radius: .6rem; background: var(--sl-color-accent-low); color: var(--sl-color-accent-high); }
+

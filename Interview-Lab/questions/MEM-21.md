@@ -26,6 +26,10 @@ Production reports increasing memory usage over days. How do you isolate the cau
 
 لو التقارير بتقول memory بتزيد مع الأيام، أول سؤال: هل نفس process عايشة كل الفترة؟ Android ممكن يقتلها ويبدأ واحدة جديدة؛ اجمع process-start timestamp وقياسات بعد كل lifecycle path. قس Java heap وnative/graphics وPSS/anonymous RSS حسب المصدر، واربطها بنسخة التطبيق ونوع الجهاز والرحلة. هل baseline بعد GC يرتفع بعد تكرار شاشة؟ ده leak محتمل. هل cache تسخن ثم تثبت؟ ده سلوك مختلف. هل native bitmap أو threads تزيد بينما Java heap ثابتة؟ فتش مصدرها. اعمل long-run reproduction آمن، خذ snapshots بنفس checkpoint، وتتبع GC root أو native allocation، ثم أصلح ownership أو cache bound بدل التخمين.
 
+## Practical walkthrough
+
+تقارير أيام مش معناها process واحدة عاشت أيام؛ اربط كل sample بـprocess start time والـrelease والـdevice tier. كرر رحلة receipt preview 200 مرة على جهاز RAM قليل، وقارن after-idle baseline وnative/graphics والـfile descriptors. لو Java heap بترجع لكن native memory بتزيد، دور على decoded bitmaps أو streams مش على Activity leak فقط. بعد الإصلاح أعد نفس loop وراقب cohort الإنتاج، عشان server traffic والتخزين المؤقت ممكن يغيروا المنحنى.
+
 ## Why it matters and how it works
 
 Aggregated memory charts can mix different processes and device classes. A long-running process may accumulate retained Activities, unbounded cache entries, threads, or native buffers. GC can lower reachable transient heap but cannot reclaim still-referenced objects. Low-memory kills and OOMs have different signatures; a rising PSS alone may reflect page/cache behavior rather than a managed leak. The investigation needs consistent checkpoints and segmentation.
@@ -56,7 +60,15 @@ Collect privacy-safe process lifetime, memory category, app version, device tier
 
 ## Interview answer — deep senior
 
-“I would not start by calling it a memory leak. I establish a trustworthy signal: process uptime, app release, device RAM class, foreground/background history, and memory category. A days-long aggregate may join multiple process lifetimes. I compare post-quiescence baselines and peaks for the same journey, then ask whether Java retained objects, native bitmaps, threads, file descriptors, or cache entries keep growing. For managed retention I inspect heap dumps and paths to GC roots; for native growth I use process memory and allocation tooling. I script a soak test that repeats the affected feature with production-sized data, keeping checkpoints and environmental conditions fixed. The fix may release a listener, bound a cache, close a stream, or resize images. I then validate functional behavior, memory slope, OOM/LMK and frame metrics on constrained devices, and compare staged rollout cohorts. If the issue is rare and not reproduced, I add targeted privacy-safe instrumentation instead of inventing certainty.”
+“I would not start by calling it a memory leak. I establish a trustworthy signal: process uptime, app release, device RAM class, foreground/background history, and memory category. A days-long aggregate may join multiple process lifetimes. I compare post-quiescence baselines and peaks for the same journey, then ask whether Java retained objects, native bitmaps, threads, file descriptors, or cache entries keep growing. For managed retention I inspect heap dumps and paths to GC roots; for native growth I use process memory and allocation tooling. I script a soak test that repeats the affected feature with production-sized data, keeping checkpoints and environmental conditions fixed. The fix may release a listener, bound a cache, close a stream, or resize images. I then validate functional behavior, memory slope, OOM/LMK and frame metrics on constrained devices, and compare staged rollout cohorts. If the issue is rare and not reproduced, I add targeted privacy-safe instrumentation instead of inventing certainty. For a receipt-preview soak test, I record one process-start identifier per sample and repeat the preview two hundred times. If Java heap returns to baseline while native footprint and descriptor counts rise, I investigate decoder buffers and open streams. That is a different fix from an Activity path retained by a singleton.”
+
+## How to answer in the interview
+
+- **Why:** Validate process lifetime before interpreting a days-long trend.
+- **How:** Split managed, native, graphics, and descriptor signals.
+- **Trade-off:** A warm cache may intentionally raise then stabilize memory.
+- **Failure case:** Java-only heap inspection misses native image growth.
+- **Production solution:** Replay the suspect journey and monitor a release cohort.
 
 ## Deep-dive talking points
 
@@ -78,4 +90,4 @@ Segment the field data, form two competing hypotheses, choose relevant profiler 
 - [Overview of memory management](https://developer.android.com/topic/performance/memory-overview) — process footprint and GC.
 - [Android vitals](https://developer.android.com/games/optimize/vitals) — population signals.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The receipt investigation is hypothetical; no device proof is claimed.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The receipt investigation is hypothetical; no device proof is claimed.

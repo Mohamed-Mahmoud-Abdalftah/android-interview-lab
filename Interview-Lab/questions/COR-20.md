@@ -24,6 +24,10 @@ Compare suspending exclusion, blocking locks, atomics and confinement by invaria
 
 `Mutex` بيعمل critical section للـcoroutines و`lock` بتعلّق بدل ما تحجز thread وهي مستنية. `synchronized` lock للـJVM بيحجز thread أثناء الانتظار ومينفعش تحط suspend call داخل الـmonitor. Atomic types ممتازة لعملية صغيرة على قيمة واحدة. Confinement معناه مالك واحد يعدّل الـstate، وده يبسط التصميم لكن ممكن يبقى bottleneck.
 
+## Practical walkthrough
+
+لو عندك `stock` و`reservationCount` لازم يتغيروا مع بعض، `Mutex.withLock` يخلّي coroutine تنتظر من غير حجز thread. `synchronized` بيحجز thread وقت الانتظار ومينفعش تعمل suspension داخل critical section. atomic مناسب لتعديل قيمة واحدة، وconfinement مناسب لو كل التحديثات تمر على owner واحد. أي حل داخل process ما يحميش server stock من جهاز تاني.
+
 ## Why it matters and how it works
 
 Choose the smallest primitive that protects the entire invariant. `Mutex.withLock` is cancellable while waiting; keep its critical section short and do not call slow network operations inside. `synchronized` can be right for tiny non-suspending JVM state. Atomics provide linearizable primitives, while thread/actor confinement serializes access.
@@ -67,7 +71,15 @@ A repository uses a local Mutex to coalesce token refresh calls, then the server
 
 ## Interview answer — deep senior
 
-“I distinguish local coordination from the authoritative invariant. A Mutex protects coroutines that share that exact instance and its `lock` suspends while waiting, but the lock does not survive process death. A JVM monitor can be fast for tiny synchronous sections, yet blocking and suspension do not mix inside it. Atomics are ideal for a single CAS-style operation; combining fields often requires a loop or stronger transaction. Confinement, such as an actor, serializes mutations and makes ordering explicit but can become a hotspot. In a token refresh repository I might use a Mutex to prevent duplicate refresh calls and recheck the token inside the lock. For financial balance, server transaction and idempotent operation records remain authoritative.”
+“I distinguish local coordination from the authoritative invariant. A Mutex protects coroutines that share that exact instance and its `lock` suspends while waiting, but the lock does not survive process death. A JVM monitor can be fast for tiny synchronous sections, yet blocking and suspension do not mix inside it. Atomics are ideal for a single CAS-style operation; combining fields often requires a loop or stronger transaction. Confinement, such as an actor, serializes mutations and makes ordering explicit but can become a hotspot. In a token refresh repository I might use a Mutex to prevent duplicate refresh calls and recheck the token inside the lock. For financial balance, server transaction and idempotent operation records remain authoritative. I would choose `Mutex` when coroutine waiters should suspend and a whole in-process invariant needs a critical section. A JVM monitor can be fine for a tiny non-suspending section, but waiting blocks a thread and suspending while holding it is unsafe. Atomics fit simple counters; confinement fits state owned by one actor or dispatcher. I would profile contention and verify every reader and writer uses the same boundary. Database transactions are still required across processes.”
+
+## How to answer in the interview
+
+- **Why:** choose synchronization by the shape of the invariant.
+- **How:** mutex suspends waiters; synchronized blocks a JVM thread; atomic CAS protects small state; confinement serializes access.
+- **Trade-off:** locks add contention and confinement adds a queue.
+- **Failure case:** suspending inside a monitor or protecting only one field.
+- **Production solution:** enforce authoritative cross-device invariants transactionally.
 
 ## Deep-dive talking points
 
@@ -86,4 +98,4 @@ Can I compare waiting behavior, pick by invariant, avoid network calls under loc
 
 - [Kotlin shared mutable state](https://kotlinlang.org/docs/shared-mutable-state-and-concurrency.html) — atomics, confinement and Mutex.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

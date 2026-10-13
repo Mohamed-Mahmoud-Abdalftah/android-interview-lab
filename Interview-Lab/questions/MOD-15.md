@@ -26,6 +26,10 @@ How do api/implementation influence compilation boundaries and rebuilds?
 
 `api` تصدر dependency للمستهلك على compile classpath؛ لو public ABI تعتمد على type منها، هذا لازم. `implementation` تخفي dependency كـتفصيل داخلي من compile classpath للمستهلك، ما قد يقلل recompilation عند تغيير implementation. لكن تأثير build ليس قانونًا ثابتًا: تغيير public ABI، annotation processors، Kotlin inline functions، resource/variant tasks أو configuration قد يوسع العمل. قِس Gradle task execution/build scan قبل وبعد، ولا تحول `api` إلى `implementation` إذا consumer يحتاج type في signature.
 
+### Practical walkthrough in Egyptian Arabic
+
+تغيير public type في `api` dependency يمكن يعيد compile مستهلكين كثيرين؛ `implementation` يخفي التفاصيل إن public signatures لا تسرّبها. قس Gradle task invalidation وcompile classpath قبل/بعد، ولا تعد بسرعة دون Build Scan. لو نقلت dependency إلى implementation ثم consumer فشل compile، فهذا دليل API boundary تحتاج تعديل أو `api` مبررة.
+
 ## Why it matters and how it works
 
 Gradle computes compile inputs per module. API dependencies widen what consumers compile against; internal implementation dependencies need not. An ABI-stable private change can stay local, while modifying exported types invalidates downstream consumers. Android builds add resource and variant tasks, so a graph improvement may not dominate total wall time.
@@ -57,6 +61,14 @@ Track ABI changes and affected compile tasks for high-fan-out modules, inspect d
 ## Interview answer — deep senior
 
 “Gradle's `api` versus `implementation` choice changes who must compile against a dependency. `api` is part of the library's exported compile contract; `implementation` is internal, although needed runtime code remains available. Consider a high-fan-out payment module that returns a provider response directly: every consumer sees that SDK's types, and provider API changes may ripple widely. If I introduce a small owned `PaymentResult` contract, the provider SDK can become an implementation detail. That improves replacement freedom and can shrink downstream compile inputs. I still verify the ABI, including public generic types, supertypes and inline Kotlin behavior, before changing configuration. Incremental build results are not guaranteed by one keyword: annotation processing, Android resources, variant tasks, compiler settings and caches all affect what reruns. I compare controlled clean and warm incremental builds and inspect executed tasks in a build scan. The goal is a correct narrow API and measured build reduction, not blindly converting every `api` declaration.”
+
+## How to answer in the interview
+
+- **Why:** classpath exposure increases rebuild surface.
+- **How:** audit signatures and choose api/implementation.
+- **Trade-off:** encapsulation versus convenient transitive access.
+- **Failure case:** consumer relied on hidden transitive type.
+- **Production solution:** compile consumers and measure tasks.
 
 ## Deep-dive talking points
 

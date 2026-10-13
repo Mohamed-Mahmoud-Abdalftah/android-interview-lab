@@ -25,6 +25,10 @@ What are average and worst-case HashMap lookup complexities?
 
 `HashMap` lookup غالبًا expected O(1) مع hash distribution كويس وload factor مناسب. Worst case ممكن يوصل O(n) لو collisions كثيرة أو adversarial keys، مع اختلاف implementation الداخلية. Resize/rehash بيعمل spike حتى لو average/amortized جيد. استخدام map لكل عنصر في Compose list ممكن يوفر scan لكن يزود memory وallocations.
 
+### Practical walkthrough in Egyptian Arabic
+
+HashMap lookup عادة expected `O(1)` مع hash distribution مناسبة، لكن collisions/resizing/hostile keys تؤثر في worst case وlatency. Kotlin `Map` interface لا يضمن implementation بعينها. لا تخزن mutable object كمفتاح ثم تغير حقول equality/hashCode؛ lookup ممكن يفشل. في production قس عدد العناصر وحجم الذاكرة واستخدم stable immutable key مثل product ID.
+
 ## Why it matters and how it works
 
 A hash code selects a bucket and equality distinguishes keys. Collision chains/probing and table growth determine actual cost; exact worst-case varies by JVM/Android implementation, so do not promise universal tree-bin behavior. Kotlin `HashMap` on JVM delegates to platform implementation.
@@ -55,7 +59,15 @@ Profile lookup and allocations on low-end devices; do not place expensive reinde
 
 ## Interview answer — deep senior
 
-“I separate per-operation lookup from total workflow cost. Building an index is O(n) time and memory, then repeated queries are expected O(1); if I rebuild it during every recomposition, I may regress to quadratic work. Worst-case behavior depends on collision handling, which I do not assume identical across Java/Android versions. I test stable key hash/equality contracts, avoid mutable keys, and watch allocations and GC on constrained devices. If ordering or range queries matter, another structure may fit better.”
+“A hash map computes a hash to find a bucket and then uses equality to locate a key. With a reasonable distribution and managed load factor, lookup is expected constant time, but collisions, resizing and implementation details affect the worst case and latency. Kotlin’s `Map` is an interface, so I do not promise internals for every implementation. The most important correctness trap is using a mutable key whose fields participate in `equals` and `hashCode`; mutating it after insertion can make the entry unreachable by a logically matching lookup. In an Android repository I use immutable product or account IDs as keys and avoid storing unbounded user-controlled keys without a retention policy. If lookup is called for every visible list row, an index may be worth the extra memory; if the list is tiny, a scan may be simpler. I test collisions and key equivalence where custom keys exist, and profile allocation and memory at production size rather than claiming O(1) means free.”
+
+## How to answer in the interview
+
+- **Why:** hashing trades space for lookup speed.
+- **How:** explain bucket/hash/equality and assumptions.
+- **Trade-off:** expected speed versus collision and memory.
+- **Failure case:** mutable key becomes unreachable.
+- **Production solution:** use stable keys and profile hot path.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for bucket/equality mechanics, index build cost, mutable key failure and 
 
 ## Self-check rubric
 
-Can you derive the bound, explain the Android example, identify a data or memory trade-off, and answer both follow-ups?
+State expected O(1) lookup under good hashing and collision behavior, explain a pathological degradation, and describe how equality/hashCode bugs can break correctness before speed.
 
 ## References and reviewed-on date
 
 - [Kotlin Map API](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.collections/-map/) — map contract.
 - [Android performance](https://developer.android.com/topic/performance) — runtime profiling.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

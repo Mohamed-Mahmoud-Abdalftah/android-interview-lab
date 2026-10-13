@@ -32,7 +32,31 @@ Android resolves an explicit Intent to its named component. An implicit Intent d
 
 ## Worked example
 
-For a receipt notification, build an explicit Intent to `ReceiptActivity` with an opaque receipt ID and create `PendingIntent.getActivity` with a stable request code plus `FLAG_UPDATE_CURRENT or FLAG_IMMUTABLE`. The Activity does not trust the extra as proof of ownership: it authenticates and fetches the receipt from the backend. For sharing text to another app, use an implicit `ACTION_SEND` Intent and a chooser instead of naming an unknown package. Exact notification/task-stack behavior should be tested against the app's navigation graph and target SDK.
+For a receipt notification, make the target explicit and give each receipt a distinct Intent identity. This Android snippet assumes a `ReceiptActivity`, a validated opaque `receiptId`, and a Context from the notification builder's owner.
+```kotlin
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+
+fun receiptTap(context: Context, receiptId: String): PendingIntent {
+    val route = Uri.Builder().scheme("app").authority("receipt")
+        .appendPath(receiptId).build()
+    val intent = Intent(context, ReceiptActivity::class.java).apply {
+        data = route // Intent identity includes data; extras alone do not distinguish taps.
+        putExtra("receipt_id", receiptId)
+    }
+    return PendingIntent.getActivity(
+        context, 0, intent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+}
+```
+`ReceiptActivity` must authenticate and fetch the receipt from a backend that checks ownership; the extra is never proof of authorization. For sharing text externally, use an implicit `ACTION_SEND` chooser. Test task-stack behavior separately.
+
+## Practical walkthrough
+
+explicit Intent بتحدد component معروف داخل app؛ implicit Intent بتوصف action/data والنظام يحلّها لتطبيق مناسب. `PendingIntent` token لتفويض تنفيذ Intent مستقبلًا باسم app اللي أنشأته، فـflags والtarget والextras جزء من security contract. Receipt notification تستخدم explicit target وopaque receipt ID؛ Activity تتحقق من auth وتجيب receipt من server، والـID مش authorization. لو notifications متعددة، خلّي identity/request code وIntent data يميزوا كل action عشان taps ما تفتحش receipt غلط. اختبر cold start وBack stack وmutability flag المناسبة للـAPI؛ لا تجعل PendingIntent mutable بلا سبب.
 
 ## Trade-offs and decision criteria
 
@@ -52,10 +76,22 @@ An order app creates a distinct explicit immutable PendingIntent per notificatio
 
 ## Interview answer — structured
 
-“I use explicit Intents for known internal components and implicit Intents for actions like sharing where the user may choose another app. A PendingIntent packages an Intent for later execution by something like a notification. Because the token conveys authority, I choose a narrow target, stable identity, immutable flag by default, and only use mutability when a feature genuinely needs fill-in data. The launched screen still checks session and server authorization; the Intent extra is just input. A PendingIntent delegates a future action under the creating app’s identity, so it is more than a delayed Intent. I use an explicit target and immutable flag by default, choose stable identity/request codes deliberately, and treat extras received after a notification tap as untrusted navigation hints. The screen reloads authorized data.”
+I use explicit Intents for known internal components and implicit Intents for actions like sharing where the user may choose another app. A PendingIntent packages an Intent for later execution by something like a notification. Because the token conveys authority, I choose a narrow target, stable identity, immutable flag by default, and only use mutability when a feature genuinely needs fill-in data. The launched screen still checks session and server authorization; the Intent extra is just input. A PendingIntent delegates a future action under the creating app’s identity, so it is more than a delayed Intent.
+
 ## Interview answer — deep senior
 
-“I distinguish resolution from delegated capability. An explicit Intent routes to a named component; an implicit one asks the system to match action/data against filters and may reach an untrusted handler. PendingIntent grants a holder the ability to perform a specific later action as its creator, so I design its component, data, request-code identity, update policy, and mutability deliberately. Immutable is the default; an inline reply may justify a narrowly mutable token. For receipt notifications I pass only an opaque ID, handle multiple concurrent notifications correctly, and re-authenticate and authorize the order after a tap, including after process recreation or account switch. Explicit Intents name the component; implicit Intents ask Android to resolve an action and data type. That is useful for sharing to another app, but it is not appropriate for private privileged service calls. A PendingIntent lets a system component or another holder trigger an action later, often after process death, with the creator’s privileges. I decide whether mutability is genuinely required and constrain the target; otherwise a holder could fill in or redirect fields. Multiple notifications need distinct PendingIntent identity or they may open the wrong receipt. On tap I verify current session and backend ownership of the referenced order instead of trusting old extras.”
+I distinguish resolution from delegated capability. An explicit Intent routes to a named component; an implicit one asks the system to match action/data against filters and may reach an untrusted handler. PendingIntent grants a holder the ability to perform a specific later action as its creator, so I design its component, data, request-code identity, update policy, and mutability deliberately. Immutable is the default; an inline reply may justify a narrowly mutable token. For receipt notifications I pass only an opaque ID, handle multiple concurrent notifications correctly, and re-authenticate and authorize the order after a tap, including after process recreation or account switch. Explicit Intents name the component; implicit Intents ask Android to resolve an action and data type.
+
+For a receipt notification I construct an explicit Intent, give each receipt a distinct identity in the Intent data or request code, and request an immutable PendingIntent unless a supported feature needs mutation. Extras alone are not sufficient to distinguish every PendingIntent identity. The receiving Activity treats the receipt ID as untrusted routing data, signs in if needed, and fetches from an ownership-checking backend. I choose task-stack behavior so Back and Up make sense after a cold tap. By contrast, a text share uses an implicit Intent and chooser because the recipient is intentionally selected by the system or user.
+
+## How to answer in the interview
+
+- **Why:** Intents route work; PendingIntents delegate future execution under the creator’s identity.
+- **How:** Contrast explicit target, implicit resolution, and notification tap token.
+- **Trade-offs:** Use immutable PendingIntent unless a documented interaction requires mutation.
+- **Failure cases:** Mention identity collisions, untrusted extras, and wrong task stack.
+- **Production solution:** Open one receipt by opaque ID and re-authorize from the backend.
+
 ## Deep-dive talking points
 
 Explain Intent resolution, exported component boundaries, PendingIntent capability semantics, mutability rules, request-code identity, stale extras, notification back stack, and resource authorization after tap.
@@ -75,4 +111,4 @@ Define Intent and PendingIntent separately; contrast explicit and implicit resol
 - [Intents and intent filters](https://developer.android.com/guide/components/intents-filters) — resolution and PendingIntent usage.
 - [PendingIntent security](https://developer.android.com/privacy-and-security/risks/pending-intent) — mutability and capability risks.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The notification example is illustrative and was not device-tested.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The notification example is illustrative and was not device-tested.

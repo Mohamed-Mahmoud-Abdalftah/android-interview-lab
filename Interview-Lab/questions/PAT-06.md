@@ -32,6 +32,10 @@ Repositories expose application data and centralize updates while abstracting da
 
 Conceptual API: `observeOrders(): Flow<List<Order>>` reads Room; `refresh()` fetches and writes validated entities; `submit(requestId)` persists pending status and queries server outcome. UI observes the same local path. Room entity and Retrofit DTO stay internal.
 
+## Practical walkthrough
+
+Repository في Android data layer بتدي UI/domain API ثابتة مثل `observeOrders()` و`refresh()`؛ جواها تقرر Room مصدر العرض وnetwork للتحديث، وتعمل DTO mapping/conflict/freshness policy. مش مجرد interface بتكرر DAO method بنفس الاسم من غير سياسة أو boundary. لو ViewModel تنادي Retrofit وRoom بنفسها، lifecycle/UI بتبقى مسؤولة عن cache consistency، وtests تتبعثر. في payment submit، repository تحفظ pending attempt قبل إرسال request وتعرض status من server بدل Boolean بسيط. لكن لو feature صغيرة بمصدر واحد، implementation ممكن تفضل بسيطة جدًا؛ الحدود أهم من عدد wrappers.
+
 ## Trade-offs and decision criteria
 
 A repository adds a boundary and testing seam; for tiny one-source features, a direct data-source wrapper may be enough but should still expose a stable app contract. Do not build one repository per method or hide unrelated workflows in one huge repository.
@@ -56,6 +60,16 @@ I use a repository when the app needs a stable way to obtain and update a kind o
 
 The repository’s important responsibilities are consistency and ownership. For an offline-first feature I usually let a local database provide the observable stream, then write validated network refreshes into it so screens agree. The repository also reports refresh errors and staleness without discarding useful cached data. It maps DTOs and entities to app-facing models and makes expensive operations main-safe. This is not the same as a UseCase, which expresses a product action or reusable rule, nor is it a GoF pattern from the original catalog. A local cache remains only a display source for server-authoritative facts such as payment status; reconciliation is needed after uncertainty. I test races, process death and conflict policy rather than just DAO method forwarding.
 
+I place Repository at the data boundary, which is broader than a GoF class pattern. The UI asks for domain data rather than orchestrating Room and Retrofit itself. A repository can make Room the local source of truth, map wire DTOs, decide when to refresh, and expose a Flow that updates when the database changes. That hides storage details without hiding important freshness or error states. For a payment write, it can persist a pending attempt and later reconcile with the backend, but server authority remains outside the client. I would avoid a repository that merely forwards every DAO method with no policy or test seam. The boundary can be small in a one-source feature and grow when variation appears.
+
+## How to answer in the interview
+
+- **Why:** Centralize data-source coordination and domain contracts.
+- **How:** UI observes repository; repository maps Room/network and freshness.
+- **Trade-off:** Keep a one-source repository small instead of adding forwarding layers.
+- **Failure case:** ViewModel merges two sources or repository hides stale/unknown state.
+- **Production solution:** Test cache updates and payment reconciliation through one boundary.
+
 ## Deep-dive talking points
 
 Distinguish repository from DAO and UseCase; explain local SSOT versus server authority.
@@ -74,4 +88,4 @@ Give two responsibilities beyond DAO forwarding and explain why Repository is no
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — repository responsibilities.
 - [GoF pattern catalog](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — original 23-pattern catalog.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

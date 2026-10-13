@@ -26,6 +26,10 @@ What are GC roots, and how does the GC determine reachability?
 
 `GC roots` هي نقاط يبدأ منها الـcollector تتبع الـobject graph، زي references من thread stacks وstatic fields وبعض VM/JNI roots. أي object له strong-reference path من root يظل reachable، حتى لو الشاشة المقابلة اتقفلت. لو `singleton` ماسك listener والـlistener ماسك Activity، الـActivity وكل شجرتها ممكن تفضل في الذاكرة. بالمقابل دائرتين ماسكين بعض لكن مفيش طريق من root ليهم يمكن جمعهم؛ مجرد circular reference مش leak وحده. في heap dump ندور على retaining path للـActivity أو bitmap ونصلح المالك اللي طول عمره أكبر من اللازم.
 
+## Practical walkthrough
+
+لو heap dump بيقول خمس نسخ من `ProfileActivity` بعد خمس rotations، امشِ من كل نسخة لحد root: static manager، callback، وبعدين Activity. المشكلة مش إن GC تأخر ثانية؛ المشكلة إن manager لسه محتفظ بالـcallback. شيل التسجيل من نفس lifecycle boundary ورجّع السيناريو. لو الدائرة الداخلية منفصلة عن كل roots فدي مش leak في tracing GC حتى لو objects ماسكة بعض.
+
 ## Why it matters and how it works
 
 Tracing collectors start from runtime-defined roots and walk references. Reachability is about graph connectivity, not developer intent. Strong references keep targets alive; weak references can be cleared and are not a substitute for correct lifecycle ownership. The exact root set and GC algorithm vary by runtime, but the diagnostic model is stable: find why an object remains reachable from a long-lived owner.
@@ -56,7 +60,15 @@ For a suspected screen leak, record a deterministic navigation loop, force a dia
 
 ## Interview answer — deep senior
 
-“Reachability gives a concrete way to investigate leaks. Roots include live thread stack references, static state, and runtime or JNI-held references. The collector walks the strong-reference graph; lifecycle callbacks do not change this graph unless my code releases references. If a Fragment view is retained by an observer in a longer-lived scope, the view tree remains reachable even after `onDestroyView`. I capture a heap dump after a repeatable screen-close cycle and inspect the shortest retaining path to a root. Then I decide which edge violates intended ownership—perhaps a singleton listener, an unbounded coroutine, or a native global—and remove it at the right boundary. I verify retained instance counts after the fix. Weak references can be useful in specific cache designs, but they do not replace explicit lifecycle cleanup.”
+“Reachability gives a concrete way to investigate leaks. Roots include live thread stack references, static state, and runtime or JNI-held references. The collector walks the strong-reference graph; lifecycle callbacks do not change this graph unless my code releases references. If a Fragment view is retained by an observer in a longer-lived scope, the view tree remains reachable even after `onDestroyView`. I capture a heap dump after a repeatable screen-close cycle and inspect the shortest retaining path to a root. Then I decide which edge violates intended ownership—perhaps a singleton listener, an unbounded coroutine, or a native global—and remove it at the right boundary. I verify retained instance counts after the fix. Weak references can be useful in specific cache designs, but they do not replace explicit lifecycle cleanup. For five rotations, I expect at most the current screen to remain once old work settles. A static registry-to-listener-to-Activity path names the edge to remove; a large object without such a path is not enough. I also check JNI globals when managed code cannot explain the root.”
+
+## How to answer in the interview
+
+- **Why:** Define roots and strong reachability.
+- **How:** Trace the destroyed screen back to its owning registry.
+- **Trade-off:** Weak references reduce retention but weaken delivery guarantees.
+- **Failure case:** An uncleared static listener keeps an obsolete view tree alive.
+- **Production solution:** Unregister at the matching lifecycle event and compare dumps.
 
 ## Deep-dive talking points
 
@@ -77,4 +89,4 @@ Name roots, trace a listener-to-Activity path, explain cycle collection, and ide
 - [Overview of memory management](https://developer.android.com/topic/performance/memory-overview) — managed heap reachability.
 - [JVMTI reachable objects](https://docs.oracle.com/en/java/javase/18/docs/specs/jvmti.html#iterate-over-reachable-objects) — root categories and graph traversal model.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The heap path is illustrative.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The heap path is illustrative.

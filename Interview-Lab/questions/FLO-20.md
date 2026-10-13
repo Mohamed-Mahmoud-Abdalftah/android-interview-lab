@@ -24,6 +24,10 @@ Compare Channel queue/receive semantics with SharedFlow broadcast and acknowledg
 
 `Channel` بيوزع كل element عادة لمستقبل واحد من receivers متنافسين، و`SharedFlow` broadcast لكل subscribers النشطين حسب replay/buffer. Channel ممكن تحتفظ بعناصر في buffer أثناء غياب receiver داخل نفس process، لكن لو process مات ضاعت؛ و`receive` مش ضمان إن UI نفذت الفعل بعد ما استلمته. SharedFlow replay صفر ممكن يضيّع event بدون subscriber، وreplay موجب ممكن يعيدها.
 
+### Practical walkthrough in Egyptian Arabic
+
+`Channel` غالبًا point-to-point: كل element تروح لواحد من receivers، بينما `SharedFlow` broadcast للمشتركين الحاليين حسب replay. الاتنين في الذاكرة ومش ضمان إن UI نفذت navigation فعلًا؛ send ناجحة لقناة لا تعني handling تم قبل crash. لو لازم effect تعيش rotation/process death، خزّن event ID في state/durable layer واعمل acknowledgment.
+
 ## Why it matters and how it works
 
 Channel has send/receive and close semantics; receiveAsFlow exposes one-consumer distribution among multiple collectors. SharedFlow is hot broadcast and never completes normally. Both require a lifecycle and delivery contract. For exactly-once business effects use durable IDs and acknowledgement at the source of truth.
@@ -66,7 +70,15 @@ A snackbar may use a best-effort SharedFlow. A local in-process command dispatch
 
 ## Interview answer — deep senior
 
-“The word ‘event’ hides several contracts. Is it one receiver or several? Can it be lost while UI is stopped? Can it replay after rotation? Must it survive process death, and when is it acknowledged? Channel handles in-process handoff to one receiver and can buffer, but a receiver may remove an item just before its view is destroyed. SharedFlow broadcasts and its replay can help late subscribers, but can duplicate one-shot effects. Neither guarantees exactly-once business processing. I keep durable outcomes in Room/server state with stable IDs, use a lifecycle-aware UI consumer, and test the race between send, receive, rotation and acknowledgement.”
+“The word ‘event’ hides several contracts. Is it one receiver or several? Can it be lost while UI is stopped? Can it replay after rotation? Must it survive process death, and when is it acknowledged? Channel handles in-process handoff to one receiver and can buffer, but a receiver may remove an item just before its view is destroyed. SharedFlow broadcasts and its replay can help late subscribers, but can duplicate one-shot effects. Neither guarantees exactly-once business processing. I keep durable outcomes in Room/server state with stable IDs, use a lifecycle-aware UI consumer, and test the race between send, receive, rotation and acknowledgement. I would ask whether the event is work for one consumer or a broadcast to all active observers. Channel distributes elements among receivers and can queue according to capacity; SharedFlow broadcasts emissions and can replay some to late subscribers. Neither gives transactional exactly-once UI handling. A channel send can succeed and the process can die before the receiver navigates; a zero-replay SharedFlow can emit while no screen collects and lose the event. Conversely, replay can duplicate an action after rotation. For a truly important transition, such as opening a receipt after payment, I model the completed destination as recoverable state or a durable command with an ID and acknowledgment. Then I test lifecycle gaps, duplicate collectors, and process death.”
+
+## How to answer in the interview
+
+- **Why:** event transport is not event consumption.
+- **How:** compare one receiver versus broadcast and replay.
+- **Trade-off:** queueing/replay can still duplicate or lose.
+- **Failure case:** navigation event vanishes or repeats.
+- **Production solution:** durable identity and acknowledgment for required transitions.
 
 ## Deep-dive talking points
 

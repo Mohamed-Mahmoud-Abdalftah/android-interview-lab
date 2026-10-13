@@ -26,6 +26,10 @@ Explain Gradle, Android Gradle Plugin (AGP), and Kotlin compiler roles.
 
 Gradle هو build system ينفذ task graph وdependency resolution/cache/configuration. Android Gradle Plugin يضيف Android-specific model/tasks: variants، manifest/resource processing، DEX، shrink/package/sign حسب المهمة. Kotlin compiler يترجم Kotlin source إلى bytecode ويفرض semantics اللغة، وCompose compiler plugin يضيف تحويلات Compose عند استخدامه. فشل Kotlin type error غير manifest merge conflict وغير Gradle dependency resolution. الإصدارات بينها compatibility matrix؛ ثبتها وراجع release notes عند upgrade، ولا تفترض أن تحديث Gradle وحده يحل AGP/Java/Kotlin تعارض.
 
+### Practical walkthrough in Egyptian Arabic
+
+Gradle ينسق task graph وdependencies، AGP يضيف Android variants وpackaging/manifest merge، وKotlin compiler يحول Kotlin source إلى bytecode/metadata. لو release crash، لا تقول “Gradle bug” دون تحديد المرحلة: compile أم R8 أم packaging. شغّل task المحددة وراجع output/variant، وثبّت نسخ plugins المناسبة. مثال `compileReleaseKotlin` فشل يختلف عن `bundleRelease` الذي يفتقد native library.
+
 ## Why it matters and how it works
 
 Gradle configures and schedules tasks with inputs/outputs. AGP registers Android variant tasks and integrates SDK tools. Kotlin compilation runs as part of that graph, producing class files that downstream Android steps transform and package. Toolchain requirements constrain JDK, Gradle, AGP and Kotlin plugin combinations, so reproducibility requires recording the whole stack.
@@ -57,6 +61,14 @@ Pin wrapper, AGP, Kotlin and JDK versions, log them in CI, and classify failures
 ## Interview answer — deep senior
 
 “I think of Gradle as the execution engine: it configures a project, resolves dependencies and runs a task graph with declared inputs and outputs. AGP contributes the Android model to that engine—build variants, source-set merging, resources and manifests, dexing, packaging, signing and optimization integration. The Kotlin compiler processes Kotlin sources and emits class files, with the Compose compiler plugin involved for Compose code. This separation helps diagnosis. An unresolved Kotlin symbol points toward source or compile classpath; a provider authority collision points to AGP's merged manifest; a rejected artifact coordinate points to Gradle dependency resolution. I do not treat these as interchangeable tools or assume any one version can be bumped in isolation. The JDK, Gradle wrapper, AGP and Kotlin plugin have compatibility constraints, so CI records and pins them, and an upgrade checks release flavors as well as debug. A reproducible build report should identify the source revision, toolchain, dependency inputs and variant that produced the artifact.”
+
+## How to answer in the interview
+
+- **Why:** distinct tool roles make failures diagnosable.
+- **How:** trace task, variant and produced artifact.
+- **Trade-off:** plugin upgrades versus compatibility.
+- **Failure case:** blaming Gradle for SDK runtime crash.
+- **Production solution:** pin versions and reproduce release pipeline.
 
 ## Deep-dive talking points
 

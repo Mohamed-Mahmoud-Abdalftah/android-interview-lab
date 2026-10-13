@@ -25,6 +25,10 @@ How do you mentor junior developers and improve team engineering practice?
 
 Mentoring junior مش مجرد review comments أو pair programming مرة. نعرف مستوى الشخص وهدفه، ندي مهمة بحدود واضحة ومساحة قرار، نعمل pair في نقطة صعبة، وfeedback محدد على reasoning/tests. نرفع المسؤولية تدريجيًا ونبني team practice زي design review، test examples، incident learning. ما نخليش mentoring يتحول لاعتماد دائم على senior.
 
+### Practical walkthrough in Egyptian Arabic
+
+الmentoring مش إن senior يكتب الكود بدل junior. خليه يشرح invariant في PR، مثل “لا نكرر charge بعد timeout”، ثم اعمل pair على test يثبت failure، وبعدها سيبه ينفذ مع feedback محدد. اكتب decision record أو مثال repo عشان المعرفة تبقى للفريق. قيّم التقدم باستقلالية القرار وجودة tests وتقليل إعادة العمل، مش بعدد التعليقات. لو الخطأ يمس security/payment، تدخل مباشرة لحماية المستخدم مع شرح السبب والتعلم.
+
 ## Why it matters and how it works
 
 Effective mentoring creates safe feedback loops: explicit expectations, timely review, opportunity to explain decisions, and autonomy with guardrails. Knowledge sharing improves bus factor and consistency when institutionalized in docs/tests.
@@ -55,7 +59,15 @@ Measure progress via independent delivery, fewer repeated review findings, test 
 
 ## Interview answer — deep senior
 
-“I treat mentoring as capability building with product safety. A junior can own a Room migration if we provide historical schemas, a fixture plan and review checkpoints; they should make the decisions and explain trade-offs, while I protect the data-loss boundary. I give feedback promptly and privately where appropriate, distinguish preference from correctness, and invite reverse feedback. Over time I assign broader problems and let them lead review/design conversations. At team level I look for reduced single-person dependencies, more reliable PRs and improved onboarding time, not a high count of pairing sessions. For high-risk payments work, I keep explicit escalation and independent verification. Rotate code ownership thoughtfully.”
+“I mentor through ownership with a safe feedback loop. I start by making the engineering contract explicit—for example, a payment timeout means unknown outcome, not permission to create a new charge. I ask the developer to describe the failure case, pair on a focused test or design review, then let them implement and defend the trade-offs in their own words. My code review comments are specific about behavior and risk, not a stream of stylistic preferences. I share reusable examples and decision records so the team can apply the lesson without me present. I measure improvement by how independently they identify edge cases, communicate assumptions and ship stable changes, not by how many lines I rewrote. On a high-risk security or financial defect I intervene promptly, protect the release and explain the reasoning afterward. The trade-off is short-term throughput versus long-term team capacity; good mentoring creates both competence and accountability without pretending all mistakes are equally safe to learn in production.”
+
+## How to answer in the interview
+
+- **Why:** team quality should scale beyond one senior.
+- **How:** teach invariant, pair on test, return ownership.
+- **Trade-off:** short-term speed versus long-term capacity.
+- **Failure case:** senior silently rewrites every PR.
+- **Production solution:** measure independent decisions and safe delivery.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for learner goal, graduated scope, concrete feedback, team metric and saf
 
 ## Self-check rubric
 
-Can you state the decision, evidence, affected people, measurable result, risk and both follow-up answers without claiming unearned personal experience?
+Give a mentoring example with a learner-owned task, timely feedback and a measurable skill outcome; avoid taking over the work or using review comments as the sole teaching tool.
 
 ## References and reviewed-on date
 
 - [Android architecture guide](https://developer.android.com/topic/architecture) — maintainable ownership boundaries.
 - [Google code review guidance](https://google.github.io/eng-practices/review/reviewer/) — review communication.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

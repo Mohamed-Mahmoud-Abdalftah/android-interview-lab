@@ -32,6 +32,10 @@ Patterns provide shared vocabulary for object collaboration; architecture sets l
 
 Example: a checkout app uses a repository boundary to coordinate Room/network, a Strategy for multiple payment providers, and Adapter wrappers for SDK callback differences. Its architecture also defines UI/data modules, server authority and process-death recovery. These are different scales of decision.
 
+## Practical walkthrough
+
+لو checkout app عندها SDKين للدفع، architecture تقرر إن UI تتعامل مع domain operation واحدة وإن server هو صاحب قرار الدفع وإن Room تحفظ pending attempts. جوه boundary دي Adapter يحوّل callbacks لكل SDK لشكل موحد، وStrategy تختار طريقة تنفيذ حسب payment method. ده يوضح الفرق: architecture تحدد ownership/data flow/trust boundaries على مستوى system؛ pattern تحل variation موضعية. لو vendor واحد وAPI واضح، ثلاث layers من factories لمجرد الاسم هتزود صعوبة التتبع. في review ابدأ بسؤال: “أي تغيير متوقع؟ وأي failure لازم يتعزل؟” وبعدين سمّي pattern إن كانت بتختصر الفكرة.
+
 ## Trade-offs and decision criteria
 
 A named pattern can speed review when the team shares its meaning. Forcing pattern classes into a simple feature adds indirection. Kotlin language features such as `object`, lambdas and delegation can implement the intent with less boilerplate.
@@ -56,6 +60,16 @@ I start with the problem: do I need to vary an algorithm, adapt an API, or notif
 
 The useful difference is scale and responsibility. A GoF pattern such as Adapter explains a collaboration among objects; application architecture decides which module owns transport, how state reaches UI, and where server authority resides. Some patterns like Repository sit closer to an architectural/data boundary and are not one of the original GoF catalog entries. Kotlin may implement a pattern without formal class hierarchies: lambdas can stand in for simple strategies, `object` can express a singleton, and delegation can forward behavior. None of those syntactic conveniences solves lifecycle or thread safety. I would show the team the problem, proposed seam, failure behavior and tests before choosing a pattern. A named pattern is valuable when it makes change local and expectations clear, not when it creates ceremonial classes.
 
+I would use a checkout system to show the scale difference. The architecture decides that the UI talks to a data boundary, that the server is authoritative for payment outcomes, and that pending attempts survive process death. Within that design, an Adapter can normalize two vendor SDK callback contracts, and a Strategy can select between supported payment methods. Neither pattern decides where financial trust lives or makes retries safe. I would draw the expected change and failure boundary first, then choose the smallest collaboration that contains it. If there is only one stable provider, a hierarchy of factories and strategies may add cost without benefit; I would keep the simpler implementation and revisit it when variation is real.
+
+## How to answer in the interview
+
+- **Why:** Pattern vocabulary helps only when it names a real local change point.
+- **How:** Contrast Adapter/Strategy inside checkout with app-wide ownership and server authority.
+- **Trade-off:** Avoid ceremonial classes for one stable implementation.
+- **Failure case:** A named Singleton still leaks Activity or loses state on process death.
+- **Production solution:** Show the boundary, tests, and expected variation before naming the pattern.
+
 ## Deep-dive talking points
 
 Compare object collaboration with module boundaries, and identify Kotlin shorthand plus lifecycle caveats.
@@ -74,4 +88,4 @@ Define pattern and architecture at different scales and give one Android example
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — original pattern catalog and categories.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — app-level boundaries.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

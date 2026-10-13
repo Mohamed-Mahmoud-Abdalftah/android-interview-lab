@@ -32,6 +32,10 @@ A giant base class couples every child to unrelated hooks and shared lifecycle a
 
 Conceptual flow: `CatalogActivity` receives `ToolbarController` and `AnalyticsObserver`; `CameraActivity` receives only analytics. Both may extend the framework `ComponentActivity`, but neither has to implement an unsupported `setupToolbar()`. The analytics observer registers and unregisters at documented lifecycle points.
 
+## Practical walkthrough
+
+ابدأ بـ`BaseActivity` اللي ماسكة toolbar وanalytics وpermissions وnavigation. اعمل inventory: كل child بتستخدم إيه؟ اختار behavior قليل المخاطر زي analytics، وانقله لـobserver له lifecycle owner واضح. بعدين toolbar يبقى controller للشاشات اللي تحتاجه، وpermission flow يبقى explicit عند feature اللي تطلبه. حافظ على `ComponentActivity` أو framework base الطبيعي. أثناء النقل، أضف tests لـrecreation وduplicate callbacks، وخلي metrics تبين إن شاشات غير محتاجة toolbar بطلت تورثه. ما تعملش service locator جديد يخفي dependencies بدل الـbase.
+
 ## Trade-offs and decision criteria
 
 Composition adds wiring and possibly small interfaces. A tiny stable base helper can remain if every child truly uses it and the contract is sound. Avoid replacing one giant base with a giant service locator.
@@ -50,11 +54,19 @@ I inventory the base class’s responsibilities, add characterization tests, and
 
 ## Interview answer — structured
 
-A giant BaseActivity often mixes toolbar, navigation, analytics and permissions because inheritance made sharing easy. I would first capture behavior and lifecycle assumptions, then extract cohesive collaborators one at a time. Toolbar screens receive a toolbar controller; full-screen camera does not. Analytics registration gets explicit lifecycle cleanup. I move screens incrementally and test recreation, permissions and back behavior. I do not replace the base with a global service locator or a dozen empty interfaces. I would migrate one representative screen first and compare behavior before moving the rest. The new controller or observer must have an explicit cleanup path; otherwise the refactor only relocates a leak. After parity, I can remove the old hook and simplify subclasses.
+A giant BaseActivity often mixes toolbar, navigation, analytics and permissions because inheritance made sharing easy. I would first capture behavior and lifecycle assumptions, then extract cohesive collaborators one at a time. Toolbar screens receive a toolbar controller; full-screen camera does not. Analytics registration gets explicit lifecycle cleanup. I move screens incrementally and test recreation, permissions and back behavior. I do not replace the base with a global service locator or a dozen empty interfaces. I would migrate one representative screen first and compare behavior before moving the rest.
 
 ## Interview answer — deep senior
 
-The important step is to map responsibilities and owners, not merely split a file. A toolbar is a UI capability, a permission launcher is tied to an Activity lifecycle, and analytics may need an observer registered only while active. Each should have a contract and scope appropriate to that lifetime. I would write characterization tests for representative screens and identify subclasses that override methods with no-op or throws—signs the base promise is too broad. Then I introduce collaborators behind the old API, migrate one screen at a time, and remove the old hooks after parity. Tests cover configuration change, navigation and callback cleanup; device inspection is needed before claiming leak freedom. The result is explicit composition, with framework inheritance only where required. A giant base class often hides state shared across children, so extraction must identify ownership. A permission launcher belongs to an Activity lifecycle, a toolbar controller to the screen UI, and an analytics observer may register only while started. I would not inject all of them as an application singleton. During migration I add tests for no-toolbar screens, repeated recreation, and listener cleanup. If a collaborator has no variation, it can be concrete; composition does not require a new interface for every behavior. The objective is explicit optional capabilities and safe lifetimes, not just a smaller base file.
+The important step is to map responsibilities and owners, not merely split a file. A toolbar is a UI capability, a permission launcher is tied to an Activity lifecycle, and analytics may need an observer registered only while active. Each should have a contract and scope appropriate to that lifetime. I would write characterization tests for representative screens and identify subclasses that override methods with no-op or throws—signs the base promise is too broad. Then I introduce collaborators behind the old API, migrate one screen at a time, and remove the old hooks after parity. Tests cover configuration change, navigation and callback cleanup; device inspection is needed before claiming leak freedom. The result is explicit composition, with framework inheritance only where required. I would first map actual child usage and change history, then extract one responsibility at a time. Analytics is a good first candidate if it can be attached to the correct lifecycle owner and verified on recreation. Toolbar setup becomes a capability for relevant screens; permissions remain close to the feature that requests them. The activities can still extend Android's required framework class. The migration trade-off is temporary duplication and more explicit constructor or composition wiring. A service locator would hide the same coupling under another name. I would run existing screen behavior tests after each extraction and compare changed-file locality for the next feature request.
+
+## How to answer in the interview
+
+- **Why:** Describe usage inventory.
+- **How:** show staged extraction.
+- **Trade-offs:** admit migration wiring.
+- **Failure cases:** flag lifecycle duplicate callbacks.
+- **Production solutions:** close with recreation tests and change-locality check..
 
 ## Deep-dive talking points
 
@@ -74,4 +86,4 @@ List three base responsibilities, one lifecycle leak, and a two-step migration w
 - [Android app architecture](https://developer.android.com/topic/architecture) — component lifecycle and separation of concerns.
 - [Kotlin delegation](https://kotlinlang.org/docs/delegation.html) — composition helper.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

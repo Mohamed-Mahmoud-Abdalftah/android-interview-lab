@@ -25,6 +25,10 @@ What Git conflicts can a revert of an older commit cause?
 
 `git revert` لcommit قديم بيحاول يعكس patch على code الحالي. لو commits بعده عدّلت نفس السطور ممكن conflict نصي؛ ولو اعتمدت على behavior القديم ممكن revert ينجح Git لكن يكسر build أو runtime. Revert merge commit يحتاج mainline parent. ولا تنسى migration اتطبقت بالفعل على devices؛ عكس code لا يعكس data.
 
+### Practical walkthrough in Egyptian Arabic
+
+Revert لcommit قديم ممكن يتصادم مع commits لاحقة نقلت الملف، غيرت API، أو بنت على schema/behavior الذي ستزيله. Git قد يعطي conflict نصي واضح، لكن الأخطر semantic conflict: revert ينجح ويكسر feature تعتمد على التغيير. راجع commits بعد الهدف، اعمل revert في branch، افحص diff، compile للvariants المعنية، وشغّل regression tests. لو كان merge commit، حدد mainline parent عن فهم بدل تجربة أمر عشوائي.
+
 ## Why it matters and how it works
 
 Git merges inverse changes into present tree, not the historical tree at the old commit. Conflict resolution needs understanding of later edits and dependencies. Tests of current combined state are necessary even if revert applies cleanly.
@@ -55,7 +59,15 @@ Hotfix PR includes conflict rationale, affected tests, data migration plan and r
 
 ## Interview answer — deep senior
 
-“I treat an old revert as a new change request. I identify the target’s APIs, schema and flags; trace dependent commits; decide whether to revert a sequence or fix forward; then review the full resulting diff. Conflict-free Git output is not proof of correctness. A shipped Room migration may be irreversible and a Play build remains installed, so I require mixed-version and data-recovery tests before rollout. I preserve audit history rather than force-reset a shared branch. Preserve source-to-artifact traceability.”
+“An old commit does not exist in isolation anymore. Later commits may rename its files, call APIs it introduced, change database schema, or make the original behavior a prerequisite. A revert may produce textual conflicts, or it may apply cleanly while creating a semantic regression. I inspect the commit graph and dependencies, create a rollback branch from the current release head, perform the revert there and review the resulting diff. Then I compile the affected variants and run the journeys that consumed the changed contract, including migration and data compatibility where relevant. Reverting a merge requires an explicit mainline choice and has consequences for later merges, so I treat that as a planned operation. For a production incident I may prefer a small compensating fix if it preserves newer dependent work more safely than a broad revert. The aim is a tested current-state change with auditable history, not just a Git command that exits zero.”
+
+## How to answer in the interview
+
+- **Why:** later commits can depend on older behavior.
+- **How:** inspect graph, revert on branch, review current diff.
+- **Trade-off:** broad revert versus narrow compensating fix.
+- **Failure case:** clean apply creates semantic breakage.
+- **Production solution:** test affected variants and migrations.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for inverse patch, textual versus semantic conflicts, merge mainline and 
 
 ## Self-check rubric
 
-Can you explain the mechanism, apply the example, justify a trade-off, identify a failure mode, and answer both follow-ups?
+Draw how a later commit can depend on lines changed by an older commit; predict the revert conflict, resolve the intended behavior and run targeted tests rather than assuming inverse patches commute.
 
 ## References and reviewed-on date
 
 - [Git revert documentation](https://git-scm.com/docs/git-revert) — revert semantics.
 - [Room migration guide](https://developer.android.com/training/data-storage/room/migrating-db-versions) — deployed schema effects.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

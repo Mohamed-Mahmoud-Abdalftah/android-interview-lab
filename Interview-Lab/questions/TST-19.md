@@ -23,7 +23,11 @@ Write tests for three parallel APIs with partial success and cancellation.
 
 ## Explanation in Arabic
 
-لو 3 APIs شغالين parallel، الاختبار لازم يحدد policy الأول: `coroutineScope` مع `async/awaitAll` يفشل ويـcancel siblings عند failure؛ `supervisorScope` يسمح لكل child يخلص لكن لازم نمسك errors ونقرر partial result. Fake APIs نتحكم في delays والفشل، ونختبر cancellation/late response. مجرد “واحد فشل” مش كفاية؛ لازم expected UI/data behavior.
+قبل test للـ3 APIs لازم تحدد product policy: هل profile/balance/offers لازم ينجحوا معًا، أم كل قسم مستقل؟ في all-or-nothing استخدم gates معلقة، خلّي profile ينجح وbalance يفشل وoffers تفضل pending، ثم أثبت أن aggregate يفشل وأن child المنتظر اتلغى؛ مجرد فشل واحد بدون assertion على cancellation ناقص. في partial-success، `supervisorScope` تسمح للأبناء المستقلين يكملوا، لكن كل `async` failure لازم تتعالج عند `await`؛ `CancellationException` لا تتحول إلى data.
+
+## Practical walkthrough
+
+اختبر parent cancellation وlate response بعد retry/navigation حتى ما تعرضش نتيجة قديمة. `runTest` يساعدك تتحكم في scheduling، وHTTP adapter integration test تثبت إلغاء requests الحقيقي. الـUI state المتوقعة تتبع قرار consistency، مش تفضيل عام لـscope معيّنة.
 
 ## Why it matters and how it works
 
@@ -96,7 +100,15 @@ Production telemetry records per-call status and aggregate outcome without PII. 
 
 ## Interview answer — deep senior
 
-“I build a decision table for three API outcomes: all succeed, one fails early, one fails late, parent cancels and a child ignores cancellation. With TestScope and controlled deferreds I verify launch concurrency, sibling cancellation under coroutineScope, and per-child error capture under supervisorScope. I also check that a late result cannot overwrite a newer screen generation after navigation or retry. Retrofit-level tests confirm the adapter’s cancellation semantics, while domain tests verify whether partial data is safe to show. The choice follows data consistency requirements, not a blanket preference for one scope.”
+“I start by stating the product rule. If the three fields form one consistent bundle, the contract is all-or-nothing: under `coroutineScope` a child failure cancels siblings, and the screen should not publish a misleading partial bundle. I use three suspended fake calls, release profile, fail balance while offers is pending, and assert both the aggregate failure and the pending child’s cancellation. If sections are independent, I use supervision plus explicit result handling for each child; `supervisorScope` does not magically turn exceptions into values, and cancellation of the parent still stops every child. I add a table for all succeed, early failure, late failure, timeout, parent cancellation and stale completion after retry. The fake’s gates make order deterministic so the test actually observes concurrency rather than three instant responses. I also verify how the UI communicates a partial balance error without overwriting profile or showing an unsafe total. Finally, Retrofit-level tests check request cancellation behavior, while domain tests justify whether partial data is safe for this particular screen.”
+
+## How to answer in the interview
+
+- **Why:** partial success is a product consistency decision.
+- **How:** gate three calls, fail one while another waits, and assert cancellation or supervised results.
+- **Trade-off:** atomic bundle simplicity versus independent-section availability.
+- **Failure case:** late child overwrites state after retry/navigation.
+- **Production solution:** explicit UI error model and adapter cancellation tests.
 
 ## Deep-dive talking points
 
@@ -109,7 +121,7 @@ Prompt for explicit product policy, controlled deferreds, sibling cancellation, 
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Make all three calls controllable. Fail balance while offers is pending and assert sibling cancellation for all-or-nothing; repeat under supervision and assert explicit partial results. Cancel the parent and reject a late stale result.
 
 ## References and reviewed-on date
 

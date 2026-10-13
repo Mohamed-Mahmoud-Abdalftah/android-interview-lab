@@ -30,7 +30,28 @@ Observable APIs differ in lifecycle activation, hot/cold behavior, replay and ba
 
 ## Worked example
 
-Conceptual callback-to-Flow adapter requires `kotlinx.coroutines.flow.callbackFlow` and `awaitClose`: register listener on collection, `trySend` updates, unregister in `awaitClose`. A ViewModel can convert to `StateFlow`; Compose collects with lifecycle. Implementation must handle callback thread and close semantics.
+JVM callback adapter. `SensorSource` represents an app-owned wrapper whose register/unregister methods accept the **same listener instance** and are safe if cancellation races with registration. The `kotlinx-coroutines-core` dependency is required.
+```kotlin
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+
+interface SensorSource {
+    fun register(listener: (Int) -> Unit)
+    fun unregister(listener: (Int) -> Unit)
+}
+
+fun sensorEvents(source: SensorSource): Flow<Int> = callbackFlow {
+    val listener: (Int) -> Unit = { value -> trySend(value) }
+    source.register(listener)
+    awaitClose { source.unregister(listener) }
+}
+```
+Each cold collector registers separately. A ViewModel can share this Flow with a deliberate owner; UI must collect with lifecycle awareness. Decide how to handle buffer overflow or dropped events for the actual sensor contract.
+
+## Practical walkthrough
+
+callback observer من Android SDK ممكن يتحول لـ`callbackFlow`: سجّل listener لما Flow تتcollect، استخدم `trySend`، و`awaitClose` تفصل listener وقت cancellation. لو SDK callback بتشتغل بعد unregister، تحقق من late event handling. `StateFlow` hot وتحتفظ بآخر value وتعمل equality conflation؛ LiveData lifecycle-aware في UI، لكن لا تخلط semantics. Flow العادية cold وممكن كل collector يسجل listener منفصل؛ استخدم `shareIn/stateIn` في owner مناسب لو عايز مصدر واحد. في Fragment اجمع بـviewLifecycleOwner `repeatOnLifecycle` عشان view القديمة ما تستقبلش events. اختبر تعدد collectors وrotation والbackground.
 
 ## Trade-offs and decision criteria
 
@@ -56,6 +77,16 @@ Observer describes a source notifying interested consumers. Android LiveData imp
 
 The design question is delivery, not merely whether an observer exists. A callback may invoke on an arbitrary thread and may outlive an Activity; a correct adapter owns registration and removal. `callbackFlow` bridges that lifecycle, but buffering and cancellation still need decisions. LiveData knows Android lifecycle; Flow is more general and needs a lifecycle-aware collection point for UI. StateFlow is hot and conflates current state, so it is appropriate for renderable snapshots but not an audit trail of every event. A critical action should be represented in persistent data and acknowledged, because process death can erase in-memory emissions. I test multiple collectors, rotation, cancellation and duplicate callbacks.
 
+Observer describes a relationship, while Flow and LiveData provide particular delivery and lifecycle semantics. A callback source can be wrapped in `callbackFlow`, registering on collection and unregistering in `awaitClose`; each cold collector may create a separate registration. StateFlow is hot, holds a current value, and conflates equal values, so it fits ongoing UI state rather than a guaranteed exactly-once event queue. LiveData has built-in lifecycle awareness for its observers; a Flow collected by UI needs lifecycle-aware collection such as `repeatOnLifecycle`. In a location feature I decide who owns the upstream listener and whether sharing is appropriate. I test rotation, simultaneous collectors, cancellation and late callbacks so the adapter does not leak a view or sensor.
+
+## How to answer in the interview
+
+- **Why:** Delivery semantics and lifecycle determine whether observer wiring is safe.
+- **How:** Bridge callback with `callbackFlow`/`awaitClose`, then choose Flow/StateFlow/LiveData.
+- **Trade-off:** Cold collectors can duplicate registration; sharing changes ownership.
+- **Failure case:** Listener leak or false exactly-once event assumption.
+- **Production solution:** View-lifecycle collection and multi-collector/cancellation tests.
+
 ## Deep-dive talking points
 
 Compare callback registration, LiveData active owners, cold Flow, hot StateFlow and durable events.
@@ -74,4 +105,4 @@ Explain three observable APIs, show listener cleanup, and identify one event tha
 - [Android LiveData overview](https://developer.android.com/topic/libraries/architecture/livedata) — observer lifecycle.
 - [Kotlin callbackFlow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/callback-flow.html) — callback adaptation and `awaitClose`.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

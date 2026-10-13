@@ -25,6 +25,10 @@ How do you review code for correctness, security, readability, and testability?
 
 Code review تبدأ بالـbehavior والحدود: requirement اتحققت؟ هل في race، cancellation، auth bypass، data leak أو migration risk؟ بعدين API design، testability، readability وstyle. اكتب comment محدد بسبب وتأثير واقتراح أو سؤال؛ ما تحولش review لمنافسة preferences. في payment code لازم تشوف unknown outcome وidempotency قبل اسم variable.
 
+### Practical walkthrough in Egyptian Arabic
+
+في PR فيه payment retry، ابدأ correctness: هل timeout `unknown` ولا failure نهائي؟ هل ID ثابت؟ بعدين security: logs فيها card data؟ exported component اتغير؟ بعدين readability: state transitions مسماة؟ وبعدها testability: هل في fake clock وintegration test للbackend؟ خليك محدد بالسطر والسلوك، وافصل blocking issue عن suggestion. اسأل عن contract لو ناقص، وما تحول review لمجرد formatting أو عدد tests.
+
 ## Why it matters and how it works
 
 Review is a risk filter and a knowledge-sharing process. Check source of truth, lifecycle, concurrency, security boundary, performance and test evidence. Different findings have different severity; blocking comments should identify a real defect or unmet requirement.
@@ -55,7 +59,15 @@ Team review checklist includes release variant, data migration, API contract, te
 
 ## Interview answer — deep senior
 
-“My review starts with a change-risk map: user-visible invariant, security boundary, concurrency and lifecycle, persistence/migration, performance, and observability. I inspect only the relevant surrounding code and contract, then run or request targeted tests. Feedback names the precise line/behavior and why it matters—‘a response lost after provider approval can generate a second charge here’—plus a safe direction such as same-ID status lookup. I avoid presenting preferences as defects and explain trade-offs when there are alternatives. I also consider whether a rollback would strand persisted data. The process should teach and protect the product; I monitor escaped defects and review wait time to improve it. Request a lost-response test.”
+“I review from the user and system contract inward. For a payment retry change, the blocking correctness questions are whether timeout is treated as an unknown outcome, whether the operation identity survives retry and process death, and whether the server can deduplicate. I then inspect security boundaries: logging, secrets, exported components, input validation and least privilege. Readability matters because an explicit state transition is easier to audit than nested booleans, but I separate style preferences from defects. Testability asks whether clocks, dispatchers and remote results can be controlled, and whether unit tests are supplemented by integration evidence at the actual boundary. I leave actionable comments tied to a failure case and expected behavior, run or inspect relevant checks, and mark which points block merging. I also look for migration and rollout effects that may not appear in the diff’s main file. The trade-off is review depth versus delivery time, so I spend attention where the blast radius is highest.”
+
+## How to answer in the interview
+
+- **Why:** review prevents escaped behavior and boundary errors.
+- **How:** follow contract, security, clarity and test evidence.
+- **Trade-off:** review depth versus release speed.
+- **Failure case:** style nit hides an unsafe retry.
+- **Production solution:** block on demonstrated risk and verify fix.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for severity, trust boundary, targeted test, respectful feedback and roll
 
 ## Self-check rubric
 
-Can you state the decision, evidence, affected people, measurable result, risk and both follow-up answers without claiming unearned personal experience?
+Review correctness, security boundaries, readability and testability with one concrete PR example; distinguish a blocking invariant from a style preference and propose a verifiable fix.
 
 ## References and reviewed-on date
 
 - [Android architecture guide](https://developer.android.com/topic/architecture) — design boundaries.
 - [Google code review guidance](https://google.github.io/eng-practices/review/reviewer/) — primary review process guidance.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

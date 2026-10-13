@@ -23,7 +23,11 @@ What are screenshot tests, Baseline Profiles, and Macrobenchmark tests?
 
 ## Explanation in Arabic
 
-Screenshot tests تقارن pixels عشان visual regressions؛ Baseline Profiles تحدد hot code paths عشان Android Runtime يجهزها للتنفيذ أسرع؛ Macrobenchmark يقيس startup/scrolling/frames على device مع setup ثابت. دي أدوات مختلفة: screenshot مش accessibility test، وprofile مش benchmark، وbenchmark debug build مش دليل على release performance.
+Screenshot test تقارن شكل UI بصورة baseline وتكشف layout أو RTL regression، لكنها لا تثبت إن الزر يعمل أو إن accessibility semantics صحيحة. `Baseline Profiles` تحدد hot paths علشان ART يهيئ compilation لمسارات مهمة؛ لازم نتحقق من الـprofile في build المناسب. `Macrobenchmark` تقيس startup أو frame timing على جهاز/إعدادات متكررة وبناء release-like، مش داخل unit test.
+
+## Practical walkthrough
+
+اختَر metric قبل التحسين: startup من tap لframe جاهز، أو jank في scroll حقيقي. قارن نفس device/OS/thermal state وعدة runs، وابحث عن allocation traces قبل تغيير الكود. لو image loading هو المشكلة، تحسين algorithm في ViewModel قد لا يصلح الرسم. لا تعتبر screenshot “performance test” ولا رقم benchmark واحدًا ضمانًا لكل الأجهزة.
 
 ## Why it matters and how it works
 
@@ -55,7 +59,15 @@ Use release-like benchmark variants, controlled thermal/battery state and repres
 
 ## Interview answer — deep senior
 
-“I define the performance hypothesis first. If product-list scrolling freezes, I benchmark frame timing and trace CPU/allocation behavior on low-end hardware, then optimize and rerun. A Baseline Profile may help cold startup or first-use compilation costs but will not fix an O(n²) filter or heavy image decode. I keep screenshot goldens for visual regression across relevant themes/locales and semantics tests for accessibility. CI/performance labs pin device and build conditions and compare distributions, with controlled review for noisy changes. Run Macrobenchmark before/after. ”
+“These tools answer different questions. A screenshot golden catches a visual regression in light, dark, RTL or font-scaled layouts, but cannot prove a button’s behavior or screen-reader semantics. A Baseline Profile identifies important code paths for ahead-of-time optimization in the installed app; I verify the generated profile is packaged and represents real startup or scroll flows. Macrobenchmark measures user-visible startup and frame performance in a release-like build on a controlled device, across repeated runs. I define the metric and baseline before changing code, keep device and thermal conditions comparable, and inspect traces when a number moves. For a product list that janks, I would measure scroll frames and allocations, then separate image decode, composition/layout and data transformation costs. I would not claim a JVM microbenchmark or one fast emulator run proves production improvement on low-end phones. After optimizing, I rerun correctness and accessibility checks as well: a faster list that drops content descriptions or changes item identity is not a successful release.”
+
+## How to answer in the interview
+
+- **Why:** visual, compilation and runtime performance regressions need different evidence.
+- **How:** map screenshot, Baseline Profile and Macrobenchmark to one scrolling screen.
+- **Trade-off:** richer performance measurement costs devices and repeated runs.
+- **Failure case:** one emulator timing number is treated as universal.
+- **Production solution:** controlled release-like benchmark plus correctness checks.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for three tool purposes, release-like benchmark, representative profile p
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Choose a screenshot golden for layout, a Baseline Profile for hot-path compilation, and Macrobenchmark for startup/frame measurement. Define device, build variant, metric and baseline before claiming an improvement.
 
 ## References and reviewed-on date
 
 - [Android Baseline Profiles](https://developer.android.com/topic/performance/baselineprofiles/overview) — profile purpose.
 - [Android Macrobenchmark](https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview) — measurement guidance.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

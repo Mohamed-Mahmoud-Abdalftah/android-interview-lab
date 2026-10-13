@@ -24,6 +24,10 @@ Combine cache, Paging 3 and remote sync with stable keys and freshness.
 
 نستخدم Room كـlocal SSOT، `PagingSource` منها تعرض صفحات فورًا، و`RemoteMediator` يجيب صفحات server ويكتب rows + cursor keys transactionally. cache policy تحدد TTL/stale indicator ووقت refresh، وoutbox منفصلة للlocal writes. لازم server pagination contract يكون stable (cursor/version)، وإلا offset مع feed متغير يكرر/يسقط عناصر.
 
+## Practical walkthrough
+
+في feed منتجات بيتغيّر بسرعة، Room تعرض الموجود فورًا و`RemoteMediator` تجيب page وتكتب items والـremote keys في transaction. لو السيرفر بيدي offset على ترتيب غير ثابت، item ممكن يتكرر أو يختفي بين صفحتين؛ اطلب cursor أو snapshot contract واضح. حدد TTL للعرض stale ومتى refresh يحصل، ولا تخلط outbox edits مع paging keys.
+
 ## Why it matters and how it works
 
 PagingData is a UI window over local rows, not a substitute for sync correctness. RemoteMediator handles REFRESH/APPEND and invalidates Room source via committed changes. Version checks reject out-of-order refresh. WorkManager can prefetch, while UI on-demand loads remain responsive.
@@ -61,7 +65,15 @@ A news/social feed opens from Room, refreshes pages by opaque cursor, marks stal
 
 ## Interview answer — deep senior
 
-“I would first negotiate backend pagination semantics: opaque cursors, snapshot versions or stable ordering. Without that, no client operator can prevent duplicate/skipped items in a changing feed. Locally, Room is the display source; `RemoteMediator` owns fetch and transactional item/key updates, and PagingSource invalidation updates the UI. Refresh policy uses TTL, conditional requests and explicit stale indicators, while failed refresh preserves old rows. Pending local writes are partitioned from server-owned fields and reconciled by version. I test APPEND after new top insertions, duplicate pages, cursor invalidation, process death between fetch/commit and offline startup. I measure first-content latency, cache hit rate and data usage. Version checks reject out-of-order refresh.”
+“I would first negotiate backend pagination semantics: opaque cursors, snapshot versions or stable ordering. Without that, no client operator can prevent duplicate/skipped items in a changing feed. Locally, Room is the display source; `RemoteMediator` owns fetch and transactional item/key updates, and PagingSource invalidation updates the UI. Refresh policy uses TTL, conditional requests and explicit stale indicators, while failed refresh preserves old rows. Pending local writes are partitioned from server-owned fields and reconciled by version. I test APPEND after new top insertions, duplicate pages, cursor invalidation, process death between fetch/commit and offline startup. I measure first-content latency, cache hit rate and data usage. Version checks reject out-of-order refresh. I would test a changing feed under insertions and deletions while the user is on page three. If the server offers only offsets over an unstable sort, duplicates are a contract problem; `RemoteMediator` cannot repair it alone. The mediator should write page data and remote keys atomically, while Room invalidation updates the UI. Cache age and refresh state should be visible to users when freshness matters. I would verify refresh, append, empty page, cursor expiry and offline re-entry with real database fixtures.”
+
+## How to answer in the interview
+
+- **Why:** paging must preserve a stable user-visible dataset.
+- **How:** use Room PagingSource as display source and RemoteMediator for transactional fetch.
+- **Trade-off:** stale cache improves speed but needs freshness signaling.
+- **Failure case:** unstable offset paging duplicates or skips rows.
+- **Production solution:** negotiate cursor/version contract and test refresh, append, deletion, and offline paths.
 
 ## Deep-dive talking points
 
@@ -81,4 +93,4 @@ Can I preserve cache on error, store keys atomically and handle changing server 
 - [Android Paging network/database](https://developer.android.com/topic/libraries/architecture/paging/v3-network-db) — mediator architecture.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — local source of truth.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

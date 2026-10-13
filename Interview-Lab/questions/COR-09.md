@@ -24,6 +24,10 @@ Whether the candidate sees `withContext` as a suspending context boundary, with 
 
 `withContext` بيشغّل block داخل `CoroutineContext` مختلف بشكل مؤقت، وغالبًا بنستخدمه لنقل blocking I/O إلى `Dispatchers.IO` أو حساب CPU إلى `Default`. الدالة نفسها بتستنى block وترجع نتيجته أو exception، وبعدها المستدعي يكمل في سياقه الأصلي. هي مش launch لشغل منفصل، ومش علاج سحري لأي API بتتجاهل الإلغاء.
 
+## Practical walkthrough
+
+لو `loadBytes` بتستخدم disk driver synchronous، خلي `withContext(ioDispatcher)` جوه repository بحيث أي caller، حتى Main، يستدعيها بأمان. هي بتستنى النتيجة وترجع للـcontext الأصلي؛ مش fire-and-forget. لو ألغيت caller أثناء التحويل، مش لازم تفترض إن driver نفسه اتقطع: ممكن يرجع متأخر، والنتيجة ما تتنشرش بسبب إلغاء الـcoroutine.
+
 ## Why it matters and how it works
 
 The supplied context replaces matching elements such as dispatcher, while retaining the caller Job unless explicitly overridden. The call suspends the caller until the block and its structured children finish. On dispatch back, cancellation can prevent returning a result if the parent was cancelled. Keep side effects idempotent or otherwise reconciled when cancellation races with an external operation.
@@ -64,7 +68,15 @@ A local file repository exposes a main-safe `loadBytes` contract, switches only 
 
 ## Interview answer — deep senior
 
-“A context switch is a structured boundary, not a detached fire-and-forget task. `withContext(Dispatchers.IO)` changes the dispatcher element for its block and waits for completion, including child work; it propagates failure to the caller. When control returns, execution resumes in the caller context, often Main. Cancellation is cooperative, and a blocking native or Java method may continue until it returns, so I pair timeouts with transport-specific cancellation when available. I also avoid inserting a new Job into the context because that can break caller ownership. In production I put the switch in a repository with a main-safe contract, inject dispatchers for deterministic tests, and treat an external side effect’s outcome as uncertain if cancellation occurs after submission.”
+“A context switch is a structured boundary, not a detached fire-and-forget task. `withContext(Dispatchers.IO)` changes the dispatcher element for its block and waits for completion, including child work; it propagates failure to the caller. When control returns, execution resumes in the caller context, often Main. Cancellation is cooperative, and a blocking native or Java method may continue until it returns, so I pair timeouts with transport-specific cancellation when available. I also avoid inserting a new Job into the context because that can break caller ownership. In production I put the switch in a repository with a main-safe contract, inject dispatchers for deterministic tests, and treat an external side effect’s outcome as uncertain if cancellation occurs after submission. I would keep dispatcher injection near the operation that knows it blocks, not scatter it through UI callers. The caller receives a value or exception only after `withContext` completes; it does not create detached work. One subtlety is prompt cancellation when dispatching back to the original context: a computed result may be discarded if the caller was cancelled. For side-effecting writes, I would model server status separately from coroutine return value.”
+
+## How to answer in the interview
+
+- **Why:** callers should receive a main-safe suspend contract.
+- **How:** withContext temporarily replaces context elements, waits for the block, then resumes the caller.
+- **Trade-off:** use it for a known blocking or CPU boundary, not every suspend call.
+- **Failure case:** a fresh Job breaks parent cancellation; a legacy driver keeps running.
+- **Production solution:** inject dispatchers and document cancellation limits.
 
 ## Deep-dive talking points
 
@@ -84,4 +96,4 @@ Can I explain return and exception behavior, identify the owning layer, distingu
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — `withContext` and context.
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — main-safe data layer.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

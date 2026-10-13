@@ -25,6 +25,10 @@ How do you protect sensitive buffers and reduce memory residence time?
 
 المعلومات الحساسة بتظهر في memory أثناء استخدامها حتى لو storage مشفّر. نقلّل copies ومدة الاحتفاظ: نقرأ عند الحاجة، ما نخزنش plaintext في singleton أو Compose state طويل العمر، نمسح mutable buffers بعد الاستهلاك، ونمنع logs/crash SDK من التقاطها. على جهاز rooted أو process مـhooked مفيش ضمان إن wipe واحد شال كل النسخ.
 
+## Practical walkthrough
+
+لو SDK يرجّع `ByteArray` فيها key material أو token، عالجها في نطاق صغير، امسحها بعد الإرسال في `finally`، وما تطبعهاش في exception أو trace. لكن JVM GC والنسخ المؤقتة، والـJNI، وstring conversion يخلو zeroization ضمان محدود. الهدف العملي تقليل residence time وتقليل النسخ، مع Keystore للـkeys غير القابلة للتصدير وعدم تخزين plaintext.
+
 ## Why it matters and how it works
 
 A byte or char buffer can be overwritten only if code owns that allocation and knows when consumers finish. Strings, framework input widgets, encoders, cryptographic APIs and JNI can make copies. Minimize creation and scope, use cancellation-safe cleanup, and avoid holding sensitive bytes across suspend points without a clear owner.
@@ -55,7 +59,15 @@ Security review maps sensitive fields through UI, SDK, network and crash reporti
 
 ## Interview answer — deep senior
 
-“I trace data residence as a lifecycle problem. Every allocation has an owner, a consumer and a cleanup point; asynchronous calls need explicit ownership so the buffer is neither wiped too early nor retained indefinitely. I test success, failure and cancellation, inspect SDK documentation for copies, and use approved secure-entry flows for card/PIN data. I never promise deterministic clearing of Strings, framework buffers or pages moved by the runtime. Backend authorization and token minimization limit the impact if runtime inspection succeeds. The byte copy remains. ”
+“I trace data residence as a lifecycle problem. Every allocation has an owner, a consumer and a cleanup point; asynchronous calls need explicit ownership so the buffer is neither wiped too early nor retained indefinitely. I test success, failure and cancellation, inspect SDK documentation for copies, and use approved secure-entry flows for card/PIN data. I never promise deterministic clearing of Strings, framework buffers or pages moved by the runtime. Backend authorization and token minimization limit the impact if runtime inspection succeeds. The byte copy remains.  A payment SDK may require its own secure PIN entry path, so I would not copy PIN bytes into a custom buffer merely to demonstrate zeroization. For an app-owned token buffer, I would use a narrow scope and clear it after the synchronous consumer finishes. I would inspect heap snapshots and crash-report configuration for accidental copies, while acknowledging that absence in one test is not proof of perfect erasure on all JVMs or devices.”
+
+## How to answer in the interview
+
+- **Why:** longer memory residence increases exposure during compromise.
+- **How:** minimize copies and lifetime, clear owned mutable buffers, and avoid immutable conversions.
+- **Trade-off:** JVM memory management prevents a complete zeroization guarantee.
+- **Failure case:** a log or crash dump retains plaintext.
+- **Production solution:** nonexportable keys and tested data-flow minimization.
 
 ## Deep-dive talking points
 
@@ -75,4 +87,4 @@ Can I trace UI-to-network buffers, specify cleanup timing, and state what wiping
 - [OWASP MASVS storage](https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-1/) — sensitive data minimization.
 - [Android Keystore system](https://developer.android.com/privacy-and-security/keystore) — key versus plaintext boundaries.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

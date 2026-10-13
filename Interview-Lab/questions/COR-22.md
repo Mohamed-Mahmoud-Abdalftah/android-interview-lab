@@ -24,6 +24,10 @@ Explain cancellation responsiveness in CPU loops and the scheduling distinction 
 
 لو coroutine بتعمل CPU loop طويل من غير suspension، إلغاء الـJob مش هيوقفها فورًا. `ensureActive()` بتفحص حالة الـJob وترمي `CancellationException` لو اتلغى؛ `yield()` بتفحص وبتدي فرصة لغيرها تتنفذ. نحط checks كل كمية عمل مناسبة بدل كل instruction، ونقيس latency الفعلية للإلغاء.
 
+## Practical walkthrough
+
+في image processing loop طويلة، `ensureActive` كل 512 عنصر مثلًا تخلي إغلاق الشاشة يوقف الحساب خلال chunk بدل ما يستمر للآخر. `yield` يفحص الإلغاء ويتيح scheduling لشغل تاني، فاختاره لو العدالة مهمة؛ لكن كثرة `yield` تضيع وقت. شغّل الحساب على `Default`، وقس latency الفعلية لأن حجم الـchunk المناسب يعتمد على تكلفة العنصر.
+
 ## Why it matters and how it works
 
 Ordinary CPU code does not hit cancellable suspension automatically. `ensureActive` is a cheap explicit check; `yield` adds a scheduling point and fairness opportunity. Neither makes non-cooperative native calls cancellable. Avoid running the loop on Main; use an appropriate CPU dispatcher and bounded work.
@@ -70,7 +74,15 @@ A gallery indexer processes images in chunks on Default and checks cancellation 
 
 ## Interview answer — deep senior
 
-“I would choose an explicit cancellation budget. A CPU-bound parser can run millions of instructions without a suspension point, so cancelling its Job only sets state until it checks. `ensureActive` observes that state and throws; `yield` does that plus a dispatch opportunity, useful if one coroutine monopolizes a thread. I process bounded chunks on Default, check between chunks and avoid shared mutable state without synchronization. A native decoder or synchronous SDK may require its own stop mechanism; these helpers cannot interrupt arbitrary code inside it. In production I measure cancellation response under load and make sure a stale result is not published even if the last chunk completes near cancellation. Neither makes non-cooperative native calls cancellable.”
+“I would choose an explicit cancellation budget. A CPU-bound parser can run millions of instructions without a suspension point, so cancelling its Job only sets state until it checks. `ensureActive` observes that state and throws; `yield` does that plus a dispatch opportunity, useful if one coroutine monopolizes a thread. I process bounded chunks on Default, check between chunks and avoid shared mutable state without synchronization. A native decoder or synchronous SDK may require its own stop mechanism; these helpers cannot interrupt arbitrary code inside it. In production I measure cancellation response under load and make sure a stale result is not published even if the last chunk completes near cancellation. Neither makes non-cooperative native calls cancellable. I would choose a chunk size from measured work rather than a fixed folklore number. If one image tile takes milliseconds, checking every few tiles may meet a cancellation target; if each tile is expensive, check more often. `ensureActive` is a cheap fail-fast check, while `yield` can improve fairness when other coroutines share Default. Neither substitutes for a dispatcher switch away from Main or solves an uninterruptible native decoder.”
+
+## How to answer in the interview
+
+- **Why:** CPU loops may have no natural suspension point.
+- **How:** check current Job with ensureActive periodically, or yield when peers need scheduling.
+- **Trade-off:** tighter checks improve cancellation latency but add overhead.
+- **Failure case:** a tight loop ignores cancel and monopolizes a worker.
+- **Production solution:** process chunks on Default and profile cancellation latency.
 
 ## Deep-dive talking points
 
@@ -90,4 +102,4 @@ Can I place a check, justify frequency, choose Default, and state the limitation
 - [Kotlin cancellation guidance](https://kotlinlang.org/docs/cancellation-and-timeouts.html) — cooperative checks.
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — dispatchers.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

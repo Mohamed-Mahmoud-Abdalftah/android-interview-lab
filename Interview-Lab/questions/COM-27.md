@@ -26,6 +26,10 @@ How do you test a screen with loading, error, success, and permission states?
 
 عرّف `UiState` واضحة ثم اختبر Screen composable ببيانات fake لكل حالة: Loading يعلن progress، Error رسالة وRetry action، Success البيانات، PermissionRequired شرح وطلب access. Compose UI test يستخدم semantics nodes وأفعال حقيقية بدل البحث عن implementation details. ViewModel unit tests تتحقق من transitions وretry. Permission dialog نفسها منصة Android؛ اختبرها في instrumented test/وسيلة مناسبة للـActivity Result، مع denial وrevocation من Settings. Previews تساعد بصريًا لكنها ليست assertions.
 
+### Practical walkthrough in Egyptian Arabic
+
+اختبر Screen بحالات injected بدل ما تحاول تضبط network وpermission حقيقية لكل assertion. `Loading` لازم progress واضح، `Error` فيها Retry يعمل callback مرة، و`PermissionRequired` فيها rationale؛ `Success` تعرض البيانات. بعد كده اختبر Route على emulator للـpermission dialog والعودة من Settings والـlifecycle. Preview تعرض الشكل فقط؛ مش هتكشف callback مكررة أو permission dialog حقيقية. غطّ كل state باختبار semantics، ثم Route على emulator للرفض والعودة من Settings.
+
 ## Why it matters and how it works
 
 A stateless Screen can be rendered under Compose test rule with explicit state and callback spies. Its semantics tree exposes labels, roles and actions. ViewModel tests isolate state transitions without device setup. Route tests prove integration with navigation, lifecycle collection and permission launcher, which pure Screen tests cannot claim.
@@ -33,6 +37,25 @@ A stateless Screen can be rendered under Compose test rule with explicit state a
 ## Worked example
 
 For a photo-upload Screen, inject `Loading` and assert progress semantics, inject `Error(network)` and tap Retry once, inject `Ready(images)` and assert content descriptions, then inject `PermissionRequired` and assert rationale plus Grant callback. An emulator test launches the route, denies permission, returns from Settings with changed grant, and checks the state updates without duplicate dialog.
+
+### Compose/Kotlin walkthrough
+
+```kotlin
+// Instrumented Compose UI test against a stateless Screen.
+class UploadScreenTest {
+    @get:Rule val rule = createComposeRule()
+
+    @Test fun errorOffersRetry() {
+        var retries = 0
+        rule.setContent { UploadScreen(UploadState.Error, onRetry = { retries++ }) }
+        rule.onNodeWithText("Retry").performClick()
+        rule.runOnIdle { assertEquals(1, retries) }
+    }
+}
+// Imports: androidx.compose.ui.test.junit4.createComposeRule,
+// androidx.compose.ui.test.onNodeWithText/performClick;
+// org.junit.Test, org.junit.Rule, org.junit.Assert.assertEquals.
+```
 
 ## Trade-offs and decision criteria
 
@@ -48,15 +71,23 @@ Keep a canonical state matrix and at least one action assertion per meaningful s
 
 ## Interview answer — short
 
-“I test each state in an isolated Compose Screen, assert semantics and actions, unit-test transitions, then instrument the Route for permission and lifecycle behavior.”
+“I test each state in an isolated Compose Screen, assert semantics and actions, unit-test transitions, then instrument the Route for permission and lifecycle behavior. Test each visual state with injected inputs, then test platform wiring separately.”
 
 ## Interview answer — structured
 
-“A stateless Screen lets me inject Loading, Error, Success and PermissionRequired directly in Compose tests. I assert visible semantics and user actions, such as Retry calling its callback once, rather than implementation layout. ViewModel tests verify how repository outcomes produce those states. I reserve instrumented tests for Activity Result permissions, navigation and lifecycle because a pure UI test cannot prove Android dialogs or revocation handling. Previews are useful review aids but not proof.”
+“A stateless Screen lets me inject Loading, Error, Success and PermissionRequired directly in Compose tests. I assert visible semantics and user actions, such as Retry calling its callback once, rather than implementation layout. ViewModel tests verify how repository outcomes produce those states. I reserve instrumented tests for Activity Result permissions, navigation and lifecycle because a pure UI test cannot prove Android dialogs or revocation handling. Previews are useful review aids but not proof. An Error screen test taps Retry once; an emulator test covers the real permission dialog and return from Settings.”
 
 ## Interview answer — deep senior
 
-“I divide the claim into rendering, transition, and platform integration. For rendering, I provide a coherent `UiState` to a Screen that has no hidden ViewModel or NavController dependency. A Compose test checks loading progress semantics, error message and Retry action, success content and accessible labels, and the permission rationale/action. For transitions, a ViewModel unit test uses a fake repository and controlled dispatcher to drive loading, success, error and retry. For Android behavior, an instrumented Route test covers the Activity Result launcher, denial, a later grant or revocation, lifecycle restart and navigation. I do not let a screenshot stand in for a button action, or a fake permission result stand in for platform dialog behavior. I also check rotation and saved-state restoration where the workflow requires them, plus TalkBack focus when an error or dialog appears. The test matrix should state precisely which layer proves each behavior, keeping most feedback fast while retaining a small device suite for risks only Android can expose.”
+“I divide the claim into rendering, transition, and platform integration. For rendering, I provide a coherent `UiState` to a Screen that has no hidden ViewModel or NavController dependency. A Compose test checks loading progress semantics, error message and Retry action, success content and accessible labels, and the permission rationale/action. For transitions, a ViewModel unit test uses a fake repository and controlled dispatcher to drive loading, success, error and retry. For Android behavior, an instrumented Route test covers the Activity Result launcher, denial, a later grant or revocation, lifecycle restart and navigation. I do not let a screenshot stand in for a button action, or a fake permission result stand in for platform dialog behavior. I also check rotation and saved-state restoration where the workflow requires them, plus TalkBack focus when an error or dialog appears. The test matrix should state precisely which layer proves each behavior, keeping most feedback fast while retaining a small device suite for risks only Android can expose. The test suite asserts accessible meaning and state transitions, not just what a preview screenshot looks like.”
+
+## How to answer in the interview
+
+- **Why:** each state has a different user promise.
+- **How:** feed explicit state into Screen and assert semantics plus callbacks.
+- **Trade-off:** Screen tests cannot prove platform permission wiring.
+- **Failure case:** previews look fine while Route repeats a dialog.
+- **Production solution:** combine state tests, ViewModel transition tests, and emulator integration.
 
 ## Deep-dive talking points
 

@@ -26,6 +26,10 @@ How would you create measurable performance budgets and regression tests?
 
 Performance budget يعني اتفاق قابل للقياس: مثل cold-start `TTID` و`TTFD`، نسبة slow frames في scroll، peak memory بعد 10 دورات، وANR/OOM rate في production. حدد الجهاز أو فئة RAM، build قريب من release، حجم البيانات، حالة cache/network، وعدد runs؛ وإلا الرقم مش قابل للمقارنة. استعمل Macrobenchmark للرحلات الكبيرة وMicrobenchmark لدالة محددة، واحتفظ بالـtraces عند regression. في CI تجنب حد جامد شديد الحساسية على hardware مش ثابت؛ استخدم أجهزة مخصصة أو حد/اتجاه إحصائي مع إعادة تأكيد. لازم تحافظ على صحة النتيجة: تقليل وقت أول frame مع إخفاء المحتوى أو تأخير auth لا يعتبر نجاحًا.
 
+## Practical walkthrough
+
+budget مفيد لو محدد: cold TTID/TTFD على جهاز متوسط، slow-frame tail في scroll 100 row، peak PSS بعد عشر فتحات، وANR rate بعد release. ثبّت build والـcompilation mode والـnetwork/cache/dataset وعدد runs؛ وخلي failure threshold مبني على baseline متكرر، مش run واحد noisy. لو CI emulator مختلفة عن أجهزة المستخدمين، استخدمها كsignal مبكر وراجع physical device مع trace قبل قرار الإصدار.
+
 ## Why it matters and how it works
 
 A budget turns “fast enough” into a repeatable product contract. Startup, rendering, memory, energy, and stability have different units and populations. Macrobenchmark runs app-level journeys and emits metrics/traces; unit or Microbenchmark tests isolate small algorithms. Field signals reveal devices and behavior the lab may miss. Compare distributions and tail values, not only a best run, and treat a regression as a hypothesis for investigation rather than automatically suppressing a failing threshold.
@@ -56,7 +60,15 @@ Establish baseline distributions from controlled devices and Android vitals coho
 
 ## Interview answer — deep senior
 
-“A useful budget is a contract for a real interaction, not a single global millisecond number. I select critical user journeys and define both initial and meaningful readiness for startup, frame-tail metrics for interaction, and memory footprint or retention after repeated navigation. I specify device tier, refresh rate, build variant, compilation state, cache and network setup, dataset, repetitions, and statistical comparison. Macrobenchmark and traces catch whole-app regressions; Microbenchmark helps isolate a hot function, while correctness UI tests ensure an optimization did not skip content, auth, or state restoration. Dedicated physical devices reduce CI noise; ambiguous threshold crossings trigger investigation rather than arbitrary threshold inflation. I segment production vitals by release and device class, then compare staged rollout outcomes to the controlled benchmark. The budget evolves with product flows but every change has an explicit reason and evidence.”
+“A useful budget is a contract for a real interaction, not a single global millisecond number. I select critical user journeys and define both initial and meaningful readiness for startup, frame-tail metrics for interaction, and memory footprint or retention after repeated navigation. I specify device tier, refresh rate, build variant, compilation state, cache and network setup, dataset, repetitions, and statistical comparison. Macrobenchmark and traces catch whole-app regressions; Microbenchmark helps isolate a hot function, while correctness UI tests ensure an optimization did not skip content, auth, or state restoration. Dedicated physical devices reduce CI noise; ambiguous threshold crossings trigger investigation rather than arbitrary threshold inflation. I segment production vitals by release and device class, then compare staged rollout outcomes to the controlled benchmark. The budget evolves with product flows but every change has an explicit reason and evidence. For a catalog budget, I record TTID and meaningful TTFD, slow-frame tails during a fixed scroll, and peak footprint after repeated navigation. Thresholds need a stable baseline and noise allowance on dedicated devices. An emulator crossing a boundary triggers trace review, while rollout cohorts tell me whether the controlled improvement reached users.”
+
+## How to answer in the interview
+
+- **Why:** Choose user journeys and observable metrics.
+- **How:** Fix device, build, data, and repetitions for comparisons.
+- **Trade-off:** Strict thresholds catch regressions but can be noisy.
+- **Failure case:** One run or emulator-only result can mislead.
+- **Production solution:** Archive traces and use field cohorts to calibrate gates.
 
 ## Deep-dive talking points
 
@@ -78,4 +90,4 @@ Specify a journey and metric, control the environment, handle variance, retain c
 - [Measure app performance](https://developer.android.com/topic/performance/measuring-performance) — metric selection and tracing.
 - [Android vitals](https://developer.android.com/games/optimize/vitals) — field quality signals.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Thresholds in the example are illustrative and not project measurements.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. Thresholds in the example are illustrative and not project measurements.

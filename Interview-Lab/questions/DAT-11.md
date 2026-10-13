@@ -43,6 +43,10 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
 }
 ```
 
+## Practical walkthrough
+
+migration مش `version++` وخلاص. اعرف كل schema اتحطت في release للمستخدمين، ومين ممكن يعمل upgrade مباشر من v1 لـv5؛ اكتب migration path كاملة. لو أضفت non-null column، default لازم يحافظ على meaning مش بس يعدّي schema validation. لو split table، انقل rows وforeign keys/indices وخطط لو app مات أثناء migration؛ SQLite transaction غالبًا تحمي schema change المحلية لكن test ضروري. export schema JSON للversion control، استخدم Room migration tests على old files فيها nulls/edge rows، وقارن counts وbusiness invariants. `fallbackToDestructiveMigration` لا تستخدمها لبيانات المستخدم المهمة لمجرد build ناجح.
+
 ## Trade-offs and decision criteria
 
 Auto migration reduces boilerplate for straightforward changes; manual migration gives control for transforms. A destructive fallback is acceptable only when data is explicitly disposable and product agrees. Preserve compatibility with old app/backend contracts during staged rollout.
@@ -65,7 +69,17 @@ A notes app exports schema history, tests upgrades from every shipped version wi
 
 ## Interview answer — deep senior
 
-“Migration is a data-preservation operation under mobile failure conditions. I inventory shipped schemas and upgrade paths, choose auto migration only for changes it can express safely, and write manual transforms for data reshaping. Tests build databases at each supported old version, populate representative and adversarial rows, run the full path, and compare both schema and business invariants. I avoid wiping user data as a convenience, plan for low storage and process interruption, and monitor crash reports by old/new version during staged rollout. I also coordinate backend compatibility because users can stay on old app versions while data/server contracts change. For very risky encryption or file moves, I use a verified copy-and-swap protocol with recovery markers. Room validates expected schema after migration.”
+Migration is a data-preservation operation under mobile failure conditions. I inventory shipped schemas and upgrade paths, choose auto migration only for changes it can express safely, and write manual transforms for data reshaping. Tests build databases at each supported old version, populate representative and adversarial rows, run the full path, and compare both schema and business invariants. I avoid wiping user data as a convenience, plan for low storage and process interruption, and monitor crash reports by old/new version during staged rollout. I also coordinate backend compatibility because users can stay on old app versions while data/server contracts change. For very risky encryption or file moves, I use a verified copy-and-swap protocol with recovery markers. Room validates expected schema after migration.
+
+I inventory every database version shipped to real users and test upgrades from each supported one, not only the immediately previous schema. Adding a non-null field may be syntactically easy but needs a business-correct default for old rows; splitting a table requires backfill, indices, and foreign-key checks. Room’s exported schemas and migration test helper make those paths reproducible. I would test representative and adversarial rows, kill/restart around upgrade where feasible, and verify that user-visible counts and ownership are unchanged. A destructive fallback might be acceptable only for explicitly disposable cache, never as a silent fix for orders or drafts. I also stage rollout and watch migration crashes before wide release.
+
+## How to answer in the interview
+
+- **Why:** A schema upgrade is a user-data preservation operation.
+- **How:** Inventory shipped versions, export schemas, backfill and test full paths.
+- **Trade-offs:** Use auto migration only for transformations it expresses safely.
+- **Failure cases:** Wrong default, missing upgrade path, destructive fallback.
+- **Production solution:** Representative old DB fixtures, invariant checks and staged rollout.
 
 ## Deep-dive talking points
 
@@ -84,4 +98,4 @@ Can I enumerate shipped versions, protect rows, reject destructive fallback and 
 
 - [Android Room migrations](https://developer.android.com/training/data-storage/room/migrating-db-versions) — migration and testing guidance.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

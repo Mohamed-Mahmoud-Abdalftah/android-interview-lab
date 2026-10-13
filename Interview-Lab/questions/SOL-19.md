@@ -32,6 +32,10 @@ A premature abstraction can couple independent changes and create configuration 
 
 Example: checkout address validation requires a verified billing postcode, while profile address edit permits an optional postcode. A shared `validateAddress(isCheckout: Boolean)` may grow flags. Two small validators can remain separate until a stable common primitive emerges.
 
+## Practical walkthrough
+
+عندك validation عنوان في checkout يتطلب billing postcode مؤكد، وفي profile التعديل يسمح postcode فاضي. تشابه السطور مغري لعمل `validateAddress(isCheckout)`، بس flag هيتوسع ومعنى الدالتين مختلف. سيب التكرار الصغير مؤقتًا، مع tests توضح شرط كل flow. لما يظهر stable primitive مثل postcode format مستقل عن policy، استخرجه فقط. القرار يتغير لو bugs متكررة في نفس logic وبيحتاجوا تحديث متزامن. التكرار هنا تكلفة واعية، مش تجاهل للنظافة؛ وثّق نقطة المراجعة بعد variation ثالثة أو change history واضح.
+
 ## Trade-offs and decision criteria
 
 Duplication risks drift and repeated bug fixes. A genuine shared policy should be centralized. Accept modest duplication only when the variation is unclear or change reasons differ; revisit with evidence.
@@ -50,11 +54,19 @@ I accept small, clear duplication when two pieces only look alike but may change
 
 ## Interview answer — structured
 
-I compare the reason each copy changes. Two screens may both have address validation but one follows billing rules and the other profile-edit rules. A universal validator with mode flags could be harder to maintain than two small explicit functions. I would keep the duplication temporarily, test both, and revisit after the variation becomes clear. If both are applying the same tax law or security policy, that is genuine shared behavior and should be centralized. I would mark duplicated rules for later review and watch whether bug fixes repeatedly need the same change in both places. That is evidence of a real shared invariant. Until then, a few clear lines can be cheaper than a generic mode flag that every caller must understand.
+I compare the reason each copy changes. Two screens may both have address validation but one follows billing rules and the other profile-edit rules. A universal validator with mode flags could be harder to maintain than two small explicit functions. I would keep the duplication temporarily, test both, and revisit after the variation becomes clear. If both are applying the same tax law or security policy, that is genuine shared behavior and should be centralized. I would mark duplicated rules for later review and watch whether bug fixes repeatedly need the same change in both places. That is evidence of a real shared invariant.
 
 ## Interview answer — deep senior
 
-Abstraction is a bet that two behaviors will continue to change together. If that bet is wrong, every new requirement adds conditionals to a shared component and couples independent teams. A few duplicated lines can be a safer, reversible choice. I inspect domain meaning, change actors and invariants rather than visual code similarity. In an Android app, two UI mappers may legitimately differ by screen, while the authoritative pricing rule should not be copied. I keep tests around each path and monitor whether bug fixes must be repeated. When the common part stabilizes, I extract a small named primitive with a truthful contract—not a giant configurable engine. This is a trade-off, not a ban on DRY; the aim is local change and clear behavior. I also distinguish duplication at different layers. Duplicate UI presentation mapping may be intentional because screens have different wording and lifecycle. Duplicated tax computation or authentication policy is dangerous because it can diverge and produce inconsistent decisions. When extracting, I name the actual invariant and write tests against it before changing callers. A premature common base can make future feature differences require exceptions and conditionals. Reversibility matters: two small implementations can later converge, whereas a widely used bad abstraction can be expensive to unwind.
+Abstraction is a bet that two behaviors will continue to change together. If that bet is wrong, every new requirement adds conditionals to a shared component and couples independent teams. A few duplicated lines can be a safer, reversible choice. I inspect domain meaning, change actors and invariants rather than visual code similarity. In an Android app, two UI mappers may legitimately differ by screen, while the authoritative pricing rule should not be copied. I keep tests around each path and monitor whether bug fixes must be repeated. When the common part stabilizes, I extract a small named primitive with a truthful contract—not a giant configurable engine. I accept duplication when two pieces look similar but answer different change requests. Checkout address validation may require a verified billing postcode, while profile editing may permit an optional one. A shared function with `isCheckout` flags tends to accumulate policy branches and makes each flow harder to reason about. I would keep two small validators with separate tests, then extract a genuinely stable primitive such as postcode syntax if both need it. The trade-off is possible drift; repeated identical bug fixes are evidence to revisit the decision. I would state that trigger explicitly in review rather than abstracting on the first two matching lines.
+
+## How to answer in the interview
+
+- **Why:** Use address-policy divergence.
+- **How:** explain extraction trigger.
+- **Trade-offs:** acknowledge drift cost.
+- **Failure cases:** flag boolean-flag abstraction.
+- **Production solutions:** finish with separate tests and review threshold..
 
 ## Deep-dive talking points
 
@@ -75,4 +87,4 @@ Give an example of safe temporary duplication and one shared policy that must be
 - [Robert C. Martin, SRP](https://blog.cleancoder.com/uncle-bob/2014/05/08/SingleReponsibilityPrinciple.html) — change reasons.
 - [Robert C. Martin, OCP](https://blog.cleancoder.com/uncle-bob/2014/05/12/TheOpenClosedPrinciple.html) — strategic extension.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

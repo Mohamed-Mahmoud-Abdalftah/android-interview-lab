@@ -26,6 +26,10 @@ When are dynamic feature modules inappropriate because of offline/runtime constr
 
 On-demand dynamic feature غير مناسبة إذا user يحتاجها فورًا بدون شبكة: عرض تذكرة سفر مخزنة، استعادة payment/status، أو إجراء safety/identity لازم في لحظة. حتى مع اتصال، download قد يفشل/يتأخر أو يُلغى، والfeature غير موجودة قبل install. لو requirements تقول must work offline، ضعها في base أو install-time delivery وتأكد أنها متاحة في القناة المدعومة. لو feature كبيرة ونادرة ولها fallback مقبول، on-demand قد تستحق. قرر من contract المنتج وقياس size/usage/failure، لا من الرغبة في مزيد modules.
 
+### Practical walkthrough in Egyptian Arabic
+
+Dynamic feature تنزيلها مش مضمون فورًا: المستخدم offline، Play delivery failure، storage قليل، أو process death أثناء install. لو POS يحتاج reversal أو auth أساسي بدون شبكة، لا تجعلها on-demand. استخدم regular module أو install-time delivery لcritical path، وعالج optional feature missing بfallback. اختبر device offline update، install cancellation وdeep link قبل availability.
+
 ## Why it matters and how it works
 
 On-demand delivery separates feature availability from app installation. Before a successful split install, code and resources cannot be assumed present. Play Feature Delivery relies on supported distribution and installation mechanisms; test environments may package modules differently. An install-time module remains part of initial delivery, so it trades initial bytes for immediate availability.
@@ -57,6 +61,14 @@ Write availability requirements per journey, test fresh install/offline/poor net
 ## Interview answer — deep senior
 
 “The relevant question is whether the feature can be unavailable at the moment the user needs it. On-demand delivery creates a runtime prerequisite: code and resources are present only after a successful install request, which can be delayed, denied, canceled or impossible offline. For a transit ticket already purchased and needed at a station, that is an unacceptable product risk; I keep the viewer and its required assets in base or install-time delivery and test fresh install plus offline use. A large optional 3D tour has a different contract: the app can show a download choice, progress, retry and graceful fallback. I also account for channel compatibility and updates, because local debug installs often include modules in a way that hides delivery failures. I measure initial bytes saved, usage frequency, install success and time, and support cost before choosing the mode. Navigation and DI must not assume the split exists, and any critical recovery path must remain available if installation fails. Dynamic delivery is valuable when its availability trade-off is acceptable, not simply because modularization is fashionable.”
+
+## How to answer in the interview
+
+- **Why:** runtime availability is a product constraint.
+- **How:** classify offline-critical versus optional feature.
+- **Trade-off:** initial size versus reliable access.
+- **Failure case:** critical payment UI absent offline.
+- **Production solution:** choose install-time/base and test failure.
 
 ## Deep-dive talking points
 

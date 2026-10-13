@@ -25,6 +25,10 @@ How do you estimate an unfamiliar feature and communicate risk?
 
 ميزة غير مألوفة ما تتقدرش برقم دقيق من أول دقيقة. نفصل discovery، API/backend contract، Android UI/state، security، tests، rollout. نحدد assumptions والمجهول الكبير ونقترح spike قصير لخفض uncertainty. نعطي range وثقة وتواريخ checkpoints، ونحدّث estimate لما نتعلم. ما نخلطش estimate بالتزام ثابت من غير scope.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو feature مجهولة مثل offline checkout، لا تقول “أسبوعين” من UI mockup. فكّك unknowns: backend contract، payment status، Room migration، SDK device، auth، QA matrix وPlay release. اعمل spike قصير للجزء الأعلى مخاطرة، وقدم range مع assumptions ومراحل evidence. عرف ما الذي يمكن قصّه من scope وما الذي لا يمكن قصّه مثل idempotency. بلّغ المخاطر بدري وحدث التقدير عند ظهور نتيجة الـspike بدل الدفاع عن رقم أولي.
+
 ## Why it matters and how it works
 
 Estimation is a forecast conditional on scope, dependencies and team capacity. Separate known work from unknown integration risk. A spike should answer a specific technical question and produce evidence, not become hidden feature implementation.
@@ -55,7 +59,15 @@ Weekly update shows completed evidence, remaining uncertainties, current range a
 
 ## Interview answer — deep senior
 
-“I make the estimate inspectable. For a POS integration, I list SDK proof on target hardware, provider contract, durable payment state, reversal/reconciliation, UI, automation, certification and rollout. I map dependencies and identify the critical path. A one-week spike might test callback semantics under disconnection, yielding evidence that narrows the unknown. I report optimistic/likely/pessimistic ranges with explicit conditions, not a single date. At each checkpoint I compare actual progress and newly discovered risks, communicate options early and avoid trading away mandatory transaction safety to make an arbitrary estimate look correct. Share options and consequences.”
+“For unfamiliar work I estimate the uncertainty, not only the visible UI. I break the feature into contracts, Android state ownership, persistence, external SDK behavior, tests and release verification. An offline checkout estimate, for example, depends on whether the backend already supports durable idempotent operation IDs and status lookup; if that is unknown, I time-box a spike with backend and QA before promising a fixed date. I provide a range, the assumptions behind it, a likely critical path and a checkpoint when I will re-estimate. I distinguish scope that can be deferred, such as polish, from safety requirements that cannot, such as preventing duplicate charges. I communicate evidence and choices to product in plain language: what can ship, what risk remains and what additional work changes confidence. The trade-off is spending early time reducing uncertainty versus moving immediately. False precision creates a larger schedule surprise than an honest range with a validation plan.”
+
+## How to answer in the interview
+
+- **Why:** unknown dependencies make point estimates misleading.
+- **How:** decompose work, spike risk, give range.
+- **Trade-off:** early discovery time versus schedule confidence.
+- **Failure case:** backend idempotency assumed but absent.
+- **Production solution:** re-estimate at evidence checkpoints.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for conditional range, dependency map, focused spike, safety floor and up
 
 ## Self-check rubric
 
-Can you state the decision, evidence, affected people, measurable result, risk and both follow-up answers without claiming unearned personal experience?
+Break the unknown feature into discovery, dependencies and implementation slices; give a range with assumptions, name the top risk and report what evidence would narrow the estimate.
 
 ## References and reviewed-on date
 
 - [Android architecture guide](https://developer.android.com/topic/architecture) — layer/task decomposition.
 - [Android testing overview](https://developer.android.com/training/testing) — verification scope.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

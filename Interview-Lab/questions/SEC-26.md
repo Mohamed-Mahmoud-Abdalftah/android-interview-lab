@@ -25,6 +25,10 @@ Design secure session storage for a fintech app on a potentially compromised dev
 
 على جهاز ممكن يكون compromised، مفيش local storage يخلي bearer token غير قابل للسرقة وقت الاستخدام. نقلل الضرر: access token قصير ومحدود، refresh token يُخزّن فقط لو session persistence مطلوبة، Keystore-backed protection وbackup exclusions، server rotation/revocation، وstep-up للعمليات الحساسة. أي payment decision لازم server-side.
 
+## Practical walkthrough
+
+في app fintech، access token قصيرة في memory، وrefresh token لو لزم استمرار الجلسة تتخزن بKeystore-backed encryption مع backup policy. لو hook قدر يقرأ token وقت الاستخدام، الحماية المحلية وحدها مش كفاية؛ backend يطبق rotation/revocation وstep-up لعملية تحويل عالية. لو key ضاعت بعد restore، إعادة login أفضل من فتح session مجهولة.
+
 ## Why it matters and how it works
 
 Keystore raises extraction cost for a local wrapping key, but hooks can observe tokens when decrypted or sent. The server owns grant validity and can bind risk signals to a session, enforce limits and revoke it. Refresh must be single-flight in one process and tolerate unknown network outcomes without resurrecting old sessions.
@@ -55,7 +59,15 @@ Monitor session anomalies, provide per-device revocation, minimize scopes, and t
 
 ## Interview answer — deep senior
 
-“I would split threats: offline file extraction, runtime hooking, stolen bearer credentials and forged transaction requests. Keystore and encrypted storage target the first; short token lifetime, server rotation/revocation and anomaly detection limit the second and third. The backend independently checks account ownership, amount, transaction state and idempotency for the fourth. A refresh response is committed only if the session generation still matches, preventing resurrection after logout. Process death and key invalidation lead to explicit re-authentication, and offline logout blocks local use while remote revocation remains pending. I document that a fully compromised endpoint can observe plaintext at use time. ”
+“I would split threats: offline file extraction, runtime hooking, stolen bearer credentials and forged transaction requests. Keystore and encrypted storage target the first; short token lifetime, server rotation/revocation and anomaly detection limit the second and third. The backend independently checks account ownership, amount, transaction state and idempotency for the fourth. A refresh response is committed only if the session generation still matches, preventing resurrection after logout. Process death and key invalidation lead to explicit re-authentication, and offline logout blocks local use while remote revocation remains pending. I document that a fully compromised endpoint can observe plaintext at use time.  I would test a stolen refresh token, restored ciphertext without a key, concurrent refresh, device compromise during token use, and a revoked account. The server is the common control point across those cases: it can revoke sessions, detect replay, enforce transaction limits and require step-up. Local encryption makes offline extraction harder but does not certify the runtime. I would expose a clear user recovery path rather than turning key loss into a silent session bypass.”
+
+## How to answer in the interview
+
+- **Why:** a compromised device can inspect credentials during use.
+- **How:** minimize token lifetime, protect necessary persistence, and authorize sensitive operations server-side.
+- **Trade-off:** tighter session policy adds user friction.
+- **Failure case:** relying on Keystore to prevent runtime token theft.
+- **Production solution:** refresh rotation, revocation, step-up, and anomaly limits.
 
 ## Deep-dive talking points
 
@@ -75,4 +87,4 @@ Can I describe storage, runtime residual risk, refresh/logout races and server a
 - [Android Keystore system](https://developer.android.com/privacy-and-security/keystore) — local key limits.
 - [Play Integrity overview](https://developer.android.com/google/play/integrity/overview) — risk signals.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

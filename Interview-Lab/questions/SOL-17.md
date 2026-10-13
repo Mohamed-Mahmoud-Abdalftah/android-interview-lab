@@ -32,6 +32,10 @@ LSP is judged by behavioral expectations for valid calls. An unsupported operati
 
 Conceptual Kotlin: `interface Reader { suspend fun read(id: String): Data? }` and `interface Writer { suspend fun save(data: Data) }`; a read-only cache implements only `Reader`. A writable store implements both. Callers needing `save` depend on `Writer`, not a broad `Storage`.
 
+## Practical walkthrough
+
+لو `ReadOnlyStorage` وارث `Storage.save()` وبيعمل `UnsupportedOperationException`، غالبًا العقد الأساسي أو inheritance غلط: caller متوقع save متاح. افصل `Reader` و`Writer`، وخلي read-only ينفذ الأول فقط. لكن لو العقد مكتوب صراحة إن العملية قد تفشل بنتيجة typed مثل `NotSupported` لكل implementations، throw مش تلقائي دليل LSP؛ راجع وعد الـAPI. اختبر كل implementation بنفس inputs وfailure semantics. في production خليك واضح مع caller قبل التنفيذ، بدل runtime crash لما المستخدم يدوس حفظ.
+
 ## Trade-offs and decision criteria
 
 Splitting interfaces adds types but makes capabilities explicit. A documented partial operation can be valid in some APIs, though callers must handle its result and it may be less ergonomic. Avoid subclass checks as the primary design.
@@ -54,7 +58,15 @@ LSP is about behavior, not signatures. If callers are promised that any `Storage
 
 ## Interview answer — deep senior
 
-The strongest clue is that a client must ask “which subclass did DI give me?” before making a valid call. That means the base type no longer captures a reliable behavior. I write contract tests against each implementation with valid inputs, cancellation and failure paths. If one cannot support a method, I split the interface by capabilities or return an explicit domain outcome when unavailability is a legitimate case. I do not automatically label every thrown exception an LSP violation: invalid input or a documented transient failure may be part of the contract. `UnsupportedOperationException` for a normally valid operation is different. In Android, this matters for provider adapters and screen base classes, where hidden special cases cause production-only crashes. For Android adapters I include threading and cancellation in the behavioral contract. A supposedly replaceable SDK wrapper that blocks Main or ignores cancellation may technically return the same value while still breaking caller expectations. Contract tests should exercise valid operations across implementations, with integration tests for device-specific behavior. I avoid broad interfaces that require no-op methods. If an operation is optional by design, I state that explicitly and make the UI adapt to the capability, rather than letting a runtime exception reveal it unexpectedly.
+The strongest clue is that a client must ask “which subclass did DI give me?” before making a valid call. That means the base type no longer captures a reliable behavior. I write contract tests against each implementation with valid inputs, cancellation and failure paths. If one cannot support a method, I split the interface by capabilities or return an explicit domain outcome when unavailability is a legitimate case. I do not automatically label every thrown exception an LSP violation: invalid input or a documented transient failure may be part of the contract. `UnsupportedOperationException` for a normally valid operation is different. In Android, this matters for provider adapters and screen base classes, where hidden special cases cause production-only crashes. An unsupported override is a strong signal that the subtype cannot honor the base contract. If `Storage` promises `save`, a read-only subclass that throws for every save is not substitutable for callers using that promise. I would split reading and writing capabilities and inject `Writer` only where saving is required. I would also inspect the documented contract: a typed unsupported outcome may be a valid part of it, so the conclusion depends on the promise, not the exception's name alone. Contract tests should run against each implementation. In production, the UI should not expose a save action based on a broad type that might crash at runtime.
+
+## How to answer in the interview
+
+- **Why:** State the base promise.
+- **How:** show reader/writer split.
+- **Trade-offs:** discuss documented unsupported outcome.
+- **Failure cases:** cite runtime save crash.
+- **Production solutions:** finish with contract tests and capability-aware UI..
 
 ## Deep-dive talking points
 
@@ -74,4 +86,4 @@ State the base promise, classify a thrown case correctly, and redesign a read-on
 - [Liskov and Wing, A Behavioral Notion of Subtyping](https://www.cs.columbia.edu/~wing/publications/LiskovWing94.pdf) — substitution.
 - [Kotlin inheritance](https://kotlinlang.org/docs/inheritance.html) — override mechanics.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

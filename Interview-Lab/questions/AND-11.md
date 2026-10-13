@@ -34,6 +34,10 @@ Android can start an app component without a conventional `main()` function, so 
 
 An exported deep-link Activity declares an `https` intent filter and `android:exported="true"`; its handler validates the URI and authenticates before showing account data. An internal settings Activity declares `android:exported="false"`. The build review inspects the merged manifest to catch a library-added provider and checks that every required permission has a corresponding user-facing runtime flow where Android requires one. This is an illustrative configuration review, not a complete manifest.
 
+## Practical walkthrough
+
+merged manifest هو العقد النهائي اللي Android يقرأه، مش ملف app module لوحده؛ library ممكن تضيف provider أو receiver. راجع `android:exported` لكل entry point، intent filters، permissions، foreground service types، App Links، وminimum/target SDK وتأثيرهم. مجرد declaration للـpermission مش معناها user وافق على runtime permission. في release review، شغّل manifest merger output وافتح components اللي SDKs أضافتها، وجرب invoke مباشر لها بIntent خارجي. بيانات session أو API key ما تتحطش في manifest metadata لأنها ضمن package القابل للفحص.
+
 ## Trade-offs and decision criteria
 
 Explicit components and least privilege reduce unintended entry points. Intent filters enable external navigation but increase input validation obligations. A hardware `<uses-feature>` marked required can exclude devices from distribution; optional features need graceful fallback. Library manifest entries simplify integration, but the app owner still must audit the merged result.
@@ -52,10 +56,22 @@ For a banking app, review the merged release manifest on each dependency update.
 
 ## Interview answer — structured
 
-“Android uses the manifest to discover and start components, and build tools merge declarations from the app, variants, and dependencies. It also lists requested permissions, device features, and application metadata. A permission declaration is not a runtime grant. I pay particular attention to `android:exported` and intent filters because they control external entry points. Before release I inspect the merged manifest, verify the permission and device-filter implications, and test exported handlers with untrusted input. The important review artifact is the merged manifest, because app and library declarations combine across variants. I check exported components, permissions, intent filters, features and backup/network settings in the actual release flavor. A manifest declaration is configuration, not runtime user authorization.”
+Android uses the manifest to discover and start components, and build tools merge declarations from the app, variants, and dependencies. It also lists requested permissions, device features, and application metadata. A permission declaration is not a runtime grant. I pay particular attention to `android:exported` and intent filters because they control external entry points. Before release I inspect the merged manifest, verify the permission and device-filter implications, and test exported handlers with untrusted input.
+
 ## Interview answer — deep senior
 
-“I treat the manifest as a shipped platform contract. Activities, services, receivers, and providers are declared there because Android can instantiate them directly. Intent filters and exported flags determine which external calls may reach them; those calls still need validation and authorization in code. Permissions and uses-feature declarations affect platform access and potentially Play device eligibility. Gradle merges source-set and dependency manifests, so reviewing only the source file misses the actual behavior. I inspect the merged release manifest after dependency changes, diff sensitive entries in CI, and test cold external launches and process restoration. I do not put secrets or live session state in metadata, nor assume a manifest permission request means the user granted it. Android does not enter an app through one conventional main function; the system discovers components and capabilities from its manifest. Build variants and libraries contribute entries through manifest merging, so the source manifest alone can miss an exported provider or new permission. I inspect the merged release manifest and test externally reachable entry points with hostile inputs. Permissions in the manifest request or protect platform capabilities; a logged-in user and payment entitlement must still be checked by backend logic. I also review `uses-feature` because an accidental required feature can remove devices from Play eligibility. CI should compare sensitive manifest changes and fail unexpected exports or permissions before publishing.”
+I treat the manifest as a shipped platform contract. Activities, services, receivers, and providers are declared there because Android can instantiate them directly. Intent filters and exported flags determine which external calls may reach them; those calls still need validation and authorization in code. Permissions and uses-feature declarations affect platform access and potentially Play device eligibility. Gradle merges source-set and dependency manifests, so reviewing only the source file misses the actual behavior. I inspect the merged release manifest after dependency changes, diff sensitive entries in CI, and test cold external launches and process restoration.
+
+I inspect the merged release manifest because dependencies can contribute components, filters, and metadata that are absent from the app module’s source manifest. An exported Activity for a web link may be needed, but its URI and caller-controlled extras still require validation; an internal admin service should normally remain private. A manifest permission declaration also does not grant runtime permission, so the corresponding user flow must be tested. I would include a component inventory in release review and exercise entry points from a separate test app. Secrets do not belong in manifest metadata because packaged declarations are inspectable.
+
+## How to answer in the interview
+
+- **Why:** The manifest declares app entry points and platform capabilities.
+- **How:** Describe the merged manifest, exports, filters, permissions, and service declarations.
+- **Trade-offs:** Declare only components/capabilities needed by the feature.
+- **Failure cases:** Explain a library-added exported provider or a permission declared but never requested.
+- **Production solution:** Audit the release merged manifest and exercise external entry points.
+
 ## Deep-dive talking points
 
 Discuss manifest merger, exported entry points, runtime grants, feature filtering, and validation after deep-link launch.
@@ -75,4 +91,4 @@ Name the four component types, describe manifest merging, distinguish declaratio
 - [App manifest overview](https://developer.android.com/guide/topics/manifest/manifest-intro) — required declarations and manifest purpose.
 - [Manage manifests](https://developer.android.com/studio/build/manage-manifests) — merger and merged-manifest inspection.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The configuration example is illustrative.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The configuration example is illustrative.

@@ -34,6 +34,10 @@ Context is an abstract handle through which Android exposes resources, services,
 
 An image-disk-cache singleton needs `context.applicationContext` to find an app-private cache directory; it should never retain the Activity passed during construction. A theme-aware Dialog belongs to a currently valid Activity or DialogFragment. A repository that needs neither files nor Android services should receive a narrower dependency instead of any Context. This is an architectural example; exact Context requirements of a system service must be checked against its API documentation.
 
+## Practical walkthrough
+
+`Context` بوابة لخدمات Android وresources/files، لكن مش كل instance له نفس owner. لو disk cache هتعيش طول process، خد `applicationContext` أو حقن `cacheDir` بس، وما تخزّنش Activity جوه singleton. Dialog محتاجة window token وtheme من Activity حية؛ Application Context مش اختيار مناسب للـUI دي. ده مش معناه إن Activity Context غلط دائمًا: استعمالها داخل screen وبعمرها طبيعي. في review اسأل: object ده هيعيش لحد إمتى؟ والـAPI محتاجة window/theme ولا مجرد file/service؟
+
 ## Trade-offs and decision criteria
 
 Application Context reduces accidental Activity retention in process-level objects, but it cannot substitute for a visual Context when theme, display, or window token matters. Passing an Activity to a screen-scoped presenter can be valid if the presenter ends with that screen. Injecting Context everywhere couples domain code to Android and makes JVM tests harder; prefer supplying a file path, clock, or interface if that is the actual need.
@@ -52,10 +56,22 @@ In a multi-window app, create visual resources from the current Activity/window 
 
 ## Interview answer — structured
 
-“An Activity is a Context with visual configuration and window association, which matters for themed UI, Dialogs, and inflation. Application Context is process-scoped and appropriate for app-private storage or non-visual services used by a singleton. Using Application Context everywhere is not universally safe because it may not reflect the current display/window. Retaining an Activity Context beyond its screen lifetime leaks views after recreation. If a class only needs one operation, I inject that dependency rather than the entire Context. For long-lived repositories I usually retain Application Context, while dialogs and window-attached UI need the current Activity Context. That choice is about lifetime and visual configuration, not simply avoiding a lint warning. Passing Application Context to a visual API can select the wrong theme or display on resizable devices.”
+An Activity is a Context with visual configuration and window association, which matters for themed UI, Dialogs, and inflation. Application Context is process-scoped and appropriate for app-private storage or non-visual services used by a singleton. Using Application Context everywhere is not universally safe because it may not reflect the current display/window. Retaining an Activity Context beyond its screen lifetime leaks views after recreation. If a class only needs one operation, I inject that dependency rather than the entire Context.
+
 ## Interview answer — deep senior
 
-“I decide by both lifetime and environment. Context is a capability object; Activity Context is tied to a visual owner and current theme/display, while Application Context is process-scoped. A long-lived cache can use app-private storage through Application Context, but a Dialog or visual inflater needs the active window's Context. This matters more on foldables, multi-window, and dynamic locale/theme changes where Application resources may not represent the visual container. I keep Activity references out of singletons and ViewModels, inject narrow interfaces into domain code, and test both heap retention after rotation and configuration-correct rendering. Context is an access handle with capabilities that vary by implementation. An Activity Context carries a window, theme and current configuration, but retaining it in a singleton across rotation leaks the old screen. Application Context matches process lifetime for nonvisual services, yet it does not automatically represent the active display or Activity theme. I pass a short-lived Activity to a function that shows UI rather than storing it. For a singleton cache I avoid caching themed drawables indefinitely because dark mode or display configuration can change. I test rotation, multi-window and service callers instead of blindly casting every Context to Activity.”
+I decide by both lifetime and environment. Context is a capability object; Activity Context is tied to a visual owner and current theme/display, while Application Context is process-scoped. A long-lived cache can use app-private storage through Application Context, but a Dialog or visual inflater needs the active window's Context. This matters more on foldables, multi-window, and dynamic locale/theme changes where Application resources may not represent the visual container. I keep Activity references out of singletons and ViewModels, inject narrow interfaces into domain code, and test both heap retention after rotation and configuration-correct rendering. Context is an access handle with capabilities that vary by implementation.
+
+In a disk cache I would accept `cacheDir: File` if that is the only Context capability required; it makes lifetime and tests simpler. If a platform service truly needs a process-long Context, I use the Application Context. A Dialog or view inflater tied to current theme and window uses a valid Activity or themed wrapper within the screen lifetime. The failure is storing that Activity in a process singleton, which retains the old view tree after rotation. Context choice is therefore about capability and ownership, not a universal ban on Activity Context.
+
+## How to answer in the interview
+
+- **Why:** A Context carries capabilities and a lifetime that can affect leaks and UI behavior.
+- **How:** Contrast the Activity’s window/theme with the Application’s process lifetime.
+- **Trade-offs:** Inject a narrower dependency such as `cacheDir` when possible.
+- **Failure cases:** Name singleton-held Activity references and a Dialog built with the wrong owner.
+- **Production solution:** Pair an application-scoped disk cache with an Activity-owned dialog.
+
 ## Deep-dive talking points
 
 Explain Context capabilities, lifecycle and visual configuration, Activity retention leaks, theme/window token needs, multi-window resource behavior, and when to replace a broad Context dependency with a narrow interface.
@@ -75,4 +91,4 @@ Define Context without calling it a global variable; compare lifetimes; choose a
 - [Context API reference](https://developer.android.com/reference/android/content/Context) — capabilities and visual Context distinctions.
 - [Activity lifecycle](https://developer.android.com/guide/components/activities/activity-lifecycle) — recreation and lifetime.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. UI behavior examples were not instrumented on a device.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. UI behavior examples were not instrumented on a device.

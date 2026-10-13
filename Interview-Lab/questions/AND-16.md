@@ -34,6 +34,10 @@ How do you protect exported Android components?
 
 A receipt deep-link Activity is exported because browser links must open it. It accepts only `https://app.example.com/receipts/{opaqueId}`, rejects unknown query parameters, requires a signed-in session, and fetches receipt data from a backend that checks ownership. An internal `PaymentAdminService` has no external use and is `exported=false`. A partner integration that truly needs cross-app access may require a signature-protected permission and a documented request contract. These are architecture examples; test the actual merged manifest and target SDK.
 
+## Practical walkthrough
+
+ابدأ من merged manifest: كل exported Activity/Service/Receiver/Provider قابلة للاستدعاء من process تانية وفق rules الخاصة بها. `exported=false` للداخل فقط؛ لو Activity لازم تفتح App Link، خليه exported لكن validate scheme/host/path/IDs وارجع لفحص auth على backend. signature permission تنفع partner apps تحت signing relationship مضبوط، مش بديل عن validation. `PendingIntent` ممكن يفوّض action؛ اختار explicit target وimmutability. جرّب explicit Intent مباشر من test app بدل الاعتماد على UI path المتوقع، وراجع content URI grants بمبدأ أقل صلاحية.
+
 ## Trade-offs and decision criteria
 
 `exported=false` is the safest default but cannot serve legitimate external integrations. Signature permissions restrict to apps signed with the trusted key, yet are unsuitable for arbitrary partners. Runtime caller verification can add granularity, but identity APIs vary by component and must be used correctly. Verified App Links reduce interception of owned web links, but do not authenticate the sender or authorize the requested data. A provider can grant one URI temporarily instead of exposing a whole database.
@@ -52,10 +56,22 @@ Security review inventories all exported components from the release merged mani
 
 ## Interview answer — structured
 
-“I inspect the merged manifest because dependencies can add components. Internal components stay non-exported. For a required public Activity or provider, I define exact actions, schemes, hosts, paths, extras, and allowed operations, and use permissions or URI grants where appropriate. External data is untrusted even if it matched an intent filter. I recheck account ownership at the backend and test direct explicit calls that bypass the expected UI flow. An intent filter is routing metadata, not an authorization rule: an exported class can be targeted explicitly. I set nonpublic components to `exported=false`, protect necessary exports with permissions and caller validation, parse every URI and extra, and verify account ownership on the backend. The merged release manifest is the source of truth.”
+I inspect the merged manifest because dependencies can add components. Internal components stay non-exported. For a required public Activity or provider, I define exact actions, schemes, hosts, paths, extras, and allowed operations, and use permissions or URI grants where appropriate. External data is untrusted even if it matched an intent filter. I recheck account ownership at the backend and test direct explicit calls that bypass the expected UI flow.
+
 ## Interview answer — deep senior
 
-“I treat each exported component as an API surface. First I inventory the release merged manifest and remove unnecessary exposure. For legitimate integrations I define caller identity, permission level, URI scope and an input schema; signature permissions fit same-signer integrations, while a public App Link still needs strict route parsing. I assume an attacker can send an explicit Intent to an exported component regardless of its filter, so no privileged action depends on UI navigation having happened. Providers enforce per-URI access and backend resources enforce authenticated ownership. I test hostile callers, malformed URIs, stale sessions, library manifest changes, and PendingIntent delegation paths. I begin with a component inventory from the merged manifest, including SDK-added receivers and providers. For each exported entry I define who may call it, what data it accepts and what privileged action it can trigger. A caller can send an explicit Intent even if it does not match the narrow filter the developer imagined; unchecked account IDs make the component a confused deputy. Providers need URI grants and path-level checks, while PendingIntents need explicit targets and minimal mutability. The client validates input shape, but financial authorization remains server-side. I test direct hostile intents, malformed URIs and access after logout on the shipped variant.”
+I treat each exported component as an API surface. First I inventory the release merged manifest and remove unnecessary exposure. For legitimate integrations I define caller identity, permission level, URI scope and an input schema; signature permissions fit same-signer integrations, while a public App Link still needs strict route parsing. I assume an attacker can send an explicit Intent to an exported component regardless of its filter, so no privileged action depends on UI navigation having happened. Providers enforce per-URI access and backend resources enforce authenticated ownership. I test hostile callers, malformed URIs, stale sessions, library manifest changes, and PendingIntent delegation paths.
+
+A secure inventory includes Activities, Services, receivers, providers, and components added by libraries in the merged manifest. I keep internal ones non-exported and document every public entry. For an exported receipt Activity, exact URI parsing is followed by a current-session check and server-side ownership verification; a caller can bypass the normal UI path with an explicit Intent. For a partner Binder service, signature permission can narrow callers but does not replace input validation. I also review PendingIntent delegation and temporary URI grants. I test from another app because in-process unit tests can miss the actual trust boundary.
+
+## How to answer in the interview
+
+- **Why:** Exported components are trust boundaries exposed to other apps.
+- **How:** Inventory merged-manifest entries and validate callers, input, and authorization.
+- **Trade-offs:** Keep internal components private; export only documented integration points.
+- **Failure cases:** Name a deep-link Activity that trusts an ID or a broad provider grant.
+- **Production solution:** Test direct external invocation and server-checked receipt ownership.
+
 ## Deep-dive talking points
 
 Discuss merged-manifest audit, explicit Intent bypass of filters, signature permissions, provider URI grants, verified link limits, confused-deputy behavior, and server-side ownership checks.
@@ -76,4 +92,4 @@ Name the merged-manifest audit step; explain explicit Intent targeting; protect 
 - [Permission-based access control to exported components](https://developer.android.com/privacy-and-security/risks/access-control-to-exported-components) — privilege boundary.
 - [Intents and intent filters](https://developer.android.com/guide/components/intents-filters) — routing versus explicit targeting.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The integration examples were not exercised on a device.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The integration examples were not exercised on a device.

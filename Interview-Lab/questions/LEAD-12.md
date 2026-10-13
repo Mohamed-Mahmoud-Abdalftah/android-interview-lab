@@ -25,6 +25,10 @@ Tell me about a production incident you owned and how you prevented recurrence.
 
 السؤال behavioral؛ لازم المرشح يحكي حادثة حقيقية من خبرته، مش ينسب لنفسه قصة متخيلة. نرتب Situation، Task، Actions، Result، Learning: impact بالأرقام لو متاح، قرار تحت ضغط، التعاون، ما الذي تغير في system. لو ما حصلتش production incident، قول ده بوضوح واستخدم near miss أو incident شاركت فيه مع توضيح دورك.
 
+### Practical walkthrough in Egyptian Arabic
+
+السؤال شخصي: اختار حادثة حصلت فعلًا، ووضح دورك من غير ما تنسب لنفسك شغل الفريق. استخدم STAR مع timestamps وأثر معروف، ثم لماذا قررت halt rollout أو feature flag أو hotfix. لو مثال payment، فرّق وقف محاولات جديدة عن متابعة unknown/reversal الموجودة. اختم بإصلاح systemic له owner واختبار، واذكر ما لا تعرفه أو ما كان ممكن تعمله أفضل. لو ما عندكش incident حقيقي، قل ده واستخدم near miss بشفافية.
+
 ## Why it matters and how it works
 
 Interviewers evaluate judgment, accountability, communication and learning. A strong answer separates personal action from team action, quantifies what was observed and states unresolved limitations. A blameless postmortem focuses systemic fixes.
@@ -55,7 +59,15 @@ Prepare one real incident timeline, artifacts/metrics you can discuss, and a sho
 
 ## Interview answer — deep senior
 
-“I would choose an incident I can substantiate with a timeline and results. A strong narrative covers detection signal, immediate risk assessment, safe containment, communication cadence, technical diagnosis and trade-offs under time pressure. For a payment issue, I would distinguish stopping new attempts from preserving status lookup and reversals, and I would not declare success until unknown transactions were reconciled. I would state which action I personally took versus what backend, QA and operations did, quantify impact only from recorded data, and close with a blameless postmortem action that was verified by a drill or test. If no production incident fits, I would transparently use a near miss rather than invent ownership. “ So is blaming one developer.”
+“I would answer with a real incident I can substantiate, not an invented success story. I would state the user impact and my specific responsibility, then walk through detection, the evidence available at each decision point, containment, communication and confirmation of recovery. If the incident involved a payment path, I would explain how we stopped new attempts while keeping reconciliation for in-flight unknown outcomes, because turning off a screen is not financial recovery. I would distinguish my action from what backend, QA and operations owned, and use only measured numbers I can defend. Then I would describe a systemic follow-up—such as a release artifact check or lost-response test—with an owner and evidence that it now catches the failure. I would also say what I would change about my own response. If I have only supported an incident or a near miss, I would say that plainly and focus on my actual decisions. The interviewer is evaluating judgment and accountability, not the drama of the story.”
+
+## How to answer in the interview
+
+- **Why:** real ownership demonstrates judgment.
+- **How:** tell truthful impact, decisions, result and learning.
+- **Trade-off:** brevity versus enough evidence.
+- **Failure case:** invented metrics or blaming one person.
+- **Production solution:** verified prevention and honest personal role.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for real event, personal role, evidence, mitigation, result and verified 
 
 ## Self-check rubric
 
-Can you state the context, decision evidence, alternatives, affected people, measurable result and both follow-up answers?
+Tell a real incident as timeline, impact, your decision, mitigation and prevention. Name one measurable result and clearly distinguish your contribution from the wider team.
 
 ## References and reviewed-on date
 
 - [Google SRE postmortem culture](https://sre.google/workbook/postmortem-culture/) — incident learning.
 - [Android app quality](https://developer.android.com/quality) — impact metrics.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

@@ -26,6 +26,10 @@ Compare stack and heap at a high level. What lives on each?
 
 كل thread لها call stack فيها frames لاستدعاءات الدوال: return addresses، local slots وبيانات التنفيذ. الـmanaged heap فيه objects وarrays اللي عمرها قد يمتد بعد انتهاء الدالة. المتغير المحلي ممكن يكون reference في stack frame يشير إلى object في heap؛ ولا يصح نقول “كل primitive على stack وكل object على heap” كقاعدة حرفية لأن compiler وruntime ممكن يعملوا optimization. الـstack تنمو مع الاستدعاء المتكرر، والـheap تتأثر بالـallocations والـretention. `StackOverflowError` من recursion عميق مختلف عن `OutOfMemoryError` بسبب heap أو موارد أخرى.
 
+## Practical walkthrough
+
+لو recursive parser دخل في payload بعمق غير متوقع، ممكن يعمل `StackOverflowError` حتى لو heap فاضية. ولو cache ماسكة `Photo` objects بعد ما دالة render ترجع، الـobjects تفضل على heap لأن فيه reference من cache. في profiler ركّز على stack trace للـrecursion مقابل retained graph للـheap؛ متبنيش الحل على جملة إن كل primitive بتتخزن في stack، لأن ART والـcompiler بيعملوا optimizations.
+
 ## Why it matters and how it works
 
 Method invocation creates a frame with locals and operand state for that thread; it leaves the frame on return. Objects generally occupy the managed heap and remain until unreachable and collected. A local reference can temporarily make a heap object reachable; capturing that object in a longer-lived callback extends its life beyond the call. ART may optimize representation, so the model guides reasoning but is not a promise about every byte's physical location.
@@ -56,7 +60,15 @@ When a production crash reports stack overflow, inspect the recursive call path 
 
 ## Interview answer — deep senior
 
-“I explain stack and heap in terms of lifetime and ownership. A thread's stack represents nested execution; returning from a function removes its frame. The managed heap supports objects that can survive that function, depending on references from live frames, static fields, and other roots. A reference stored in a frame can keep an object reachable for the call, but a singleton or long-lived callback can retain it far longer. Recursion depth can exhaust stack space; a heap OOM has a different diagnostic path, and native/thread memory also affects the process. ART optimizations may elide allocations or change representation, so I do not claim every primitive always sits on stack. I use crash stacks and heap/thread profiles to decide whether to bound recursion, release retained graphs, or limit thread creation.”
+“I explain stack and heap in terms of lifetime and ownership. A thread's stack represents nested execution; returning from a function removes its frame. The managed heap supports objects that can survive that function, depending on references from live frames, static fields, and other roots. A reference stored in a frame can keep an object reachable for the call, but a singleton or long-lived callback can retain it far longer. Recursion depth can exhaust stack space; a heap OOM has a different diagnostic path, and native/thread memory also affects the process. ART optimizations may elide allocations or change representation, so I do not claim every primitive always sits on stack. I use crash stacks and heap/thread profiles to decide whether to bound recursion, release retained graphs, or limit thread creation. A maliciously deep tree is a concrete stack-risk case: I put a depth bound on recursive traversal or use an explicit queue. That queue moves pressure into heap, so it needs an item or byte cap as well. This is why stack and heap fixes are related but not interchangeable.”
+
+## How to answer in the interview
+
+- **Why:** Use lifetime and execution depth as the distinction.
+- **How:** Check recursion stack traces versus heap retaining paths.
+- **Trade-off:** An explicit queue saves stack depth but consumes heap.
+- **Failure case:** Unbounded recursion crashes independently of retained heap.
+- **Production solution:** Bound input depth and queue size; verify on worst-case fixtures.
 
 ## Deep-dive talking points
 
@@ -77,4 +89,4 @@ Define a frame, explain a local-to-heap reference, reject the primitive slogan, 
 - [JVM runtime data areas](https://docs.oracle.com/en/java/javase/26/docs/specs/jvms/jvms-2.html#jvms-2.5) — stacks and heap conceptual model.
 - [Android memory overview](https://developer.android.com/topic/performance/memory-overview) — ART process and heap behavior.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The Kotlin examples are illustrative.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The Kotlin examples are illustrative.

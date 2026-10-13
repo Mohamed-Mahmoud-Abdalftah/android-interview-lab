@@ -24,6 +24,10 @@ Diagnose why a coroutine on Main can still produce jank/ANR and provide a verifi
 
 `launch` على `Dispatchers.Main` بيشتغل على UI thread. لو جوه `suspend fun` نادينا blocking library بتمسك thread، الـLooper مش هيعالج input أو draw لحد ما النداء يرجع؛ كلمة `suspend` لا تجعلها non-blocking. نحدد stack من ANR traces أو profiler، ننقل boundary إلى IO أو API async، ونختبر responsiveness مع driver الحقيقي.
 
+## Practical walkthrough
+
+في ANR trace هتلاقي main Looper دخل `fetchBlocking()` ولم يرجع؛ مفيش suspension حقيقية أثناء النداء حتى لو الدالة الخارجية `suspend`. التشخيص يبدأ من stack trace والـprofiler عشان تحدد blocking boundary. خلي repository يعمل `withContext(IO)` حول النداء أو بدّله بـasync client؛ حدّ parallel calls واختبر library الحقيقي، لأن cancel قد لا يوقفه.
+
 ## Why it matters and how it works
 
 A coroutine only releases Main at genuine suspension. `Thread.sleep`, synchronous disk/network or a blocking Binder/SDK call inside Main continues to occupy it. `withContext(IO)` protects Main for known blocking I/O, while heavy CPU belongs on Default. The chosen library may not respond promptly to cancellation; set native timeouts and bound concurrent calls.
@@ -65,7 +69,15 @@ An ANR report shows Main parked in a third-party synchronous SDK. The team repro
 
 ## Interview answer — deep senior
 
-“The precise failure chain is dispatcher inheritance, synchronous call and blocked Looper. The coroutine starts in Main; the call has no suspension point, so no continuation is parked and the same UI thread remains inside the SDK. The system sees input or lifecycle work unserved long enough to report an ANR. I use production traces to confirm this path, because the apparent coroutine frame alone is not proof of the blocker. The repository owns the fix: a documented main-safe suspend contract, `withContext(IO)` for legacy blocking I/O or a genuine asynchronous SDK, plus concurrency limits and timeouts. I regression-test under artificial slow I/O and monitor ANR rates. Cancellation is separate; moving threads does not make an uncooperative call stoppable.”
+“The precise failure chain is dispatcher inheritance, synchronous call and blocked Looper. The coroutine starts in Main; the call has no suspension point, so no continuation is parked and the same UI thread remains inside the SDK. The system sees input or lifecycle work unserved long enough to report an ANR. I use production traces to confirm this path, because the apparent coroutine frame alone is not proof of the blocker. The repository owns the fix: a documented main-safe suspend contract, `withContext(IO)` for legacy blocking I/O or a genuine asynchronous SDK, plus concurrency limits and timeouts. I regression-test under artificial slow I/O and monitor ANR rates. Cancellation is separate; moving threads does not make an uncooperative call stoppable. To diagnose an ANR I would inspect the main thread trace and follow the call into the synchronous SDK; merely seeing `launch` or `suspend` in the source proves nothing about blocking. A main-safe repository can switch that specific call to an IO dispatcher, or preferably use an async client with a cancellation contract. I would cap outstanding requests, measure latency and test navigation cancellation, because an uncooperative SDK may still return after the ViewModel is gone.”
+
+## How to answer in the interview
+
+- **Why:** the UI Looper cannot render or handle input while a synchronous call occupies Main.
+- **How:** trace dispatcher inheritance and the blocking stack frame.
+- **Trade-off:** IO offload restores responsiveness but costs a worker; an async client is preferable when available.
+- **Failure case:** merely adding suspend or unbounded IO fan-out.
+- **Production solution:** main-safe repository boundary, limits, and trace-based verification.
 
 ## Deep-dive talking points
 
@@ -85,4 +97,4 @@ Can I explain the exact UI-thread blockage, collect trace evidence, choose IO ve
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — main safety.
 - [Android ANR guidance](https://developer.android.com/topic/performance/vitals/anr) — diagnosis and traces.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

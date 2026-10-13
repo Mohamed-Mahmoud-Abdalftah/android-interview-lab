@@ -24,6 +24,10 @@ Design privacy-aware analytics, structured logs, metrics and crash reporting.
 
 نفصل analytics للأفعال، logs للتشخيص، metrics للاتجاهات وcrash/ANR reporting للأعطال. كل event له schema, version, correlation ID وprivacy classification؛ ما نرسلش tokens, card data أو PII بدون حاجة وموافقة/سياسة مناسبة. نقيس startup, ANR, crash-free sessions, sync pending age وpayment unknowns، ونربط client/server IDs من غير كشف أسرار.
 
+## Practical walkthrough
+
+لو payment علق Pending، الفريق يحتاج يعرف operation ID، المرحلة، زمن الانتظار، وbackend status من غير ما يسجل PAN أو token. Analytics للسلوك، logs للتفاصيل الآمنة، metrics للاتجاهات، crash/ANR للأعطال؛ ما تخلطهمش في event واحد ضخم. اعمل schema typed وretention/consent policy، وقس sync pending age وpayment reconciliation delay كـSLOs قابلة للتنبيه.
+
 ## Why it matters and how it works
 
 Use structured events with sampling and retention limits. Offline telemetry can queue with bounded storage and WorkManager, respecting consent and network constraints. A server correlation ID helps trace one operation across retries. Crash reports need deobfuscation mapping for release and redaction of sensitive breadcrumbs.
@@ -65,7 +69,15 @@ A commerce app emits payment operation state transitions by opaque ID, records a
 
 ## Interview answer — deep senior
 
-“Observability should test the architecture’s promises. I instrument cold-start time, ANR/crash rate, API latency by endpoint, cache stale age, outbox pending age, token refresh failures and payment reconciliation delay. Every business operation has an opaque correlation ID shared with backend logs, but no credentials or full payment payload enter telemetry. Events are typed/versioned with ownership and retention; sampling controls high-volume traces while aggregate counters preserve trends. Offline telemetry uses bounded storage and consent-aware upload. I compare client and server views because a lost response can produce client timeout and server success. During staged rollout, alert thresholds and kill-switch criteria are defined before deployment. Logging Authorization header leaks credentials.”
+“Observability should test the architecture’s promises. I instrument cold-start time, ANR/crash rate, API latency by endpoint, cache stale age, outbox pending age, token refresh failures and payment reconciliation delay. Every business operation has an opaque correlation ID shared with backend logs, but no credentials or full payment payload enter telemetry. Events are typed/versioned with ownership and retention; sampling controls high-volume traces while aggregate counters preserve trends. Offline telemetry uses bounded storage and consent-aware upload. I compare client and server views because a lost response can produce client timeout and server success. During staged rollout, alert thresholds and kill-switch criteria are defined before deployment. Logging Authorization header leaks credentials. I would use an opaque operation ID to connect client events with backend state transitions, and define safe event schemas before emitting data. A payment Pending age histogram can reveal reconciliation backlog; a generic `request failed` counter cannot. I would segment crash and ANR data by release cohort, and alert on user-visible thresholds rather than every transient network error. I would verify release logs and crash attachments contain no tokens or card data, and define retention, access and consent rules for each sink.”
+
+## How to answer in the interview
+
+- **Why:** observability must reveal broken promises without leaking data.
+- **How:** define typed events, opaque correlation IDs, metrics, and privacy rules per sink.
+- **Trade-off:** less raw logging requires better safe schemas.
+- **Failure case:** token or card data enters crash attachments.
+- **Production solution:** release leak tests, dashboard thresholds, and incident ownership.
 
 ## Deep-dive talking points
 
@@ -85,4 +97,4 @@ Can I classify signals, redact data, bound offline storage and measure unknown o
 - [Android vitals](https://developer.android.com/google/play/vitals) — crash/ANR signals.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — data ownership.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

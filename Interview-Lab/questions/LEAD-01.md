@@ -25,6 +25,10 @@ How do you explain architectural trade-offs clearly in an interview?
 
 في interview ما تقولش “MVVM أحسن” من غير سياق. ابدأ بالمشكلة والconstraints: حجم team، offline، lifecycle، testability، deadlines. اعرض 2–3 options، معيار القرار، trade-offs، وامتى تغير رأيك. مثال: Repository مع Room يزيد code لكنه يحمي offline state بعد process death. الأهم إن interviewer يشوف reasoning قابل للتقييم، مش شعار architecture.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو interviewer سأل “ليه MVVM هنا؟” ما تردش باسم pattern فقط. ابدأ بالمشكلة: مثل شاشة طلبات تحتاج offline cache وloading/error منفصلين. اعرض بديلين، كلفة كل واحد على ownership والاختبار والهجرة، ثم القرار والمعيار الذي سيغيّره. استخدم مثال فشل: ViewModel يحتفظ بـActivity أو retry يكرر payment. اختم بقرار production قابل للقياس، مثل وضوح state وتغطية process death، بدل “ده best practice”.
+
 ## Why it matters and how it works
 
 A strong trade-off explanation has context, options, decision criteria, evidence, consequences and review trigger. It distinguishes non-negotiable safety requirements from preferences. Metrics and incidents can revise the choice after launch.
@@ -55,7 +59,15 @@ In design review, write a one-page decision record with assumptions, alternative
 
 ## Interview answer — deep senior
 
-“A senior answer is a decision memo spoken aloud. I define users and constraints, distinguish hard invariants from preferences, and compare two or three feasible designs. I name the specific failure each option permits: an in-memory retry queue disappears after process death; a durable outbox survives but can repeat sends, so the backend needs idempotency. I state the chosen option, implementation boundary, test evidence and rollout metrics. I also say what would invalidate the choice—for example, provider deadlines or an increase in offline volume—and how I would migrate safely. I invite disagreement on assumptions and use evidence from QA, operations and security, because architecture is a team decision with a measurable outcome.”
+“I explain a trade-off by starting with the decision’s context and the failure I am trying to avoid. Suppose an Android orders screen needs offline reads, refresh and process recreation. I might compare a thin ViewModel with a repository against putting orchestration in the UI: the former makes state ownership and tests clearer but adds contracts and migration work. I name what I will measure—stale-state bugs, test setup cost and release performance—and what evidence would reverse my choice. I then describe the failure boundary: an in-memory ViewModel cannot be the payment ledger, and a retry after timeout may duplicate an operation unless the backend enforces identity. I keep the answer short enough to speak, then offer detail if the interviewer asks. I avoid saying a pattern is universally best. A senior decision exposes assumptions, alternatives, production risk and how the team will know the decision worked.”
+
+## How to answer in the interview
+
+- **Why:** an architecture choice solves a concrete failure.
+- **How:** state constraints, alternatives and evidence.
+- **Trade-off:** simplicity versus future change cost.
+- **Failure case:** pattern chosen without state ownership.
+- **Production solution:** measure outcome and revisit assumptions.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for problem, options, explicit criteria, failure modes, decision trigger 
 
 ## Self-check rubric
 
-Can you state the decision, evidence, affected people, measurable result, risk and both follow-up answers without claiming unearned personal experience?
+State the decision, constraints and at least two alternatives; compare measurable trade-offs and explain how you would revisit the architecture when assumptions change.
 
 ## References and reviewed-on date
 
 - [Android architecture guide](https://developer.android.com/topic/architecture) — state and layer constraints.
 - [Android offline-first design](https://developer.android.com/topic/architecture/data-layer/offline-first) — durability example.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

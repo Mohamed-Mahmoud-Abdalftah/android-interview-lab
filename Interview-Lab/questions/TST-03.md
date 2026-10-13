@@ -23,11 +23,15 @@ What are JUnit, MockK/Mockito, Espresso, and Compose UI Testing?
 
 ## Explanation in Arabic
 
-JUnit بتنظم test cases وassertions/runner؛ Mockito وMockK لtest doubles والتحقق من calls؛ Espresso بتتفاعل مع Android Views مع idling synchronization؛ Compose UI testing بتستخدم semantics tree وCompose test rules. دول مش بدائل لبعض: تقدر تستخدم JUnit مع mock framework، وUI framework حسب نوع الشاشة.
+`JUnit` يوفّر test runner وassertions/lifecycle للـtests؛ `MockK` و`Mockito` يعملوا doubles لما نحتاج نعزل dependency أو نراقب تفاعل. `Espresso` تختبر View hierarchy في Android، وCompose UI Testing تستعلم من semantics tree وتنفّذ actions. الأدوات دي مش بدائل متساوية: pure validation function تتختبر بـJUnit في JVM، لكن permission dialog أو lifecycle محتاجان Android test، وزر Compose يحتاج semantics assertion.
+
+## Practical walkthrough
+
+مثال login: اختبر validation كدالة، ViewModel state بـfake repository، ثم UI test يكتب input ويضغط ويتأكد من رسالة الخطأ والـfocus. تجنّب assertion على implementation tags لو label/role كفاية؛ اختبر ما يراه المستخدم. ولا تخلط نجاح UI test مع نجاح backend auth الحقيقي.
 
 ## Why it matters and how it works
 
-JUnit is the execution/assertion foundation in JVM/Android test setups. Mockito/MockK replace collaborator behavior. Espresso targets View hierarchy and synchronization, while Compose testing queries semantics nodes and drives Compose interactions. Instrumentation/device environment is required for many UI behaviors.
+JUnit is the execution/assertion foundation in JVM/Android test setups. The tool choice follows the boundary under test: logic, Android interaction, or collaboration. Espresso targets View hierarchy and synchronization, while Compose testing queries semantics nodes and drives Compose interactions. Instrumentation/device environment is required for many UI behaviors.
 
 ## Worked example
 
@@ -51,11 +55,19 @@ Choose libraries per UI technology and run release-critical flows on an emulator
 
 ## Interview answer — structured
 
-“For pure Kotlin logic I use JUnit with minimal doubles. For Android Views I use Espresso and its synchronization model; for Compose I query semantics nodes through a Compose test rule and control its clock. MockK or Mockito are useful when a collaborator must be controlled, but they do not replace real integration coverage. I avoid fixed sleeps and brittle pixel selectors. Mockito/MockK replace collaborator behavior.”
+“For pure Kotlin logic I use JUnit with minimal doubles. For Android Views I use Espresso and its synchronization model; for Compose I query semantics nodes through a Compose test rule and control its clock. MockK or Mockito are useful when a collaborator must be controlled, but they do not replace real integration coverage. I avoid fixed sleeps and brittle pixel selectors, then add a device test for the interaction that matters to users.”
 
 ## Interview answer — deep senior
 
-“I select tools from the architecture, not from fashion. A ViewModel’s state machine is usually cheapest in a JVM test with a fake repository and TestDispatcher. A Compose screen uses semantics assertions for accessibility and navigation behavior; a legacy View uses Espresso. For database, permission or SDK behavior I run instrumentation on devices. Mock frameworks are deliberately narrow: verifying incidental calls makes tests fragile. CI separates fast feedback from slower device journeys and captures screenshots/logs only with redaction.”
+“I start with what must be observed, then pick the tool. JUnit supplies execution and assertions for JVM or Android tests. MockK and Mockito create doubles when replacing an external dependency is useful, but they do not define a test layer. Espresso targets traditional Android Views; Compose UI testing queries the semantics tree of composables and performs user actions. For a login feature I would put password policy in fast JVM tests, drive ViewModel states with a controlled repository fake and test the visible validation and submit action in the relevant UI framework. I keep a smaller Android integration test for lifecycle, Activity Result permissions or navigation because a JVM test cannot claim those platform behaviors. A Compose test should prefer accessible text, role or content description over brittle layout structure; tags are useful when localization or duplicated semantics make them necessary. I also separate presentation proof from system proof: tapping Sign In and seeing a spinner does not prove the backend accepted credentials. Finally, I run the release-like build variant where shrinker, manifest or dependency differences could alter behavior.”
+
+## How to answer in the interview
+
+- **Why:** each framework observes a different part of the app.
+- **How:** map JUnit, doubles, Espresso and Compose semantics to one login flow.
+- **Trade-off:** JVM speed versus Android/platform fidelity.
+- **Failure case:** a JVM test claims permission or navigation behavior.
+- **Production solution:** keep a small instrumented suite for user-critical integration.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for tool roles, UI technology selection, synchronization and mocks versus
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Map JUnit to test execution/assertions, MockK or Mockito to test doubles, Espresso to View UI, and Compose testing to semantics. Name one assertion each tool can make and one platform behavior a JVM-only test cannot verify.
 
 ## References and reviewed-on date
 
 - [Android testing overview](https://developer.android.com/training/testing) — framework choices.
 - [Compose testing](https://developer.android.com/develop/ui/compose/testing) — semantics and test APIs.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

@@ -26,6 +26,10 @@ What is NavHost, and how is state restored after process death?
 
 في Navigation Compose، `NavHost` يربط NavController بالـnavigation graph وdestinations؛ لكل back-stack entry lifecycle وsaved state وViewModel ownership مناسب. عند system-initiated process death قد يعيد Android/Navigation حفظ back stack والarguments الصغيرة، لكن ViewModel instance لا تعيش؛ أعد إنشاءها واسترجع ID من `SavedStateHandle` ثم حمّل البيانات من repository. `rememberSaveable` لحالة UI صغيرة داخل destination. لا تعتمد على object كبير أو singleton in-memory وحده. تأكد من الإعدادات والنسخة وتجربة kill/recreate فعليًا.
 
+### Practical walkthrough in Egyptian Arabic
+
+`NavHost` تعرض destination من back stack. لو Android رجّع task بعد process death، الـViewModel جديدة؛ استخدم `articleId` المحفوظ في args/`SavedStateHandle` لتحميل المقال من repository. `rememberSaveable` يصلح لتبويب صغير؛ لو المقال اتحذف، اعرض error بدل محاولة استرجاع object قديم من الذاكرة. استرجاع route لا يضمن إن المقال ما زال موجودًا؛ لازم Error واضحة لو ID اتحذف أو user فقد الصلاحية. اختبر eligible process death بالـID وبحالة data اتغيرت.
+
 ## Why it matters and how it works
 
 The navigation host renders the current destination from a back stack. Back-stack entries provide owners for lifecycle, ViewModel and saved state, so scope choice affects retention and restoration. Android saved-state mechanisms can restore small navigation/UI information after eligible system recreation; they do not persist arbitrary process memory or unfinished external work. Durable business data belongs in a repository or persistent store.
@@ -33,6 +37,27 @@ The navigation host renders the current destination from a back stack. Back-stac
 ## Worked example
 
 An article route passes `articleId`, not an `Article` object. The destination ViewModel reads that ID from its saved-state handle and loads the article. A local selected tab uses saveable state. After system process recreation, NavHost returns to the article destination if the platform restores the task, the ViewModel is new, and it reloads by ID; a deleted article shows a valid error state.
+
+### Compose/Kotlin walkthrough
+
+```kotlin
+// Navigation graph; article destination reads only a small stable ID.
+@Composable
+fun ArticleGraph(navController: NavHostController) {
+NavHost(navController, startDestination = "feed") {
+    composable("feed") { FeedScreen(onOpen = { id ->
+        navController.navigate("article/$id")
+    }) }
+    composable("article/{articleId}") { entry ->
+        val id = requireNotNull(entry.arguments?.getString("articleId"))
+        ArticleRoute(articleId = id)
+    }
+}
+}
+// Imports: androidx.navigation.NavHostController, navigation.compose.NavHost/composable;
+// encode arbitrary IDs
+// before route interpolation, or use supported typed routes.
+```
 
 ## Trade-offs and decision criteria
 
@@ -48,15 +73,23 @@ Test rotation, background system process death, deep links, and missing/stale ID
 
 ## Interview answer — short
 
-“NavHost displays destinations from a NavController back stack. After eligible process recreation, restore small navigation/UI identifiers and rebuild new ViewModels that reload durable data.”
+“NavHost displays destinations from a NavController back stack. After eligible process recreation, restore small navigation/UI identifiers and rebuild new ViewModels that reload durable data. NavHost restores destination identity when eligible; the new ViewModel reloads by ID.”
 
 ## Interview answer — structured
 
-“I define destinations in NavHost and use the back-stack entry as the intended lifecycle and ViewModel owner. I navigate with a small ID. Navigation and saved-state mechanisms can restore the destination and arguments after system recreation, but the ViewModel instance and in-memory repository cache are gone. The new ViewModel reads the ID from `SavedStateHandle`, reloads the entity, and handles missing data. I save only small UI choices locally and test real process recreation.”
+“I define destinations in NavHost and use the back-stack entry as the intended lifecycle and ViewModel owner. I navigate with a small ID. Navigation and saved-state mechanisms can restore the destination and arguments after system recreation, but the ViewModel instance and in-memory repository cache are gone. The new ViewModel reads the ID from `SavedStateHandle`, reloads the entity, and handles missing data. I save only small UI choices locally and test real process recreation. An article route passes articleId, and its recreated owner asks the repository for current content.”
 
 ## Interview answer — deep senior
 
-“NavHost is the Navigation Compose boundary that renders a graph's current back-stack entry, with entry-specific lifecycle, saved state and ViewModel ownership. That owner is important: an Activity-scoped ViewModel can unintentionally share one destination's state with another, while a destination-scoped one is recreated when its entry is removed. For restoration I pass a stable article ID in the route, not an entire domain object. On eligible system process death, Android and Navigation can restore small back-stack and argument state; the old ViewModel and caches do not survive. A new ViewModel obtains the ID from saved state and reloads article data from durable storage or network, showing loading and an error if the item no longer exists. A selected tab or draft text can use `rememberSaveable` or saved-state handle when small and appropriate. I avoid promising restoration after every user-initiated dismissal or arbitrary kill path. I test rotation, system recreation, deep link entry, stale IDs and back navigation on the installed Navigation version. Any in-flight high-value action needs its own durable recovery and idempotency, independent of NavHost restoration.”
+“NavHost is the Navigation Compose boundary that renders a graph's current back-stack entry, with entry-specific lifecycle, saved state and ViewModel ownership. That owner is important: an Activity-scoped ViewModel can unintentionally share one destination's state with another, while a destination-scoped one is recreated when its entry is removed. For restoration I pass a stable article ID in the route, not an entire domain object. On eligible system process death, Android and Navigation can restore small back-stack and argument state; the old ViewModel and caches do not survive. A new ViewModel obtains the ID from saved state and reloads article data from durable storage or network, showing loading and an error if the item no longer exists. A selected tab or draft text can use `rememberSaveable` or saved-state handle when small and appropriate. I avoid promising restoration after every user-initiated dismissal or arbitrary kill path. I test rotation, system recreation, deep link entry, stale IDs and back navigation on the installed Navigation version. Any in-flight high-value action needs its own durable recovery and idempotency, independent of NavHost restoration. I include a deleted-article error path because restoring an ID does not guarantee the resource still exists.”
+
+## How to answer in the interview
+
+- **Why:** a back stack restores destination identity, not process memory.
+- **How:** pass ID, recreate owner, reload authoritative data.
+- **Trade-off:** saved state is small and restoration is platform-conditional.
+- **Failure case:** in-memory singleton or large argument disappears.
+- **Production solution:** test eligible process recreation and deleted-content errors.
 
 ## Deep-dive talking points
 

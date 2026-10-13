@@ -25,6 +25,10 @@ How do you publish builds to internal testing and Play Console?
 
 بعد build/test للـrelease AAB، نرفعها بـPlay Console أو Publishing API لinternal testing track مع versionCode فريد وrelease notes مناسبة، ونتأكد testers/environment صح. بعد smoke/QA نرقّي نفس version إلى closed/open أو production staged rollout حسب policy. Credentials في protected CI job فقط، والـbackend endpoints ما تتبدلش بالغلط بسبب flavor.
 
+### Practical walkthrough in Egyptian Arabic
+
+بعد signed AAB من commit محدد، ارفع النسخة لـinternal testing track مع versionCode صحيح وrelease notes، وثبّت نتيجة smoke test على نفس الـartifact. بعدها closed testing ثم production staged rollout حسب سياسة المنتج؛ راقب crashes وANR وpayment conversion قبل زيادة النسبة. Play upload ممكن يقبل bundle لكنه لا يثبت إن feature شغالة على الأجهزة، لذلك جرّب install/update لنسخة release ومراجعة device matrix. لا تعيد بناء الـbundle بين track والتاني لو تريد ضمان نفس البايتات.
+
 ## Why it matters and how it works
 
 Play tracks manage distribution audiences. App Bundles are signed/uploaded under Play App Signing workflow. Automated publishing needs service-account permissions and release API use aligned with Play Console settings; a draft/review process may still be required.
@@ -55,7 +59,15 @@ Release dashboard tracks Play processing, tester install, crash/ANR and payment 
 
 ## Interview answer — deep senior
 
-“I treat publication as a state transition with auditable inputs: source commit, immutable AAB, signing identity, applicationId, backend environment and target track. The pipeline verifies each before calling Play, then checks upload acceptance and delivered-device behavior, including ABI splits. Internal testers and QA sign off against the same version where possible. Production rollout starts small, with automated stop criteria for crashes, ANRs and financial unknowns. Halting distribution does not remove installed builds, so backend feature gates and compatible fixes remain part of the plan.”
+“I publish from a release candidate that has an immutable source commit, variant, version code and signed AAB. CI records its digest, R8 mapping and test evidence, then uploads that artifact to an internal track where testers exercise install, upgrade, critical navigation and any device-specific SDK path. Promotion to closed or staged production uses explicit approval and the same verified artifact where the distribution system permits it. I monitor crashes, ANRs, startup, key transactions and support signals as the rollout expands; an upload success only proves the store accepted the artifact. If a gate fails I halt expansion, use a server flag to contain a feature where safe, or publish a fixed higher-version build. I do not promise that Android users already updated can be instantly rolled back to an older APK. Release notes and tag identify what changed, but mapping and provenance identify what actually shipped. High-risk payment changes get provider sandbox and hardware evidence before production exposure.”
+
+## How to answer in the interview
+
+- **Why:** upload acceptance is not runtime safety.
+- **How:** promote a traceable AAB via testing tracks.
+- **Trade-off:** release speed versus observed device confidence.
+- **Failure case:** store accepts a release-only crashing artifact.
+- **Production solution:** staged rollout with crash and transaction gates.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for AAB provenance, versionCode, correct applicationId/track, protected c
 
 ## Self-check rubric
 
-Can you explain this decision, apply the example, name a trade-off and failure, and answer both follow-ups without relying on a memorized slogan?
+Trace one signed build from immutable source SHA to internal testers and then Play track; verify package ID, versionCode, signing provenance and promotion gates before exposure.
 
 ## References and reviewed-on date
 
 - [Android app publishing](https://developer.android.com/studio/publish) — release preparation.
 - [Play App Signing](https://developer.android.com/studio/publish/app-signing) — signed uploads.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

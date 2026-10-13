@@ -24,6 +24,10 @@ Can the candidate distinguish a coroutine deadline from network commit certainty
 
 `withTimeout` بيعمل deadline للـblock ويلغيه بـ`TimeoutCancellationException` لما الوقت يخلص؛ `withTimeoutOrNull` يرجع `null` بدل رمي الاستثناء عند timeout. الإلغاء تعاوني: لو جوا block SDK blocking وما بيسمعش cancel، مش هيتوقف فورًا. وفي network/payment timeout ما نقدرش نستنتج إن السيرفر ما نفذش الطلب.
 
+## Practical walkthrough
+
+في autocomplete، `withTimeoutOrNull` ممكن يرجّع `null` وتعرض cache لو القراءة ما خلصتش خلال budget. لكن في الدفع timeout معناها النتيجة غير معروفة، مش فشل مؤكد؛ اسأل backend عن status. والـtimeout يلغي block تعاونيًا، فماينفعش تعتبره إيقاف قاطع لـnative call. خليك واضح كمان هل `null` معناها timeout فقط ولا API ممكن ترجع null طبيعي.
+
 ## Why it matters and how it works
 
 Timeout is a structured child boundary and can race with a successful return. Use a positive duration and handle nullable domain values separately if `withTimeoutOrNull` is ambiguous. To convert timeout into a domain failure, map it at the correct boundary without swallowing unrelated parent cancellation. Transport timeouts and application deadlines are separate layers.
@@ -62,7 +66,15 @@ An address suggestion API uses a short timeout and cached suggestions as fallbac
 
 ## Interview answer — deep senior
 
-“A timeout is a local deadline in the coroutine tree. The deadline can fire before the caller receives a result, even if the block’s external work already happened. `withTimeout` cancels its child with `TimeoutCancellationException`; `withTimeoutOrNull` maps that timeout to null, which is unsuitable if null also means a valid response. Neither can forcibly interrupt arbitrary blocking Java code. In production I set compatible transport deadlines, make reads cancellable, and design writes with idempotency keys and status reconciliation. I catch and map a timeout at the narrow operation boundary, while letting unrelated parent cancellation propagate. Tests advance virtual time for the coroutine layer and use fake transport outcomes for commit uncertainty.”
+“A timeout is a local deadline in the coroutine tree. The deadline can fire before the caller receives a result, even if the block’s external work already happened. `withTimeout` cancels its child with `TimeoutCancellationException`; `withTimeoutOrNull` maps that timeout to null, which is unsuitable if null also means a valid response. Neither can forcibly interrupt arbitrary blocking Java code. In production I set compatible transport deadlines, make reads cancellable, and design writes with idempotency keys and status reconciliation. I catch and map a timeout at the narrow operation boundary, while letting unrelated parent cancellation propagate. Tests advance virtual time for the coroutine layer and use fake transport outcomes for commit uncertainty. A timeout is a deadline for the coroutine's wait, not proof that a remote operation failed. For a cache lookup I can map the timeout to a fallback value, but I would keep a distinct timeout signal if `null` could also be a legitimate result. For a payment write, I would keep an operation ID in Pending and reconcile with the server. I would test a timeout racing with success and an uncooperative blocking call separately.”
+
+## How to answer in the interview
+
+- **Why:** a deadline bounds caller waiting, not remote side effects.
+- **How:** withTimeout throws TimeoutCancellationException; withTimeoutOrNull maps its own timeout to null.
+- **Trade-off:** fallback suits safe reads, while writes need reconciliation.
+- **Failure case:** uncooperative blocking code keeps running or null conflates states.
+- **Production solution:** define a typed timeout outcome and set transport/server deadlines too.
 
 ## Deep-dive talking points
 
@@ -82,4 +94,4 @@ Can I choose an API, interpret null safely, name cooperative-cancellation limits
 - [Kotlin withTimeout API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout.html) — deadline and race semantics.
 - [Kotlin withTimeoutOrNull API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout-or-null.html) — nullable timeout result.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

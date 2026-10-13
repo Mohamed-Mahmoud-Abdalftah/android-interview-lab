@@ -26,6 +26,10 @@ Compare APK and Android App Bundle (AAB).
 
 APK هو package قابل للتثبيت على جهاز Android. AAB صيغة نشر تجمع code/resources/modules؛ Play أو distributor يحولها إلى APKs مناسبة للجهاز، مثل base/configuration/feature splits. لا يمكنك تثبيت AAB مباشرة مثل APK؛ استخدم bundletool أو Play testing لإنتاج APK set واختبار ما سيصل لجهاز معين. AAB تساعد في تقليل download عبر استبعاد موارد/ABIs غير اللازمة وقد تدعم dynamic delivery، لكن عليك اختبار packaging/لغة/ABI وsigning في مسار النشر الفعلي.
 
+### Practical walkthrough in Egyptian Arabic
+
+APK حزمة install مباشرة، AAB حزمة نشر يشتق منها المتجر split APKs حسب الجهاز. نجاح universal debug APK لا يثبت إن ABI أو resources وصلت في Play split. خذ bundle المنتج، افحص splits باستخدام أدوات رسمية، وجرّب install/update على device matrix. احتفظ بالmapping وnative symbols لنفس artifact؛ حجم الـAAB وحده ليس حجم تنزيل المستخدم.
+
 ## Why it matters and how it works
 
 An APK contains installable application code and assets for a target package. An App Bundle is a structured publishing artifact from which a distributor creates installable APKs tailored to device configuration. Delivery can include multiple split APKs, so testing a universal local APK may miss a missing native library or resource in device-targeted splits.
@@ -57,6 +61,14 @@ Test AAB-derived APK sets on target ABIs/locales/densities, inspect size and con
 ## Interview answer — deep senior
 
 “The key difference is artifact role. An APK is the Android package a device installs. An App Bundle is a publishing input containing modules and resources; Google Play or another supporting distributor processes it into installable APKs, often selecting ABI, density and language resources and feature splits for the device. This can reduce downloaded bytes and enable on-demand features, but it means a locally installed universal debug APK is not sufficient evidence for the Play-delivered release. I generate an APK set from the AAB with bundletool for representative device specs, install it on emulators or devices, and exercise native-library and resource paths. I also test an internal Play track to cover the real signing/delivery path. If one ABI crashes with `UnsatisfiedLinkError`, I inspect which split contained the `.so` and the native dependency's supported ABIs. I distinguish the upload key used to submit the bundle from the app-signing key that signs delivered APKs under Play App Signing. AAB is not a runtime format that I pass directly to `adb install`.”
+
+## How to answer in the interview
+
+- **Why:** distribution changes bytes delivered to device.
+- **How:** compare package and generated splits.
+- **Trade-off:** delivery efficiency versus split complexity.
+- **Failure case:** missing .so in one ABI split.
+- **Production solution:** test Play-like generated install.
 
 ## Deep-dive talking points
 

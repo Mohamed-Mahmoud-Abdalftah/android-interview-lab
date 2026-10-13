@@ -24,6 +24,10 @@ Choose among cold Flow, StateFlow, SharedFlow and LiveData with lifecycle and in
 
 `Flow` interface لstream async وغالبًا cold، كل collector يشغّل upstream. `StateFlow` hot وبها قيمة حالية؛ `SharedFlow` hot broadcast مع replay/buffer قابلين للضبط. `LiveData` lifecycle-aware observable من AndroidX مناسبة للتعامل مع code قديم، لكنها أقل ملاءمة لعمليات Flow الغنية خارج UI. نوع الـstream وحده لا يوقف collection في UI؛ نحتاج lifecycle-aware collector.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو شاشة قديمة بـLiveData وشاشة Compose جديدة، ما تعملش migration لمجرد الاسم. `Flow` cold pipeline، `StateFlow` hot current state، `SharedFlow` broadcast configurable، وLiveData lifecycle-aware observation على Android. في migration خلّي source of truth في repository واحدة، وحوّل على boundary، بدل نسختين state بيحدثوا بشكل مختلف. اختبر rotation وinactive observer وerror model.
+
 ## Why it matters and how it works
 
 Use Flow for repository streams/operators, StateFlow for ViewModel state snapshots, SharedFlow for specified broadcast contracts, LiveData where Android lifecycle-native APIs or legacy integration demand it. StateFlow/SharedFlow collectors remain active until their coroutine is cancelled, so use repeatOnLifecycle or collectAsStateWithLifecycle.
@@ -66,7 +70,15 @@ A mixed XML/Compose application keeps repository data as Flow, exposes screen st
 
 ## Interview answer — deep senior
 
-“I would not equate all four types. Flow is an asynchronous stream interface whose typical builders are cold; an expensive upstream may run per collector. StateFlow is a specialized hot SharedFlow with one current value and equality-based conflation. SharedFlow is a broadcast primitive with configurable replay and subscriber buffering. LiveData integrates observer activity with LifecycleOwner and can be a practical interoperability boundary in a mature app. For Compose or Views, I keep repository Flow independent of UI, derive StateFlow in a ViewModel, and collect only while active. One-shot effects require explicit delivery semantics; persistent business outcomes should be modeled as durable state. I test rotation, stopped UI and multiple collectors.”
+“I would not equate all four types. Flow is an asynchronous stream interface whose typical builders are cold; an expensive upstream may run per collector. StateFlow is a specialized hot SharedFlow with one current value and equality-based conflation. SharedFlow is a broadcast primitive with configurable replay and subscriber buffering. LiveData integrates observer activity with LifecycleOwner and can be a practical interoperability boundary in a mature app. For Compose or Views, I keep repository Flow independent of UI, derive StateFlow in a ViewModel, and collect only while active. One-shot effects require explicit delivery semantics; persistent business outcomes should be modeled as durable state. I test rotation, stopped UI and multiple collectors. I would compare behavior rather than declare a winner. A regular Flow can be cold and run separately per collector. StateFlow is a hot, conflated current-state holder with an initial value. SharedFlow is a hot broadcast with replay and buffer options. LiveData is Android-specific and observes according to lifecycle, while Flow collection needs an explicit lifecycle-aware collector in UI. Conversion can be useful during incremental migration, but two mutable holders for the same screen create synchronization bugs. I would keep repository truth in one place and adapt at the ViewModel or presentation boundary. I would also ask how errors and completion are represented, because StateFlow does not close to signal either. The practical test is whether a new screen after rotation gets the right current state.”
+
+## How to answer in the interview
+
+- **Why:** API names hide different lifetime and replay contracts.
+- **How:** compare cold/hot, initial value, lifecycle, and errors.
+- **Trade-off:** migration adapters add complexity.
+- **Failure case:** parallel LiveData and StateFlow owners diverge.
+- **Production solution:** one source of truth and rotation tests.
 
 ## Deep-dive talking points
 

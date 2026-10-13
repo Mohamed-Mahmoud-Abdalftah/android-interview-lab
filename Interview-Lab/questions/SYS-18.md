@@ -24,6 +24,10 @@ Handle older APKs against newer backend contracts with versioned compatibility.
 
 مستخدم Android ممكن يفضل على APK قديمة شهور؛ backend لازم تعرف version skew. نفضّل additive JSON/API changes، default values وfeature negotiation، ونحافظ على endpoints/schema قديمة لفترة معلنة. لو change breaking نستخدم versioned route أو minimum-supported-version response واضح، لكن ما نمسحش قدرة user offline على قراءة data. Contract tests تغطي أقدم نسخة مدعومة.
 
+## Practical walkthrough
+
+لو backend بدأت ترجع enum جديدة وAPK قديمة ما تعرفهاش، parser لازم يتعامل مع unknown بقيمة آمنة بدل crash أو افتراض نجاح. أضف fields قبل فرضها، وخلي server يقبل الطلبات القديمة لحد adoption threshold. لو مضطر تمنع نسخة قديمة أمنيًا، رد واضح بminimum-supported-version ومسار تحديث، وخطط للمستخدم offline عنده outbox لازم ما تضيعش.
+
 ## Why it matters and how it works
 
 Old clients may not know new enum values or required fields; robust parsing and explicit unknown states help. Backend rollout should precede client use of new fields, then remove old behavior only after telemetry confirms migration. Security fixes may require forced upgrade with careful user/data policy.
@@ -63,7 +67,15 @@ A bank deploys additive transaction-status fields first, updates Android parser 
 
 ## Interview answer — deep senior
 
-“I plan an expand-migrate-contract sequence. First the backend accepts both old and new request shapes and emits additive responses. Then new clients roll out gradually with feature capability and schema/version handling. Only after usage data and policy thresholds allow do we remove the old contract. I test unknown fields/enum variants, auth refresh and deep links on old clients, and I maintain a compatibility matrix for DB versions as well. A forced upgrade may be necessary for a severe security flaw, but it must explain the user path and avoid destroying offline drafts. Version skew is an operational reality, not an edge case.”
+“I plan an expand-migrate-contract sequence. First the backend accepts both old and new request shapes and emits additive responses. Then new clients roll out gradually with feature capability and schema/version handling. Only after usage data and policy thresholds allow do we remove the old contract. I test unknown fields/enum variants, auth refresh and deep links on old clients, and I maintain a compatibility matrix for DB versions as well. A forced upgrade may be necessary for a severe security flaw, but it must explain the user path and avoid destroying offline drafts. Version skew is an operational reality, not an edge case. I would make a compatibility matrix across supported app versions and backend contract revisions. Unknown response fields should be ignored safely, while unknown business enum values should map to an explicit unsupported state rather than success. A new required request field cannot be enforced until older clients are retired or given a compatibility path. Telemetry should show active old versions and schema errors before removal. Security-mandated upgrades need a clear minimum-version response and a way to preserve pending local data.”
+
+## How to answer in the interview
+
+- **Why:** old binaries coexist with new server contracts for months.
+- **How:** add fields, tolerate unknown values, negotiate capability, then retire safely.
+- **Trade-off:** compatibility layers increase server complexity.
+- **Failure case:** old app crashes on new enum or loses pending writes.
+- **Production solution:** version matrix, telemetry, explicit upgrade response, and recovery of local work.
 
 ## Deep-dive talking points
 
@@ -83,4 +95,4 @@ Can I support old clients, parse unknowns and plan safe contract removal?
 - [Android architecture guide](https://developer.android.com/topic/architecture) — robust persistent model boundaries.
 - [Android modularization guide](https://developer.android.com/topic/modularization) — stable API boundaries.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

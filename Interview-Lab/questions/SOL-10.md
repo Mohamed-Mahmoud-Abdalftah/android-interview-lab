@@ -39,6 +39,10 @@ class CheckoutHeader(private val host: ToolbarHost) {
 ```
 A full-screen camera Fragment does not implement `ToolbarHost` and need not pretend to support it.
 
+## Practical walkthrough
+
+السؤال هنا مش إن `setupToolbar()` فاضية وخلاص؛ هل base contract بيقول إن كل Fragment يقدر يجهز toolbar؟ لو camera screen مفيهاش toolbar وبتعمل throw أو no-op مخفي، caller بيتعامل معاها كبديل وبيفشل. الأفضل تخلي capability مستقلة `ToolbarHost` أو controller يتضاف للشاشات المناسبة فقط. لو method optional صراحة وبلا افتراض من callers، LSP قد لا تنكسر لكن تصميم الـbase غالبًا لسه مربك. اختبر caller كان بيعمل إيه مع أي subclass، خصوصًا بعد navigation أو recreation.
+
 ## Trade-offs and decision criteria
 
 A default no-op can be acceptable if optional behavior is explicit and callers do not rely on it. A capability interface adds wiring but prevents invalid base assumptions. Avoid adding an interface if a simple local helper suffices.
@@ -57,11 +61,19 @@ It violates LSP when the base contract promises toolbar setup but a subclass can
 
 ## Interview answer — structured
 
-I first ask what `BaseFragment` promises. If callers can treat every subclass as toolbar-capable, a screen that throws from `setupToolbar()` breaks substitution. A no-op may also be misleading if callers expect visible configuration. I would extract a `ToolbarHost` or controller used only by toolbar screens and remove the requirement from the common base. If the hook is explicitly optional with no caller guarantee, it may not be a strict LSP violation, though the hierarchy may still be awkward. In a migration, I would preserve screens that actually use the toolbar while removing the compulsory hook from screens that do not. I would test rotation and back navigation because toolbar setup often interacts with the Activity lifecycle. A new capability should describe what callers can rely on.
+I first ask what `BaseFragment` promises. If callers can treat every subclass as toolbar-capable, a screen that throws from `setupToolbar()` breaks substitution. A no-op may also be misleading if callers expect visible configuration. I would extract a `ToolbarHost` or controller used only by toolbar screens and remove the requirement from the common base. If the hook is explicitly optional with no caller guarantee, it may not be a strict LSP violation, though the hierarchy may still be awkward. In a migration, I would preserve screens that actually use the toolbar while removing the compulsory hook from screens that do not. I would test rotation and back navigation because toolbar setup often interacts with the Activity lifecycle.
 
 ## Interview answer — deep senior
 
-The principle is behavioral, not syntax-based. A subclass can compile while rejecting a valid operation of its base type. If `BaseFragment` always calls `setupToolbar()` during lifecycle and one child has no toolbar, throwing is a clear failure. A silent no-op may also violate user-visible expectations depending on the documented contract. I would add tests that exercise the base behavior through each subclass, then introduce an explicit toolbar capability for only the applicable screens. The migration can be incremental: stop invoking the hook unconditionally, move toolbar setup to a collaborator, and remove obsolete overrides. I would also inspect other BaseFragment responsibilities such as analytics and permissions, because the same overbroad abstraction often hides lifecycle leaks and test coupling. A nuanced answer distinguishes an invalid subtype from an intentionally optional operation. If the documented base contract says toolbar setup may be absent and callers never assume otherwise, a no-op may be legal, though perhaps awkward. If the base lifecycle unconditionally invokes the hook expecting a toolbar, a throw is a clear contract break. I would examine call sites, introduce a toolbar capability only for relevant screens, and avoid a wide BaseFragment that also bundles analytics, permissions, and navigation. This reduces both LSP risk and lifecycle coupling.
+The principle is behavioral, not syntax-based. A subclass can compile while rejecting a valid operation of its base type. If `BaseFragment` always calls `setupToolbar()` during lifecycle and one child has no toolbar, throwing is a clear failure. A silent no-op may also violate user-visible expectations depending on the documented contract. I would add tests that exercise the base behavior through each subclass, then introduce an explicit toolbar capability for only the applicable screens. The migration can be incremental: stop invoking the hook unconditionally, move toolbar setup to a collaborator, and remove obsolete overrides. I would also inspect other BaseFragment responsibilities such as analytics and permissions, because the same overbroad abstraction often hides lifecycle leaks and test coupling. I would ask what callers are promised by `BaseFragment`. If the base says every screen can configure a toolbar, a camera subclass that throws or silently does nothing breaks substitutability when a caller invokes that behavior. The fix is to move the capability to a narrow `ToolbarHost` or compose a controller only into screens with toolbars. If the base explicitly models optional toolbar behavior and callers handle absence, the LSP claim is less direct, though the hierarchy may still be awkward. I would migrate call sites to depend on the capability they actually require and test navigation and recreation, where hidden no-op behavior often surfaces.
+
+## How to answer in the interview
+
+- **Why:** State the promised base behavior.
+- **How:** explain substitution at caller site.
+- **Trade-offs:** mention optional-contract nuance.
+- **Failure cases:** show throw/no-op failure.
+- **Production solutions:** propose explicit capability and caller tests..
 
 ## Deep-dive talking points
 
@@ -81,4 +93,4 @@ Explain the contract condition for violation, give a counterexample where option
 - [Kotlin inheritance](https://kotlinlang.org/docs/inheritance.html) — override behavior.
 - [Liskov and Wing, A Behavioral Notion of Subtyping](https://www.cs.columbia.edu/~wing/publications/LiskovWing94.pdf) — substitutability.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

@@ -23,7 +23,11 @@ How do you test process death, rotation, and offline transitions?
 
 ## Explanation in Arabic
 
-Rotation عادة Activity تتعاد وViewModel يفضل في نفس process؛ process death يمسح memory وViewModel، فلازم `SavedStateHandle` للـsmall UI state وRoom/backend للبيانات الدائمة. Offline transition يغير availability وقد يحدث وسط request؛ لازم state unknown لو payment response ضاع. نختبر كل حالة بشكل مستقل، مش نعتبر rotation اختبار process death.
+Rotation تغيّر Activity instance غالبًا، لكن مش مساوية لـprocess death. اختبر أثناء Loading إن ViewModel/state وoperation ID لا يتكرروا بعد rotation، والـscreen الجديدة ترجع تعرض state. لاختبار process death فعليًا لازم state المهمة تتخزن قبل الإرسال في Room أو `SavedStateHandle` حسب عمرها؛ اقتل العملية وأعد فتح التطبيق وتأكد إن intent تتقرأ من durable source، مش ذاكرة singleton.
+
+## Practical walkthrough
+
+Offline transition بعد approval أخطر من مجرد “network unavailable”: الرد ممكن يضيع بعد server commit، فالواجهة تظهر Unknown وتعمل status lookup/reconciliation بدل Declined أو charge جديدة. اختبر login/session وpermission restoration حسب workflow. UI test وحدها لا تثبت إن backend منع duplicate؛ محتاج backend contract/integration test.
 
 ## Why it matters and how it works
 
@@ -55,7 +59,15 @@ CI includes rotation/locale changes and background process recreation. Release d
 
 ## Interview answer — deep senior
 
-“I enumerate state by lifetime: composable memory, ViewModel, saved instance state, local database and backend ledger. Each test kills the owning lifetime and checks the next layer restores correctly. Rotation tests verify no duplicate request; process-death tests relaunch from Room and query provider authority; network tests sever the connection at different points to expose ambiguous outcomes. I run release-like device tests because lifecycle and vendor SDK behavior may differ from fakes. A screen appearing correct after Activity recreation is not evidence of durable payment recovery.”
+“I separate three failure modes that are often collapsed into one UI test. Rotation recreates an Activity, so I trigger it while a request is pending and assert that the operation ID remains stable and the new screen observes the same state without submitting again. Process death is stronger: memory, ViewModel and ordinary coroutine scope disappear. I persist the intended operation before network send, kill and relaunch the process in an instrumented test, and assert the repository reconstructs pending or unknown state from durable storage. For offline transitions I test both before-send failure and after-server-commit lost response. The latter must not become Declined; the client should show Unknown, retain the original identity and reconcile with the authority. I also verify that a late callback from an old screen generation cannot overwrite newer state. A fake can drive the app’s state machine deterministically, but it does not prove the backend’s idempotency or real Android restoration by itself. I record exactly which layer and device environment supports each claim.”
+
+## How to answer in the interview
+
+- **Why:** rotation, process death and offline loss have different state survivors.
+- **How:** rotate, kill/relaunch and drop reply after approval in separate tests.
+- **Trade-off:** fast fake state tests versus expensive Android and backend evidence.
+- **Failure case:** a recreated screen sends a new charge ID.
+- **Production solution:** durable intent, Unknown state and reconciliation.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for lifetime table, actual process kill, same operation ID, offline-after
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Rotate while loading and verify one stable operation ID, recreate after persisted intent and verify recovery, then drop the network after server approval and assert Unknown plus reconciliation. Distinguish rotation from actual process death.
 
 ## References and reviewed-on date
 
 - [Android saving UI state](https://developer.android.com/topic/libraries/architecture/saving-states) — state lifetimes.
 - [Android offline-first data layer](https://developer.android.com/topic/architecture/data-layer/offline-first) — durable data design.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

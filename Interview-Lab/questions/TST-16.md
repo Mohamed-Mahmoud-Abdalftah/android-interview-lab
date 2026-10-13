@@ -23,11 +23,15 @@ What should be unit-tested versus verified with an emulator/device?
 
 ## Explanation in Arabic
 
-Pure Kotlin business rules، formatting وretry policy ممكن unit-test على JVM بسرعة. Android framework behavior مثل runtime permissions، Room migration على SQLite/device، lifecycle/process death، UI semantics وhardware SDK لازم emulator أو جهاز حقيقي حسب الحالة. Emulator ممتاز للـAPI matrix، لكن NFC/EMV/biometric/hardware quirks تحتاج أجهزة فعلية.
+اختار test layer حسب الشيء المراد إثباته. Rounding، validation وstate reducer من غير Android APIs تُختبر سريعًا على JVM مع edge cases. Room migration، permissions، process recreation وCompose semantics تحتاج emulator أو جهاز لأن contract متعلق بالـplatform.
+
+## Practical walkthrough
+
+POS reader disconnect أو camera timing يحتاج hardware/provider sandbox؛ fake callback تثبت state machine في التطبيق فقط. Emulator لا يمثل كل firmware أو OEM behavior، وجهاز واحد لا يغطي كل API levels. اكتب في التقرير claim دقيقة: “unit test يثبت قرار Unknown”، وليس “اختبرنا terminal” لو ما شغلناش terminal. رتّب matrix بالمخاطر: flows حرجة لها integration/device coverage، بينما logic بسيط لا يحتاج suite بطيئة لكل حالة.
 
 ## Why it matters and how it works
 
-JVM tests execute without Android runtime and cannot prove manifest, Binder, file backup or device UI behavior. Instrumentation executes on Android. Some local Robolectric-style tests approximate framework behavior but are not a substitute for hardware or OS-specific validation.
+JVM tests execute without Android runtime and cannot prove manifest, Binder, file backup or device UI behavior. I record which devices and SDK versions were actually covered. Some local Robolectric-style tests approximate framework behavior but are not a substitute for hardware or OS-specific validation.
 
 ## Worked example
 
@@ -51,11 +55,19 @@ Build a supported API/device/ABI matrix. Run fast JVM PR checks, targeted emulat
 
 ## Interview answer — structured
 
-“I choose environment based on what could fail. A use case or algorithm runs in JVM tests; permissions, lifecycle, Room migration and Compose UI need Android execution. Emulators cover API levels and screen sizes efficiently, while a POS SDK and reader disconnect require actual terminal hardware. I do not call a fake SDK test proof that certified hardware behaves correctly. Instrumentation executes on Android.”
+“I choose the environment based on what could fail. A use case or algorithm runs in JVM tests; permissions, lifecycle, Room migration and Compose UI need Android execution. Emulators cover API levels and screen sizes efficiently, while a POS SDK and reader disconnect require actual terminal hardware. I state which devices, OS versions and provider versions were actually exercised, because a mock cannot certify the hardware.”
 
 ## Interview answer — deep senior
 
-“I maintain a risk matrix with OS version, API, ABI, device class and vendor firmware. Critical business invariants get abundant fast JVM tests, but platform contracts get instrumentation and hardware-specific bugs get real-device drills. Release-like packaging matters: minification and split APKs can expose issues absent in debug. If a test uses a simulator, I state exactly what it proves and keep an authoritative integration or operational verification for the financial boundary. Build a supported API/device/ABI matrix. Record which claims were device-verified.”
+“I choose the cheapest environment that can observe the contract. Pure fee rounding, ID validation and reducers belong in JVM unit tests with exhaustive edge cases. When the claim depends on Android framework behavior—Room migrations, permissions, Activity recreation, Compose semantics or manifest packaging—I run a targeted emulator or device test. Hardware and provider timing need another boundary: a fake POS callback can prove that my state machine enters Unknown after a disconnect, but it cannot certify the terminal firmware or payment provider protocol. I keep a small hardware and sandbox suite for release-critical paths, and state exactly which devices, API levels and provider versions were exercised. An emulator is valuable but cannot represent every OEM implementation; a physical device is not universal proof either. I separate app-policy tests from platform and external-system verification in the release report. That avoids both extremes: making every simple rule wait for a device, and declaring a payment integration safe because a mocked callback passed on the JVM.”
+
+## How to answer in the interview
+
+- **Why:** a fake proves app policy but cannot emulate firmware or Android exactly.
+- **How:** allocate rounding to JVM, lifecycle/Room to device and POS timing to hardware.
+- **Trade-off:** speed and coverage versus cost of realistic environments.
+- **Failure case:** a mocked disconnect is called terminal certification.
+- **Production solution:** explicit device/provider coverage in release evidence.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for JVM boundary, emulator API matrix, real hardware, release variant and
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Place pure rounding/policy on JVM, Room or permission behavior on emulator, and reader disconnect timing on real hardware. Explain why a fake callback cannot certify firmware or platform integration.
 
 ## References and reviewed-on date
 
 - [Android test fundamentals](https://developer.android.com/training/testing/fundamentals) — local versus instrumented tests.
 - [Android device testing](https://developer.android.com/training/testing) — test environment guidance.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

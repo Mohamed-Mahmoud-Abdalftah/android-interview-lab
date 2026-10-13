@@ -34,6 +34,10 @@ Android may kill a stopped application's process to reclaim resources. No in-pro
 
 For a receipt screen, write the server's `paymentAttemptId` to a durable local record before leaving the initiation flow. The restored ViewModel reads that ID and calls a read-only status endpoint. Only the backend decides whether the attempt succeeded. Illustrative flow: `Persist attempt ID → submit with idempotency key → process is killed → reopen → read ID → fetch server status → render receipt/pending/failure`. A small `SavedStateHandle` key may restore which receipt page was open, but is not the transaction ledger.
 
+## Practical walkthrough
+
+process death معناها process memory راحت؛ singleton وViewModel وcoroutine القديمة اختفوا، ومش مضمون `onDestroy`. Android قد يرجّع navigation/saved small state في مسارات restore معينة، لكن business data لازم ترجع من persistent store أو server. في receipt screen، خزّن `paymentAttemptId`/idempotency key في storage مناسب قبل الـexternal side effect، وبعد العودة اعمل status query بدل ما تبعت خصم جديد. لو مفيش restoration data، ابدأ safe route واسأل backend عن الحساب. فرق ده عن rotation: rotation غالبًا process نفسها عايشة والـViewModel scope ممكن يحتفظ بالحالة.
+
 ## Trade-offs and decision criteria
 
 Saved state is fast and convenient for small UI reconstruction keys; it is constrained by serialization cost, size, and save timing. Room or another durable store survives process death and supports richer data, but requires schema and I/O design. WorkManager can schedule deferrable recovery work under system constraints, while opening the screen can also trigger a foreground reconciliation. Neither makes an uncertain payment outcome safe to repeat without a server idempotency and status contract.
@@ -52,10 +56,22 @@ An offline note editor persists drafts incrementally, saves only the note ID and
 
 ## Interview answer — structured
 
-“Rotation commonly replaces the Activity but leaves the process alive, allowing its ViewModelStore to retain the ViewModel. Process death removes the whole process; callbacks are not a reliable opportunity to save last-minute work. I persist business data before it matters, keep a compact reconstruction key in SavedStateHandle or rememberSaveable, and reload from disk or the server. For an external operation I restore its identity and query status instead of blindly retrying. A process may be killed without `onDestroy()`, so no final callback can be the durability plan. On return, the system may provide saved UI state, but I use it as a reconstruction hint and reload durable data. The exact restoration path differs after normal task return, force-stop or a fresh launch.”
+Rotation commonly replaces the Activity but leaves the process alive, allowing its ViewModelStore to retain the ViewModel. Process death removes the whole process; callbacks are not a reliable opportunity to save last-minute work. I persist business data before it matters, keep a compact reconstruction key in SavedStateHandle or rememberSaveable, and reload from disk or the server. For an external operation I restore its identity and query status instead of blindly retrying. A process may be killed without `onDestroy()`, so no final callback can be the durability plan.
+
 ## Interview answer — deep senior
 
-“I design restoration as a fresh process bootstrap. The UI may receive a saved Bundle for a previously stopped task, but I do not make that Bundle the source of truth or assume every exit provides it. ViewModel and dependency graph are recreated, so repositories must rebuild from durable records. For a transaction, I persist an attempt ID and idempotency key before submission, model an unknown outcome if the response is lost, and reconcile against the server on restart. I exercise a background process kill, force-stop/new launch, and rotation separately because their restoration guarantees differ. I model return as a new process bootstrap: dependency graph, ViewModels and singleton caches are new objects. A saved Bundle may recover a receipt ID or cursor position for a previously stopped task, but it may be absent after other exit paths and should not contain large business data. Before sending a payment, I persist an operation ID and immutable parameters; after restart I query the backend for status and represent a lost response as unknown. I never repeat a non-idempotent POST merely because the screen reappeared. Tests must actually kill a background process and also cover a clean launch without saved state.”
+I design restoration as a fresh process bootstrap. The UI may receive a saved Bundle for a previously stopped task, but I do not make that Bundle the source of truth or assume every exit provides it. ViewModel and dependency graph are recreated, so repositories must rebuild from durable records. For a transaction, I persist an attempt ID and idempotency key before submission, model an unknown outcome if the response is lost, and reconcile against the server on restart. I exercise a background process kill, force-stop/new launch, and rotation separately because their restoration guarantees differ. I model return as a new process bootstrap: dependency graph, ViewModels and singleton caches are new objects.
+
+A payment screen demonstrates why this distinction is operational. The client may be killed after the server receives a submit but before the response reaches the UI. A new process cannot infer success from its missing in-memory state, and calling submit again with a new key could duplicate the charge. I persist the attempt identity and immutable parameters before the external side effect, then query status on restore. Saved instance state can recover which screen to display when available, but it is not the source of truth for the transaction. I test kill points around the request and response.
+
+## How to answer in the interview
+
+- **Why:** Process memory can vanish while an external operation remains uncertain.
+- **How:** Contrast recreation within one process with a new process and optional saved state.
+- **Trade-offs:** Save small route keys in state; persist critical attempt identity durably.
+- **Failure cases:** Reject reliance on `onDestroy` or an in-memory singleton.
+- **Production solution:** Reconcile a payment attempt with the server before any retry.
+
 ## Deep-dive talking points
 
 Explain process importance, Bundle save timing, why `onDestroy()` is not a durability hook, ViewModel retention only across ordinary configuration recreation, and safe handling of unknown network outcomes after a restart.
@@ -76,4 +92,4 @@ State exactly what process death destroys; contrast it with a configuration chan
 - [Save UI states](https://developer.android.com/topic/libraries/architecture/saving-states) — scope and limitations of saved state.
 - [ViewModel overview](https://developer.android.com/topic/libraries/architecture/viewmodel) — in-memory retention boundary.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The payment recovery flow is an architectural illustration; no server implementation was tested.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The payment recovery flow is an architectural illustration; no server implementation was tested.

@@ -24,6 +24,10 @@ Design shared session ownership without feature-to-feature imports or a process-
 
 Account/session state تخص أكتر من feature، فحط contract ضيق في shared core/session module: `SessionRepository.observeSession()` و`signOut()`. implementation في data/app module تتعامل مع token storage وserver refresh، وfeatures تعتمد على contract بدل checkout يستورد profile أو العكس. UI state لكل feature مشتقة من session stream، وما تخزنش Activity في singleton. بعد process death ارجع من persisted session مع revalidation؛ local token مش دليل server authorization. logout يمسح local credential ويبلّغ server حسب policy، مع race handling للطلبات الجارية.
 
+### Practical walkthrough in Egyptian Arabic
+
+Account/session state بين features لا تترك كل feature يملك mutable copy. عرّف contract صغير مثل `SessionRepository` في core module لا يعتمد على features، والauth implementation تحقنه. Features تراقب identity/version وتعيد تحميل data عند switch/logout. لا تضع Activity Context أو navigation في singleton. اختبر logout أثناء request والعودة من notification لحساب مختلف.
+
 ## Why it matters and how it works
 
 Shared state needs one owner and a dependency direction that prevents cycles. A narrow core contract lets features observe session facts while a data implementation owns persistence and refresh. DI composes the graph.
@@ -55,6 +59,14 @@ Cross-feature session state needs one owner. I define a small `SessionRepository
 ## Interview answer — deep senior
 
 The graph is the first design artifact: features point to a small session API, while a data module implements it and app-level composition wires them together. The exposed model contains only safe facts such as signed-in state and user ID, not raw tokens. The owner handles storage, refresh races, expiry, and logout; features observe a stream and react to changes. A process singleton may cache state but cannot be the durable source of truth. After process death, the repository rehydrates from protected storage and validates as needed. I test simultaneous refresh and logout, in-flight requests during sign-out, and feature recreation. This avoids circular Gradle dependencies and prevents a Profile ViewModel from becoming an accidental global account service. To avoid cycles, neither profile nor checkout imports the other; both depend on a shared API with only the session facts they need. DI in the app composition root binds the data implementation. A singleton can cache a current snapshot but is not durable; after process death the repository must rehydrate and validate. I also define how token refresh races with sign-out and whether pending requests are cancelled or rejected. These operational details are where a shared session design succeeds or fails, beyond a clean module diagram.
+
+## How to answer in the interview
+
+- **Why:** cross-feature state can create cycles.
+- **How:** central contract with one authoritative owner.
+- **Trade-off:** shared core versus coupling.
+- **Failure case:** stale account response leaks into new session.
+- **Production solution:** session generation and authorization checks.
 
 ## Deep-dive talking points
 

@@ -23,7 +23,11 @@ How would you create a risk-based test plan for a security-sensitive release?
 
 ## Explanation in Arabic
 
-Security-sensitive release ما ينفعش تتقاس بعدد tests فقط. نحدد assets وattack paths: token leak، backup، exported component، TLS، tampered client، payment duplicate. نربط كل risk بـunit/integration/device/backend test ودليل، ونشغّل release variant على أجهزة ممثلة. High-risk unresolved finding يمنع release أو يحتاج قرار موثق من أصحاب الصلاحية.
+Risk-based test plan تبدأ من تهديدات التغيير: token storage migration، key invalidation، backup restore، logout race، tampered amount، logs فيها بيانات حساسة، وminified build. رتّب likelihood × impact وحدد owner وrelease gate لكل خطر. JVM tests لسياسة auth والredaction، Android tests لـKeystore/backup/lifecycle على API matrix، backend tests ترفض تعديل amount أو reuse غير مصرح، وpenetration/manual review للحدود الحساسة.
+
+## Practical walkthrough
+
+لا تجعل SDK أو local flag سلطة على payment؛ server هو authority. قبل release جرّب بيانات من الإصدار القديم، وتأكد من reauthentication عند فقد key بدل decrypt fallback غير آمن. السجل يذكر ما تم اختباره فعلاً وما بقي جهاز/مزود-dependent.
 
 ## Why it matters and how it works
 
@@ -51,11 +55,19 @@ Record risk owner, test evidence, residual limitation and release gate. Roll out
 
 ## Interview answer — structured
 
-“For a security release I rank risks such as credential leakage, insecure backup, exported components, TLS misconfiguration and payment replay. I map each to a test: static artifact/manifest inspection, dynamic device tests, backend authorization and idempotency tests, and provider sandbox flows. I run the actual minified variant and record evidence and unresolved limitations. Rollout gates monitor both attacks and legitimate-user failures. Staged rollout watches residual risks. ”
+“For a security release I rank risks such as credential leakage, insecure backup, exported components, TLS misconfiguration and payment replay. I map each to a test: static artifact/manifest inspection, dynamic device tests, backend authorization and idempotency tests, and provider sandbox flows. I run the actual minified variant and record evidence and unresolved limitations. Rollout gates monitor both attacks and legitimate-user failures. I keep a rollback trigger for any unresolved high-impact risk.”
 
 ## Interview answer — deep senior
 
-“My plan has a traceability matrix from threat to invariant to evidence. A client storage migration is tested across old data, key loss, process death and backup restore; a backend payment rule is attacked with a modified APK/request; observability is scanned for canary secrets. I select devices by API, ABI and incident exposure, then use staged rollout with crash, fraud and false-positive signals. If a critical control fails, I halt or scope the release and document an explicit risk decision rather than silently reducing tests.”
+“I begin with a threat and change inventory, then assign evidence to each release risk. If the release changes token storage, I test migration from old encrypted data, missing or invalidated Keystore keys, backup restore to another device, logout and refresh races, and log redaction. A JVM suite covers policy and state transitions; Android instrumentation covers platform key and lifecycle behavior on supported API levels; a minified release-like build catches R8 or manifest differences. Backend tests prove it rejects a tampered amount, replayed or unauthorized request even if the client UI is modified. I prioritize by impact and likelihood, not by which test is easiest to automate, and give each blocking case an owner. A security SDK verdict is only a signal; it cannot replace server authorization. I also define what happens when a key is unrecoverable: clear a replaceable token and require sign-in rather than manufacturing a plaintext default. The release report states exact device, provider and environment coverage. I do not claim one emulator or a passing fake proves all hardware and threat-model behavior.”
+
+## How to answer in the interview
+
+- **Why:** security-sensitive changes need risk-weighted evidence.
+- **How:** map token migration, key loss, backup, tampering and logs to test layers.
+- **Trade-off:** release cost versus exposure and impact.
+- **Failure case:** client SDK verdict is treated as authorization.
+- **Production solution:** backend checks, device matrix and exact coverage report.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for threat-to-test matrix, real boundary, release variant, residual risk 
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Rank token migration, key invalidation, backup restore, tampered requests and log leakage by likelihood and impact. Assign each a test layer and release gate, including a minified build and backend authorization check.
 
 ## References and reviewed-on date
 
 - [OWASP MASVS](https://mas.owasp.org/MASVS/) — mobile security controls.
 - [OWASP MASTG](https://mas.owasp.org/MASTG/) — test methods.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

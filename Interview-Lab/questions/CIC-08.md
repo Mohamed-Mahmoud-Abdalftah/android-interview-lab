@@ -25,6 +25,10 @@ How do you configure PR checks for lint, static analysis, and tests?
 
 نضبط branch protection إن PR ما يندمجش إلا بعد compile، Android Lint، static analysis المختارة، JVM tests وcontract tests. Device tests حسب affected area أو release gate. كل check يطلع report واضح ويفشل عند threshold متفق عليه. مش نخلط warning جديد مع baseline debt؛ baseline مؤقتة لها owner وخطة تقليل.
 
+### Practical walkthrough in Egyptian Arabic
+
+PR checks لازم ترتبط بمخاطر التغيير: compile للـvariants الأساسية، Android Lint، static analysis، unit tests، contract tests، ومع feature حساس نفّذ release-like test أو emulator. Branch protection يمنع الدمج قبل required checks ومراجعة مستقلة. لا تجعل PR من fork يستخدم signing secrets. فرّق بين test فشل بسبب code وemulator تعطل؛ أظهر artifacts والlogs وخلي owner واضح. التغطية المئوية وحدها مش بوابة جودة.
+
 ## Why it matters and how it works
 
 Gradle tasks provide Android Lint/build/test outputs; CI status checks gate merge. Untrusted PR code should run with read-only tokens and no release secrets. Required checks should be deterministic and tied to a specific commit SHA.
@@ -55,7 +59,15 @@ CI publishes lint SARIF/report, test failures and changed-file context. Owners r
 
 ## Interview answer — deep senior
 
-“A good PR gate is both trustworthy and fast. I pin checks to the exact head SHA, run independent jobs in parallel, cache deterministic inputs and measure flakiness. For a security-sensitive manifest change, an affected-area test must exercise exported components, not just lint. I prevent CI workflow changes in a PR from gaining privileged context, review suppressions and treat critical findings as blockers. Nightly/release suites cover the full graph so selective PR tests do not create blind spots. Separate existing debt from new regressions.”
+“I make PR checks a contract rather than a list of green badges. The baseline compiles relevant variants, runs Android Lint/static analysis and fast JVM tests, and validates content or API contracts that can break other modules. I add targeted emulator tests when the change touches lifecycle, Room or UI semantics, and a minified release-like check for manifest, R8 or SDK integration risk. Branch protection requires those checks on the exact head or merge commit and prevents bypass except through an auditable process. A fork PR runs untrusted code with minimal token permissions and no signing secrets. To keep feedback useful, I parallelize independent checks, publish test reports and identify a check owner when flakes appear. A failure is not automatically waived because a retry passes; I investigate the race or environment and time-box quarantine. For payment logic, a low line coverage number is less important than an explicit duplicate-charge and unknown-outcome test that truly exercises the contract.”
+
+## How to answer in the interview
+
+- **Why:** review needs reliable failure signals.
+- **How:** gate compile, lint, tests and risk-specific checks.
+- **Trade-off:** CI latency versus scope of required checks.
+- **Failure case:** flaky retry masks a real race.
+- **Production solution:** protect branch and publish diagnostic artifacts.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for head SHA, branch protection, baseline debt, affected tests and untrus
 
 ## Self-check rubric
 
-Can you explain this decision, apply the example, name a trade-off and failure, and answer both follow-ups without relying on a memorized slogan?
+Specify required PR checks, branch protection and artifact identity; run lint/static analysis and focused tests before merge; explain where emulator and release-only tests fit without hiding failures.
 
 ## References and reviewed-on date
 
 - [Android Lint](https://developer.android.com/studio/write/lint) — static checks.
 - [Gradle command-line builds](https://docs.gradle.org/current/userguide/command_line_interface.html) — task execution.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

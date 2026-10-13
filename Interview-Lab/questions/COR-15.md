@@ -24,6 +24,10 @@ Can the candidate compare the observation of `launch` and `async` exceptions whi
 
 فشل `launch` من غير catch بيتعامل معاه كـuncaught exception عند boundary مناسبة؛ فشل `async` بيتخزن في `Deferred` ويتعاد رميه عند `await`. لكن تحت parent عادي الاتنين ممكن يلغوا الـparent والإخوة، فمش صحيح إن `async` آمنة لأن محدش عمل `await`. الاختلاف في طريقة أخذ النتيجة ومكان الملاحظة، مش تصريح بإهمال الفشل.
 
+## Practical walkthrough
+
+لو request جوا `launch` فشل، الـJob يفشل وما فيش `await` للقيمة؛ الاستثناء يطلع للـparent أو handler حسب الشجرة. `async` يخزن النتيجة أو الخطأ في `Deferred`، و`await` يرميه، لكن فشل child تحت `coroutineScope` عادي ممكن يلغي الـparent قبل `await`. علشان optional widget ترجع error state، حط catch داخل child أو استخدم supervisor boundary مع معالجة صريحة.
+
 ## Why it matters and how it works
 
 Root `launch` reports an uncaught exception through a handler/default handling. Root `async` stores exception until awaited. Inside a normal structured parent, child failure cancels the parent regardless of builder. A supervisor isolates sibling cancellation, but callers must still await or otherwise account for `Deferred` outcomes.
@@ -69,7 +73,15 @@ A dashboard requests independent badges using supervised `async` and captures ea
 
 ## Interview answer — deep senior
 
-“I would separate the root case from the child case. A root `launch` has no result channel, so its uncaught failure reaches `CoroutineExceptionHandler` or default handling. A root `async` holds an exception until `await`. But in a normal structured scope the child’s failure also participates in parent cancellation; wrapping a later `await` may not undo it. A supervisor stops one child’s failure from cancelling sibling children, yet it still requires explicit observation: await Deferred values, and handle or report launch errors. In an Android ViewModel I prefer a suspend repository contract for request/response and publish an explicit loading/success/error state, with `CancellationException` rethrown so obsolete work does not update UI. Root `async` stores exception until awaited.”
+“I would separate the root case from the child case. A root `launch` has no result channel, so its uncaught failure reaches `CoroutineExceptionHandler` or default handling. A root `async` holds an exception until `await`. But in a normal structured scope the child’s failure also participates in parent cancellation; wrapping a later `await` may not undo it. A supervisor stops one child’s failure from cancelling sibling children, yet it still requires explicit observation: await Deferred values, and handle or report launch errors. In an Android ViewModel I prefer a suspend repository contract for request/response and publish an explicit loading/success/error state, with `CancellationException` rethrown so obsolete work does not update UI. Root `async` stores exception until awaited. The distinction becomes important under supervision. A supervised `launch` that fails without a local catch needs a handler or it may reach platform last-resort reporting. A supervised `async` holds its exception for `await`, so the caller has a clear value/error contract. Under a normal parent, both builders can trigger parent cancellation on non-cancellation failure. I would choose the builder by result needs, then choose the failure boundary and test it explicitly.”
+
+## How to answer in the interview
+
+- **Why:** builders expose different observation APIs.
+- **How:** launch exposes completion through Job; async exposes value and failure through Deferred.await.
+- **Trade-off:** async is right for a needed value, not a universal error shield.
+- **Failure case:** an unawaited async child still cancels a normal parent.
+- **Production solution:** catch expected errors inside optional children and preserve CancellationException.
 
 ## Deep-dive talking points
 
@@ -89,4 +101,4 @@ Can I state both result handles, predict parent cancellation, and design explici
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — root builders and child propagation.
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — Job versus Deferred.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

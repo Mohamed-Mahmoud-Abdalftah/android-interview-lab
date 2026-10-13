@@ -32,6 +32,10 @@ Each creational pattern addresses a different construction problem. Singleton co
 
 Example: `object CurrencyCodes` holds stateless constants; `PaymentRouteFactory` selects a provider adapter; an `EnvironmentFactory` could create matching API and serializer for sandbox/production; an OkHttp-style builder configures timeouts/interceptors before creation. These are conceptual roles, not an instruction to implement all four.
 
+## Practical walkthrough
+
+`object CurrencyCodes` لو stateless utility ممكن، لكن `object CurrentSession` اللي فيه user/token state خطر: process death يمسحه وaccount switch يعمل stale state. Factory function تنشئ provider adapter من config/runtime choice؛ Abstract Factory تنشئ مجموعة متوافقة مثل sandbox API + signer معًا، مش مجرد factory لكل class. Builder مفيدة لو options كتير وبعض combinations invalid وتحتاج `build()` يعمل validation؛ لconstructor صغير بتخفي المطلوب. في Android DI scope تحدد lifetime فعليًا، و`@Singleton` معناها one instance في graph/process تقريبًا، مش persistent data ولا مناسب لكل dependency. اشرح متى تختار كل واحدة وحالة فشلها.
+
 ## Trade-offs and decision criteria
 
 A constructor is best when creation is simple. Factories and builders add names and indirection but can enforce invariants. A global singleton is convenient but hard to reset in tests and risky for mutable state. Hilt scopes may replace manual singleton wiring.
@@ -56,6 +60,16 @@ I would use a constructor for a simple object. A factory becomes useful when sel
 
 These four patterns are often confused because they all involve creation. A singleton is about instance cardinality and access, not complex configuration; Kotlin `object` makes it concise but mutable state inside it still needs synchronization and process-death recovery. A factory method or factory object chooses a product without forcing callers to know constructor details. An abstract factory coordinates a family—such as matching API and serializer implementations for an environment—so mismatched combinations are harder to create. A builder collects options, validates required fields, then creates an immutable client. DI can wire these constructions and scopes, but I still design the contract. In Android I never let an application-scoped instance retain Activity context, and I do not mistake a Hilt scope for server-authoritative session truth.
 
+I distinguish lifetime, variation, families, and construction complexity. A stateless Kotlin `object` can be a simple singleton, but a global current-session object is a bad source of truth because it can leak screen references and is lost after process death. A Factory chooses or creates one product under a rule; an Abstract Factory produces a compatible family, such as sandbox API and signer, so callers cannot mix environments. A Builder handles a configuration with many optional choices and a validated final object. In Android I do not apply an application-wide singleton scope by default: ownership follows the feature or session. I test invalid environment combinations and account switching, and I prefer a constructor when the object has only a few required inputs.
+
+## How to answer in the interview
+
+- **Why:** Each creational pattern solves a different construction or lifetime constraint.
+- **How:** Contrast `object`, one-product factory, compatible-family factory and validated builder.
+- **Trade-off:** Direct constructor beats Builder for a small fixed input set.
+- **Failure case:** Global session Singleton leaks state or outlives the account.
+- **Production solution:** Scope providers correctly and test environment/account transitions.
+
 ## Deep-dive talking points
 
 Compare construction intent, instance lifetime, related product families, validation and Hilt scope.
@@ -74,4 +88,4 @@ Choose among constructor, factory, abstract factory and builder for four cases; 
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — creational patterns.
 - [Kotlin object declarations](https://kotlinlang.org/docs/object-declarations.html) — Kotlin singleton syntax.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

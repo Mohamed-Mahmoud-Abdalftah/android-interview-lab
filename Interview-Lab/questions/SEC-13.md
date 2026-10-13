@@ -25,6 +25,10 @@ How do you handle key invalidation, key rotation, backups, and reinstall?
 
 Key ممكن تبقى unavailable بعد uninstall/reinstall، restore على جهاز تاني، أو invalidation مرتبط بإعدادات authentication حسب key policy. Rotation مش مجرد alias جديد؛ لازم تعرف تقرأ البيانات القديمة ثم تعيد تشفيرها بأمان، وتتعامل مع crash في النص. بيانات قابلة للإصدار من server زي token ممكن تتمسح ويُطلب sign-in؛ بيانات غير قابلة للاسترجاع تحتاج recovery مستقل.
 
+## Practical walkthrough
+
+لو غيرت alias من `session-v1` إلى `session-v2`، اعمل تشفير نسخة جديدة ثم verify فكّها قبل ما تغيّر pointer النشط. لو crash حصل بين الخطوتين، لازم النسخة القديمة تفضل قابلة للقراءة. بعد uninstall أو restore، Keystore key ممكن ما ترجعش؛ لو السر مجرد session token، امسح ciphertext غير القابل للفتح واطلب login، أما بيانات لا تُستعاد تحتاج سياسة backup مختلفة من البداية.
+
 ## Why it matters and how it works
 
 Persist a ciphertext format version and key identifier. While the old key works, decrypt and write the new envelope atomically before deleting old data. If the old key no longer works, no local algorithm can reconstruct plaintext. Android backup policy must align with Keystore non-transferability.
@@ -51,10 +55,20 @@ For a finance app, test fresh install, reinstall, cloud restore, device transfer
 
 ## Interview answer — structured
 
-“Rotation needs a readable old key, a new key, a versioned storage format and crash-safe switch. I write and verify the new ciphertext before deleting the old one. On invalidation I classify the data: a session token can be cleared and reissued, but irreplaceable data needs an independent recovery method. Device-bound Keystore keys should not be assumed to transfer with Auto Backup. I test restore and process death, not just the happy path. Rotation must be crash-safe: keep the old readable envelope until the new ciphertext has been written and verified, then switch the active version. Backups and reinstall may restore data without the device-bound key. I classify data before choosing recovery; tokens can be reissued, but irreplaceable files need a separate plan.”
+“I version key aliases and ciphertext so a rotation can read the old record, write a new one, verify it, then switch atomically. A crash before the switch must leave one readable version. Backup and reinstall may restore ciphertext without its Keystore key, so I distinguish replaceable session tokens from irreplaceable offline data. The former can trigger sign-in; the latter needs a recovery architecture from the start. I test both migration and key-loss paths.”
+
 ## Interview answer — deep senior
 
-“I would define an explicit state machine: old readable, migration pending, new verified, old retired, and unrecoverable. The storage update is atomic, and a crash can restart from either old or new valid envelope. I never pretend an invalidated key can be recreated to decrypt existing ciphertext. Authentication-bound keys can have additional invalidation conditions, so tests follow the exact KeyGenParameterSpec policy. Backup rules exclude device-bound ciphertext or provide a separate recovery design. Financial truth and payment records remain on the backend; local session material can be safely discarded with server-aware logout. I would model key migration as states rather than one blind rewrite: old format readable, new alias created, new envelope verified, active pointer changed and old material retired. Each step must survive process death without leaving ambiguous ciphertext. If the old key is invalidated, generating another key cannot decrypt the old bytes; a token store should clear unusable session material and use authenticated sign-in, while unrecoverable user data requires a recovery design prepared earlier. Authentication-bound keys may have additional invalidation behavior depending on their parameters and device, so I test that exact policy. I also run backup/device-transfer drills and avoid backing up ciphertext that assumes a nontransferable Keystore key. Server payment history remains the source of truth.”
+“I separate routine rotation from key loss. During rotation, I keep the old alias readable, write a new versioned ciphertext record, verify a round trip, then atomically switch the active pointer. A crash before that switch must still leave the old record usable. Backup and reinstall are different: Keystore keys may be absent when ciphertext returns on another installation. For a refresh token I can clear the unusable record and reauthenticate; irreplaceable offline data needs a recovery architecture planned in advance. I would test invalidation, restore, process death at each migration step, and rollback before claiming this is reliable. The migration protocol should have a committed active-version marker so startup can distinguish an interrupted write from a completed cutover. I would keep only a bounded number of old aliases and remove them after telemetry shows migration success. For biometric-bound keys I would explicitly test enrollment changes and authentication policy; those failures differ from an attacker-modified ciphertext tag. Support messages should ask for reauthentication without exposing raw crypto exceptions.”
+
+## How to answer in the interview
+
+- **Why:** key lifecycle outlives a single encryption call.
+- **How:** version aliases and ciphertext, migrate atomically, then retire old keys.
+- **Trade-off:** keeping old readers supports rollback but extends key exposure.
+- **Failure case:** partial migration or backup without Keystore key.
+- **Production solution:** exercise reinstall, restore, invalidation, and crash recovery tests.
+
 ## Deep-dive talking points
 
 Build a decision table for key invalidation, biometric enrollment changes, backup restore and reinstall; separate revocable tokens from irreplaceable user data.
@@ -73,4 +87,4 @@ Can I explain rotation ordering, crash recovery, invalidation, backup/reinstall 
 - [Android Keystore system](https://developer.android.com/privacy-and-security/keystore) — key behavior.
 - [Android Auto Backup](https://developer.android.com/identity/data/autobackup) — restore and exclusion rules.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

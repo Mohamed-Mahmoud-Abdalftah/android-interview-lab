@@ -24,6 +24,10 @@ Handle transient UI actions without event loss or repetition across lifecycle an
 
 في UDF، user events تدخل state holder ونتيجتها state جديدة. Snackbar أو navigation غالبًا “one-time effect”، لكن channel/SharedFlow بس ممكن تضيع event لو UI مش بتجمع، وreplay ممكن تعيدها بعد rotation. Android guidance تفضّل تمثّل ViewModel event كـUI state قابل للملاحظة؛ مثل `showLoginRequired` ومعاه acknowledgement لما UI تنفذ action. Navigation trigger لازم مرتبط بbusiness state أو state flag واضح، مش payment effect يتنفّذ اعتمادًا على emission عابر. لو العملية لازم تنجو من process death، persist الحالة أو request ID؛ effect stream في الذاكرة لا يكفي.
 
+### Practical walkthrough in Egyptian Arabic
+
+One-time effect مثل navigation/snackbar لا تعامله كـstate دائم يعاد بعد rotation بلا قصد، لكن event channel بلا replay قد يضيع لو UI متوقفة. حدد semantics: navigation كنتيجة user action؟ أم business state يمكن اشتقاقها؟ للدفع لا تجعل Approved مجرد event؛ خزّنه state. اختبر collector توقف/رجوع وprocess death، واظهر action pending بوضوح.
+
 ## Why it matters and how it works
 
 UDF makes events flow to the state holder and state flow back. Delivery semantics for effects need explicit acknowledgement/replay policy. Lifecycle-aware collection can pause, so ephemeral channels are not durable business queues.
@@ -55,6 +59,14 @@ I first classify the effect: a cosmetic toast may be best-effort, while navigati
 ## Interview answer — deep senior
 
 The hard part is delivery semantics. Compose and Activity lifecycles can stop collection; a channel may deliver to an unexpected collector, while replay may duplicate a command. I prefer modeling the result as state when the action matters: the ViewModel exposes a pending outcome, UI consumes it in a lifecycle-aware way, and calls back to acknowledge completion. The underlying business record is persisted if it must survive process death. I test rotation between state update and acknowledgement, repeat collectors, back stack recreation, and duplicate taps. For purely decorative feedback, a best-effort effect stream may be acceptable and simpler. I never equate one emission with exactly-once payment execution or server confirmation. The effect contract must say what happens with zero collectors, a recreated collector, and process death. A Channel can lose an item or deliver it to the wrong consumer depending on setup; replay can repeat navigation. State with acknowledgement makes the pending action visible and testable, but only persisted or reconstructible business state survives process death. If server confirmation matters, the app should derive it from repository status, not from whether an effect was emitted. This is a delivery design problem, not simply a choice of Flow type.
+
+## How to answer in the interview
+
+- **Why:** effects need delivery semantics.
+- **How:** separate durable state from transient command.
+- **Trade-off:** replay safety versus missed event.
+- **Failure case:** payment success event lost on recreation.
+- **Production solution:** model domain outcome durably and acknowledge UI effects.
 
 ## Deep-dive talking points
 

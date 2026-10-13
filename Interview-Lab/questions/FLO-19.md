@@ -24,6 +24,10 @@ Explain replay, per-subscriber buffer capacity and overflow behavior including a
 
 `replay` عدد القيم القديمة اللي subscriber جديد يشوفها. `extraBufferCapacity` مساحة إضافية للتعامل مع subscriber بطيء، و`BufferOverflow` يحدد suspend أو إسقاط الأقدم/الأحدث لما buffer يتملي. نقطة مهمة: لو مفيش subscribers، SharedFlow تحتفظ بقيم replay فقط؛ extra buffer ما بيعملش queue لأحداث المستقبل. ولا إعداد يضمن بقاء event بعد process death.
 
+### Practical walkthrough in Egyptian Arabic
+
+`MutableSharedFlow(replay=1)` تخلي subscriber جديدة تاخد آخر emission؛ `extraBufferCapacity` تستوعب بطء subscribers الحاليين حسب overflow policy، لكنها مش offline queue للمشتركين الغايبين. `DROP_OLDEST` أو `DROP_LATEST` ممكن تفقد رسائل. لو navigation حرجة بعد process death، buffer في الذاكرة مش كفاية؛ خزّن intent مع acknowledgment.
+
 ## Why it matters and how it works
 
 Replay cache is shared history for new subscribers. Extra capacity is relevant to lagging active subscribers. With no subscribers, overflow policy is not triggered and only last replay values are retained. `tryEmit` success does not prove any subscriber processed an event; acknowledgement is separate.
@@ -69,7 +73,15 @@ A dashboard uses SharedFlow for best-effort snackbars where loss is acceptable. 
 
 ## Interview answer — deep senior
 
-“There are three distinct questions: what a new subscriber receives, how far an active subscriber may lag, and whether anything survives process death. Replay addresses the first; extraBufferCapacity and overflow address the second; none addresses the third. In the absence of subscribers, SharedFlow stores only replay and overflow settings do not turn it into a queue. This makes replay-zero suitable for disposable visual effects, but it may lose events while the Activity is stopped. Replay can cause a navigation effect to fire again after rotation. I test emissions before subscription, during a slow collector and after re-subscription, and I use persisted operation records for anything that must be handled reliably.”
+“There are three distinct questions: what a new subscriber receives, how far an active subscriber may lag, and whether anything survives process death. Replay addresses the first; extraBufferCapacity and overflow address the second; none addresses the third. In the absence of subscribers, SharedFlow stores only replay and overflow settings do not turn it into a queue. This makes replay-zero suitable for disposable visual effects, but it may lose events while the Activity is stopped. Replay can cause a navigation effect to fire again after rotation. I test emissions before subscription, during a slow collector and after re-subscription, and I use persisted operation records for anything that must be handled reliably. I would separate replay from buffering. Replay is what a new subscriber receives immediately, up to the configured cache size. Extra buffer capacity helps active subscribers tolerate a producer that gets ahead; overflow decides whether the emitter suspends or an item is dropped when capacity fills. With no subscribers, SharedFlow retains only replay values, so extra capacity does not act as a mailbox. `tryEmit` success also needs careful interpretation; it is not evidence that a UI handled an event. This is why I do not use SharedFlow configuration as a substitute for a durable command queue. I would test no subscriber, one slow subscriber, and a new subscriber to observe all three behaviors explicitly.”
+
+## How to answer in the interview
+
+- **Why:** replay and buffer serve different audiences.
+- **How:** simulate absent and slow subscribers.
+- **Trade-off:** suspension versus drops and memory.
+- **Failure case:** relying on extraBufferCapacity as an offline queue.
+- **Production solution:** test delivery gaps and persist important commands.
 
 ## Deep-dive talking points
 

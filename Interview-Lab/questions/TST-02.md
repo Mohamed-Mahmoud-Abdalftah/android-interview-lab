@@ -23,7 +23,11 @@ Compare fake, mock, stub, spy, and test double.
 
 ## Explanation in Arabic
 
-Test double اسم عام لأي بديل في الاختبار. Stub بيرجع قيم محددة، fake implementation خفيف لكنه شغال (زي in-memory repository)، mock بنحدد له توقعات calls، spy يسجل أو يمرر calls لimplementation حقيقي. الاسم أقل أهمية من contract: هل الاختبار بيفحص النتيجة ولا تفاصيل التنفيذ؟
+`test double` هو الاسم العام لأي بديل بنستخدمه بدل dependency حقيقية. Stub يرد بقيم جاهزة؛ fake عنده سلوك بسيط لكنه متماسك، زي repository in-memory؛ mock بنضبط عليه توقعات عن التفاعل؛ spy يسجل ما حدث، وقد يمرر التنفيذ لمكوّن حقيقي. مش لازم نعمل mock لكل object.
+
+## Practical walkthrough
+
+لو المطلوب إثبات إن ViewModel عرض Error بعد فشل، fake repository متحكم في نتيجته مع assertion على `UiState` أوضح من التحقق من سلسلة calls داخلية. لكن لو إرسال audit event نفسه requirement، يبقى فحص تفاعل الـport مناسب. احذر إن fake تختلف عن Room أو الشبكة في transaction/cancellation؛ نحتاج integration test عند الـboundary الحقيقي. اختَر الـdouble حسب السلوك المطلوب إثباته، وليس حسب سهولة الـframework.
 
 ## Why it matters and how it works
 
@@ -55,7 +59,15 @@ Keep doubles local to test modules, specify failure/cancellation behavior, and r
 
 ## Interview answer — deep senior
 
-“I ask whether the dependency contract is state or interaction. If the requirement is ‘shows pending after a timeout,’ a fake driving state is clearer than verifying three method calls. If the requirement is ‘enqueue exactly one reversal intent,’ an interaction or persisted-row assertion may be appropriate, but a mock alone cannot prove durable atomicity. I make doubles model cancellation and errors, then use contract tests or targeted integrations to detect semantic drift. This keeps tests resilient to refactoring while preserving real risk coverage. Assert `StateFlow` UI state. Add integration coverage for persistence.”
+“I use ‘test double’ as the umbrella term, then choose the least complicated kind that proves the contract. A stub returns scripted data; a fake has a small working implementation, such as an in-memory repository; a mock verifies interactions; and a spy records calls, sometimes around a real object. For a ViewModel loading account data, I prefer a controllable fake that emits Loading and then Error, and I assert the visible state and retry behavior. If I mock every repository method call and its exact order, a harmless refactor can break tests without changing the user outcome. Interaction verification is valid when the interaction is the product requirement, for example one audit command or one idempotent submission to a gateway port. I also document the fake’s limits. An in-memory map does not reproduce Room transactions, migrations or process death, and a fake HTTP client cannot certify Retrofit cancellation. Those claims need integration tests against the real boundary. Good tests make a failure diagnostic: they say which observable contract broke, rather than which implementation detail moved.”
+
+## How to answer in the interview
+
+- **Why:** doubles keep tests deterministic without coupling them to every implementation call.
+- **How:** name stub, fake, mock and spy, then choose a fake repository for state behavior.
+- **Trade-off:** interaction checks are precise but can be brittle.
+- **Failure case:** a fake map hides transaction semantics.
+- **Production solution:** pair behavior tests with a real-boundary integration test.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for five roles, outcome versus interaction, fake drift and real-adapter v
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Distinguish the umbrella term test double from stubbed answers, behavior-verifying mocks, stateful fakes and observation spies. Choose a fake repository for a ViewModel state test and explain when verifying a collaborator call is actually the requirement.
 
 ## References and reviewed-on date
 
 - [Android test doubles](https://developer.android.com/training/testing/fundamentals/test-doubles) — official definitions and guidance.
 - [Mockito documentation](https://site.mockito.org/) — mock interaction behavior.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

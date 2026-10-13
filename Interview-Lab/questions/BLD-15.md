@@ -26,6 +26,10 @@ How do you investigate dependency version conflicts and build-speed regressions?
 
 في version conflict، ابدأ بالـconfiguration والvariant المتأثرين؛ `dependencies` و`dependencyInsight --dependency ... --configuration ...` يبينان من طلب كل نسخة ولماذا اختار Gradle نسخة. راجع BOM/constraints وmetadata، وتحقق من runtime behavior لا compilation فقط. لبُطء build قارن baseline مع build scan/profile: configuration، dependency downloads، codegen، Kotlin compile، R8، tests. لا تفترض أن آخر library أضفتها هي السبب؛ جرّب تغييرًا مضبوطًا وحدد critical path/cache misses. تجنب `force` عشوائي يخفي binary incompatibility.
 
+### Practical walkthrough in Egyptian Arabic
+
+Dependency conflict قد يظهر duplicate class أو runtime `NoSuchMethodError`؛ افحص dependency graph والconstraints، لا تضف force version قبل معرفة من يطلبها. Build slowdown قد يأتي من plugin upgrade أو task invalidation؛ قس before/after بـBuild Scan. قفل النسخ والتحقق من dependencies يقلل surprise. اختبر release/minified variant بعد align لأنه قد يكشف native/R8 differences.
+
 ## Why it matters and how it works
 
 Gradle resolves one selected component version per configuration under its rules and constraints. Different variants can have different graphs. Build wall time includes configuration and parallel task critical path, not just sum of tasks; a regression may be network resolution, ABI fan-out, annotation processing or cache invalidation. Evidence from task graphs and controlled runs makes optimization targeted.
@@ -57,6 +61,14 @@ Pin and verify dependencies, record selected versions by release variant, review
 ## Interview answer — deep senior
 
 “I separate correctness from speed but use the same evidence discipline. A dependency conflict is resolved per configuration, so I look at the failing release variant's compile or runtime classpath, run `dependencyInsight`, and trace every requester and the selected version. A forced version can make compilation green while an SDK later throws `NoSuchMethodError`, so I prefer compatible upgrades, a platform/BOM where applicable, or an explicit tested constraint. Then I exercise the affected runtime flow. For a build-speed regression I establish comparable warm and clean baselines with the same machine/toolchain and inspect a build scan or task profile. I locate configuration, dependency resolution, compiler/codegen, tests and R8 on the actual critical path. A new processor may invalidate many modules; a custom task with changing undeclared inputs may lose cache hits; neither is solved by blaming Gradle generally. I make one change, remeasure median/variance, and preserve a regression signal in CI. Dependency locks or verification can also prevent a later silent change.”
+
+## How to answer in the interview
+
+- **Why:** transitive changes affect behavior and speed.
+- **How:** inspect graph and task profile.
+- **Trade-off:** upgrade freshness versus compatibility.
+- **Failure case:** forced version fixes compile but breaks runtime.
+- **Production solution:** pin tested set and verify release.
 
 ## Deep-dive talking points
 

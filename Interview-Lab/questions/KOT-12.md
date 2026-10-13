@@ -40,6 +40,10 @@ fun main() {
 ```
 For performance claims, inspect release bytecode/DEX and profile a representative workload.
 
+## Practical walkthrough
+
+لما `inline fun <T> trace(block: () -> T)` صغيرة واتنادت آلاف المرات، compiler ينسخ body في call sites ويقدر يتجنب بعض lambda object/call overhead. لكن ده trade-off مع bytecode/DEX size؛ و`inline` مش بديل عن benchmark. في Android ابدأ بprofile لrelease build لأن R8/JIT/AOT ممكن يغيّروا النتيجة. كمان public inline function body يبان للـcallers وقت compilation وله قيود على وصوله لـprivate internals؛ تغيير implementation في library قد يحتاج recompilation للمستهلكين. استخدم `inline` لما تحتاج reified أو non-local return، أو عندك قياس لhot-path صغير.
+
 ## Trade-offs and decision criteria
 
 Inline a small function when semantic features or measured overhead justify it. Use `noinline` for a lambda that must be stored, and avoid inlining a large body called widely. An ordinary function is easier on code size and binary evolution.
@@ -54,15 +58,25 @@ A library exposes a tiny reified JSON adapter helper, but the actual parsing imp
 
 ## Interview answer — short
 
-`inline` substitutes a function and eligible lambdas at call sites. It can remove lambda-call overhead and enable reified types, but duplicates bytecode. I reserve it for small APIs or measured hot paths.
+`inline` copies a function and eligible lambdas into call sites, which can remove some call and allocation overhead and enables reified type parameters. It increases generated code and is not a blanket performance fix. I profile the release build before applying it broadly.
 
 ## Interview answer — structured
 
-Kotlin inlining can eliminate some higher-order function overhead because the compiler inserts the body at the call site. It also enables non-local returns and reified type parameters. The cost is code duplication, which can increase DEX size, compile time, and potentially hurt instruction-cache behavior. I would inspect generated code and profile release builds rather than assume every inline declaration improves Android performance. It can also enable reified type checks or a caller-level return. For a large function, the duplicated body can outweigh those gains across many call sites. A public inline API also deserves compatibility review because its body is copied into other modules. I keep those wrappers small and avoid exposing private implementation details through them.
+Inlining is a compile-time transformation: the body, and eligible lambda arguments, are placed at the call site. That can remove lambda allocation or virtual calls in a small hot path, and it makes `reified T` possible because the concrete type is known there. The cost is repeated bytecode, potential DEX growth, and a public inline API whose body affects downstream compilation. I use it when semantics require reification or when measurements justify it, then compare release size and latency. I would not inline a large parser merely because it is called often; modern runtime optimizers and R8 also matter.
 
 ## Interview answer — deep senior
 
-I distinguish semantic reasons from optimization reasons. Reified generics require inline because the call site supplies a concrete type. Small collection-like higher-order functions can avoid function-object and invocation overhead. But large or frequently called inline bodies expand at every call site; JVM optimizers already inline some ordinary calls at runtime, and Android behavior depends on the runtime and build optimizer. I compare APK/DEX size and representative benchmarks, while ensuring public inline APIs obey visibility and ABI constraints. I split inline decisions into semantics and optimization. For performance, the compiler can substitute eligible lambdas and sometimes avoid closure allocations and virtual calls. The cost is duplicated bytecode, which can increase DEX size, build work, and pressure on code locality. A public inline function also exposes its body to downstream binaries, so visibility and compatibility become concerns. I keep the inline layer small and put heavy parsing or I/O work in an ordinary function. Android runtime and optimizer behavior can differ by build mode and device, so I compare minified release artifacts for size and real latency. The annotation is a trade, not a blanket optimization. A valid optimization review compares a control build with an inline build using representative calls and minification. I would measure latency, allocation, and artifact size, and check that the improved case is actually a user-visible bottleneck. Otherwise an ordinary function is simpler to evolve.
+I distinguish semantic reasons from optimization reasons. Reified generics require inline because the call site supplies a concrete type. Small collection-like higher-order functions can avoid function-object and invocation overhead. But large or frequently called inline bodies expand at every call site; JVM optimizers already inline some ordinary calls at runtime, and Android behavior depends on the runtime and build optimizer. I compare APK/DEX size and representative benchmarks, while ensuring public inline APIs obey visibility and ABI constraints.
+
+For an Android release build, I would compare DEX size and representative latency before and after inlining a frequently used helper. A tiny inline wrapper around a lambda may remove an allocation, but a large body copied across many call sites can enlarge the artifact and pressure instruction cache. If I need reified type access, I keep that wrapper small and delegate parsing or I/O to an ordinary function. Public inline implementation is visible to compiling callers, so I also review binary and source compatibility when publishing a library. The failure is equating compiler substitution with guaranteed runtime improvement.
+
+## How to answer in the interview
+
+- **Why:** Eliminate object allocation and virtual call overhead for higher-order functions.
+- **How:** Mark functions accepting lambdas with `inline` so the compiler substitutes the bytecode directly at the call site.
+- **Trade-offs:** Inlining large function bodies across many call sites leads to APK/DEX code bloat and cache invalidation.
+- **Failure cases:** Inlining functions that do not take lambdas; the compiler issues a warning because no allocation savings occur while code duplication increases.
+- **Production solution:** Reserve `inline` for small, frequently called higher-order utility functions (like collection operations or reified type helpers), measuring DEX size in release builds.
 
 ## Deep-dive talking points
 
@@ -81,4 +95,4 @@ Name two benefits and two costs, explain why benchmarking is needed, and identif
 
 - [Kotlin inline functions](https://kotlinlang.org/docs/inline-functions.html) — inlining, reified parameters, and lambda modifiers.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.

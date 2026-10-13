@@ -26,6 +26,10 @@ How do you analyze APK/AAB size and bundled native ABIs?
 
 ابدأ baseline واضحة: download size لكل device profile، install size وفرق version، لا حجم AAB وحده. Android Studio APK Analyzer أو bundletool يفصل DEX/resources/assets و`lib/<abi>/*.so`. Native SDK قد يضيف عدة ABIs، لكن Play يرسل device-targeted APKs؛ افحص ما يصل لكل ABI وما إذا كانت .so موجودة في split الصحيح. راجع unused resources، R8/resource shrinking، صورة/asset resolution، وdependency graph. لا تحذف ABI لمجرد تقليل الحجم لو ما زال لديك مستخدمون يحتاجونه؛ اختبر compatibility واستراتيجية توزيع.
 
+### Practical walkthrough in Egyptian Arabic
+
+حلل AAB/APK حسب ABI/resources/dex/assets بدل النظر للحجم الكلي. APK Analyzer أو bundletool يبين هل `.so` لكل ABI وما سيصل لجهاز معين. Large native SDK قد يضخم الحجم، لكن إزالة ABI غير مدعومة تغير device eligibility؛ قرار product ودعم hardware. قس download/install size وstartup بعد التعديل، واختبر split على الجهاز المتأثر.
+
 ## Why it matters and how it works
 
 An AAB is converted into device-targeted APKs, so its total archive size is not a user's download. Native libraries are typically packaged under ABI-specific paths and may be selected into splits. Compressed transfer size, installed disk footprint and in-memory cost measure different things. An APK Analyzer helps attribute bytes, while bundletool/Play testing verifies delivered combinations.
@@ -57,6 +61,14 @@ Track device-targeted download and install size by release, inspect APK/AAB diff
 ## Interview answer — deep senior
 
 “I establish the metric before optimizing. AAB archive bytes, Play's device-targeted download, installed disk use and runtime memory are different numbers. For release size I inspect the built artifact with APK Analyzer, attribute DEX, resources, images, assets and native libraries, and compare against the previous release. I use bundletool or an internal Play track to inspect what arm64 and x86 devices actually receive, because an App Bundle generates targeted splits. Native `.so` files live under ABI-specific paths; one SDK can contribute several architectures or miss a transitive dependency for one of them. If native code dominates, I review SDK alternatives and supported ABI policy rather than blindly delete an architecture. If images dominate, I change formats/resolution or delivery with a first-use latency trade-off. R8 and resource shrinking can help but need minified release tests for dynamic references. I track per-device download and install deltas in CI and pair a size decision with compatibility and crash data. A smaller bundle that no longer launches on a supported ABI is a regression.”
+
+## How to answer in the interview
+
+- **Why:** size and compatibility vary per device.
+- **How:** inspect generated splits and native inventory.
+- **Trade-off:** smaller download versus supported devices.
+- **Failure case:** universal APK hides missing split.
+- **Production solution:** profile size and install on ABI matrix.
 
 ## Deep-dive talking points
 

@@ -44,6 +44,10 @@ fun terminal(s: CheckoutState) = when (s) {
 }
 ```
 
+## Practical walkthrough
+
+في checkout، `Processing(requestId)` و`Succeeded(receiptId)` عندهم data مختلفة، و`Failed(code, retryable)` فيها قرار UI. sealed hierarchy بتخلي payload مطلوب في الحالة الصح بدل enum واحد فيه nullable fields كتير ممكن تنتج `Succeeded(receiptId=null)`. لكن sealed type ما تمنعش transition غلط من `Succeeded` لـ`Processing`؛ reducer أو state machine وtests لازم يحددوا legal transitions. مهم كمان timeout في دفع: `PendingVerification` أحسن من `Failed` لو server outcome مجهول؛ ما تعيدش الخصم عشوائيًا. enum تفضل مناسبة لثوابت مستقلة من payload زي payment method category.
+
 ## Trade-offs and decision criteria
 
 Sealed cases are more verbose and adding a case affects exhaustive clients. That is useful within a controlled app; a public extensible API may need an interface. Enum remains best for simple fixed choices such as payment method display category. Persisted wire values need explicit mapping, not implicit class names.
@@ -58,15 +62,25 @@ Checkout ViewModel renders sealed local states while repository persists request
 
 ## Interview answer — short
 
-A sealed hierarchy is better when each state has different required data, such as a receipt for success and a reason for failure. An enum is simpler for uniform constants. For payments I also separate UI state from server-authoritative transaction status.
+A sealed hierarchy is better when states carry different required data, such as a receipt only on success. An enum is simpler for fixed constants without per-instance payloads. I still validate legal transitions separately; exhaustiveness does not make the state machine correct.
 
 ## Interview answer — structured
 
-Enums model a fixed list of constants well. Sealed types let each case carry its own payload, so a success without receipt or failure without reason is harder to construct. Exhaustive `when` branches help when the state machine evolves. In a payment flow, I would add an uncertain or pending-verification state for timeouts and reconcile with the server rather than treating the client enum or sealed object as authoritative. For UI or payment state, I first list what data each case requires. `Succeeded` needs a receipt, `Failed` needs a reason, and a timeout may need a request ID for verification. A sealed hierarchy packages those fields with the corresponding case and lets `when` handling be exhaustive. An enum remains a good choice for simple uniform choices such as sort order or an unadorned display category.
+I choose the representation from the shape of the state. For a payment flow, Processing needs a request ID, Succeeded needs a receipt, and an uncertain timeout may need PendingVerification. A sealed hierarchy makes those payloads specific to each case and lets a `when` renderer be exhaustive. An enum with several nullable fields admits impossible combinations such as success without a receipt. I would still implement transition rules in a reducer or coordinator, because a sealed type only limits shapes, not history. For a fixed choice with no distinct payload, an enum is smaller and clearer. In production, uncertain network outcomes must be reconciled using server idempotency rather than treated as definite failure.
 
 ## Interview answer — deep senior
 
-I would start by listing legal states and transitions. If cases need different fields, sealed types encode those invariants, and exhaustiveness makes UI rendering and tests more robust. But a closed class hierarchy does not solve distributed uncertainty: a request can time out after server success. The client persists an idempotency/request key and checks server status, including after process death. Serialization uses stable explicit codes, and sensitive payment decisions remain server-side. If the domain truly has simple uniform constants, an enum avoids unnecessary hierarchy. The real design gain is eliminating invalid combinations. A single enum plus optional receipt and error fields permits a state that says success with no receipt or failure with a success payload. Sealed cases give each outcome its own constructor and help the compiler point out unhandled additions. For a public API I would think about how adding a new case affects clients and use stable wire codes for persistence. In payments, I also separate client presentation state from the authoritative transaction record. Idempotency helps prevent duplicate effects under server rules, but it does not mean the network request executed exactly once.
+I would start by listing legal states and transitions. If cases need different fields, sealed types encode those invariants, and exhaustiveness makes UI rendering and tests more robust. But a closed class hierarchy does not solve distributed uncertainty: a request can time out after server success. The client persists an idempotency/request key and checks server status, including after process death. Serialization uses stable explicit codes, and sensitive payment decisions remain server-side. If the domain truly has simple uniform constants, an enum avoids unnecessary hierarchy.
+
+For checkout UI, I would define Processing with an attempt ID, Succeeded with a receipt ID, Rejected with a code, and PendingVerification when a response is lost. That avoids an enum plus several nullable fields which can represent success without a receipt. Still, the sealed type only constrains shapes; a reducer must prevent illegal transitions, and the server is authoritative for the payment outcome. I would persist the attempt ID before submission and reconcile after process death, using the same server idempotency key for any allowed retry. If cases carry no distinct data, an enum is less ceremony.
+
+## How to answer in the interview
+
+- **Why:** Enforce type-safe state modeling with distinct data payloads for complex domain and payment workflows.
+- **How:** Use sealed classes where states have distinct parameters (e.g., `PaymentState.Success(txId)`, `PaymentState.Failed(code, retryable)`).
+- **Trade-offs:** Sealed hierarchies cannot be iterated over like enum values (`values()`), and adding new subtypes requires handling across all `when` expressions.
+- **Failure cases:** Using an enum with nullable fields for state payloads, allowing invalid states (e.g., `PaymentState.SUCCESS` paired with an error message) to exist at runtime.
+- **Production solution:** Model UI and checkout flows using sealed classes to make invalid states unrepresentable, combining exhaustive `when` matching with targeted UI rendering.
 
 ## Deep-dive talking points
 
@@ -86,4 +100,4 @@ Model success/failure payloads, justify enum alternative, and explain timeout un
 - [Kotlin sealed classes and interfaces](https://kotlinlang.org/docs/sealed-classes.html) — closed cases and exhaustive `when`.
 - [Android app architecture](https://developer.android.com/topic/architecture) — separation of UI and data sources.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. Examples are illustrative JVM snippets unless explicitly labeled conceptual; no Android device claim is made.
+Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets unless explicitly labeled conceptual; no Android device claim is made.

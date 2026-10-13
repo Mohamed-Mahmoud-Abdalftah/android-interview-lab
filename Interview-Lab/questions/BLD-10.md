@@ -26,6 +26,10 @@ How do you use retrace with mapping files?
 
 R8 تغير أسماء classes/methods في release، فيظهر stack trace مثل `a.b.c`. `mapping.txt` الناتجة من نفس build تربط الأسماء المحولة بالأصلية؛ استخدم Retrace tool أو crash platform يرفع لها mapping بنفس version/build ID. لا تستخدم map من release أخرى، حتى لو versionName نفسه؛ mappings تختلف. احتفظ بها آمنًا مرتبطة بـartifact hash، versionCode، source commit وvariant. Retrace يعيد أسماء/مواضع حيث تتوفر معلومات، لكنه لا يثبت root cause وحده؛ راجع سياق الجهاز والسبب.
 
+### Practical walkthrough in Egyptian Arabic
+
+Obfuscated stack لا يفيد بدون mapping المطابقة للـversionCode/variant. خزّن mapping كـartifact محمي، ارفعها لـcrash tool بالنسخة الصحيحة، واستخدم retrace على stack وملف mapping من نفس AAB. لو ملف غلط، هتطلع أسماء مضللة. native crashes تحتاج symbols منفصلة؛ retrace لا يحل native frames. لا تنشر mapping علنًا بلا داعٍ.
+
 ## Why it matters and how it works
 
 Obfuscation renames symbols and can alter stack trace readability. The mapping file records the correspondence for one optimization run, including information needed for retracing frames. Since each build can produce a different mapping, provenance is essential. Some lines may be missing due to optimization, native frames or absent debug metadata, so the retraced trace still requires interpretation.
@@ -57,6 +61,14 @@ Archive mapping next to immutable artifact metadata, automatically upload it dur
 ## Interview answer — deep senior
 
 “Retrace is only reliable when I can establish provenance. I identify the exact production artifact—variant, versionCode, source revision and preferably hash—then fetch the mapping emitted by its R8 run. I pass the obfuscated stack to Retrace or to a crash platform where the map was uploaded under the correct build identity. The result can restore class and method names and sometimes line context, but optimization and incomplete frames mean it remains diagnostic evidence, not a full causal explanation. I reproduce the flow with the same minified artifact or AAB-derived APKs and correlate logs, device, ABI and server state. I design the pipeline so maps are immutable artifacts, never overwritten by the next `bundleRelease`, and verify the crash tool actually ingested them. A versionName alone is not a sufficient key when hotfixes or multiple variants exist. I also keep secrets out of the app; symbol obfuscation is not a security boundary. Fast, accurate incident response depends on release provenance as much as the Retrace command.”
+
+## How to answer in the interview
+
+- **Why:** obfuscation hides fault location.
+- **How:** bind mapping to exact artifact.
+- **Trade-off:** storage/control versus incident speed.
+- **Failure case:** wrong mapping gives false diagnosis.
+- **Production solution:** automate secure upload and verification.
 
 ## Deep-dive talking points
 

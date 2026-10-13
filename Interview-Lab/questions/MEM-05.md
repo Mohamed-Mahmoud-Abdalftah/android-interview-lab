@@ -26,6 +26,10 @@ Compare memory leak, OutOfMemoryError, ANR, and StackOverflowError.
 
 الـmemory leak معناه object مبقاش له استخدام لكنه لسه reachable من GC root، زي singleton ماسك Activity قديمة؛ الاستهلاك يزيد مع الوقت. `OutOfMemoryError` بيحصل لما runtime ما يقدرش يوفّر مساحة لتخصيص جديد، وده ممكن يحصل من leak أو صورة ضخمة واحدة أو cache بلا حد. الـANR معناه التطبيق ما استجابش في المهلة المطلوبة؛ غالبًا Main thread محجوز بـI/O أو lock أو شغل CPU، حتى لو الذاكرة طبيعية. `StackOverflowError` غالبًا من recursion عميق أو غير منتهٍ استهلك stack بتاع thread. الأربعة أعراض مختلفة؛ شخّص بالدليل قبل ما تصلح.
 
+## Practical walkthrough
+
+لما crash dashboard يجمع OOM وANR تحت كلمة performance، فرّقهم من الأدلة: OOM فيه allocation فشل وheap/native footprint؛ ANR فيه Main مش بيرد وthread dump؛ stack overflow فيه frames متكررة؛ leak فيه retained objects تزيد عبر دورة عمر متكررة. ممكن leak يسبب OOM، أو GC pressure يبطّأ الواجهة، لكن الربط يحتاج traces مش افتراض. رتّب التحقيق حسب الضرر وعدد المستخدمين، مش حسب اسم الاستثناء بس.
+
 ## Why it matters and how it works
 
 Garbage collection reclaims unreachable heap objects. A leak keeps obsolete objects reachable, while an OOM is failure of a new allocation under a memory limit and may have no leak at all. ANR is an app responsiveness timeout; inspect the main thread and blockers, including Binder calls or locks. Stack overflow consumes a thread's call stack, not the Java heap capacity in the same way. A leak may increase GC pressure and contribute to jank/OOM, but an ANR can occur with plenty of free heap.
@@ -56,7 +60,15 @@ For a media feed with crashes and freezes, segment reports by OOM stack, ANR clu
 
 ## Interview answer — deep senior
 
-“These failures have different causal mechanisms and telemetry. For a leak, I compare retained-object populations over repeated lifecycle transitions and trace GC roots. For OOM, I examine the attempted allocation, heap limit, image size, cache policy, and whether leak pressure contributed. For ANR, I inspect the main-thread state and the thread or Binder target it waits on; the apparent top frame can be misleading if the trace was captured late. For StackOverflowError, I inspect recursion depth and cycle detection. In production I cluster each symptom separately, form a reproducible hypothesis, make a targeted fix, and verify the corresponding memory, crash, or responsiveness metric.”
+“These failures have different causal mechanisms and telemetry. For a leak, I compare retained-object populations over repeated lifecycle transitions and trace GC roots. For OOM, I examine the attempted allocation, heap limit, image size, cache policy, and whether leak pressure contributed. For ANR, I inspect the main-thread state and the thread or Binder target it waits on; the apparent top frame can be misleading if the trace was captured late. For StackOverflowError, I inspect recursion depth and cycle detection. In production I cluster each symptom separately, form a reproducible hypothesis, make a targeted fix, and verify the corresponding memory, crash, or responsiveness metric. The incidents may be related: retained screens reduce headroom until a later allocation fails, and heavy allocation can increase GC pauses without producing an ANR. I correlate timestamps and release cohorts before claiming causation. A fix for one symptom gets its own proof: retained count, allocation peak, Main wait time, or maximum recursion depth.”
+
+## How to answer in the interview
+
+- **Why:** Name each failure by its direct mechanism.
+- **How:** Choose heap, thread dump, or repeated lifecycle evidence.
+- **Trade-off:** One regression can trigger several symptoms.
+- **Failure case:** Treating an ANR as a heap leak misses a lock holder.
+- **Production solution:** Fix the causal edge and watch cohort rates after release.
 
 ## Deep-dive talking points
 
@@ -77,4 +89,4 @@ Define all four failures; give a non-leak OOM example; choose one diagnostic art
 - [Android memory overview](https://developer.android.com/topic/performance/memory-overview) — heap/GC and OOM behavior.
 - [Diagnose and fix ANRs](https://developer.android.com/topic/performance/anrs/diagnose-and-fix-anrs) — responsiveness and trace analysis.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Examples are diagnostic scenarios, not device experiments.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. Examples are diagnostic scenarios, not device experiments.

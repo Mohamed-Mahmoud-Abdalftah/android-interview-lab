@@ -24,6 +24,10 @@ Apply Android guidance that domain is optional and articulate evidence that just
 
 Domain layer مش واجب في كل Android app. لو عندك ViewModel بسيطة بتنادي repository لقراءة شاشة واحدة، UseCase `GetItemsUseCase` اللي تعمل `repo.getItems()` بس بتضيف indirection. لما logic بقى معقد أو reused بين شاشات—زي eligibility، combine accounts/orders، أو transaction workflow—use case تعطي اسم واضح، tests مستقلة، وتحمي ViewModel من التضخم. افتكر إن Android docs تسمي domain optional وبينها وبين تعريف Clean Architecture الكلاسيكي فرق طفيف؛ اختار boundary حسب المشكلة الحقيقية.
 
+### Practical walkthrough in Egyptian Arabic
+
+Domain layer منفصلة مفيدة لو rules مشتركة بين عدة screens أو فيها invariants واختبارات مستقلة عن Android. لو app صغيرة وrepository واحدة pass-through، layer إضافية قد تشتت الفهم. ابدأ direct VM->repository، ثم استخرج use case عندما يتكرر قرار أو يتطلب transaction/coordination. المعيار هو فصل policy الحقيقي، لا اتباع رسم ثابت.
+
 ## Why it matters and how it works
 
 Android guidance recommends domain use cases for complex logic or reuse across ViewModels, but not as a mandatory layer. The cost is extra files, mapping and navigation. A use case should own one coherent behavior rather than merely pass through.
@@ -55,6 +59,14 @@ I would ask whether the business behavior has its own tests, is reused by multip
 ## Interview answer — deep senior
 
 The decision should be incremental. A domain layer earns its place when policies change independently of rendering and storage, when multiple ViewModels duplicate logic, or when a workflow needs focused tests. It should not become a dumping ground for arbitrary helpers. I look for cohesive actions—calculate eligibility, submit a transfer, combine subscriptions—and keep each use case narrow. A direct ViewModel-to-repository dependency can be entirely reasonable for simple data presentation. I still maintain a data boundary so DTOs and persistence details do not leak into the screen. If complexity grows, extraction is possible without rewriting every UI call. The trade-off is real: more types, mappings, and build graph edges versus clearer ownership and testing. The optionality is a strength, not a compromise. A use case has a cost in navigation, DI wiring and API design. I want it to expose a meaningful action and stable result, not merely repeat the repository name. If the app later adds another feature, I can extract shared policy behind a clear contract. That is easier when the repository already hides DTOs and database entities. I review complexity periodically instead of committing to a permanent three-layer template on day one.
+
+## How to answer in the interview
+
+- **Why:** abstractions should protect real policy.
+- **How:** extract when rules or reuse justify.
+- **Trade-off:** test seam versus extra indirection.
+- **Failure case:** many one-line use cases obscure flow.
+- **Production solution:** evolve by concrete coupling signals.
 
 ## Deep-dive talking points
 

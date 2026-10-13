@@ -26,6 +26,10 @@ What is modularization, and what trade-offs does it introduce?
 
 Modularization تقسيم التطبيق إلى Gradle modules لها dependencies وpublic APIs محددة، مثل app/features/core. الهدف عزل المسؤوليات، تسهيل ownership وإعادة الاستخدام، وربما تحسين incremental build حين تكون الحدود صحيحة. لكنه ليس مجانيًا: كل module تضيف Gradle configuration، API maintenance، DI/navigation wiring واختبارات تكامل. لو قسمت حسب كل class، ستخلق graph معقدة وبطء configuration بدون فائدة. قِس سبب التقسيم أولًا، واختَر حدودًا حول feature أو capability مستقرة.
 
+### Practical walkthrough in Egyptian Arabic
+
+Module تقسم ownership والبناء، لكن كل module جديدة تزيد Gradle configuration وAPI maintenance. لو فريق checkout وفريق catalog يغيروا نفس core باستمرار، التقسيم الحالي قد لا يحمي الاستقلالية. ابدأ boundary واضح لحاجة تتغير مستقلة وتملك tests، وقس build time وchange coupling بعد الفصل. لا تجعل عدد modules هدفًا بحد ذاته.
+
 ## Why it matters and how it works
 
 Gradle compiles modules according to a dependency graph. An implementation change behind a stable API can avoid recompiling unrelated consumers, while an API change fans out. Visibility and compile dependencies make ownership enforceable beyond package conventions. The benefit depends on DAG quality, module size, Gradle configuration and test design, not merely module count.
@@ -57,6 +61,14 @@ Document a module DAG and ownership rules, enforce no cycles, track configuratio
 ## Interview answer — deep senior
 
 “I treat a module as an enforceable ownership and compile boundary. A checkout feature can hide its screens and internal repositories, expose a small navigation or domain contract, and depend on stable lower-level APIs. That can reduce accidental coupling and make an internal refactor affect fewer compilers and teams. The graph must remain acyclic so there is a clear composition root. The trade-off is real: Gradle config time, duplicated convention setup if unmanaged, API version decisions, Hilt binding visibility, navigation contracts and more integration tests. A module per class may actually slow the build and make architecture harder to follow. I justify a new module with an ownership, reuse, delivery or measured build reason; for a small app I may use packages first. I track configuration and incremental build baselines, watch for a growing common module, and keep a test that assembles the actual app. The success criterion is easier, safer change at acceptable build cost, not the number of modules on a diagram.”
+
+## How to answer in the interview
+
+- **Why:** modules should reduce change coupling.
+- **How:** split by ownership and dependency direction.
+- **Trade-off:** isolation versus build/config cost.
+- **Failure case:** many empty modules slow work.
+- **Production solution:** measure build and cross-team changes.
 
 ## Deep-dive talking points
 

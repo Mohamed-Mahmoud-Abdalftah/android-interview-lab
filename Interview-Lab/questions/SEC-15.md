@@ -25,6 +25,10 @@ How do you prevent token leakage through logs, screenshots, crash reports, and a
 
 Token ممكن يتسرب من `Authorization` header في HTTP logger، crash breadcrumb، analytics property، notification أو screenshot. تشفير storage مش بيعالج القنوات دي. سياسة logging لازم تكون allowlist: نسجل event type وcorrelation ID وstatus، ونحذف tokens/PAN/PIN وquery params الحساسة قبل ما تصل لأي SDK خارجي.
 
+## Practical walkthrough
+
+ممكن network interceptor يطبع `Authorization` header في debug ثم نفس logger يتفعل في release بالغلط. اعمل allowlist للأحداث بدل redact بعد ما السر انتشر: `operationId`, status, latency كفاية للتشخيص. راجع crash attachments وanalytics وscreenshots كأنها مخازن بيانات. للواجهات الحساسة استخدم سياسة screen capture مناسبة واختبر إنها ما تكسرش الدعم أو accessibility.
+
 ## Why it matters and how it works
 
 Redaction is applied before data crosses an observability boundary, not only at dashboard display. Android `FLAG_SECURE` can prevent screenshots/recording for selected sensitive screens, but it has usability and platform limitations and cannot prevent all compromised-device capture. Crash SDKs and HTTP interceptors need separate configuration.
@@ -51,10 +55,20 @@ Use shared redaction at network and analytics boundaries, restrict dashboard acc
 
 ## Interview answer — structured
 
-“My logging policy records operational state rather than sensitive payloads. I remove Authorization headers and secret query parameters before network logs, disable body logging in release, and configure crash/analytics SDKs to avoid tokens and screenshots. For sensitive screens I may use FLAG_SECURE, aware of usability and device limitations. Tests inject a fake token and assert it never appears in telemetry. If one leaks, I revoke it rather than simply deleting the log. I test leakage with a synthetic token in a release-like build and inspect every telemetry sink, including network interceptors and crash attachments. An allowlist of event names, status and opaque correlation IDs is safer than trying to redact arbitrary payloads later. A screenshot flag can help on sensitive screens but is not a guarantee against a hostile device.”
+“I define an allowlist of safe telemetry fields such as opaque operation ID, status, error code, latency and app version. Tokens, passwords, PAN, PIN, CVV, raw request bodies and headers never reach the logging API. I audit Logcat, network interceptors, crash attachments, analytics and screenshots on a release build, because redacting one logger is insufficient. Screen-capture controls may help on sensitive views, subject to product and accessibility needs, and telemetry itself needs retention and access limits.”
+
 ## Interview answer — deep senior
 
-“I treat observability as an exfiltration path with multiple sinks. Data classification drives an allowlist at source: event names, statuses, latency buckets and opaque correlation IDs; no PAN, PIN, CVV, bearer credentials, names or raw request bodies. I audit third-party SDK capture settings and retention, inspect release builds with synthetic canaries, and test error paths because exceptions often include headers or URLs. FLAG_SECURE is a screen-level mitigation, not a universal privacy guarantee on rooted devices. When a leak is detected, security response rotates/revokes credentials, limits access to stored telemetry and traces the affected versions. A banking app can encrypt a refresh token at rest and still leak it through a debug HTTP logger or crash breadcrumb. I define prohibited fields at collection time—credentials, PAN, PIN, raw bodies and sensitive query parameters—and allow only safe operational state. Third-party analytics and crash SDK defaults are reviewed before integration, because once data is uploaded, dashboard-side masking may be too late. For a confirmation screen I evaluate `FLAG_SECURE` against accessibility/support needs, while acknowledging that a rooted process can capture content elsewhere. Canary tests verify no synthetic secret reaches logs, screenshots or reports. If a real bearer token appears in telemetry, I contain access and revoke the underlying session rather than only deleting the event.”
+“My logging policy starts with an allowlist of fields, not a redaction pass over a raw request. For sign-in or payment failures I need an opaque operation ID, state, safe reason code, latency and app version. I do not pass Authorization headers, PAN, PIN, CVV or request bodies into Logcat, crash SDKs or analytics. I would audit every sink on a release build, including network interceptors and screenshots, then test with canary secret values to catch leaks. Screen capture controls may be appropriate for sensitive views, but their usability effect must be considered. Retention and access controls limit exposure if telemetry itself is compromised. I would create a canary token in a test environment, exercise login, refresh, failure and crash paths, then search release Logcat, telemetry payloads and support attachments for that token. No arbitrary string field should accept card or credential data. If support needs a screenshot, provide a safe diagnostic view instead of capturing a payment screen. Auditing includes third-party SDK defaults because a logger outside our wrapper can still leak data.”
+
+## How to answer in the interview
+
+- **Why:** telemetry sinks create durable copies of secrets.
+- **How:** allowlist safe fields before logging, disable body/header capture, and review crash/analytics sinks.
+- **Trade-off:** less raw telemetry requires better correlation IDs.
+- **Failure case:** a token enters a third-party SDK before redaction.
+- **Production solution:** release-build leak tests and restricted access/retention.
+
 ## Deep-dive talking points
 
 Audit redaction at HTTP logging, crash capture, analytics properties and screenshots; test release builds for accidental token exposure.
@@ -73,4 +87,4 @@ Can I enumerate leak channels, design an allowlist, test redaction and state inc
 - [Android sensitive data guidance](https://developer.android.com/privacy-and-security/security-best-practices) — handling sensitive information.
 - [OWASP MASTG tests](https://mas.owasp.org/MASTG/tests/) — storage and log verification.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

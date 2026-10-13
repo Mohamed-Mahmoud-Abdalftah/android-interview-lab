@@ -26,6 +26,10 @@ How do you decide R8 keep rules for reflection, serialization, JNI, and SDKs?
 
 لا تبدأ بــ`-keep class ** { *; }`. افحص كيف runtime يصل للكود: `Class.forName` يحتاج اسم class وربما constructor، JSON serializer قد يحتاج field names أو generic Signature، JNI قد يربط أسماء methods/classes، وSDK قد تشحن consumer rules جاهزة. حدّد هل المطلوب منع shrinking أو renaming أو الاحتفاظ بعضو/attribute فقط، واكتب أضيق rule. لو المكتبة تملك reflection داخلي، هي مسؤولة عن `consumerProguardFiles`؛ app تضيف قواعد لسلوك خاص بها. اختبر minified release ومسار التحميل الفعلي، وافحص أثر rule على الحجم.
 
+### Practical walkthrough in Egyptian Arabic
+
+Keep rules للreflection/JNI/serializer تبنى على contract: أي class/member يُبحث عنه بالاسم runtime؟ راجع vendor rules وR8 usage output، واكتب أصغر rule تسمح بالسلوك. لكل rule test يعمل في minified consumer app، خصوصًا native callbacks وserialized names. rule واسعة تقلل shrinking وتخفي unsupported SDK behavior؛ لا تعتمد على `@Keep` بلا فهم propagation.
+
 ## Why it matters and how it works
 
 R8's static reachability cannot infer all runtime string-based lookups. Keep rule options can retain classes, members, names or attributes with different optimization impact. Some serializers use generated adapters and need few rules; reflective serializers may rely on fields and generic signatures. Library authors can package rules so consumers do not need undocumented manual configuration.
@@ -57,6 +61,14 @@ Inventory dynamic entry points, rule owner and supporting tests. Build the actua
 ## Interview answer — deep senior
 
 “A keep rule should document a runtime dependency invisible to static analysis. I reproduce the minified failure and identify the lookup mechanism: `Class.forName` by string, serializer field name or generic metadata, native method registration, or an SDK callback factory. Each needs a different retention property. Keeping a class object does not necessarily preserve the name or every constructor; keeping names indiscriminately can block useful optimization. I consult the installed library version's consumer rules first, because SDK authors should ship rules for their own internals. If the app owns the reflection, I write a targeted app rule and add a release variant test that exercises that exact lookup with R8 enabled. For a serializer I prefer generated adapters when practical and inspect whether attributes or field names are required. I use R8 usage/configuration reports and APK size to check the rule is not needlessly broad. The rule is reviewed when SDK versions change, because dynamic contracts and R8 behavior can evolve.”
+
+## How to answer in the interview
+
+- **Why:** static optimizer cannot infer every dynamic lookup.
+- **How:** identify reflective entry and protect needed names.
+- **Trade-off:** targeted safety versus app size.
+- **Failure case:** renamed JNI method crashes one device.
+- **Production solution:** test minified integration path.
 
 ## Deep-dive talking points
 

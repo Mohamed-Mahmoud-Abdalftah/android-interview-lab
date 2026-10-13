@@ -40,6 +40,10 @@ fun main() = println(loadUser(UserId("u-7")))
 ```
 A Java-facing or serialization API needs explicit interop tests for the compiler version in use.
 
+## Practical walkthrough
+
+`@JvmInline value class UserId(val value: String)` يمنع تبديل `UserId` بـ`OrderId` وقت compile ويديك validation في `init`. لكن ما تقولش zero allocation: القيمة ممكن تتعمل لها boxing لما تستخدمها كـnullable، generic، أو interface، والتمثيل يتأثر بالسياق. الـJVM signature/name mangling ممكن يغيّر Java-facing API؛ جرّب الاستدعاء من Java فعلًا، خصوصًا library عامة أو serialization framework. كمان value class مش object identity: ما تستخدمش `===` عليها. لو ID بيدخل database وJSON، اعمل adapters صريحة واختبر round trip بدل افتراض إن frameworks تفهم wrapper تلقائيًا.
+
 ## Trade-offs and decision criteria
 
 Prefer value class for one-field identifiers or units with clear invariants. Use data class for multiple fields or when stable object identity/interop simplicity matters. A typealias is cheaper syntactically but provides no distinct type. Avoid promising performance without profiling boxed generic and nullable paths.
@@ -54,15 +58,25 @@ A commerce app models `ProductId` and `OrderId` as separate value classes, valid
 
 ## Interview answer — short
 
-A value class creates a distinct type around one value and may avoid a wrapper allocation in many cases. Boxing can occur with nullable, generic, interface, and Java interop use. I choose it mainly for type-safe domain identifiers, then measure costs.
+A value class creates a distinct domain type around one value, often without a separate wrapper at a suitable call site. It can box in nullable, generic, or interface contexts, and Java interop needs testing. I use it to prevent ID mix-ups, not as a guaranteed allocation optimization.
 
 ## Interview answer — structured
 
-`@JvmInline value class UserId(val value: String)` prevents accidental mixing with a plain `String` or a different ID class. On the JVM it often uses the underlying representation, but not in every context: nullable and generic positions can box, and generated methods can be awkward for Java. I validate construction, define serialization explicitly, and profile before claiming an allocation win. If the model has multiple fields or rich identity, a regular or data class is clearer. I would use a `UserId` value class to prevent passing an `OrderId` to a user lookup, which a type alias cannot do. I would also avoid selling it as allocation-free: nullable, generic, and interface paths can box the value. If Java callers or a serializer use the type, I test the generated API and wire format for the Kotlin/compiler version in the project.
+A JVM value class lets me express `UserId` as a distinct type from a plain `String`, so the compiler rejects an accidental `OrderId` at the API boundary. The representation may use the underlying value at some call sites, but boxing can occur with generics, nullability, or interfaces; I never promise zero allocations. It also has no identity semantics. For a public Android library I test Java callers, serialization, and reflection against the Kotlin compiler version, since generated JVM signatures differ from a regular wrapper class. I choose it primarily for domain correctness and confirm performance only with measurement.
 
 ## Interview answer — deep senior
 
-A value class has no object identity in its source-level contract. Its key benefit is a domain-specific type with a single stored property, potentially represented as the underlying value. The compiler may box it where a generic or interface representation is needed, so the cost model is use-site dependent. Public Java APIs require deliberate boxed exposure or adapters, and serialization libraries need explicit rules. I review validation, ABI, data persistence, and benchmarks on release builds rather than treating `@JvmInline` as a universal optimization. It lets the compiler reject accidental mixing of identifiers or units while often representing the value without a separate wrapper. The word often is important: boxing can occur for nullable use, generic containers, interfaces, and other interop positions. Validation in `init` helps ordinary construction but should be verified at external-data boundaries. I compare it with a typealias, which adds no type distinction, and a data class, which handles multiple fields and simpler object interop. For performance claims I inspect generated code and benchmark release builds instead of assuming every value-class use removes allocations.
+A value class has no object identity in its source-level contract. Its key benefit is a domain-specific type with a single stored property, potentially represented as the underlying value. The compiler may box it where a generic or interface representation is needed, so the cost model is use-site dependent. Public Java APIs require deliberate boxed exposure or adapters, and serialization libraries need explicit rules. I review validation, ABI, data persistence, and benchmarks on release builds rather than treating `@JvmInline` as a universal optimization.
+
+For domain IDs, `UserId("u-7")` prevents passing an order ID to a user lookup, and an `init` check can reject blank values at construction. But a value class can be boxed when nullable, stored in a generic collection, or viewed through an interface, so I would not promise zero allocations. Java callers may see mangled or inaccessible signatures unless the API provides a deliberate adapter or boxed exposure supported by the toolchain. Serialization must also explicitly encode the underlying value and validate it on decode. I choose this feature for a type-level invariant first, then measure performance and test JVM interop.
+
+## How to answer in the interview
+
+- **Why:** Create domain-specific, strongly-typed wrappers around primitive values without heap allocation overhead.
+- **How:** Define `@JvmInline value class UserId(val raw: String)` so the compiler replaces instances with the underlying type in bytecode.
+- **Trade-offs:** Value classes box into heap objects when used in generic contexts, nullable types, or collections (`List<UserId>`).
+- **Failure cases:** Name-mangled value class methods called from Java code, resulting in cryptic compiler errors or missing symbols on the Java side.
+- **Production solution:** Use value classes to enforce domain type safety for IDs, currencies, and tokens, adding `@JvmName` when Java interoperability is required.
 
 ## Deep-dive talking points
 
@@ -82,4 +96,4 @@ State the single-field rule, identify two boxing situations, and explain one Jav
 - [Kotlin inline value classes](https://kotlinlang.org/docs/inline-classes.html) — representation and boxing.
 - [Calling Kotlin from Java](https://kotlinlang.org/docs/java-to-kotlin-interop.html) — Java exposure.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. Examples are illustrative JVM snippets unless explicitly labeled conceptual; no Android device claim is made.
+Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets unless explicitly labeled conceptual; no Android device claim is made.

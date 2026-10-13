@@ -24,6 +24,10 @@ Explain read-only exposure without claiming it makes underlying objects immutabl
 
 بنخلي `MutableStateFlow` private ونعرّض `StateFlow` عبر `asStateFlow()` علشان المستهلك يقدر يقرأ ويعمل collect لكن ما يقدرش يغيّر `value` مباشرة. الـViewModel يفضل owner للتحديثات. ده بيحمي API surface، لكنه مش بيحوّل list mutable جوه state إلى immutable، ولا يمنع reference قديم من تغيير نفس object.
 
+### Practical walkthrough in Egyptian Arabic
+
+الـViewModel تحتفظ بـ`MutableStateFlow` private وتطلع `asStateFlow()` للـUI. ده يمنع Screen تعمل `_state.value = ...` وتكسر invariants؛ الأحداث ترجع methods زي `onRetry()`. لكن read-only interface مش أمان مطلق لو سربت mutable object جوا `UiState` نفسها، فلازم values غير قابلة للتعديل أو نسخ واضحة.
+
 ## Why it matters and how it works
 
 `asStateFlow()` returns a read-only view of the same hot state source; it does not copy data. Use immutable state classes/lists and atomic `update` when concurrent writers may modify state. Keep mutation functions small and domain-specific.
@@ -65,7 +69,15 @@ A checkout ViewModel exposes a read-only price state and methods for quantity ch
 
 ## Interview answer — deep senior
 
-“The read-only type prevents accidental external writes to the flow, but not every form of mutation. `asStateFlow()` delegates to the same source, so a mutable list or object stored as the value can still be changed in place, potentially hiding an update because StateFlow uses equality-based conflation. I design a small transition API, publish fresh immutable snapshots and use atomic `update` when multiple coroutines may modify state. For a payment screen I do not trust UI state as transaction authority: the server and durable repository determine the final status. Tests verify that rapid actions preserve updates and that no caller can bypass the owner’s validation. Keep mutation functions small and domain-specific.”
+“The read-only type prevents accidental external writes to the flow, but not every form of mutation. `asStateFlow()` delegates to the same source, so a mutable list or object stored as the value can still be changed in place, potentially hiding an update because StateFlow uses equality-based conflation. I design a small transition API, publish fresh immutable snapshots and use atomic `update` when multiple coroutines may modify state. For a payment screen I do not trust UI state as transaction authority: the server and durable repository determine the final status. Tests verify that rapid actions preserve updates and that no caller can bypass the owner’s validation. Keep mutation functions small and domain-specific. I would frame `asStateFlow()` as an ownership boundary. The ViewModel alone can mutate the backing `MutableStateFlow`; callers receive a `StateFlow` and can collect or read its current value but cannot call `emit` or assign `.value` through that reference. Events go back through named functions, so validation and atomic `update` stay in one place. This does not make a mutable list inside the state immutable, and it does not make the value persistent after process death. I would use immutable UI models and keep the backing reference private. In tests I verify a concurrent update uses `update` rather than a read-then-write race, and in the UI I collect with lifecycle awareness.”
+
+## How to answer in the interview
+
+- **Why:** only the owner should enforce state transitions.
+- **How:** private mutable flow, public read-only view, named events.
+- **Trade-off:** API boundary does not freeze mutable nested objects.
+- **Failure case:** exposing `_state` or mutating a list in place.
+- **Production solution:** immutable models and atomic update tests.
 
 ## Deep-dive talking points
 

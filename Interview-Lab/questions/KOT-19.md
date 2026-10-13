@@ -30,12 +30,22 @@ A generic success/failure wrapper can make exception handling explicit, but stab
 
 ## Worked example
 
-JVM illustration of a domain result with explicit failure categories.
+JVM illustration of a domain result with explicit failure categories. The `fetch` lambda stands for an I/O adapter; this code preserves coroutine cancellation before mapping an ordinary I/O error.
 ```kotlin
+import java.io.IOException
+import java.util.concurrent.CancellationException
+
 sealed interface LoadUser {
     data class Found(val name: String) : LoadUser
     data object Missing : LoadUser
     data class Unavailable(val retryable: Boolean) : LoadUser
+}
+ suspend fun load(fetch: suspend () -> String?): LoadUser = try {
+    fetch()?.let(LoadUser::Found) ?: LoadUser.Missing
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (io: IOException) {
+    LoadUser.Unavailable(retryable = true)
 }
 fun display(result: LoadUser): String = when (result) {
     is LoadUser.Found -> result.name
@@ -43,6 +53,10 @@ fun display(result: LoadUser): String = when (result) {
     is LoadUser.Unavailable -> "Try again"
 }
 ```
+
+## Practical walkthrough
+
+`Result<T>` مناسب عند adapter صغير بيرجع success أو `Throwable` وعايز تحتفظ بالcause. لكنه مش domain vocabulary: UI محتاجة تعرف هل `Missing`، `Unauthorized`، أو `Unavailable(retryable)` عشان تاخد قرار. map exceptions في boundary: HTTP 404 → Missing مثلًا فقط لو endpoint contract يقول كده، timeout → حالة uncertain أو retriable حسب operation. لا تستخدم `runCatching` حوالين suspend call من غير ما تعيد رمي `CancellationException`، وإلا تلغي cancellation وتحوّلها failure عادية. خليك واضح هل failure exception داخلي ولا expected business outcome.
 
 ## Trade-offs and decision criteria
 
@@ -58,15 +72,25 @@ A payments repository maps transport failures to `PaymentError.Network`, `Declin
 
 ## Interview answer — short
 
-Kotlin `Result<T>` holds a success value or a `Throwable` failure. I use it for generic exception boundaries, but model domain errors with explicit sealed cases when callers need reliable recovery decisions. In coroutines I let cancellation propagate.
+`Result<T>` packages success or a `Throwable`, which is useful near an operation boundary. For domain behavior, I often prefer a sealed outcome with named cases and payloads. In suspending code I preserve cancellation rather than turning it into an ordinary failure.
 
 ## Interview answer — structured
 
-`Result` gives operators for handling success and exception failure, which is convenient at an infrastructure boundary. It is less expressive as a domain contract when product behavior depends on specific categories. I map known failures to a sealed outcome with fields such as retryability or validation reasons, keep unknown failures visible, and avoid leaking sensitive exception messages to UI. `runCatching` can catch cancellation, so a suspend implementation must rethrow `CancellationException`. For a checkout screen, however, callers need stable categories like authentication required, declined, unavailable, or pending verification. A cancelled coroutine should not be reported as a failed payment. For an unknown server failure, I keep a generic but observable fallback rather than pretending it is a known decline. That helps both UI recovery and incident diagnosis.
+I choose the result type from the caller’s decisions. A low-level adapter can return `Result<T>` when preserving an exception is useful, but a screen needs stable meanings such as Missing, Unauthorized, and TemporarilyUnavailable. I map transport errors once at the boundary, retain diagnostic causes for logging, and do not expose raw exception classes as the whole product contract. In coroutine code I avoid swallowing `CancellationException`; a broad `runCatching` can accidentally capture it, so I rethrow cancellation before mapping genuine failures. The outcome type should tell the caller whether to retry, ask for credentials, or stop.
 
 ## Interview answer — deep senior
 
-I choose the failure type based on who consumes it. At a generic adapter, `Result<T>` can package an exception while preserving the original cause. At a domain boundary, stable sealed errors let UI and tests handle offline, unauthorized, and business rejection separately without parsing messages. I retain diagnostic context in logs and correlation IDs, not raw secrets. Coroutine cancellation is not a business failure; it must propagate through structured concurrency. I also specify whether a retry is safe and distinguish transport uncertainty from a confirmed server outcome. The design starts with what the consumer needs to decide. Kotlin `Result` wraps a successful value or a `Throwable` and has useful transformations, but a `Throwable` hierarchy is not usually a stable business contract. A sealed domain result can carry a decline code, retry-after hint, or correlation ID without exposing raw server messages. I pay special attention to `runCatching`: it catches `Throwable`, including `CancellationException`, so suspend code must rethrow cancellation rather than converting it to a UI error. This keeps structured concurrency working and avoids spurious retries. Tests cover each category and verify that logged details omit tokens and personal data. The transport layer may preserve an underlying exception internally while the domain API exposes stable categories. I test that classification against offline, timeout, unauthorized, malformed response, and cancellation cases. Those are distinct paths with different safe retry behavior.
+I choose the failure type based on who consumes it. At a generic adapter, `Result<T>` can package an exception while preserving the original cause. At a domain boundary, stable sealed errors let UI and tests handle offline, unauthorized, and business rejection separately without parsing messages. I retain diagnostic context in logs and correlation IDs, not raw secrets. Coroutine cancellation is not a business failure; it must propagate through structured concurrency. I also specify whether a retry is safe and distinguish transport uncertainty from a confirmed server outcome.
+
+For a user lookup, I might map a 404 into Missing only if the endpoint contract says it means no user, map a transient I/O failure into Unavailable, and preserve a cause plus correlation ID for diagnosis. A raw exception message should not become user text or a stable error code. In suspending code, a broad `runCatching` catches `CancellationException` too; I rethrow it so closing the screen can cancel the work correctly. For an unsafe write operation, a timeout can mean the server completed the action but the response was lost, so the result model needs an uncertain state and an idempotent recovery path.
+
+## How to answer in the interview
+
+- **Why:** Model operations that can succeed or fail as values rather than throwing unchecked exceptions.
+- **How:** Use Kotlin's `Result<T>` or custom sealed domain hierarchies (`Outcome.Success`, `Outcome.Failure`).
+- **Trade-offs:** `Result<T>` wraps exceptions as `Throwable`, which lumps programming bugs, network timeouts, and cancellation together.
+- **Failure cases:** Catching `CancellationException` inside `runCatching` and boxing it into `Result.failure`, breaking coroutine cancellation in Android view models.
+- **Production solution:** Build custom sealed error hierarchies (`NetworkError`, `ValidationError`, `AuthError`) for expected domain failures, letting unexpected exceptions crash or propagate.
 
 ## Deep-dive talking points
 
@@ -86,4 +110,4 @@ Explain Result payloads, choose typed error cases for a domain API, and identify
 - [Kotlin Result API](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin/-result/) — success/failure operations.
 - [Kotlin cancellation and timeouts](https://kotlinlang.org/docs/cancellation-and-timeouts.html) — cancellation propagation.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.

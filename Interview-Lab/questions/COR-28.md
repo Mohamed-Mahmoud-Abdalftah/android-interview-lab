@@ -24,6 +24,10 @@ Demonstrate lost update on balance and choose local plus authoritative transacti
 
 لو coroutine A وB قرأوا balance=100 ثم كل واحدة حسبت +10 وكتبت 110، ضاع تحديث بدل 120. `suspend` أو `Dispatchers.Default` لا يحموا العملية المركبة. داخل process ممكن `Mutex` يحمي القراءة والتعديل؛ لكن balance مالية حقيقية لازم تتحسم في database/server transaction أو ledger، لأن قفل Android لا ينسّق أجهزة تانية.
 
+## Practical walkthrough
+
+لو balance=100 واتنين coroutines قرأوه مع بعض، كل واحدة تحسب +10 وتكتب 110 بدل 120. اقفل القراءة والتحقق والكتابة كلهم داخل `Mutex.withLock`؛ قفل الكتابة بس مش كفاية. المثال ده محلي للتوضيح، إنما رصيد حقيقي لازم server transaction أو ledger ينسّق بين أجهزة وعمليات بعد process death.
+
 ## Why it matters and how it works
 
 The vulnerable read-modify-write spans multiple operations. `Mutex.withLock` makes the in-memory section exclusive for coroutines sharing that Mutex. A server transaction enforces the invariant across clients and crash/retry boundaries; use operation IDs to avoid duplicated increments. Test with barriers to force the two reads before writes.
@@ -68,7 +72,15 @@ A wallet UI reads server ledger-derived balance. The backend transaction checks 
 
 ## Interview answer — deep senior
 
-“I would first reproduce the interleaving deterministically: both tasks read 100, pause, then both write 110. A `Mutex.withLock` around read, validation and write fixes the in-process race; `@Volatile` does not because the compound operation is still not atomic. An `AtomicLong` can fix a local increment, but cannot by itself atomically add an audit entry or check credit limits. For production money, the server owns the ledger and wraps balance/constraint updates in one transaction. The client sends a stable operation key, treats timeouts as uncertain and reconciles, because process death or another device bypasses any local Mutex. Tests assert no lost update and no duplicate ledger entry under concurrent retries. The vulnerable read-modify-write spans multiple operations.”
+“I would first reproduce the interleaving deterministically: both tasks read 100, pause, then both write 110. A `Mutex.withLock` around read, validation and write fixes the in-process race; `@Volatile` does not because the compound operation is still not atomic. An `AtomicLong` can fix a local increment, but cannot by itself atomically add an audit entry or check credit limits. For production money, the server owns the ledger and wraps balance/constraint updates in one transaction. The client sends a stable operation key, treats timeouts as uncertain and reconciles, because process death or another device bypasses any local Mutex. Tests assert no lost update and no duplicate ledger entry under concurrent retries. The vulnerable read-modify-write spans multiple operations. I would make the race visible with a controlled interleaving: both coroutines read 100, pause, then write 110. Locking just the write does not help; validation, read and write must share the critical section. A local `Mutex` is a good teaching fix, and an `AtomicLong` works for a lone increment. Neither protects money across devices or process death, so production uses a server transaction or ledger with idempotent operation identity.”
+
+## How to answer in the interview
+
+- **Why:** read-modify-write is a compound operation.
+- **How:** show the 100→110 lost update, then protect the whole local critical section with Mutex.
+- **Trade-off:** an atomic counter is simpler for one number but cannot include validation and audit.
+- **Failure case:** volatile or write-only locking leaves the race.
+- **Production solution:** an idempotent server transaction is authoritative for money.
 
 ## Deep-dive talking points
 
@@ -88,4 +100,4 @@ Can I show the lost update, protect the whole critical section, and state why th
 - [Kotlin shared mutable state](https://kotlinlang.org/docs/shared-mutable-state-and-concurrency.html) — lost increments and Mutex.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — local/remote source-of-truth design.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

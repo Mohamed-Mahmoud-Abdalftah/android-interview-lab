@@ -26,6 +26,10 @@ A LazyColumn scroll position resets after data refresh. What should you inspect?
 
 أولًا اسأل: هل المطلوب البقاء عند نفس item أم العودة للأول بعد query جديدة؟ افحص `rememberLazyListState()` هل موجود في call site ثابت أم Screen تُزال/تتغير key فيُنشأ state جديد. ثم keys للعناصر: IDs ثابتة وفريدة تساعد Compose يتتبع item بعد insertion/reorder؛ index keys تجعل الصفوف تتبدل هويتها. راجع هل refresh تستبدل list بنفس IDs أم تولد IDs جديدة، وهل code يستدعي `scrollToItem(0)` في effect بكل emission. `LazyListState` له saveable behavior، لكن restoration تعتمد على owner وبقاء saved state.
 
+### Practical walkthrough in Egyptian Arabic
+
+اسأل الأول: refresh المفروض يحافظ على نفس post ولا يرجع لأول القائمة؟ بعدين افحص `rememberLazyListState` هل في call site ثابت، وkeys هل IDs حقيقية ولا index، وهل effect بتعمل `scrollToItem(0)` مع كل data emission. عالج السبب المناسب؛ تغيير refreshToken في root key ممكن يمسح state كلها. لو query جديدة، الرجوع لأول القائمة ممكن يكون صحيح، لكن refresh لنفس query لازم غالبًا يحافظ على post الحالي. اختبر الحالتين منفصلتين مع insert/reorder ومع restoration.
+
 ## Why it matters and how it works
 
 Scroll state tracks index and offset, and lazy item keys can help maintain logical position when data changes. A `rememberLazyListState` bound to a removed composition location is recreated. An effect that scrolls on every dataset update overrides remembered position. If a refreshed data set has different identity or sort order, preserving the same index may be semantically wrong even when technically possible.
@@ -33,6 +37,26 @@ Scroll state tracks index and offset, and lazy item keys can help maintain logic
 ## Worked example
 
 A feed inserts three newer posts above a user reading post ID 42. Stable post IDs allow the reader to remain anchored near post 42; a root `key(refreshToken)` recreates the entire list state and jumps to top. Remove that root key, keep one list state for the destination, and scope a top-scroll effect only to an explicit new search filter, not every refresh emission.
+
+### Compose/Kotlin walkthrough
+
+```kotlin
+@Composable
+fun Feed(posts: List<PostUi>, queryIdentity: String) {
+    val listState = rememberLazyListState()
+    var previousQuery by rememberSaveable { mutableStateOf(queryIdentity) }
+    LaunchedEffect(queryIdentity) {
+        if (previousQuery != queryIdentity) listState.scrollToItem(0)
+        previousQuery = queryIdentity
+    }
+    LazyColumn(state = listState) {
+        items(posts, key = PostUi::id) { post -> PostRow(post) }
+    }
+}
+// Imports: foundation.lazy.LazyColumn/items/rememberLazyListState,
+// runtime.LaunchedEffect/rememberSaveable/mutableStateOf/getValue/setValue.
+// Refresh under the same query leaves scroll untouched.
+```
 
 ## Trade-offs and decision criteria
 
@@ -48,15 +72,23 @@ Test refresh insertions above viewport, deletion of current item, query/account 
 
 ## Interview answer — short
 
-“I inspect list-state ownership, stable item IDs, any scroll effect triggered by refresh, and the product's desired policy for data changes.”
+“I inspect list-state ownership, stable item IDs, any scroll effect triggered by refresh, and the product's desired policy for data changes. Inspect list-state ownership, stable item keys, and any scroll-to-top effect.”
 
 ## Interview answer — structured
 
-“First I ask whether refresh should retain the same item or reset for a new query. I check that `LazyListState` is remembered at a stable call site and not recreated by a loading branch or root key. Then I verify unique stable item keys and whether the backend preserves IDs. Finally I look for `scrollToItem(0)` effects keyed to every list emission. I test inserts above the viewport and account/filter changes separately.”
+“First I ask whether refresh should retain the same item or reset for a new query. I check that `LazyListState` is remembered at a stable call site and not recreated by a loading branch or root key. Then I verify unique stable item keys and whether the backend preserves IDs. Finally I look for `scrollToItem(0)` effects keyed to every list emission. I test inserts above the viewport and account/filter changes separately. For a feed insertion, I expect the same post ID to remain anchored; a new query can intentionally reset.”
 
 ## Interview answer — deep senior
 
-“A jump to top can come from three different causes, so I instrument the first visible item ID, index and offset before and after refresh. One cause is owner recreation: the list may leave composition during Loading or sit under a changing `key(refreshToken)`, so `rememberLazyListState()` is new. Another is item identity: if rows use positions as keys, inserting records above the viewport changes which item an index refers to and can move remembered row state. The third is explicit code, such as a `LaunchedEffect(items)` that scrolls to zero after every emission. I fix the actual cause rather than forcing an offset restore blindly. Stable IDs and a persistent destination-owned list state fit incremental updates, while a genuinely new search query may intentionally reset to top. I keep account and filter identity in that policy so an old feed offset does not leak into another dataset. I test insert, delete, reorder, navigation return and eligible process recreation, including the case where the formerly visible item is removed.”
+“A jump to top can come from three different causes, so I instrument the first visible item ID, index and offset before and after refresh. One cause is owner recreation: the list may leave composition during Loading or sit under a changing `key(refreshToken)`, so `rememberLazyListState()` is new. Another is item identity: if rows use positions as keys, inserting records above the viewport changes which item an index refers to and can move remembered row state. The third is explicit code, such as a `LaunchedEffect(items)` that scrolls to zero after every emission. I fix the actual cause rather than forcing an offset restore blindly. Stable IDs and a persistent destination-owned list state fit incremental updates, while a genuinely new search query may intentionally reset to top. I keep account and filter identity in that policy so an old feed offset does not leak into another dataset. I test insert, delete, reorder, navigation return and eligible process recreation, including the case where the formerly visible item is removed. I would remove a refresh-token key that recreates the list and separately test an explicit query change.”
+
+## How to answer in the interview
+
+- **Why:** position has both state-owner and item-identity components.
+- **How:** inspect listState site, stable keys, and explicit scroll effects.
+- **Trade-off:** a new query may intentionally reset to top.
+- **Failure case:** regenerated IDs or root key recreate scroll state.
+- **Production solution:** test insertion above viewport and a true query change separately.
 
 ## Deep-dive talking points
 

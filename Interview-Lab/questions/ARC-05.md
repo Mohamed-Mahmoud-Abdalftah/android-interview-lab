@@ -24,6 +24,10 @@ Place UI state/lifecycle, reusable policy, and data-source coordination with the
 
 ViewModel شاشة: تستقبل UI events، تنادي domain/data، وتطلع `UiState` مناسب للعرض؛ ما تمسكش View/Activity reference وما تعملش blocking I/O على Main. UseCase، لو موجودة، لقاعدة business أو workflow معاد استخدامها أو معقدة، من غير Android UI types. Repository لداتا التطبيق: local/remote، cache، merge، error mapping من transport. مثال: ViewModel يحوّل `Balance` لعملة معروضة؟ formatting المحلي للـUI عند presentation؛ التحقق من حد التحويل في domain؛ جلب balance وحفظه في data.
 
+### Practical walkthrough in Egyptian Arabic
+
+ViewModel يحول events إلى UiState ويمسك scope للشاشة؛ UseCase ينفذ business decision قابل للاستخدام خارج الشاشة؛ Repository يتعامل مع cache/network/DB. لو ViewModel فيها JSON parsing وretry/payment rule، ابدأ بنقل rule مع test ثم adapter، لا rewrite كامل. UI state بعد process death يعاد من durable ID. راقب إن ViewModel لا تحتفظ بـActivity.
+
 ## Why it matters and how it works
 
 Screen state holder owns state production and event handling. Domain use cases encapsulate reusable business operations. Repositories expose data and coordinate sources. Keeping owners distinct makes lifecycle, testing, and change impact clearer.
@@ -55,6 +59,14 @@ I ask whether a line of code changes when the screen design changes, a business 
 ## Interview answer — deep senior
 
 There are gray areas, so I use ownership questions rather than a rigid checklist. A repository can contain data-centric business logic such as conflict resolution because it owns the source of truth. A use case expresses product behavior across repositories or reused by multiple screens. A ViewModel produces UI state and calls those APIs in a lifecycle-aware scope, but should not be a durable transaction owner. For an uncertain transfer, repository and server track status through process death; ViewModel only renders the resulting state. I test each boundary with a fake for the next one down, and I review public types to ensure transport DTOs and Android Views do not cross into domain. If a use case merely forwards a call, it may not earn its maintenance cost. A difficult review case is a rule that mixes data and presentation. I ask whether the result is valid across screens and locales. Transfer limits are domain policy; a red warning label is UI. Repository owns the latest validated limit data and request status, while domain applies policy and ViewModel maps to screen state. Tests should prove that a timeout leads to pending verification rather than a false success or failure. A thin ViewModel is useful only if the lower layers have clear contracts.
+
+## How to answer in the interview
+
+- **Why:** one owner per kind of decision.
+- **How:** route event through VM, policy and data.
+- **Trade-off:** smaller classes versus navigation overhead.
+- **Failure case:** VM becomes network and ledger god object.
+- **Production solution:** refactor slice with regression test.
 
 ## Deep-dive talking points
 

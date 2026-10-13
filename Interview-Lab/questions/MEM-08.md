@@ -26,6 +26,10 @@ Why can a Singleton holding Activity Context leak memory?
 
 الـsingleton غالبًا عايش طول عمر الـprocess. لو خزّن `Activity` كـContext، عمر الـActivity يقصر عند rotation أو إغلاق الشاشة، لكن المرجع من singleton يمنع GC من جمعها ومعاها view tree وresources. لو dependency محتاجة Context عام للملفات أو موارد لا تعتمد على theme، استخدم `applicationContext`. لكن `applicationContext` مش بديل سحري لكل حاجة: عرض dialog أو طلب Activity Result يحتاج Activity حية، والأصح تمررها وقت العملية أو تربط المكوّن بالـlifecycle المناسب. افحص retaining path للتأكد من leak الفعلي.
 
+## Practical walkthrough
+
+مثال image cache في `object` محتاجة تفتح cache directory: ادّيها `applicationContext` وقت الإنشاء، وما تخزنش `Activity`. لو محتاجة تعرض picker أو dialog، خليك في الـActivity نفسها وابعث للـcache النتيجة أو البيانات. بعد rotation مرتين، heap dump لازم ما يلاقيش الـActivity القديمة من cache root. كمان شوف أي lambda داخل cache لأنها ممكن تلتقط الـActivity حتى لو field اسمه Context سليم.
+
 ## Why it matters and how it works
 
 A static or singleton field is reachable for the process lifetime. Storing a short-lived Activity there creates a strong path to the Activity and its views after recreation. Application context has process lifetime and is safe to retain for compatible APIs, but it lacks an Activity's window, lifecycle, and sometimes themed behavior. A singleton may also leak through a callback that captures `this`, even when its direct Context field looks harmless.
@@ -33,6 +37,21 @@ A static or singleton field is reachable for the process lifetime. Storing a sho
 ## Worked example
 
 `object ImageCache { lateinit var context: Context }` initialized with `this` in an Activity retains that Activity. Instead, initialize a cache needing only file access with `applicationContext`, or inject an application-scoped Context via DI. If a picker must launch, keep the launcher in the Activity and pass a result into the cache; do not store the Activity in it. These snippets describe ownership, not a full compilable cache.
+
+This Android sketch assumes a cache that only needs files, never UI theming or an Activity result. It has not been compiled in this repository.
+
+```kotlin
+import android.content.Context
+import java.io.File
+
+class ThumbnailDiskCache(context: Context) {
+    private val appContext = context.applicationContext
+    val directory: File
+        get() = File(appContext.cacheDir, "thumbnails")
+}
+```
+
+The caller still owns UI launchers and disposes any listeners it registers with this cache.
 
 ## Trade-offs and decision criteria
 
@@ -56,7 +75,15 @@ For an image cache, inject only an application-scope directory or Context, set a
 
 ## Interview answer — deep senior
 
-“I reason about object ownership first. An application singleton is a GC root path for as long as the process lives. Putting an Activity Context in it can retain the Activity, its Views, drawables, and callbacks through configuration changes. The fix is to reduce the dependency's scope: an application Context for file/cache work, or an Activity-scoped component for UI work. I also inspect indirect captures such as a lambda registered with the singleton, because changing one field may leave the leak. I do not blindly replace every Context with application Context, since window and themed operations need a live Activity and can fail or behave incorrectly otherwise. A repeatable rotation test plus heap analysis demonstrates that old Activity instances become collectable after cleanup.”
+“I reason about object ownership first. An application singleton is a GC root path for as long as the process lives. Putting an Activity Context in it can retain the Activity, its Views, drawables, and callbacks through configuration changes. The fix is to reduce the dependency's scope: an application Context for file/cache work, or an Activity-scoped component for UI work. I also inspect indirect captures such as a lambda registered with the singleton, because changing one field may leave the leak. I do not blindly replace every Context with application Context, since window and themed operations need a live Activity and can fail or behave incorrectly otherwise. A repeatable rotation test plus heap analysis demonstrates that old Activity instances become collectable after cleanup. In a file-backed thumbnail cache, the singleton can safely keep an application Context, but the picker launcher stays in the Activity. I inspect callback fields as well as the Context field, then rotate twice and check the old Activity's retaining path. This catches a lambda leak that a simple field replacement would miss.”
+
+## How to answer in the interview
+
+- **Why:** Tie singleton lifetime to the process.
+- **How:** Inject application Context only for process-safe services.
+- **Trade-off:** Application Context lacks Activity UI behavior.
+- **Failure case:** A captured lambda can retain Activity despite field cleanup.
+- **Production solution:** Keep picker ownership in Activity and verify rotation heap paths.
 
 ## Deep-dive talking points
 
@@ -77,4 +104,4 @@ Trace the singleton-to-Activity path, choose a correct scope, identify indirect 
 - [Memory leak patterns](https://developer.android.com/topic/performance/memory) — resource and reference ownership.
 - [Context API](https://developer.android.com/reference/android/content/Context) — application and Activity context behavior.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The cache sketch is illustrative.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The cache sketch is illustrative.

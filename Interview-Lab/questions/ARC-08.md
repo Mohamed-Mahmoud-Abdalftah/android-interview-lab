@@ -24,6 +24,10 @@ Compare responsibility for state and events across patterns without asserting on
 
 MVC بيفصل model/view/controller لكن في Android القديم Activity كتير بقت controller ضخمة. MVP يخلي Presenter يتعامل مع View interface، يسهل بعض tests لكن wiring lifecycle يدوي. MVVM يستخدم ViewModel يعرض observable UI state والـView ترندر؛ Android lifecycle integration مناسب. MVI عادة intents/actions تدخل reducer لتولّد state موحدة وeffects واضحة، وUDF principle أوسع: events لأعلى وstate لأسفل. المصطلحات بتختلف بين الفرق؛ قيّم data flow، ownership، testability، وcomplexity بدل اختيار acronym.
 
+### Practical walkthrough in Egyptian Arabic
+
+MVC/MVP/MVVM/MVI/UDF أسماء لتنظيم ownership. في شاشة payment، الأهم state transitions وside effects وrecreation: هل Button tap ينتج event؟ هل Unknown محفوظ؟ هل UI تعمل request مباشرة؟ اختبر representative flow بدل تفضيل pattern بالاسم. MVVM مع immutable UiState قد يكفي، وreducer MVI يفيد transitions المعقدة بتكلفة ceremony.
+
 ## Why it matters and how it works
 
 These patterns answer how presentation responsibilities and state transitions are organized. UDF is a directional principle that can be implemented within MVVM or MVI. Android guidance favors state holders and UDF, not a universal rigid MVI framework.
@@ -55,6 +59,14 @@ MVC often puts coordination in a controller, MVP uses a presenter and view contr
 ## Interview answer — deep senior
 
 I compare these approaches by tracing one event through the system. Who receives it? Who applies business rules? Who owns current state? How does the UI render it after recreation? MVP makes View abstraction explicit but can require careful attach/detach behavior. MVVM gives a lifecycle-aware state holder but needs discipline to avoid scattered LiveData booleans. MVI or reducer-based UDF centralizes transitions and can make impossible states easier to detect, at the cost of more ceremony and effect handling. UDF itself simply asks for one-way event and state flow. I avoid claiming that a pattern name guarantees testability or correctness; I test actual transitions and separate durable business status from UI state. The names often overlap in practice, so I review the actual event and state flow. Does the UI render one source of state? Can a new event arrive while work is in flight? Is state restored after process death? MVP tests may fake a View contract, while MVVM tests can assert StateFlow and MVI tests can assert reducer transitions. None of these patterns automatically fixes stale cache, server authority or lifecycle leaks; those need explicit owners and tests.
+
+## How to answer in the interview
+
+- **Why:** pattern names do not prove correctness.
+- **How:** compare ownership, state and effects.
+- **Trade-off:** simple VM versus explicit reducer complexity.
+- **Failure case:** pattern adopted but duplicate payment persists.
+- **Production solution:** prototype difficult flow and measure.
 
 ## Deep-dive talking points
 

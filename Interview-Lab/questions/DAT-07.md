@@ -43,6 +43,10 @@ interface OfflineNotes {
 // editLocally commits Note plus pending operation in one local transaction.
 ```
 
+## Practical walkthrough
+
+offline-first معناها القراءة من local source شغال حتى الشبكة غايبة، مش مجرد cache على جنب. Notes app: UI تراقب Room `Flow`, edit يتحفظ محليًا مع outbox row في transaction، worker يرفع لما network تسمح، وserver يرد version/canonical state. لو request وصل والack ضاع، worker يعيد بنفس operation ID/idempotency contract؛ ما يخلقش duplicate note. conflicts لازم policy: per-field merge أو user resolution حسب المنتج. اعرض freshness/pending sync/error بوضوح، وما تقولش “synced” قبل server ack. payments أو stock authority ما ينفعش تتعامل كأن optimistic local write نهائي.
+
 ## Trade-offs and decision criteria
 
 Local-first reads improve startup and resilience but add sync complexity and storage/security responsibility. Network-first can be simpler for non-critical ephemeral data. Conflicts require domain rules: server-wins, merge, or user resolution, not a blanket last-write-wins assumption.
@@ -65,7 +69,17 @@ A field-inspection app saves forms and attachments locally with Pending status, 
 
 ## Interview answer — deep senior
 
-“Offline-first is an end-to-end consistency design. The local database is the UI’s current source, but the backend remains authoritative for shared data. I use stable IDs, server versions/cursors and transactional local writes so a user action and its pending sync record cannot diverge. Workers can retry after process death, which requires server idempotency and reconciliation of ambiguous responses. I explicitly model freshness and conflicts; text notes might merge or ask the user, while payment balances cannot be client-merged. I test airplane mode, reconnect, duplicate worker runs, out-of-order responses and app crashes at each state transition.”
+Offline-first is an end-to-end consistency design. The local database is the UI’s current source, but the backend remains authoritative for shared data. I use stable IDs, server versions/cursors and transactional local writes so a user action and its pending sync record cannot diverge. Workers can retry after process death, which requires server idempotency and reconciliation of ambiguous responses. I explicitly model freshness and conflicts; text notes might merge or ask the user, while payment balances cannot be client-merged. I test airplane mode, reconnect, duplicate worker runs, out-of-order responses and app crashes at each state transition.
+
+I describe offline-first as a data-flow contract. Reads come from the local database so the screen can render without network; refresh and sync update that source, and UI observes it. A note edit and its outbox record commit together locally, then a persistent worker sends it with stable identity. The backend remains authoritative for shared state, so versions and conflict rules are part of the design. A lost acknowledgement can cause another HTTP attempt, which must reuse the same logical operation identity if the server supports deduplication. I expose pending and conflict states to users rather than claiming an offline edit has already synchronized. For money or inventory I defer the final decision to the server.
+
+## How to answer in the interview
+
+- **Why:** Offline UX needs a local read path and explicit consistency model.
+- **How:** Describe Room observation, transactional edit/outbox, worker and server version.
+- **Trade-offs:** Optimistic local edits improve UX but create conflict policy work.
+- **Failure cases:** Duplicate write after lost ack or false “synced” label.
+- **Production solution:** Reconcile IDs/versions and show pending/conflict state.
 
 ## Deep-dive talking points
 
@@ -84,4 +98,4 @@ Can I name local and server authority, persist pending work and define freshness
 
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — local source and queued writes.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

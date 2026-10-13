@@ -24,6 +24,10 @@ Recover an authorized payment after UI timeout by querying ledger and preserving
 
 UI timeout بعد authorization معناها العميل مش عارف النتيجة؛ backend ممكن يكون Authorized بالفعل. نخزن operation ID وidempotency key قبل submit، ونخلي UI Pending/Unknown، ثم نسأل status endpoint أو نستنى server event موثوق. ما نعملش authorization جديدة بمفتاح جديد، ولا نعمل capture/reversal من التخمين. backend state machine يحدد authorized, captured, expired أو reversed.
 
+## Practical walkthrough
+
+الـbackend عمل authorize لكن شاشة POS استنت deadline؛ ده Unknown للعميل، رغم إن السيرفر عارف Authorized. احفظ operation ID قبل الإرسال وخلي UI Pending، واسأل status endpoint أو ledger عند العودة. نفس idempotency key فقط ضمن عقد provider، ولا تعمل capture أو reversal من التخمين. لو app اتقتلت، WorkManager تتابع reconciliation؛ support تشوف timeline من غير card secrets.
+
 ## Why it matters and how it works
 
 Authorization may expire or require later capture; status lookup and reconciliation must distinguish those states. A worker can resume after process death, using the same key for safe retry only under server contract. UI should disable duplicate submit and provide support correlation ID. Metrics track unresolved Unknown age.
@@ -63,7 +67,15 @@ A ticket app records one checkout ID, submits authorization, shows Pending after
 
 ## Interview answer — deep senior
 
-“I walk the commit window: the backend accepts authorization, response is lost, app may die, and a new UI appears. Durable local operation state and server ledger query let us converge. Idempotency protects logical retries if the server enforces key retention and payload matching; it does not mean one HTTP packet. Authorization and capture are distinct transitions, so the UI must display the exact authoritative state and avoid promising settlement early. Reversal is a separate linked operation after policy checks. I monitor Pending age, alert support on unresolved cases and test delayed status propagation, duplicate taps, process restart and a response lost after commit. Metrics track unresolved Unknown age.”
+“I walk the commit window: the backend accepts authorization, response is lost, app may die, and a new UI appears. Durable local operation state and server ledger query let us converge. Idempotency protects logical retries if the server enforces key retention and payload matching; it does not mean one HTTP packet. Authorization and capture are distinct transitions, so the UI must display the exact authoritative state and avoid promising settlement early. Reversal is a separate linked operation after policy checks. I monitor Pending age, alert support on unresolved cases and test delayed status propagation, duplicate taps, process restart and a response lost after commit. Metrics track unresolved Unknown age. I would maintain a durable local row keyed by the original operation ID so process death cannot erase the ambiguity. On relaunch a worker queries the backend's ledger or provider status; it never sends a fresh authorization merely because the screen timed out. The UI says Pending and later reflects Authorized, Settled or Reversed only from authoritative evidence. I would test the response-loss window, repeated worker execution and delayed provider callbacks. Support tools should show a safe audit timeline tied to the same ID.”
+
+## How to answer in the interview
+
+- **Why:** a lost response does not undo authorization.
+- **How:** persist identity, show Pending, and converge on authoritative status.
+- **Trade-off:** waiting UX and support tooling are more complex.
+- **Failure case:** second authorize with a new key duplicates effect.
+- **Production solution:** ledger query, idempotency contract, durable recovery, and audit timeline.
 
 ## Deep-dive talking points
 
@@ -83,4 +95,4 @@ Can I preserve original key, represent Unknown and reconcile authorization/captu
 - [Kotlin withTimeout API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout.html) — timeout semantics.
 - [Android task scheduling](https://developer.android.com/develop/background-work/background-tasks/persistent) — restartable reconciliation.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

@@ -25,6 +25,10 @@ A POS transaction is approved by issuer but the terminal loses power before savi
 
 ده أسوأ crash window: issuer وافق، terminal اتطفت قبل ما تحفظ approval. لو حفظنا intent والـoperation ID قبل الإرسال نقدر بعد reboot نسأل backend/provider. لو حتى intent ما اتحفظتش، terminal وحدها ما تقدرش تثبت النتيجة؛ لازم backend/acquirer ledger وbatch reconciliation يطابقوا العملية. ما نعيدش charge بهوية جديدة.
 
+### Practical walkthrough in Egyptian Arabic
+
+دي فجوة بين commit عند issuer وcommit محلي. لو write-ahead intent موجودة، بعد reboot اسأل بالـoperation ID وسجل النتيجة؛ لو مفيش intent، terminal وحدها لا تعرف تثبت مين اتوافق عليه. backend/acquirer ledger وتقارير batch لازم يحددوا العملية، وبعدها قرار completion أو reversal حسب protocol. متطلعش receipt Approved قبل دليل محفوظ.
+
 ## Why it matters and how it works
 
 Local and remote commits cannot be atomic. A write-ahead attempt reduces uncertainty, while server operation records and provider references supply independent evidence. Reconciliation compares terminal, backend and issuer/acquirer status; a protocol-specific reversal may be required when sale completion cannot be confirmed.
@@ -47,15 +51,23 @@ Use an operations dashboard for orphaned authorizations, settlement mismatches a
 
 ## Interview answer — short
 
-“Issuer approval can precede terminal persistence. I write a stable intent before sending and reconcile after reboot; if local evidence is lost, backend/provider ledgers must find the orphan. I never infer decline or issue a new charge blindly.”
+“I would not infer failure from the dead terminal. I recover the original intent if it was committed, query backend/acquirer status, and reconcile the missing approval before deciding whether the sale completes or needs a protocol-specific reversal.”
 
 ## Interview answer — structured
 
-“A local database cannot commit atomically with an issuer. Before authorization I persist an operation ID and safe request metadata. After power loss I scan pending attempts and query the backend/acquirer using that ID. If approval occurred, I record it and follow the provider’s completion or reversal rule. If the local record itself is missing, server/provider reconciliation must detect the orphaned authorization. The UI remains unknown until authority resolves it.”
+“A local database cannot commit atomically with an issuer. Before authorization I persist an operation ID and safe request metadata. After power loss I scan pending attempts and query the backend/acquirer using that ID. If approval occurred, I record it and follow the provider’s completion or reversal rule. If the local record itself is missing, server/provider reconciliation must detect the orphaned authorization. The UI remains unknown until authority resolves it. A write-ahead record gives me the lookup key; without it I need independent backend and acquirer evidence.”
 
 ## Interview answer — deep senior
 
-“I analyze two crash windows separately: after write-ahead intent but before response save, and before any durable local intent. The first is recoverable by same-ID lookup; the second requires a central operation ledger, terminal sequence/batch references and acquirer reconciliation. Neither a Room transaction nor WorkManager provides atomicity with the issuer. I test battery removal immediately after approval, late callbacks and delayed provider status. Unknown cases have SLA and human escalation, and reversals use the original references under the payment network’s actual rules rather than a guessed local status. ”
+“I analyze two crash windows separately: after write-ahead intent but before response save, and before any durable local intent. The first is recoverable by same-ID lookup; the second requires a central operation ledger, terminal sequence/batch references and acquirer reconciliation. Neither a Room transaction nor WorkManager provides atomicity with the issuer. I test battery removal immediately after approval, late callbacks and delayed provider status. Unknown cases have SLA and human escalation, and reversals use the original references under the payment network’s actual rules rather than a guessed local status.  I would separate “issuer approved” from “sale completed and durably recorded” before offering a receipt. I separate three facts that are easy to conflate: issuer authorization, backend knowledge, and the terminal's durable sale record. If the terminal wrote a pre-send intent, I recover that original ID and ask the backend or acquirer for status. If the intent was never committed despite a remote send, local recovery alone cannot identify the charge reliably; the independent backend/provider ledger and batch references must find it. Depending on the rail and settlement stage, the correct repair may be completing the sale, issuing a protocol-specific reversal, or escalating a mismatch. I would never print an approved receipt or retry with a fresh ID based solely on the rebooted UI's empty database. Crash-window drills are essential.”
+
+## How to answer in the interview
+
+- **Why:** issuer approval and terminal persistence cannot be one atomic transaction.
+- **How:** recover by original ID, then compare independent ledgers.
+- **Trade-off:** some cases require manual operations when evidence is incomplete.
+- **Failure case:** new charge or false declined receipt after power loss.
+- **Production solution:** pre-send write, reconciliation, escalation, and tested reboot path.
 
 ## Deep-dive talking points
 

@@ -32,7 +32,37 @@ Lifecycle states tell a component when resources may be visible or interactive. 
 
 ## Worked example
 
-In a View-based Fragment, acquire a binding in `onCreateView`, collect `uiState` in `viewLifecycleOwner.lifecycleScope` with `repeatOnLifecycle(Lifecycle.State.STARTED)`, then set binding to null in `onDestroyView`. The surrounding app provides a ViewModel and UI state. The important detail is that the collector follows the **view** owner; collecting in the Fragment's longer-lived scope can target an old view after navigation.
+In a View-based Fragment, the collection belongs to the **view** owner. The app supplies `OrderViewModel`, `OrderUiState`, and a `render` function; the snippet assumes AndroidX Fragment/Lifecycle KTX and `uiState: StateFlow<OrderUiState>`.
+```kotlin
+import android.os.Bundle
+import android.view.View
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.launch
+
+class OrderFragment : Fragment(R.layout.order) {
+    private val viewModel: OrderViewModel by viewModels()
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.uiState.collect(::render)
+            }
+        }
+    }
+
+    private fun render(state: OrderUiState) { /* update this view only */ }
+}
+```
+With ViewBinding, clear its field in `onDestroyView`; do not retain the view in the ViewModel.
+
+## Practical walkthrough
+
+في screen بتعرض live location، اسأل إمتى الواجهة visible وإمتى فعليًا محتاجة sensor. Activity `onStart/onStop` يحدّدوا visibility على نطاق واسع؛ `onResume/onPause` قد يناسبوا resource حصري محتاج foreground interaction. في Fragment فيه lifecycle للobject وواحد للـview؛ collector اللي بيرسم UI لازم يستخدم `viewLifecycleOwner` عشان view تتشال وتتعمل تاني من غير duplicate collectors. لا تعتمد على `onDestroy` لحفظ transaction مهمة؛ process kill ممكن يحصل من غيره. اختبر rotation وBack وتبديل app وsplit-screen على الأجهزة المستهدفة.
 
 ## Trade-offs and decision criteria
 
@@ -52,10 +82,22 @@ On a live order screen, a repository owns the order stream, a ViewModel maps it 
 
 ## Interview answer — structured
 
-“An Activity moves through create, start, resume, pause, stop, and destruction as its visibility and interaction change. A Fragment follows its host and manager, but its view can be destroyed while the Fragment remains. In a Fragment I collect UI state with the viewLifecycleOwner, commonly using repeatOnLifecycle at STARTED, and release binding in onDestroyView. I choose resource boundaries by whether a screen is visible or interactive. Configuration recreation and process death require separate restoration strategies. For a Fragment I distinguish the Fragment object from its view: the view can be destroyed while the Fragment remains on the back stack. UI collectors therefore use `viewLifecycleOwner` and `repeatOnLifecycle`, and listeners are removed at the matching stop point. I test navigation, rotation and multi-window visibility.”
+An Activity moves through create, start, resume, pause, stop, and destruction as its visibility and interaction change. A Fragment follows its host and manager, but its view can be destroyed while the Fragment remains. In a Fragment I collect UI state with the viewLifecycleOwner, commonly using repeatOnLifecycle at STARTED, and release binding in onDestroyView. I choose resource boundaries by whether a screen is visible or interactive. Configuration recreation and process death require separate restoration strategies.
+
 ## Interview answer — deep senior
 
-“I use lifecycle states to define resource ownership instead of attaching everything to onCreate/onDestroy. An Activity can be visible but not resumed, especially in multi-window, so a visible data collector may follow STARTED while an exclusive camera follows a tighter interaction policy. A Fragment's object and view lifetimes differ; view-bound flows, adapters, and bindings belong to the view owner and end at onDestroyView. Repositories can outlive the UI for data consistency, but external side effects need deliberate persistence and idempotency. I test stop/start, back-stack view recreation, rotation, and process death separately and watch for duplicate observers or retained old views. I choose a lifecycle state based on the resource, not a memorized callback list. A visible screen may be paused in multi-window, so stopping all visual work in `onPause` can be wrong; a camera or exclusive sensor may need different ownership. A Fragment view binding is valid only until `onDestroyView`, while a Fragment-scoped ViewModel can persist beyond that view. I use the view lifecycle for rendering collectors and pair registration with cleanup. If the process is killed, none of these in-memory owners preserve a payment intent; durable state must already exist. Tests cover stop/start, back-stack view recreation and actual process restoration.”
+I use lifecycle states to define resource ownership instead of attaching everything to onCreate/onDestroy. An Activity can be visible but not resumed, especially in multi-window, so a visible data collector may follow STARTED while an exclusive camera follows a tighter interaction policy. A Fragment's object and view lifetimes differ; view-bound flows, adapters, and bindings belong to the view owner and end at onDestroyView. Repositories can outlive the UI for data consistency, but external side effects need deliberate persistence and idempotency. I test stop/start, back-stack view recreation, rotation, and process death separately and watch for duplicate observers or retained old views. I choose a lifecycle state based on the resource, not a memorized callback list.
+
+I would then apply the callbacks to one real resource. A camera preview may need to stop when the UI is no longer interactive, while a list collector can often run while the screen is visible at STARTED. Multi-window can separate visibility from focus, so a rigid “everything in onResume” policy is fragile. Rotation recreates UI, but it does not imply a durable save; process death is another path. I test rapid navigation and background/foreground transitions, then verify that there is one active listener and no reference to the destroyed view.
+
+## How to answer in the interview
+
+- **Why:** Resource ownership must match the period when the screen can use it.
+- **How:** Explain Activity creation, visible, interactive, stopped, and destroyed states plus the Fragment view owner.
+- **Trade-offs:** Pick STARTED or RESUMED based on the resource, not habit.
+- **Failure cases:** Describe stale view collectors and missing cleanup after rapid transitions.
+- **Production solution:** Give the location screen’s registration, state restoration, and rotation test.
+
 ## Deep-dive talking points
 
 Contrast visibility with focus, Fragment and view owners, `repeatOnLifecycle` cancellation/restart, cleanup symmetry, ViewModel retention, and why no lifecycle callback guarantees a final durable write before process death.
@@ -75,4 +117,4 @@ Order the main Activity states; distinguish Fragment object and view lifecycle; 
 - [Activity lifecycle](https://developer.android.com/guide/components/activities/activity-lifecycle) — state transitions and process behavior.
 - [Fragment lifecycle](https://developer.android.com/guide/fragments/lifecycle) — Fragment and view lifecycle distinction.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The Fragment collection flow is descriptive and not a compiled snippet.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The Fragment collection flow is descriptive and not a compiled snippet.

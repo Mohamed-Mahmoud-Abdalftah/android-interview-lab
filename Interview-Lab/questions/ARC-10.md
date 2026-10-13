@@ -24,6 +24,10 @@ Define one authoritative owner per data type and distinguish local cache from se
 
 SSOT يعني لكل نوع data في التطبيق مصدر authoritative واضح، والتحديثات تمرّ عليه بدل كل شاشة تمسك copy mutable وتتنافس. في offline-first app، Room ممكن تكون local source of truth اللي UI تراقبه، والnetwork refresh يكتب فيها. لكن لمدفوعات أو account balance السيرفر يفضل authority النهائي حتى لو DB هي مصدر العرض المحلي. “واحد” مش معناها server واحد لكل شيء؛ بعض UI element state محلي للشاشة. المهم تعرف مين يحسم التعارض وكيف تتعامل مع stale/offline data.
 
+### Practical walkthrough in Egyptian Arabic
+
+SSOT معناها مكان authoritative لكل معلومة، مش “استخدم Room دائمًا”. Offline notes قد تكون Room هي مصدر UI مع sync backend؛ payment status authority عند backend والـRoom local projection. حدد write path وconflict policy، وخلي UI تراقب stream واحدة بدل cache منفصلة في ViewModel. اختبر اختلاف local/remote ولا تمسح pending edits عند refresh.
+
 ## Why it matters and how it works
 
 A single source of truth prevents conflicting copies and creates a predictable update path. Android offline-first guidance often uses a local data source as the observable app source, with network synchronization feeding it. Server-authoritative business facts still require reconciliation.
@@ -55,6 +59,14 @@ I identify where a value becomes official for the app and make all consumers rea
 ## Interview answer — deep senior
 
 SSOT is an ownership rule, not a claim that one database answers every question. A screen’s selected tab can be locally owned; product data may be database-backed; a transfer status may need server confirmation. The repository should state what consumers observe, how network updates are applied, and how conflicts or stale data are signaled. In an offline-first app I commonly expose a Flow from Room and update Room transactionally after refresh, so all screens converge on one local source. After process death the same persisted source restores state. For server-authoritative decisions I do not promote optimistic client flags to facts; I reconcile with the backend and retain pending uncertainty. I test refresh races, stale cache, offline behavior, and conflict resolution. I would specify conflict policy and freshness, not just draw a database icon. What happens when two refreshes overlap, the device is offline for a week, or a write is rejected by the server? The repository should expose stale metadata or a refresh error while keeping useful cached data. A single source of truth means consumers converge through a defined path; it does not mean local values are universally authoritative. Tests should cover races, process death, and contradictory updates.
+
+## How to answer in the interview
+
+- **Why:** conflicting copies create stale UI.
+- **How:** name authority and derive projections.
+- **Trade-off:** offline responsiveness versus reconciliation.
+- **Failure case:** two mutable caches disagree.
+- **Production solution:** single observable path with conflict policy.
 
 ## Deep-dive talking points
 

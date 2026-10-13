@@ -26,6 +26,10 @@ What are stable keys and content types in LazyColumn?
 
 في `LazyColumn.items`، `key` يحدد هوية العنصر عبر insert/reorder/refresh، مثل `product.id` الفريد والثابت. بدون key مناسبة يعتمد Compose غالبًا على position، فينتقل remembered row state إلى item آخر أو يبدو scroll غير مستقر بعد تغير القائمة. `contentType` شيء مختلف: يحدد شكل/نوع المحتوى، مثل product row أو ad row، ليس ID فريد؛ يساعد إعادة استخدام composition بين عناصر من نفس النوع. keys على Android يجب تكون قابلة للحفظ في Bundle إذا احتجت حفظ state. لا تستخدم index عندما العناصر تتحرك.
 
+### Practical walkthrough in Egyptian Arabic
+
+في feed فيها article وad، `key` لازم تكون هوية item ثابتة وفريدة زي `article:42`؛ `contentType` تكون شكل row مثل `article` أو `ad`. عند إدراج item فوق، key تساعد state والموضع يرتبطوا بالعنصر الصح. لو استخدمت index، checkbox المفتوحة ممكن تروح لصف تاني. لو backend بيولّد ID جديدة مع كل refresh، key صحيحة في الكود مش هتنقذ state. ثبّت هوية البيانات من المصدر واختبر إدراج صفوف فوق المستخدم وهو فاتح row.
+
 ## Why it matters and how it works
 
 Lazy layouts compose visible items and reuse item compositions. Keys let the runtime associate an item's state with logical identity even when its position changes, helping scroll anchoring and item-local state. `contentType` groups structurally compatible item content for more efficient reuse. Neither fixes a data source that changes IDs unpredictably or a UI state held under a wrong list owner.
@@ -33,6 +37,22 @@ Lazy layouts compose visible items and reuse item compositions. Keys let the run
 ## Worked example
 
 A feed interleaves articles and sponsored cards. Use stable article/ad IDs as keys with a type prefix if namespaces overlap, and `contentType` values such as `article` and `ad`. Refresh inserts two new articles above the viewport; with stable keys, the previously visible article remains identified. An index key would now name a different article, potentially carrying an expanded-row flag to it.
+
+### Compose/Kotlin walkthrough
+
+```kotlin
+// FeedItem has stable id and distinct Article/Ad variants.
+LazyColumn(state = rememberLazyListState()) {
+    items(
+        items = feed,
+        key = { item -> "${item.type}:${item.id}" },
+        contentType = { item -> item.type }
+    ) { item ->
+        FeedRow(item)
+    }
+}
+// Imports: androidx.compose.foundation.lazy.LazyColumn/items/rememberLazyListState.
+```
 
 ## Trade-offs and decision criteria
 
@@ -48,15 +68,23 @@ Define a stable ID contract in the data model, test insert/delete/reorder while 
 
 ## Interview answer — short
 
-“`key` is stable item identity for state and position across changes; `contentType` groups similar row structures for efficient lazy composition reuse.”
+“`key` is stable item identity for state and position across changes; `contentType` groups similar row structures for efficient lazy composition reuse. Key identifies the item; contentType identifies its row shape.”
 
 ## Interview answer — structured
 
-“I key rows by a unique durable ID, not their current index, when the list can reorder or insert items. That keeps remembered row state associated with the same logical item and helps scroll continuity. `contentType` is not another key: it says whether two rows have compatible structure for reuse, such as article versus ad. I check key uniqueness and saveability on Android and test a refresh above the viewport.”
+“I key rows by a unique durable ID, not their current index, when the list can reorder or insert items. That keeps remembered row state associated with the same logical item and helps scroll continuity. `contentType` is not another key: it says whether two rows have compatible structure for reuse, such as article versus ad. I check key uniqueness and saveability on Android and test a refresh above the viewport. For an article/ad feed I would use a stable namespaced ID key and a small set of content types.”
 
 ## Interview answer — deep senior
 
-“A lazy list has two separate questions: which logical record is this, and what kind of content can its composition be reused for? A stable `key`, usually a durable domain ID, answers the first. If a feed inserts rows above the viewport, position-based identity changes and remembered expansion or input state can attach to the wrong row; stable keys allow Compose to track the same record through the move. On Android the key also needs to fit saved-state rules for restoration. I do not use a mutable title or a list index as the identity, and I distinguish ID namespaces for mixed item families. `contentType` answers the second question: an article row can be reused like another article row, while an ad card may have a different structure. It is a performance hint, not a substitute for unique identity. I test insert, delete and reorder while scrolled and with an edited row; then I profile release scrolling to see whether reuse or some other cost such as image decoding dominates. If local drafts lack server IDs, I assign stable local IDs at creation rather than deriving identity from their current content.”
+“A lazy list has two separate questions: which logical record is this, and what kind of content can its composition be reused for? A stable `key`, usually a durable domain ID, answers the first. If a feed inserts rows above the viewport, position-based identity changes and remembered expansion or input state can attach to the wrong row; stable keys allow Compose to track the same record through the move. On Android the key also needs to fit saved-state rules for restoration. I do not use a mutable title or a list index as the identity, and I distinguish ID namespaces for mixed item families. `contentType` answers the second question: an article row can be reused like another article row, while an ad card may have a different structure. It is a performance hint, not a substitute for unique identity. I test insert, delete and reorder while scrolled and with an edited row; then I profile release scrolling to see whether reuse or some other cost such as image decoding dominates. If local drafts lack server IDs, I assign stable local IDs at creation rather than deriving identity from their current content. I would insert posts above the viewport while a row is expanded to verify identity and scroll anchoring.”
+
+## How to answer in the interview
+
+- **Why:** lazy rows need durable identity across insertion and reorder.
+- **How:** distinguish unique key from reusable content type.
+- **Trade-off:** key values must stay stable and be saveable for item state restoration.
+- **Failure case:** index or regenerated IDs move local state.
+- **Production solution:** test refresh while scrolled and expanded.
 
 ## Deep-dive talking points
 

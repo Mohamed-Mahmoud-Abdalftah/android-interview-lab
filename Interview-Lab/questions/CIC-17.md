@@ -25,6 +25,10 @@ A production hotfix is needed while feature branches have diverged. Explain your
 
 لو production محتاج hotfix وfeature branches اختلفت، أبدأ من tag/commit اللي اتشحن فعلًا، أعمل minimal fix مع test، وأطلع release candidate منفصل. بعدها أنقل نفس المنطق لـmain/feature branches بـmerge أو cherry-pick مدروس، وأتحقق من conflicts. ما أدمجش features غير جاهزة في hotfix. لو schema/backend اتغيروا لازم نفحص compatibility مع النسخ المثبتة.
 
+### Practical walkthrough in Egyptian Arabic
+
+Production hotfix يبدأ من tag أو commit النسخة المنشورة، مش من feature branch متباعد. اعزل أقل تعديل يصلح incident، اختبر release variant والمسار المتأثر، ثم انشر versionCode أعلى تدريجيًا. بعدين انقل الإصلاح لـmain وبقية release branches بـmerge أو cherry-pick مع فحص conflicts semantic. لو main فيها refactor يجعل نفس patch غير صحيح، اكتب equivalent fix واختبره. احتفظ بالحادثة والـartifact والcommit المرتبطين.
+
 ## Why it matters and how it works
 
 Hotfix source should match deployed artifact provenance, including mapping and dependencies. Cherry-picking replays a patch with new hash and may need dependent changes. Release branch and main each need tests in their own context.
@@ -55,7 +59,15 @@ Incident log maps deployed version, hotfix SHA, main follow-up and rollout state
 
 ## Interview answer — deep senior
 
-“I first contain customer impact with a server flag if possible, then verify the deployed tag, AAB hash and mapping. The hotfix branch changes only what is needed and retains compatibility with current server and local data. I test the exact minified flavor, stage rollout, and maintain recovery for already affected users. I propagate the fix to main and active release branches, recording different SHAs if cherry-picked. Conflict-free application is not enough; each branch has its own architecture and tests.”
+“I branch the hotfix from the code that actually shipped, identified by the production tag and artifact provenance, rather than from a moving main branch full of unrelated features. I make the smallest safe change, add a regression test for the incident, build the production release variant and publish a higher-version candidate through the urgent release gate. Then I forward-port the fix to main and supported branches with merge or cherry-pick as appropriate, reviewing semantic differences caused by divergence. A patch that applies cleanly to refactored main may still behave differently, so each destination gets its own tests. I avoid rewriting public history or merging unfinished features into the emergency release. If the issue can be contained by a safe server control, I may reduce exposure while the binary is prepared. The trade-off is some duplicated integration work for isolation and speed. I track which users received which build and ensure the fix does not abandon in-flight financial or data operations.”
+
+## How to answer in the interview
+
+- **Why:** hotfix must match shipped code.
+- **How:** branch from production tag and forward-port fix.
+- **Trade-off:** isolation speed versus duplicate integration.
+- **Failure case:** patch applies but behavior differs on main.
+- **Production solution:** test release variant and every destination branch.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for deployed artifact base, minimal scope, branch propagation, compatibil
 
 ## Self-check rubric
 
-Can you explain the mechanism, apply the example, justify a trade-off, identify a failure mode, and answer both follow-ups?
+Branch the hotfix from the production tag, cherry-pick only the fix, test and release a higher version, then merge or cherry-pick the fix forward into diverged branches.
 
 ## References and reviewed-on date
 
 - [Git cherry-pick documentation](https://git-scm.com/docs/git-cherry-pick) — patch replay.
 - [Android publishing](https://developer.android.com/studio/publish) — release process.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

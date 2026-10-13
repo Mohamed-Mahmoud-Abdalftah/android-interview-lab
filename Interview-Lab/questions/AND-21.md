@@ -34,6 +34,10 @@ Process death destroys in-memory state and may occur after the server committed 
 
 Illustrative sequence with an app database and server contract: `transaction { insert(attemptId, orderId, idempotencyKey, PENDING) }`; submit the order through the backend; if the HTTP response is lost, persist `UNKNOWN` for this attempt rather than another new attempt; on screen recreation, fetch `GET /payment-attempts/{attemptId}`. A retry is permitted only when backend semantics explicitly accept the same key and payload. The pseudocode is architectural; the endpoint and atomicity guarantees must be provided by the actual backend.
 
+## Practical walkthrough
+
+قبل ما تبعت payment submit، أنشئ attempt ID/idempotency key ثابت واحفظ بيانات العملية غير الحساسة بشكل durable حسب العقد مع server. لو Android قتل process بعد ما request وصل لكن الرد ضاع، الشاشة الجديدة تقرأ attempt وتعمل status lookup؛ ما تعملش submit جديد بمفتاح جديد. `UNKNOWN` أو `PendingVerification` حالة صادقة؛ timeout مش إثبات فشل. إعادة الإرسال بنفس المفتاح ممكنة فقط لو backend/provider يضمن idempotency لنفس payload ومدة retention مناسبة. اعرض pending/receipt بقرار server، واحفظ card/PIN data خارج local state. اختبر kill عند نقاط: قبل الإرسال، بعده، وبعد response lost.
+
 ## Trade-offs and decision criteria
 
 Immediate screen reconciliation improves feedback but requires connectivity; scheduled recovery with WorkManager can continue after the UI leaves, subject to OS scheduling and network constraints. Server webhooks can establish eventual status but need authentication, replay defense, and duplicate handling. Local Room persistence helps the client remember identity, yet cannot make a charge exactly once. Provider idempotency is scoped to its documented retention and parameter rules; the backend should own the durable business transaction and avoid relying solely on a client-generated key.
@@ -52,10 +56,22 @@ Persist attempt identity before submission, bind it to authenticated order and a
 
 ## Interview answer — structured
 
-“Before sending payment, I persist a unique attempt and idempotency key. If Android kills the process, the ViewModel is gone, so on return I reload the attempt and ask the server whether it succeeded, declined, or remains pending. I restore minor UI inputs separately. A transport timeout is an unknown outcome, not a failed payment, and I never create a new charge just because the Activity restarted. Retrying the same request is allowed only under a documented backend/provider idempotency contract. A status read is safe to repeat; initiating a new charge is not. I keep the order and amount bound to the original key on the backend and show pending or unknown when connectivity prevents confirmation. WorkManager can resume lookup, but a client worker cannot make a provider operation exactly once. I test power/process kill after remote commit.”
+Before sending payment, I persist a unique attempt and idempotency key. If Android kills the process, the ViewModel is gone, so on return I reload the attempt and ask the server whether it succeeded, declined, or remains pending. I restore minor UI inputs separately. A transport timeout is an unknown outcome, not a failed payment, and I never create a new charge just because the Activity restarted. Retrying the same request is allowed only under a documented backend/provider idempotency contract.
+
 ## Interview answer — deep senior
 
-“I treat payment as a distributed state machine whose authority is the backend, not the Activity. The device durably records attempt identity before the request; the backend binds that identity to authenticated order, amount, and provider call. A process kill may cut the response path at any point, so recovery first performs an authenticated status read. We model pending and unknown separately from success and decline, and use the same idempotency key only under the provider's documented parameter and retention rules. WorkManager may schedule reconciliation, while the visible screen can query immediately. I test kill points around persistence, send, provider commit, response, and status lookup, and monitor stuck unknown attempts without exposing card data. I place a durable local write before the first external side effect: attempt ID, order ID and immutable parameters, without card secrets. The backend owns a record that binds that ID to authenticated user, amount and provider call. A process death after server commit but before response leaves the client unable to infer success, so restoration first performs a read-only status lookup. If the provider contract permits retry, the same key and payload are used under its documented retention and concurrency rules; a new key would represent a new financial intent. I model unresolved status explicitly and alert on aging unknown attempts. Tests kill the app before send, after remote commit and during reconciliation, then verify one logical business operation.”
+I treat payment as a distributed state machine whose authority is the backend, not the Activity. The device durably records attempt identity before the request; the backend binds that identity to authenticated order, amount, and provider call. A process kill may cut the response path at any point, so recovery first performs an authenticated status read. We model pending and unknown separately from success and decline, and use the same idempotency key only under the provider's documented parameter and retention rules. WorkManager may schedule reconciliation, while the visible screen can query immediately. I test kill points around persistence, send, provider commit, response, and status lookup, and monitor stuck unknown attempts without exposing card data.
+
+I would model the payment attempt as a durable state machine: prepared, submitted, unknown, and terminal status from the backend. The client stores a stable attempt ID and idempotency key before submission, plus only non-sensitive immutable parameters needed for reconciliation. A lost response leaves the state unknown; it does not prove failure. On recreation I query by attempt ID and present PendingVerification until the backend resolves it. An allowed retry reuses the same key and payload only under the server’s documented retention and idempotency contract. I would test kills immediately before and after the request, and monitor stuck unknown attempts.
+
+## How to answer in the interview
+
+- **Why:** UI death does not roll back a server-side financial side effect.
+- **How:** Persist attempt identity, then reconcile a pending outcome from the backend.
+- **Trade-offs:** Retry only under a documented same-key idempotency contract.
+- **Failure cases:** Explain a lost response and duplicate charge from a new request key.
+- **Production solution:** Restore pending state, query status, and never store raw card/PIN data.
+
 ## Deep-dive talking points
 
 Discuss write-before-send ordering, uncertain network outcomes, provider versus backend idempotency scope, status read versus charge retry, webhook reconciliation, process-death testing, and how to avoid logging sensitive payment material.
@@ -76,4 +92,4 @@ Place the durable write before the network send; distinguish timeout from declin
 - [Android persistent work](https://developer.android.com/develop/background-work/background-tasks/persistent) — recovery scheduling limits.
 - [Stripe idempotent requests](https://docs.stripe.com/api/idempotent_requests) — one provider's documented key and parameter semantics; other providers require their own contract review.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The endpoint sequence is illustrative; no real payment backend was implemented or tested here.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The endpoint sequence is illustrative; no real payment backend was implemented or tested here.

@@ -25,6 +25,10 @@ How do you calculate complexity for nested loops with dependent bounds?
 
 Nested loops مش دائمًا O(n²): لو الداخلي من 0 لحد i، عدد التكرارات `1+2+…+n = n(n+1)/2` وبالتالي O(n²). لو j بيتضاعف كل مرة داخل outer n، الداخلي O(log n) فالمجموع O(n log n). ولو outer والداخل بيمشوا pointer واحد للأمام، ممكن O(n) إجمالي. نعد العمليات الفعلية أو نكتب summation.
 
+### Practical walkthrough in Egyptian Arabic
+
+Nested loops مش دائمًا `O(n²)`: لو inner يبدأ من i، مجموع 1+2+...+n ما زال quadratic؛ لو pointer يتحرك للأمام مرة واحدة عبر كل outer iterations قد يكون linear. اكتب عدد تكرارات inner كـsum بدل ضرب آلي. مثال `for each row { items.find(...) }` في Compose list يصنع scan لكل row؛ اعمل index مرة خارج render.
+
 ## Why it matters and how it works
 
 Dependent bounds make simple “multiply loop lengths” insufficient. Sum inner work over outer iterations. A geometric progression can be O(n) even with syntactically nested loops; amortized analysis may be needed when a pointer never retreats.
@@ -55,7 +59,15 @@ Use realistic n in benchmarks and move heavy list transforms off the main thread
 
 ## Interview answer — deep senior
 
-“I express the total as a sum and simplify its dominant term. For `sum(i=1..n) i`, the result is n(n+1)/2. For a halving inner process, it is n log n if repeated independently per outer iteration. For a sliding window, I charge each pointer advance to an element; each element is visited a bounded number of times, so O(n). This matters in Compose/RecyclerView transforms, where a hidden linear lookup per row may turn every refresh quadratic. I confirm with scaling measurements before redesign. Inspect total pointer movement.”
+“I count iterations, not just loop keywords. If the outer index goes from zero to n and the inner loop runs from that index to n, the total is a triangular sum, roughly n²/2, so it is still quadratic. If the inner pointer only advances forward across the whole algorithm and never resets, the combined work may be linear by amortized analysis. I write the sum or an invariant for each pointer and include the cost of work inside the body; a map lookup or sort there changes the result. This matters in Android list binding: `items.forEach { product -> allPrices.find { it.id == product.id } }` can scan n prices for each of n products, producing quadratic work during rendering. I would build a price-by-ID map once, accepting O(n) memory for expected O(n) total transformation. Then I measure frame time, because a theoretically linear replacement could still allocate too much. The interviewer should hear the derivation and the practical decision.”
+
+## How to answer in the interview
+
+- **Why:** dependent bounds need a counted sum.
+- **How:** derive total iterations or amortized pointer moves.
+- **Trade-off:** precomputed index costs memory.
+- **Failure case:** multiplying loops without checking shared progress.
+- **Production solution:** measure repeated work in UI paths.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for summation, geometric progression, amortized pointer argument and hidd
 
 ## Self-check rubric
 
-Can you derive the bound, explain the Android example, identify a trade-off/failure, and answer both follow-ups?
+Derive the sum for a dependent inner loop rather than multiplying loop bounds blindly; give a linear triangular or logarithmic example and state its memory complexity.
 
 ## References and reviewed-on date
 
 - [Kotlin collection operations](https://kotlinlang.org/docs/collection-operations.html) — API behavior context.
 - [Android performance](https://developer.android.com/topic/performance) — scaling measurements.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

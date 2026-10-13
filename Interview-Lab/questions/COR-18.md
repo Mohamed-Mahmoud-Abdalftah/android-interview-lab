@@ -24,6 +24,10 @@ Can the candidate design bounded retries with exponential backoff, jitter, cance
 
 الـretry الصح مش `while(true)` بسرعة. بنحدد أخطاء transient بس، عدد محاولات وdeadline، delay بيتضاعف مع cap وjitter لتقليل thundering herd. لازم `CancellationException` توقف الحلقة فورًا، وطلبات الكتابة ما تتعادش من غير idempotency contract أو reconciliation. `Retry-After` وقيود السيرفر لها أولوية لو موجودة.
 
+## Practical walkthrough
+
+لو خدمة قراءة catalog رجّعت 503، جرّب تاني بـexponential backoff وjitter عشان كل العملاء ما يرجعوش في نفس اللحظة. لازم توقف عند عدد محاولات أو overall deadline، وما تكرر 401 أو validation error. `delay` قابل للإلغاء؛ لو الشاشة اتقفلت خلال الانتظار، ارمِ الإلغاء بدل محاولة إضافية. عمليات الكتابة تحتاج idempotency قبل أي retry.
+
 ## Why it matters and how it works
 
 Exponential delay grows by attempts, capped to prevent overflow and excessive wait; jitter spreads clients. `delay` is cancellable. Check the operation’s safety: a read may be retried, while a non-idempotent write needs a stable operation key and server deduplication. Retrying after process death requires persisting attempt state or handing it to durable work.
@@ -78,7 +82,15 @@ An offline-first feed refresh retries transient read failures with bounded backo
 
 ## Interview answer — deep senior
 
-“Production retry design needs safety and operability, not just a delay formula. I separate transport failures from validation/auth failures, honor server retry guidance such as `Retry-After` where specified, bound total elapsed time, and cap the exponential calculation to avoid overflow. Full jitter spreads clients; tests inject the random source and virtual clock. For UI reads the ViewModel can cancel retries when the screen goes away. For durable sync I persist enough state for WorkManager to resume after process death. For writes, a stable idempotency key can let the server deduplicate requests, but it does not prove exactly-once network delivery; I query authoritative transaction state before deciding whether another attempt is safe.”
+“Production retry design needs safety and operability, not just a delay formula. I separate transport failures from validation/auth failures, honor server retry guidance such as `Retry-After` where specified, bound total elapsed time, and cap the exponential calculation to avoid overflow. Full jitter spreads clients; tests inject the random source and virtual clock. For UI reads the ViewModel can cancel retries when the screen goes away. For durable sync I persist enough state for WorkManager to resume after process death. For writes, a stable idempotency key can let the server deduplicate requests, but it does not prove exactly-once network delivery; I query authoritative transaction state before deciding whether another attempt is safe. I would define the retry budget before writing the loop: maximum attempts, total deadline, retryable status codes, and an idempotency rule. Full jitter spreads clients after a 503 rather than causing a synchronized second spike. `delay` is cancellable, so closing the screen during backoff should stop the next request. Metrics should include attempt count and final cause, without treating a cancelled request as a service failure.”
+
+## How to answer in the interview
+
+- **Why:** transient failures are recoverable, synchronized retries are harmful.
+- **How:** classify failures, cap exponential delay, add jitter, and stop at an overall deadline.
+- **Trade-off:** retries increase tail latency and load.
+- **Failure case:** retrying auth errors or a non-idempotent write duplicates effects.
+- **Production solution:** share a retry budget, preserve cancellation, and instrument attempt counts.
 
 ## Deep-dive talking points
 
@@ -98,4 +110,4 @@ Can I state retryable errors, bound attempts/time, preserve cancellation, add ji
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — retry and sync design.
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — cancellable delay.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

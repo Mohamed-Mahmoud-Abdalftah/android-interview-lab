@@ -32,6 +32,10 @@ Composition localizes optional behavior and makes dependencies visible. Inherita
 
 Conceptual design: `class CheckoutCoordinator(private val analytics: Analytics, private val navigator: Navigator)` composes two services. A screen with no toolbar simply omits `ToolbarController`; it does not inherit `BaseFragment.setupToolbar()` and throw.
 
+## Practical walkthrough
+
+لو كل شاشة بتورث `BaseFragment` فيها toolbar وanalytics وpermission helper، شاشة camera هتضطر تعمل override فاضي أو ترمي exception. بدل ده ركّب السلوك المطلوب: `AnalyticsObserver` للشاشات المحتاجة tracking، و`ToolbarController` فقط للشاشات اللي عندها toolbar. composition بتخليك تغيّر جزء بدون كسر باقي الشاشات وتختبره منفصل. وراثة Android framework نفسها طبيعية؛ المشكلة في inheritance بتاع التطبيق لما يفرض capability غير مشتركة. راقب lifecycle: أي observer يتسجل ويتفك في التوقيت الصح وإلا هيعمل leak أو event مكرر.
+
 ## Trade-offs and decision criteria
 
 Composition requires wiring and can introduce indirection. Inheritance can be concise for a stable genuine subtype hierarchy. Kotlin classes are final by default, nudging deliberate extension. Choose by behavioral substitution, not blanket style.
@@ -50,11 +54,19 @@ Composition builds behavior from collaborators, while inheritance binds a subtyp
 
 ## Interview answer — structured
 
-A `BaseFragment` that forces every screen to have a toolbar creates a brittle hierarchy. With composition, a screen receives a toolbar controller only if it has one, and analytics or navigation can be separate collaborators. That reduces hidden lifecycle coupling and makes tests replace dependencies independently. Inheritance still makes sense when the subtype truly satisfies the base contract and shared behavior is stable. I choose by substitutability and ownership, not a rule that inheritance is always wrong. A concrete example is a screen without a toolbar. It should not inherit a base hook that it must override to do nothing or throw. It can simply omit a toolbar collaborator while still using analytics and navigation objects with lifetimes appropriate to that screen.
+A `BaseFragment` that forces every screen to have a toolbar creates a brittle hierarchy. With composition, a screen receives a toolbar controller only if it has one, and analytics or navigation can be separate collaborators. That reduces hidden lifecycle coupling and makes tests replace dependencies independently. Inheritance still makes sense when the subtype truly satisfies the base contract and shared behavior is stable. I choose by substitutability and ownership, not a rule that inheritance is always wrong. A concrete example is a screen without a toolbar. It should not inherit a base hook that it must override to do nothing or throw.
 
 ## Interview answer — deep senior
 
-The risk in inheritance is that subclasses depend on implementation details and lifecycle assumptions of the base class. A change to `BaseActivity` may affect many screens, and children may add no-op or throwing overrides for behavior they do not support—an LSP smell. Composition lets each screen assemble only needed capabilities with explicit constructors or delegation. It also clarifies scopes: a navigation helper may be Activity-scoped while a payment SDK adapter belongs elsewhere. The cost is some wiring and interfaces where variation is real. I would keep framework inheritance where required and small true subtype hierarchies where contracts hold, but avoid using inheritance solely to share utility methods or global mutable state. I would check whether the base class provides a real is-a relationship or merely a bag of convenience methods. Inheritance exposes protected state and lifecycle hooks to every child, so a change in base can ripple widely. Composition makes dependencies visible and lets tests replace them independently, but it can overdo wiring if every tiny helper becomes an interface. Kotlin’s final-by-default classes support deliberate extension. I keep framework-required inheritance, use delegation where forwarding is appropriate, and prefer small collaborators for optional behaviors. Contract tests protect any true subtype hierarchy.
+The risk in inheritance is that subclasses depend on implementation details and lifecycle assumptions of the base class. A change to `BaseActivity` may affect many screens, and children may add no-op or throwing overrides for behavior they do not support—an LSP smell. Composition lets each screen assemble only needed capabilities with explicit constructors or delegation. It also clarifies scopes: a navigation helper may be Activity-scoped while a payment SDK adapter belongs elsewhere. The cost is some wiring and interfaces where variation is real. I would keep framework inheritance where required and small true subtype hierarchies where contracts hold, but avoid using inheritance solely to share utility methods or global mutable state. I would check whether the base class provides a real is-a relationship or merely a bag of convenience methods. Composition lets a screen receive only the behaviors it needs, rather than inherit a large application base class. I would keep the framework superclass where Android requires it, but move analytics, toolbar configuration, and navigation into focused collaborators or lifecycle-aware components. A camera screen can omit toolbar behavior entirely, so it never implements a meaningless override. The cost is more wiring and sometimes forwarding calls; inheritance may remain appropriate when the subtype truly preserves a stable base contract. Production risk shifts to lifecycle ownership: observers must register and clean up at the right owner, and tests should cover recreation so composition does not become leaked or duplicated behavior.
+
+## How to answer in the interview
+
+- **Why:** Give BaseFragment failure.
+- **How:** show collaborator composition.
+- **Trade-offs:** acknowledge wiring cost.
+- **Failure cases:** mention empty overrides and lifecycle leaks.
+- **Production solutions:** finish with owner-scoped collaborators and recreation tests..
 
 ## Deep-dive talking points
 
@@ -74,4 +86,4 @@ Redesign one bloated base class with two collaborators and state one valid inher
 - [Kotlin inheritance](https://kotlinlang.org/docs/inheritance.html) — explicit inheritance mechanics.
 - [Kotlin delegation](https://kotlinlang.org/docs/delegation.html) — composition through forwarding.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

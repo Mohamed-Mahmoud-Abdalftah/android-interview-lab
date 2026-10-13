@@ -25,6 +25,10 @@ Compare encryption, hashing, HMAC, and digital signatures.
 
 Encryption بتخفي الرسالة ويمكن فكّها بمفتاح؛ hash digest من غير مفتاح ومش بديل لتشفير سر؛ HMAC بتثبت integrity/authenticity بين أطراف شايلة نفس المفتاح؛ digital signature بمفتاح private وتتحقق بـpublic key. Passwords تحتاج password hashing متخصص ومملّح، مش SHA-256 خام. وفي كل الحالات لازم تعرف مين ماسك المفتاح وإيه حدود الثقة.
 
+## Practical walkthrough
+
+لو backend يبعت إعدادات دفع لازم app تتحقق من مصدرها، يوقّعها private key على السيرفر وapp تتحقق بـpublic key. Plain SHA-256 للرسالة مش كفاية لو المهاجم يقدر يبدّل الرسالة والـhash سوا. HMAC يتطلب secret مشترك، فلا تحطّ مفتاح server HMAC في APK. تشفير AES-GCM يحمي السرية وintegrity، لكن مش إثبات قرار دفع من backend.
+
 ## Why it matters and how it works
 
 Authenticated encryption such as AES-GCM combines confidentiality and integrity, provided nonce use is correct. A cryptographic hash alone proves neither who produced data nor that an attacker did not replace both data and hash. HMAC authenticates to shared-key holders; a digital signature allows public verification without sharing the signing key.
@@ -51,10 +55,20 @@ For each security requirement, document the property needed: secrecy, tamper det
 
 ## Interview answer — structured
 
-“I choose the primitive by security goal. A plain hash detects accidental change only when the expected digest is itself trusted; it does not authenticate an attacker-controlled message. HMAC authenticates among parties sharing a key. A digital signature can be verified with a public key without exposing the signer’s private key. Encryption is reversible with a key, and authenticated encryption is preferable when stored secrets need both confidentiality and integrity. Password storage needs a slow, salted scheme, not a general-purpose hash. I choose the primitive from the security property: authenticated encryption for local confidentiality and integrity, HMAC for parties sharing a secret, and signatures when a public verifier must not possess the signing key. A plain hash does not authenticate an attacker-controlled message. Password verification needs a dedicated salted, slow scheme.”
+“I choose a primitive by the property I need. Encryption protects confidentiality; a plain hash is a digest, not proof of who wrote a message. HMAC authenticates between parties sharing a secret, while a digital signature lets the app verify a server message with a public key without carrying the private key. Passwords need dedicated salted password hashing on the server. For local secrets I use authenticated encryption and vetted platform APIs, not a custom combination of primitives.”
+
 ## Interview answer — deep senior
 
-“In a mobile payment design, I first assign key ownership. A server private signing key must not be inside the APK; the app may carry a public verification key. Shared HMAC keys are unsuitable if every untrusted app instance would receive the same forging secret. For local data, an AEAD mode like AES-GCM protects ciphertext integrity, but nonce uniqueness and key-loss recovery are part of the design. A hash is useful for stable identifiers or integrity comparisons only when the expected value is trusted. Password verification belongs server-side with a specialized KDF, unique salts and an upgrade policy. For a payment configuration, the backend could sign a versioned payload and the Android app could verify it with a public key, while the private signing key stays server-side. HMAC would be inappropriate if every untrusted app instance received the shared forging key. For local secret storage, AES-GCM provides confidentiality and tamper detection, but only if the IV is unique under the key and the authentication tag is checked. A SHA-256 digest alone neither hides data nor proves who produced it; for passwords, fast SHA-256 permits rapid offline guessing after a verifier leak. I would document key ownership, algorithm parameters, rotation and failure behavior, use reviewed platform primitives, and still require backend transaction authorization after any local cryptographic check.”
+“I first name the property I need. Encryption gives confidentiality, while authenticated encryption such as AES-GCM also detects modification. A plain hash is a digest, not proof of origin when an attacker can replace both data and hash. HMAC authenticates between parties that share a secret; putting the same HMAC key in every APK defeats that trust model. A server can sign a configuration with a private key and let the app verify with a public key. Passwords need a salted password-hashing scheme on the server, not a fast general-purpose hash. I would use vetted APIs and keep all private payment authority off device. A useful design exercise is to ask whether the app must read the message, verify its origin, or both. A public signature can verify server-issued configuration without giving every mobile installation the signing secret. By contrast, encrypting a payload under an app-wide symmetric key shipped in the APK would not establish a private boundary. I would include algorithm, key ownership, and replay handling in the protocol review.”
+
+## How to answer in the interview
+
+- **Why:** each primitive solves a different security property.
+- **How:** choose encryption for confidentiality, hash for digest, HMAC for shared-key authenticity, signature for public verification.
+- **Trade-off:** shared secrets in clients are extractable.
+- **Failure case:** treating a plain hash as authentication.
+- **Production solution:** keep signing keys server-side and use purpose-specific libraries.
+
 ## Deep-dive talking points
 
 Compare confidentiality, one-way digest, keyed integrity and asymmetric authenticity using one concrete Android-to-server message for each primitive.
@@ -73,4 +87,4 @@ Can I pick a primitive for confidentiality, shared-key authentication, public ve
 - [Android cryptography guidance](https://developer.android.com/privacy-and-security/cryptography) — platform cryptographic practices.
 - [OWASP MASVS cryptography](https://mas.owasp.org/MASVS/controls/MASVS-CRYPTO-1/) — algorithm and key controls.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

@@ -32,6 +32,10 @@ Adapters translate incompatible interfaces; a facade or repository exposes a sta
 
 Conceptual contract: `suspend fun verify(requestId: String): VerificationOutcome`. Vendor A adapter resumes once from callbacks and unregisters on cancellation; Vendor B adapter maps status codes and may query server for uncertain outcomes. Both pass one contract suite.
 
+## Practical walkthrough
+
+vendor A بتدي callback فيها status code، vendor B بتدي listener يفضل registered؛ Adapter لكل vendor تحول لـ`VerificationOutcome` موحد. لو عايز suspend API، `suspendCancellableCoroutine` تحتاج exactly-once resume guard وcleanup عند cancellation حسب SDK، بس cancellation المحلية ما تلغيش server transaction بالضرورة. لو events متعددة، `callbackFlow` مع `awaitClose` أنسب من suspend one-shot. Facade تقدم `verify(requestId)` وتخفي API differences، لكنها تُظهر PendingVerification لو outcome غير معروف. tests تحاكي duplicate callbacks وlate callback بعد cancel وprocess restart، عشان swap SDK ما يغيرش ضمانات الدومين.
+
 ## Trade-offs and decision criteria
 
 A generic gateway adds indirection but localizes vendor churn. If vendors differ in capabilities, expose optional capabilities explicitly rather than falsifying a single contract. A facade should not become a vendor switch with every SDK detail.
@@ -56,6 +60,16 @@ I would first define the result semantics the app needs, then write an adapter f
 
 Vendor swaps fail when an adapter only changes method signatures but not behavior. One SDK may call back on Main, another on a worker; one may invoke twice; cancellation may stop a listener but not a remote transaction. I design a domain contract with thread, lifetime and outcome semantics and put each SDK behind an adapter. A facade/repository coordinates durable request identity and maps unknown outcomes to pending verification. DI handles selection, and staged rollout plus telemetry compares real failure categories without exposing personal data. UI and domain import only stable types, so vendor classes remain contained. I test callback order and resource cleanup in addition to happy-path values, and I keep provider credentials on the server.
 
+I would create a domain contract first: verification returns a confirmed, rejected, or unknown outcome tied to a request ID. Each vendor gets an Adapter that translates its callback shape and error codes into that contract. A one-shot callback can be bridged to a suspending function with cancellation and a guard against multiple completion; a stream of updates belongs in a Flow adapter with unregister cleanup. The facade offers the stable operation to the rest of the app and keeps vendor-specific imports at the boundary. I would not claim cancellation rolls back an already sent request. Contract tests must inject duplicate, missing, and late callbacks and verify process-death reconciliation before declaring the vendor swap safe.
+
+## How to answer in the interview
+
+- **Why:** Vendor differences should not rewrite UI/domain behavior.
+- **How:** Define outcome contract, adapt each SDK, expose one facade.
+- **Trade-off:** Choose suspend one-shot versus Flow stream by callback semantics.
+- **Failure case:** Double resume, leaked listener or unknown outcome mapped to failure.
+- **Production solution:** Shared adapter contract tests and server status reconciliation.
+
 ## Deep-dive talking points
 
 Compare callback semantics, thread, cancellation, duplicates, staged migration and server authority.
@@ -74,4 +88,4 @@ Define a common outcome and two vendor adapters; specify four shared contract te
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — Adapter and Facade patterns.
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — application data boundary.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

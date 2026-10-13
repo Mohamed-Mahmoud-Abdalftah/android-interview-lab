@@ -23,7 +23,11 @@ What is runTest? How are virtual time and TestScope used?
 
 ## Explanation in Arabic
 
-`runTest` من `kotlinx-coroutines-test` بيشغّل test coroutine داخل `TestScope` ويضبط scheduler يقدر يعدّي `delay` افتراضيًا بدل انتظار حقيقي. `advanceTimeBy` و`runCurrent` و`advanceUntilIdle` يتحكموا في tasks المجدولة. بس لو code هرب لـ`Dispatchers.IO` حقيقي أو network حقيقية، virtual time مش هتسيطر عليه.
+`runTest` يخلق `TestScope` و`TestCoroutineScheduler` علشان نتحكم في coroutine scheduling والـ`delay` افتراضيًا بدل نوم حقيقي. `runCurrent()` يشغّل الشغل الجاهز الآن، و`advanceTimeBy()` يقدّم الساعة الافتراضية، وبعدها قد تحتاج `runCurrent()` عشان تنفّذ tasks على نفس اللحظة. لو ViewModel والـfake يستخدموا dispatchers مختلفة بسchedulers منفصلة، ترتيب الأحداث يبقى غير متوقع؛ شارك scheduler أو حقن dispatcher مناسب.
+
+## Practical walkthrough
+
+الاختبار يثبت Loading قبل release للـfake، وبعدها Success. `runTest` لا يسيطر تلقائيًا على callback حقيقي من SDK أو thread مستقل أو network؛ لازم fake أو adapter قابل للتحكم. ولا تستخدم `advanceUntilIdle()` قبل فحص intermediate state، لأنه ممكن يخفي المرحلة اللي تحاول تختبرها.
 
 ## Why it matters and how it works
 
@@ -31,7 +35,42 @@ A TestScope owns a TestCoroutineScheduler. TestDispatchers sharing that schedule
 
 ## Worked example
 
-Illustrative test: `runTest { val dispatcher = StandardTestDispatcher(testScheduler); val job = launch(dispatcher) { delay(1_000); events += "done" }; runCurrent(); advanceTimeBy(1_000); runCurrent(); assertEquals(listOf("done"), events); job.join() }`. Requires `kotlinx-coroutines-test` and JUnit assertion imports; list defined in test scope.
+This JVM test runs with `kotlinx-coroutines-test` and JUnit 5. The injected dispatcher shares `runTest`'s scheduler, so both the intermediate state and the exact delay boundary are observable:
+
+```kotlin
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class VirtualTimeExampleTest {
+    @Test fun eventAppearsOnlyAfterDelay() = runTest {
+        val events = mutableListOf<String>()
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        launch(dispatcher) {
+            delay(1_000)
+            events += "done"
+        }
+
+        runCurrent()
+        assertEquals(emptyList<String>(), events)
+        advanceTimeBy(999)
+        runCurrent()
+        assertEquals(emptyList<String>(), events)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(listOf("done"), events)
+    }
+}
+```
+
+في Android استبدل `Dispatchers.Main` بقاعدة اختبار، واحقن أي dispatcher تاني يستخدمه الكود؛ المثال هنا JVM ولا يختبر SDK أو شبكة حقيقية.
 
 ## Trade-offs and decision criteria
 
@@ -51,11 +90,19 @@ Use a main-dispatcher test rule and shared scheduler across ViewModel collaborat
 
 ## Interview answer — structured
 
-“I use runTest for suspend and Flow logic so delay-based behavior can be checked without sleeping. TestScope owns the scheduler, and StandardTestDispatcher queues work until I call runCurrent, advanceTimeBy or advanceUntilIdle. I inject test dispatchers and replace Main for ViewModel tests. I do not assume runTest virtualizes real network or code launched on an unrelated dispatcher. A TestScope owns a TestCoroutineScheduler.”
+“I use runTest for suspend and Flow logic so delay-based behavior can be checked without sleeping. TestScope owns the scheduler, and StandardTestDispatcher queues work until I call runCurrent, advanceTimeBy or advanceUntilIdle. I inject test dispatchers and replace Main for ViewModel tests. I do not assume runTest virtualizes real network or code launched on an unrelated dispatcher. I check intermediate states before advancing the scheduler to idle.”
 
 ## Interview answer — deep senior
 
-“When testing retries I want to assert both order and time: initial attempt, no second attempt before backoff, second attempt at the expected virtual instant, and cancellation preventing later work. I construct all test dispatchers with `testScheduler`, inject them into the class, then advance in small steps. I inspect uncaught child exceptions and clean up Main in finally/teardown. A test that uses `advanceUntilIdle` only can miss intermediate-state bugs, so I assert between ticks. Real HTTP and Room adapters get separate integration tests. ”
+“I use `runTest` to make coroutine timing explicit. It gives a test scope with a scheduler that can run queued work and skip virtual delays; `runCurrent` executes tasks ready at the current time, while `advanceTimeBy` moves the clock. For a retry policy I can assert one call at t=0, no second call just before the backoff, and exactly one next call after the scheduled boundary without sleeping a real second. If a ViewModel uses `StandardTestDispatcher`, I inject one using the test scheduler so its work is visible to the same control. I do not blindly call `advanceUntilIdle` before asserting Loading because it may run the repository completion and erase the intermediate state I wanted to observe. I also distinguish virtual time from control of all external work: a vendor callback, socket or unmanaged thread still needs a fake or integration setup. Finally, I check that child jobs complete or are canceled; a test that leaves background collection running can hang or leak. The scheduler makes a contract deterministic, but the contract must still be chosen deliberately.”
+
+## How to answer in the interview
+
+- **Why:** wall-clock sleeps make retries slow and unstable.
+- **How:** describe TestScope, runCurrent and virtual-time advancement with exact call counts.
+- **Trade-off:** virtual time controls coroutines on its scheduler, not vendor callbacks.
+- **Failure case:** advanceUntilIdle skips the Loading state you intended to assert.
+- **Production solution:** inject dispatchers and gates for deterministic state tests.
 
 ## Deep-dive talking points
 
@@ -68,11 +115,11 @@ Prompt for scheduler sharing, `runCurrent` versus `advanceTimeBy`, escaping real
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Explain TestScope and its scheduler, show runCurrent versus advanceTimeBy, assert the event before and after virtual time advances, and identify a real external callback that virtual time alone cannot control.
 
 ## References and reviewed-on date
 
 - [Kotlin coroutine testing](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/) — runTest and scheduler.
 - [Android coroutine testing](https://developer.android.com/kotlin/coroutines/test) — test dispatchers.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

@@ -24,6 +24,10 @@ Explain permit accounting and how to limit active operations separately from dis
 
 `Semaphore` عنده عدد permits؛ coroutine بتستنى permit قبل دخول عملية وتفرجها في `finally`/`withPermit`. ده بيحدّد عدد requests المتزامنة مثلًا، لكنه مش بيحدد thread بعينه. `Dispatchers.IO` ممكن يشغّل blocking calls كتير، لكن السيرفر والاتصالات والذاكرة عندهم حدود مختلفة؛ semaphore بتحمي الموارد دي.
 
+## Practical walkthrough
+
+لو API بيسمح 3 طلبات في نفس الوقت، `Semaphore(3)` مشتركة على مستوى repository تحدّ العدد؛ لو أنشأتها داخل كل method call هتبقى كأن مفيش حد. `withPermit` يحرر التصريح حتى لو request فشل أو اتلغى. ده غير معدل الطلبات في الثانية: semaphore يضبط التزامن اللحظي، ولـrate limit محتاج policy منفصلة أو احترام `Retry-After`.
+
 ## Why it matters and how it works
 
 `withPermit` acquires cancellably and releases when the block exits, including failure. Scope the semaphore to the shared resource, not per request, or every call gets a fresh full quota. Use bounded queues and timeouts when callers can accumulate indefinitely.
@@ -64,7 +68,15 @@ A media repository limits concurrent thumbnail downloads to three per host while
 
 ## Interview answer — deep senior
 
-“I would define the capacity constraint first: sockets, database connections, CPU-intensive encoders or a partner API rate/parallelism rule. A shared Semaphore gives an in-flight permit bound and must outlive individual calls; per-call semaphores are ineffective. `withPermit` makes release exception-safe, while caller cancellation should remove queued work. It is distinct from a dispatcher, which schedules execution, and from rate limiting, which controls requests per time window. Under load I also bound the waiting queue, expose queue latency and reject or defer low-priority work. For a remote service, retries must obey the same limiter and server backoff policy.”
+“I would define the capacity constraint first: sockets, database connections, CPU-intensive encoders or a partner API rate/parallelism rule. A shared Semaphore gives an in-flight permit bound and must outlive individual calls; per-call semaphores are ineffective. `withPermit` makes release exception-safe, while caller cancellation should remove queued work. It is distinct from a dispatcher, which schedules execution, and from rate limiting, which controls requests per time window. Under load I also bound the waiting queue, expose queue latency and reject or defer low-priority work. For a remote service, retries must obey the same limiter and server backoff policy. A semaphore only limits operations sharing that same instance. Creating one per request gives a false sense of control, while `withPermit` handles release when a call fails or is cancelled. I would tune the count against connection pool size and backend capacity, then distinguish concurrency from rate: three simultaneous calls may still exceed a per-second provider quota. Queue time, saturation and 429 responses would guide the production setting.”
+
+## How to answer in the interview
+
+- **Why:** a backend and device have finite concurrent capacity.
+- **How:** share one Semaphore across calls and release permits in finally through withPermit.
+- **Trade-off:** lower concurrency protects service but increases queue latency.
+- **Failure case:** per-request semaphores do not constrain global fan-out.
+- **Production solution:** tune the limit from metrics and combine it with server rate-limit handling.
 
 ## Deep-dive talking points
 
@@ -83,4 +95,4 @@ Can I scope a shared semaphore, release permits safely, and distinguish active v
 
 - [Kotlin Semaphore API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.sync/-semaphore/) — permit semantics.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

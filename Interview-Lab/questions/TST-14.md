@@ -23,7 +23,11 @@ How do you test Compose UI semantics, navigation, and accessibility?
 
 ## Explanation in Arabic
 
-Compose UI tests بتتعامل مع semantics tree: `onNodeWithText` أو content description/test tag عند الضرورة، وتعمل click/typing/assertions. نختبر إن المستخدم يقدر يوصل للشاشة، error واضح، focus وaccessibility labels صحيحة. Navigation نختبره من فعل المستخدم وvisible destination، مش بس إن `navController.navigate()` اتنادت.
+Compose UI test تتعامل مع semantics، مش ترتيب الـcomposables في source. ابحث عن node بالنص أو role أو content description، واستخدم test tag فقط عند الحاجة، ثم أدخل input واضغط وتأكد من state/destination. في checkout جرّب amount غير صالح: رسالة Error واضحة، Pay لا يعمل charge، ولا تظهر شاشة التأكيد؛ وبعد قيمة صحيحة تأكد من Pending ثم النتيجة المناسبة.
+
+## Practical walkthrough
+
+Navigation يُختبر بمحتوى الشاشة التي وصل لها المستخدم، مش mock لـ`navigate()`. accessibility تحتاج labels وroles وfocus وfont scaling وRTL؛ automated semantics assertions تساعد لكن لا تستبدل TalkBack/manual device pass. Fake payment source يجعل test حتمية، لكن لا يثبت approval حقيقي أو Android permission dialog. اختبر Route/platform integration منفصلًا.
 
 ## Why it matters and how it works
 
@@ -55,7 +59,15 @@ Run Compose tests on supported screen sizes, RTL locales and font scaling; inclu
 
 ## Interview answer — deep senior
 
-“I write UI tests around user intent and semantic output. I account for merged semantics, avoid brittle hierarchy selectors and use tags only when localization makes text unsuitable. A checkout test covers invalid input, loading, unknown outcome and retry affordance, and checks that an icon-only control has an accessible name. I test navigation across rotation where relevant and use device-level accessibility review beyond automated assertions. The UI test proves presentation and interaction, not issuer approval.”
+“I write Compose tests from the user’s point of view. I query the semantics tree by visible text, role or content description, perform typing and clicks, and assert the resulting UI state. For a checkout form I enter an invalid amount, tap Pay and verify a readable error appears while confirmation remains absent. With valid input I release a controlled fake response and assert the pending state and final accessible destination. I avoid matching an exact composable hierarchy; semantics merging can change without changing the user contract. A navigation test should observe the destination, not merely verify a mocked `NavController.navigate` call. Accessibility assertions cover names for icon buttons, error text, action availability and focus where feasible, with RTL and large-font layouts checked on representative devices. Automated tests cannot certify TalkBack behavior or payment authorization, so I keep targeted manual/device accessibility checks and backend integration tests. I also control animation time and lifecycle recreation rather than adding arbitrary sleeps.”
+
+## How to answer in the interview
+
+- **Why:** users interact with semantics and destinations, not composable internals.
+- **How:** type invalid/valid input, click and assert error, pending and destination.
+- **Trade-off:** stable semantic selectors versus tags tied to implementation.
+- **Failure case:** test only verifies navigate() call or ignores inaccessible icon labels.
+- **Production solution:** UI assertions plus device accessibility review.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for semantics tree, merged nodes, accessible name, navigation outcome and
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Use semantics to enter invalid input, assert an accessible error and absent destination, then submit valid input and assert pending/navigation state. Identify one screen-reader or platform behavior requiring device review.
 
 ## References and reviewed-on date
 
 - [Compose testing](https://developer.android.com/develop/ui/compose/testing) — semantics and test rules.
 - [Compose accessibility](https://developer.android.com/develop/ui/compose/accessibility) — semantics and accessible UI.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

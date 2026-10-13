@@ -26,6 +26,10 @@ What does suspend mean? Does a suspend function imply background execution?
 
 `suspend` معناها إن الدالة تقدر تنادي suspending functions وتتوقف بشكل تعاوني عند نقطة انتظار. مش معناها إنها بتشتغل تلقائي على background thread. لو استدعيتها من coroutine على Main ونفذت جواها `Thread.sleep` أو driver synchronous، الـMain هيتحجز. النقل لـdispatcher مناسب قرار صريح عند الجزء اللي فعلاً blocking؛ أما API أصلًا non-blocking ومكتوب إنها main-safe فمش لازم نحط حوالينها `withContext(IO)` لمجرد إن اسمها `suspend`.
 
+## Practical walkthrough
+
+مثال عملي: `suspend fun load()` لو جواها `legacyDb.readBlocking()` واتنادت من `viewModelScope` هتشتغل على Main لحد ما القراءة تخلص. إضافة `suspend` للكلمة مش بتغيّر thread. خلي الـrepository اللي عارف إن القراءة blocking ينقل الجزء ده بـ`withContext(ioDispatcher)`، واختبره بـdispatcher محقون. أما API بتعلّق من غير حجز thread فلا تحتاج النقل لمجرد الاسم.
+
 ## Why it matters and how it works
 
 The `suspend` modifier changes how a function participates in coroutine continuations; it does not launch a new coroutine or select a thread. Execution initially follows the caller's context. A real suspending call can release the current thread. `withContext(dispatcher)` changes context for its block and returns to the caller context afterward. It cannot magically cancel an uncooperative blocking driver in mid-call; cancellation may wait until that call returns.
@@ -75,7 +79,15 @@ A screen ViewModel calls a repository with a documented main-safe suspend contra
 
 ## Interview answer — deep senior
 
-“The `suspend` modifier changes the call contract so a coroutine can pause at suspension points; it neither creates a new coroutine nor selects a thread. The executing dispatcher is inherited from the caller unless a block explicitly changes context. On Main, a suspending Retrofit API can await network I/O without blocking, but a synchronous database driver called inside a suspend function still blocks Main. I make each repository API main-safe at its implementation boundary, injecting a dispatcher for genuinely blocking work, and test cancellation with the real driver because cancellation of a coroutine cannot forcibly make a blocking API cooperative. That distinction matters when diagnosing an ANR despite apparently asynchronous code.”
+“The `suspend` modifier changes the call contract so a coroutine can pause at suspension points; it neither creates a new coroutine nor selects a thread. The executing dispatcher is inherited from the caller unless a block explicitly changes context. On Main, a suspending Retrofit API can await network I/O without blocking, but a synchronous database driver called inside a suspend function still blocks Main. I make each repository API main-safe at its implementation boundary, injecting a dispatcher for genuinely blocking work, and test cancellation with the real driver because cancellation of a coroutine cannot forcibly make a blocking API cooperative. That distinction matters when diagnosing an ANR despite apparently asynchronous code. I would review a library contract before deciding where to switch context. A genuinely asynchronous suspend HTTP call can be invoked from Main without parking the Looper; a synchronous SDK call inside `suspend fun` cannot. A repository should own the switch because callers should receive one main-safe API. In tests I inject that dispatcher and verify both the result and that cancellation does not publish stale UI.”
+
+## How to answer in the interview
+
+- **Why:** `suspend` describes a calling contract, not a performance guarantee.
+- **How:** trace the inherited dispatcher until a real suspension or context switch.
+- **Trade-off:** move synchronous I/O at its owning boundary; avoid redundant switches for nonblocking clients.
+- **Failure case:** a renamed blocking method still freezes Main.
+- **Production solution:** inject the dispatcher and verify the library's actual contract.
 
 ## Deep-dive talking points
 
@@ -96,4 +108,4 @@ Score 0–5, one point each: define `suspend`; state that it does not select a t
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — suspending functions and dispatchers.
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — main safety and Android scope use.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. The code is a JVM illustration, not an instrumented Android test.
+Technically reviewed against the linked primary documentation on 2026-10-13. The code is a JVM illustration, not an instrumented Android test.

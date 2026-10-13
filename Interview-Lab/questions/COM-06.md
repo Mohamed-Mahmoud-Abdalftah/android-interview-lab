@@ -26,6 +26,10 @@ What is Unidirectional Data Flow in Compose?
 
 في UDF، الـowner مثل ViewModel يخرج `UiState` للـscreen، والـcomposable ترسمه وتُرجع actions عبر callbacks مثل `onRetry`. الـViewModel يعالج الحدث، يحدث state، وقد يطلب من repository عملًا؛ ثم state الجديدة تنزل للواجهة. بهذه الطريقة سبب التغيير واضح واختباره أسهل. لا تعمل screen نسخة mutable موازية لنفس البيانات. أحداث مثل navigation أو Snackbar تحتاج contract واضح: state مستهلكة مرة مع acknowledgment أو event stream بخصائص delivery معلومة، لا مجرد Boolean يعاد تشغيله بعد rotation.
 
+### Practical walkthrough in Egyptian Arabic
+
+في checkout، الزر يبعت `Pay` للـViewModel. الـViewModel ينقل `Ready → Submitting → Success/Error` بعد نتيجة repository، والـScreen ترسم المرحلة الحالية؛ كده عندك مسار واحد للتغيير. الـnavigation تحتاج contract استهلاك واضح عشان `Success` ما يودّيش لنفس الوجهة مرتين بعد rotation. لو `Pay` اتبعت مرتين قبل ما الزر يتعطل، UDF وحدها مش ضمان؛ owner لازم يحرس العملية. اختبر transition من كل حالة، خصوصًا retry وعودة الشاشة بعد نتيجة الدفع.
+
 ## Why it matters and how it works
 
 UDF makes the rendering function a consumer of state and producer of user intents. A state holder serializes or coordinates changes and exposes a coherent snapshot, commonly as `StateFlow`. Side effects occur in the owner or a composition-aware effect rather than during rendering. This helps distinguish durable screen state from one-time UI actions whose delivery needs lifecycle consideration.
@@ -33,6 +37,24 @@ UDF makes the rendering function a consumer of state and producer of user intent
 ## Worked example
 
 `CheckoutScreen(uiState, onAction)` renders `Loading`, `Ready`, or `Error`; tapping Pay sends `CheckoutAction.Pay`. The ViewModel disables payment while an idempotent request is in flight, records the result, and emits a new state. Navigation to a receipt occurs after authoritative result, with a consumed action or destination state designed to avoid double navigation.
+
+### Compose/Kotlin walkthrough
+
+```kotlin
+sealed interface CheckoutUiState {
+    data object Ready : CheckoutUiState
+    data object Submitting : CheckoutUiState
+    data class Failed(val message: String) : CheckoutUiState
+}
+@Composable
+fun CheckoutScreen(state: CheckoutUiState, onPay: () -> Unit) {
+    when (state) {
+        CheckoutUiState.Ready -> Button(onClick = onPay) { Text("Pay") }
+        CheckoutUiState.Submitting -> CircularProgressIndicator()
+        is CheckoutUiState.Failed -> Text(state.message)
+    }
+}
+```
 
 ## Trade-offs and decision criteria
 
@@ -48,15 +70,23 @@ Define a typed action contract, model loading/error/success explicitly, and test
 
 ## Interview answer — short
 
-“UDF sends immutable state from an owner into composables and user events back to that owner. The owner changes state and handles effects; the UI renders the result.”
+“UDF sends immutable state from an owner into composables and user events back to that owner. The owner changes state and handles effects; the UI renders the result. State flows down, Pay flows up, and a new state follows the result.”
 
 ## Interview answer — structured
 
-“I give the screen a state value and callbacks rather than letting it mutate repositories during composition. A Pay tap becomes an action; the ViewModel checks whether payment is already running, calls the use case, and emits loading or result state. Compose renders each state. I separately define transient navigation or Snackbar delivery so lifecycle changes do not replay or lose it accidentally. The important invariant is one owner for each fact.”
+“I give the screen a state value and callbacks rather than letting it mutate repositories during composition. A Pay tap becomes an action; the ViewModel checks whether payment is already running, calls the use case, and emits loading or result state. Compose renders each state. I separately define transient navigation or Snackbar delivery so lifecycle changes do not replay or lose it accidentally. The important invariant is one owner for each fact. I would draw the Ready to Submitting to result transition and distinguish that state from a one-time navigation action.”
 
 ## Interview answer — deep senior
 
-“Unidirectional flow is an ownership and causality model. The ViewModel or other screen state holder exposes an immutable state snapshot; composables read it and send typed user intents upward. The owner validates the intent, runs business work, and produces a new state. That lets me test a transition without needing a full UI: given Ready and Pay, expect Loading and then a result. It also keeps recomposition safe because rendering does not initiate requests. I pay special attention to one-time actions. A navigation command is not interchangeable with persistent screen state: a replayed flow event may navigate twice, while an unbuffered event may be missed while stopped. I choose an explicit delivery and acknowledgment policy or model the destination state so it can be consumed deterministically. For payment I disable duplicate taps but also use a backend idempotency key because UI controls alone cannot stop retries or process restarts. I avoid two mutable copies of the same form state and make lifecycle-aware collection part of the screen boundary. UDF is useful when the state and event contracts clarify behavior, not because every click needs an elaborate reducer framework.”
+“Unidirectional flow is an ownership and causality model. The ViewModel or other screen state holder exposes an immutable state snapshot; composables read it and send typed user intents upward. The owner validates the intent, runs business work, and produces a new state. That lets me test a transition without needing a full UI: given Ready and Pay, expect Loading and then a result. It also keeps recomposition safe because rendering does not initiate requests. I pay special attention to one-time actions. A navigation command is not interchangeable with persistent screen state: a replayed flow event may navigate twice, while an unbuffered event may be missed while stopped. I choose an explicit delivery and acknowledgment policy or model the destination state so it can be consumed deterministically. For payment I disable duplicate taps but also use a backend idempotency key because UI controls alone cannot stop retries or process restarts. I avoid two mutable copies of the same form state and make lifecycle-aware collection part of the screen boundary. UDF is useful when the state and event contracts clarify behavior, not because every click needs an elaborate reducer framework. I would test that a restored success state does not navigate a second time and that repeated Pay events are rejected.”
+
+## How to answer in the interview
+
+- **Why:** state and intents make transitions auditable.
+- **How:** walk through Pay, repository result, and a new immutable state.
+- **Trade-off:** one-time navigation needs an explicit delivery contract.
+- **Failure case:** duplicate mutable state in UI and owner.
+- **Production solution:** test transitions and acknowledge consumed actions.
 
 ## Deep-dive talking points
 

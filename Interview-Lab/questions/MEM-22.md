@@ -26,6 +26,10 @@ Your main thread is blocked even though you launched a coroutine. Why?
 
 `launch` بيبدأ coroutine، لكنه مش أمر “انقل الشغل لخلفية”. لو استدعيت `viewModelScope.launch` فغالبًا البداية على Main؛ `Thread.sleep` أو SDK synchronous أو loop CPU جواه هيحجز Main ويعمل jank أو ANR. الـsuspend function كمان مش ضمان إنها non-blocking: ممكن حد كتبها وبتنادي driver blocking. الحل إنك تحدد السطر اللي واقف عليه Main من trace، وتخلي طبقة البيانات main-safe بـ`withContext` على dispatcher مناسب للشغل blocking، أو تستخدم API asynchronous فعلًا. وخلي بالك إن إلغاء coroutine مش هيوقف driver blocking غصبًا عنه.
 
+## Practical walkthrough
+
+في `viewModelScope.launch` استدعاء `client.blockingLoad()` هيشتغل على Main لو مفيش context switch حقيقي. في ANR trace شوف هل Main بتنفذ SDK، ولا مستنية lock أو Binder. `withContext(ioDispatcher)` يحمي Main من blocking I/O لكن driver ممكن يفضل شغال بعد cancellation، ومئات طلبات متزامنة تستهلك threads. اعمل limit للconcurrency، timeout حقيقي حسب client، واختبر خروج المستخدم بسرعة من الشاشة.
+
 ## Why it matters and how it works
 
 Coroutines execute on threads selected by their context. A coroutine launched from `viewModelScope` uses Main by default; it only releases that thread at a genuine suspension point. A plain synchronous call or CPU loop runs until it completes, yields cooperatively, or changes context. `withContext(ioDispatcher)` can move a blocking I/O boundary off Main; CPU-heavy work fits a CPU-oriented dispatcher. A non-blocking suspend API that already uses appropriate internal threads need not be wrapped blindly. Main-safety is a contract of the called layer, not the `suspend` keyword.
@@ -72,7 +76,15 @@ For a receipt screen with rare ANRs, correlate ANR traces with network and datab
 
 ## Interview answer — deep senior
 
-“I separate execution context, suspension, and driver behavior. A ViewModel coroutine inherits Main, and `suspend` does not imply a thread switch. If the main thread is blocked I first gather ANR traces and, ideally, Perfetto scheduling evidence to identify whether it is CPU work, synchronous I/O, Binder, or lock contention. I make the responsible layer main-safe: an injected IO context for unavoidable blocking I/O, a CPU-limited context for computation, or a genuinely async API. I bound concurrency, preserve `CancellationException`, and verify how the driver handles cancellation. If the call is a payment operation, dispatcher choice solves responsiveness only; idempotent recovery and durable identity remain separate requirements.”
+“I separate execution context, suspension, and driver behavior. A ViewModel coroutine inherits Main, and `suspend` does not imply a thread switch. If the main thread is blocked I first gather ANR traces and, ideally, Perfetto scheduling evidence to identify whether it is CPU work, synchronous I/O, Binder, or lock contention. I make the responsible layer main-safe: an injected IO context for unavoidable blocking I/O, a CPU-limited context for computation, or a genuinely async API. I bound concurrency, preserve `CancellationException`, and verify how the driver handles cancellation. If the call is a payment operation, dispatcher choice solves responsiveness only; idempotent recovery and durable identity remain separate requirements. In a concrete failure, `viewModelScope.launch` invokes a synchronous legacy client and blocks Main until the call returns. I move that boundary behind an injected dispatcher or async API, then cap parallel requests so a worker pool cannot be exhausted. A driver that ignores cancellation needs its own timeout and ownership policy; `withContext` alone cannot interrupt it.”
+
+## How to answer in the interview
+
+- **Why:** Separate coroutine context from true suspension.
+- **How:** Trace Main and switch at the responsible repository boundary.
+- **Trade-off:** Worker dispatch consumes threads and needs concurrency limits.
+- **Failure case:** A blocking driver can ignore coroutine cancellation.
+- **Production solution:** Test rapid navigation and durable operation identity.
 
 ## Deep-dive talking points
 
@@ -94,4 +106,4 @@ State the default ViewModel coroutine context; name three blocking operations; u
 - [Coroutines best practices](https://developer.android.com/kotlin/coroutines/coroutines-best-practices) — repository responsibility for blocking calls.
 - [Diagnose and fix ANRs](https://developer.android.com/topic/performance/anrs/diagnose-and-fix-anrs) — trace-led diagnosis.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The snippet is illustrative; the legacy client and Android integration were not compiled here.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The snippet is illustrative; the legacy client and Android integration were not compiled here.

@@ -40,6 +40,10 @@ class SessionStore(initialUser: String? = null) {
 ```
 Each unit test constructs its own store. Production may wrap persistent storage and synchronization; this small class alone is not thread-safe or durable.
 
+## Practical walkthrough
+
+global `object SessionStore` بيعيش طول process، فtest A تكتب user وtest B تشوفه لو مفيش reset؛ production account switch ممكن يورث data من user قديم، وprocess death يمسحها. بدّلها بـ`SessionStore` instance تتخلق في auth/session scope وتتحقن في consumers، مع `close/reset` واضح وقت logout. test ينشئ store جديدة لكل case أو fake store. لو process restart، token/session recovery من persistent credential policy/server، مش من singleton memory. ما تعملش App-wide `@Singleton` لكل حاجة عشان DI موجودة؛ scope لازم تتطابق مع ownership.
+
 ## Trade-offs and decision criteria
 
 An injected instance adds wiring but improves isolation and ownership. A stateless `object` may be simplest. If multiple threads access mutable session data, use a proper state holder and synchronization; merely replacing singleton with class does not solve races.
@@ -64,6 +68,16 @@ I first separate stateless singleton helpers from mutable global state. The latt
 
 The root problem is hidden ownership. A global `object` with mutable fields can be read and changed by any caller, so tests influence one another and production behavior depends on call order. I identify who owns updates and what must survive process death. A session repository can expose immutable snapshots, persist only appropriate token material, refresh with the backend, and invalidate on logout. Features depend on its contract rather than global access. Unit tests construct a new in-memory fake per test, and integration tests cover refresh/logout races. A DI singleton may still be used for the repository instance, but its scope and state protocol are explicit; it must not capture Activity context. Stateless `object` helpers remain fine.
 
+I would first identify who owns the mutable state. A global `object SessionStore` couples every test to the previous process state and can retain one account after a switch. I replace it with an instance passed through constructors, scoped to the authenticated session, and dispose or reset it on logout. Each test constructs its own store, so order no longer changes the result; integration tests verify account-switch teardown. The object still disappears on process death, so durable credentials and server session recovery need a separate design. A DI container helps wire the scope, but marking the store application-wide singleton would recreate the problem under a different annotation. Ownership, not the keyword, is the fix.
+
+## How to answer in the interview
+
+- **Why:** Global mutable state creates order dependence and stale accounts.
+- **How:** Inject a session-scoped store and tear it down on logout.
+- **Trade-off:** Keep stateless singletons; scope mutable session objects narrowly.
+- **Failure case:** Test pollution, Activity leak or process-death assumption.
+- **Production solution:** Per-test instances, account-switch test and durable recovery path.
+
 ## Deep-dive talking points
 
 Diagnose test order dependence, separate stateless singleton, specify owner, persistence and concurrency.
@@ -82,4 +96,4 @@ Explain a failing test order, propose injection, and state what must survive pro
 - [Kotlin object declarations](https://kotlinlang.org/docs/object-declarations.html) — object lifetime.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — persistent data ownership.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

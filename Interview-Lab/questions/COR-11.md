@@ -24,6 +24,10 @@ Whether the candidate compares sibling failure propagation while remembering tha
 
 `coroutineScope` و`supervisorScope` الاتنين بيعملوا boundary منظمة وبيستنوا كل الأطفال قبل ما يرجعوا. الفرق إن فشل child في `coroutineScope` العادية بيلغي إخوته ويُفشل الـscope؛ في `supervisorScope` child فاشل ما يلغيّش إخوته تلقائيًا. لكن لو الـparent اتلغى، كل الأطفال بيتلغوا في الحالتين، ولازم نمسك failures الفردية في supervision.
 
+## Practical walkthrough
+
+لو كارت الطقس وكارت الأخبار مستقلين، `supervisorScope` يسمح للواحد ينجح لو التاني فشل، بشرط كل child يرجع outcome واضحة أو يتعامل مع exception. لو السعر والضريبة لازم ينجحوا سوا، `coroutineScope` أنسب لأنه يلغي الإخوة عند الفشل. في الحالتين إلغاء الـparent من الشاشة يوصل للأطفال؛ supervision مش معناها إن الشغل صار detached.
+
 ## Why it matters and how it works
 
 With `coroutineScope`, a child exception cancels the scope and sibling Jobs. With `supervisorScope`, direct children are supervised; a failing `launch` can reach an exception handler, while a failed `async` stores failure for `await`. Failure of the supervisor block itself still cancels children. Supervision changes propagation among siblings, not the need to return an outcome.
@@ -71,7 +75,15 @@ A dashboard has independent weather and messages cards. A supervised repository 
 
 ## Interview answer — deep senior
 
-“The subtle point is where failure occurs. A direct child failing in `supervisorScope` does not cancel its siblings, but an exception thrown by the supervisor block itself cancels its children. A failing `launch` is effectively uncaught unless it handles the error; a failing `async` holds the error until `await`. In a normal `coroutineScope`, one child’s failure cancels the Job tree, even if I planned to catch a later `await`. For an all-or-nothing response I want that behavior, and I make operations safe to cancel. For partial success, I use supervision, capture outcomes within children and report them separately. Neither scope survives process death or guarantees an external request was rolled back.”
+“The subtle point is where failure occurs. A direct child failing in `supervisorScope` does not cancel its siblings, but an exception thrown by the supervisor block itself cancels its children. A failing `launch` is effectively uncaught unless it handles the error; a failing `async` holds the error until `await`. In a normal `coroutineScope`, one child’s failure cancels the Job tree, even if I planned to catch a later `await`. For an all-or-nothing response I want that behavior, and I make operations safe to cancel. For partial success, I use supervision, capture outcomes within children and report them separately. Neither scope survives process death or guarantees an external request was rolled back. The placement of `try/catch` matters. Catching an `await` in an ordinary `coroutineScope` may be too late to stop sibling cancellation after a child has already failed. In a `supervisorScope`, direct child failure is isolated, but an uncaught `launch` failure still needs reporting, and an exception from the scope block itself cancels the scope. For optional cards I return explicit outcomes and test that parent cancellation still stops every card.”
+
+## How to answer in the interview
+
+- **Why:** failure policy follows product dependency.
+- **How:** coroutineScope propagates child failure across siblings; supervisorScope isolates direct child failures while parent cancellation still cascades.
+- **Trade-off:** partial results require richer UI states.
+- **Failure case:** an unhandled supervised launch can be reported as uncaught.
+- **Production solution:** return typed outcomes per independent child and reserve ordinary scope for required aggregates.
 
 ## Deep-dive talking points
 
@@ -91,4 +103,4 @@ Can I predict all four failure paths, choose a scope by product semantics, and p
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — supervision semantics.
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — scope completion.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

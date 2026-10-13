@@ -23,7 +23,11 @@ How do you test DI substitutions and scoped dependencies?
 
 ## Explanation in Arabic
 
-DI test لازم يستبدل dependency في scope الصح: fake repository واحد للـtest، مش singleton يتسرب لاختبار تاني، وViewModel/Activity تشوف نفس instance المتوقع. في Hilt نستخدم test bindings أو `@UninstallModules` حسب الحاجة، وننشئ component بعد تجهيز replacement. اختبار graph مهم عشان qualifier أو scope غلط ممكن يشتغل unit test ويقع في التطبيق.
+اختبار DI لازم يثبت حاجتين مختلفتين: test graph تقدر تستبدل dependency وتتوقع UI behavior، وproduction graph فيها كل bindings/qualifiers/scopes المطلوبة. في Hilt test استبدل `AuthRepository` بfake قبل Activity launch، وخلّي fake ترد بحالة معلومة؛ بعدين assertion على الشاشة أو ViewModel. لو عملت replacement لكل شيء، الاختبار لن يكشف binding ناقصة في build الحقيقي، لذلك ضيف smoke compile/launch للـproduction graph.
+
+## Practical walkthrough
+
+جرّب scope: object اللي المفروض Activity-scoped لا يعيش بعد Activity، وSingleton لا يمسك Activity Context. assisted/runtime parameters لها owner واضح. reset fake state بين tests حتى لا تظهر flakes. الـDI framework أداة لتوصيل graph؛ الاختبار يثبت contract السلوك وعمر dependency.
 
 ## Why it matters and how it works
 
@@ -51,11 +55,19 @@ CI verifies unit behavior, instrumentation graph injection and each shipped flav
 
 ## Interview answer — structured
 
-“For a use case, constructor injection makes a fast JVM test enough. For an Android screen, I use Hilt test bindings to replace the repository, then launch the Activity after configuring the fake. I verify scopes and qualifiers so the screen and worker receive the intended instance. I also keep a production graph smoke test because test-only bindings can conceal missing real bindings. ”
+“For a use case, constructor injection makes a fast JVM test enough. For an Android screen, I use Hilt test bindings to replace the repository, then launch the Activity after configuring the fake. I verify scopes and qualifiers so the screen and worker receive the intended instance. I also keep a production graph smoke test because test-only bindings can conceal missing real bindings.”
 
 ## Interview answer — deep senior
 
-“I distinguish behavior testing from graph testing. Most domain behavior uses direct construction and short-lived fakes; a smaller instrumentation layer checks Hilt replacement and the real component hierarchy. I verify singleton versus activity/viewmodel scope, qualifiers and cleanup so tests do not leak session state. A worker that runs after process death may use a different component instance, so its contract gets separate coverage. CI builds every release flavor’s graph, not just the test flavor. ”
+“I test substitution and graph integrity separately. In a Hilt instrumented test I replace an `AuthRepository` binding with a controllable fake before launching the Activity, then assert Loading, success, denial or retry through the screen. This proves the feature can consume the substituted contract. It does not prove production has the correct qualifier, constructor binding or scope, because the test graph may replace the missing piece. I add a production-graph smoke build or launch in the release-like variant. Scope tests should check lifetime rather than only object identity: an Activity-scoped collaborator must not retain an old Activity after recreation, and a Singleton should not capture Activity Context. I also test runtime parameters where assisted creation is used and clear fake state between tests. I avoid replacing internal details that would make a test pass while the real boundary is broken. DI tests are most useful when they reveal a wrong graph or a user-visible state, not when they merely assert that injection syntax compiled.”
+
+## How to answer in the interview
+
+- **Why:** a replaceable test graph can hide a broken production graph.
+- **How:** substitute AuthRepository before Activity launch and separately smoke-test real bindings.
+- **Trade-off:** deterministic feature test versus realistic DI wiring.
+- **Failure case:** missing qualifier or wrong scope survives fake-only tests.
+- **Production solution:** test both user-visible state and release graph construction.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for binding override, scope, setup-before-launch, flavor parity and fake 
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Replace an AuthRepository in a test graph before Activity launch, assert the screen consumes the fake, and separately smoke-test production bindings. Explain scope and qualifier mistakes that a replaced graph can hide.
 
 ## References and reviewed-on date
 
 - [Hilt testing](https://developer.android.com/training/dependency-injection/hilt-testing) — test bindings and components.
 - [Android test doubles](https://developer.android.com/training/testing/fundamentals/test-doubles) — dependency replacement.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

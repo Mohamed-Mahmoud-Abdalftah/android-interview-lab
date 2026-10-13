@@ -24,6 +24,10 @@ Design offline-first cache plus remote refresh with one local source of truth.
 
 لو Room data مع remote refresh، الـUI تقرأ من Room Flow كمصدر محلي للحقيقة المعروضة. الـrefresh تجيب remote ثم تكتب Room داخل transaction؛ Room تطلع snapshot جديدة. ما نعملش `combine` مباشر لقائمتين مختلفتين ونخلي UI تخمّن مين الأصح. السيرفر يفضل authoritative لبياناته، ومع النزاعات نحتاج version/ETag وقواعد merge محددة.
 
+### Practical walkthrough in Egyptian Arabic
+
+في offline-first list، Room هي source of truth المعروضة؛ remote refresh تجيب data وتكتبها transaction في Room، وبعدها Room Flow تصدر snapshot جديدة. لو UI جمعت remote response مباشرة وفي نفس الوقت Room، ممكن تعرض ترتيبين أو data قديمة. احتفظ بـsync status منفصلة، وحدد conflict policy ووقت refresh. اختبر offline ثم reconnect.
+
 ## Why it matters and how it works
 
 Expose `Flow<List<Entity>>` from DAO and a separate suspend refresh/sync operation. The network response is validated and committed transactionally before UI observes it. Offline writes need queued operations and conflict resolution. Stale state should carry freshness metadata, not silently masquerade as current.
@@ -66,7 +70,15 @@ A messaging inbox observes Room and runs a worker to fetch updates. Rows have se
 
 ## Interview answer — deep senior
 
-“I avoid a dual-source UI where cached and remote lists race each other. Room is the single local source consumed by the screen, and refresh is a side operation that writes a versioned batch into it. That makes rotation and offline startup deterministic. Server authority and client display state are different: remote version/ETag and operation IDs govern merge and conflict decisions. I perform related updates in one transaction, preserve pending local writes, and surface stale status when refresh fails. For process death, a durable worker resumes sync; for repeated network writes, the backend deduplicates logical operations. Tests cover offline startup, stale cache, out-of-order refresh, conflict and crash during batch apply.”
+“I avoid a dual-source UI where cached and remote lists race each other. Room is the single local source consumed by the screen, and refresh is a side operation that writes a versioned batch into it. That makes rotation and offline startup deterministic. Server authority and client display state are different: remote version/ETag and operation IDs govern merge and conflict decisions. I perform related updates in one transaction, preserve pending local writes, and surface stale status when refresh fails. For process death, a durable worker resumes sync; for repeated network writes, the backend deduplicates logical operations. Tests cover offline startup, stale cache, out-of-order refresh, conflict and crash during batch apply. I would make the read path unambiguous: the UI observes Room, and a refresh operation updates Room from the server. That makes local storage the immediate source of truth for display and supports offline rendering. The server may remain authoritative for business rules, so conflict resolution and freshness policy are still explicit. I do not emit a remote list directly to the UI while also collecting cached rows, because the two paths can disagree and flicker. I model refresh status separately from content and persist writes transactionally. When the network fails, cached data remains visible with a stale or error indicator rather than becoming an empty screen. I test offline launch, refresh, conflict, and process restart.”
+
+## How to answer in the interview
+
+- **Why:** two read paths create inconsistent UI.
+- **How:** refresh remote into Room, then observe Room Flow.
+- **Trade-off:** stale cache needs freshness and conflict policy.
+- **Failure case:** direct remote emission fights cached state.
+- **Production solution:** offline/reconnect and transaction tests.
 
 ## Deep-dive talking points
 

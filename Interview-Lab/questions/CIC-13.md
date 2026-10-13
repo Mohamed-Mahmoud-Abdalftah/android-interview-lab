@@ -25,6 +25,10 @@ How do you deal with flaky tests, retries, and quarantine policies?
 
 Flaky test يفشل أحيانًا بنفس code؛ ممكن يكشف race حقيقي أو test harness timing. نسجل first attempt والenvironment، نعيد للتشخيص، ونصلح السبب. Retries محدودة ومعلنة، quarantine لها owner وdeadline وبديل يغطي risk؛ مش نحول test red إلى green بصمت. Payment/security gate لا يُشال لمجرد إنه مزعج.
 
+### Practical walkthrough in Egyptian Arabic
+
+الـflaky test يمر مرة ويفشل مرة لنفس الكود؛ اعرف الأول هل race في التطبيق، sleep في test، shared DB، emulator load، أو external service. ثبّت seed والclock والresponses وخد first failure logs/screenshot. retry ممكن يساعد تشخيص مؤقت، لكنه لو خلّى failure أخضر بصمت فقدنا الإشارة. quarantine يكون باسم owner، issue، deadline، وبديل يغطي المسار؛ security/payment tests الحرجة لا تتشال من gate بلا بديل. قس flake rate منفصل عن product failures.
+
 ## Why it matters and how it works
 
 CI retries can distinguish intermittent from deterministic failure but cannot identify cause alone. Quarantining removes a signal from required checks, so it needs risk assessment. Track flake rate per test, shard and device; preserve first-failure artifacts.
@@ -55,7 +59,15 @@ Weekly flake dashboard assigns owners; quarantine expiry fails or escalates. CI 
 
 ## Interview answer — deep senior
 
-“I govern flakes as production risk. I track rate and cost, group by emulator/device and shard order, preserve logs/screenshots from attempt one and test hypotheses with repeated focused runs. If an app race caused it, I add a lower-level regression and fix state ownership. A quarantined critical test must have a compensating gate before release; otherwise the release is blocked. I avoid blanket retries that hide a rising failure rate and slow every PR. Compose test fails 2% on CI.”
+“A flaky test is a defect in the test system or product synchronization, not a green result after enough retries. I preserve the first failing run, reproduce it in a focused loop and compare order, emulator image, machine load, time zone, network and shared state. Then I classify the cause: app race, test synchronization, environmental instability or external dependency. I replace sleeps with observable conditions or virtual time, give each test isolated data and make fake responses controllable. A retry can be a temporary diagnostic or containment measure, but the report must show the first failure and its frequency. Quarantine needs an owner, an issue, a time limit and an alternative signal, especially for release-critical payment or security flows. I measure both flake rate and escaped defects; making CI faster by hiding failures is worse than a slower trustworthy gate. Once fixed, I run the focused test repeatedly and on the target CI environment before removing the exception.”
+
+## How to answer in the interview
+
+- **Why:** unreliable tests erode release confidence.
+- **How:** capture first failure and classify race/environment.
+- **Trade-off:** temporary retry versus trusted signal.
+- **Failure case:** quarantine silently removes payment coverage.
+- **Production solution:** owner, deadline and repeated verification.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for first failure, same-environment reproduction, app race, quarantine ow
 
 ## Self-check rubric
 
-Can you explain the mechanism, apply the example, justify a trade-off, identify a failure mode, and answer both follow-ups?
+Classify a flaky test by ordering, timing, shared state or environment; collect seed/log evidence, assign owner and expiry for quarantine, and explain why blind retries cannot prove a release safe.
 
 ## References and reviewed-on date
 
 - [Android testing guidance](https://developer.android.com/training/testing) — reliable test practice.
 - [Gradle test execution](https://docs.gradle.org/current/userguide/java_testing.html) — test reporting.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

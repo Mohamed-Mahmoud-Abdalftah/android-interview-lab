@@ -23,7 +23,11 @@ How do you reduce flaky UI tests and control scheduling?
 
 ## Explanation in Arabic
 
-Flaky UI test غالبًا سببه timing غير متحكم فيه، shared state، network حقيقية، animation أو device load. بدل `Thread.sleep` نستخدم test clock/idling، fake backend، reset database/permissions، وstable selectors. Retry في CI ممكن يكشف intermittency لكنه ما يصلحش العيب؛ نسجل first-failure evidence ونصلح السبب.
+Flaky UI test مش “طبيعي” لمجرد إن الاختبارات على emulator. جمّع failure evidence: seed، device/API، order، screenshots، logs ووقت الشبكة. لو test تنتظر 500ms ثابتة، استبدل live backend بfake response تتحكم في إطلاقها أو انتظر semantics state محددة بدل sleep.
+
+## Practical walkthrough
+
+Compose test clock تتحكم في animations، و`runTest` يتحكم في coroutines اللي داخل نطاقه؛ لا تفترض أنهما يتحكمان في كل SDK callback. اعزل DB وDI والـclock لكل test حتى لا تؤثر حالة اختبار سابق. أعد تشغيل الحالة منفردة ثم مع shard/ترتيب CI. Retry مؤقتًا للتشخيص أو quarantine بowner وexpiry، لكنه لا يثبت إن defect اختفى.
 
 ## Why it matters and how it works
 
@@ -55,7 +59,15 @@ CI stores screenshots, logs and test seed/attempt IDs with redaction. Track flak
 
 ## Interview answer — deep senior
 
-“I measure flake frequency and correlate it with device, OS, shard and test order. If a test waits on custom background work, I expose a deterministic completion signal rather than extend sleeps; if the app has a race, I fix production state ownership and add a lower-level test. Fakes handle UI determinism while contract/E2E tests still cover real integrations. I preserve artifacts from the first attempt even when a rerun passes, assign an owner and deadline to quarantine, and avoid normalizing flaky tests as harmless noise.”
+“I first determine whether the flake is product behavior, test synchronization or environment contamination. I preserve the failing seed, device image, build variant, screenshots, logs and test order; then reproduce the test alone and next to the preceding test in the same shard. If a checkout test sleeps 500 milliseconds for a network response, I replace the live dependency with a gate I control, assert Loading, release it and assert Approved or Unknown. I use semantics waits and Compose’s test clock for UI work, and a shared coroutine test scheduler only for coroutines it actually owns. Shared singleton fakes, database rows and leftover service workers must be reset between cases. A retry can collect evidence but is not a fix: it may turn a real race into a green dashboard. If quarantine is needed, I record an owner, affected coverage, expiry and a blocking replacement for critical payment or security paths. Finally I rerun enough repetitions and the original CI shard to show the causal change removed the failure.”
+
+## How to answer in the interview
+
+- **Why:** flaky green results undermine trust in the release gate.
+- **How:** reproduce order/seed, replace sleeps with controlled fake and rerun original shard.
+- **Trade-off:** quarantine can unblock work but leaves coverage debt.
+- **Failure case:** retry masks an app race or shared singleton state.
+- **Production solution:** owner, expiry, replacement gate and repeated verification.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for first-failure evidence, synchronization, state isolation, bounded qua
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Reproduce the order-dependent or timing flake, remove wall-clock sleeps, control the fake response and Compose clock, and rerun the affected shard. Quarantine only with an owner, evidence and expiry.
 
 ## References and reviewed-on date
 
 - [Android test reliability](https://developer.android.com/training/testing) — official testing practices.
 - [Compose testing](https://developer.android.com/develop/ui/compose/testing) — clock/synchronization APIs.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

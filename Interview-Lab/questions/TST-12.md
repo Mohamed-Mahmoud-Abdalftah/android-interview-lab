@@ -23,7 +23,11 @@ How do you test HTTP failures with MockWebServer or equivalent?
 
 ## Explanation in Arabic
 
-`MockWebServer` أو equivalent يخلينا نرسل responses محددة: 401، 429، 500، malformed JSON، delay أو connection drop، ونفحص request headers/body. ده يختبر Retrofit/OkHttp adapter وretry mapping من غير backend حي. لكنه لا يثبت server idempotency أو provider approval؛ محتاج contract/integration منفصل.
+`MockWebServer` أو test server مشابه تتيح ردود HTTP متحكم فيها: status، headers، body ناقص، delay، disconnect، وترتيب requests. اختبر request method/path/body/headers غير الحساسة، ثم state الذي يراه المستخدم. في payment، أخطر حالة server سجّل approval وبعدها الاتصال وقع قبل response؛ العميل لا يجوز يفترض Declined أو يولّد ID جديدة.
+
+## Practical walkthrough
+
+اختبر أن intent المحفوظة تظل Unknown وأن status lookup أو retry تستخدم نفس key، ثم افصل backend integration test لإثبات dedup. Fake ترجع timeout قبل تنفيذ server effect لا تمثل هذه الحالة. لا تطبع Authorization أو card data في سجلات الاختبار، واعزل server per test حتى لا تنتقل responses بين الاختبارات.
 
 ## Why it matters and how it works
 
@@ -55,7 +59,15 @@ CI covers auth expiry, rate limit, malformed responses, lost body and slow netwo
 
 ## Interview answer — deep senior
 
-“I design HTTP tests around failure timing: before connection, after request write, after server commit before response, and partial response. The client cannot distinguish all of these, so its policy must be safe under ambiguity. MockWebServer catches interceptor mistakes such as automatic retry with a fresh key, tests auth refresh and `Retry-After` interpretation, and lets me inspect redacted requests. It does not simulate server atomicity or issuer decisions, so I run integration tests against a controlled backend and test the provider’s actual idempotency window.”
+“I script transport failures as distinct cases. An HTTP 500 response is not the same as a socket disconnect, a truncated body or a timeout after the server committed. With MockWebServer or an equivalent controlled server I inspect the actual method, path, headers and body the client sent, then assert the repository’s result and UI state. For a payment call I deliberately let the server record the operation and drop the reply. The client must retain its durable ID and immutable amount, show an Unknown or pending state, and query status or retry under the same idempotency contract. I also test malformed JSON, unauthorized responses, a retry budget, cancellation, and that sensitive headers are redacted from logs. I reset the server and dispatcher per test to avoid order-dependent failures. This is an Android-client HTTP integration test: it proves serialization and local recovery behavior. It cannot guarantee that a real backend or payment provider has atomic same-key deduplication; that needs backend concurrency and provider sandbox tests.”
+
+## How to answer in the interview
+
+- **Why:** timeout, truncated response and HTTP rejection imply different outcomes.
+- **How:** script each server response and inspect emitted request identity.
+- **Trade-off:** controlled HTTP integration versus real backend guarantee.
+- **Failure case:** fake timeout occurs before a simulated server commit.
+- **Production solution:** after-commit fault test plus backend concurrency verification.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for transport timing, real interceptor path, stable ID, status mapping an
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Script HTTP status, truncated body and disconnect cases; inspect the emitted request and resulting state. For a lost payment reply, prove the client keeps the operation ID and queries status; say what only the backend can prove.
 
 ## References and reviewed-on date
 
 - [OkHttp MockWebServer](https://github.com/square/okhttp/blob/master/README.md) — OkHttp official project documentation.
 - [Android network testing](https://developer.android.com/training/testing) — integration test guidance.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

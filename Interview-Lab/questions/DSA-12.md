@@ -25,6 +25,10 @@ How do you identify an accidental O(n²) transformation in a RecyclerView/Compos
 
 RecyclerView/Compose list ممكن تبقى O(n²) لو لكل item نعمل `others.find { id == ... }` أو `filter` على list كلها. الـUI يظهر كويس مع 20 item ويهنّج مع آلاف، خصوصًا لو transformation تتعاد في recomposition. نعمل lookup map مرة لكل snapshot أو join في data layer، ونقيس allocations والframe time.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو كل RecyclerView bind أو Compose item يعمل `allProducts.find { id == ... }` على n عنصر، rendering كل القائمة قد يصبح `O(n²)`. احسب product map مرة في ViewModel/repository ومرر item جاهز أو keyed lookup. لكن لا تحرك state mutable إلى composable بدون observation؛ ستستبدل freeze بـstale UI. استخدم profiler يميز time في transform عن layout/draw.
+
 ## Why it matters and how it works
 
 Outer per-row mapping O(n) times inner linear search O(n) gives O(n²). Rebuilding a map inside each row is also quadratic despite O(1) subsequent lookup. Create it once per data snapshot, then row lookups are expected O(1), total expected O(n) plus memory.
@@ -55,7 +59,15 @@ Use traces to split bind/recomposition time from data transform time. Benchmark 
 
 ## Interview answer — deep senior
 
-“I diagnose the pipeline: data fetch, transform, diffing, binding/recomposition, image decode and GPU rendering. A trace showing CPU spent in per-row lookup points to algorithmic complexity; repeated composition alone is not proof. I use a stable map keyed by immutable ID per snapshot, validate duplicate-key behavior and avoid stale memoization. I test on low-end devices with scaling input sizes and compare frame times/allocations after change. Offloading to a worker thread can protect UI responsiveness but is not a substitute for reducing O(n²) work.”
+“I look for hidden multiplication in the rendering path. If each RecyclerView bind or Compose item calls `allProducts.find` over n items, rendering n rows performs roughly n² comparisons, even though each callback contains only one simple scan. I confirm it with a trace showing repeated transformation work, then build an ID-to-product index once in a ViewModel or repository and pass ready row models into the UI. That trades O(n) memory for expected O(n) preparation and cheap per-row access. I ensure the index is rebuilt when the source changes; caching a mutable map without observable state can trade jank for stale content. I also distinguish algorithmic work from layout, image decoding and recomposition cost—pre-indexing will not fix oversized images or unstable keys. I test correctness for missing IDs, duplicates and updates, then measure frame timing on a low-end device in a release build. The goal is a stable user interaction, not merely a better complexity label.”
+
+## How to answer in the interview
+
+- **Why:** per-row scans multiply work.
+- **How:** precompute ID index and profile.
+- **Trade-off:** map memory versus repeated CPU.
+- **Failure case:** optimization breaks observable state.
+- **Production solution:** benchmark scroll on low-end device.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for hidden find, one-time index, snapshot invalidation, rendering versus 
 
 ## Self-check rubric
 
-Can you derive the bound, explain the Android example, identify a trade-off/failure, and answer both follow-ups?
+Find the repeated scan or map lookup inside a list bind/composition path, derive O(n²), pre-index once, and measure both algorithm time and UI frame cost after the change.
 
 ## References and reviewed-on date
 
 - [Kotlin associateBy](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.collections/associate-by.html) — index construction.
 - [Android rendering performance](https://developer.android.com/topic/performance/rendering) — frame diagnosis.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

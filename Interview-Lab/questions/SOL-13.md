@@ -32,6 +32,10 @@ Abstraction is a trade-off. It can decouple change and enable substitution, but 
 
 Example: `PriceFormatter(locale)` has one deterministic implementation and can be tested directly. `PaymentGateway` has two SDK adapters and a policy consumer, so an interface has a clear role. Hilt can inject either a concrete formatter or a bound gateway interface.
 
+## Practical walkthrough
+
+لو `PriceFormatter` deterministic وله implementation واحد، interface بنفس الاسم وclass `Impl` مش هتضيف boundary مفيد؛ هتزود ملفات وnavigation بس. اختبر formatter مباشرة. أما `PaymentGateway` له SDKين أو external side effect وpolicy لازم تفضل مستقلة عنه؛ هنا interface صغير منطقي. اسأل قبل abstraction: مين المستهلك؟ ما هي variation المتوقعة؟ هل fake مطلوب لعزل I/O فعلي؟ واعمل refactor لما تظهر إجابة حقيقية. اختبار class concrete مش عيب، وHilt يقدر يبنيها مباشرة؛ annotations مش سبب كافي لإنشاء interface.
+
 ## Trade-offs and decision criteria
 
 Premature abstraction can be revised later after a second implementation appears. Conversely, delaying a boundary when policy imports a volatile SDK can make testing and change costly. Use evidence from change patterns.
@@ -50,11 +54,19 @@ An interface per class adds indirection and maintenance without necessarily isol
 
 ## Interview answer — structured
 
-A one-to-one interface and implementation often change together, so the interface may not be protecting anything. It adds navigation, bindings and fake boilerplate. For a pure formatter, I can inject and test the concrete class directly. For a payment gateway or domain-facing repository, a narrow contract may isolate a volatile adapter or support multiple providers. I decide from the consumer and change boundary, not from a rule that every class must have a mockable interface. A warning sign is when each small feature change edits both the interface and its only implementation, then updates a binding module and several mocks. That is usually not independent variation. I would collapse it until a real consumer boundary appears.
+A one-to-one interface and implementation often change together, so the interface may not be protecting anything. It adds navigation, bindings and fake boilerplate. For a pure formatter, I can inject and test the concrete class directly. For a payment gateway or domain-facing repository, a narrow contract may isolate a volatile adapter or support multiple providers. I decide from the consumer and change boundary, not from a rule that every class must have a mockable interface. A warning sign is when each small feature change edits both the interface and its only implementation, then updates a binding module and several mocks. That is usually not independent variation.
 
 ## Interview answer — deep senior
 
-The cost of an abstraction is paid on every read and every refactor. If `Thing` and `ThingImpl` have identical APIs and no independent consumers or implementations, the pair may make a small feature harder to understand. It can even freeze a poor interface too early. I prefer to keep a pure helper concrete and test its behavior directly. When a high-level policy would otherwise import Retrofit or a vendor SDK, a consumer-oriented contract has a real job; provider strategies also justify one. I inspect module dependencies and signature types, because an interface returning `Response<Dto>` does not decouple business policy. Hilt can inject concrete classes, so DI framework use is not a reason to multiply interfaces. Tests also inform the choice. A pure class with injected primitive collaborators can be instantiated without a fake interface. A repository boundary consumed by several features may need a contract so tests can provide deterministic data and infrastructure can change independently. But mocking every internal helper can make tests brittle to refactoring rather than protective of behavior. I prefer fakes at meaningful seams, concrete classes within a feature, and a periodic audit of one-to-one pairs. The objective is readable change, not maximum theoretical replaceability.
+The cost of an abstraction is paid on every read and every refactor. If `Thing` and `ThingImpl` have identical APIs and no independent consumers or implementations, the pair may make a small feature harder to understand. It can even freeze a poor interface too early. I prefer to keep a pure helper concrete and test its behavior directly. When a high-level policy would otherwise import Retrofit or a vendor SDK, a consumer-oriented contract has a real job; provider strategies also justify one. I inspect module dependencies and signature types, because an interface returning `Response<Dto>` does not decouple business policy. Hilt can inject concrete classes, so DI framework use is not a reason to multiply interfaces. I judge an interface by the boundary it protects, not by a class-count rule. A pure price formatter with one implementation can be constructed and tested directly. A payment gateway facing several SDKs and an I/O boundary benefits from a stable, consumer-shaped contract. One-to-one interfaces introduce navigation cost, binding modules, and the illusion of flexibility while the implementation and interface still change together. I would ask which independent change or test needs substitution. If there is no answer, keep the concrete type and refactor when variation becomes real. If the answer is provider selection, define failure and cancellation semantics before creating the abstraction.
+
+## How to answer in the interview
+
+- **Why:** Use formatter versus gateway.
+- **How:** state change-boundary test.
+- **Trade-offs:** discuss extra files.
+- **Failure cases:** flag interface/implementation lockstep.
+- **Production solutions:** finish with delayed, contract-driven abstraction..
 
 ## Deep-dive talking points
 
@@ -74,4 +86,4 @@ Choose a formatter and a payment gateway; justify which one needs an interface a
 - [Android architecture recommendations](https://developer.android.com/topic/architecture/recommendations) — adaptable design guidance.
 - [Android dependency injection](https://developer.android.com/training/dependency-injection) — constructor injection without mandatory interfaces.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

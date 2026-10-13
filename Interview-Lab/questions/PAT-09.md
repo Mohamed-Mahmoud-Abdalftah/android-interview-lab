@@ -32,6 +32,10 @@ Strategy encapsulates interchangeable policies; State encapsulates behavior that
 
 Conceptual example: `PaymentStrategy.submit()` has card/wallet implementations. `CheckoutState` sealed cases determine whether Submit is legal and how timeout is represented. A reducer updates state; a selected strategy performs the provider request.
 
+## Practical walkthrough
+
+Strategy بتجاوب “هننفّذ العملية بإيه؟” مثل CardStrategy أو WalletStrategy على نفس submit contract. State بتجاوب “احنا فين دلوقتي وإيه legal next event؟” مثل Idle→Submitting→PendingVerification→Confirmed. تبديل strategy ما يغيّرش state machine تلقائيًا؛ كل provider لازم يرجّع outcomes تتترجم للحالات نفسها. لو حطيت `isLoading`, `isSuccess`, `isFailed` booleans، ممكن كلهم يبقوا true بالخطأ؛ sealed State مع transition function أوضح. Strategy واحدة ممكن تكون lambda بسيطة لو الاختيار قليل؛ class hierarchy لو behavior/lifecycle مختلف فعلًا.
+
 ## Trade-offs and decision criteria
 
 An explicit `when` can be simpler than either pattern for a few stable cases. A State pattern or reducer helps when transitions multiply. Strategy helps when independently replaceable algorithms exist. Avoid provider selection logic scattered through state classes.
@@ -56,6 +60,16 @@ I use Strategy when multiple implementations of one operation should be intercha
 
 The distinguishing question is who selects the behavior and why. A Strategy is often supplied by configuration, DI or a router to perform one operation; it can usually be changed without implying an internal transition. State is tied to the object’s history and legal transitions. A checkout in `Submitting` rejects duplicate taps, while `PendingVerification` waits for server status after a timeout. One of several payment strategies may execute the request from that state. I test strategies for common outcome semantics and the state machine for transition legality, process-death restoration and late responses. If the flow has only two cases, a clear conditional may be easier than a hierarchy.
 
+I use Strategy for interchangeable behavior and State for lifecycle-specific behavior or transition rules. Card and wallet providers may implement one submit contract, so a router selects the strategy at request time. The checkout state then moves through Idle, Submitting, PendingVerification, and a terminal result according to events. Those are separate axes: choosing a provider does not by itself make a transition legal, and a timeout from either provider should map to uncertain status rather than Failed. I would use a sealed state plus a tested reducer to reject invalid events, and use a simple function for the strategy if a full class hierarchy buys nothing. The failure is scattering booleans and provider conditionals through UI.
+
+## How to answer in the interview
+
+- **Why:** Behavior variation and current workflow phase are different axes.
+- **How:** Card/Wallet Strategy feeds one sealed checkout State reducer.
+- **Trade-off:** Lambda strategy may suffice; state transitions still need tests.
+- **Failure case:** Impossible boolean combinations or timeout mapped to definite failure.
+- **Production solution:** Test provider outcomes against one legal transition table.
+
 ## Deep-dive talking points
 
 Draw two axes—provider choice and checkout lifecycle—and test each independently.
@@ -74,4 +88,4 @@ State who selects Strategy, what changes State, and model a timeout without decl
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — original Strategy and State patterns.
 - [Android UI state guidance](https://developer.android.com/topic/architecture/ui-layer/stateholders) — screen state modeling.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

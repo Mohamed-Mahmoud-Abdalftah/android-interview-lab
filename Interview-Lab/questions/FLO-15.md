@@ -24,6 +24,10 @@ Explain debouncing and equality suppression for search without promising cancell
 
 في search box، `debounce` تستنى فترة هدوء قبل ما تطلع query، فبتقلل requests أثناء الكتابة. `distinctUntilChanged` تمنع نفس query بعد normalization من إعادة الطلب. بعدها `flatMapLatest` يلغي collection القديمة لما query جديدة تجي. لازم نعالج blank query، loading/error لكل query، ونعرف إن cancel قد لا يوقف HTTP call أو server processing بالفعل.
 
+### Practical walkthrough in Egyptian Arabic
+
+في search box، خلي TextField تعرض الحروف فورًا، وبعدها `debounce` على query Flow عشان تقلل API calls؛ `distinctUntilChanged` تمنع نفس query تتبعت مرتين متتاليتين. ترتيب operators مهم حسب هل trim/normalization قبل distinct. `debounce` ممكن ما تصدرش أي intermediate لو المستخدم يكتب باستمرار؛ لا تستخدمها لحدث لازم يتسجل كله.
+
 ## Why it matters and how it works
 
 Order matters: trim/normalize before distinct, debounce before expensive search, then switch latest. Debounce uses time and may delay perceived responsiveness; immediate local suggestions can be separate. `distinctUntilChanged` compares adjacent values, not a cache of all past queries.
@@ -33,8 +37,11 @@ Order matters: trim/normalize before distinct, debounce before expensive search,
 JVM/Android-compatible snippet with Flow input and cancellable repository search Flow; coroutines-core is required.
 
 ```kotlin
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 
+@OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 fun searchResults(
     typed: Flow<String>,
     search: (String) -> Flow<List<String>>,
@@ -67,7 +74,15 @@ A catalog ViewModel holds query state, applies the pipeline, exposes StateFlow o
 
 ## Interview answer — deep senior
 
-“A robust search pipeline begins with semantics: an empty query may show suggestions, normalization defines equivalence, and a late response must never overwrite a newer query. I trim or normalize before equality comparison, debounce only the remote path, and use `flatMapLatest` for stale-result cancellation. The old HTTP request may already be on the wire, so I also associate results with query generation and ensure stale data is ignored. I expose a single state stream from the ViewModel to avoid duplicate cold collections, measure request count and perceived latency, and test rapid typing, backspacing, identical queries, errors and cancellation with virtual time and controlled responses.”
+“A robust search pipeline begins with semantics: an empty query may show suggestions, normalization defines equivalence, and a late response must never overwrite a newer query. I trim or normalize before equality comparison, debounce only the remote path, and use `flatMapLatest` for stale-result cancellation. The old HTTP request may already be on the wire, so I also associate results with query generation and ensure stale data is ignored. I expose a single state stream from the ViewModel to avoid duplicate cold collections, measure request count and perceived latency, and test rapid typing, backspacing, identical queries, errors and cancellation with virtual time and controlled responses. I would keep local text echo immediate and debounce only the network-facing query stream. `debounce` waits for a quiet interval before forwarding a value, so it reduces request volume while the user types; `distinctUntilChanged` suppresses consecutive equal normalized queries. I decide whether trim and case normalization happen before equality, because that changes what counts as duplicate. Then I use `flatMapLatest` for the request so an old response does not replace a newer query. Debounce introduces latency, which is a product trade-off; a short interval needs testing with real typing behavior and accessibility input. I would test rapid `a`, `ab`, pause, then a repeated `ab`, and verify request count and final UI state.”
+
+## How to answer in the interview
+
+- **Why:** search requests should follow stable intent without slowing text entry.
+- **How:** immediate field, normalize, debounce, distinct, latest request.
+- **Trade-off:** fewer calls versus result latency.
+- **Failure case:** debouncing the field or letting old results win.
+- **Production solution:** test request count and rapid typing.
 
 ## Deep-dive talking points
 

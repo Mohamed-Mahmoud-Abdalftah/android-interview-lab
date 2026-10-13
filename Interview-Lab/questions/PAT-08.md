@@ -32,6 +32,10 @@ Android APIs often embody pattern intent but add lifecycle and process constrain
 
 Scenario: `object CurrencyFormatter` is stateless; `LegacyLocationAdapter` converts callback results; `ProfileViewModel.state: StateFlow<ProfileUiState>` is collected by a lifecycle-aware screen. The formatter is not a session store, and the state stream is not a payment event queue.
 
+## Practical walkthrough
+
+في Android app، Singleton قد يكون app-scoped OkHttp client أو stateless formatter؛ ما يمسكش Activity. Adapter ينفع مع legacy location SDK callback وتحويله لـsuspend/Flow contract مع cancellation/unregister. Observer في ViewModel `StateFlow` يخلي UI تراقب state، لكن collection لازم تتربط بـlifecycle (`repeatOnLifecycle` أو Compose lifecycle-aware API). لو callbackFlow اتفتح لكل collector بدون قصد، ممكن تسجل listeners كتير؛ حدد sharing/ownership. بعد process death singleton تتولد من جديد، فdata المهمة ترجع من repository. ده ربط patterns بplatform lifetimes بدل أسماء محفوظة.
+
 ## Trade-offs and decision criteria
 
 Using framework APIs can reduce custom pattern boilerplate. A hand-written singleton or observer registry may add leaks and concurrency hazards. Choose existing lifecycle-aware tools when they fit; still test delivery semantics.
@@ -56,6 +60,16 @@ A Kotlin `object` or Hilt singleton can hold one in-process instance, but it sho
 
 In a production Android app, the three patterns often appear in one path. A data repository may be application-scoped for shared access, an adapter translates a vendor callback and normalizes errors, and a ViewModel exposes state observed by the screen. Each boundary has different lifetime. A singleton-like object is only one per process or DI graph, so it cannot be the sole store for a login session. A callback adapter must unregister or cancel with its owner, and UI observers should stop with the lifecycle. LiveData supplies lifecycle-aware observation; Flow/StateFlow need explicit collection strategy. I test rotation, process recreation, duplicate callbacks and stale results, rather than relying on GoF labels to imply those guarantees.
 
+I would point to three different Android boundaries. A reusable OkHttp client may be application-scoped for connection pooling, while a stateless formatter can simply be an `object`; neither should retain an Activity. An Adapter can convert a legacy location listener into a domain event API and unregister it when its owner stops or the Flow closes. Observer appears when the ViewModel exposes StateFlow and the UI collects it with lifecycle awareness. The risks are hidden: a per-collector callbackFlow may register duplicate listeners, a global singleton can hold stale account state, and an observer may keep rendering into a destroyed view. I would test rotation, cancellation, and process recreation for each.
+
+## How to answer in the interview
+
+- **Why:** Pattern use must match Android lifetime and ownership.
+- **How:** Map scoped client, callback adapter and StateFlow observer to three boundaries.
+- **Trade-off:** Share listeners deliberately; avoid global state for session data.
+- **Failure case:** Leaked Activity, duplicate callback registration or stale view collector.
+- **Production solution:** Rotation/process-recreation tests plus explicit listener cleanup.
+
 ## Deep-dive talking points
 
 Map object scope, SDK adaptation and observation; distinguish LiveData/Flow lifecycle behavior.
@@ -74,4 +88,4 @@ Give one Android example of each pattern and one lifecycle failure for Singleton
 - [Kotlin object declarations](https://kotlinlang.org/docs/object-declarations.html) — object lifetime syntax.
 - [Android LiveData overview](https://developer.android.com/topic/libraries/architecture/livedata) — observer behavior.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

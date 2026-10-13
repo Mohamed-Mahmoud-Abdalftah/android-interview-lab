@@ -24,6 +24,10 @@ Design cache/server synchronization with a source of truth, stale policy, confli
 
 Data layer تقرر مين المصدر اللي UI تراقبه. في offline-first app، Room غالبًا local SSOT: repository تعرض Flow من DAO، والnetwork refresh يكتب في Room transaction؛ UI ما تعرضش raw response بشكل منفصل. لازم تعرف freshness، invalidation، conflict resolution، وretry. لو server عنده authority زي balance، cache للعرض فقط وما تعتبرش optimistic local change نهائي. كمان تعامل مع concurrent refreshes عشان response قديم ما يكتبش فوق أحدث data؛ استخدم version/timestamp policy موثوقة أو serialize updates.
 
+### Practical walkthrough in Egyptian Arabic
+
+Offline-first screen تقرأ Room Flow وتنفذ network refresh في repository، ثم transaction تكتب canonical data؛ UI لا تدمج قائمتين بنفسها. لو user edit pending، refresh لا يمسحه؛ conflict policy تحدد merge. Payment state backend authoritative، وlocal cache projection لا تقول Approved دون receipt. اختبر network loss، concurrent edits، stale responses وrecreation.
+
 ## Why it matters and how it works
 
 A repository coordinates local and remote sources and gives consumers one observation contract. Offline-first guidance favors a local source of truth. Sync must define write order, staleness, conflict handling and failure behavior.
@@ -55,6 +59,14 @@ I expose one observable data path, often Room Flow, and make refresh update that
 ## Interview answer — deep senior
 
 The design begins with data authority and offline requirements. If a local database is the app’s observable SSOT, all UI reads go through it and remote updates are validated and committed atomically. The repository owns invalidation, freshness metadata, retries and conflict policy. I test a late older response, partial page failure, offline restart, and process death during sync. Simply writing the last response to arrive can regress state, so I use server versions or ordered reconciliation where available. I keep useful cached content on refresh failure and signal staleness to UI. For sensitive facts, such as account balance, server authority remains explicit even when Room is the local render source. The goal is consistent observation, not an illusion of always-fresh data. The hard cases are ordering and conflict. An old response can arrive after a newer one; device wall-clock timestamps can be unreliable; queued edits can be rejected by the server. I define version or sequence rules with the backend where possible, serialize writes when needed, and test partial failures transactionally. A refresh should not clear the cache before replacement succeeds. The repository should expose enough metadata for UI to communicate freshness without forcing every screen to understand network mechanics.
+
+## How to answer in the interview
+
+- **Why:** cache/server races cause stale or lost data.
+- **How:** define authority, write path and merge.
+- **Trade-off:** offline speed versus consistency complexity.
+- **Failure case:** refresh overwrites pending mutation.
+- **Production solution:** transactional projection and conflict tests.
 
 ## Deep-dive talking points
 

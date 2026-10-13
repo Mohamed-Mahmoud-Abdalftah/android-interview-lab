@@ -24,6 +24,10 @@ Contain accidental activation of broken security-sensitive feature flag.
 
 لو flag فتحت path أمنية مكسورة، نوقف server endpoint/authorization path فورًا؛ client flag وحدها لا تكفي لأن APK ممكن تكون offline أو tampered أو config cached. نجمّد rollout، نحدد cohorts/versions المتأثرة، نراجع logs من غير أسرار، ونصلح/نلغي sessions أو tokens حسب التهديد. العمليات الجارية تتحول لحالة Pending/reconciliation، ثم نعمل postmortem واختبارات regression.
 
+## Practical walkthrough
+
+Flag فتحت transfer flow ناقصة authorization. أول إجراء server-side deny للendpoint أو rule، لأن الـAPK قد تكون offline وremote config متأخرة. بعد كده اقفل client UX، وقف rollout، حدد versions/cohorts، وراجع عمليات جارية وtokens لو اتعرضت. لا تمسح audit trail. اعمل incident runbook وتمرين rollback؛ التصليح code مش كفاية لو بيانات اتأثرت بالفعل.
+
 ## Why it matters and how it works
 
 Incident sequence: server-side deny/kill, client disable, assess exposure and revoke credentials if needed, preserve evidence, notify according to policy, patch and staged re-enable. Use safe default and short TTL for future flags, but never let a flag grant backend privilege. Version skew means older clients need server enforcement.
@@ -61,7 +65,15 @@ A fintech team blocks a vulnerable transfer endpoint, halts rollout, identifies 
 
 ## Interview answer — deep senior
 
-“The first minutes are about containing server effects, because remote config cannot reach every offline APK and the client is not trusted. I apply a server-side deny rule or feature kill switch, stop new vulnerable operations and retain audit records. I then disable client UX, inspect impacted versions/cohorts and reconcile any transaction already accepted. Depending on exposure, I revoke sessions/keys and coordinate support/legal response. I do not erase Pending records or misclassify outcomes. Root cause may be unsafe default, stale config TTL, missing backend check or rollout guardrail failure; tests must reproduce it. Re-enable occurs only after backend authorization tests, patched client rollout and metrics show recovery. Deleting logs prematurely loses incident evidence. Re-enabling without regression tests repeats incident.”
+“The first minutes are about containing server effects, because remote config cannot reach every offline APK and the client is not trusted. I apply a server-side deny rule or feature kill switch, stop new vulnerable operations and retain audit records. I then disable client UX, inspect impacted versions/cohorts and reconcile any transaction already accepted. Depending on exposure, I revoke sessions/keys and coordinate support/legal response. I do not erase Pending records or misclassify outcomes. Root cause may be unsafe default, stale config TTL, missing backend check or rollout guardrail failure; tests must reproduce it. Re-enable occurs only after backend authorization tests, patched client rollout and metrics show recovery. Deleting logs prematurely loses incident evidence. Re-enabling without regression tests repeats incident. The first decision is whether the vulnerable server action can still execute. If yes, a client-side flag flip is too slow and untrusted; I apply a server deny rule or safe enforcement path. Then I freeze rollout, scope affected versions and cohorts, inspect logs without exposing secrets, and reconcile any in-flight operations. A fixed client can ship later under a canary. I would document who can activate and revert the server switch, and test that older cached APKs cannot bypass it.”
+
+## How to answer in the interview
+
+- **Why:** security containment cannot rely on cached client config.
+- **How:** stop server effects first, then disable UI and scope affected operations.
+- **Trade-off:** deny rule may block legitimate transfers temporarily.
+- **Failure case:** only flipping a client flag leaves old APKs exposed.
+- **Production solution:** audited incident response, reconciliation, and staged fixed rollout.
 
 ## Deep-dive talking points
 
@@ -81,4 +93,4 @@ Can I contain at server, preserve evidence and handle in-flight operations hones
 - [Android security guidance](https://developer.android.com/privacy-and-security/security-tips) — client-side security considerations.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — authority boundaries.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

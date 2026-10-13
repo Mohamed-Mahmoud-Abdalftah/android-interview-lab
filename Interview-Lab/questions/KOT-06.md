@@ -44,6 +44,10 @@ fun label(state: LoadState): String = when (state) {
 }
 ```
 
+## Practical walkthrough
+
+في `LoadState`، `Ready(items)` محتاجة payload مختلف عن `Failed(cause)`؛ sealed hierarchy تضمن إن `when` على الحالات المعروفة يغطيهم. `enum` أنسب لو مجرد مجموعة constants ثابتة زي sort mode، حتى لو enum عندها properties مشتركة، إنما مش payload فريد لكل occurrence. `abstract class` تقدر تسمح extension مفتوح لو ده مقصود؛ sealed بتقيّد direct subclasses حسب قواعد Kotlin. `sealed interface` مفيدة لو case لازم تطبق أكتر من contract، لكن لو public library بتتطور كتير، إضافة case جديدة ممكن تكسر exhaustive consumers عند إعادة الترجمة.
+
 ## Trade-offs and decision criteria
 
 Choose enum for fixed, uniform constants such as sort direction. Choose sealed types for case-specific data and exhaustive branching. Use abstract class or interface if consumers must add implementations. Serialization and cross-module API evolution need care when adding a new sealed case.
@@ -58,15 +62,25 @@ A checkout ViewModel exposes `CheckoutState` as sealed cases. Rendering handles 
 
 ## Interview answer — short
 
-Enums are fixed constants; sealed classes and interfaces define a closed set of subtypes with different payloads; abstract classes are extensible. I use a sealed hierarchy when the compiler should force every state to be handled.
+I use an enum for a fixed set of constant choices, and a sealed hierarchy when each case can carry different data. A sealed `when` can be exhaustive. An abstract class is useful when extension is intentionally open, while a sealed interface can combine contracts.
 
 ## Interview answer — structured
 
-If cases are uniform constants, an enum is simplest. If `Success` has a receipt and `Failure` has an error, a sealed hierarchy models those payloads without nullable fields. A sealed interface supports multiple inheritance patterns, while a sealed class can share constructor state. `when` over a closed hierarchy can be exhaustive. An abstract class is appropriate when I intentionally allow external implementations. If the state is just `ASCENDING` or `DESCENDING`, an enum is easy to read. If `Ready` needs items and `Failed` needs a cause, separate sealed cases ensure each payload is present only where it belongs. `when` can then force callers to handle a newly added case. I would choose an open abstract type only when plugin authors or other modules are supposed to provide new implementations.
+The design test is whether cases have different payloads and whether the set should be closed. A UI load result has Loading, Ready with data, and Failed with an error, so a sealed type models legal shapes and enables exhaustive handling. A sort order with fixed constants is simpler as an enum. A plain abstract class is appropriate when third parties should add implementations; a sealed class can share constructor state, while a sealed interface supports multiple interface inheritance. In production I consider API evolution: introducing another sealed case obliges consumers with exhaustive `when` expressions to handle it when they recompile.
 
 ## Interview answer — deep senior
 
-The design question is whether the set of cases is closed and whether each case has a distinct payload. Sealed types make state transitions and rendering explicit, but adding a case can break exhaustive consumers, which is often desirable inside an app and more delicate in a public library. Enums are efficient and discoverable for fixed constants, but bolting payloads onto one enum often creates invalid states. Abstract classes permit extension and shared implementation, at the cost of weaker exhaustiveness. I choose based on API evolution as well as syntax. A sealed class or interface lets me encode a finite state space. The compiler can check an exhaustive `when`, so adding `PendingVerification` to a checkout flow exposes all places that need a decision. Enums are excellent for uniform constants and can themselves hold properties, but they do not give each case a separate subtype with distinct constructor data. An abstract class is intentionally open to more subclasses and therefore offers a different evolution contract. In production I would also consider serialization: persisted values need stable wire codes and migration, not assumptions about Kotlin class names. Closedness helps local correctness, but it does not replace server authority or transition tests.
+The design question is whether the set of cases is closed and whether each case has a distinct payload. Sealed types make state transitions and rendering explicit, but adding a case can break exhaustive consumers, which is often desirable inside an app and more delicate in a public library. Enums are efficient and discoverable for fixed constants, but bolting payloads onto one enum often creates invalid states. Abstract classes permit extension and shared implementation, at the cost of weaker exhaustiveness. I choose based on API evolution as well as syntax.
+
+Consider a search result: Loading has no data, Ready has a list, and Failed has a reason. A sealed hierarchy avoids a single record with nullable `items` and `error` that allows contradictory combinations. It does not, however, enforce that Ready can only follow Loading; transition rules belong in a reducer or coordinator. If this is a public library, adding a new sealed case requires consumers to update exhaustive `when` logic, which is a compatibility decision. For a simple fixed filter option, I would choose an enum and avoid the extra hierarchy.
+
+## How to answer in the interview
+
+- **Why:** Model domain and UI state machines with exhaustive compile-time verification.
+- **How:** Use `enum` for simple constants without state payloads, and `sealed class` / `sealed interface` when states require heterogeneous parameters.
+- **Trade-offs:** Adding branches to a public sealed hierarchy in an exported library breaks consumer `when` statements unless managed carefully.
+- **Failure cases:** Leaving an `else` branch in a UI state `when` block, which masks newly added states and causes unhandled UI rendering bugs.
+- **Production solution:** Enforce exhaustive `when` expressions without `else` for UI/payment state machines, and model network errors as explicit sealed subtypes with retry metadata.
 
 ## Deep-dive talking points
 
@@ -86,4 +100,4 @@ Give one enum use case and one sealed use case; explain payload advantage, exhau
 - [Kotlin sealed classes and interfaces](https://kotlinlang.org/docs/sealed-classes.html) — restricted hierarchies and exhaustive `when`.
 - [Kotlin enum classes](https://kotlinlang.org/docs/enum-classes.html) — enum constants and behavior.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.

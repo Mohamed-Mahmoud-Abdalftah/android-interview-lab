@@ -25,6 +25,10 @@ What is the Android application sandbox and permission model?
 
 كل app غالبًا ليه Linux UID مستقل؛ الـsandbox بيعزل ملفاتها وعملياتها عن apps تانية. الوصول للكاميرا أو الموقع بيمرّ من permission model ومن system service، وبعض الصلاحيات لازم موافقة runtime. العزل مش معناه إن كل بيانات جوّه app آمنة لو الجهاز rooted، ولا إن exported component آمن تلقائيًا. الـbackend يظل صاحب قرار authorization.
 
+## Practical walkthrough
+
+مثال: شاشة رفع إيصال تستخدم Photo Picker بدل طلب صلاحية قراءة كل الصور. ده يقلل مساحة الوصول، لكن الـURI اللي رجع من picker لازم تتعامل معاه على إنه input غير موثوق وتتحقق من الحجم والنوع قبل الرفع. ولو عندك `ContentProvider` exported، الـsandbox مش هيمنع app تانية من استدعائه؛ لازم تصاريح وauthorization على كل مسار.
+
 ## Why it matters and how it works
 
 Android assigns an app identity and enforces file/process isolation through the kernel and framework. A manifest declaration states a requested capability; dangerous permissions also need runtime grant on supported versions. A system service checks the caller identity. Content providers, intents, URI grants, and shared storage create deliberate crossings of that boundary.
@@ -51,10 +55,20 @@ For a fintech app, keep customer data in app-private storage, request only neces
 
 ## Interview answer — structured
 
-“The sandbox starts with an app UID, private storage, and Binder caller identity. Manifest permissions describe requested capabilities, while dangerous permissions require runtime consent. I prefer scoped APIs such as a system picker, check permission again before use, and handle revocation. Exported components and URI grants intentionally cross the sandbox and need review. A platform permission is not backend authorization. In practice I review the merged manifest for exported components and SDK-added permissions, then exercise a denied-permission path. A photo picker can avoid broad storage access for a single image. If a deep link or provider opens an entry point, I validate the caller and request data separately from any platform grant.”
+“Android gives each app a UID and private storage, while permissions gate access to platform capabilities. I prefer scoped APIs such as Photo Picker, request dangerous permissions only when needed, and handle denial or revocation. The boundary changes when I export a component or grant a URI, so I inspect the merged manifest and test untrusted intents. A permission to use the camera does not authorize a transfer or another customer's data; the backend checks account ownership separately.”
+
 ## Interview answer — deep senior
 
-“I model the sandbox as a default isolation layer rather than a universal trust guarantee. The framework can enforce access to camera or location, but exported activities, providers, PendingIntents, and shared files add new attack surfaces. I audit the merged manifest and third-party SDK permissions, test denial/revocation paths, and apply least privilege. Rooted devices can weaken local assumptions. The backend independently authenticates the user and checks ownership for every sensitive operation; a client permission or local flag never grants financial authority. For a banking app I map every boundary the sandbox intentionally crosses: Binder calls, URI grants, exported activities and shared files. A runtime camera grant allows a platform operation; it does not authorize a transfer or disclose another customer’s record. I would use an app-private database for local cache, inspect any backup/transfer path, and require the backend to check the authenticated account on each request. Permission state can change after onboarding, so feature code checks at use time and degrades gracefully on denial. Tests send malformed intents, revoke permissions while the app is backgrounded and attempt unauthorized server requests. That gives evidence about the specific boundaries while acknowledging a rooted device can weaken local isolation.”
+“I start by identifying the boundary. The Android UID and framework permission checks protect private files and platform capabilities, but an exported component or URI grant deliberately crosses that boundary. For a receipt upload I would prefer Photo Picker, validate the selected content, and handle a revoked grant. I would inspect the merged manifest, including SDK-added exports, and test malformed intents. None of that authorizes a financial action: the backend still checks the signed-in user and ownership of the requested record. On a rooted device I assume local isolation can be weakened, so I keep the client’s authority narrow. For verification, I would revoke media access after selection, attempt an exported-provider read from another app, and send a deep link with an unexpected account ID. Those tests show whether the client handles platform grants safely; a separate API test proves the server rejects cross-account access. I would document the exact supported Android versions because permission and picker behavior can differ, while keeping the backend invariant constant.”
+
+## How to answer in the interview
+
+- **Why:** sandbox boundaries reduce accidental cross-app access.
+- **How:** trace UID, permission check, URI grant, and exported component.
+- **Trade-off:** a scoped picker reduces access but adds URI handling.
+- **Failure case:** an exported provider leaks private rows.
+- **Production solution:** audit merged manifest and enforce server ownership on every request.
+
 ## Deep-dive talking points
 
 Trace one cross-UID data path through a provider or URI grant; distinguish platform permission checks from account authorization at the backend.
@@ -73,4 +87,4 @@ Can I explain UID isolation, runtime permission denial, a cross-app entry point,
 - [Android app sandbox](https://source.android.com/docs/security/app-sandbox) — UID-based isolation.
 - [Android permissions overview](https://developer.android.com/guide/topics/permissions/overview) — declarations and runtime access.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

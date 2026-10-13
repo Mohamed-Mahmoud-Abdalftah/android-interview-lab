@@ -34,6 +34,10 @@ A singleton remains reachable for the app process. Any Activity stored in it rem
 
 A disk cache factory accepts an Application Context, immediately derives `cacheDir`, and retains only a `File` handle and its own bounded cache state. A screen-specific image loader call receives the current view target for one request and cancels it when the view ends. If the cache only needs `cacheDir`, inject that directory instead of retaining Context at all. This design example deliberately avoids a broad singleton field of type `Activity` or `View`.
 
+## Practical walkthrough
+
+لو singleton محتاج `Context` بس عشان `cacheDir`, الأفضل factory تستخرج `File` وتديها للcache؛ كده singleton ما يمسكش Context أصلًا. لو API تانية فعلًا محتاجة Context طول process، `applicationContext` مناسب بشرط ما تكونش window/themed UI capability. لا تدي singleton Activity أو View أو Dialog، لأن rotation/finish يسيبهم referenced. اطلب dependencies أضيق زي `Resources`؟ خليك حذر إن resources configuration ممكن تتغير؛ ما تحفظش themed object قديم. راجع constructor scope في DI، اعمل heap leak test، وخلي screen-specific target request له cancellation مع view lifecycle.
+
 ## Trade-offs and decision criteria
 
 Application Context is a sensible default for truly process-scoped Android services, but a narrow `File` or `StorageGateway` is easier to test and reduces accidental capability use. Activity Context can be valid inside an Activity-scoped object, not a process singleton. A provider that owns an observer for the app lifetime needs an explicit shutdown policy, even if its Context lifetime is correct.
@@ -52,10 +56,22 @@ For analytics, keep an application-scoped client with an injected transport and 
 
 ## Interview answer — structured
 
-“A singleton outlives Activity recreation, so storing Activity Context keeps the old screen reachable and leaks its view tree. If the singleton needs files or another non-visual Android service, I inject Application Context or the exact service. UI needing a current theme or window stays in Activity scope. I also audit callbacks and caches because using Application Context alone does not prevent leaks, and I test repeated rotation and screen closure with a heap dump. For a process-scoped nonvisual dependency I inject Application Context, but I avoid keeping Activity, Dialog, View or themed Drawable in a singleton. UI work gets the current Activity for the duration of the call. I also unregister listeners and close Cursors; Application Context alone does not make a singleton leak-free.”
+A singleton outlives Activity recreation, so storing Activity Context keeps the old screen reachable and leaks its view tree. If the singleton needs files or another non-visual Android service, I inject Application Context or the exact service. UI needing a current theme or window stays in Activity scope. I also audit callbacks and caches because using Application Context alone does not prevent leaks, and I test repeated rotation and screen closure with a heap dump. For a process-scoped nonvisual dependency I inject Application Context, but I avoid keeping Activity, Dialog, View or themed Drawable in a singleton.
+
 ## Interview answer — deep senior
 
-“I treat the Context request as a dependency-design smell until I know the capability. A process singleton needing app-private storage can receive a directory or an Application Context; an SDK UI operation requiring Activity stays a short-lived presentation call. I never promote an Activity, Fragment, View, or window-themed resource into process scope. I audit any receiver, observer, Cursor, or callback registered by the singleton and define unregister or process-lifetime behavior explicitly. After rotation and locale/night-mode changes, I inspect heap paths for destroyed Activities and verify that cached resources are not tied to an obsolete visual configuration. A singleton stays reachable while its process lives, so any Activity reference it stores prevents that Activity and its view tree from being collected after rotation. Application Context has a compatible lifetime for database, files or process-wide services, but is not the right owner for window-attached UI and may carry the wrong visual configuration. I pass a short-lived Activity through a function boundary when showing a dialog and clear callbacks when its lifecycle ends. I inspect heap dumps for the GC-root path instead of assuming every Context leak has the same cause. I test rotation and dark-mode changes to catch both retention and stale themed resources.”
+I treat the Context request as a dependency-design smell until I know the capability. A process singleton needing app-private storage can receive a directory or an Application Context; an SDK UI operation requiring Activity stays a short-lived presentation call. I never promote an Activity, Fragment, View, or window-themed resource into process scope. I audit any receiver, observer, Cursor, or callback registered by the singleton and define unregister or process-lifetime behavior explicitly. After rotation and locale/night-mode changes, I inspect heap paths for destroyed Activities and verify that cached resources are not tied to an obsolete visual configuration. A singleton stays reachable while its process lives, so any Activity reference it stores prevents that Activity and its view tree from being collected after rotation.
+
+A disk cache constructor that only needs `cacheDir` should accept a `File`, which is simpler to test and cannot retain an Activity by accident. If a platform API requires Context for the lifetime of the process, Application Context is appropriate for a process-scoped singleton. A Dialog or view target still belongs to the current screen; passing Activity Context briefly there is correct, while storing it in the singleton is the leak. I inspect DI scopes and cancellation of screen requests, then use a heap dump or leak test across rotation. The dependency type should reveal the narrow capability required.
+
+## How to answer in the interview
+
+- **Why:** Singleton lifetime can exceed every Activity and view lifetime.
+- **How:** Identify the exact capability: cache directory, service, or themed window UI.
+- **Trade-offs:** Inject a `File` or narrow service before accepting a broad Context dependency.
+- **Failure cases:** Name retained Activity/View and stale themed resources.
+- **Production solution:** Build an application-scoped disk cache with cancellable view requests.
+
 ## Deep-dive talking points
 
 Explain GC-root reachability, process versus screen lifetime, narrow dependency injection, visual resource configuration, listener ownership, and testing leaks under repeated recreation.
@@ -75,4 +91,4 @@ Identify the actual Context capability; show a safe process-scoped dependency; t
 - [Context API reference](https://developer.android.com/reference/android/content/Context) — Context lifetime and visual configuration.
 - [Activity lifecycle](https://developer.android.com/guide/components/activities/activity-lifecycle) — Activity recreation.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The singleton example is architectural and was not instrumented on a device.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The singleton example is architectural and was not instrumented on a device.

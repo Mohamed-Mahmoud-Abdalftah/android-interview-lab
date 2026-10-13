@@ -24,6 +24,10 @@ Explain required initial StateFlow value, readable current state and explicit lo
 
 `MutableStateFlow` لازم تبدأ بـvalue لأن عقدها إن أي collector جديد يقدر يشوف current state فورًا، و`state.value` متاحة بشكل synchronous. لو البيانات لسه ما اتحملتش، نعبّر عن ده بـ`Loading` أو sealed UI state بدل fake empty value ملتبسة. تغيير القيمة يحدّث آخر snapshot، ومافيش completion عادي للـStateFlow.
 
+### Practical walkthrough in Egyptian Arabic
+
+الشاشة لازم تعرف ترسم إيه قبل أول network response؛ عشان كده `MutableStateFlow` تطلب قيمة أولية زي `Loading` أو `Empty`، مش انتظار مبهم. بعد rotation collector جديدة تقرأ آخر قيمة. لو مش عارف الحالة بعد، عرّفها صراحة كـ`Uninitialized`/`Loading` بدل `null` تفسرها كل شاشة بطريقة.
+
 ## Why it matters and how it works
 
 StateFlow replays exactly the latest value to new collectors and suppresses equal updates using equality. `stateIn` likewise requires an initial value in its common non-suspending overload. Use immutable state objects so equality represents a snapshot rather than a mutable object being modified in place.
@@ -69,7 +73,15 @@ A profile ViewModel starts in Loading, moves to Ready or Error, and reconstructs
 
 ## Interview answer — deep senior
 
-“The initial value is a semantic choice. If I pick `emptyList()` merely to satisfy the constructor, a user may see a false empty-state UI before the first query completes. A sealed screen state or a well-defined nullable contract makes loading explicit. StateFlow’s hot instance exists without collectors, its `value` is synchronously readable, and new collectors see the latest snapshot. Equality-based conflation means repeated equal state is suppressed and fast intermediate states may be skipped, which is correct for rendering but wrong for transaction history. Rotation often reuses the ViewModel and its current state; process death reconstructs from saved/durable data, not from the old in-memory flow.”
+“The initial value is a semantic choice. If I pick `emptyList()` merely to satisfy the constructor, a user may see a false empty-state UI before the first query completes. A sealed screen state or a well-defined nullable contract makes loading explicit. StateFlow’s hot instance exists without collectors, its `value` is synchronously readable, and new collectors see the latest snapshot. Equality-based conflation means repeated equal state is suppressed and fast intermediate states may be skipped, which is correct for rendering but wrong for transaction history. Rotation often reuses the ViewModel and its current state; process death reconstructs from saved/durable data, not from the old in-memory flow. I would explain that the initial value is part of the state contract, not an API inconvenience. A new subscriber can synchronously read `.value` and receives the latest state immediately. If data is not loaded yet, the type should express that as Loading or Uninitialized; using a nullable model without semantics pushes ambiguity to every consumer. Once the repository emits Ready, StateFlow replaces the current value and equality suppresses equal repeats. For process death, the ViewModel and its flow are recreated, so the initial value may appear again while authoritative data reloads; the flow itself is not durable storage. I would test first render and rotation separately to verify both experiences.”
+
+## How to answer in the interview
+
+- **Why:** a state holder must always answer what UI should display.
+- **How:** initialize with a meaningful state and replace it from owner results.
+- **Trade-off:** loading model adds a branch but removes null ambiguity.
+- **Failure case:** treating StateFlow as process persistence.
+- **Production solution:** test first frame and reload after recreation.
 
 ## Deep-dive talking points
 

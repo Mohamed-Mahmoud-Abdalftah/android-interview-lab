@@ -24,6 +24,10 @@ Redesign ownership and dependency graph for 20 teams with 25-minute builds based
 
 أولًا نقيس 25 دقيقة: configuration, dependency resolution, Kotlin compile, kapt/KSP, resources, tests ولا network؟ بعدها نرسم module graph وchange impact. نحدد feature ownership وstable API modules صغيرة، نمنع cycles وgiant core، ونستخدم `implementation` بدل `api` لما type مش public. convention plugins/version catalog تقلل اختلاف الإعدادات، وCI يعمل targeted tests مع full gates دوريًا. لا نَعِد بتحسن قبل benchmark.
 
+## Practical walkthrough
+
+25 دقيقة build مش معناها تلقائيًا نعمل modules أكثر. قس configuration وKotlin compile وKSP/resources/tests في clean/no-op/one-feature edit. لو `:core:model` عليها كل features، أي تغيير فيها يسبب fan-out؛ اقسم stable APIs وحدود ownership، وأصلح broad `api` edges. جرّب configuration cache وbuild cache حسب قياس، وقارن median وP95، مش أحسن run واحدة.
+
 ## Why it matters and how it works
 
 Gradle build scans/profile, configuration cache and build cache diagnostics reveal hotspots. A module split can reduce incremental rebuild but increase configuration overhead; public API changes invalidate downstream compile. Team ownership needs contract versioning and app composition root, not just folder names.
@@ -61,7 +65,15 @@ A large retail org assigns feature owners, extracts stable contracts, replaces b
 
 ## Interview answer — deep senior
 
-“A 25-minute build is a measured symptom, not proof that we need more modules. I establish baselines for clean build, no-op build and representative one-feature/model-change builds, plus configuration-cache and task-cache hit rates. A giant core model or `api` edge can fan recompilation across 20 teams; unstable annotation processing can add non-incremental work. I split by ownership and stable contracts, keep common modules small, enforce acyclic dependencies and use app-level DI composition. Convention plugins and version catalogs reduce duplicated Gradle logic, while build cache/configuration cache require compatible deterministic tasks. CI gives fast affected-module tests but preserves full integration/release gates. I report actual before/after minutes and regression thresholds.”
+“A 25-minute build is a symptom, so I would first separate clean build, no-op build, and representative changes in one feature versus a shared model. A build scan can show configuration, KSP or kapt, resource processing, Kotlin compilation and test time. I would map the dependency graph and ask which edges cause a small change to recompile half the app. Then I would align modules with stable feature ownership, expose narrow API modules, keep `:app` as composition root, use `implementation` unless a type is part of a public signature, and prohibit cycles. I would pilot one split and compare median and P95 incremental builds, cache hits and integration-test time before expanding. The organizational side matters too: every public contract needs an owner, review policy and migration window, or teams simply move coupling into shared interfaces. CI can run affected tests quickly while retaining a full release gate. I would set a build-time budget and track regressions, because improving one local command at the expense of flaky integration or longer configuration time is not success.”
+
+## How to answer in the interview
+
+- **Why:** build time is a symptom of dependency and task behavior.
+- **How:** profile representative edits, map fan-out, and assign module owners.
+- **Trade-off:** fine modules may worsen configuration overhead.
+- **Failure case:** splitting files without changing dependency edges.
+- **Production solution:** build dashboards, graph rules, and incremental rollout with measured results.
 
 ## Deep-dive talking points
 
@@ -81,4 +93,4 @@ Can I profile first, shrink fan-out, measure real gains and keep release coverag
 - [Android modularization guide](https://developer.android.com/topic/modularization) — module graph.
 - [Gradle performance](https://docs.gradle.org/current/userguide/performance.html) — profiling/caches.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

@@ -25,6 +25,10 @@ The app release pipeline deploys the wrong flavor. How do you prevent recurrence
 
 لو pipeline نشر wrong flavor، أولًا نوقف rollout ونفهم هل التطبيق اتصل بbackend غلط أو حمل keys/permissions غير مناسبة. بعدين نفحص variant task، artifact metadata، applicationId، signing cert، host وPlay track. الإصلاح مش تغيير اسم job فقط؛ CI لازم تعمل assertion على الـbuilt AAB قبل upload، وتربط target environment بmetadata موثوقة.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو AAB اتوقّع بمفتاح غلط، أوقف promotion واعرف هل upload اترفض أم وصل track وأي مستخدم استلمه. فرّق بين upload key وapp signing key في Play App Signing؛ إجراءات الاسترداد مختلفة ولا ينفع تفترض استبدال مفتاح تطبيق منشور ببساطة. راجع CI secret reference وfingerprint قبل الرفع، اعزل credential الخطأ، ثم ابنِ artifact صحيح بهوية source/version مناسبة حسب حالة الرفع. لازم incident log يحفظ ماذا نُشر فعلًا.
+
 ## Why it matters and how it works
 
 Gradle variant name, source sets and manifest merging determine packaged config. The publish task can be parameterized incorrectly or consume a stale artifact. A pre-upload gate checks the actual output and expected tuple; branch name is not reliable proof of flavor.
@@ -55,7 +59,15 @@ Postmortem records root cause, affected installs, data exposure assessment and g
 
 ## Interview answer — deep senior
 
-“I do not stop at changing the variable that caused this incident. I map the full source-to-release chain: variant matrix, merged manifest, AAB hash, signing identity, upload task and Play target. A test that checks only a build variable can pass while stale output is uploaded, so I inspect the artifact itself and enforce an expected tuple. I add a canary release test that deliberately swaps flavors and must fail. For already installed wrong builds, I use backend controls and a corrected compatible release; Play rollout halt does not uninstall them. If any mismatch, stop.”
+“First I contain the release: stop promotion and establish whether the bundle was rejected, accepted only into an internal track, or reached users. I compare the uploaded certificate fingerprint with the expected upload identity and distinguish it from the app-signing key managed by Play App Signing. Those keys have different roles and recovery procedures, so I follow the store’s current documented flow rather than assuming I can replace a production signing key at will. I inspect the trusted CI job, secret reference and artifact provenance, revoke or rotate a compromised credential if needed, and rebuild from the intended protected commit. I validate package ID, version code and signing fingerprint before another upload, then test install/update on the relevant track. A wrong key may be a configuration mistake or an intrusion signal, so audit logs and access review matter. I preserve evidence of which artifact, if any, users received and communicate a correction plan based on that fact.”
+
+## How to answer in the interview
+
+- **Why:** signing identity controls update trust.
+- **How:** contain upload and compare certificate fingerprints.
+- **Trade-off:** speed versus careful key recovery.
+- **Failure case:** assuming upload and app-signing keys are identical.
+- **Production solution:** verify trusted release job and store state.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for tested/uploaded hash, actual AAB inspection, endpoint tuple, already-
 
 ## Self-check rubric
 
-Can you explain the mechanism, apply the example, justify a trade-off, identify a failure mode, and answer both follow-ups?
+Specify variant identity assertions in build metadata and pre-publish gates; demonstrate how package ID, endpoint and signing certificate would catch the wrong flavor before Play upload.
 
 ## References and reviewed-on date
 
 - [Android build variants](https://developer.android.com/build/build-variants) — variant configuration.
 - [Android App Bundle](https://developer.android.com/guide/app-bundle) — packaged artifact.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

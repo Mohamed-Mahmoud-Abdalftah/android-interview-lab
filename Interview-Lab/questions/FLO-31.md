@@ -24,6 +24,10 @@ Choose SharingStarted using battery cost, freshness and subscriber transitions.
 
 لو upstream sensor/socket غالية، `WhileSubscribed` توقفها بعد آخر UI subscriber وتوفر battery، مع grace قصيرة للrotation. لو لازم cache تبقى دافئة قبل أول شاشة، `Eagerly` قد يناسب مع cost واضح. `Lazily` يبدأ عند أول subscriber لكن يفضل شغال حتى نهاية scope. نختبر restart والفجوة في data، ونحدد replay expiration/session logout بدل إعداد ثابت لكل streams.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو repository Flow بتفتح location updates، `Eagerly` قد تفضل شغالة من غير UI؛ `WhileSubscribed(5_000)` توفر battery بعد خروج الشاشة وتتفادى restart سريع أثناء rotation. لكن لو sync مهمة مالية لازم تكمل حتى UI مخفية، ما تربطش شغلها بعدد subscribers؛ انقلها worker/repository owner. راقب replay expiration لأن cache ممكن ترجع initial value.
+
 ## Why it matters and how it works
 
 `WhileSubscribed(stopTimeoutMillis, replayExpirationMillis)` controls stop and cache reset; stateIn can reset to initial value after replay expiration. A source may need reconnection/authentication on restart. Correctness of a continuous audit feed cannot depend on UI subscribers; run such work in a durable owner instead.
@@ -68,7 +72,15 @@ A live exercise screen uses WhileSubscribed and a 5-second grace to avoid Blueto
 
 ## Interview answer — deep senior
 
-“The start policy is part of architecture, not a styling preference. I list the upstream cost, first-subscriber latency, data-loss tolerance and owner lifetime. `WhileSubscribed` can stop a sensor or socket for battery savings, but restart must recover current state or missed events; a required audit stream cannot be owned only by UI subscriptions. A grace period smooths transient STOP/START during rotation, and replay expiration controls how long old values remain. `Eagerly` is acceptable for cheap state that must be warm; `Lazily` delays first work but continues until scope cancellation. I measure reconnect count, battery cost and stale-data time, and cancel the session scope on logout.”
+“The start policy is part of architecture, not a styling preference. I list the upstream cost, first-subscriber latency, data-loss tolerance and owner lifetime. `WhileSubscribed` can stop a sensor or socket for battery savings, but restart must recover current state or missed events; a required audit stream cannot be owned only by UI subscriptions. A grace period smooths transient STOP/START during rotation, and replay expiration controls how long old values remain. `Eagerly` is acceptable for cheap state that must be warm; `Lazily` delays first work but continues until scope cancellation. I measure reconnect count, battery cost and stale-data time, and cancel the session scope on logout. I would decide ownership before selecting a constant. A screen-bound sensor or expensive Room transformation usually benefits from `WhileSubscribed` with a measured stop timeout, so short navigation or rotation gaps do not thrash the producer while long background periods stop it. `Eagerly` is reasonable when an application-wide source must be warm regardless of observers. `Lazily` waits for the first observer but normally keeps the upstream running for the scope lifetime afterward. I distinguish upstream lifetime from cached value retention: `WhileSubscribed` can also expire replay, affecting what a returning UI first sees. Required business work, such as a payment reversal, must not depend on UI subscriptions at all. I verify collector counts, restart costs, battery use, and the first value after return.”
+
+## How to answer in the interview
+
+- **Why:** subscription policy affects resource use and first-value correctness.
+- **How:** map sensor, warm app source, and durable task to owners.
+- **Trade-off:** battery versus restart latency.
+- **Failure case:** UI subscribers accidentally control required business work.
+- **Production solution:** measure starts, replay expiry, and battery.
 
 ## Deep-dive talking points
 

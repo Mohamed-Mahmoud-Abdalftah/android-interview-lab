@@ -32,6 +32,10 @@ The taxonomy helps choose a starting family: construction, composition/interface
 
 Scenario: SDK needs complex configuration, so Builder creates a client (creational). A wrapper converts its callback to a domain result (Adapter, structural). Checkout chooses card or wallet route (Strategy, behavioral). UI observes repository state (Observer-like behavior).
 
+## Practical walkthrough
+
+فكر في سؤال كل category بتحله بدل حفظ قائمة أسماء. Creational: إزاي تنشئ object مع config valid؟ `Builder` لـclient مع timeout/endpoint check. Structural: إزاي تركّب APIs مختلفة؟ Adapter يحوّل SDK callback لـdomain result. Behavioral: إزاي يتغير سلوك في runtime؟ Strategy تختار provider أو State تحدد انتقال checkout. نفس feature ممكن تحتاج واحدة من كل مجموعة، لكن ما فيش سبب تختار “واحد من كل نوع” كهدف. لو config بسيطة constructor كفاية، ولو callback مطابق للدومين adapter غير ضروري. اختبر invariant اللي pattern بتمثله، مش عدد classes.
+
 ## Trade-offs and decision criteria
 
 Categorization is a navigation aid, not an implementation rule. A factory can hide an SDK while a strategy selects behavior; do not confuse them because both may appear in provider routing. Patterns add indirection if simple language constructs suffice.
@@ -56,6 +60,16 @@ For a concrete Android feature, I might use Builder to configure a client, Adapt
 
 The GoF categories are a map of design forces. Creational patterns hide or coordinate construction; structural patterns compose objects and reconcile interfaces; behavioral patterns describe how responsibilities and state-driven actions collaborate. I ask what is varying: object family, vendor API surface, or runtime algorithm. Confusing these leads to god-objects that both construct and execute providers while also controlling UI. Kotlin syntax can implement the intent compactly, and Android lifecycle may add constraints the original pattern catalog does not address. In production I define the contract, error semantics, ownership and tests. A category is useful for explanation, but it does not prove performance, substitutability or process-death correctness.
 
+I classify patterns by the problem they address. Creational patterns control construction; a Builder is useful when an SDK client has several optional settings and validation. Structural patterns adapt or compose interfaces; an Adapter can isolate a vendor callback contract. Behavioral patterns organize changing behavior; a Strategy can select a payment implementation without putting vendor branches in the UI. In one checkout feature all three may coexist, but the categories are not a checklist. A constructor is better than a Builder for two mandatory values, and a direct call is better than an Adapter when there is no mismatch. I would choose from the expected variation, the invariants, and the test seam, then measure whether the added indirection helps.
+
+## How to answer in the interview
+
+- **Why:** Categories describe different design pressures, not required class counts.
+- **How:** Use Builder, Adapter and Strategy in one checkout flow.
+- **Trade-off:** Prefer constructor/direct call when no construction or interface problem exists.
+- **Failure case:** Pattern taxonomy turns into unnecessary wrappers.
+- **Production solution:** Tie each pattern to validation, SDK isolation, or behavior variation tests.
+
 ## Deep-dive talking points
 
 Classify Builder, Adapter, Strategy and Observer in one checkout flow; note overlapping roles.
@@ -74,4 +88,4 @@ Classify four named patterns by problem, then reject one unnecessary factory in 
 - [Kotlin object declarations](https://kotlinlang.org/docs/object-declarations.html) — language-level Singleton example.
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — original taxonomy and catalog.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

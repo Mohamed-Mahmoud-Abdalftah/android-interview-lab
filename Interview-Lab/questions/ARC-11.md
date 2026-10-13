@@ -24,6 +24,10 @@ Model mutually exclusive loading/content/empty/error states and avoid losing cac
 
 للشاشة البسيطة، sealed `Loading`, `Content(items)`, `Empty`, `Error(reason)` يخلي الحالات المتنافرة واضحة. لكن offline-first screen عندها cached content مع refresh شغال أو error؛ هنا state مركّبة زي `items + isRefreshing + refreshError` أنسب من sealed واحدة تمنع coexistence. Empty لازم تعني data load ناجح لكن مفيش عناصر، مش network error اتخبى. ViewModel يشتق الحالة من repository stream ويحدد retry action؛ الـUI ترسم فقط. بعد process death ارجع للمصدر الدائم بدل افتراض إن الـViewModel state باقية.
 
+### Practical walkthrough in Egyptian Arabic
+
+UiState sealed/immutable تجعل Loading/Content/Empty/Error واضحة، لكن بعض الحالات متزامنة: content قد يبقى مع refresh spinner أو error banner. لا تمسح data فور network failure لو cache صالح. اعرض retry action من event واضح، وتأكد StateFlow initial value مفهومة. اختبر transitions لا snapshot النهائية فقط، خصوصًا slow request/cancellation.
+
 ## Why it matters and how it works
 
 UI state should be a complete, renderable snapshot. Choose exclusive cases when states cannot coexist, or orthogonal fields when content and refresh status can coexist. Data source freshness and errors should remain distinguishable.
@@ -65,6 +69,14 @@ For a screen without cached data, a sealed state gives exhaustive Loading, Conte
 ## Interview answer — deep senior
 
 The key is to model legal combinations, not merely list four labels. A sealed hierarchy is strong when states are exclusive. If a feed can show cached articles during refresh, one `Content` case may include refresh status and a recoverable error; a flat set of booleans without invariants can create nonsense combinations. I distinguish initial loading from background refresh and successful empty data from failure. The data layer remains source of truth; after process death the screen reconstructs from persisted data and reload status. Error text is mapped for the UI without leaking raw exception messages. I test transitions rather than isolated snapshots, especially refresh failing after content and retry succeeding. The design should also account for accessibility and interaction. A screen reader should know when loading completes, and a retry control should be available only when retry is meaningful. The ViewModel owns state production, while the composable renders that state and sends events. I avoid combining `isLoading`, `isEmpty`, and `hasError` booleans without invariants because contradictory combinations become possible. State shape follows legal product states, including whether content can coexist with a refresh error.
+
+## How to answer in the interview
+
+- **Why:** users need honest transition states.
+- **How:** model exclusive and concurrent state explicitly.
+- **Trade-off:** simple sealed type versus combinational needs.
+- **Failure case:** error wipes usable cached content.
+- **Production solution:** test loading-to-content/error sequences.
 
 ## Deep-dive talking points
 

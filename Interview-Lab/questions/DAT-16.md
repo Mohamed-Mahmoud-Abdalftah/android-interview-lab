@@ -43,6 +43,10 @@ fun decide(base: VersionedNote, local: String, remote: VersionedNote): MergeDeci
     else MergeDecision.NeedsUser(local, remote.text)
 ```
 
+## Practical walkthrough
+
+لو note اتعدلت على جهازين من version 7، server يرفض update واحدة بـversion/ETag mismatch بدل last-write-wins العمياء. قارن base/local/remote: لو fields مستقلة ممكن three-way merge؛ لو نفس paragraph اتغير، user resolution أو domain rule واضحة. server-wins ممكن يضيع offline work، client-wins ممكن يمسح تعديل أحدث؛ لا تختار من غير business rule. في stock أو balance، server transaction authority وتحويل local intent لـrequest، مش merge للأرقام على العميل. خزّن conflicting versions بشكل آمن، واعرض UI تقول “Needs review” مع recovery بدل silent overwrite.
+
 ## Trade-offs and decision criteria
 
 Server-wins is simple but can lose offline user work; client-wins can overwrite others. Field-level merge is useful only when fields are independent; CRDTs add complexity and suit specific collaborative domains. User review preserves intent but costs UX.
@@ -65,7 +69,17 @@ A notes app stores base/local/remote versions and offers merge review when both 
 
 ## Interview answer — deep senior
 
-“I start by identifying invariants and user intent. A version/ETag allows optimistic concurrency: the server accepts only if the base version still matches. On conflict, a three-way merge can preserve non-overlapping field edits; overlapping text changes may need human choice. Client-wins and server-wins are policies with real data-loss tradeoffs, not defaults. Financial inventory/account state must be resolved by server transactions and operation IDs, never by local timestamp. I persist the unresolved local edit and remote snapshot, expose conflict state, and make the resolution a new idempotent operation. Tests include clock skew, delete-versus-edit, repeated conflict and process death during resolution.”
+I start by identifying invariants and user intent. A version/ETag allows optimistic concurrency: the server accepts only if the base version still matches. On conflict, a three-way merge can preserve non-overlapping field edits; overlapping text changes may need human choice. Client-wins and server-wins are policies with real data-loss tradeoffs, not defaults. Financial inventory/account state must be resolved by server transactions and operation IDs, never by local timestamp. I persist the unresolved local edit and remote snapshot, expose conflict state, and make the resolution a new idempotent operation. Tests include clock skew, delete-versus-edit, repeated conflict and process death during resolution.
+
+I start with the invariant and who owns it. For a note, I send the base version with an update so the server can reject a stale write rather than silently overwrite another device. A three-way comparison of base, local, and remote can merge independent fields, while overlapping text edits may need a human choice. Client-wins and server-wins are explicit data-loss policies, not generic defaults. Financial balances or inventory cannot be resolved by adding or choosing client copies; the server transaction is authoritative. I preserve both candidate edits until the conflict is resolved, mark the local row accordingly, and test repeated conflict after reconnect.
+
+## How to answer in the interview
+
+- **Why:** Reconnect can reveal two valid but divergent user edits.
+- **How:** Use base version/ETag and classify non-overlapping versus overlapping changes.
+- **Trade-offs:** Explain data loss in client-wins and server-wins policies.
+- **Failure cases:** Silent overwrite or merging authoritative financial state on device.
+- **Production solution:** Preserve candidates, show conflict UI and server-check versions.
 
 ## Deep-dive talking points
 
@@ -84,4 +98,4 @@ Can I detect conflict, choose policy by domain, preserve user edit and test skew
 
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — conflict resolution.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

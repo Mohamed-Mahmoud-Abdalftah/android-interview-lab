@@ -44,6 +44,10 @@ fun message(r: SubmitResult) = when (r) {
 }
 ```
 
+## Practical walkthrough
+
+ابدأ بقرارات caller: `Accepted(receiptId)` تفتح receipt، `Rejected(code)` تعرض تصحيح واضح، و`PendingVerification(requestId)` تمنع retry عشوائي. sealed result بيخلي required payload في كل case. Error من network مش دايمًا business rejection؛ timeout ممكن يكون الطلب اتنفذ والسيرفر ردّه ضاع. عند boundary، احتفظ بـcause للـlogs مع correlation ID من غير تسريب secrets، وmap status codes حسب API contract. لو عملية غير idempotent، استخدم client request ID ثابت وserver idempotency + query/reconciliation قبل retry. في coroutine لا تحوّل cancellation لحالة domain failure.
+
 ## Trade-offs and decision criteria
 
 A sealed hierarchy is verbose but makes business cases explicit. Kotlin `Result<T>` is concise for exception-bearing infrastructure, but `Throwable` alone is a weak public domain contract. Keep a cause internally where safe; expose stable codes and localized UI messages separately.
@@ -58,15 +62,25 @@ A checkout repository returns typed outcomes, logs a correlation ID without card
 
 ## Interview answer — short
 
-I use a sealed success/error contract with stable categories and enough safe context for recovery. I preserve causes in diagnostics, keep UI text separate, propagate cancellation, and model network uncertainty explicitly.
+I model outcomes around caller actions, with named cases and required data. For a payment-like submission I distinguish accepted, rejected, and unknown pending verification. I preserve diagnostic causes internally, respect cancellation, and reconcile uncertain network outcomes with a server idempotency key.
 
 ## Interview answer — structured
 
-A type-safe result API should let callers handle known outcomes without parsing exception messages. I define success and domain error cases with stable codes, retryability, and correlation information where useful. Infrastructure exceptions are mapped at the repository boundary; unknown failures remain observable. For suspend functions I rethrow cancellation. For payment timeouts I represent pending verification and ask the server, because timeout does not prove failure. I begin with decisions callers need to make: show a validation hint, require sign-in, retry safely, or verify an uncertain operation. That yields explicit cases with required fields instead of a Boolean or a null. I keep raw exception details and correlation IDs in protected diagnostics, while the UI receives stable safe codes and localized messages.
+A type-safe result API should make impossible combinations difficult to construct and retain enough context for a useful decision. I start with consumer actions: show a receipt, ask for correction, or wait for verification. Those become sealed cases with required payloads rather than one object full of nullable fields. I map transport exceptions at the boundary and keep the original cause and correlation ID for diagnostics, while exposing stable domain reasons to the UI. A timeout is not proof of rejection; for a submission I use a stable request ID, server-side idempotency, and reconciliation before retry. Cancellation remains cancellation rather than a user-facing failure case.
 
 ## Interview answer — deep senior
 
-I start with consumer decisions: retry, re-authenticate, correct input, wait, or escalate. Those become explicit cases with required payloads. A raw `Throwable` may be retained in internal telemetry, but it should not become the UI contract or leak secrets. I distinguish confirmed server rejection from transport uncertainty and define idempotency and reconciliation with the backend. Cancellation is control flow and must propagate. I version error codes deliberately, test exhaustive mapping, and ensure process-death recovery retains only safe identifiers. A type-safe result API should make the legal outcomes and their payloads visible in the type system. A sealed hierarchy can distinguish accepted, rejected, unavailable, and pending verification, each with the information the caller needs. Kotlin `Result<T>` is useful at an exception-bearing infrastructure boundary, but exposing only a `Throwable` forces domain callers to inspect unstable classes or messages. I map known failures once, retain the original cause for safe logging, and keep user-facing text separate from protocol codes. For a payment request, timeout is not proof of failure; the server may have committed the operation. I preserve a request ID, use server reconciliation and carefully designed idempotent retries, and restore pending work after process death.
+I start with consumer decisions: retry, re-authenticate, correct input, wait, or escalate. Those become explicit cases with required payloads. A raw `Throwable` may be retained in internal telemetry, but it should not become the UI contract or leak secrets. I distinguish confirmed server rejection from transport uncertainty and define idempotency and reconciliation with the backend. Cancellation is control flow and must propagate. I version error codes deliberately, test exhaustive mapping, and ensure process-death recovery retains only safe identifiers.
+
+Imagine a submit endpoint returning Accepted with a receipt, Rejected with a stable reason, or PendingVerification after a timeout. These cases guide different caller actions; a `Boolean` or nullable receipt cannot express the uncertainty safely. I would map transport failures at the repository boundary, retain the cause and request ID for internal telemetry, and expose only safe domain fields to UI. For retry, the client must reuse the same request identity under a documented server idempotency contract, then query status after process death. I test exhaustive handling and never convert coroutine cancellation into a domain rejection.
+
+## How to answer in the interview
+
+- **Why:** Communicate operation outcomes with rich, type-safe error context without relying on throwing exceptions.
+- **How:** Create a sealed result hierarchy (`Result.Success<T>`, `Result.Failure(error: DomainError)`) where `DomainError` is a sealed class classifying failure causes.
+- **Trade-offs:** Typed result hierarchies require callers to explicitly unwrap outcomes, increasing boilerplate compared to unchecked exceptions.
+- **Failure cases:** Using a single generic string for error messages, preventing the UI layer from distinguishing retryable network timeouts from fatal authentication failures.
+- **Production solution:** Define domain error types with structured metadata (HTTP code, error category, idempotency key), and map low-level exceptions at repository boundaries.
 
 ## Deep-dive talking points
 
@@ -86,4 +100,4 @@ Define three actionable errors, explain where causes live, and handle cancellati
 - [Kotlin sealed classes and interfaces](https://kotlinlang.org/docs/sealed-classes.html) — explicit case modeling.
 - [Kotlin Result API](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin/-result/) — generic failure wrapper.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. Examples are illustrative JVM snippets unless explicitly labeled conceptual; no Android device claim is made.
+Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets unless explicitly labeled conceptual; no Android device claim is made.

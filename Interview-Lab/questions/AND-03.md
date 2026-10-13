@@ -63,6 +63,10 @@ class ScreenFragment : Fragment(R.layout.screen) {
 
 The surrounding app must supply `viewModel` and `ScreenBinding`; this is not a stand-alone compiled program. Keep collectors free of references to a captured old binding across view recreation.
 
+## Practical walkthrough
+
+في Fragment بتدخل back stack، `onDestroyView` ممكن تحصل والـFragment object يفضل عايش. لو خزّنت ViewBinding أو collector في `fragment.lifecycleScope`، callback متأخر ممكن يمسك view قديمة أو يعمل render على binding null. اربط UI collection بـ`viewLifecycleOwner.lifecycleScope` و`repeatOnLifecycle(STARTED)`، وامسح binding في `onDestroyView`. الـViewModel ممكن يفضل محتفظ بـstate حسب scope، لكنه ما يحتفظش بـView أو Context بتاع Activity. جرّب navigate away/back أكتر من مرة وشوف هل فيه collector واحد فقط لكل view جديدة.
+
 ## Trade-offs and decision criteria
 
 View-scoped collection restarts when a new view appears, which is appropriate for rendering current state. A Fragment-level scope can own work genuinely independent of the view, but never a view-bound adapter or binding. `StateFlow` replaying current state is suitable for restart; a one-shot event needs an explicit delivery policy. Compose hosted inside a Fragment still requires an appropriate composition disposal strategy tied to the view.
@@ -81,10 +85,22 @@ In a product-detail Fragment, a ViewModel holds the product ID and UI state; eac
 
 ## Interview answer — structured
 
-“The Fragment lifecycle tracks the component in FragmentManager; the view lifecycle starts with a created view and ends around onDestroyView. Back-stack navigation can destroy the view without destroying the Fragment. Therefore, a Fragment-level observer that holds ViewBinding can leak the old hierarchy or render into a detached view. I use viewLifecycleOwner for view updates, repeatOnLifecycle for visible collection, and release binding and listeners when the view ends. The operational symptom is often a leak or duplicate observation after navigating away and back. `fragment.lifecycleScope` can outlive the current view, while `viewLifecycleOwner.lifecycleScope` is canceled with that view. I clear binding references and test repeated view creation rather than only a single launch.”
+The Fragment lifecycle tracks the component in FragmentManager; the view lifecycle starts with a created view and ends around onDestroyView. Back-stack navigation can destroy the view without destroying the Fragment. Therefore, a Fragment-level observer that holds ViewBinding can leak the old hierarchy or render into a detached view. I use viewLifecycleOwner for view updates, repeatOnLifecycle for visible collection, and release binding and listeners when the view ends. The operational symptom is often a leak or duplicate observation after navigating away and back.
+
 ## Interview answer — deep senior
 
-“I separate logical screen ownership from rendering ownership. FragmentManager may retain the Fragment instance while replacing its view tree, so a Fragment-scoped ViewModel can continue holding state but any view reference must have the shorter view lifetime. I acquire binding per onViewCreated, launch collectors through viewLifecycleOwner, and clear binding and listeners at onDestroyView. For a hot state stream, a new view receives the latest snapshot; for one-time navigation effects I define replay/acknowledgement instead of assuming collection timing. I test back-stack transitions and configuration recreation and inspect heap retention to catch old view trees. I trace the two lifetimes explicitly: Fragment instance lifecycle may continue on the back stack, but the rendered hierarchy ends at `onDestroyView`. A collector that captures binding and is launched in Fragment scope can keep a detached view reachable or crash on a null binding. I start collection with the view owner, repeat at STARTED when appropriate, and remove listeners/adapters tied to the old view. A Fragment-scoped ViewModel holds screen state but never a View reference. I verify by navigating back and forth many times, counting collectors and inspecting heap roots. This is a UI resource problem, not a reason to persist every render value.”
+I separate logical screen ownership from rendering ownership. FragmentManager may retain the Fragment instance while replacing its view tree, so a Fragment-scoped ViewModel can continue holding state but any view reference must have the shorter view lifetime. I acquire binding per onViewCreated, launch collectors through viewLifecycleOwner, and clear binding and listeners at onDestroyView. For a hot state stream, a new view receives the latest snapshot; for one-time navigation effects I define replay/acknowledgement instead of assuming collection timing. I test back-stack transitions and configuration recreation and inspect heap retention to catch old view trees. I trace the two lifetimes explicitly: Fragment instance lifecycle may continue on the back stack, but the rendered hierarchy ends at `onDestroyView`.
+
+A typical bug appears when a Fragment is on the back stack: `onDestroyView` has run, but a coroutine launched in the Fragment’s own scope still receives data and touches the old binding. I bind rendering to `viewLifecycleOwner.repeatOnLifecycle(STARTED)` and clear the binding when the view ends. I keep fetch state in a correctly scoped ViewModel and let the new view subscribe when the user returns. This preserves work that belongs to the destination while releasing resources that belong to a particular view instance. A navigate-away/back test exposes duplicate collectors.
+
+## How to answer in the interview
+
+- **Why:** The Fragment object may outlive its rendered view.
+- **How:** Contrast Fragment lifecycle with `viewLifecycleOwner` and point to `onDestroyView`.
+- **Trade-offs:** Keep screen state in a scoped ViewModel, view references in the view lifetime.
+- **Failure cases:** Explain duplicate collection, stale binding, and leaked views.
+- **Production solution:** Show view-scoped Flow collection and a navigate-away/back test.
+
 ## Deep-dive talking points
 
 Explain view owner availability, back-stack view destruction, ViewBinding cleanup, lifecycle-aware StateFlow collection, adapter/listener retention, and why one-shot effects differ from current state.
@@ -104,4 +120,4 @@ Describe one case where Fragment outlives its view; choose the right LifecycleOw
 - [Fragment lifecycle](https://developer.android.com/guide/fragments/lifecycle) — Fragment and view owner transitions.
 - [Lifecycle-aware coroutine collection](https://developer.android.com/topic/libraries/architecture/coroutines) — restartable collection guidance.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The snippet requires generated binding and app ViewModel declarations and was not Android-compiled here.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The snippet requires generated binding and app ViewModel declarations and was not Android-compiled here.

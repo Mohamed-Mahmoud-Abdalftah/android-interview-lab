@@ -25,6 +25,10 @@ Compare Git merge, rebase, squash, revert, and reset.
 
 `merge` يضم تاريخ فرعين ويحتفظ بالbranch topology؛ `rebase` يعيد تشغيل commits فوق base جديد فيغيّر hashes؛ `squash` يجمع commits؛ `revert` يعمل commit عكسي؛ `reset` ينقل branch pointer وقد يمسح working changes حسب mode. على shared branch نفضل revert للتراجع عشان التاريخ ما يتكتبش من جديد.
 
+### Practical walkthrough in Egyptian Arabic
+
+في hotfix: `merge` يحتفظ بتاريخ الفرعين ويصنع merge commit؛ `rebase` يعيد كتابة commits فرعك فوق base أحدث؛ `squash` يجمع تغييرات قبل الدمج؛ `revert` يصنع commit عكسي يحافظ على تاريخ shared branch؛ `reset` ينقل مؤشر branch وقد يرمي تغييرات حسب mode. ما تعملش force push على branch مشترك عشان تتخلص من release سيئ. لو hotfix لازم يروح `main` وrelease branch، cherry-pick أو merge حسب السياسة مع اختبار كل نسخة.
+
 ## Why it matters and how it works
 
 Git commits are immutable objects linked by parents. Rebase and reset create/move references and can require force-push on shared history. Revert applies inverse changes as a new commit; it may conflict if later changes depend on the old code.
@@ -55,7 +59,15 @@ Branch protection blocks force-pushes to main, requires reviewed PRs and records
 
 ## Interview answer — deep senior
 
-“I reason from the commit graph and release state. Rebase changes commit identities, which is safe only when collaborators know the branch will be rewritten. A merge retains both parent histories, while squash trades granularity for simpler main. Reverting an old change is not guaranteed to apply cleanly: later commits may depend on it, so I resolve conflicts and run affected tests. Reset is useful for local cleanup, but force-resetting a shared release branch breaks traceability and may leave deployed artifacts without a clear source history.”
+“I choose the Git operation from the history contract. Merge joins branches without rewriting existing commits, making it appropriate when shared history matters. Rebase replays my local commits on a new base and can simplify review, but rebasing a published branch changes commit identities for collaborators. Squash creates a compact final change when the intermediate commits have no independent value. Revert adds a new commit that reverses an earlier change, which is usually the safe operation on a shared release branch; reset moves the branch pointer and is most useful for my own unpublished history. In a production hotfix I branch from the release commit, make the smallest fix, run release checks, then merge or cherry-pick it back to main and other supported branches with explicit conflict review. I avoid assuming a successful cherry-pick implies the same runtime behavior, because surrounding code may differ. The trade-off is clean history versus provenance, so I preserve an auditable link between incident, fix commit and release artifact.”
+
+## How to answer in the interview
+
+- **Why:** history operations affect collaborators.
+- **How:** choose merge/rebase/squash/revert/reset by shared-state boundary.
+- **Trade-off:** linear history versus preserved branch context.
+- **Failure case:** force reset loses public release history.
+- **Production solution:** use additive revert or hotfix commits on protected branches.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for commit graph, public history, revert conflict and deployment traceabi
 
 ## Self-check rubric
 
-Can you explain this decision, apply the example, name a trade-off and failure, and answer both follow-ups without relying on a memorized slogan?
+Show the commit-graph effect of merge, rebase and squash; use revert for a shared published change and reset for private history; describe one conflict or audit implication.
 
 ## References and reviewed-on date
 
 - [Git reset documentation](https://git-scm.com/docs/git-reset) — reset modes.
 - [Android app publishing](https://developer.android.com/studio/publish) — release traceability context.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

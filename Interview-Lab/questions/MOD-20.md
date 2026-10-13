@@ -26,6 +26,10 @@ How do you migrate a monolith to modules without blocking feature delivery?
 
 ابدأ audit للdependencies وbuild times وأماكن ownership. ضع module rules وأول seam مستقرة، ثم استخرج feature واحدة كاملة مع API صغيرة بدل نقل كل `utils` إلى core. أثناء النقل حافظ على public behavior، اختبارات/فakes وnavigation، واجعل app composition تدمج القديم والجديد. امنع cycle بإصلاح العقد لا بإخفائها، وشغّل full variant build. الفريق يواصل features عبر migration تدريجية وflag/adapter محدود العمر. قِس build/CI ووقت تعديل feature قبل وبعد، واحذف مسار قديم بعد انتقال كل callers.
 
+### Practical walkthrough in Egyptian Arabic
+
+Migration monolith تبدأ من slice لها boundary واضحة، مثل feature catalog، مع characterization tests وCI baseline. استخرج API صغير، انقل code تدريجيًا مع adapter/compatibility، وقس build time والfeature delivery كل خطوة. لا تنقل 100 package في PR واحدة، ولا تكسر imports لكل الفرق. لو ظهر cycle، أصلح ownership بدل service locator يخفيه.
+
 ## Why it matters and how it works
 
 A monolith often contains implicit cross-package dependencies, so a big-bang split reveals many cycles at once. Extracting one vertical capability exposes a manageable contract and lets remaining code continue to ship. Adapter seams can preserve calls temporarily while new module boundaries are adopted. An explicit deletion condition prevents temporary bridges from becoming permanent architecture.
@@ -57,6 +61,14 @@ Track migration checklist, owner, old-caller count, graph rules, build metrics a
 ## Interview answer — deep senior
 
 “A monolith-to-modules migration is safest as a sequence of behavior-preserving boundary changes. I first collect a dependency graph, build-time baseline, ownership map and integration tests for critical flows. Then I select one cohesive, moderate-risk feature with a clear entry point and define the smallest API it should expose. I move a vertical slice—screen state, use case and owned data access—rather than scatter random utility files into core. The app composition root registers its navigation and DI bindings; a temporary adapter can keep old callers working while they migrate. I watch for duplicate shared state if both old and new containers construct a session service. Each slice has a full debug/release build and user-flow test, not only module tests, and a rollback path if release behavior changes. I prohibit new reverse imports so the graph improves rather than oscillates. Finally I delete old code once its caller count reaches zero, compare incremental build and delivery metrics, and adjust the next boundary. This lets feature teams ship while architecture changes in reviewable increments.”
+
+## How to answer in the interview
+
+- **Why:** modularization must preserve release cadence.
+- **How:** extract one slice with tests and metrics.
+- **Trade-off:** migration speed versus disruption.
+- **Failure case:** big-bang move causes cycles and blocked teams.
+- **Production solution:** ship reversible slices.
 
 ## Deep-dive talking points
 

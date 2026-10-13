@@ -42,6 +42,10 @@ interface FeedCache {
 // Remote refresh writes Room transactionally; UI does not merge two lists.
 ```
 
+## Practical walkthrough
+
+cache-first تعرض local data فورًا ثم refresh حسب freshness policy؛ network-first تحاول remote قبل fallback محلي، فممكن تقلل staleness لكن تزيد انتظار المستخدم؛ stale-while-revalidate تعرض cached snapshot مع تحديث في الخلفية. مش كل data ينفع لها stale: news cards ممكن، available balance أو authorization قبل action لا. خزّن `fetchedAt` وserver version/ETag، واضبط invalidation لما account يتبدل أو write تغير row. لو refresh فشل، سيب last-good rows واعرض stale indicator بدل تمسح الشاشة. استخدم clock injected للاختبار، وافتكر TTL وحده ما يمنع old response overwriting newer version.
+
 ## Trade-offs and decision criteria
 
 Cache-first is fast and economical; network-first favors freshness at latency cost; stale-while-revalidate improves perceived speed but can briefly show outdated data. For security-critical or financial status, verify current server authority before committing an action.
@@ -64,7 +68,17 @@ A news feed displays cached stories immediately with an updated-at label and ref
 
 ## Interview answer — deep senior
 
-“A cache strategy is not just ordering two calls; it is a correctness contract. I specify maximum tolerated age, whether stale data may drive actions, and how invalidation works. Cache-first reduces startup and battery cost but risks hidden staleness. Network-first can block UX on a weak connection, so I set a deadline and explicit fallback. Stale-while-revalidate is excellent for browsable feeds if remote updates commit transactionally into Room, which remains the one UI source. I use server ETags/versions where available, suppress older refresh results, label stale/pending state and test offline startup and clock anomalies. Financial or security-sensitive state requires authoritative confirmation before irreversible action.”
+A cache strategy is not just ordering two calls; it is a correctness contract. I specify maximum tolerated age, whether stale data may drive actions, and how invalidation works. Cache-first reduces startup and battery cost but risks hidden staleness. Network-first can block UX on a weak connection, so I set a deadline and explicit fallback. Stale-while-revalidate is excellent for browsable feeds if remote updates commit transactionally into Room, which remains the one UI source. I use server ETags/versions where available, suppress older refresh results, label stale/pending state and test offline startup and clock anomalies. Financial or security-sensitive state requires authoritative confirmation before irreversible action.
+
+I would first define what “fresh enough” means for the feature. Cache-first prioritizes startup and battery, network-first prioritizes current data but needs a bounded fallback, and stale-while-revalidate renders the local snapshot while refreshing it. A news feed can tolerate a stale label; a payment balance or authorization decision usually needs a server check before action. I store freshness metadata and server versions, partition by account, and ensure an old response cannot overwrite newer data. If refresh fails, I keep last-good rows and surface their age. The production test covers offline launch, slow network, account switch, and out-of-order responses.
+
+## How to answer in the interview
+
+- **Why:** Cache policy is a product correctness choice, not only call order.
+- **How:** Contrast first render and refresh behavior of all three strategies.
+- **Trade-offs:** Set tolerated age per feature and bound network-first wait.
+- **Failure cases:** Hidden stale balance or older response overwriting newer rows.
+- **Production solution:** Use freshness/version metadata and retain last-good data on failure.
 
 ## Deep-dive talking points
 
@@ -84,4 +98,4 @@ Can I choose all three by domain, label stale data and prevent old refresh overw
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — cached local reads and refresh.
 - [HTTP Semantics RFC 9110](https://httpwg.org/specs/rfc9110.html) — conditional request semantics.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

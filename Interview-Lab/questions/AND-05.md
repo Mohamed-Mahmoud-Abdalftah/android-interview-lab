@@ -34,6 +34,10 @@ An Activity is a Context associated with a window, display, configuration, and t
 
 For a confirmation Dialog, use the current Activity or a lifecycle-aware `DialogFragment`, then dismiss it when that owner ends. For a global image cache, use Application Context to locate cache files and pass the loaded image data to the screen without retaining the Activity. For a system picker result, register the launcher with the Activity/Fragment lifecycle owner. These three needs have different owners even though all participate in one user flow.
 
+## Practical walkthrough
+
+وقت إظهار confirmation Dialog، استخدم Activity الحالية أو `DialogFragment` عشان الـwindow تتربط بـvalid Activity token والtheme الحالية. لو Activity انتهت أو اتغيرت configuration، ما تحتفظش بمرجع قديم عشان تعيد استخدام Dialog. في المقابل، image cache عمرها process واحتياجها `cacheDir`، فـApplication Context كافية أو حتى حقن `File`. System picker registration مربوط بـlifecycle owner بتاع Activity/Fragment، مش cache singleton. معيار الاختيار هو نوع capability المطلوبة وعمرها، مش قاعدة “Activity context ممنوعة”.
+
 ## Trade-offs and decision criteria
 
 Activity Context provides correct visual environment but risks a leak if held beyond the screen lifetime. Application Context is safe for process-lifetime, non-visual operations but can miss window-specific configuration. A `DialogFragment` manages a dialog with Fragment lifecycle, reducing manual cleanup, but does not erase the need to reason about state restoration. Prefer APIs that take a LifecycleOwner or Activity explicitly when they need one; do not cast arbitrary Context to Activity.
@@ -52,10 +56,22 @@ A checkout confirmation belongs to the visible checkout Activity or its DialogFr
 
 ## Interview answer — structured
 
-“A Dialog or themed view attached to a screen needs a visual Context representing the current Activity. Activity Result registration is even more specific: it needs the Activity or Fragment lifecycle owner. A cache directory or non-visual service can use Application Context. I avoid broad rules such as ‘all startActivity calls need an Activity’; the Context and task flags affect that API differently. Most importantly, I never inject a screen Activity into a singleton. I check the called API’s contract: attaching a dialog, launching a window-specific UI flow or inflating a themed visual component generally needs the current Activity or an appropriate themed Context. Background data access, database construction and process-wide services can use Application Context. I never store an Activity in a process singleton.”
+A Dialog or themed view attached to a screen needs a visual Context representing the current Activity. Activity Result registration is even more specific: it needs the Activity or Fragment lifecycle owner. A cache directory or non-visual service can use Application Context. I avoid broad rules such as ‘all startActivity calls need an Activity’; the Context and task flags affect that API differently. Most importantly, I never inject a screen Activity into a singleton.
+
 ## Interview answer — deep senior
 
-“I inspect the capability the API requires. Window-attached UI needs a current visual Context and token; themed inflation needs the correct display and configuration, particularly with multi-window and foldables; result launchers need a lifecycle owner. An Application Context is intentionally longer-lived and suitable for file or non-visual service access, but it is not a universal UI owner. I pass Activity only at the presentation boundary for the duration of the operation, handle a late result after navigation, and test dialog rotation and memory retention. If a library asks for Context without explaining why, I wrap it behind a narrow interface and verify its actual requirement. The key is not a universal rule that Activity Context is always better. A window-attached dialog needs a live Activity token; using Application Context may fail to attach or render under an unexpected theme. On foldables or multi-window devices, the active Activity may have configuration distinct from application resources. Conversely, a repository that only needs files or system services should not retain a short-lived Activity. I make the UI owner pass the Context only for the duration of the operation and check lifecycle state before showing it. I test calls from Activity and Service paths to catch unsafe `context as Activity` assumptions.”
+I inspect the capability the API requires. Window-attached UI needs a current visual Context and token; themed inflation needs the correct display and configuration, particularly with multi-window and foldables; result launchers need a lifecycle owner. An Application Context is intentionally longer-lived and suitable for file or non-visual service access, but it is not a universal UI owner. I pass Activity only at the presentation boundary for the duration of the operation, handle a late result after navigation, and test dialog rotation and memory retention. If a library asks for Context without explaining why, I wrap it behind a narrow interface and verify its actual requirement. The key is not a universal rule that Activity Context is always better.
+
+For example, an Activity-owned confirmation dialog can be dismissed and recreated as the screen changes, while an image cache created from Application Context can keep its files across screen changes. Passing Application Context to UI that expects an Activity window may fail or use an unintended theme. Conversely, keeping the screen Activity in a cache leaks it after a configuration change. I would inspect the API’s documented Context requirement, narrow constructor dependencies where possible, and test rotation while the dialog or cache request is active. That makes the lifetime decision observable.
+
+## How to answer in the interview
+
+- **Why:** Window-attached UI needs the current screen owner and theme.
+- **How:** Compare Dialog and application-scoped cache needs.
+- **Trade-offs:** Keep Activity context for short screen work; pass only file/service dependencies to long-lived objects.
+- **Failure cases:** Describe invalid window tokens and leaking an old Activity.
+- **Production solution:** Use a lifecycle-owned dialog and an application-scoped image cache.
+
 ## Deep-dive talking points
 
 Discuss window token, visual resource configuration, lifecycle registration, Service versus Activity callers, late callbacks, and why a Context cast is not an ownership design.
@@ -75,4 +91,4 @@ Give two cases requiring a visual Activity owner, one valid Application Context 
 - [Context API reference](https://developer.android.com/reference/android/content/Context) — visual Context and resource configuration.
 - [Activity Result APIs](https://developer.android.com/training/basics/intents/result) — lifecycle-bound result handling.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. Examples describe API ownership and were not device-tested.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. Examples describe API ownership and were not device-tested.

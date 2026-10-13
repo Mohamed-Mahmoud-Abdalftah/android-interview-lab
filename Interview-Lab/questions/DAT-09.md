@@ -44,8 +44,13 @@ class RefreshCoordinator(private val refresh: suspend () -> Token) {
             if (now != observed) now else refresh()
         }
 }
-// Token, persistence and OkHttp Authenticator adapter are app-specific.
+// refresh() must persist the new token pair before returning; Token, persistence,
+// session-generation checks and the OkHttp Authenticator adapter are app-specific.
 ```
+
+## Practical walkthrough
+
+interceptor يضيف access token للrequest الحالية، لكن 401 refresh محتاجة coordination. لو خمس requests رجعت 401 مع بعض وكل واحدة استخدمت refresh token rotating، أول واحدة قد تبطل الباقي ويقفل session غلط. coordinator يعمل single-flight، ويعيد فحص token داخل lock؛ لو token اتغير بعد الـ401، أعد request مرة واحدة بالتوكن الجديد. OkHttp `Authenticator` synchronous، فلا تعمل network refresh recursively على نفس client/pool بشكل يسبب deadlock أو loop؛ استخدم boundary/refresh client مناسب، حدّد max attempts، واحترم logout generation عشان late refresh ما يرجعش session. خزّن token pair atomically حسب threat model، بدون logging.
 
 ## Trade-offs and decision criteria
 
@@ -69,7 +74,17 @@ A banking app has a session repository with atomic token replacement and one ref
 
 ## Interview answer — deep senior
 
-“Token refresh is a concurrency and security boundary. Multiple requests can receive 401 together; without a single-flight lock they may rotate one-time refresh credentials twice and invalidate the session. My coordinator acquires a mutex, rechecks the token inside it, refreshes once and stores the new pair atomically. It rejects a late result if logout or account switch changed session generation. The OkHttp challenge handler must not recursively call itself or block all available dispatch threads, and it must stop after a bounded follow-up count. I redact Authorization and refresh tokens from logs, use HTTPS and a defined local storage/backup threat model, and test simultaneous 401s, refresh rejection, cancellation and logout races. Logging Authorization headers leaks credentials.”
+Token refresh is a concurrency and security boundary. Multiple requests can receive 401 together; without a single-flight lock they may rotate one-time refresh credentials twice and invalidate the session. My coordinator acquires a mutex, rechecks the token inside it, refreshes once and stores the new pair atomically. It rejects a late result if logout or account switch changed session generation. The OkHttp challenge handler must not recursively call itself or block all available dispatch threads, and it must stop after a bounded follow-up count. I redact Authorization and refresh tokens from logs, use HTTPS and a defined local storage/backup threat model, and test simultaneous 401s, refresh rejection, cancellation and logout races. Logging Authorization headers leaks credentials.
+
+I split token attachment from challenge handling. A request interceptor can read the current access token, but a 401 authenticator must coordinate a possible refresh. Several calls may fail together; the first successful refresh can replace the token, and later callers should re-read it rather than rotate the refresh token again. I limit challenge retries, avoid authenticating the refresh endpoint through the same loop, and use an independent refresh path with a clear blocking boundary for OkHttp’s synchronous Authenticator API. Logout or account switch increments a session generation so a late refresh cannot resurrect credentials. I test concurrent 401s, invalid refresh, cancellation, and redacted logs.
+
+## How to answer in the interview
+
+- **Why:** Concurrent 401s can rotate credentials more than once.
+- **How:** Separate token interceptor from bounded challenge/refresh coordinator.
+- **Trade-offs:** A synchronous Authenticator needs a safe independent refresh path.
+- **Failure cases:** Recursive refresh loop, deadlock, late token after logout.
+- **Production solution:** Single-flight refresh, atomic token pair, generation checks and tests.
 
 ## Deep-dive talking points
 
@@ -89,4 +104,4 @@ Can I prevent recursion and duplicate refresh, bound retries and protect logout 
 - [OkHttp calls guide](https://lysine.dev/okhttp/features/calls/) — Authenticator follow-up requests.
 - [Android security configuration](https://developer.android.com/privacy-and-security/security-config) — transport security.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

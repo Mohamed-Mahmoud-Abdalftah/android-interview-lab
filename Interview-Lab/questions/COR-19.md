@@ -24,6 +24,10 @@ Explain a read-modify-write race and why coroutine syntax does not serialize sha
 
 الـrace condition بتحصل لما النتيجة تعتمد على ترتيب interleaving بين عمليات متزامنة. `counter++` قراءة ثم حساب ثم كتابة، مش خطوة atomic؛ coroutines على `Default` ممكن تشتغل على threads مختلفة وتضيّع تحديثات. وحتى على thread واحد، suspension بين القراءة والكتابة يسمح coroutine تانية تغيّر القيمة.
 
+## Practical walkthrough
+
+لو اتنين coroutines بيزودوا counter مشترك، `counter++` فيها read ثم add ثم write؛ ممكن الاتنين يقروا نفس الرقم وتضيع زيادة. الـcoroutines ممكن تتنفذ على threads مختلفة، وحتى على thread واحد suspension بين القراءة والكتابة يعمل interleaving. `AtomicInteger.incrementAndGet()` حل لقيمة واحدة، لكن تحديث stock مع audit row يحتاج transaction أوسع.
+
 ## Why it matters and how it works
 
 Structured concurrency governs lifetime and failure, not mutual exclusion. Protect a shared invariant with an atomic operation, Mutex, confinement or database transaction. `@Volatile` improves visibility of a value but does not make compound read-modify-write atomic.
@@ -67,7 +71,15 @@ A cart repository updates quantity and total together in one database transactio
 
 ## Interview answer — deep senior
 
-“I first identify the invariant, not just the variable. An atomic integer can make a simple increment linearizable, but a balance update that must check funds and append a ledger entry needs a transaction at the authoritative store. A Mutex only protects participants using that same in-process lock and disappears after process death; it cannot coordinate other devices or server workers. A confined actor can serialize messages, but may bottleneck throughput. I test a forced interleaving of two updates and then assert the invariant, and I keep server-side financial authority even if the Android client uses a local synchronization primitive. Telemetry checks invariant violations and reconciliation.”
+“I first identify the invariant, not just the variable. An atomic integer can make a simple increment linearizable, but a balance update that must check funds and append a ledger entry needs a transaction at the authoritative store. A Mutex only protects participants using that same in-process lock and disappears after process death; it cannot coordinate other devices or server workers. A confined actor can serialize messages, but may bottleneck throughput. I test a forced interleaving of two updates and then assert the invariant, and I keep server-side financial authority even if the Android client uses a local synchronization primitive. Telemetry checks invariant violations and reconciliation. An atomic counter solves exactly one read-modify-write variable; it does not make a pair of fields or a business invariant atomic. I would reproduce the lost update with two coroutines reading the same initial value before either writes, then choose confinement, Mutex, or a transaction based on ownership. On a real account balance, a client-side lock cannot coordinate other devices or backend workers, so the server ledger remains authoritative.”
+
+## How to answer in the interview
+
+- **Why:** scheduling can interleave a compound update.
+- **How:** demonstrate the lost update, then choose one synchronization boundary around the invariant.
+- **Trade-off:** atomics fit one variable; mutex or transactions fit multi-field state.
+- **Failure case:** volatile only provides visibility, not atomic read-modify-write.
+- **Production solution:** use a server/database transaction for shared authoritative business state.
 
 ## Deep-dive talking points
 
@@ -86,4 +98,4 @@ Can I exhibit a lost update, explain volatile limits, choose a primitive and nam
 
 - [Kotlin shared mutable state](https://kotlinlang.org/docs/shared-mutable-state-and-concurrency.html) — lost updates, atomics and Mutex.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

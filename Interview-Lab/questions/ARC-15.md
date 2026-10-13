@@ -24,6 +24,10 @@ Choose interfaces for meaningful polymorphism, boundaries and tests, not one per
 
 Interface مفيدة لما consumer محتاج contract مستقل عن implementation: repository له offline/server adapters، payment provider strategies، أو module boundary محتاج fake. لكن `Foo` و`FooImpl` لكل class من غير alternative أو سبب تغيّر بيزود navigation وboilerplate. Concrete implementation ممكن تكون كفاية داخل feature صغير، وتقدر تختبرها بحقن dependencies بتاعتها. الأهم public types ما تسرّبش Retrofit/Room لو هدفك عزلها. DI tool يقدر يحقن concrete class؛ interface قرار design مش شرط Hilt.
 
+### Practical walkthrough in Egyptian Arabic
+
+Interface مفيدة عند boundary متغير أو له بديل اختبار/feature implementation؛ مثل `PaymentGateway` مع sandbox/vendor. لا تكتب `FooInterface` لكل class final لمجرد DI؛ Hilt يمكن يحقن concrete. ابدأ concrete داخل feature وextract contract عند الحاجة. اختبر behavior لا mock call order فقط؛ adapter الحقيقي يحتاج integration test.
+
 ## Why it matters and how it works
 
 Abstractions are valuable when they protect independent change or express a stable consumer contract. Testability comes from substitutable dependencies and deterministic seams, not simply counting interfaces.
@@ -55,6 +59,14 @@ I start from the consumer. If it must remain independent of a payment provider o
 ## Interview answer — deep senior
 
 The question is where change happens. A repository contract consumed by a domain rule can isolate Room or network implementation details; a payment strategy interface can support multiple providers. Those interfaces should be narrow and use domain types. Creating one for every class adds cognitive load and makes refactors touch two declarations. Hilt can construct concrete classes, so DI does not force an interface. I also do not create interfaces solely to mock implementation details; tests can use fakes at meaningful boundaries and instantiate pure concrete collaborators. If a concrete dependency later starts changing independently, extracting a consumer-oriented contract is straightforward. I assess benefit by reduced change propagation, clearer behavior, and test isolation. I also inspect how tests are written. If every test mocks internal helpers, an interface explosion may be hiding over-coupling rather than solving it. A pure concrete class can be instantiated and tested directly; a repository seam can use a small fake. When a second implementation arrives, I can extract the exact common behavior then. The design goal is stable substitution where needed, not maximum indirection. I check public parameter types so a supposed abstraction does not still leak a DTO or framework class.
+
+## How to answer in the interview
+
+- **Why:** abstraction should isolate variability.
+- **How:** introduce interface at meaningful boundary.
+- **Trade-off:** testability versus interface sprawl.
+- **Failure case:** fake hides broken real adapter.
+- **Production solution:** pair fake policy test with integration.
 
 ## Deep-dive talking points
 

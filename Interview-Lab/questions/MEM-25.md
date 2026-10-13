@@ -26,6 +26,10 @@ How do you find a rare ANR associated with database lock contention?
 
 الـANR النادر قد يظهر Main thread واقفة في query أو `synchronized`، لكن السبب الحقيقي worker ماسك database lock أثناء transaction طويلة أو network call داخل transaction. ابدأ من ANR report: زمن ومكان الـMain، thread اللي ماسكة lock، وكل transaction شغالة. استخدم Perfetto/trace مع markers للاستعلامات، وحاول تعيد المشكلة بقراءات وكتابات متزامنة على جهاز بطيء. الحل غالبًا تقصير transaction، منع network داخلها، وتحويل UI لقراءة asynchronous/state بدل انتظار lock على Main. لا تخفِ المشكلة بزيادة timeout أو نقل نفس deadlock لthread أخرى. اختبر ordering والاتساق بعد التعديل.
 
+## Practical walkthrough
+
+لو ANR نادر في checkout وMain stack واقفة على Room query، متفترضش إن query بطيئة بذاتها. بص على كل threads: worker ماسك transaction أثناء network request؟ استخدم trace markers للمعاملة والـquery وحاول concurrent read/write على جهاز بطيء. اقفل transaction بسرعة بعد تسجيل pending operation، اعمل network خارجها، وبعد الرد حدّث الحالة في transaction قصيرة. احتفظ بـoperation ID عشان retries ما تكررش الدفع.
+
 ## Why it matters and how it works
 
 Android reports ANR when a required app thread cannot respond in time; for input dispatch this is commonly Main, but the blocking cause may be elsewhere. Database transactions serialize some writes and can hold locks. A synchronous read on Main or a synchronous wait for a repository result makes UI hostage to another thread's transaction. Room discourages main-thread database access and supports suspend/Flow DAO patterns, but async alone does not remove a long transaction or deadlock.
@@ -56,7 +60,15 @@ Segment ANR clusters by release, device, and operation. Add privacy-safe timing 
 
 ## Interview answer — deep senior
 
-“I treat the Main thread as the victim until evidence shows otherwise. The ANR report may show it blocked on a Room query, a `Future.get`, or a monitor; I inspect the full thread dump to find the lock holder and any dependency chain. A Perfetto trace with transaction markers and a concurrent-load reproduction tells me whether a long write, database initialization, nested transaction, or network call inside a transaction owns the delay. Moving a query off Main prevents direct UI blocking but does not fix database throughput or a deadlock. I reduce transaction scope, separate external I/O from local atomic updates, and model pending/reconciliation state where correctness spans a server call. For a payment path I reuse an idempotency key and resolve unknown outcomes rather than blindly retrying. I test slow network, concurrent sync, cancellation, process death, and database consistency, then compare tail lock/query latency and production ANR cohorts.”
+“I treat the Main thread as the victim until evidence shows otherwise. The ANR report may show it blocked on a Room query, a `Future.get`, or a monitor; I inspect the full thread dump to find the lock holder and any dependency chain. A Perfetto trace with transaction markers and a concurrent-load reproduction tells me whether a long write, database initialization, nested transaction, or network call inside a transaction owns the delay. Moving a query off Main prevents direct UI blocking but does not fix database throughput or a deadlock. I reduce transaction scope, separate external I/O from local atomic updates, and model pending/reconciliation state where correctness spans a server call. For a payment path I reuse an idempotency key and resolve unknown outcomes rather than blindly retrying. I test slow network, concurrent sync, cancellation, process death, and database consistency, then compare tail lock/query latency and production ANR cohorts. A checkout transaction must never hold a database lock through a network request. I persist a pending operation quickly, call the server outside the transaction with a stable idempotency key, then reconcile in another short transaction. The intermediate state must survive process death; I measure lock-hold tail and test duplicate callback or retry behavior.”
+
+## How to answer in the interview
+
+- **Why:** Follow Main's lock chain to the actual holder.
+- **How:** Trace transaction span with concurrent read/write reproduction.
+- **Trade-off:** Short transactions require explicit pending-state recovery.
+- **Failure case:** Moving only the Main query may leave contention intact.
+- **Production solution:** Keep network outside transactions and verify idempotent recovery.
 
 ## Deep-dive talking points
 
@@ -78,4 +90,4 @@ Find waiter and holder, reproduce with latency, shorten the transaction, preserv
 - [Room asynchronous queries](https://developer.android.com/training/data-storage/room/async-queries) — nonblocking DAO use.
 - [RoomDatabase.Builder](https://developer.android.com/reference/androidx/room/RoomDatabase.Builder) — transaction executor behavior.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The checkout case was not device-reproduced.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The checkout case was not device-reproduced.

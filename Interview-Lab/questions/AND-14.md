@@ -34,6 +34,10 @@ The API replaces manual `onActivityResult` request-code routing with `ActivityRe
 
 In an Activity, declare `private val pickPhoto = registerForActivityResult(ActivityResultContracts.GetContent()) { uri -> if (uri != null) showPreview(uri) }`, then call `pickPhoto.launch("image/*")` from a click handler. This abbreviated Kotlin snippet assumes AndroidX Activity KTX and an implementation of `showPreview`; it is not standalone compilable. For long-lived URI access, use the appropriate document contract and persistable grant flow instead of assuming `GetContent` grants it.
 
+## Practical walkthrough
+
+Activity Result API بتربط result handler بـlifecycle-aware registration بدل request codes متناثرة. عرّف launcher في Activity/Fragment بشكل ثابت قبل ما owner تبقى STARTED، واطلقها بسبب user action. لو photo picker رجّع `Uri?`, null ممكن تعني إلغاء؛ ما تعملش force unwrap. `GetContent` مناسب للوصول المؤقت، ولو مطلوب document access طويل استخدم contract/grant flow المناسبة مثل `OpenDocument` مع persistable permission لما provider يسمح. بعد process recreation الـcallback بيتسجل تاني بنفس pattern، لكن مهم تراجع هل result القديم لسه منطقي للscreen الحالية.
+
 ## Trade-offs and decision criteria
 
 Built-in contracts cover common actions with typed inputs and outputs. A custom contract can normalize a proprietary flow but adds parsing and compatibility work. A launcher tied to a Fragment's lifecycle is suitable for its UI; a shared singleton launcher is unsafe because registration belongs to an owner. Choose the system Photo Picker where appropriate to avoid broad media permissions.
@@ -52,10 +56,22 @@ A profile editor stores the pending operation ID in `SavedStateHandle`, register
 
 ## Interview answer — structured
 
-“I register the launcher consistently during Activity or Fragment creation and launch it in response to a user action. The contract defines input and parsed output, and the callback handles success or cancellation. Lifecycle-aware registration lets a recreated owner receive a pending result, but registration order must remain stable. For a photo picker I still validate the URI and handle access errors; the result alone is not durable storage or authorization. The callback survives component recreation through the registry when registration is stable, which removes brittle request-code routing. I register launchers unconditionally in a consistent order before the lifecycle is started, launch after a user action, and handle cancellation or null data. A returned URI still needs validation and appropriate read grants.”
+I register the launcher consistently during Activity or Fragment creation and launch it in response to a user action. The contract defines input and parsed output, and the callback handles success or cancellation. Lifecycle-aware registration lets a recreated owner receive a pending result, but registration order must remain stable. For a photo picker I still validate the URI and handle access errors; the result alone is not durable storage or authorization. The callback survives component recreation through the registry when registration is stable, which removes brittle request-code routing.
+
 ## Interview answer — deep senior
 
-“The result registry decouples an external request from a particular Activity instance. I register every launcher on each creation, in stable order, before the owner reaches STARTED, and keep the callback small enough to validate and hand off work. I choose an AndroidX contract for permissions, documents, or media when possible, and a custom contract only when the external protocol warrants it. During process recreation the launcher can receive a pending result, while my own request context must be restored separately. I handle cancellation, malformed results, revoked URI access, and stale account state. For an upload, that means copying or consuming the selected content under the correct grant and making the upload itself resilient to network failures. The Activity Result API pairs a contract with a lifecycle-aware registration key so a pending result can reach a recreated Activity or Fragment. That guarantee depends on registering again in the same order and at the correct lifecycle point; conditional registration can deliver to the wrong callback. I keep the minimum request context in saved state, not a live Activity reference. When a picker returns a URI, I treat it as external input: verify type, size and permissions, then copy or process it under the app’s data policy. For a permission contract I still recheck current grant before using the resource because it may change after the callback. Tests cover cancellation, rotation during launch and process recreation.”
+The result registry decouples an external request from a particular Activity instance. I register every launcher on each creation, in stable order, before the owner reaches STARTED, and keep the callback small enough to validate and hand off work. I choose an AndroidX contract for permissions, documents, or media when possible, and a custom contract only when the external protocol warrants it. During process recreation the launcher can receive a pending result, while my own request context must be restored separately. I handle cancellation, malformed results, revoked URI access, and stale account state. For an upload, that means copying or consuming the selected content under the correct grant and making the upload itself resilient to network failures.
+
+A photo-selection flow illustrates the API contract. I register a `GetContent` launcher with the Activity or Fragment before it starts, launch it from a user action, and handle a null URI as cancellation. If the image must be read much later, I choose a document access contract and persist a grant when the provider and contract permit it; a temporary `GetContent` result is not a durability promise. After recreation, stable registration lets a pending result return to the new owner, but I still check whether that result belongs to the current screen and account. I test cancellation and URI access loss.
+
+## How to answer in the interview
+
+- **Why:** Result callbacks need stable lifecycle ownership and typed contracts.
+- **How:** Register a contract and callback before launch; handle cancellation result.
+- **Trade-offs:** Select `GetContent` or document access by required URI lifetime.
+- **Failure cases:** Name late registration, null URI assumptions, and lost URI permission.
+- **Production solution:** Build and restore a photo-selection flow with explicit grant handling.
+
 ## Deep-dive talking points
 
 Discuss stable registration order, result registry, owner lifecycle, cancellation, URI grant duration, and saved request context.
@@ -75,4 +91,4 @@ Explain contract, launcher, callback, registration timing, recreation, cancellat
 - [Get a result from an activity](https://developer.android.com/training/basics/intents/result) — registry and lifecycle registration.
 - [ActivityResultContracts](https://developer.android.com/reference/androidx/activity/result/contract/ActivityResultContracts) — built-in contracts.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The Kotlin excerpt is illustrative.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The Kotlin excerpt is illustrative.

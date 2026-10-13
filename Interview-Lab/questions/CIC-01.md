@@ -25,6 +25,10 @@ What are CI, Continuous Delivery, and Continuous Deployment?
 
 CI معناها كل change يتبني ويتفحص باختبارات متكررة بعد دمجه أو على PR. Continuous Delivery يخلي artifact صالح للنشر في أي وقت لكن ممكن خطوة production تبقى بموافقة. Continuous Deployment ينشر production تلقائيًا بعد gates. المصطلحات مش مجرد GitHub Actions؛ لازم pipeline موثوق، tests، signing، rollout ومراقبة.
 
+### Practical walkthrough in Egyptian Arabic
+
+في فريق Android، أول PR لازم يطلع منه compile وlint وunit tests ونتيجة واضحة قبل الدمج؛ ده CI. بعد الدمج، pipeline تنتج AAB موقّع ومربوط بالـcommit وتجهزه لاختبار داخلي؛ ده Continuous Delivery حتى لو شخص يضغط زر النشر. لو نفس الـpipeline ترفعه تلقائيًا للمستخدمين بعد بوابات الجودة، ده Continuous Deployment. الفرّق هنا قرار الإفراج، مش مجرد وجود GitHub Actions. فشل اختبار في CI لازم يمنع دمج النسخة، وفشل بوابة crash بعد النشر يوقف زيادة rollout.
+
 ## Why it matters and how it works
 
 CI shortens integration feedback; delivery keeps a release candidate reproducible; deployment automates the production transition. A pipeline can be CI even if release is manual. A green build only proves its configured checks, not absence of defects.
@@ -55,7 +59,15 @@ Production pipeline records source commit, build toolchain, test evidence, signe
 
 ## Interview answer — deep senior
 
-“I design the pipeline around artifact provenance and risk. A single immutable artifact is built from a known commit, validated at multiple layers, signed with protected credentials and promoted through tracks. If production rollout is automatic, crash and business metrics must stop expansion quickly; high-risk migrations or payment SDK changes may need human approval. CI does not claim every security or hardware risk has been tested. I measure lead time and change failure rate while retaining the ability to identify and roll back a bad release. Keep artifact provenance and immutable versioning.”
+“I separate the three by when software becomes releasable and who decides release. Continuous Integration means small changes are integrated frequently with automated compile, lint and tests, so the main branch remains trustworthy. Continuous Delivery takes a passing commit through repeatable packaging, signing and verification to a release-ready artifact; a human or policy can still choose when to expose it to users. Continuous Deployment goes further and releases every eligible change automatically through policy gates. In an Android app I would pin the source commit and build variant to the AAB, run a signed release-like smoke test, then publish to an internal track before staged production rollout. I would not call an untested debug APK ‘delivered’. More automation shortens feedback but raises the cost of a weak gate, so I protect secrets, use approval boundaries for high-risk changes and monitor crashes and payment failures after rollout. The decisive question is which verified artifact crosses which trust boundary.”
+
+## How to answer in the interview
+
+- **Why:** CI exposes integration failures early.
+- **How:** build and test each PR, then produce a traceable release artifact.
+- **Trade-off:** faster release versus cost of stronger gates.
+- **Failure case:** a green debug build hides a release-only crash.
+- **Production solution:** gate signed release candidates and monitor staged rollout.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for distinction between ready-to-release and automatic release, artifact 
 
 ## Self-check rubric
 
-Can you explain this decision, apply the example, name a trade-off and failure, and answer both follow-ups without relying on a memorized slogan?
+Define CI, Continuous Delivery and Continuous Deployment with the exact boundary where a human approves release; give one Android AAB path through build, test, internal track and production.
 
 ## References and reviewed-on date
 
 - [Android app publishing](https://developer.android.com/studio/publish) — release process.
 - [Gradle build lifecycle](https://docs.gradle.org/current/userguide/build_lifecycle.html) — reproducible build tasks.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

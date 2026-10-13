@@ -25,6 +25,10 @@ Explain BFS versus DFS and their typical applications.
 
 BFS بيزور graph مستوى بمستوى باستخدام queue، مناسب لأقصر مسار بعدد edges في graph غير موزون. DFS يدخل عميق باستخدام stack/recursion، مناسب traversal، cycle checks أو backtracking حسب algorithm. الاتنين O(V+E) مع visited set على adjacency list، لكن BFS queue قد تكبر بعرض graph وDFS stack بعمقه.
 
+### Practical walkthrough in Egyptian Arabic
+
+BFS queue تصل لأقصر عدد edges في graph غير موزون، وDFS stack/recursion مناسبة للاستكشاف أو backtracking لا تضمن أقصر مسار. ضع visited عند enqueue كي لا تكرر cycle، واختبر disconnected node. لو edges لها أوزان، BFS لا يحل shortest weighted path؛ استعمل Dijkstra بشروطه. في Android مثال dependency graph أو navigation graph محدود الحجم.
+
 ## Why it matters and how it works
 
 Both algorithms need visited handling in cyclic graphs. BFS shortest-path guarantee requires unweighted/equal-edge-cost graph; weighted shortest path needs another algorithm. Recursive DFS can overflow stack on deep graphs, so iterative stack may be safer.
@@ -32,6 +36,35 @@ Both algorithms need visited handling in cyclic graphs. BFS shortest-path guaran
 ## Worked example
 
 For a navigation/dependency graph, BFS can find fewest screen transitions; DFS can detect a module-dependency cycle with visiting/visited states. Android module graphs can be large enough that iterative traversal avoids recursion depth risk.
+
+A breadth-first traversal uses a queue and a visited set. For an unweighted graph it discovers nodes in increasing edge distance; mark a node visited when it is enqueued so a cycle cannot enqueue it repeatedly.
+
+```kotlin
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Test
+
+private fun shortestHops(graph: Map<String, List<String>>, start: String, goal: String): Int? {
+    val queue = ArrayDeque<Pair<String, Int>>()
+    val seen = mutableSetOf(start)
+    queue.addLast(start to 0)
+    while (queue.isNotEmpty()) {
+        val (node, distance) = queue.removeFirst()
+        if (node == goal) return distance
+        for (next in graph[node].orEmpty()) {
+            if (seen.add(next)) queue.addLast(next to distance + 1)
+        }
+    }
+    return null
+}
+
+class BfsExampleTest {
+    @Test fun shortestUnweightedRouteAndCycle() {
+        val graph = mapOf("A" to listOf("B", "C"), "B" to listOf("A", "D"), "C" to listOf("D"))
+        assertEquals(2, shortestHops(graph, "A", "D"))
+        assertEquals(null, shortestHops(graph, "A", "missing"))
+    }
+}
+```
 
 ## Trade-offs and decision criteria
 
@@ -55,7 +88,15 @@ In production, expose graph traversal as pure Kotlin logic and test with synthet
 
 ## Interview answer — deep senior
 
-“For a modular Android dependency graph I might run DFS with three-color state to detect a cycle and produce a path; for a support flow I might use BFS to find the fewest transitions to a target screen. I would state graph representation, visited semantics and whether edges carry weights. On large graphs I prefer iterative DFS to avoid JVM stack exhaustion and test self-cycles/disconnected nodes. I profile memory under wide frontiers before using BFS in a constrained device path.”
+“BFS expands nodes in layers with a queue, so in an unweighted graph the first time it reaches a target gives the fewest edges. DFS follows one path with a stack or recursion and backtracks; it is useful for reachability or exhaustive exploration but does not generally give the shortest route. Both traverse each reachable vertex and edge at most a constant number of times with a visited set, giving O(V + E) work. Memory differs: BFS may hold a broad frontier, while DFS holds a path/stack and visited set. I mark a node visited when it enters the BFS queue to avoid repeated enqueues in cycles. If edges have weights, ordinary BFS is the wrong shortest-path algorithm; I would choose a weighted algorithm such as Dijkstra only when nonnegative weights satisfy its contract. In an Android feature, a dependency graph or navigation graph may be small enough that clarity matters more than micro-optimization. I test cycles, disconnected nodes, start equals target and graph size limits.”
+
+## How to answer in the interview
+
+- **Why:** graph traversal choice depends on goal.
+- **How:** show queue/stack and visited invariant.
+- **Trade-off:** BFS memory versus DFS depth.
+- **Failure case:** using BFS for weighted shortest path.
+- **Production solution:** choose by graph contract and test cycles.
 
 ## Deep-dive talking points
 
@@ -68,11 +109,11 @@ Prompt for queue/stack, V+E, unweighted shortest path, recursion limit and cycle
 
 ## Self-check rubric
 
-Can you derive the bound, explain the Android example, identify a trade-off/failure, and answer both follow-ups?
+Trace the frontier order for BFS and DFS on a small graph; choose BFS for unweighted shortest path and DFS for traversal, then handle visited nodes and memory bounds.
 
 ## References and reviewed-on date
 
 - [Kotlin ArrayDeque](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.collections/-array-deque/) — queue/stack implementation.
 - [Android performance](https://developer.android.com/topic/performance) — main-thread costs.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

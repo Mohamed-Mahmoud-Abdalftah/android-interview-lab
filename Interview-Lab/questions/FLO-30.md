@@ -24,6 +24,10 @@ State precise absent-subscriber SharedFlow replay/buffer guarantees.
 
 لو `SharedFlow` أصدرت event ومفيش subscriber، اللي يتخزن للوافدين الجدد هو آخر `replay` قيم فقط. `extraBufferCapacity` مخصص للـsubscribers البطيئين الموجودين، مش backlog وقت الغياب؛ `BufferOverflow` ما يشتغلش أصلًا في حالة مفيش subscribers. `tryEmit` ممكن يرجع success رغم إن محدش استلم. ولو process اتقفل، replay in-memory تضيع.
 
+### Practical walkthrough in Egyptian Arabic
+
+`SharedFlow(replay=0, extraBufferCapacity=64)` ومعاها zero subscribers مش معناها 64 event مستنيين UI؛ من غير subscribers اللي يفضل هو replay cache فقط، وهنا صفر. حتى `emit` الناجحة لا تعني navigation اتنفذت. لو حدث لازم يوصل بعد ما التطبيق يرجع، خزّنه في state/durable store مع ID وack؛ replay=1 قد تعيد حدث قديم وتكرر action.
+
 ## Why it matters and how it works
 
 With replay zero, no-subscriber emissions are lost. With replay n, a new subscriber receives up to n latest values, which can be correct for history or duplicate an imperative effect. Emission acknowledgement cannot be inferred from SharedFlow buffering; a durable queue needs persisted IDs and consumer acknowledgement.
@@ -62,7 +66,15 @@ A payment status update is written to local database; UI observes StateFlow deri
 
 ## Interview answer — deep senior
 
-“A SharedFlow is a broadcast primitive with precise memory semantics. Replay holds recent values for new subscribers. Extra buffer capacity absorbs lag from subscribers already collecting; absent subscribers do not create a backlog beyond replay. `tryEmit` returning true only describes acceptance by the flow under its rules, not that a UI action completed. These distinctions matter most across STOP/START and rotation: replay zero may lose a toast, replay one may repeat a navigation command. I document which is acceptable, test no-subscriber emissions and late joins, and use a durable operation record plus acknowledgement if the event represents a payment or other required effect.”
+“A SharedFlow is a broadcast primitive with precise memory semantics. Replay holds recent values for new subscribers. Extra buffer capacity absorbs lag from subscribers already collecting; absent subscribers do not create a backlog beyond replay. `tryEmit` returning true only describes acceptance by the flow under its rules, not that a UI action completed. These distinctions matter most across STOP/START and rotation: replay zero may lose a toast, replay one may repeat a navigation command. I document which is acceptable, test no-subscriber emissions and late joins, and use a durable operation record plus acknowledgement if the event represents a payment or other required effect. I would test the absent-subscriber case explicitly. SharedFlow is hot, but with no active subscriber it retains only the configured replay cache; extra buffer capacity does not become an offline mailbox. With replay zero, an emitted event can disappear even if `emit` returns normally, and a successful `tryEmit` is not proof of UI consumption. With replay one, a new collector gets the last event, which can be useful for a latest signal but dangerous for navigation because it may fire again after rotation. Buffer overflow settings matter when subscribers are present and slow. For a required action, I use a recoverable state or durable command with an ID and acknowledgment and test no-subscriber, slow-subscriber, and restart paths.”
+
+## How to answer in the interview
+
+- **Why:** no-subscriber semantics are easy to misread.
+- **How:** distinguish replay cache from extra buffer.
+- **Trade-off:** replay recovery versus duplicate action.
+- **Failure case:** tryEmit success mistaken for handling.
+- **Production solution:** no-subscriber tests and durable commands when required.
 
 ## Deep-dive talking points
 

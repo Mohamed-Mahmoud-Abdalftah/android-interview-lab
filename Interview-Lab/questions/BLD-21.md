@@ -26,6 +26,10 @@ How would you safely roll out and then roll back a bad Android release?
 
 ابدأ internal/closed test للـAAB الفعلية، ثم staged rollout بنسبة صغيرة مع gates محددة مسبقًا: crash-free/ANR، startup، login/payment success، backend errors، حسب حجم العينة. زوّد النسبة تدريجيًا بعد وقت كافٍ، مع owner يملك قرار الإيقاف. لو ظهر bug، أوقف rollout/حلّل scope، واستخدم kill switch/remote config آمنة للميزة إن وجدت. Play قد يتيح halt لإصدار staged أو كامل وفق القناة، لكن هذا لا يزيل النسخة من الأجهزة التي ثبتتها بالفعل. “Rollback” الحقيقي لهؤلاء يحتاج غالبًا forward fix بـversionCode أعلى أو mitigation server-side؛ downgrade عادي ليس خطة موثوقة. راجع migration/data compatibility قبل النشر حتى يمكن التعافي.
 
+### Practical walkthrough in Egyptian Arabic
+
+Staged rollout يخفف التعرض لكنه لا يرجع التطبيق المثبت فورًا. قبل النشر حدد crash/ANR/payment/login metrics وthreshold وخطة توقف. لو نسخة سيئة، halt rollout، استخدم feature flag آمن عند الإمكان، ثم build مصحح بـversionCode أعلى. حافظ على schema backward compatibility والpending transactions أثناء containment؛ لا توقف reconciliation مع feature. راقب الأجهزة/ABI المتأثرة والتواصل مع support.
+
 ## Why it matters and how it works
 
 Staged rollout limits initial exposure and provides telemetry before wider distribution. Halting stops additional delivery under Play controls but does not reverse an already installed binary. Android update ordering by versionCode prevents a lower-code APK from normally replacing a higher one. Server-side flags may disable a risky path rapidly, while critical binary bugs need a signed higher-code release.
@@ -57,6 +61,14 @@ Define release gates, on-call owner and halt playbook before launch. Track metri
 ## Interview answer — deep senior
 
 “A safe rollout begins before the Play percentage slider. I preserve the exact signed AAB tested in an internal track, its mapping file, source/toolchain provenance and a release owner. I define measurable gates for crash-free sessions, ANRs, startup and business flows such as payment success or unknown-outcome rate, with enough sample time and segmentation by app version, ABI and region. I increase staged exposure only when those gates hold. If checkout failures rise at 5%, I halt distribution and preserve incident evidence; a pretested remote flag can disable an optional UI path, while backend reconciliation protects pending writes. I do not claim that halting the rollout removes version 431 from users who installed it. Android normally rejects a lower versionCode as an update, so those users need a higher-code forward fix or safe server-side mitigation. I retrace with 431's map, add a regression test, validate 432 on an internal track and stage it with recovery metrics. Before any release I review database and API migrations for forward/backward compatibility, because an irreversible schema change can make a nominal rollback unsafe. The playbook defines who may halt, communicate and resume.”
+
+## How to answer in the interview
+
+- **Why:** bad release can persist on devices.
+- **How:** stage with metrics and containment plan.
+- **Trade-off:** speed versus exposure.
+- **Failure case:** assuming halt downgrades users.
+- **Production solution:** fixed higher-version build and data-safe recovery.
 
 ## Deep-dive talking points
 

@@ -25,13 +25,33 @@ How do you implement Keystore-backed encryption for small app secrets?
 
 لتشفير small secret مثل refresh token، الـapp تنشئ AES key في Android Keystore وتستخدم AES-GCM مع IV جديد لكل عملية. لازم تخزن version وIV وciphertext+tag مع بعض؛ وقت القراءة الـtag يفشل لو البيانات اتغيرت. الـKeystore مش مكان نحط فيه arbitrary plaintext. لو key ضاع بعد reinstall أو restore، token يتشال ويطلب sign-in بدل افتراض إن decrypt هينجح.
 
+## Practical walkthrough
+
+لو محتاج تخزّن refresh token صغير، ولّد AES key في Keystore واستعمل AES-GCM مع IV فريد لكل encryption. خزّن envelope فيها version وIV وciphertext+tag، واكتبها atomically. وقت القراءة، tag failure ممكن يعني تلف بيانات أو مفتاح مختلف، فلا تعيد استخدام IV أو ترجع plaintext جزئي. لو token بديل، اطلب login بدل محاولة إصلاح صامتة.
+
 ## Why it matters and how it works
 
 Generate a non-exportable key with encrypt/decrypt purposes, then initialize a Cipher for each encryption so it gets a fresh IV. Store a versioned envelope and use the same IV for decryption, never reuse an IV under the key. Authentication failures are data-integrity or key-loss events, not empty-string defaults.
 
 ## Worked example
 
-Illustrative Kotlin call site, assuming a previously generated Keystore AES key and an app-private envelope format: `val cipher = Cipher.getInstance("AES/GCM/NoPadding"); cipher.init(Cipher.ENCRYPT_MODE, key); val sealed = cipher.doFinal(tokenBytes); val iv = cipher.iv`. Persist `iv` and `sealed` atomically with a format version; this is not a complete library implementation.
+Android/Kotlin example for a small replaceable token. `key` is an existing AES key generated in `AndroidKeyStore` for GCM encryption; this function produces a versioned envelope but the caller must persist it atomically in app-private storage. A production reader must validate version and IV length before AES-GCM decryption.
+
+```kotlin
+import javax.crypto.Cipher
+import javax.crypto.SecretKey
+
+fun sealToken(token: ByteArray, key: SecretKey): ByteArray {
+    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+    cipher.init(Cipher.ENCRYPT_MODE, key) // provider generates a fresh IV
+    val ciphertextAndTag = cipher.doFinal(token)
+    val iv = cipher.iv
+    require(iv.size in 12..16)
+    return byteArrayOf(1, iv.size.toByte()) + iv + ciphertextAndTag
+}
+```
+
+The same key and IV pair must never encrypt twice. On decryption, GCM authentication failure is a hard failure; do not return partial plaintext.
 
 ## Trade-offs and decision criteria
 
@@ -51,10 +71,20 @@ A production token store writes a versioned envelope atomically, excludes unreco
 
 ## Interview answer — structured
 
-“Keystore protects the key material, while the app still needs a correct encryption format. For a small replaceable secret I generate an AES key with restricted purposes, encrypt with AES-GCM and a unique IV, and persist the IV, ciphertext, tag and version together. I handle authentication failure or missing key by clearing the token and asking the user to sign in. Backup rules must not restore ciphertext without its key. I avoid designing custom crypto if a reviewed library or platform option meets the same requirements. The encryption API call is only one part of the protocol. I would persist a version, IV and authenticated ciphertext together, exclude unusable ciphertext from backup, and test tampering and interrupted writes. If a refresh token cannot be decrypted after key loss, I clear it and request login; I do not fabricate a plaintext default.”
+“For a small replaceable token I would generate an AES key in Android Keystore, encrypt with AES-GCM using a fresh IV, and write a versioned envelope containing IV and authenticated ciphertext atomically. Decryption must either verify the tag or fail; it cannot return a default plaintext. I test tampering, interrupted writes, backup restore and key loss. If the token cannot be decrypted, the app clears it and requests sign-in while the backend keeps control of the session.”
+
 ## Interview answer — deep senior
 
-“The trust model matters more than the API call. I minimize local secret retention, then define a versioned AEAD envelope and atomic storage semantics. Keystore may be hardware backed but I check actual properties; plaintext remains visible to the app while used. I test nonce uniqueness, corrupted ciphertext, partial writes, rotation from old aliases, process death and restore to a new device. A refresh token is replaceable through a controlled login flow, so I fail closed on invalidation. The service still checks session validity and can revoke tokens; a compromised client can observe a token during use, so encryption is defense in depth. I begin by minimizing local secret retention, then define an AEAD envelope for the data that truly must remain. The Android Keystore key is restricted to AES-GCM operations; every encryption obtains a new IV, and decryption verifies the authentication tag before any plaintext is used. The app records format and key version so rotation can be staged and crash recovery is deterministic. Because a restored device may not have the original key, a replaceable session token has an explicit reauthentication path and server revocation remains available. I test corruption, concurrent writes, key invalidation, backup restore and logout on release-like devices. A rooted attacker may still observe the token during a valid app use, so local encryption does not authorize payment or replace server checks.”
+“For a replaceable local secret, I would generate a restricted AES key in Android Keystore, encrypt with AES-GCM using a fresh IV, and store version, IV, and ciphertext plus tag as one atomic envelope. Decryption either authenticates the entire value or fails; I never return partial plaintext. I would test IV uniqueness, tampering, crash during write, key invalidation, and restore without the original key. If the token cannot be recovered, the app asks for sign-in instead of silently weakening storage. Hardware backing is device dependent, and plaintext is still exposed to the app during use, so server revocation and authorization remain essential. I would avoid a hand-rolled serialized format without test vectors: define exact byte order, IV length, tag length and supported versions, and reject malformed envelopes before decrypting. A write should be atomic so a crash cannot leave half an IV or tag. I would also inspect whether backup rules include the ciphertext; if the key will not survive restore, excluding it or forcing reauthentication is a product decision, not an implementation accident.”
+
+## How to answer in the interview
+
+- **Why:** local encryption is only as sound as key and format handling.
+- **How:** generate Keystore AES-GCM key and persist a versioned IV/ciphertext envelope.
+- **Trade-off:** encrypted storage complicates migration and recovery.
+- **Failure case:** IV reuse or restored ciphertext without its key.
+- **Production solution:** atomic writes, test tampering, and reauthenticate on unrecoverable key loss.
+
 ## Deep-dive talking points
 
 Specify the ciphertext envelope, authenticated-encryption mode, IV uniqueness, key alias/version, backup exclusions and unreadable-key recovery path.
@@ -73,4 +103,4 @@ Can I describe key purpose, unique IV, envelope/tag, atomic persistence, invalid
 - [Android Keystore system](https://developer.android.com/privacy-and-security/keystore) — key properties and use.
 - [Android cryptography guidance](https://developer.android.com/privacy-and-security/cryptography) — cryptographic practices.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

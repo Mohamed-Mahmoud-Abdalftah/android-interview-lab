@@ -25,6 +25,10 @@ An embedded TLS certificate expires. How do you rotate pins without bricking the
 
 لو certificate embedded كpin وانتهت أو اتبدلت key، النسخ القديمة ممكن تفقد الاتصال حتى لو الشهادة الجديدة valid. نستخدم public-key pins بمفتاح backup مختلف، ننشره قبل switch، نختبر أقدم app مدعوم، ونراقب الأخطاء. صلاحية pin في config مش magic fix؛ لو انتهت هتقل الحماية. ما نفتحش trust-all عشان نرجع الخدمة.
 
+## Practical walkthrough
+
+لو شهادة TLS انتهت، ده غير إن SPKI اتغيّرت. لو pin على public key والrenewal احتفظ بنفس key، pin قد تفضل صالحة؛ لو key اتبدلت، النسخ القديمة تحتاج backup pin مشحونة مسبقًا. اعمل جدول فيه app versions والـpins اللي كل نسخة تعرفها ومواعيد انتهاء الشهادات. ما تستخدمش trust-all كـemergency fix؛ ده يحوّل outage لثغرة.
+
 ## Why it matters and how it works
 
 Pinning requires both normal TLS validation and membership in an accepted pin set. A renewed certificate under the same public key may keep an SPKI pin valid, whereas key rotation needs prepublished new key material. Old installed clients cannot be patched through the failed TLS channel.
@@ -55,7 +59,15 @@ Keep a version-to-pin inventory, expiry alerts, rollout gates and old-client tra
 
 ## Interview answer — deep senior
 
-“This is an operational dependency across release and infrastructure teams. I track which binaries trust which keys, maintain backup key custody outside the primary certificate path, and rehearse rotation before expiry. If an incident requires emergency key change, the prepublished backup enables continuity; otherwise I may need a store-delivered app update and a service incident, not a trust-all override. I also verify the chosen Android/library pinning semantics, including pin-set expiration, on the production network stack. The backend still treats every request as untrusted. Keep a separately controlled recovery key. Monday checkout fails. ”
+“This is an operational dependency across release and infrastructure teams. I track which binaries trust which keys, maintain backup key custody outside the primary certificate path, and rehearse rotation before expiry. If an incident requires emergency key change, the prepublished backup enables continuity; otherwise I may need a store-delivered app update and a service incident, not a trust-all override. I also verify the chosen Android/library pinning semantics, including pin-set expiration, on the production network stack. The backend still treats every request as untrusted. Keep a separately controlled recovery key. Monday checkout fails.  I would rehearse the renewal with a matrix of app versions, pins and certificate chains, including a client whose update is delayed. If the public key is unchanged, renewal may not require a new SPKI pin; if key material changes, the backup must already be in those old binaries. An emergency app release cannot instantly reach every user, so operational overlap is essential. I would reject a trust-all bypass even under outage pressure.”
+
+## How to answer in the interview
+
+- **Why:** old binaries may reject a valid rotated chain.
+- **How:** distinguish certificate renewal from key rotation, predeploy backup SPKI, and test oldest supported builds.
+- **Trade-off:** operational overlap needs long planning.
+- **Failure case:** single embedded certificate pin expires.
+- **Production solution:** versioned trust matrix, staged rollout, and tested update path.
 
 ## Deep-dive talking points
 
@@ -75,4 +87,4 @@ Can I explain why expiry bricks clients and give a safe ordered recovery plan?
 - [Android Network Security Configuration](https://developer.android.com/privacy-and-security/security-config) — pin sets and expiration.
 - [OWASP MASVS network](https://mas.owasp.org/MASVS/controls/MASVS-NETWORK-2/) — endpoint identity.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

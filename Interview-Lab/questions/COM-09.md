@@ -26,6 +26,10 @@ What does collectAsStateWithLifecycle() solve?
 
 `collectAsStateWithLifecycle()` يحوّل Flow أو StateFlow إلى Compose `State` بحيث UI تعيد composition للقيمة الحالية، لكنه يجمع فقط عندما LifecycleOwner يصل عادة إلى `STARTED`، ويتوقف تحتها ثم يبدأ ثانية. ده يمنع UI مخفية من استهلاك emissions وعمل عرض بلا داعٍ. لا يعني أنه أوقف كل upstream دائمًا: `viewModelScope` أو `stateIn` sharing policy قد تواصل الشغل. API تخص Android lifecycle؛ في Compose متعدد المنصات قد تستخدم `collectAsState()` مع ownership مختلف.
 
+### Practical walkthrough in Egyptian Arabic
+
+لما الشاشة تروح background، collector بتاع `collectAsStateWithLifecycle()` يقف تحت `STARTED` ويرجع يجمع لما ترجع؛ الـScreen تشوف آخر قيمة من `StateFlow`. لكن لو repository شغالة في `viewModelScope` أو application scope، ده مش بيوقفها تلقائيًا. راجع sharing policy ومصدر الـFlow لو عايز توفر battery أو network. لو الـUI وقفت collection والـupstream لسه بتعمل location updates، البطارية مش هتتحسن. راقب scope و`SharingStarted` في production واختبر الرجوع للشاشة بعد background.
+
 ## Why it matters and how it works
 
 The lifecycle-aware collector uses the active owner and minimum lifecycle state, defaulting to STARTED in the referenced API. It stops collection below that state and restarts at or above it. The returned Compose State exposes the latest value to readers. StateFlow has a current value on restart; a cold Flow may restart upstream work, depending on its operators and sharing.
@@ -33,6 +37,19 @@ The lifecycle-aware collector uses the active owner and minimum lifecycle state,
 ## Worked example
 
 A catalog screen collects `viewModel.uiState` and shows products while foregrounded. When the user opens another screen, its collector stops; returning resumes and receives current state. A location stream in a repository may still be active if separately launched in an application scope, so the team audits that producer instead of assuming UI collection controls its cost.
+
+### Compose/Kotlin walkthrough
+
+```kotlin
+// Requires androidx.lifecycle:lifecycle-runtime-compose; route has LifecycleOwner.
+@Composable
+fun CatalogRoute(viewModel: CatalogViewModel = viewModel()) {
+    val state by viewModel.ui.collectAsStateWithLifecycle()
+    CatalogScreen(state = state, onRetry = viewModel::refresh)
+}
+// Imports: androidx.lifecycle.compose.collectAsStateWithLifecycle,
+// androidx.lifecycle.viewmodel.compose.viewModel, androidx.compose.runtime.getValue.
+```
 
 ## Trade-offs and decision criteria
 
@@ -48,15 +65,23 @@ Measure subscription and upstream work across START/STOP, choose sharing deliber
 
 ## Interview answer — short
 
-“It turns Flow into Compose State while collecting only in an active Android lifecycle state, usually STARTED, so off-screen UI collection pauses and later resumes.”
+“It turns Flow into Compose State while collecting only in an active Android lifecycle state, usually STARTED, so off-screen UI collection pauses and later resumes. It collects for the active Android lifecycle and exposes a Compose State.”
 
 ## Interview answer — structured
 
-“I use it at the Compose screen boundary for `uiState`. It observes the latest Flow value as Compose State, stops collection below the configured lifecycle state, and restarts when the owner is active again. That avoids unnecessary off-screen UI work. I still inspect the upstream scope: a `stateIn` or application-owned producer may continue even when this collector stops, while a cold Flow may restart. It is not a replacement for event-delivery design.”
+“I use it at the Compose screen boundary for `uiState`. It observes the latest Flow value as Compose State, stops collection below the configured lifecycle state, and restarts when the owner is active again. That avoids unnecessary off-screen UI work. I still inspect the upstream scope: a `stateIn` or application-owned producer may continue even when this collector stops, while a cold Flow may restart. It is not a replacement for event-delivery design. On a catalog route, I collect the ViewModel StateFlow at STARTED and then inspect whether upstream sharing keeps running.”
 
 ## Interview answer — deep senior
 
-“The problem is coupling a visible Android screen to a Flow without wasting work or leaking collection when the screen stops. `collectAsStateWithLifecycle` bridges the Flow to Compose State and uses a `LifecycleOwner` with an active threshold, which defaults to STARTED in the API. The composable reads the resulting State and updates when collected values change. When the lifecycle drops below the threshold, collection stops; on return it starts again. That describes the collector, not every producer behind it. A ViewModel's shared StateFlow may remain active according to its scope and `SharingStarted` policy, and a cold Flow may perform setup again for the new subscription. I check those semantics for a GPS or network-backed stream. I also separate current UI state from one-shot navigation because stopping collection has different consequences for event delivery. In tests I move the owner through STOP and START, assert no unintended UI work while stopped, and verify the latest state appears on resume. The function is Android lifecycle integration; platform-agnostic Compose code may use a different collection strategy.”
+“The problem is coupling a visible Android screen to a Flow without wasting work or leaking collection when the screen stops. `collectAsStateWithLifecycle` bridges the Flow to Compose State and uses a `LifecycleOwner` with an active threshold, which defaults to STARTED in the API. The composable reads the resulting State and updates when collected values change. When the lifecycle drops below the threshold, collection stops; on return it starts again. That describes the collector, not every producer behind it. A ViewModel's shared StateFlow may remain active according to its scope and `SharingStarted` policy, and a cold Flow may perform setup again for the new subscription. I check those semantics for a GPS or network-backed stream. I also separate current UI state from one-shot navigation because stopping collection has different consequences for event delivery. In tests I move the owner through STOP and START, assert no unintended UI work while stopped, and verify the latest state appears on resume. The function is Android lifecycle integration; platform-agnostic Compose code may use a different collection strategy. I would verify both UI collection and repository resource usage when navigating away and back.”
+
+## How to answer in the interview
+
+- **Why:** collection should follow visible UI lifecycle.
+- **How:** describe stop below STARTED and restart with the current StateFlow value.
+- **Trade-off:** a cold Flow can restart upstream collection.
+- **Failure case:** assuming this stops work launched elsewhere.
+- **Production solution:** inspect producer scope and sharing policy.
 
 ## Deep-dive talking points
 

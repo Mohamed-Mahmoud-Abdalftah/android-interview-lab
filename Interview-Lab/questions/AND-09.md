@@ -34,6 +34,10 @@ ViewModel is retained in memory across ordinary configuration recreation for its
 
 In a product detail screen, keep `productId` in navigation/saved state, `selectedTab` in `rememberSaveable`, and fetched product UI state in a destination-scoped ViewModel. Cache products in Room if offline access is a requirement. On process recreation, rebuild the ViewModel, read the ID, and query the repository. This is a design example; whether a local cache is appropriate depends on freshness and data sensitivity.
 
+## Practical walkthrough
+
+في product page، `rememberSaveable` تحفظ selected tab/scroll الصغير طالما نوعه saveable، والـViewModel تملك data fetching وscreen state على navigation scope. `SavedStateHandle` تحفظ `productId` أو query صغير تحتاجه ViewModel بعد restore. Room أو server يبقى source of truth للproduct نفسه لما correctness/offline مطلوب؛ لا تخزن object كبير في Bundle. `remember` وحدها بس داخل composition الحالية، وViewModel ما تنجو من process death. لو item اتحذف أو user اتسجل خروج أثناء غياب app، restoration لازم تعرض missing/unauthorized بدل stale product.
+
 ## Trade-offs and decision criteria
 
 ViewModel avoids refetching on rotation but costs memory. `rememberSaveable` is convenient for UI-only values; putting business rules in composables makes testing and ownership unclear. `SavedStateHandle` suits ViewModel reconstruction keys. Room suits structured durable records; DataStore suits small preferences, not relational queries. All saved-state APIs should hold small simple values, while durable storage needs migration and backup decisions.
@@ -52,10 +56,22 @@ An offline-first note editor stores note content in Room after each debounced ed
 
 ## Interview answer — structured
 
-“I choose by lifetime and owner. ViewModel is the screen's in-memory state holder and survives rotation, but not process death. SavedStateHandle carries compact keys into a recreated ViewModel, and rememberSaveable handles small composable-local UI values. Room or DataStore belongs to the data layer for durable content. For a product page I save the product ID and selected tab, then reload the product from a repository. I do not put the whole product list in a Bundle. The stores solve different lifetimes: ViewModel is in-memory screen state across ordinary recreation; SavedStateHandle and rememberSaveable hold compact serializable hints for eligible system recreation; Room or backend storage holds drafts and financial state. I choose the least durable store that still meets the user’s expectation and test save timing.”
+I choose by lifetime and owner. ViewModel is the screen's in-memory state holder and survives rotation, but not process death. SavedStateHandle carries compact keys into a recreated ViewModel, and rememberSaveable handles small composable-local UI values. Room or DataStore belongs to the data layer for durable content. For a product page I save the product ID and selected tab, then reload the product from a repository.
+
 ## Interview answer — deep senior
 
-“The distinction is retention versus reconstruction versus durability. ViewModel retention works while the owner is recreated in the same process. SavedStateHandle and rememberSaveable serialize limited UI inputs at saved-state lifecycle points; they are backup mechanisms, not guaranteed databases. A durable store survives process loss and normal restarts, but its schema, transaction boundaries, encryption and backup policy require design. For a note editor I persist the draft to Room, save only its ID and cosmetic UI state in saved state, then reconstruct streams and repository state after restart. For server actions I reconcile with the backend rather than trusting any client-side flag. I classify each value by source of truth and recovery requirement. A search field or selected tab can fit saved instance state; a draft note the user expects after relaunch belongs in durable storage; a payment outcome belongs to the backend, with a local attempt ID for reconstruction. Bundle-backed state has serialization and size constraints and is not guaranteed after force-stop, finish or every crash path. ViewModel is not serialized and a new process constructs a new one. I avoid copying a large API response into saved state; I save its key and refetch. Tests kill the process after the system has saved state and also launch without it.”
+The distinction is retention versus reconstruction versus durability. ViewModel retention works while the owner is recreated in the same process. SavedStateHandle and rememberSaveable serialize limited UI inputs at saved-state lifecycle points; they are backup mechanisms, not guaranteed databases. A durable store survives process loss and normal restarts, but its schema, transaction boundaries, encryption and backup policy require design. For a note editor I persist the draft to Room, save only its ID and cosmetic UI state in saved state, then reconstruct streams and repository state after restart. For server actions I reconcile with the backend rather than trusting any client-side flag.
+
+The distinction matters during account switching and process recreation. A saveable tab index is harmless to restore, but a cached product object may be stale, too large for the saved-state Bundle, or belong to a previous account. I restore the small product ID, query the repository under the current user, and let the ViewModel rebuild screen state. If offline display is required, a persistent cache needs freshness and access rules; it is not automatically justified by state restoration. I test route restoration with deleted products and signed-out users, not only the happy path.
+
+## How to answer in the interview
+
+- **Why:** UI state has different survival and correctness requirements.
+- **How:** Place ephemeral composition state, saveable UI element state, ViewModel logic, and durable data in their scopes.
+- **Trade-offs:** Save IDs rather than large objects; reload data when freshness matters.
+- **Failure cases:** Name process-death loss and stale account-specific data.
+- **Production solution:** Restore product ID/tab and re-query the repository with authorization checks.
+
 ## Deep-dive talking points
 
 Discuss ViewModelStore retention, Bundle size and save timing, business versus UI state ownership, Room versus DataStore, and how backup and process termination alter recovery assumptions.
@@ -75,4 +91,4 @@ Compare all four tools by owner and lifetime; choose a home for product ID, sele
 - [Save UI states](https://developer.android.com/topic/libraries/architecture/saving-states) — saved state, ViewModel, and durable storage boundaries.
 - [ViewModel overview](https://developer.android.com/topic/libraries/architecture/viewmodel) — screen state ownership.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The note-editor example is architectural and was not device-tested.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The note-editor example is architectural and was not device-tested.

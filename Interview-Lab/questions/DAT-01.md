@@ -30,11 +30,12 @@ A Retrofit suspend service delegates network I/O to its configured OkHttp client
 
 ## Worked example
 
-Conceptual Android snippet; converter dependency and `UserDto` are application-specific, and base URL must be trusted HTTPS.
+Conceptual Android snippet. The app provides `UserDto` and a matching `converter-gson` dependency; the base URL must be trusted HTTPS. The repository still validates `UserDto` before mapping it to a domain user.
 
 ```kotlin
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
 
 interface UserApi { @GET("users/me") suspend fun me(): UserDto }
@@ -42,9 +43,14 @@ val http = OkHttpClient.Builder().build()
 val api = Retrofit.Builder()
     .baseUrl("https://api.example.com/")
     .client(http)
+    .addConverterFactory(GsonConverterFactory.create())
     .build()
     .create(UserApi::class.java)
 ```
+
+## Practical walkthrough
+
+لو `UserApi.me()` رجعت 200 بس JSON ناقص `id`، transport نجح لكن mapping للدومين لازم يفشل بشكل واضح؛ ما تحوّلش ده لـ“network unavailable”. جهّز `OkHttpClient` واحد مناسب للbackend عشان connection pool/timeouts/interceptors، وRetrofit service للـendpoint والتَحويل. في repository اعمل validation للـDTO قبل `User` domain model، وارسم contract للأخطاء: I/O، HTTP status، malformed body، unauthorized. Auth header يتضاف في boundary آمنة، لكن refresh ما يدخلش loop في interceptor، وlogging ما تطبعش token أو PII. اختبر request headers وstatus/body بكود mock server وتأكد release variant مع converter/R8.
 
 ## Trade-offs and decision criteria
 
@@ -68,7 +74,17 @@ A bank app injects a configured OkHttp client with TLS policy and safe telemetry
 
 ## Interview answer — deep senior
 
-“I separate three concerns: transport, protocol and application meaning. OkHttp owns sockets, TLS, timeouts and interceptors; Retrofit turns a service interface into calls and delegates to OkHttp; the repository translates responses into stable domain contracts. A 200 response with invalid data is not the same as a transport timeout, and a 401 requires session-aware refresh logic rather than a generic retry. I reuse a configured client for pooling, inject dependencies for tests, and review logging and R8 behavior in release. For a financial write I do not let a generic interceptor replay requests without idempotency and reconciliation.”
+I separate three concerns: transport, protocol and application meaning. OkHttp owns sockets, TLS, timeouts and interceptors; Retrofit turns a service interface into calls and delegates to OkHttp; the repository translates responses into stable domain contracts. A 200 response with invalid data is not the same as a transport timeout, and a 401 requires session-aware refresh logic rather than a generic retry. I reuse a configured client for pooling, inject dependencies for tests, and review logging and R8 behavior in release. For a financial write I do not let a generic interceptor replay requests without idempotency and reconciliation.
+
+For a profile endpoint, I would have Retrofit declare the HTTP shape, OkHttp execute it through one configured client, and the repository validate the DTO. A successful TCP exchange or 200 status does not prove the payload is a usable profile. I map transport loss, HTTP rejection, and malformed response into different domain outcomes because each asks for a different UI action. An authentication header can be added at the client boundary, but a 401 refresh path needs bounded attempts and session coordination. The failure cases are per-call clients losing pooling, logs exposing credentials, or an interceptor replaying a financial POST. I test those with a mock server and a minified build.
+
+## How to answer in the interview
+
+- **Why:** Separate transport success from valid application data.
+- **How:** Trace UI → repository → Retrofit service → reusable OkHttp client and converter.
+- **Trade-offs:** Use raw OkHttp only for unusual transport needs, not ordinary typed endpoints.
+- **Failure cases:** Name malformed 200 bodies, token logs, and unsafe POST replay.
+- **Production solution:** Mock-server tests cover headers, error mapping, cancellation and release behavior.
 
 ## Deep-dive talking points
 
@@ -89,4 +105,4 @@ Can I name each layer, classify failures, reuse transport and avoid credential l
 - [OkHttp documentation](https://lysine.dev/okhttp/) — transport features.
 - [Android network security](https://developer.android.com/privacy-and-security/security-config) — platform TLS configuration.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-12; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

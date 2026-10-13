@@ -41,6 +41,10 @@ fun main() {
 }
 ```
 
+## Practical walkthrough
+
+`inline fun around(block: () -> Unit)` يسمح `return` من caller لو lambda اتنفذت مباشرة في موقع الاستدعاء. لو هتخزنها في object أو تمررها لfunction عادية، `noinline` يبقيها function object ويمنع non-local return. `crossinline` يمنع return ده لكن يسمح نقل جسمها لموضع زي `Runnable { action() }`؛ لازم تنفيذ callback في السياق المسموح حسب التصميم. `reified` يديك type token على call site، لكن generic arguments المتداخلة لسه تخضع لـtype erasure؛ `value is List<String>` مش فحص آمن لكل عنصر. خلي كل modifier مربوط بعقد API واضح بدل إضافته لإسكات compiler.
+
 ## Trade-offs and decision criteria
 
 Use `noinline` only when a lambda must be a first-class stored value; use `crossinline` when invoking from a different execution context forbids caller return. Prefer ordinary explicit type tokens for non-inline public APIs or Java callers. Reified helpers can improve ergonomics but may enlarge bytecode.
@@ -55,15 +59,25 @@ A navigation registry stores callbacks, so its registration function uses ordina
 
 ## Interview answer — short
 
-`noinline` keeps a lambda as a value; `crossinline` allows inlining but forbids non-local return; eligible inlined lambdas may return from the caller. `reified` makes a type parameter available at an inline call site.
+`noinline` keeps a lambda as a function value, so it can be stored or passed on. `crossinline` disallows a non-local return when the lambda runs from another execution context. `reified` exposes an inline type parameter at a call site, within JVM erasure limits.
 
 ## Interview answer — structured
 
-The key is whether the lambda stays inside the call. An eligible inline lambda can perform a non-local return because its code is inserted into the caller. If I need to store or pass a lambda as a value, I mark it `noinline`. If I invoke it from another context where returning from the caller is invalid, I use `crossinline`. A reified type parameter is also tied to inlining; it permits checks such as `value is T`, but does not erase the need to validate generic payloads. The three modifiers answer different questions. If the callback is stored, it must remain a function value, so `noinline` fits. If I need `T::class` or `is T` in a small wrapper, `reified` makes the concrete type available at each inline call. None of this validates arbitrary nested generic data for me.
+I start with the callback’s lifetime. A normal inlined lambda can use a non-local return to leave the caller because it is expanded at that call site. If I must store or pass that lambda as a value, I mark it `noinline`. If I invoke it from another context such as a `Runnable`, `crossinline` prevents a return that cannot safely jump out of the caller. `reified` applies to an inline type parameter and allows checks such as `value is T`, but it does not fully reify nested generic arguments. I choose these modifiers to express execution behavior, not to silence a compiler error.
 
 ## Interview answer — deep senior
 
-I would inspect callback lifetime before selecting these modifiers. A delayed callback cannot jump back into a stack frame that has returned, so `noinline` or `crossinline` blocks that control flow. `noinline` preserves the lambda object; `crossinline` can still be substituted but prevents non-local return. Reification substitutes type information at each call site, which is convenient for serializers and class lookup, but type erasure remains relevant to nested generic contents. I keep wrappers small and document whether callbacks are immediate or deferred. A normal inlined lambda may use an unqualified `return` to exit the enclosing caller because its instructions are placed there. Once a callback can be stored or called later, that return has no valid stack frame to target. Reified parameters similarly exploit substitution of a concrete type at the call site. That allows a type check or class token without explicitly passing `Class<T>`, but Java type erasure still limits checks of nested generic elements. I would make callback lifetime explicit and avoid a public inline wrapper so large that it bloats each caller. These modifiers are control-flow contracts as much as performance details.
+I would inspect callback lifetime before selecting these modifiers. A delayed callback cannot jump back into a stack frame that has returned, so `noinline` or `crossinline` blocks that control flow. `noinline` preserves the lambda object; `crossinline` can still be substituted but prevents non-local return. Reification substitutes type information at each call site, which is convenient for serializers and class lookup, but type erasure remains relevant to nested generic contents. I keep wrappers small and document whether callbacks are immediate or deferred. A normal inlined lambda may use an unqualified `return` to exit the enclosing caller because its instructions are placed there. Once a callback can be stored or called later, that return has no valid stack frame to target.
+
+Imagine an API that returns a `Runnable` to invoke a callback later. Allowing an unqualified `return` from the caller inside that callback would be nonsensical after the caller has returned, so `crossinline` communicates the restriction. If the callback itself must be stored as a value, `noinline` is the right contract. For a small JSON convenience API, `reified T` can supply a top-level class token, but it cannot prove that every element of a `List<T>` has type T after erasure. I would keep the wrapper small and let the serializer validate nested shape and report errors.
+
+## How to answer in the interview
+
+- **Why:** Fine-tune lambda inlining behavior and bypass JVM type erasure.
+- **How:** Use `noinline` to pass lambdas as objects, `crossinline` to forbid non-local returns in deferred/async contexts, and `reified` to retain generic type parameters at runtime.
+- **Trade-offs:** `reified` is only usable on `inline` functions and increases compiled bytecode size.
+- **Failure cases:** Attempting a non-local `return` inside a lambda passed to an asynchronous runner, causing compiler errors or unexpected early termination of the outer function.
+- **Production solution:** Use `crossinline` for callbacks executed inside coroutines or handlers, and `reified` for clean, type-safe JSON deserialization or Android `Intent`/`Bundle` extras.
 
 ## Deep-dive talking points
 
@@ -82,4 +96,4 @@ Explain each modifier, describe one prohibited non-local return, and state a lim
 
 - [Kotlin inline functions](https://kotlinlang.org/docs/inline-functions.html) — `noinline`, `crossinline`, non-local returns, and reified.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.

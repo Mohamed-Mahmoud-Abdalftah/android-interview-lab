@@ -25,6 +25,10 @@ What are the threats of insecure backup and local database files?
 
 App-private database محمية بالـsandbox أثناء التشغيل العادي، لكن backup/device transfer/debug build أو exported provider ممكن يفتح طريق تاني. حساسية المحتوى هي اللي تحدد هل نخزن أصلًا، نمنع backup، أو نحتاج app encryption. لو database مشفّرة بمفتاح Keystore، نسخها لجهاز تاني غالبًا مش هيفكها؛ لازم recovery واضح.
 
+## Practical walkthrough
+
+Room database private من منظور sandbox، لكن `-wal` وattachments وSDK caches وbackup rules قد تحمل نفس البيانات. اعمل inventory فعلي لملفات release build، واستبعد secrets من backup/device transfer أو صمّم restore بقابلية فقد Keystore key. لو POS محتاج transaction history، احتفظ محليًا بـmasked display وoperation IDs فقط، وخلي السجل الحقيقي على backend.
+
 ## Why it matters and how it works
 
 Android Auto Backup may include app data by default; rules differ for Android 12+ target behavior versus older backup XML. Database files and WAL/journal files should be reviewed together. File encryption and backup exclusion are separate controls, and `allowBackup`/data extraction configuration must be tested on supported versions.
@@ -55,7 +59,15 @@ Production security review inspects database schema, cache files, WAL, exports a
 
 ## Interview answer — deep senior
 
-“I would perform a data-flow and file inventory, including Room database, WAL, journal, cache, attachments and SDK files. I validate Android 12+ data-extraction-rules and legacy full-backup-content on the supported matrix, then run a backup and restore drill. Excluding everything can harm usability, while backing up credentials can create both exposure and unusable ciphertext after key loss. I keep payment truth on the backend, store minimal offline state with explicit retention, and re-authenticate after restore. A compromised rooted device can still inspect local files at runtime, so file controls are defense in depth. ”
+“I would perform a data-flow and file inventory, including Room database, WAL, journal, cache, attachments and SDK files. I validate Android 12+ data-extraction-rules and legacy full-backup-content on the supported matrix, then run a backup and restore drill. Excluding everything can harm usability, while backing up credentials can create both exposure and unusable ciphertext after key loss. I keep payment truth on the backend, store minimal offline state with explicit retention, and re-authenticate after restore. A compromised rooted device can still inspect local files at runtime, so file controls are defense in depth.  I would include Room's WAL and journal files, attachments and SDK caches in the storage inventory, because deleting a row is not necessarily immediate erasure from every file. On Android versions with distinct cloud-backup and device-transfer rules, I would test both paths with a real install/restore. If the app needs offline transactions, I would persist the minimum operation data and reconcile with the server after restore, rather than storing full card data for convenience.”
+
+## How to answer in the interview
+
+- **Why:** storage paths extend beyond the main database file.
+- **How:** inventory DB, WAL, cache, SDK files, backup and transfer behavior.
+- **Trade-off:** exclusions reduce restore convenience.
+- **Failure case:** ciphertext restores without its local key or PAN leaks via WAL.
+- **Production solution:** minimize rows and run real backup/restore tests.
 
 ## Deep-dive talking points
 
@@ -75,4 +87,4 @@ Can I identify database side files, backup rules, restore behavior and authorita
 - [Android Auto Backup](https://developer.android.com/identity/data/autobackup) — inclusion/exclusion and API behavior.
 - [OWASP backup test](https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0216/) — sensitive backup exposure.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

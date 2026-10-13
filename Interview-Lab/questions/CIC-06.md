@@ -25,6 +25,10 @@ When is revert safer than reset on shared branches?
 
 على branch مشترك أو release branch، `revert` بيضيف commit يعكس change قديم من غير ما يغير hashes اللي الناس سحبتها. `reset` ينقل branch pointer وforce-push ممكن يكسر شغل الآخرين ويضيّع provenance. لكن revert مش زر سحري: لو commits أحدث معتمدة على القديم، هتظهر conflicts أو behavior مكسور لازم يتراجع ويُختبر.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو commit نازل على `main` وكل الفريق بنا عليه، `reset` وforce push هيغيّروا التاريخ اللي عندهم. `revert` يضيف commit جديد يلغي الأثر بدون تغيير identities القديمة. لكن revert مش زر سحري: لو فيه commits لاحقة تعتمد على API الذي أُلغي، هيظهر conflict أو build failure يحتاج تعديل. راجع diff النهائي وشغّل tests للـvariant المتأثر، وبعدها أصلح forward branches أو release branches حسب السياسة.
+
 ## Why it matters and how it works
 
 A revert applies inverse patch against current tree, so it may conflict or produce semantic problems when subsequent commits changed the same code. Git history remains append-only, preserving CI and release references. A revert of a merge requires choosing a mainline parent.
@@ -55,7 +59,15 @@ Incident runbook records commit, revert SHA, artifact version, schema compatibil
 
 ## Interview answer — deep senior
 
-“I separate source rollback from operational rollback. Git revert can restore code behavior in a new artifact, but it cannot uninstall an AAB, recover data deleted by a migration or erase a server-side side effect. I inspect dependent commits and schemas, create a targeted revert or fix-forward, test the current tree, and stage rollout. For an urgent active incident, a server feature gate may reduce exposure while the app release propagates. Reset remains appropriate for private local history, not shared release provenance. Plan compatible forward migration or fix-forward.”
+“Revert is safer on shared branches because it records a compensating change instead of rewriting history that other contributors and release systems already reference. If commit A introduced a bad feature and B and C landed afterward, resetting main to before A would also move away B and C or force everyone to reconcile a new history. Reverting A creates a new commit whose diff is reviewed and tested like any other change. I still inspect dependencies: later code may call APIs introduced by A, so the revert can conflict or compile yet fail a user journey. In a release incident I select the smallest rollback, run the release-like checks and preserve the artifact/commit link. If the bad change was a merge commit, I explicitly choose the mainline parent and review the resulting diff. The trade-off is an extra commit and occasional conflict resolution, but the operational history remains auditable and teammates do not have to repair their local branches.”
+
+## How to answer in the interview
+
+- **Why:** shared refs already depend on published commits.
+- **How:** revert with a reviewed compensating commit.
+- **Trade-off:** auditability versus extra history.
+- **Failure case:** later commits may rely on reverted API.
+- **Production solution:** run release checks on the resulting branch.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for public commit references, inverse patch conflict, released migration,
 
 ## Self-check rubric
 
-Can you explain this decision, apply the example, name a trade-off and failure, and answer both follow-ups without relying on a memorized slogan?
+Explain why revert adds a new inverse commit without rewriting shared history; identify a case where reverting an old commit conflicts with later changes and how you would verify the result.
 
 ## References and reviewed-on date
 
 - [Git revert documentation](https://git-scm.com/docs/git-revert) — inverse commit semantics.
 - [Android Room migrations](https://developer.android.com/training/data-storage/room/migrating-db-versions) — shipped schema considerations.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

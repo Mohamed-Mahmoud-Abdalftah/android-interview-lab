@@ -44,6 +44,10 @@ fun news(dao: NewsDao, mediator: NewsMediator): Flow<PagingData<Article>> =
     }.flow
 ```
 
+## Practical walkthrough
+
+news feed تفتح بسرعة لو UI تقرأ Room PagingSource من أول لحظة، والـRemoteMediator تعمل refresh لما online حسب TTL/gesture. خزّن articles والremote keys وfreshness metadata في transaction، واستخدم server cursor/snapshot بدل offset لو feed تتغير باستمرار. لو refresh فشلت، ما تمسحش cached rows؛ اعرض stale age وload-state retry. لو append رجّعت duplicate article، primary key/upsert يثبت القائمة. لو user فتح article offline، data كاملة ولا بس card summary؟ صمّم ده من الأول. اختبر cold launch offline، process death أثناء append، inserts جديدة تغير ترتيب feed، وحذف/تعديل server rows.
+
 ## Trade-offs and decision criteria
 
 Room-backed paging gives instant offline content but adds storage and key migration work. Network-only paging is simpler but opens empty offline. Prefetch improves startup at battery/network cost; respect user data policies.
@@ -66,7 +70,17 @@ A news app shows cached headlines immediately, starts conditional refresh when o
 
 ## Interview answer — deep senior
 
-“I would design the server pagination contract before the UI adapter. Opaque cursors or snapshot versions are safer than offsets for a changing news feed. Locally, articles, remote keys and freshness metadata are stored transactionally; Room invalidation drives the PagingSource. On launch, cached rows render immediately, while RemoteMediator refreshes according to TTL or user action. Network errors affect load state, not existing cached rows. I may prefetch with WorkManager under network/battery constraints, but the UI remains usable without it. Tests simulate top insertions, duplicate pages, cursor expiration, process death between fetch and commit, and offline startup.”
+I would design the server pagination contract before the UI adapter. Opaque cursors or snapshot versions are safer than offsets for a changing news feed. Locally, articles, remote keys and freshness metadata are stored transactionally; Room invalidation drives the PagingSource. On launch, cached rows render immediately, while RemoteMediator refreshes according to TTL or user action. Network errors affect load state, not existing cached rows. I may prefetch with WorkManager under network/battery constraints, but the UI remains usable without it. Tests simulate top insertions, duplicate pages, cursor expiration, process death between fetch and commit, and offline startup.
+
+I would start from the user promise: the feed renders cached headlines immediately and becomes fresher when connected. Room is the UI source through a PagingSource, while RemoteMediator fetches pages and stores articles, remote keys, and freshness metadata transactionally. For a changing news list, a cursor or snapshot contract is safer than offsets that shift under new inserts. I do not clear last-good rows when refresh fails; load state reports the error while the user can still browse. Stable IDs make duplicate page delivery harmless. I also decide whether opening an article offline requires full body storage or only cached summary, then test that explicit experience across process death and reconnect.
+
+## How to answer in the interview
+
+- **Why:** Instant launch and offline reading need local paging.
+- **How:** Room PagingSource renders; mediator refreshes rows and keys transactionally.
+- **Trade-offs:** Cursor/snapshot contract versus simpler but shifting offsets.
+- **Failure cases:** Blank feed on failed refresh or duplicate page rows.
+- **Production solution:** Stale indicator, retry load state and offline/article tests.
 
 ## Deep-dive talking points
 
@@ -86,4 +100,4 @@ Can I show instant local page, atomic keys, stable cursor and offline error UX?
 - [Android Paging network/database guide](https://developer.android.com/topic/libraries/architecture/paging/v3-network-db) — RemoteMediator.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — local source of truth.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

@@ -41,6 +41,10 @@ fun main() {
 }
 ```
 
+## Practical walkthrough
+
+`firstMatching(items) { it.price < budget }` بتاخد behavior كparameter بدل ما تعمل method لكل filter. راجع العقد: الـpredicate بيتنادى كام مرة؟ synchronous ولا محفوظ لاستخدام لاحق؟ هل ممكن يرمي exception؟ لو بتسجل callback في listener، إمسك handle للإلغاء عشان ما تسرّبش Activity. والـlambda اللي تلتقط `budget` أو View reference بتحتفظ بيها طول عمر callback. في hot loop، allocation أو inlining قرار قياس، مش سبب لاستخدام lambda مبهمة.
+
 ## Trade-offs and decision criteria
 
 A lambda is concise for one behavior; an interface or named class is clearer when there are multiple operations, identity, or long-lived lifecycle. Function references can be readable but still require checking capture and dispatch semantics. Inlining may remove call overhead but duplicates body bytecode.
@@ -55,15 +59,25 @@ A validation pipeline accepts small predicates and applies them synchronously. F
 
 ## Interview answer — short
 
-A higher-order function takes or returns a function; a lambda is a compact function value. It helps compose behavior, but I check whether it captures state and whether the API stores or repeatedly invokes it.
+A higher-order function accepts or returns a function. A lambda supplies behavior at the call site, which is useful for filters, callbacks, and policies. I document when the lambda runs and whether it can escape, throw, or capture long-lived references.
 
 ## Interview answer — structured
 
-Kotlin lets a function accept another function, for example a predicate passed to `firstOrNull`. The lambda can capture local values, which keeps the code concise. The important API contract is invocation: synchronous or deferred, once or many times, and on which thread. A deferred callback capturing an Activity can leak it. For performance-sensitive code I measure allocations and only consider inline where its trade-offs are justified. Suppose I pass a predicate to find a matching product: the function decides when and how often that predicate runs. If the predicate closes over a screen reference and is stored in a long-lived registry, I can leak the screen. I therefore review whether a higher-order API invokes immediately, retains the callback, or calls concurrently. A named interface can be preferable when the behavior has several methods or a lifecycle.
+I use higher-order functions to pass a small policy without creating a subclass, such as filtering products with a caller-supplied predicate. The function type shows the input and return value, but a useful API must also state whether it invokes the lambda immediately, stores it, or calls it on another thread. Those details affect captured state, exceptions, and lifecycle cleanup. For an Android listener I return an unregister handle and avoid capturing an Activity in a longer-lived owner. I choose a named interface if the behavior has several operations or needs a richer contract.
 
 ## Interview answer — deep senior
 
-I treat higher-order functions as behavioral dependencies. A caller should know whether the lambda can return non-locally, whether it is invoked under a lock, and whether it can escape the call. Captures may retain resources and complicate lifecycle management. In a tight loop, generated allocation and call overhead may matter, but JVM optimization is contextual; profiling beats blanket inlining. For long-lived asynchronous subscriptions I give them an explicit owner and cancellation path. I see lambdas as a way to pass behavior with an explicit type, not merely shorter syntax. A higher-order function can compose validation or iteration cleanly, and closures can capture useful context such as a limit. That capture also extends the lifetime of referenced objects if the callback escapes. In Android, a retained lambda that captures an Activity is a classic leak; registration should return a removable handle or be tied to a lifecycle scope. I document invocation frequency and thread, especially for retries. I would profile before using `inline`, because inlining can enlarge bytecode. A readable named helper is often better than a chain of anonymous callbacks.
+I treat higher-order functions as behavioral dependencies. A caller should know whether the lambda can return non-locally, whether it is invoked under a lock, and whether it can escape the call. Captures may retain resources and complicate lifecycle management. In a tight loop, generated allocation and call overhead may matter, but JVM optimization is contextual; profiling beats blanket inlining. For long-lived asynchronous subscriptions I give them an explicit owner and cancellation path. I see lambdas as a way to pass behavior with an explicit type, not merely shorter syntax.
+
+Suppose a repository accepts a callback for live updates. The function type tells me the values it receives, but not whether it runs immediately, on Main, or after the screen is gone. I would document invocation timing and return a cancellation handle, then verify that an Activity or View captured by the lambda is released on stop. If the callback performs several operations or needs structured state, a named interface may communicate the contract better. I would only discuss inline or allocation cost after profiling a genuine hot path rather than assuming every lambda allocates in the same way.
+
+## How to answer in the interview
+
+- **Why:** Enable clean functional composition, event handling, and customizable algorithms.
+- **How:** Pass lambdas and function references (`(T) -> R`) as parameters, inlining execution where appropriate to eliminate allocation overhead.
+- **Trade-offs:** Non-inlined higher-order functions allocate `Function` object instances and closure capture contexts on the heap.
+- **Failure cases:** Storing a lambda that captures an `Activity` reference inside a long-lived singleton, leaking the entire UI context.
+- **Production solution:** Inline short utility functions, clear stored callbacks in lifecycle teardown (`onDestroy`), or prefer lifecycle-aware listeners and Flow streams.
 
 ## Deep-dive talking points
 
@@ -83,4 +97,4 @@ Write a higher-order predicate function, explain capture, and identify a lifecyc
 - [Kotlin lambdas](https://kotlinlang.org/docs/lambdas.html) — function types, higher-order functions, and closures.
 - [Kotlin inline functions](https://kotlinlang.org/docs/inline-functions.html) — inline behavior.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.

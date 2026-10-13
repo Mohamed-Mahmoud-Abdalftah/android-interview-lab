@@ -26,6 +26,10 @@ What are StrictMode, Perfetto/System Trace, and Android vitals useful for?
 
 `StrictMode` ينبهك في التطوير لو حصل disk أو network access على Main أو بعض أنماط استخدام resources؛ يفيد لاكتشاف مخالفة مبكرة، لكنه لا يشرح كل أسباب jank. `Perfetto/System Trace` يسجل timeline للـthreads والـscheduler والـframes وBinder/I/O عشان تعرف أين ضاع الوقت في سيناريو محدد على جهاز. `Android vitals` يعطي إشارات من مستخدمين حقيقيين مثل ANR/crash وstartup أو rendering حسب التوفر، فيحدد حجم المشكلة والأجهزة المتأثرة، لكنه عادة لا يغني عن trace محلي يفسر السبب. استخدمهم كحلقة: field signal، إعادة إنتاج، trace، إصلاح، ثم قياس field بعد الإطلاق.
 
+## Practical walkthrough
+
+Android vitals أظهر ANR بعد release على أجهزة RAM قليلة. ابدأ بالـcohort، حاول تعيد الرحلة على جهاز مشابه، وشغّل StrictMode في debug لالتقاط disk/network على Main. لو التحذير ظهر، Perfetto يبيّن هل ده فعلًا داخل critical path أو Main مستنية Binder/lock. حط trace section حول query محددة بدل التخمين. بعد الإصلاح تابع ANR rate لا مجرد نجاح التشغيل المحلي؛ StrictMode مش profiler شامل.
+
 ## Why it matters and how it works
 
 StrictMode policies flag selected operations on a thread or VM, especially accidental main-thread disk/network work; they are guardrails, not comprehensive performance profilers. Perfetto records time-correlated system and app events on a device, exposing scheduling and cross-thread interactions. Android vitals aggregates production quality signals for Play-distributed apps, helping prioritize by user impact and cohort. A trace is detailed but narrow; a population metric is broad but may not pinpoint root cause.
@@ -33,6 +37,23 @@ StrictMode policies flag selected operations on a thread or VM, especially accid
 ## Worked example
 
 Android vitals shows ANRs concentrated on low-end devices after a release. Reproduce opening the order list on a matching device. StrictMode reports a synchronous database read on Main; a Perfetto trace shows Main waiting during that query while frames are missed. Move the query behind a main-safe repository and check lock contention, then compare local trace and later ANR cohort. This is an investigative scenario; no real vitals or trace was collected here.
+
+Enable this only in a debug `Application.onCreate()` to surface accidental Main-thread I/O during development. It is an illustrative Android snippet and was not compiled here.
+
+```kotlin
+import android.os.StrictMode
+
+StrictMode.setThreadPolicy(
+    StrictMode.ThreadPolicy.Builder()
+        .detectDiskReads()
+        .detectDiskWrites()
+        .detectNetwork()
+        .penaltyLog()
+        .build()
+)
+```
+
+A warning prompts trace-led investigation; it does not by itself establish the root cause of a field ANR.
 
 ## Trade-offs and decision criteria
 
@@ -56,7 +77,15 @@ Define an alert threshold and affected cohort from Android vitals; use privacy-s
 
 ## Interview answer — deep senior
 
-“My workflow starts with scale and then drills into causality. Android vitals may show a user-perceived ANR regression tied to a release and device class. I reproduce on a comparable device and enable StrictMode in debug to catch obvious synchronous I/O or leaked resource patterns. I then capture a Perfetto trace of the exact interaction, inspect Main thread slices, scheduler state, binder waits, disk operations, and frame deadlines, and add app trace markers if the operation is opaque. StrictMode does not catch every source of latency, and system traces may not resolve every method-level CPU hotspot, so I use a CPU profiler where needed. I fix the specific cause, rerun the same trace and UI metric, and use staged rollout vitals to confirm the field regression actually improves. The evidence and limitations are recorded separately.”
+“My workflow starts with scale and then drills into causality. Android vitals may show a user-perceived ANR regression tied to a release and device class. I reproduce on a comparable device and enable StrictMode in debug to catch obvious synchronous I/O or leaked resource patterns. I then capture a Perfetto trace of the exact interaction, inspect Main thread slices, scheduler state, binder waits, disk operations, and frame deadlines, and add app trace markers if the operation is opaque. StrictMode does not catch every source of latency, and system traces may not resolve every method-level CPU hotspot, so I use a CPU profiler where needed. I fix the specific cause, rerun the same trace and UI metric, and use staged rollout vitals to confirm the field regression actually improves. The evidence and limitations are recorded separately. If vitals points to low-RAM devices after one release, I reproduce the affected journey on a comparable device, not just a flagship. A StrictMode disk warning is a lead; I add a trace section around the query and confirm its duration overlaps missed frames or the ANR. That gives a causal path from cohort to code.”
+
+## How to answer in the interview
+
+- **Why:** Link field signal to a local reproducible trace.
+- **How:** Use vitals, debug StrictMode, and Perfetto for distinct evidence.
+- **Trade-off:** Debug policies and traces can change runtime timing.
+- **Failure case:** A warning may be unrelated to the ANR's wait chain.
+- **Production solution:** Name critical sections and monitor the same production cohort.
 
 ## Deep-dive talking points
 
@@ -78,4 +107,4 @@ Pick each tool for a concrete question, state its limit, connect a field regress
 - [System tracing overview](https://developer.android.com/topic/performance/tracing) — Perfetto timeline scope.
 - [Android vitals ANRs](https://developer.android.com/topic/performance/vitals/anr) — field signal.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The ANR case is illustrative; no production telemetry is claimed.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The ANR case is illustrative; no production telemetry is claimed.

@@ -25,6 +25,10 @@ What are encryption at rest and encryption in transit?
 
 Encryption at rest بتحمي bytes وهي مخزنة، مثل database أو token file، من بعض سيناريوهات فقدان الجهاز أو نسخ الملفات. Encryption in transit بتحمي الاتصال بين app وserver باستخدام TLS مع التحقق من هوية الطرف. الاتنين مهمين لكن مختلفين: TLS ما بتحميش ملف محفوظ، وتشفير الملف ما يمنعش MITM. والـplaintext لازم يظهر وقت الاستخدام في process أو server.
 
+## Practical walkthrough
+
+في تطبيق بنك، TLS يحمي request وهي ماشية للشبكة، لكن بعد وصول الرد الـtoken ممكن يتكتب في cache أو log. تشفير الملف بمفتاح Keystore يحمي نسخة الـbytes على القرص في بعض التهديدات، لكنه ما يمنعش hook يشوف plaintext وقت الاستخدام. اعمل data-flow يحدد الأماكن اللي السر بيظهر فيها، وقلل التخزين والاحتفاظ قبل اختيار التشفير.
+
 ## Why it matters and how it works
 
 At rest, a key and authenticated encryption format protect stored content; Android file-based encryption already provides device-level protection, while app-level encryption may add protection for a specific threat model. In transit, TLS negotiates keys and validates the server certificate chain and hostname. Neither mode authorizes a payment.
@@ -51,10 +55,20 @@ Production reviews trace each sensitive field from collection through storage, t
 
 ## Interview answer — structured
 
-“I separate two attack windows. Android storage encryption and, if needed, Keystore-backed app encryption reduce exposure of stored bytes. TLS protects requests in transit when certificate and hostname checks remain enabled. I also minimize what is stored and sent, avoid logging secrets, and design for key loss. Pinning can add a constraint for selected endpoints but complicates certificate rotation. Server authorization is independent of both forms of encryption. For each sensitive field I identify both windows. HTTPS with certificate and hostname validation protects transit; Android storage encryption and, where justified, Keystore-backed app encryption protect stored bytes. I minimize retention, exclude incompatible ciphertext from backup and keep authorization independent of encryption.”
+“At-rest encryption protects stored bytes; TLS protects traffic between the app and server when certificate and hostname validation remain enabled. I first minimize what is stored, then use Keystore-backed app encryption where the threat model justifies it and define recovery if the key disappears. Neither layer hides plaintext during processing or repairs a log leak. I test the actual release network policy, backup and restore behavior, and keep authorization on the backend.”
+
 ## Interview answer — deep senior
 
-“For a payment app I make a data-flow table: where PAN-adjacent metadata and tokens enter, how long they remain, and which service receives them. I use TLS with normal validation, explicitly test that cleartext and invalid certificates fail, and only add pins when the threat model justifies rotation and recovery cost. At rest I minimize sensitive persistence first; if app encryption is needed, use authenticated encryption with a Keystore-protected key, versioned format and restore strategy. Runtime hooks on a compromised device may still observe plaintext, so the server verifies every transaction. On a payment app I would trace a token from receipt through memory, network, local persistence, backup and deletion. TLS protects the connection to a verified endpoint but does not protect a database after download; local encryption protects bytes at rest but plaintext appears while the app uses it. If we add app-level AES-GCM, we own IV uniqueness, key rotation, format version and recovery after key loss. If we add pinning, we also own certificate rollout and outage planning. I would test invalid certificates, cleartext configuration, backup restore and redacted telemetry on release builds. None of these controls makes a client-supplied approval trustworthy; the service must independently authenticate and authorize the financial operation.”
+“I map the data’s lifetime before picking encryption. TLS with valid certificate and hostname checks protects traffic between app and server, while local encryption can reduce exposure of stored bytes. Neither stops a hook from reading a token when the app uses it, and TLS does not remove plaintext from a log or crash report. For a banking flow I would minimize stored credentials, keep keys in Keystore where justified, define key-loss behavior, and test a restore. I would also verify that release traffic rejects invalid certificates and cleartext paths. Backend authorization remains independent of both encryption layers. I would distinguish Android's device storage encryption from app-managed encryption: the former is platform protection, while the latter introduces key format and migration obligations. A file encrypted under a device-bound key may be unrecoverable after backup restore. For network transport I would test the actual release Network Security Config, redirects and certificate failure behavior, not just inspect an HTTPS base URL in source.”
+
+## How to answer in the interview
+
+- **Why:** network and storage expose different attack windows.
+- **How:** use validated TLS for transit and a justified local encryption design for stored data.
+- **Trade-off:** local encryption creates key-loss and backup obligations.
+- **Failure case:** plaintext leaks through logs or memory after decryption.
+- **Production solution:** minimize retained data and test both network and restore paths.
+
 ## Deep-dive talking points
 
 Separate on-disk ciphertext from TLS channel protection, identify who holds each key, and explain why neither replaces authenticated authorization.
@@ -73,4 +87,4 @@ Can I distinguish the two encryption windows, name plaintext exposure and backup
 - [Android Network Security Configuration](https://developer.android.com/privacy-and-security/security-config) — TLS/cleartext and trust settings.
 - [Android Keystore system](https://developer.android.com/privacy-and-security/keystore) — key protection.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

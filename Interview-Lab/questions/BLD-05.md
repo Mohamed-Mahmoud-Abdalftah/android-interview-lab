@@ -26,6 +26,10 @@ What are build cache, configuration cache, and incremental compilation?
 
 Build cache تعيد استخدام outputs لمهمة إذا inputs المعلنة ونوع المهمة متطابقان، محليًا أو من remote cache. Configuration cache تحفظ نتيجة configuration/task graph لتتجنب إعادة تكوين build في invocation لاحقة عندما المدخلات المعنية لم تتغير. Incremental compilation تقلل ما يعيد compiler ترجمته بعد تغيير source/ABI. الثلاثة مستويات مختلفة وقد تفشل لأسباب مختلفة. Task تقرأ ملفًا غير معلن أو environment secret أثناء configuration قد تفسد reproducibility/compatibility؛ افحص Gradle reports وbuild scan، ولا تفترض أن تشغيل cache يجعل كل build سريعًا.
 
+### Practical walkthrough in Egyptian Arabic
+
+Build cache يعيد task outputs عند مطابقة inputs، configuration cache يعيد نتيجة configuration، incremental compilation يقلل إعادة compile عند تغير جزء من الكود. قس Build Scan قبل تفعيل toggles عشوائيًا؛ plugin غير متوافق قد يعطل cache، وtask لا يعلن input صحيحًا قد يعطي stale output. قارن cold/warm وCI runner ثابت، وراقب cache hit وcorrectness.
+
 ## Why it matters and how it works
 
 Gradle computes task input fingerprints to decide up-to-date or cache reuse. Configuration cache serializes configured task state with compatibility requirements. Compiler incremental analysis tracks source dependencies and ABI changes within and across modules. A broad public API change can invalidate many compile units even if caches work correctly.
@@ -57,6 +61,14 @@ Pin toolchain, review task inputs/outputs, run cache correctness checks, and mon
 ## Interview answer — deep senior
 
 “I separate configuration time, task execution and compiler work. Gradle's build cache stores outputs of cacheable tasks by input fingerprint, so correct declared inputs are essential; a task reading an undeclared schema file can produce a fast but wrong build. Configuration cache serializes the configured task graph and related state so a later invocation can skip much of configuration, provided plugins and tasks follow its rules. Incremental compilation is a compiler-level strategy for changed sources and dependent ABI, independent of whether a task output is loaded from cache. In a multi-module Android build I inspect a representative warm edit: a private function change may affect one compiler task, while a public model or inline API change can fan out. I use build scans or Gradle reports to identify configuration cost, task cache misses and compile invalidation separately. Remote cache is useful only with controlled access and reproducible task inputs. I also avoid resolving sensitive credentials in configuration because cache state may capture them. I measure the critical path before enabling or refactoring build logic.”
+
+## How to answer in the interview
+
+- **Why:** build time has different phases.
+- **How:** profile cache misses and configuration cost.
+- **Trade-off:** speed versus reproducibility.
+- **Failure case:** stale output from undeclared input.
+- **Production solution:** measure and verify clean build parity.
 
 ## Deep-dive talking points
 

@@ -26,6 +26,10 @@ Explain int versus Integer in Java interoperability.
 
 Java `int` قيمة primitive لا تقبل null، بينما `Integer` object wrapper يقبل null ويُستخدم حيث مطلوب reference مثل generics. Kotlin تعرض Java `int` كـ`Int`، و`Integer` غالبًا كـ`Int?` حسب annotations والسياق، لكن generic Java collection ممكن عناصرها تظهر platform types بسبب نقص معلومات nullability. لذلك ما تفترضش إن `List<Integer>` سليمة من null. في المقارنة استخدم `==` للقيمة، مش `===` للهوية؛ cached wrappers تجعل الهوية متغيرة مع القيمة. لو `Integer` null واتعمل له unboxing لحساب رقم سيحدث crash.
 
+## Practical walkthrough
+
+لو SDK Java رجّعت `Integer` من غير nullability annotation، Kotlin ممكن تعرضها كـplatform type؛ الكود يترجم حتى لو القيمة null وتكسر عند الحساب. اعمل adapter صغير يحوّلها لـdomain value واضح: صفر لو العقد يقول غياب القيمة يعني صفر، أو error لو الغياب فساد بيانات. اختبر null فعلًا في boundary test؛ `===` هنا يسأل عن object identity، مش العدد.
+
 ## Why it matters and how it works
 
 Java primitives store numeric values; wrappers are objects with identity and nullable references. Autoboxing converts between them where Java expects a wrapper or primitive. Kotlin maps both into its numeric API but generates primitive or boxed JVM representations according to nullable/generic usage. Java nullability annotations can improve compiler checks, yet unannotated platform types require explicit boundary validation.
@@ -56,7 +60,15 @@ Wrap Java-facing SDK responses in a Kotlin adapter that validates nullability an
 
 ## Interview answer — deep senior
 
-“The distinction matters at API boundaries. A Java method returning `int` promises a value; one returning `Integer` can represent absence and can be null unless its contract says otherwise. Kotlin's mapping makes both pleasant to use, but an unannotated Java value may be a platform type that bypasses strict null checking. I convert it into an explicit domain value in one adapter, deciding whether null means unknown, default, or error. This prevents auto-unboxing crashes and avoids spreading platform uncertainty. I never use wrapper identity for equality, since caching is an implementation behavior. If large numeric collections are on a measured hot path, I consider primitive arrays to reduce boxing; normal UI code favors clarity.”
+“The distinction matters at API boundaries. A Java method returning `int` promises a value; one returning `Integer` can represent absence and can be null unless its contract says otherwise. Kotlin's mapping makes both pleasant to use, but an unannotated Java value may be a platform type that bypasses strict null checking. I convert it into an explicit domain value in one adapter, deciding whether null means unknown, default, or error. This prevents auto-unboxing crashes and avoids spreading platform uncertainty. I never use wrapper identity for equality, since caching is an implementation behavior. If large numeric collections are on a measured hot path, I consider primitive arrays to reduce boxing; normal UI code favors clarity. I make the null policy explicit in the adapter: zero is acceptable only if the SDK contract defines absence that way; otherwise null becomes a typed error. A boundary test supplies null and checks the business outcome, because a platform type can compile while still crashing at unboxing time.”
+
+## How to answer in the interview
+
+- **Why:** Distinguish primitive value from nullable wrapper.
+- **How:** Normalize the Java SDK result in one adapter.
+- **Trade-off:** Defaulting null is convenient but may hide protocol errors.
+- **Failure case:** Unboxing a null platform type causes a crash.
+- **Production solution:** Test absence explicitly and document the chosen domain meaning.
 
 ## Deep-dive talking points
 
@@ -78,4 +90,4 @@ Describe both Java types, map them to Kotlin, handle a null wrapper, and explain
 - [Kotlin numbers](https://kotlinlang.org/docs/numbers.html) — boxed number caching.
 - [Java autoboxing tutorial](https://docs.oracle.com/javase/tutorial/java/data/autoboxing.html) — conversion mechanics.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The SDK example is illustrative.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The SDK example is illustrative.

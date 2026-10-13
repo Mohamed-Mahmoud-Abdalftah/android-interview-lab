@@ -42,6 +42,10 @@ interface Gateway {
 suspend fun recover(id: String, gateway: Gateway): ChargeStatus = gateway.status(id)
 ```
 
+## Practical walkthrough
+
+السيناريو الأخطر: server قبِل charge لكن HTTP response ضاعت؛ client شايفة timeout فقط. قبل الإرسال، احفظ attempt ID وidempotency key وparameters غير حساسة في local durable store. بعد timeout خلّي state `UNKNOWN/PENDING_VERIFICATION`؛ في restart worker أو screen تسأل read-only status endpoint. Retry بنفس key/payload فقط لو contract server/provider يضمن deduplication ومدة retention كافية، وإلا escalation/manual reconciliation. لا تعرض “failed” وتسمح بخصم جديد، ولا تحفظ card/PIN data محليًا. سجّل correlation ID وراقب pending الطويل، واعمل tests server commit + lost response + process kill.
+
 ## Trade-offs and decision criteria
 
 Immediate retry improves responsiveness only when server idempotency is documented and status is reconciled. Waiting for status reduces duplicate risk but can leave Pending UX longer. A support/audit path is essential for unresolved financial operations.
@@ -64,7 +68,17 @@ A checkout backend stores a ledger operation keyed by client operation ID and ex
 
 ## Interview answer — deep senior
 
-“The hardest failure window is server commit followed by lost response and app crash before local acknowledgement. My workflow makes that recoverable: local Pending record is committed first, the backend assigns one logical charge to a stable key, and status can be queried by operation ID. A worker resumes Pending rows after restart. Idempotency deduplicates logical retries but does not imply only one HTTP request was executed; key retention and payload equality rules must be explicit. I do not let the UI initiate a fresh key while status is uncertain. I monitor unresolved Pending age, provide support correlation IDs and test every crash point, including delayed status propagation and duplicate worker runs.”
+The hardest failure window is server commit followed by lost response and app crash before local acknowledgement. My workflow makes that recoverable: local Pending record is committed first, the backend assigns one logical charge to a stable key, and status can be queried by operation ID. A worker resumes Pending rows after restart. Idempotency deduplicates logical retries but does not imply only one HTTP request was executed; key retention and payload equality rules must be explicit. I do not let the UI initiate a fresh key while status is uncertain. I monitor unresolved Pending age, provide support correlation IDs and test every crash point, including delayed status propagation and duplicate worker runs.
+
+I begin with the uncertainty: a timeout tells the client it lacks a response, not whether the backend committed. Before submission I persist a stable attempt ID, key, and safe immutable parameters. The backend accepts one logical charge for that key under its documented idempotency rules and exposes a status lookup. If the response is lost, I mark the local state PendingVerification and query status after restart; I do not create a new operation. Idempotency can mean more than one HTTP request but one logical charge, and key retention limits must be understood. I avoid raw card or PIN storage, monitor unresolved attempts, and test crash points around send, commit, and acknowledgement.
+
+## How to answer in the interview
+
+- **Why:** Lost response creates an unknown outcome, not proven failure.
+- **How:** Persist attempt identity, submit, then reconcile by status endpoint.
+- **Trade-offs:** Retry only under provider key/payload/retention rules.
+- **Failure cases:** New-key duplicate charge or premature “failed” UI.
+- **Production solution:** PendingVerification state, worker recovery and lost-reply tests.
 
 ## Deep-dive talking points
 
@@ -84,4 +98,4 @@ Can I hold Pending, query authority, reuse key and test the commit/ack crash win
 - [Kotlin withTimeout API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout.html) — local deadline limitations.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — durable write synchronization.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

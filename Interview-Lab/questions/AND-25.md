@@ -32,7 +32,34 @@ Notifications are external entry points. Android may start an Activity into an e
 
 ## Worked example
 
-An order-delivered notification targets `order/731`. Its content intent uses an explicit Activity, a unique order-specific request identity, and `FLAG_IMMUTABLE` plus the intended update flag. A parent stack leads from Order Detail to Orders. The destination validates the ID, checks the current account's authorization via repository, then renders loaded, missing, or sign-in states. Do not treat the ID in the Intent as authorization. Exact PendingIntent flags and NavHost routing should be integration-tested on supported API levels.
+An order notification can build a parent stack for cold launch. This Android snippet assumes `OrderActivity` has a parent Activity declared in the manifest and that the destination safely parses an opaque order ID. The unique `data` URI distinguishes Intents even with request code `0`.
+```kotlin
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.core.app.TaskStackBuilder
+
+fun orderTap(context: Context, orderId: String): PendingIntent {
+    val intent = Intent(context, OrderActivity::class.java).apply {
+        data = Uri.Builder().scheme("app").authority("order")
+            .appendPath(orderId).build()
+        putExtra("order_id", orderId)
+    }
+    return requireNotNull(
+        TaskStackBuilder.create(context)
+            .addNextIntentWithParentStack(intent)
+            .getPendingIntent(
+                0, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+    )
+}
+```
+The destination fetches the order after current-account authorization and handles missing or signed-out states. Test Back and Up for the app's actual task/Navigation setup; a different architecture may route through a single host Activity instead.
+
+## Practical walkthrough
+
+notification tap لازم يفتح order المقصود سواء process عايشة أو اتقتلت. استخدم explicit Activity PendingIntent بهوية مختلفة لكل order/action، و`FLAG_IMMUTABLE` لما ما تحتاجش تعديل من طرف تاني؛ راجع update flag عشان data الجديدة ما تتخلطش بnotification قديمة. Activity/NavHost تقرأ opaque order ID وتعيد بناء route/back stack منطقي، ثم repository تطلب order بعد auth/ownership check. لو order اتحذف أو account اتبدل، اعرض missing/sign-in بدل crash. اختبر نقر notification مختلفة بالتتابع، app warm/cold، Back/Up، process recreation وtask switching؛ single test من launcher مش كفاية.
 
 ## Trade-offs and decision criteria
 
@@ -52,10 +79,22 @@ Create a notification routing contract with explicit destination type and stable
 
 ## Interview answer — structured
 
-“For an ordinary destination I create a content PendingIntent and a parent stack, or configure the app's navigation graph to produce equivalent Back behavior. Each notification has a distinct identity so the system does not reuse stale extras. The launched screen accepts a stable ID and loads current data rather than depending on in-memory state. It handles signed-out and missing-item cases. I test multiple notifications, warm and cold launch, process recreation, and both Back and Up. The notification carries a stable destination ID, not a cached screen object or payment result. I make its PendingIntent explicit and immutable by default, distinguish simultaneous notifications by identity, and rebuild the expected parent stack. On cold start I authenticate and load current server state, including the case where the order was deleted.”
+For an ordinary destination I create a content PendingIntent and a parent stack, or configure the app's navigation graph to produce equivalent Back behavior. Each notification has a distinct identity so the system does not reuse stale extras. The launched screen accepts a stable ID and loads current data rather than depending on in-memory state. It handles signed-out and missing-item cases. I test multiple notifications, warm and cold launch, process recreation, and both Back and Up.
+
 ## Interview answer — deep senior
 
-“A notification can outlive the process, the session, and even the underlying entity. I therefore treat it as an untrusted external route, not a shortcut into an existing ViewModel. The PendingIntent is explicit, uses the least mutability required, and has identity chosen so distinct notifications do not collide. I choose a normal parent stack or a special task based on product navigation expectations, then verify Back and Up after a cold launch. The route carries a small stable ID; a repository fetches current data and checks account authorization. If the session expired, sign-in or a safe destination takes over. I test pending intent reuse, two concurrent notifications, deleted data, process kill, and task switching, and monitor navigation failures after release. Notification taps can arrive into an existing task or a fresh process with no initialized ViewModel or singleton, so navigation must be reconstructable from a durable key. I choose a content Intent and TaskStackBuilder/deep-link strategy based on the expected Back behavior, and test both normal and special destinations. PendingIntent identity depends on action/data/component/request code rather than extras alone; two receipts can accidentally share one and open the latest order. I use distinct identities and minimal mutable surface. The destination checks current session and backend ownership before rendering sensitive details, then handles missing or stale records. Tests cover multiple notifications, logout, killed process, task reuse and Back navigation.”
+A notification can outlive the process, the session, and even the underlying entity. I therefore treat it as an untrusted external route, not a shortcut into an existing ViewModel. The PendingIntent is explicit, uses the least mutability required, and has identity chosen so distinct notifications do not collide. I choose a normal parent stack or a special task based on product navigation expectations, then verify Back and Up after a cold launch. The route carries a small stable ID; a repository fetches current data and checks account authorization. If the session expired, sign-in or a safe destination takes over.
+
+For an order-delivered notification, I make each content Intent distinct using stable route data or a suitable request identity; extras alone can collide under PendingIntent matching. I normally set `FLAG_IMMUTABLE`, choose the update behavior deliberately, and construct a parent stack when this is a regular Activity destination. A single-Activity NavHost may instead route internally after launch. On cold or restored process entry, the destination reads only an opaque order ID, authenticates the current account, and fetches authorized data; missing or deleted orders get a safe state. I test two notifications in sequence, Back and Up, task switching, and process kill.
+
+## How to answer in the interview
+
+- **Why:** Notification entry can start a fresh process and task.
+- **How:** Build a distinct explicit PendingIntent and reconstruct the destination from a stable ID.
+- **Trade-offs:** Choose task-stack behavior and immutable/update flags deliberately.
+- **Failure cases:** Name PendingIntent identity collisions, stale extras, and unauthorized order display.
+- **Production solution:** Test multiple notifications across warm, cold, restored, Back, and Up paths.
+
 ## Deep-dive talking points
 
 Discuss PendingIntent identity, immutable versus mutable flags, task stack, Back versus Up, stale entities, session expiry, and cold-start testing.
@@ -76,4 +115,4 @@ Design a cold route, a parent stack, distinct PendingIntent identities, safe dat
 - [PendingIntent API](https://developer.android.com/reference/android/app/PendingIntent) — identity, flags, and mutability.
 - [Save UI states](https://developer.android.com/topic/libraries/architecture/saving-states) — restoration boundaries.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The order route is illustrative.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The order route is illustrative.

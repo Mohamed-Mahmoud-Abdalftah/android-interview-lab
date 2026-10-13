@@ -26,6 +26,10 @@ What is the difference between debug and release signing?
 
 Debug build غالبًا يوقع تلقائيًا بـdebug keystore للتطوير، وهو ليس هوية نشر موثوقة. Release يحتاج signing config بمفتاح محمي؛ update لنفس package يعتمد على signing identity المتوافقة. مع Play App Signing، ترفع AAB موقعة بـupload key، وGoogle Play يوقع APKs التي تصل للمستخدم بمفتاح app signing المُدار؛ لا تخلط الاثنين. احفظ release/upload key في protected CI secrets أو نظام مفاتيح مناسب، لا في Git أو logs، واختبر شهادة artifact قبل upload. فقدان upload key له إجراء reset مختلف عن فقدان app-signing key.
 
+### Practical walkthrough in Egyptian Arabic
+
+Debug key للتطوير ولا تستخدمها لمسار نشر. Release upload key مربوط بصلاحية رفع، وPlay App Signing قد يدير app signing key منفصلة؛ فرّق بينهما. خزّن credentials في protected release job، وراجع fingerprint قبل upload. خطأ key قد يمنع update أو يسبب incident؛ لا تحاول إصلاحه بforce key change بلا فهم سياسة المتجر.
+
 ## Why it matters and how it works
 
 Android uses signing certificates to establish app identity for installation and updates. Debug signing favors local iteration and may be generated automatically. Release signing is a controlled supply-chain step. Play App Signing separates the key used to authenticate uploads from the key used to sign delivered APKs, which changes incident response and key rotation procedures.
@@ -57,6 +61,14 @@ Protect keys, restrict signing jobs, record certificate fingerprints and artifac
 ## Interview answer — deep senior
 
 “Signing is an app identity and supply-chain control, not merely a Gradle switch. The debug keystore is designed for quick local installs; its identity is not the one I want associated with production updates. A release pipeline builds the intended minified variant, signs the AAB in a protected environment and verifies its upload certificate fingerprint and artifact hash. Under Play App Signing, the upload key authenticates the artifact sent to Play, while Play uses the app-signing key to sign the APKs delivered to devices. Those are different roles and have different recovery procedures. I keep keystore material out of source and logs, prevent untrusted PR code from reaching the signing job, restrict access and audit changes. If a bundle is signed with the wrong upload key, I stop promotion and rebuild from the same verified source/toolchain with the registered key; I do not try to patch a signed artifact in place. If key compromise is suspected, I follow the Play/account recovery and rotation process appropriate to that key. Debug success cannot prove a release can update installed users.”
+
+## How to answer in the interview
+
+- **Why:** signing controls update identity.
+- **How:** verify cert role and release job.
+- **Trade-off:** automation convenience versus key exposure.
+- **Failure case:** wrong certificate signs production AAB.
+- **Production solution:** protected credentials and fingerprint gate.
 
 ## Deep-dive talking points
 

@@ -25,6 +25,10 @@ Explain O(1), O(log n), O(n), O(n log n), and O(n²).
 
 `O(1)` ثابت بالنسبة لـn، `O(log n)` بيقلل البحث بنسبة ثابتة كل خطوة، `O(n)` مرور واحد، `O(n log n)` زي sort comparison غالبًا، و`O(n²)` كل عنصر يقارن بكل عنصر. Big O حد نمو مش وقت بالثواني؛ O(1) operation ممكن تكون غالية وO(n) على 10 عناصر سريعة.
 
+### Practical walkthrough in Egyptian Arabic
+
+في Android، قراءة قيمة من map متوقعة `O(1)`، binary search على sorted array `O(log n)`، scan `O(n)`، sort `O(n log n)`، والمقارنة بين كل زوج `O(n²)`. اشرح كل فئة بمقدار العمل عند مضاعفة n، ولا تخلط expected hash performance بضمان worst case. لو العملية في recomposition أو binding، حتى `O(n)` قد تتكرر كثيرًا.
+
 ## Why it matters and how it works
 
 For n=1,000, doubling n has approximate effects: constant unchanged, logarithmic grows slightly, linear doubles, n log n a bit more than doubles, quadratic quadruples. These are asymptotic patterns, not exact predictions.
@@ -55,7 +59,15 @@ Use benchmarks and traces to verify hot-path assumptions on low-end devices. Pre
 
 ## Interview answer — deep senior
 
-“I state what n represents and account for hidden operations. A binary search is logarithmic only under sorted access; a HashMap lookup is expected constant under typical hashing but has adversarial/worst-case caveats. I compare memory and update costs of indexing against repeated scans. Android performance adds main-thread budgets, allocation and recomposition frequency, so even an O(n) transform may be too frequent. I use scaling benchmarks with realistic n to validate the model and keep code maintainable. Inspect callees and data invariants.”
+“I explain these classes by what happens when input doubles. Constant-time indexed access or expected hash lookup barely changes with n under its assumptions. Binary search halves a sorted random-access interval and takes logarithmic comparisons. A scan grows linearly; comparison sorting commonly grows around n log n; checking every pair grows quadratically. I do not treat the labels as performance guarantees: a hash map has collision and allocation costs, and an `O(n)` loop that decodes images on Main can be worse than a clean `O(n log n)` sort off Main. In an Android product list, I would first identify whether a per-row lookup makes total rendering quadratic, then pre-index IDs once if memory allows. I also name preconditions: binary search requires sorted input, and map keys need stable equality. I test sizes that represent production, use a profiler for CPU and allocations, and explain the trade-off between asymptotic growth and constants before choosing an optimization.”
+
+## How to answer in the interview
+
+- **Why:** growth predicts user-facing scaling.
+- **How:** tie each class to a concrete operation.
+- **Trade-off:** fast expected case versus worst-case assumptions.
+- **Failure case:** nested scan repeats per row.
+- **Production solution:** measure call frequency and input size.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for doubling intuition, hidden work, sorted precondition and practical cr
 
 ## Self-check rubric
 
-Can you derive the bound, explain the Android example, identify a data or memory trade-off, and answer both follow-ups?
+Give one growth example for each listed class, compare n and 10n behavior, and explain why an O(n log n) implementation may still lose on tiny inputs.
 
 ## References and reviewed-on date
 
 - [Kotlin collections overview](https://kotlinlang.org/docs/collections-overview.html) — collection operations.
 - [Android performance](https://developer.android.com/topic/performance) — measurement context.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

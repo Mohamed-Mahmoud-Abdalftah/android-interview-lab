@@ -24,6 +24,10 @@ Define stable API boundaries and ownership contracts for multiple teams.
 
 فرق كثيرة تحتاج حدود واضحة: مين يملك domain data، مين يقدر يغيرها، وما هي public API والـSLO. feature modules تتواصل عبر interfaces/navigator contracts لا concrete implementation؛ :app يركّب DI. نستخدم versioned DTO/backend schemas، contract tests، deprecation window وownership docs. لا نرمي كل شيء في `core/common` لأن أي تغيير يكسر كل الفرق ويبطيء builds.
 
+## Practical walkthrough
+
+فريق checkout يحتاج يعرف حالة الدفع، مش تفاصيل HTTP client أو Room table عند فريق payments. اعرض `PaymentsApi.status(operationId)` بعقد يحدد freshness، errors، cancellation وmain-safety. الـapp يربط implementation بالـDI؛ DTOs الداخلية تفضل مخفية. اتفق على owner لكل contract وcontract tests وdeprecation window، وإلا كل فريق هيمشي بإصداره ويكسر التاني وقت rollout.
+
 ## Why it matters and how it works
 
 An API boundary includes types, threading, errors, cancellation, security and compatibility, not just an interface name. Prefer stable domain concepts over exposing Retrofit DTOs or Room entities. Review cross-team changes with consumers and measure dependency graph/rebuild impact.
@@ -63,7 +67,15 @@ A commerce org assigns catalog, checkout and payments team owners, uses stable p
 
 ## Interview answer — deep senior
 
-“At scale, an interface alone is insufficient; the contract must specify threading/main safety, cancellation, result freshness, security authority, error taxonomy and compatibility. I separate public domain types from private wire/database models. The owning team publishes tests and migration notes, and consumers pin compatible versions when release trains differ. An acyclic dependency graph prevents feature-to-feature implementation coupling, while the app wiring layer resolves implementations through DI. I avoid both extremes: a monolithic common module that recompiles everything and hundreds of trivial modules that create coordination overhead. I track API churn, build impact and incident ownership as signals of boundary quality.”
+“At scale, an interface alone is insufficient; the contract must specify threading/main safety, cancellation, result freshness, security authority, error taxonomy and compatibility. I separate public domain types from private wire/database models. The owning team publishes tests and migration notes, and consumers pin compatible versions when release trains differ. An acyclic dependency graph prevents feature-to-feature implementation coupling, while the app wiring layer resolves implementations through DI. I avoid both extremes: a monolithic common module that recompiles everything and hundreds of trivial modules that create coordination overhead. I track API churn, build impact and incident ownership as signals of boundary quality. A strong boundary states freshness and authority, not just method names. For example, `PaymentsApi.status` can return a cached Pending state with timestamp or an authoritative server state; callers must know the difference. The payments team owns errors and compatibility, while checkout owns presentation. I would enforce API-only dependencies in Gradle, add contract tests from consumers, and publish deprecation windows. If every feature imports payment wire models, a backend field rename can fan out across the organization.”
+
+## How to answer in the interview
+
+- **Why:** shared boundaries let teams change internals independently.
+- **How:** publish narrow domain APIs with explicit semantics and ownership.
+- **Trade-off:** contracts require versioning and coordination.
+- **Failure case:** leaking wire DTOs couples every feature to backend changes.
+- **Production solution:** consumer contract tests, migration notes, and measured adoption.
 
 ## Deep-dive talking points
 
@@ -83,4 +95,4 @@ Can I define owner, error/lifecycle contract, compatibility tests and dependency
 - [Android modularization guide](https://developer.android.com/topic/modularization) — module APIs and ownership.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — SSOT and layers.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

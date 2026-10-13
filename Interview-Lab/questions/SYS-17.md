@@ -24,6 +24,10 @@ Design operational monitoring and remote kill switches with fail-safe behavior.
 
 نراقب crash/ANR, latency, sync pending age, auth refresh failures وbusiness outcomes مثل payment Unknown. kill switch تتربط بfeature/version وتبقى لها safe default وTTL، مع backend deny path لو الموضوع أمني أو مالي. rollout تدريجي مع guardrails وowner/on-call؛ لو config fetch فشلت ما نفتحش path خطرة. كل toggle لها audit وcleanup بعد انتهاء الحادث.
 
+## Practical walkthrough
+
+لو rollout سبّب payment Unknown تزيد فجأة، alert لازم يحدد version/cohort ويوقف server acceptance للpath الخطر قبل ما remote config توصل لكل جهاز. Client kill switch تخفي UI، لكنها قد تكون cached أو offline. جهّز safe default وowner on-call وrunbook وقياسات crash/ANR/latency وreconciliation. وبعد الإيقاف، سوّي العمليات الجارية بدل اعتبارها فشلت.
+
 ## Why it matters and how it works
 
 Client config can be stale, unavailable or tampered with. Server enforcement is needed for security-sensitive containment. Metrics must distinguish client timeout from server commit and be segmented by app version/feature flag. Alert thresholds and rollback steps should be rehearsed before rollout.
@@ -64,7 +68,15 @@ A checkout rollout has 1% cohort, alert on crash/ANR and unresolved payment age,
 
 ## Interview answer — deep senior
 
-“A kill switch is useful only if its failure mode is known. Remote config may be stale, cached or unreachable, so a client-only switch cannot guarantee containment of a security bug. I define server-side enforcement and a safe fallback for old/offline apps. Guardrails are segmented by cohort/version and include both platform health and business integrity, such as unresolved payment operations rather than only HTTP errors. The runbook names an owner, threshold, disable action, support communication and reconciliation of in-flight requests. I test the switch before launch, audit who changed it, and remove flags after rollout. If rollback cannot undo committed effects, I plan compensation and status recovery.”
+“A kill switch is useful only if its failure mode is known. Remote config may be stale, cached or unreachable, so a client-only switch cannot guarantee containment of a security bug. I define server-side enforcement and a safe fallback for old/offline apps. Guardrails are segmented by cohort/version and include both platform health and business integrity, such as unresolved payment operations rather than only HTTP errors. The runbook names an owner, threshold, disable action, support communication and reconciliation of in-flight requests. I test the switch before launch, audit who changed it, and remove flags after rollout. If rollback cannot undo committed effects, I plan compensation and status recovery. I would define guardrails before rollout, such as crash rate by app version, unknown-payment age and refresh failure percentage. The kill path must have an owner, access control, audit log and drill, and a safe default when config is stale. For a financial defect, the backend stops new effects; the client switch merely removes exposure. In-flight operations require reconciliation, not blanket failure labels. I would rehearse the sequence with an old offline APK to prove containment still holds.”
+
+## How to answer in the interview
+
+- **Why:** incident controls must work despite stale clients.
+- **How:** monitor segmented guardrails and enforce sensitive shutdown server-side.
+- **Trade-off:** fast kill may interrupt legitimate use.
+- **Failure case:** client-only flag cannot reach offline APKs.
+- **Production solution:** runbook, server deny path, in-flight reconciliation, and rollback drill.
 
 ## Deep-dive talking points
 
@@ -84,4 +96,4 @@ Can I define metrics, kill path, offline fallback and in-flight reconciliation?
 - [Android vitals](https://developer.android.com/google/play/vitals) — crash/ANR monitoring.
 - [Android security guidance](https://developer.android.com/privacy-and-security/security-tips) — client trust boundary.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

@@ -24,6 +24,10 @@ Separate durable business facts from screen-specific rendering and interaction s
 
 Domain state حقيقة تخص business زي `OrderStatus.Paid` من server أو `AccountBalance` validated. UI state هي snapshot الشاشة: loading، displayed text، selected tab، enablement، snackbar/permission prompt visibility. نفس domain value ممكن يترندر بشكل مختلف حسب locale والشاشة. UI state أحيانًا ephemeral وتختفي بعد recreation، لكن business state لازم مصدرها data layer وتترجع بعد process death. ما تعتبرش `success = true` في ViewModel دليل إن payment اتسجل؛ السيرفر مصدر الحقيقة.
 
+### Practical walkthrough in Egyptian Arabic
+
+UI state فيها loading, selected tab, error banner؛ business state مثل payment Approved/Unknown لا يجب يختفي مع Activity. UI يمكن تعرض Unknown كرسالة، لكن source of truth في repository/backend. لو تعيد UI state من saveable وحدها بعد process death، ممكن تعرض success قديم. فرّق ephemeral presentation عن durable domain outcome واختبر restart.
+
 ## Why it matters and how it works
 
 UI state describes what to display now, while domain state describes application facts and rules. A ViewModel transforms domain/data streams into screen state; the repository remains responsible for the underlying source of truth.
@@ -55,6 +59,14 @@ An order can be `Pending` in the domain while one screen shows a spinner and ano
 ## Interview answer — deep senior
 
 I separate lifetime and authority. Domain data such as an account balance or payment status should be validated and obtained from the app’s data layer, with server authority where appropriate. UI state is a projection for one screen; it may include localized strings, transient loading, selected tab, or whether a button is enabled. Some UI state deserves SavedStateHandle restoration, while other effects can be derived anew. Conflating them causes bugs: a local Boolean can masquerade as a payment result, or a formatted string can be used as a monetary amount. I model domain transitions explicitly, use the repository as source of truth, and let each ViewModel derive its own immutable UI state. Tests verify both policy and rendering separately. I also consider restoration separately. A selected tab might be saved in a SavedStateHandle, while a confirmed payment must come from repository/server state after recreation. If the ViewModel merely remembers a Boolean, process death can erase or falsely preserve a conclusion. Tests should cover mapping the same domain state into different screen models and should verify that transport uncertainty never becomes a paid UI state. This separation protects both UX and business correctness.
+
+## How to answer in the interview
+
+- **Why:** UI rendering and business authority differ.
+- **How:** derive UiState from durable domain state.
+- **Trade-off:** responsive UI versus extra mapping.
+- **Failure case:** saveable success badge outlives truth.
+- **Production solution:** reconcile backend and render current state.
 
 ## Deep-dive talking points
 

@@ -26,6 +26,10 @@ What are LaunchedEffect, DisposableEffect, SideEffect, and rememberCoroutineScop
 
 `LaunchedEffect(keys)` يطلق coroutine مرتبطة بوجود composable؛ تغيير key يلغي القديمة ويبدأ جديدة. `DisposableEffect(keys)` يسجل resource/listener ويستدعي `onDispose` عند تغيير key أو خروج composable. `SideEffect` ينفذ بعد successful recomposition لنشر state إلى object خارج Compose، وليس لتشغيل طلب طويل. `rememberCoroutineScope()` يعطي scope مرتبطة بالـcomposition لتطلق coroutine من callback مثل الضغط على زر. اختَر حسب lifetime؛ لا تضع registration في body ولا تستخدم `LaunchedEffect(Unit)` لكل user action.
 
+### Practical walkthrough in Egyptian Arabic
+
+اختار الـeffect من عمر الشغل: `LaunchedEffect(id)` لشغل coroutine مربوط بالـUI وبهوية id؛ `DisposableEffect` لأي listener له unregister؛ `SideEffect` لنشر قيمة بعد composition ناجحة؛ و`rememberCoroutineScope` لحدث زر زي snackbar. لو التسجيل في body هيتكرر، ولو request مهمة بعد مغادرة الشاشة فالـViewModel أرجح. لو key اتغيرت غلط، listener هيتسجل تاني أو coroutine هتتلغي في نص الشغل. في production اكتب اختبار لدخول الشاشة وتغيير key والخروج منها؛ لازم كل register يقابله unregister.
+
 ## Why it matters and how it works
 
 Compose rendering can run repeatedly. Effects provide managed points to coordinate external work with composition lifecycle. A keyed LaunchedEffect coroutine is canceled and relaunched on key change; DisposableEffect pairs setup with cleanup; SideEffect runs after a successful composition application. A remembered scope is useful for work initiated by an event handler while its call site exists.
@@ -33,6 +37,24 @@ Compose rendering can run repeatedly. Effects provide managed points to coordina
 ## Worked example
 
 A screen loads details for `userId` with `LaunchedEffect(userId)` if the work truly belongs to composition; a ViewModel may own the fetch instead. An analytics listener uses `DisposableEffect(lifecycleOwner)` to add and remove its observer. `SideEffect` publishes the latest selected category to an analytics adapter, and a button click uses a remembered scope to show a Snackbar through its host state.
+
+### Compose/Kotlin walkthrough
+
+```kotlin
+// Assumes a screen-owned SnackbarHostState and Material3 Scaffold.
+@Composable
+fun MessageScreen(host: SnackbarHostState = remember { SnackbarHostState() }) {
+    val scope = rememberCoroutineScope()
+    Scaffold(snackbarHost = { SnackbarHost(host) }) { padding ->
+        Button(
+            modifier = Modifier.padding(padding),
+            onClick = { scope.launch { host.showSnackbar("Saved") } }
+        ) { Text("Save") }
+    }
+}
+// Imports: runtime.remember/rememberCoroutineScope, material3.*, layout.padding,
+// kotlinx.coroutines.launch.
+```
 
 ## Trade-offs and decision criteria
 
@@ -48,15 +70,23 @@ Review every effect for its start trigger, keys, cancellation/cleanup, and owner
 
 ## Interview answer — short
 
-“`LaunchedEffect` runs keyed composition-owned coroutines; `DisposableEffect` pairs registration with cleanup; `SideEffect` publishes after composition; `rememberCoroutineScope` launches from callbacks.”
+“`LaunchedEffect` runs keyed composition-owned coroutines; `DisposableEffect` pairs registration with cleanup; `SideEffect` publishes after composition; `rememberCoroutineScope` launches from callbacks. Choose the effect from the work’s trigger and cleanup needs.”
 
 ## Interview answer — structured
 
-“I select by trigger and cleanup. If work should run while a keyed composable exists, I use `LaunchedEffect(key)` and accept cancel/restart when the key changes. A listener belongs in `DisposableEffect` so it is removed on key change or exit. `SideEffect` is for publishing current Compose data to non-Compose code after a successful composition. For a button-driven Snackbar I use `rememberCoroutineScope` from the event callback. Business requests often belong in ViewModel instead.”
+“I select by trigger and cleanup. If work should run while a keyed composable exists, I use `LaunchedEffect(key)` and accept cancel/restart when the key changes. A listener belongs in `DisposableEffect` so it is removed on key change or exit. `SideEffect` is for publishing current Compose data to non-Compose code after a successful composition. For a button-driven Snackbar I use `rememberCoroutineScope` from the event callback. Business requests often belong in ViewModel instead. A click-driven Snackbar uses a remembered scope; an SDK listener needs DisposableEffect and real removal.”
 
 ## Interview answer — deep senior
 
-“Effects exist because a composable body can execute again and must not casually perform external work. I ask when the work starts, what owns it, and what ends it. `LaunchedEffect` gives a coroutine whose lifetime follows the call site and its keys; a new key cancels the old job and starts a new one. `DisposableEffect` is for a paired registration and unregistration, such as a lifecycle observer, and its `onDispose` must actually release the resource. `SideEffect` runs after a successful composition to push current Compose state into an external object, so it is unsuitable for an expensive request. `rememberCoroutineScope` is useful when a click should launch a Snackbar or animation rather than when composition itself should trigger the operation. I choose keys based on the identity of the resource, and use `rememberUpdatedState` if a callback should update without restarting registration. For screen data I often prefer a ViewModel with an explicit request owner, which can survive a composable leaving temporarily. I test exit, key change and rapid callbacks because those expose stale capture and duplicate-listener bugs.”
+“Effects exist because a composable body can execute again and must not casually perform external work. I ask when the work starts, what owns it, and what ends it. `LaunchedEffect` gives a coroutine whose lifetime follows the call site and its keys; a new key cancels the old job and starts a new one. `DisposableEffect` is for a paired registration and unregistration, such as a lifecycle observer, and its `onDispose` must actually release the resource. `SideEffect` runs after a successful composition to push current Compose state into an external object, so it is unsuitable for an expensive request. `rememberCoroutineScope` is useful when a click should launch a Snackbar or animation rather than when composition itself should trigger the operation. I choose keys based on the identity of the resource, and use `rememberUpdatedState` if a callback should update without restarting registration. For screen data I often prefer a ViewModel with an explicit request owner, which can survive a composable leaving temporarily. I test exit, key change and rapid callbacks because those expose stale capture and duplicate-listener bugs. For every effect I can name the exact event that starts it and the exact event that cancels or disposes it.”
+
+## How to answer in the interview
+
+- **Why:** recomposition makes unmanaged side effects unsafe.
+- **How:** map coroutine, listener, post-commit publication, and click to their effect APIs.
+- **Trade-off:** UI lifetime may be shorter than business work.
+- **Failure case:** missing cleanup or wrong key.
+- **Production solution:** test entry, key change, exit, and repeated taps.
 
 ## Deep-dive talking points
 

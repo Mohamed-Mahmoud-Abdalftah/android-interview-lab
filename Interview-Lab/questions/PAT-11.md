@@ -46,6 +46,10 @@ class ClientConfig private constructor(val endpoint: String, val timeoutMs: Long
 ```
 A real SDK also validates URL scheme and uses immutable interceptor copies.
 
+## Practical walkthrough
+
+SDK client فيها endpoint، timeout، TLS config، optional retry policy: Builder مفيدة لو options كتير وترتيبها مش مهم و`build()` ترفض invalid combinations. في Kotlin named/default parameters ممكن تغنيك عن Builder لو مدخلات قليلة؛ `ClientConfig(endpoint, timeout)` أوضح. Builder mutable لو اتشاركت بين threads مش آمنة تلقائيًا، وreuse بعد `build()` لازم contract واضح. لا تسمح `build()` تعمل network side effect خفي؛ خليها validation وإنشاء object immutable قدر الإمكان. في Android اختبر defaults، invalid HTTPS endpoint، timeout غير موجب، وانعكاس config على OkHttp client المعاد استخدامه.
+
 ## Trade-offs and decision criteria
 
 Builder provides readable staged configuration and Java ergonomics but adds class/API surface. Kotlin `data class` or named parameters may suffice for simple immutable config. Prefer a factory if only choosing among implementations.
@@ -70,6 +74,16 @@ I reach for Builder when construction has many optional settings or dependent va
 
 A good Builder improves correctness, not just call-site style. It can collect options in stages, make required fields explicit, and validate cross-field constraints before an expensive client exists. I would design an immutable product and ensure the builder does not leak mutable collections into it. For Android SDKs, I review context scope, timeout defaults, callback executors and security options; a builder must not silently accept an HTTP endpoint where TLS is required. If the object has only two required fields, a constructor or factory is simpler and easier to maintain. For Java-facing APIs, builders can be more ergonomic than Kotlin default arguments, which Java does not see directly. I test the invalid configurations that production incidents would expose.
 
+A Builder is useful when configuration has many optional values, defaults, and cross-field validation. An SDK client might require a trusted endpoint and positive timeout while allowing optional telemetry and retry policy. The builder accumulates choices and `build()` validates them before creating a stable client. For two mandatory values, Kotlin named arguments or a constructor communicate the contract with less code. I would not share a mutable builder across threads or let `build()` hide a remote call. In production, I test invalid combinations and verify the final client uses the configured transport, then reuse that client so connection pooling is effective. The pattern is justified by construction complexity, not aesthetic preference.
+
+## How to answer in the interview
+
+- **Why:** Validate complex configuration before an SDK client is used.
+- **How:** Show endpoint/timeout/options and checks in `build()`.
+- **Trade-off:** Kotlin named parameters beat Builder for simple construction.
+- **Failure case:** Hidden I/O, mutable shared builder or unsafe defaults.
+- **Production solution:** Test invalid combinations and reuse the built client.
+
 ## Deep-dive talking points
 
 Compare builder with Kotlin named constructor, validate dependent options and post-build immutability.
@@ -88,4 +102,4 @@ Define two required settings, one cross-field rule, and a test proving immutable
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — Builder pattern.
 - [Kotlin functions](https://kotlinlang.org/docs/functions.html) — default/named arguments alternative.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

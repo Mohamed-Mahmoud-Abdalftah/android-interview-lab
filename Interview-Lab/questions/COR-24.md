@@ -24,6 +24,10 @@ Explain detached lifetime and why a fresh repository scope per method loses call
 
 `GlobalScope` أو `CoroutineScope(...)` جديد جوه كل repository method بيقطع صلة الشغل بالـcaller: الشاشة تتقفل والطلب يفضل جاري، وممكن الخطأ ما يوصلش لحد. الـrepository الأفضل غالبًا يقدّم suspend function تورّث `Job` من الـcaller. لو شغل لازم يعيش بعد الشاشة، يبقى له owner محقون واضح؛ ولو لازم ينجو من process death يبقى state محفوظة وscheduler دائم.
 
+## Practical walkthrough
+
+لو repository function عملت `GlobalScope.launch` ورجعت فورًا، الشاشة ممكن تختفي والطلب يكمل ويكتب بيانات user قديم بعد logout. الأفضل الدالة تبقى `suspend` وتورّث Job المستدعي؛ لو لازم شغل يكمل بعد الشاشة، مرر scope مملوكة بوضوح على مستوى التطبيق ومعها shutdown وerror reporting. لو لازم تكمل بعد process death، خزّن العملية وجدولها بشكل دائم.
+
 ## Why it matters and how it works
 
 Structured child jobs allow the caller to await completion and cancel obsolete work. Detached scopes return before work finishes and need separate exception handling/shutdown. A repository may legitimately own a shared application scope for a specific in-process operation, but ownership must be explicit and testable.
@@ -33,8 +37,6 @@ Structured child jobs allow the caller to await completion and cancel obsolete w
 Illustrative repository contract; `remote.fetch` is a main-safe suspending API, and the caller chooses `viewModelScope` or another owner.
 
 ```kotlin
-import kotlinx.coroutines.CancellationException
-
 interface RemoteProfile { suspend fun fetch(id: String): String }
 
 class ProfileRepository(private val remote: RemoteProfile) {
@@ -64,7 +66,15 @@ A profile ViewModel calls `repository.load` in `viewModelScope`; navigation canc
 
 ## Interview answer — deep senior
 
-“I evaluate ownership separately from execution context. A repository can switch a blocking operation to IO without replacing the caller’s Job. `GlobalScope` or a fresh Job per method severs structured cancellation and completion: the method may return while a request still runs, the result can update stale session state, and failure may be reported only as uncaught. An application-level scope can be valid for shared in-process tasks if it is injected, supervised as appropriate, observed and cancelled at shutdown or logout. It cannot survive process death. For a payment or upload I store a stable operation ID and required inputs, schedule restartable work, and let UI collect persisted status. Tests cancel the caller and verify no late state mutation.”
+“I evaluate ownership separately from execution context. A repository can switch a blocking operation to IO without replacing the caller’s Job. `GlobalScope` or a fresh Job per method severs structured cancellation and completion: the method may return while a request still runs, the result can update stale session state, and failure may be reported only as uncaught. An application-level scope can be valid for shared in-process tasks if it is injected, supervised as appropriate, observed and cancelled at shutdown or logout. It cannot survive process death. For a payment or upload I store a stable operation ID and required inputs, schedule restartable work, and let UI collect persisted status. Tests cancel the caller and verify no late state mutation. A repository suspend function normally inherits the caller's Job, so navigation or logout can stop obsolete work and the caller observes completion. A scope created inside each method breaks that contract: the function can return while work continues and failure may have no useful consumer. If a cache warming task truly belongs to the application, I inject one owned scope with supervision, error reporting and shutdown. If it must survive process death, I persist intent and schedule recovery.”
+
+## How to answer in the interview
+
+- **Why:** hidden scopes hide completion, cancellation, and failures.
+- **How:** keep suspend repository APIs under the caller's Job unless work has a deliberate longer-lived owner.
+- **Trade-off:** an application scope survives navigation but not process death.
+- **Failure case:** stale session writes or uncaught GlobalScope launch errors.
+- **Production solution:** inject an owned scope or persist and schedule durable operations.
 
 ## Deep-dive talking points
 
@@ -84,4 +94,4 @@ Can I name the owner, explain error/cancellation propagation and design a durabl
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — structured ownership.
 - [Android background work](https://developer.android.com/develop/background-work/background-tasks/persistent) — persistent scheduling.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

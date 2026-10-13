@@ -24,6 +24,10 @@ Can the candidate preserve CancellationException through catch, Result and retry
 
 `CancellationException` إشارة control flow إن الـJob اتلغى، مش network error نعرضه للمستخدم أو نعيد محاولته. لما `catch (Exception)` أو `runCatching` يلقطها، لازم نرميها تاني قبل تحويل باقي الأخطاء إلى `Result`. وإلا request قديم ممكن يكمل، أو retry loop تشتغل بعد ما المستخدم خرج من الشاشة.
 
+## Practical walkthrough
+
+في search request، خروج المستخدم يعمل cancel، والـHTTP suspend function غالبًا ترمي `CancellationException`. لو repository مسك `Exception` وحوّلها لـ`Result.failure`، ViewModel ممكن يعرض رسالة خطأ بعد الخروج أو يبدأ retry. حط catch للإلغاء أولًا وارمه تاني، وبعدها تعامل مع الأخطاء المتوقعة. نفس المشكلة تحصل مع `runCatching` لأنه يمسك `Throwable`.
+
 ## Why it matters and how it works
 
 Cancelable suspending functions throw CancellationException when their Job is cancelled. It should flow up to the owner; cleanup belongs in `finally`. Kotlin `runCatching` catches Throwable, including cancellation, so a bare call around suspend work can accidentally turn cancellation into success-shaped data or a retryable failure.
@@ -63,7 +67,15 @@ A search repository returns domain errors from API calls while propagating cance
 
 ## Interview answer — deep senior
 
-“Cancellation is part of the concurrency contract between a caller and its children. If I turn it into `Result.failure`, the caller may think a task completed normally and launch retries, save stale data or render a wrong banner. Kotlin `runCatching` is especially easy to misuse because it catches Throwable. I normally use explicit try/catch with `CancellationException` rethrown, then catch only expected domain exceptions; I also avoid swallowing fatal JVM errors. A timeout uses a cancellation exception inside its scope, so I handle a specific timeout boundary where I need an explicit timeout outcome, while preserving outer cancellation. Tests should cancel during a delayed operation and verify no retry, no stale emission and prompt resource cleanup.”
+“Cancellation is part of the concurrency contract between a caller and its children. If I turn it into `Result.failure`, the caller may think a task completed normally and launch retries, save stale data or render a wrong banner. Kotlin `runCatching` is especially easy to misuse because it catches Throwable. I normally use explicit try/catch with `CancellationException` rethrown, then catch only expected domain exceptions; I also avoid swallowing fatal JVM errors. A timeout uses a cancellation exception inside its scope, so I handle a specific timeout boundary where I need an explicit timeout outcome, while preserving outer cancellation. Tests should cancel during a delayed operation and verify no retry, no stale emission and prompt resource cleanup. I would distinguish caller cancellation from a server or network error in metrics. A cancelled search is not a failed search, and retrying it after navigation wastes bandwidth and risks stale state. `runCatching` catches `Throwable`, so a convenient wrapper can accidentally convert cancellation into a successful `Result` object. I would use a helper that rethrows cancellation first, test cancellation during refresh and backoff, and leave cleanup in `finally`.”
+
+## How to answer in the interview
+
+- **Why:** cancellation is control flow for ownership, not an ordinary domain failure.
+- **How:** catch CancellationException first and rethrow it; map only expected exceptions afterward.
+- **Trade-off:** Result is convenient but runCatching needs an explicit cancellation escape.
+- **Failure case:** swallowed cancellation triggers retries or stale UI.
+- **Production solution:** centralize a cancellation-safe outcome helper and test parent cancellation.
 
 ## Deep-dive talking points
 
@@ -83,4 +95,4 @@ Can I write catch order, explain `runCatching`, handle cleanup, and test stale-r
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — CancellationException control flow.
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — Job cancellation.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

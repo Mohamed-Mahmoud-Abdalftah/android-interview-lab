@@ -26,6 +26,10 @@ Two feature teams need the same business logic. Where should it live?
 
 لو logic هي rule حقيقية مثل حساب أهلية خصم أو رسوم، اجعل لها owner واحد في domain/use-case module أو capability service يرى الفريقان عقدها؛ لا تنسخها فتختلف النتائج. لكن “نفس” تنسيق text أو UI behavior قد لا يكون نفس semantics، فلا ترفع كل تشابه إلى core. اكتب invariants والأمثلة وحدد inputs/outputs بعيدًا عن Android UI، ثم اختبار مشترك وconsumer integration. الفريقان يتفقان على ownership وAPI evolution، والتطبيق يربط implementation. لو اختلاف المتطلبات قريب، صمم extension واضح بدل `if (featureA)` داخل common.
 
+### Practical walkthrough in Egyptian Arabic
+
+Logic مشتركة بين ميزتين: إن كانت invariant business واحدة مثل eligibility، ضعها في domain/core feature-neutral module مع owner واختبارات. إن التشابه سطحي والقرارين قد يختلفان، التكرار الصغير أفضل من abstraction قسرية. لا تجعل Feature A تعتمد Feature B فقط لتستعير helper. اكتب contract والاختلافات قبل استخراجها، وراقب changes القادمة.
+
 ## Why it matters and how it works
 
 A shared business rule needs consistent decisions across user flows. A stable domain contract lets both features depend in one direction on an owned policy. Changes to shared logic then fan out deliberately, which is appropriate for correctness even if it adds coordination. Similar-looking code is not always the same rule; premature extraction can force unrelated teams into one release cycle.
@@ -57,6 +61,14 @@ Assign codeowners and versioned contract review, build a boundary test matrix, a
 ## Interview answer — deep senior
 
 “I classify the shared code by semantics. If two teams need one financial eligibility rule, duplicating it invites drift, so I give the policy one owner and expose a small contract independent of either screen. Cart and Checkout can both call `DiscountPolicy.evaluate`, get an eligibility result with reason, and render it in their own UI. The policy tests cover rounding, currency, expiry, account tier and concurrency or stale input as relevant. I also state whether the client calculation is a preview while a server makes the final decision; otherwise the two features may present certainty they cannot guarantee. Shared ownership has a cost: policy changes affect both teams, so codeowners, API review and a rollout plan matter. If the common code is only a short date label with subtly different product meaning, premature extraction can be worse than local duplication. I avoid a core module that imports both feature implementations or contains switches for team names. The shared layer should represent a stable business concept, with integration tests proving both consumers handle its outcomes.”
+
+## How to answer in the interview
+
+- **Why:** shared rules need stable ownership.
+- **How:** extract true invariant, keep superficial duplication.
+- **Trade-off:** reuse versus forced coupling.
+- **Failure case:** one feature changes shared helper and breaks other.
+- **Production solution:** contract tests and ownership.
 
 ## Deep-dive talking points
 

@@ -49,6 +49,10 @@ suspend fun <T> retryRead(call: suspend () -> T): T {
 }
 ```
 
+## Practical walkthrough
+
+retry policy تتحدد لكل endpoint. GET transient 503 ممكن تعيدها بـbounded exponential backoff + jitter، مع `Retry-After` لو server بعته؛ 400 validation عادة ما تتعادش. 401 مسار auth، 429 rate limiting، ومش كل 5xx آمن لو write. POST دفع timed out مش دليل إن server ما قبلش؛ خزّن idempotency key/operation ID، query status أو أعد نفس payload+key حسب server contract. ضع max attempts وdeadline عشان worker ما يفضلش للأبد، وراعِ cancellation. راقب retry count/latency وميز user-visible pending من failure مؤكد.
+
 ## Trade-offs and decision criteria
 
 Extra retries improve transient success but amplify load and latency. Jitter and server guidance reduce synchronized bursts. A durable worker is appropriate for pending offline writes, but must use stable IDs and server deduplication.
@@ -71,7 +75,17 @@ A feed refresh uses bounded retries for network I/O, records stale cache on fail
 
 ## Interview answer — deep senior
 
-“I would design a retry matrix per endpoint, not a global interceptor that repeats every request. Method semantics, server idempotency contract, error class and user deadline all matter. I cap retries and backoff, add jitter to prevent a fleet-wide surge, parse Retry-After where relevant, and apply circuit/rate limits if the backend is unhealthy. A lost response can follow a committed write, so the app records a durable operation ID and reconciles status; using the same key can make the logical operation idempotent only if the server enforces it. WorkManager may run a worker again after crash; that is why server-side deduplication and local state transitions are essential. Tests cover cancellation and duplicate execution. Log attempts without sensitive payloads. Retrying validation `400` wastes bandwidth.”
+I would design a retry matrix per endpoint, not a global interceptor that repeats every request. Method semantics, server idempotency contract, error class and user deadline all matter. I cap retries and backoff, add jitter to prevent a fleet-wide surge, parse Retry-After where relevant, and apply circuit/rate limits if the backend is unhealthy. A lost response can follow a committed write, so the app records a durable operation ID and reconciles status; using the same key can make the logical operation idempotent only if the server enforces it. WorkManager may run a worker again after crash; that is why server-side deduplication and local state transitions are essential. Tests cover cancellation and duplicate execution. Log attempts without sensitive payloads. Retrying validation `400` wastes bandwidth.
+
+I build a retry matrix per operation. A read that fails transiently can use bounded exponential backoff with jitter, while a 400 validation error needs user correction, not another call. I honor documented `Retry-After` values for rate limiting or service unavailability and cap the total deadline. For a write, method name alone is insufficient: a timed-out payment POST may already have committed. I persist one operation ID, use the backend’s idempotency semantics for any replay, and query authoritative status when the result is uncertain. I keep cancellation responsive and log attempts without sensitive payloads. Tests simulate lost responses and verify there is only one logical operation.
+
+## How to answer in the interview
+
+- **Why:** Retries can amplify outages or duplicate writes.
+- **How:** Matrix by endpoint, error class, `Retry-After`, deadline and key.
+- **Trade-offs:** Bound backoff/jitter against user latency.
+- **Failure cases:** Global POST replay or endless 4xx retry.
+- **Production solution:** Persist identity, reconcile uncertainty and test lost replies.
 
 ## Deep-dive talking points
 
@@ -91,4 +105,4 @@ Can I classify errors, bound retries, honor Retry-After and protect writes?
 - [HTTP Semantics RFC 9110](https://httpwg.org/specs/rfc9110.html) — method/status semantics.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — queued write retry.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

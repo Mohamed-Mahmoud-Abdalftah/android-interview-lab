@@ -24,6 +24,10 @@ Enforce meaningful dependencies with modules, visibility and tests while minimiz
 
 Boundary يعني قرار مين يعرف مين، مش عدد interfaces. في app متوسطة، Gradle modules تقدر تمنع `feature:ui` من استيراد Retrofit أو data implementation؛ `internal` يحدّ surface، وarchitecture tests/static checks تراقب imports. اعمل interfaces ضيقة عند seams حقيقية: domain policy محتاجة repository contract، أو provider متعدد. Concrete class داخل feature واحد ممكن يفضل concrete وتحقنه Hilt عادي. استخدم DTO/domain mapping لما contract مختلف، لكن ما تخلقش `FooApi/FooImpl/FooUseCase` لكل سطر. راجع dependency graph في CI وعالج violations بأمثلة حقيقية.
 
+### Practical walkthrough in Egyptian Arabic
+
+Enforce boundaries بأقل آليات: Gradle module dependencies للاتجاه، API visibility، static checks للimports المحظورة، وtests للعقود. لا تخلق interface واحد لكل implementation؛ ضع interface عند crossing متغير أو external dependency. مثال domain `PaymentPolicy` pure، data adapter يخاطب backend، UI تستهلك result. راجع dependency graph دوريًا بدل الاعتماد على naming conventions فقط.
+
 ## Why it matters and how it works
 
 Boundaries are compile-time dependency rules and stable API contracts. Gradle module edges, visibility, lint/architecture checks and review can enforce them. Interfaces are one tool, not the only enforcement mechanism.
@@ -55,6 +59,14 @@ First I draw the allowed dependency graph. Gradle modules can prevent UI from im
 ## Interview answer — deep senior
 
 A boundary must survive an implementation change and be enforced by the build, not just a package name. I use a small number of Gradle modules around features and volatile adapters, with explicit allowed edges and narrow shared contracts. Kotlin visibility limits accidental public API growth; lint or architecture tests catch prohibited dependencies such as Compose importing Retrofit DTOs. Interfaces are reserved for genuine consumer contracts, provider variation, or test substitution at important seams. A one-to-one interface per class adds navigation cost while leaving coupling untouched if types still leak. I periodically review build time, module graph, and change locality to see whether the structure pays for itself. For a small app, a documented UI/data split and a few checks may be enough; for a larger team, stronger module enforcement becomes valuable. I would audit the graph in CI, but also inspect the types that cross it. A domain-facing interface returning `Response<Dto>` is still coupled to transport even if Gradle edges look clean. I add contracts only where a consumer needs independent variation or a test seam, and I review whether shared modules are growing into catch-all dependencies. Architecture checks, visibility and focused tests give stronger evidence than naming conventions. As team and feature count change, I revisit module granularity and measure build and navigation cost.
+
+## How to answer in the interview
+
+- **Why:** architecture needs enforceable dependencies.
+- **How:** use modules and targeted interfaces.
+- **Trade-off:** guardrails versus boilerplate.
+- **Failure case:** package names look clean but imports cross.
+- **Production solution:** CI dependency check and contract tests.
 
 ## Deep-dive talking points
 

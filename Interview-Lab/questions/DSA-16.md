@@ -25,6 +25,10 @@ How do you optimize an algorithm while keeping code maintainable and correct?
 
 تحسين algorithm يبدأ بتحديد input range وقياس hot path، مش تحويل كل code لـlow-level loops. نثبت behavior باختبارات للحالات الحدية، نشتق complexity، نغير خطوة واحدة زي preindexing أو batching، ونقيس على جهاز ممثل. نراجع memory، concurrency وreadability؛ أسرع code مش مكسب لو بيكسر correctness أو يصعب صيانته.
 
+### Practical walkthrough in Egyptian Arabic
+
+قبل optimization اثبت bottleneck بمقياس. اكتب contract واختبارات edge cases، ثم غير algorithm في جزء واحد: مثل بدل nested scan أنشئ map واحدة. قارن output قبل وبعد على بيانات صغيرة وكبيرة، راقب memory/GC، وخلي code مفهوم لفريق Android. لو improvement 2ms لكن صعّب debugging ووضع state، قد لا يستحق؛ وثّق الافتراضات وأعد القياس في release.
+
 ## Why it matters and how it works
 
 A valid optimization preserves observable semantics under the same inputs, including ordering, duplicates, nulls, cancellation and errors. Complexity guides candidates; benchmarks confirm real costs. Readability and maintenance affect future defect rates.
@@ -55,7 +59,15 @@ Code review includes before/after trace, benchmark method, edge-case tests and r
 
 ## Interview answer — deep senior
 
-“Optimization is an engineering experiment. I state a hypothesis, baseline measurement and acceptance threshold; isolate the hot path; preserve semantics including ordering, equality, cancellation and thread safety; and change one variable. An index may reduce O(n²) to expected O(n) but increase memory and alter duplicate behavior, so tests and code review cover those risks. I benchmark cold/warm cases and p95 frames, then monitor staged rollout. If the code becomes harder to maintain for negligible gain, I reject it. Stop optimization when bottleneck moves elsewhere.”
+“I optimize only after I can name the bottleneck and preserve its contract. I establish a baseline on realistic inputs and a release-like device, write tests for the current behavior and edge cases, then change one algorithmic decision. Replacing a nested scan with a map, for example, may reduce expected time from quadratic to linear but adds memory and invalidation rules. I compare outputs before and after, measure CPU, allocations, frame time and memory, and check that the new code remains understandable to the team. A clever custom data structure is not a win if it introduces concurrency bugs or hides ownership. I also distinguish a microbenchmark from user experience: a two-millisecond unit improvement may not affect frames, while a modest allocation reduction in a frequently recomposed screen may. I document assumptions such as stable IDs and maximum list size, and define a rollback trigger if production metrics worsen. The final answer is a measured, correct trade-off rather than an asymptotic label alone.”
+
+## How to answer in the interview
+
+- **Why:** optimization should solve measured pain.
+- **How:** baseline, preserve contract, compare results.
+- **Trade-off:** speed versus memory and maintainability.
+- **Failure case:** microbenchmark hides UI regression.
+- **Production solution:** ship with regression tests and profiling.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for hypothesis, semantic tests, complexity/memory trade, realistic benchm
 
 ## Self-check rubric
 
-Can you derive the bound, explain the Android example, identify a trade-off/failure, and answer both follow-ups?
+Prove the original and optimized algorithm return the same result on edge cases, measure complexity and real latency, and keep the implementation understandable enough to maintain.
 
 ## References and reviewed-on date
 
 - [Android performance](https://developer.android.com/topic/performance) — profiling guidance.
 - [Kotlin collections overview](https://kotlinlang.org/docs/collections-overview.html) — operation semantics.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

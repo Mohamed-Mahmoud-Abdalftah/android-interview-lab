@@ -39,6 +39,10 @@ object SignalEngine {
 ```
 The native implementation must validate lengths and handle memory and exceptions; this snippet alone is not executable.
 
+## Practical walkthrough
+
+لو عندك C++ signal-processing library موجودة أو function اتقاست وطلعت محتاجة native implementation، JNI bridge ممكن يستحق التكلفة. `external fun process(samples: ShortArray)` لازم يقابله symbol/build صحيح لكل ABI، و`System.loadLibrary` ممكن يفشل بـ`UnsatisfiedLinkError` لو packaging غلط. نقل array عبر bridge ممكن يعمل copy/pinning، وnative crash يوقع process كله؛ راجع bounds، exceptions، thread attachment، وrelease symbols. اعمل thin API بمدخلات ومخرجات واضحة واختبر arm64/device الواقعي. لو الهدف إخفاء secret، JNI مش trust boundary والمفتاح الثابت يفضل قابل للاستخراج.
+
 ## Trade-offs and decision criteria
 
 Prefer Kotlin/Java for ordinary app logic. Choose NDK when a native library or measured compute path justifies tooling, ABI packaging, and crash-debugging cost. Minimize crossings by passing sensible batches, but avoid giant copies that inflate memory.
@@ -53,15 +57,25 @@ An audio editor reuses a mature C++ DSP engine. Kotlin owns UI and lifecycle; a 
 
 ## Interview answer — short
 
-JNI is the bridge from JVM code to native C/C++ code. Android apps use it for existing native libraries or justified performance work. It adds ABI, memory, threading, and debugging complexity, and native code does not hide secrets.
+JNI is the bridge between JVM code and native code. I use it for an existing C++ library or measured native requirement, then account for ABI packaging, data copying, memory safety, and native crashes. It does not make client-side secrets safe.
 
 ## Interview answer — structured
 
-Kotlin can declare an `external` function and load a shared library through the NDK. JNI then marshals values across the VM/native boundary. That is useful for a proven C++ codec or computation engine, but each crossing and conversion costs time and memory. I keep the interface narrow, validate inputs, manage JNI references and thread attachment, and test native crashes on supported ABIs. I do not put client secrets in the `.so` and call them secure. I would justify JNI when reusing a proven native codec or when profiling shows a compute path benefits from C++, not for normal view or repository code. The Kotlin declaration is only one side; the C++ library has to be built for supported ABIs and loaded. I would keep boundary calls coarse enough to avoid constant copying, then test reference lifetimes, native crashes, and cancellation behavior on actual devices.
+I would first justify the boundary: perhaps a mature C++ codec or measured signal-processing workload. Kotlin declares an `external` method and loads a native library, but the project must build matching binaries for supported ABIs and honor JNI signatures. Crossing the boundary can copy data, and native memory errors can crash the process outside ordinary Kotlin exception handling. I keep the interface narrow, validate array sizes and error codes, retain symbols for crash diagnosis, and run device tests in release configuration. I would not introduce JNI merely to hide an API key; the native library is still shipped to the client.
 
 ## Interview answer — deep senior
 
-The decision starts with a measured or integration requirement: reuse a native codebase or access a native API. I account for build variants, ABI size, symbols, crash collection, sanitizers, and lifecycle. `JNIEnv` is thread-specific; local references are call-scoped, while global references require explicit deletion. Arrays and strings may be copied or pinned depending on API and implementation, so batching matters. Native code also expands the attack surface, and APK-delivered binaries are inspectable. Business authority and long-term secrets stay on a trusted server. JNI connects code executing in the JVM to native C or C++ functions, often packaged through the Android NDK. Native heap bugs are outside Kotlin's memory safety and may crash the process without an ordinary exception. I would design a narrow interface, validate sizes and types on both sides, package supported ABIs, symbolicate crash reports, and use sanitizers in testing. Performance is workload-specific; crossing the bridge for tiny operations can lose more than native computation gains. I would also define what happens if native code reports an error or the UI cancels while a call is running. JNI does not automatically make C++ work cancellable; the adapter and engine need an explicit contract. Operationally, I need symbols and device/ABI crash data to debug failures.
+The decision starts with a measured or integration requirement: reuse a native codebase or access a native API. I account for build variants, ABI size, symbols, crash collection, sanitizers, and lifecycle. `JNIEnv` is thread-specific; local references are call-scoped, while global references require explicit deletion. Arrays and strings may be copied or pinned depending on API and implementation, so batching matters. Native code also expands the attack surface, and APK-delivered binaries are inspectable. Business authority and long-term secrets stay on a trusted server.
+
+For a C++ image codec, I would keep the JNI entry point narrow: pass a bounded byte buffer, validate lengths, return a documented status, and release native references correctly. I would package and test the supported ABIs, preserve native symbols for crash reports, and run sanitizers where possible. A blocking native call still blocks the Java/Kotlin caller, so it must not run on Main. I would compare the bridge and copying overhead against a pure Kotlin or Java implementation under a real workload. JNI is justified by reuse or measured behavior, not by a belief that C++ hides secrets.
+
+## How to answer in the interview
+
+- **Why:** Execute performance-critical algorithms, reuse cross-platform C/C++ libraries, or interface with low-level OS APIs.
+- **How:** Declare `external fun` in Kotlin and implement the corresponding native method using the Java Native Interface (JNI).
+- **Trade-offs:** JNI introduces bridging overhead, memory management complexity (manual allocation/deallocation), and multi-architecture APK bloat (`armeabi-v7a`, `arm64-v8a`).
+- **Failure cases:** Hardcoding sensitive API keys or crypto secrets in C++ believing they cannot be extracted; native shared libraries (`.so`) are easily decompiled using Ghidra or IDA Pro.
+- **Production solution:** Restrict JNI to heavy computational workloads (video processing, game engines, custom audio DSP), and protect secrets using backend authorization and Play Integrity.
 
 ## Deep-dive talking points
 
@@ -81,4 +95,4 @@ Name two legitimate JNI uses, two boundary costs, and one native memory or secur
 - [Android add native code](https://developer.android.com/studio/projects/add-native-code) — NDK integration.
 - [Android JNI tips](https://developer.android.com/ndk/guides/jni-tips) — references, threads and performance.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. Examples are illustrative JVM snippets unless explicitly labeled conceptual; no Android device claim is made.
+Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets unless explicitly labeled conceptual; no Android device claim is made.

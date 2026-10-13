@@ -23,7 +23,11 @@ What is the test pyramid, and where do contract tests fit?
 
 ## Explanation in Arabic
 
-Test pyramid معناها أغلب الاختبارات السريعة والدقيقة عند logic، وعدد أقل من UI/E2E المكلفة. مش قاعدة نسب ثابتة. Contract tests بتتحقق إن provider وconsumer متفقين على schema/status/error semantics من غير تشغيل كل النظام. في Android، repository API وbackend HTTP contract يحتاجوا tests تمنع drift، لكن مش بديل عن رحلة E2E.
+الـtest pyramid فكرة لتوزيع السرعة والثقة: اختبارات policy كثيرة وسريعة، عدد أقل عند boundaries الحقيقية، وعدد محدود لمسارات UI/end-to-end الحرجة. النسبة الدقيقة مش قانون. Contract test تقع عند حد بين consumer وprovider: Android client يثبت request/response/error schema يتوقعها، والbackend يتحقق من نفس العقد.
+
+## Practical walkthrough
+
+ده يمنع كسر API رغم نجاح unit tests للطرفين. لكنه لا يثبت auth routing أو network أو Play artifact كامل؛ اختبر مسارًا متكاملًا واحدًا على الأقل حسب المخاطر. في payments مهم التمييز بين Unknown وDeclined، وثبات ID عبر retries. لا تختبر كل شيء بـUI البطيئة، ولا تستخدم mocks لتدعي أن التكامل الحقيقي سليم.
 
 ## Why it matters and how it works
 
@@ -51,11 +55,19 @@ PR checks run fast contracts; nightly/release tests run cross-service E2E. Measu
 
 ## Interview answer — structured
 
-“I use the pyramid as an economic model, not a quota. Unit tests cover deterministic decisions, integrations cover real database/network adapters, contracts check provider-consumer agreement, and a few E2E tests catch wiring and environment issues. For a payment API, the contract includes unknown outcomes and idempotency behavior, not only success JSON. Each layer has a distinct failure signal. ”
+“I use the pyramid as an economic model, not a quota. Unit tests cover deterministic decisions, integrations cover real database/network adapters, contracts check provider-consumer agreement, and a few E2E tests catch wiring and environment issues. For a payment API, the contract includes unknown outcomes and idempotency behavior, not only success JSON. Each layer should have an owner, a clear failure signal and a proportionate CI cost.”
 
 ## Interview answer — deep senior
 
-“I place a test at the lowest layer that can detect the actual risk. A server/client contract can catch an enum or field change in PRs without waiting for an emulator and live backend, but it cannot prove auth configuration, migrations or a hardware callback. I test both sides against versioned examples and include negative cases, then retain a thin E2E path for deployment wiring. I track flakiness, runtime and production escapes to rebalance the portfolio rather than target a magic unit-test percentage.”
+“The pyramid is a feedback design, not a mandated ratio. I put many deterministic domain cases at the base, fewer tests with real database or HTTP boundaries in the middle, and a small number of complete user journeys at the top. A consumer contract belongs at an interface between systems: the Android client describes the request shape and status/error meanings it relies on, and the provider verifies it in CI. For a payments API, a contract should preserve the operation ID and distinguish pending or unknown from a confirmed decline; otherwise a client may retry unsafely after a timeout. Contract tests catch schema drift earlier than a full sandbox run, but they cannot prove credentials, routing, device behavior or a provider’s financial ledger in production. I therefore pair them with an end-to-end path through a signed release-like build and sandbox for the highest-risk flow. I also watch test cost and diagnostic value. If an end-to-end test is flaky because of shared state, I fix that boundary instead of adding retries that hide genuine regressions.”
+
+## How to answer in the interview
+
+- **Why:** broad confidence must remain fast enough for every change.
+- **How:** place domain, boundary, contract and full-flow tests at their proper scopes.
+- **Trade-off:** many fast tests versus a few expensive cross-system tests.
+- **Failure case:** passing consumer mocks while provider schema changes.
+- **Production solution:** shared API contract plus a small signed-app sandbox path.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for boundary examples, negative contract cases, limits of E2E and test ec
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Place many fast domain tests, fewer boundary tests and a small number of end-to-end flows according to risk. Show what a consumer contract checks for a payment API and why it does not replace one real integrated path.
 
 ## References and reviewed-on date
 
 - [Android testing fundamentals](https://developer.android.com/training/testing/fundamentals) — test scope.
 - [Android data-layer testing](https://developer.android.com/topic/architecture/data-layer) — interface/data boundaries.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

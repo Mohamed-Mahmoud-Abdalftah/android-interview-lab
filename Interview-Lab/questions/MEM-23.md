@@ -26,6 +26,10 @@ An app freezes only when decoding a large image. How do you diagnose it?
 
 أولًا حدد “freeze” يعني dropped frames ولا ANR ولا OOM crash. سجل حجم الصورة الحقيقي وأبعادها، لأن ملف مضغوط صغير قد يفك إلى عشرات MB. خذ trace وقت فتح الصورة: هل Main thread تنادي decoder أو تنتظر bitmap allocation/GC؟ هل الـdecode على worker لكن Main تنتظر `join` أو lock؟ هل التأخير في upload للـGPU أو layout؟ راقب Java/native/graphics memory. بعدها اطلب حجم يناسب الشاشة، decode خارج Main عبر image loader، وألغِ طلبات الواجهة المغلقة. لصورة zoom استخدم tiles أو rendition مناسب بدل ضغط كل الأصل في thumbnail. اختبر الجودة والوقت والذاكرة على جهاز ضعيف.
 
+## Practical walkthrough
+
+صورة 6000×4000 في preview 300×200: الـdecode ممكن يقرب 96MB لو ARGB_8888. حدد هل freeze jank ولا ANR ولا OOM، وخذ Perfetto مع Memory Profiler على جهاز ضعيف. لو decoder على Main، انقله لطلب image loader مرتبط بالـview؛ لو Main مستنية worker، دور على join/lock؛ لو المشكلة upload للـGPU، راقب frame stages. اختبر thumbnail وzoom منفصلين بعد الإصلاح.
+
 ## Why it matters and how it works
 
 Image decompression expands pixels according to dimensions and format; 4000×3000 ARGB_8888 needs about 48 MB of pixel storage before temporary buffers. Decode and transform work can block Main if called synchronously, while a background decode may still trigger memory pressure or an expensive handoff/upload. An ANR requires a blocked responsiveness path, not merely a high allocation. Trace frame and thread timelines, plus memory categories, to find the actual phase.
@@ -56,7 +60,15 @@ Capture input metadata, trace slice, frame metric, and memory categories without
 
 ## Interview answer — deep senior
 
-“The phrase ‘freezes on a large image’ hides several mechanisms. I first classify the failure with an ANR trace, frame timeline, and OOM evidence. I calculate the decoded footprint from pixel dimensions and format, then capture a Perfetto trace and memory categories while opening the exact image on a representative low-memory device. If decode executes on Main, I move it to a loader-managed worker path and request dimensions close to the target. If Main is blocked waiting on a worker, I remove the synchronous join or lock; if native bitmap memory or GPU upload dominates, I reduce size, cap parallel decodes, or use tiling for zoom. I guard malformed input and cancel requests when the view ends so old results cannot bind to recycled rows. I verify slow frames, first-preview latency, peak footprint, OOM rate, and acceptable image quality, then watch staged rollout cohorts.”
+“The phrase ‘freezes on a large image’ hides several mechanisms. I first classify the failure with an ANR trace, frame timeline, and OOM evidence. I calculate the decoded footprint from pixel dimensions and format, then capture a Perfetto trace and memory categories while opening the exact image on a representative low-memory device. If decode executes on Main, I move it to a loader-managed worker path and request dimensions close to the target. If Main is blocked waiting on a worker, I remove the synchronous join or lock; if native bitmap memory or GPU upload dominates, I reduce size, cap parallel decodes, or use tiling for zoom. I guard malformed input and cancel requests when the view ends so old results cannot bind to recycled rows. I verify slow frames, first-preview latency, peak footprint, OOM rate, and acceptable image quality, then watch staged rollout cohorts. For a 6000-by-4000 image shown in a 300-by-200 preview, the decoded footprint is about 96 MB at four bytes per pixel. I inspect not only decode threads but any Main-side join and GPU upload. Thumbnail and zoom modes get separate fidelity and memory budgets, and the image loader request follows the current view lifecycle.”
+
+## How to answer in the interview
+
+- **Why:** Start with pixel footprint and symptom classification.
+- **How:** Trace decode, wait, and graphics stages.
+- **Trade-off:** Downsampling may reduce zoom fidelity.
+- **Failure case:** Main can freeze while waiting for an off-Main decoder.
+- **Production solution:** Separate thumbnail and zoom requests and remeasure.
 
 ## Deep-dive talking points
 
@@ -78,4 +90,4 @@ Classify the symptom, calculate decoded size, inspect trace and memory, propose 
 - [Bitmaps and memory](https://developer.android.com/topic/performance/memory/guide/bitmaps) — footprint and pixel storage.
 - [System tracing](https://developer.android.com/topic/performance/tracing) — thread and frame timeline.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. No image decode benchmark was performed.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. No image decode benchmark was performed.

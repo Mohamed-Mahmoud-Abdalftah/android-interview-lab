@@ -39,6 +39,10 @@ class ExpiryPolicy(private val clock: Clock) {
 ```
 Production composition supplies a system clock; tests supply a fixed clock. No Android dependency is needed for policy tests.
 
+## Practical walkthrough
+
+DI معناها dependency تيجي من برّه بدل class تعمل `RealClock()` و`RealApi()` جوه constructor. `ExpiryPolicy(clock: Clock)` تتجرب بـfake clock، وproduction graph يمرر implementation مناسب. Hilt/Dagger tools تنظم graph وscopes لكن DI نفسها ممكن manual. Lifetime مهم: Activity/Fragment dependency ما تتخزنش في singleton، وsession service تتبدل بعد logout. الإفراط في interfaces لكل class يزيد noise؛ اعمل abstraction لما فيه behavior variation أو test boundary حقيقية. الاختبار يثبت deterministic time/network failure من غير global mutable state، مش مجرد “class قابلة للmock”.
+
 ## Trade-offs and decision criteria
 
 Manual DI is transparent for small graphs; Hilt reduces repetitive wiring as a graph grows but adds build tooling and scope complexity. Service locator hides dependencies and makes tests order-dependent. Avoid interfaces for every pure helper.
@@ -63,6 +67,16 @@ Without DI, a class may construct its own Retrofit client or read a global singl
 
 Dependency injection is a construction pattern. The consumer states what it needs, and the composition root decides which implementation and lifetime to provide. That allows a domain policy to be tested with deterministic fakes and lets infrastructure change without editing every caller, provided the contracts are well designed. Hilt/Dagger are graph tools, not a substitute for deciding boundaries. I distinguish DI from DIP by inspecting types: a Hilt-injected Retrofit service inside a use case is still a transport dependency. I also audit scopes. A singleton containing Activity context can leak; a ViewModel-scoped object disappears with its owner and cannot hold durable transaction truth. In production I test graph wiring and lifecycle separately from pure policy behavior.
 
+DI moves construction and ownership to a composition point. In `ExpiryPolicy(clock: Clock)`, a test can inject a fixed clock and exercise edge times without changing a global singleton; production injects the platform clock. Android tooling such as Hilt can build the graph and manage scopes, but the principle also works manually. The design review asks which object lives for the application, session, destination, or view. If a singleton retains an Activity or a token from the previous account, DI has been configured incorrectly despite using annotations. I do not create an interface for every class automatically; I add one when it communicates a contract, variant, or valuable test seam.
+
+## How to answer in the interview
+
+- **Why:** Explicit dependencies improve ownership and deterministic tests.
+- **How:** Inject `Clock` and repository through constructors or a scoped graph.
+- **Trade-off:** Manual DI is fine when graph complexity is small.
+- **Failure case:** App-scoped object retains Activity or stale session data.
+- **Production solution:** Test fake time and account-scope teardown, not just construction.
+
 ## Deep-dive talking points
 
 Compare manual composition with Hilt, constructor visibility, service locator and scope ownership.
@@ -81,4 +95,4 @@ Show one constructor-injected dependency, a fake test, and a scope mistake DI do
 - [Android dependency injection](https://developer.android.com/training/dependency-injection) — DI on Android.
 - [Kotlin classes](https://kotlinlang.org/docs/classes.html) — constructor mechanics.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

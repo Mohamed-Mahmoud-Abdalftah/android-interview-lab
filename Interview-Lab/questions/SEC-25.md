@@ -25,6 +25,10 @@ What are OWASP MASVS/MASTG, and how do they guide mobile security reviews?
 
 OWASP MASVS معيار controls لأمن mobile apps، وMASTG دليل عملي للاختبارات. نستخدمهم عشان نحدد requirements ونربط كل control باختبار ودليل، مش عشان نعمل checkboxes ونقول التطبيق “آمن”. نطاق fintech يركز على storage، crypto، network، authentication، platform وresilience حسب threat model.
 
+## Practical walkthrough
+
+في review لتطبيق POS، اربط MASVS-STORAGE بملفات token وbackup، وMASTG باختبار استخراج release APK والـrestore. سجل لكل control النتيجة والدليل ونوع الجهاز/API level والحد المتبقي. MASVS معيار requirements وMASTG طرق اختبار؛ مرور checklist آليًا لا يغطي backend authorization ولا يثبت إن الجهاز الحقيقي محمي من كل هجوم.
+
 ## Why it matters and how it works
 
 MASVS defines verification areas and MASTG gives test methods; MASWE catalogs weaknesses. A review maps app assets and threats to relevant controls, executes tests on the actual release build and records evidence, severity and remediation. Passing a tool scan is not equivalent to passing all controls.
@@ -55,7 +59,15 @@ Keep a control-to-test matrix in security review, run MASTG procedures against r
 
 ## Interview answer — deep senior
 
-“I start from assets—tokens, transaction identity, card-adjacent data and financial authority—and enumerate realistic device and network attackers. I select MASVS controls that address those threats, then use MASTG methods to test actual APK, backend interactions, backups and telemetry. Each result has device/OS/build context, evidence and residual risk; automated tools are aids with false positives and false negatives. I pair this with adversarial payment-flow tests and security review of server trust boundaries. A ‘pass’ is scoped to tested behavior and time, not a perpetual certificate.”
+“I start from assets—tokens, transaction identity, card-adjacent data and financial authority—and enumerate realistic device and network attackers. I select MASVS controls that address those threats, then use MASTG methods to test actual APK, backend interactions, backups and telemetry. Each result has device/OS/build context, evidence and residual risk; automated tools are aids with false positives and false negatives. I pair this with adversarial payment-flow tests and security review of server trust boundaries. A ‘pass’ is scoped to tested behavior and time, not a perpetual certificate. A useful deliverable is a traceable matrix: asset, threat, MASVS control, MASTG procedure, release-build evidence, affected API levels, owner and residual risk. I would prioritize payment authority, token storage and cross-app entry points over cosmetic checklist coverage. Automated static findings are a starting point; dynamic tests and backend tests still matter. A green control result should describe what was actually tested and what remained out of scope.”
+
+## How to answer in the interview
+
+- **Why:** security reviews need testable requirements and evidence.
+- **How:** map app assets to MASVS controls and MASTG procedures.
+- **Trade-off:** broad coverage costs time, so prioritize high-risk paths.
+- **Failure case:** checkbox completion without release-build evidence.
+- **Production solution:** record scope, device matrix, findings, owners, and residual risk.
 
 ## Deep-dive talking points
 
@@ -75,4 +87,4 @@ Can I map a control to a concrete test and explain limits of scans/checklists?
 - [OWASP MASVS](https://mas.owasp.org/MASVS/) — mobile verification areas.
 - [OWASP MASTG](https://mas.owasp.org/MASTG/) — testing guide.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

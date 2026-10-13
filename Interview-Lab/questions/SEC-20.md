@@ -25,6 +25,10 @@ How do you implement certificate pinning with a rotation/recovery strategy?
 
 Pinning لو اتعمل بpin واحد ممكن شهادة جديدة تقطع كل مستخدمين النسخ القديمة. الخطة: أجهّز backup public key مستقلة، أشحنها في app قبل أي server switch، أختبر overlap، وبعد انتشار النسخ أبدّل certificate/keys تدريجيًا. متابعة errors وrollback مدروس. ما نعملش trust-all fallback؛ ده يهدم الهدف.
 
+## Practical walkthrough
+
+خطة pinning تبدأ قبل انتهاء certificate بشهور: شحن current SPKI ومعاه backup key مختلفة في التطبيق، ثم اختبار أقدم نسخة مدعومة مع server chain الجديدة. `expiration` في Network Security Config بيوقف pinning بعد التاريخ، فده fallback availability له ثمن أمني؛ قراره لازم واعي. لو فشل rollout، ما تفتحش trust-all، بل استخدم backup/تحديث signed مضبوط ومراقبة أخطاء.
+
 ## Why it matters and how it works
 
 A pin set accepts selected public keys/certificates in addition to normal TLS validation. Old binaries cannot learn an emergency new pin after their network path is broken. Therefore prepublished backup pins, key custody and update cadence must be decided before enabling enforcement.
@@ -55,7 +59,15 @@ Assign owners to pin inventory, certificate expiry, signing/release process and 
 
 ## Interview answer — deep senior
 
-“I treat pins as distributed configuration with a lead time longer than certificate renewal. I maintain a matrix of app versions, accepted SPKI hashes, backend certs and sunset dates. I test staging and production canaries through real TLS stacks, including old devices and alternate endpoints, and ensure backup key custody is independent. If the main key is compromised, I can move to the prepublished backup; if both are unusable, recovery may require an app update through another channel, not a silent trust-all path. I decide whether this outage risk is justified before adopting pinning. This is an operational example. ”
+“I treat pins as distributed configuration with a lead time longer than certificate renewal. I maintain a matrix of app versions, accepted SPKI hashes, backend certs and sunset dates. I test staging and production canaries through real TLS stacks, including old devices and alternate endpoints, and ensure backup key custody is independent. If the main key is compromised, I can move to the prepublished backup; if both are unusable, recovery may require an app update through another channel, not a silent trust-all path. I decide whether this outage risk is justified before adopting pinning. This is an operational example.  The recovery strategy should be written before rollout: who holds the backup key, how old binaries are tested, what telemetry triggers a pause, and which app versions still need support. I would simulate the primary key being unavailable and verify that the backup chain works through the real TLS stack. Pin expiration is an availability fallback that turns off pinning after its date; it should be a conscious risk decision, never a hidden substitute for rotation.”
+
+## How to answer in the interview
+
+- **Why:** pinning couples mobile release cadence to server certificates.
+- **How:** ship current and backup SPKI pins before rotation and test old binaries.
+- **Trade-off:** pin expiry preserves availability by disabling pinning later.
+- **Failure case:** emergency key change with no deployed backup.
+- **Production solution:** rotation matrix, canary rollout, and monitored recovery.
 
 ## Deep-dive talking points
 
@@ -75,4 +87,4 @@ Can I draw the deployment order and describe failure/recovery without weakening 
 - [Android Network Security Configuration](https://developer.android.com/privacy-and-security/security-config) — pin sets and expiration.
 - [OWASP MASVS network](https://mas.owasp.org/MASVS/controls/MASVS-NETWORK-2/) — endpoint identity.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

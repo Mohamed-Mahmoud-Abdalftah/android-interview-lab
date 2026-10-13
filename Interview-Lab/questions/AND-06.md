@@ -59,6 +59,10 @@ class SearchViewModel(
 
 The surrounding app supplies `SearchRepository` and `SearchResult`; competing searches need cancellation or `flatMapLatest` if stale results are possible. The example illustrates ownership, not a complete search feature.
 
+## Practical walkthrough
+
+rotation أو تغيير locale/font size ممكن يخلق Activity جديدة؛ الـViewModel المرتبط بالـscope المناسب غالبًا يبقى عبر configuration recreation، لكن الـviews وActivity نفسها تتبني من جديد. `SavedStateHandle` ينفع لـquery أو item ID صغير، مش result list كبيرة. بعد process death ViewModel جديدة تتولد وتقرأ saved key إن state اتسجلت، وبعدين repository تعيد البيانات. متعتمدش على object في memory لو user كتب draft مهم؛ احفظه بشكل durable قبل ما تقول له Saved. اختبر resize والـrotation مع loading في النص، وشوف old Activity ما اتسربتش.
+
 ## Trade-offs and decision criteria
 
 Retaining a ViewModel avoids needless reloads and preserves screen logic during rotation, but it consumes memory and cannot survive process death. Saved state is suitable for small reconstruction inputs, not large lists or bitmaps. Durable storage costs I/O but is appropriate for user data and operation records. Opting out of Activity recreation with `configChanges` shifts resource updating onto the app and is rarely a substitute for correct state ownership.
@@ -77,10 +81,22 @@ For a checkout screen, persist the server operation ID and user-entered draft se
 
 ## Interview answer — structured
 
-“Android often destroys and recreates an Activity to apply new configuration resources. I keep screen logic in a ViewModel, small reconstruction keys in SavedStateHandle or rememberSaveable, and business data in a repository backed by durable storage. The new Activity observes the same retained ViewModel in an ordinary configuration change. I still design restoration after process death because the ViewModel will not survive that. I test resizing and rotation and avoid keeping references to the old Activity. I also separate configuration recreation from system-initiated process death. ViewModel retention covers the former, while saved state can reconstruct compact inputs in eligible restoration paths and Room or backend state owns durable work. Payment initiation cannot live only in an Activity field; its stable identity must be committed before sending.”
+Android often destroys and recreates an Activity to apply new configuration resources. I keep screen logic in a ViewModel, small reconstruction keys in SavedStateHandle or rememberSaveable, and business data in a repository backed by durable storage. The new Activity observes the same retained ViewModel in an ordinary configuration change. I still design restoration after process death because the ViewModel will not survive that. I test resizing and rotation and avoid keeping references to the old Activity.
+
 ## Interview answer — deep senior
 
-“The important boundary is the owner of each piece of state. Configuration recreation replaces Activity and view instances while the process generally remains alive, so the ViewModelStore can retain a ViewModel. Saved-state APIs capture compact serializable inputs for eligible recreation, but their timing and size make them unsuitable as a ledger. For a checkout, I persist an operation ID before issuing a request, restore a draft separately, and reconcile with the server after a restart. I also check that callbacks, listeners, and repository jobs do not retain the destroyed UI, and test rotation, multi-window resizing, locale, and a real process kill. When rotation or locale changes, Android can replace Activity and resources while keeping the process and ViewModelStore. That does not preserve the old View hierarchy or a coroutine launched in an Activity scope. `SavedStateHandle` and `rememberSaveable` can restore small serializable UI values in eligible process recreation, but their save timing and size make them unsuitable for a transaction log. I treat an upload or payment as a durable operation owned by a repository/backend, keyed by a stable ID. I test rotation, multi-window resizing and background process kill separately; a rotation test alone cannot prove crash recovery.”
+The important boundary is the owner of each piece of state. Configuration recreation replaces Activity and view instances while the process generally remains alive, so the ViewModelStore can retain a ViewModel. Saved-state APIs capture compact serializable inputs for eligible recreation, but their timing and size make them unsuitable as a ledger. For a checkout, I persist an operation ID before issuing a request, restore a draft separately, and reconcile with the server after a restart. I also check that callbacks, listeners, and repository jobs do not retain the destroyed UI, and test rotation, multi-window resizing, locale, and a real process kill. When rotation or locale changes, Android can replace Activity and resources while keeping the process and ViewModelStore.
+
+If a search screen rotates mid-request, the Activity and view hierarchy are recreated, and the new view should collect from the retained ViewModel rather than restart an accidental duplicate request. I save only a small query or item ID in `SavedStateHandle`; the result list comes from the repository. If the process later dies, a new ViewModel reconstructs state from that key and reloads. A draft that the user expects never to lose requires durable storage before showing “Saved.” I verify rotation, locale change, and resize separately because they exercise layout and resource behavior differently.
+
+## How to answer in the interview
+
+- **Why:** The system can recreate UI for resource/configuration changes.
+- **How:** Distinguish new Activity/views from retained scoped ViewModel and saved small keys.
+- **Trade-offs:** Put transient UI position in saved state, durable draft data in storage.
+- **Failure cases:** Mention stale Activity references and oversized Bundles.
+- **Production solution:** Restore a search query, reload results, and test rotation during loading.
+
 ## Deep-dive talking points
 
 Discuss Activity recreation versus manual configuration handling, resource qualifier selection, ViewModelStore ownership, saved-state size/timing, and why an external operation requires durable identity. Explain how a recreation test differs from a process-death test.
@@ -101,4 +117,4 @@ Explain one configuration change and its recreation effect; name what a ViewMode
 - [Save UI states](https://developer.android.com/topic/libraries/architecture/saving-states) — saved-state boundaries and size guidance.
 - [ViewModel overview](https://developer.android.com/topic/libraries/architecture/viewmodel) — scope and configuration retention.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The Android snippet is illustrative and was not device-compiled.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The Android snippet is illustrative and was not device-compiled.

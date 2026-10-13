@@ -23,7 +23,11 @@ How do you test Room DAOs, database migrations, and transactions?
 
 ## Explanation in Arabic
 
-Room DAO tests لازم تستخدم database حقيقية في test عشان SQL وconstraints وFlow invalidation. Migration tests تبدأ من schema قديمة فعلًا وبيانات تمثل مستخدمين قدام، ثم تشغل migration وتتحقق من rows/indexes/nullability. Transaction test يفشل في النص ويتأكد إن كل writes اتراجعت. Fake DAO ما يثبتش دي.
+Room DAO test تثبت query، ordering، constraints وFlow observation على قاعدة فعلية مناسبة؛ mock DAO لا يثبت SQL. Migration test تبدأ من ملفات schema قديمة تمثل إصدارات مستخدمين حقيقية، تضيف rows فيها nulls وduplicates وUnicode وقيم حدودية، ثم تعمل migration للمستهدف وتفحص data وindexes وforeign keys. جرّب كل upgrade path مدعومة بدل آخر إصدار فقط.
+
+## Practical walkthrough
+
+Transaction test تُدخل write ثم exception قبل النهاية وتتأكد أن الاثنين لم يثبتا؛ لو rollback policy مختلفة وثّقها. الـin-memory DB مفيدة لاختبارات DAO قصيرة، لكنها لا تثبت durability بعد إغلاق العملية؛ استخدم file-backed/device integration حين يكون ده claim. لا تخلط نجاح `MigrationTestHelper` مع صحة business transformation بلا assertions على rows.
 
 ## Why it matters and how it works
 
@@ -55,7 +59,15 @@ CI runs DAO and all-upgrade-path migrations against representative Android/SQLit
 
 ## Interview answer — deep senior
 
-“I treat migration as compatibility with the installed base, not just current schema validation. Fixtures cover nulls, duplicates, Unicode, large tables, old enum values and partially populated records, built from anonymized shapes rather than customer data. I run each supported upgrade path, verify indexes/foreign keys and inspect query plans for regressions. For payment status plus reversal intent, I assert atomic commit and rollback under exceptions/cancellation, then reopen a file-backed DB to verify state. None of this proves remote provider atomicity; reconciliation tests handle that gap.”
+“I test Room at the real database boundary when the question is about SQL or durability. DAO tests insert representative rows and assert filtering, ordering, uniqueness and observed updates rather than mocking the DAO and replaying expected calls. For migrations I keep exported schemas and create fixtures from every supported old version, including messy customer data: null legacy fields, duplicate merchant IDs, Arabic names and long values. I run the upgrade path to the release schema and assert transformed rows, indexes, foreign keys and the documented conflict-resolution rule. A schema validation pass alone may miss the wrong row being chosen. For transactions I inject a failure after the first write and assert the invariant that either all related rows commit or none do. I distinguish in-memory test convenience from file durability and process restart. If the release includes a risky migration, I run a device or emulator test with a file-backed database and a minified release-like build. A test that starts only from a fresh schema cannot protect existing users.”
+
+## How to answer in the interview
+
+- **Why:** old customer data is where schema changes fail.
+- **How:** create versioned fixtures, migrate and assert rows, indexes and rollback.
+- **Trade-off:** in-memory speed versus file/device durability evidence.
+- **Failure case:** schema validation passes while duplicate rows merge incorrectly.
+- **Production solution:** release-like migration matrix from every supported version.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for exported schemas, realistic old rows, all upgrade paths, rollback and
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Create an old schema fixture with edge-case rows, run each supported Room migration path, assert rows/indexes/foreign keys, and inject an exception inside a transaction to prove rollback. Name the Android runtime needed.
 
 ## References and reviewed-on date
 
 - [Room migration testing](https://developer.android.com/training/data-storage/room/migrating-db-versions) — MigrationTestHelper and schemas.
 - [Room withTransaction API](https://developer.android.com/reference/kotlin/androidx/room/package-summary) — local transactions.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

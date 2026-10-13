@@ -26,6 +26,10 @@ How do Bitmap allocations and image-loading libraries affect memory?
 
 الصورة JPEG ممكن تكون 200KB على القرص لكن بعد فك الضغط 4000×3000 بكسل بـ`ARGB_8888` تحتاج تقريبًا 48MB قبل نسخ إضافية. لذلك تحميل الأصل كاملًا لـthumbnail صغير يهدر memory ويزود decode time وjank. مكتبات زي Coil أو Glide تقيس target size، تدير request cancellation والـmemory/disk cache والـbitmap pooling. لكن لازم تحدد حجم العرض وتربط الطلب بعمر الواجهة وتراقب cache budget. على Android الحديث pixel data قد تظهر في native memory، فلا تكتفي برسم Java heap فقط. لو التطبيق يستعمل library لإدارة الصور لا تعمل `recycle()` يدويًا على bitmap ما زالت مملوكة لها.
 
+## Practical walkthrough
+
+لو JPEG حجمها 300KB وأبعادها 6000×4000، بعد decode بـARGB_8888 ممكن تقرب من 96MB قبل أي copies. اعمل target واضح للthumbnail مثل 160×160 بدل تحميل الأصل في RecyclerView، واربط request بعمر row أو الشاشة. راقب Java/native/graphics لأن مكان احتساب bitmap يختلف حسب المنصة. لو zoom مطلوب، خلي له path مستقل بتقسيم أو نسخة أكبر؛ متفتحش الأصل لكل العناصر.
+
 ## Why it matters and how it works
 
 Decoded bitmap size is roughly width × height × bytes per pixel for a chosen configuration, independent of compressed download size. Decoding on Main may block frames; repeated full-size decode can exhaust memory. An image loader coordinates sizing, caching, deduplication or pooling, and request lifecycle, but configuration choices and unbounded custom caches can defeat those benefits. Modern Android memory inspection must include native and graphics categories.
@@ -33,6 +37,20 @@ Decoded bitmap size is roughly width × height × bytes per pixel for a chosen c
 ## Worked example
 
 A catalog row displays a 120×120 thumbnail from a 4000×3000 photo. Request a rendition near the display dimensions and cancel the request when the item/view owner is disposed. For a zoom screen, use an appropriately larger rendition or tiled decoding rather than globally loading full resolution for every list item. A 4000×3000 ARGB_8888 decoded image is about 48 MB (`4000*3000*4` bytes), excluding overhead and temporary copies; this is a size estimate, not a measured app allocation.
+
+For a known bundled image, this Android sketch demonstrates sampled decoding. It assumes an `Activity` or `Fragment` with `resources` and `R.drawable.hero`; it is illustrative, not device tested.
+
+```kotlin
+import android.graphics.BitmapFactory
+
+val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+BitmapFactory.decodeResource(resources, R.drawable.hero, bounds)
+val sample = maxOf(1, maxOf(bounds.outWidth / 160, bounds.outHeight / 160))
+val options = BitmapFactory.Options().apply { inSampleSize = sample }
+val thumbnail = BitmapFactory.decodeResource(resources, R.drawable.hero, options)
+```
+
+For remote, recycled, or zoomable images, use a lifecycle-aware image loader and a separate high-resolution path; this sample factor is illustrative rather than an exact output-size guarantee.
 
 ## Trade-offs and decision criteria
 
@@ -56,7 +74,15 @@ Set image-size contracts per surface, request server thumbnails where available,
 
 ## Interview answer — deep senior
 
-“I reason in decoded pixels, not compressed bytes. The image dimensions and pixel format determine memory, and transformations may temporarily require additional buffers. For a scrolling list, I request thumbnail-sized content, ideally from the server or a loader that down-samples before display, and tie requests to the current view owner so recycled rows do not show stale results or keep screens alive. I set memory and disk cache budgets based on device constraints and use a larger or tiled strategy only for true zoom. Android's bitmap pixel storage can appear in native memory, so a Java heap-only profile can miss the dominant cost. I do not manually recycle a bitmap that an image library still owns. My regression test scrolls and navigates repeatedly on constrained devices and compares decode count, peak footprint, dropped frames, and OOM rate.”
+“I reason in decoded pixels, not compressed bytes. The image dimensions and pixel format determine memory, and transformations may temporarily require additional buffers. For a scrolling list, I request thumbnail-sized content, ideally from the server or a loader that down-samples before display, and tie requests to the current view owner so recycled rows do not show stale results or keep screens alive. I set memory and disk cache budgets based on device constraints and use a larger or tiled strategy only for true zoom. Android's bitmap pixel storage can appear in native memory, so a Java heap-only profile can miss the dominant cost. I do not manually recycle a bitmap that an image library still owns. My regression test scrolls and navigates repeatedly on constrained devices and compares decode count, peak footprint, dropped frames, and OOM rate. For a 6000-by-4000 ARGB_8888 decode I budget roughly 96 MB before transformations, despite a much smaller JPEG on disk. A 160-pixel thumbnail and a zoom viewer need different requests. I verify image quality alongside memory and frame tails so aggressive sampling does not simply trade an OOM for an unusable preview.”
+
+## How to answer in the interview
+
+- **Why:** Explain decoded pixels versus compressed bytes.
+- **How:** Specify target dimensions and observe memory categories.
+- **Trade-off:** Downsampling lowers cost but can blur zoom content.
+- **Failure case:** Full-resolution bind can trigger OOM or jank.
+- **Production solution:** Use separate thumbnail and zoom paths with measured budgets.
 
 ## Deep-dive talking points
 
@@ -77,4 +103,4 @@ Estimate a decoded image, choose a target-size strategy, explain loader ownershi
 - [Bitmaps and memory](https://developer.android.com/topic/performance/memory/guide/bitmaps) — pixel formats, footprint, and pooling.
 - [Load large bitmaps efficiently](https://developer.android.com/topic/performance/graphics/load-bitmap) — target-sized decode.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The memory calculation is theoretical, not a measured allocation.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The memory calculation is theoretical, not a measured allocation.

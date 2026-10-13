@@ -26,6 +26,10 @@ When should a module depend on an interface versus a concrete type?
 
 اعتمد على interface عندما consumer يحتاج قدرة مستقرة وimplementation تختلف أو تعيش في module لا ينبغي استيرادها: `CheckoutRepository` عقد يراه checkout وتطبقه data module. هكذا app يختار implementation، والاختبار يمرر fake. لكن لو class محلية داخل feature، لا توجد بدائل ولا boundary، فـinterface لها طريقة واحدة وimplementation واحدة قد تكون عبئًا بلا قيمة. القرار عن ملكية العقد: من يحتاجه يحدد السلوك، ولا تجعل implementation تفرض تفاصيل Retrofit/Room في API.
 
+### Practical walkthrough in Egyptian Arabic
+
+Module تعتمد interface عند boundary متغيرة، مثل `PaymentGateway` يستبدل vendor، أو network client عبر data implementation. لو class بسيطة داخل feature ولا بديل واقعي، concrete dependency أوضح وأسهل. لا تنشئ `IUserMapper` لكل mapper. حدد لماذا interface موجودة، من يملكها، وهل test fake يثبت behavior أم يخفي adapter broken.
+
 ## Why it matters and how it works
 
 An interface can invert compile dependency from policy to implementation: the consumer compiles against a contract and an outer composition root provides a concrete binding. This enables independent testing and replacement. The abstraction only reduces coupling when its methods express stable capability; a mirror interface that changes with every implementation edit preserves coupling under a new name.
@@ -57,6 +61,14 @@ Review dependency direction and contract change frequency. Keep public interface
 ## Interview answer — deep senior
 
 “An interface is useful when it changes the dependency direction in a meaningful way. The Checkout feature may need ‘submit an order and observe status,’ while data infrastructure decides how to use Room and a provider API. A contract in a feature-visible API lets Checkout compile without those implementation modules; the app graph binds the concrete class, and a fake supports focused tests. I design the methods around capability and domain outcomes, not around Retrofit Response or DAO entities, or I have merely disguised the coupling. Conversely, a small helper that is created and changed inside one feature may be clearer as a concrete constructor dependency. Creating an interface for every class adds DI bindings and navigation cost without independent ownership or a plausible alternative. I review the contract's stability and change history: if it changes on every implementation edit, the boundary is not buying much. I still add an integration test for the real implementation because a fake can satisfy the interface while missing transactional or network semantics.”
+
+## How to answer in the interview
+
+- **Why:** interfaces protect variability, not aesthetics.
+- **How:** place contract with consumer or stable core.
+- **Trade-off:** flexibility versus boilerplate.
+- **Failure case:** mock passes while real SDK fails.
+- **Production solution:** pair seam test with integration.
 
 ## Deep-dive talking points
 

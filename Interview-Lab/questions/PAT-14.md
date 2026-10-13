@@ -30,7 +30,35 @@ Explicit states make invalid combinations harder to represent and transitions te
 
 ## Worked example
 
-Transition table: `Idle + Submit -> Submitting`; `Submitting + Timeout -> PendingVerification`; `PendingVerification + ServerConfirmed -> Confirmed`; `Submitting + Submit -> unchanged` to block duplicate taps. A pure reducer can implement this while repository performs I/O.
+Pure JVM reducer for a subset of transitions; the repository performs I/O and persists the attempt ID before submitting. The explicit duplicate-submit branch is intentional, while all other unsupported transitions are rejected for diagnosis.
+```kotlin
+sealed interface CheckoutState {
+    data object Idle : CheckoutState
+    data class Submitting(val attemptId: String) : CheckoutState
+    data class PendingVerification(val attemptId: String) : CheckoutState
+    data class Confirmed(val receiptId: String) : CheckoutState
+}
+sealed interface CheckoutEvent {
+    data class Submit(val attemptId: String) : CheckoutEvent
+    data object Timeout : CheckoutEvent
+    data class ServerConfirmed(val receiptId: String) : CheckoutEvent
+}
+fun reduce(state: CheckoutState, event: CheckoutEvent): CheckoutState = when {
+    state == CheckoutState.Idle && event is CheckoutEvent.Submit ->
+        CheckoutState.Submitting(event.attemptId)
+    state is CheckoutState.Submitting && event == CheckoutEvent.Timeout ->
+        CheckoutState.PendingVerification(state.attemptId)
+    state is CheckoutState.PendingVerification && event is CheckoutEvent.ServerConfirmed ->
+        CheckoutState.Confirmed(event.receiptId)
+    state is CheckoutState.Submitting && event is CheckoutEvent.Submit -> state
+    else -> error("Illegal checkout transition: $state + $event")
+}
+```
+Add provider rejection, cancellation and restored-state events according to the actual server contract. The sealed type constrains state shapes; this reducer defines transition legality.
+
+## Practical walkthrough
+
+checkout فيها `isLoading`, `hasFailed`, `isSuccess`, `needsCheck` booleans هتسمح بحالات مستحيلة زي success+loading. sealed state `Idle`, `Submitting(attemptId)`, `PendingVerification(attemptId)`, `Confirmed(receiptId)`, `Rejected(code)` يخلي payload مناسبة لكل حالة. reducer `reduce(state, event)` يرفض أو يتجاهل events غير legal بقرار صريح؛ sealed alone ما تفرضش transition. timeout بعد submit يروح PendingVerification مش Failed، ثم status query من server. state machine لازم تتسلسل مع persistence: attempt ID تنحفظ قبل side effect عشان process death تقدر تعيد البناء.
 
 ## Trade-offs and decision criteria
 
@@ -56,6 +84,16 @@ I list the legal states first, then model each with required payloads. `Submitti
 
 The problem with flags is combinatorial state space. Four Booleans allow sixteen combinations, many of which may be nonsensical. A sealed hierarchy makes the intended cases explicit, and a transition table says what each event means from each state. I keep the reducer pure, with effects executed by a repository, so tests can cover every legal and illegal transition. For an offline-first screen, some dimensions can coexist; I may use a data class inside a `Content` state rather than forcing false exclusivity. For payment, a timeout is not final failure. I persist the request identity, reconcile with the server, and restore pending state after process death. That preserves both UX and business correctness.
 
+I replace multiple flags with a finite set of states and an explicit transition function. A checkout can be Idle, Submitting with an attempt ID, PendingVerification with the same ID, Confirmed with a receipt, or Rejected with a reason. That prevents combinations such as loading and success at once, but the sealed hierarchy alone does not validate history; the reducer must define what events are legal from each state. A lost response transitions to PendingVerification, not a definite failure. I persist the attempt identity before the external request, then reconstruct and query server status after process death. I test each transition and rejected event, including double-tap submit and a late callback after terminal state.
+
+## How to answer in the interview
+
+- **Why:** Boolean flags admit impossible UI combinations.
+- **How:** Define payload-bearing states plus a reducer transition table.
+- **Trade-off:** State machine adds structure but makes complex flows reviewable.
+- **Failure case:** Timeout marked failed or late callback overwrites terminal state.
+- **Production solution:** Persist attempt ID and test every transition/crash path.
+
 ## Deep-dive talking points
 
 Enumerate Boolean combinations, legal state transitions, effect ownership and server reconciliation.
@@ -74,4 +112,4 @@ List five legal states, reject two impossible Boolean combinations, and test tim
 - [Kotlin sealed hierarchies](https://kotlinlang.org/docs/sealed-classes.html) — exhaustive state modeling.
 - [Android UI state guidance](https://developer.android.com/topic/architecture/ui-layer/stateholders) — state-holder role.
 
-Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary publisher/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

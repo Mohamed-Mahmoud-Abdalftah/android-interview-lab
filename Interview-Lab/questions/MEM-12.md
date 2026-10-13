@@ -26,6 +26,10 @@ How can callbacks, Handler, observers, listeners, or static references cause lea
 
 أي source عمره أطول من الشاشة ممكن يمسك callback، والـcallback ماسك `Activity` أو `View` عن طريق lambda capture. `Handler.postDelayed` مثال: الـmessage queue تحتفظ بـRunnable لحد ما يتنفذ أو يتشال؛ لو Runnable ماسك binding، هتفضل view القديمة عايشة. `static` أو singleton field يحتفظ بمرجع طول عمر الـprocess، وobserver غير مفصول يحتفظ بالـowner. الحل مش بس `if (isDestroyed) return`، لأن reference ما زال موجود. لازم unregister، remove callbacks، أو استخدم lifecycle owner مناسب، مع عدم ضياع state مهمة عند إعادة الإنشاء.
 
+## Practical walkthrough
+
+افترض screen سجلت network listener في `onStart` وحطت delayed Runnable يعرض tooltip. لو خرجت قبل انتهاء delay، الـqueue ممكن تفضل ماسكة Runnable اللي ماسكة binding. احتفظ بنفس Runnable instance عشان `removeCallbacks` تشيلها، وفك listener في `onStop` من نفس source اللي سجلت فيه. سجل lifecycle events أثناء reproduce، وخذ heap path؛ مجرد `if (isDestroyed)` يمنع تحديث UI لكنه ما يقطعش المرجع.
+
 ## Why it matters and how it works
 
 GC reclaims only unreachable graphs. A system or application event source can remain reachable after an Activity closes; its callback then retains the Activity through an implicit `this`, binding, or View reference. Handler queues retain scheduled Runnable objects until execution/removal. Lifecycle-aware observers can remove themselves with an owner, but choosing Fragment instead of Fragment view lifecycle can still retain an obsolete view. A static field is process-lived and should hold only appropriately scoped data.
@@ -33,6 +37,29 @@ GC reclaims only unreachable graphs. A system or application event source can re
 ## Worked example
 
 A screen registers a network-status listener in `onStart()` and removes it in `onStop()`. It also posts a delayed UI hint and removes that Runnable with `handler.removeCallbacks(hintRunnable)` in `onStop()` or view teardown. On re-entry, fresh callbacks are registered for the new view. The pattern assumes a known Handler and listener; the exact API cleanup must match the registration source.
+
+This Android sketch assumes a `HintScheduler` owned by a Fragment view and disposed in `onDestroyView()`. It is illustrative, not compiled here.
+
+```kotlin
+import android.os.Handler
+import android.os.Looper
+import android.view.View
+
+class HintScheduler(private val hintView: View) {
+    private val handler = Handler(Looper.getMainLooper())
+    private val hint = Runnable { hintView.visibility = View.VISIBLE }
+
+    fun schedule() {
+        handler.postDelayed(hint, 2_000L)
+    }
+
+    fun dispose() {
+        handler.removeCallbacks(hint)
+    }
+}
+```
+
+Call `dispose()` during view teardown and release the `HintScheduler` field; remove any SDK listener separately with its matching API.
 
 ## Trade-offs and decision criteria
 
@@ -56,7 +83,15 @@ Wrap third-party listeners in a lifecycle-bound adapter that registers and unreg
 
 ## Interview answer — deep senior
 
-“I diagnose these leaks as ownership chains, not as special behavior of one API. A process-wide singleton, SDK event bus, or Handler queue remains reachable; the stored callback captures a short-lived screen or binding; therefore GC cannot collect that UI graph. I identify the source and its intended lifetime, then make subscription ownership explicit. A visible-only listener can register at STARTED and unregister at STOPPED, a Fragment UI stream uses `viewLifecycleOwner`, and a delayed Runnable is removed when its view is destroyed. I retain the exact callback token needed for removal and avoid simply adding a destroyed-state guard, which still leaves the graph retained. Important events are persisted in model state so cleanup does not lose them. I verify with a repeatable rotation/back-stack loop, registration counts, and heap retaining paths.”
+“I diagnose these leaks as ownership chains, not as special behavior of one API. A process-wide singleton, SDK event bus, or Handler queue remains reachable; the stored callback captures a short-lived screen or binding; therefore GC cannot collect that UI graph. I identify the source and its intended lifetime, then make subscription ownership explicit. A visible-only listener can register at STARTED and unregister at STOPPED, a Fragment UI stream uses `viewLifecycleOwner`, and a delayed Runnable is removed when its view is destroyed. I retain the exact callback token needed for removal and avoid simply adding a destroyed-state guard, which still leaves the graph retained. Important events are persisted in model state so cleanup does not lose them. I verify with a repeatable rotation/back-stack loop, registration counts, and heap retaining paths. The trade-off is missed transient events while a visible-only listener is stopped, so important status belongs in durable repository state and is re-queried on return. I also count registrations after repeated navigation to detect duplicate delivery. The same cleanup principle applies to a Handler queue and a third-party SDK registry.”
+
+## How to answer in the interview
+
+- **Why:** Describe source-to-callback-to-view retention.
+- **How:** Pair registration and removal using the same instance.
+- **Trade-off:** Unsubscribing while stopped may miss transient events.
+- **Failure case:** A stale Handler message retains a binding until it runs.
+- **Production solution:** Requery durable state on resume and verify callback counts.
 
 ## Deep-dive talking points
 
@@ -78,4 +113,4 @@ Trace one root path, pair register/unregister, cancel a Handler callback, identi
 - [Fragment lifecycle](https://developer.android.com/guide/fragments/lifecycle) — view lifetime.
 - [Handler reference](https://developer.android.com/reference/android/os/Handler) — callback queue and removal APIs.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The cleanup sketch is illustrative.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The cleanup sketch is illustrative.

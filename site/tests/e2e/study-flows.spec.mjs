@@ -98,6 +98,11 @@ test('mobile RTL prose and LTR code fit the viewport', async ({ page }) => {
   expect(await page.locator('pre').first().evaluate((node) => getComputedStyle(node).direction)).toBe('ltr');
   const width = await page.evaluate(() => ({ body: document.documentElement.scrollWidth, viewport: innerWidth }));
   expect(width.body).toBeLessThanOrEqual(width.viewport + 1);
+  await page.goto(`${base}lab/questions/sec-01/`);
+  const secondArabicParagraph = page.getByText('مثال: شاشة رفع إيصال', { exact: false });
+  expect(await secondArabicParagraph.evaluate((node) => getComputedStyle(node).direction)).toBe('rtl');
+  const inlineCode = secondArabicParagraph.locator('code').first();
+  expect(await inlineCode.evaluate((node) => getComputedStyle(node).direction)).toBe('ltr');
 });
 
 test('flashcard grades update schedule and explorer shows an empty state', async ({ page }) => {

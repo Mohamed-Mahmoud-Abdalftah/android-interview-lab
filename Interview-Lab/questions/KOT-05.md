@@ -41,6 +41,10 @@ class Session private constructor(val account: Account) {
 object AccountIdFormat { fun valid(id: String) = id.isNotBlank() }
 ```
 
+## Practical walkthrough
+
+`data class Account(id, name)` مناسبة لـsnapshot UI فيها value semantics. لكن `copy()` shallow: لو جواها `MutableList` فالنسخة والاصل ممكن يشتركوا فيها. `class Session` مناسبة لما فيه identity وlifecycle أو controlled construction؛ `companion object` يعمل factory جنب النوع لكنه مش object instance لكل Session. `object` singleton داخل process، مش persistent store ولا scoped لكل user. في app فيه account switch، حط session state عند owner قابل للreset بدل global `object` ممكن يحتفظ ببيانات user قديم.
+
 ## Trade-offs and decision criteria
 
 Use data class when all primary fields define value equality; use regular class for controlled identity or mutable invariants. `object` avoids duplicate instances but complicates state isolation and tests if it holds mutable data. Companion factories are discoverable; top-level functions may be simpler for stateless helpers.
@@ -55,15 +59,25 @@ An Android app uses `data class ProfileUiState` for immutable rendering, `class 
 
 ## Interview answer — short
 
-A data class is a value-oriented class with generated equality and copy; a regular class gives explicit identity and behavior; `object` declares one instance; and a companion object groups members with a class, often factories or constants. I choose by ownership and equality semantics.
+A data class is for value-like records with generated equality and copy. A regular class suits identity and behavior. An `object` is a singleton declaration, while a companion object holds class-level factories or members. I choose by lifecycle and equality needs.
 
 ## Interview answer — structured
 
-For UI models I use immutable data classes so equality and copy have clear meaning. For a repository with dependencies and a lifetime, I use a regular class. A stateless singleton can be an `object`, but mutable singleton state is hard to test and can leak Android components. A companion is useful for validated construction. I remember that data-class copy is shallow and generated members only use primary-constructor properties. I would keep Activity references out of process-wide objects and avoid mutable lists inside copied state models. I would also test data-class equality with separately constructed values and avoid using a singleton as a hidden mutable service locator. Those tests expose the contract rather than merely checking that syntax compiles.
+I first ask whether the type is a value or an entity with identity. A data class gives component functions, equality, and `copy`, but the copy is shallow, so nested mutable state needs care. A regular class lets me define construction and identity deliberately. An `object` creates a process-level singleton, which is useful for stateless utilities but risky for user session state. A companion object belongs to the class declaration and is a good place for a validated factory. In a multi-account app I would keep session ownership in a scoped component and use a data class for immutable account display state.
 
 ## Interview answer — deep senior
 
-I would ask what defines equality, who owns lifecycle, and whether construction needs validation. Data classes generate value-like methods, but their `copy` does not clone nested objects. Regular classes can hide mutable state behind methods. Objects are lazily initialized singletons within a classloader, so they are process-local and unsuitable as durable storage or as holders of an Activity. Companions are real objects and can implement interfaces; Java interoperability may need deliberate annotations. The choice should make invariants obvious to callers. I review these declarations through equality and lifetime. An `object` gives a single instance in the process, which is convenient for stateless functions but dangerous for mutable global state and Android component references. A companion object groups construction logic with a class and may implement interfaces; it is not a magical persistent store. For a public API I also check how Java callers access companion members and how tests replace dependencies. The simplest declaration is the one that makes the object's ownership and equality behavior unsurprising. When a companion factory enforces construction rules, I keep validation there or in the constructor and test Java callers if the API is public. Process death means an `object` instance is recreated, so it cannot own durable session truth. Dependencies with different lifetimes belong in DI scopes or explicit owners.
+I would ask what defines equality, who owns lifecycle, and whether construction needs validation. Data classes generate value-like methods, but their `copy` does not clone nested objects. Regular classes can hide mutable state behind methods. Objects are lazily initialized singletons within a classloader, so they are process-local and unsuitable as durable storage or as holders of an Activity. Companions are real objects and can implement interfaces; Java interoperability may need deliberate annotations. The choice should make invariants obvious to callers.
+
+For an account feature, I might model the displayed account as a data class, a session controller as a regular class with explicit lifecycle, a stateless format validator as an `object`, and a validated session factory in a companion. The failure mode is placing the current user in a global object: it can retain stale state after account switching and disappears after process death. I would scope session state to the authenticated owner and reload it from the authoritative source. I would also test `copy()` with nested collections so it does not masquerade as a deep snapshot.
+
+## How to answer in the interview
+
+- **Why:** Match language constructs to data modeling, identity, and lifecycle requirements.
+- **How:** Use `data class` for immutable state payloads, regular `class` for stateful actors, `object` for singletons, and `companion object` for factory methods.
+- **Trade-offs:** `data class` generates `copy()`, `equals()`, and `hashCode()` based on primary constructor properties; shallow copying mutable references breaks deep immutability.
+- **Failure cases:** Treating an `object` singleton as durable storage across process death, leading to state reset and `NullPointerException` when Android restores the activity.
+- **Production solution:** Store session-scoped state in `ViewModel` or `SavedStateHandle`, persist durable data in Room/DataStore, and restrict `object` to stateless utilities.
 
 ## Deep-dive talking points
 
@@ -83,4 +97,4 @@ Choose a declaration for UI state, repository, and factory; explain shallow copy
 - [Kotlin data classes](https://kotlinlang.org/docs/data-classes.html) — generated members and copy.
 - [Kotlin object declarations](https://kotlinlang.org/docs/object-declarations.html) — objects and companions.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.

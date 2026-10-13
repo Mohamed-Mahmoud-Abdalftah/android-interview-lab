@@ -26,6 +26,10 @@ How do Baseline Profiles and Macrobenchmark help performance?
 
 `Baseline Profile` قائمة بمسارات code ساخنة يتضمنها الإصدار عشان ART يعمل لها تحسين/تجميع مسبق عند التثبيت حسب دعم النظام، فتحسن first-run startup أو interaction بدل انتظار JIT يتعلم الاستخدام. `Macrobenchmark` اختبار يقيس رحلة كاملة مثل cold start أو scroll من خارج التطبيق، ويطلع timings وtraces ويقدر يولّد profile لرحلات مهمة. لازم تختار journeys تمثل المستخدمين فعلًا، وتختبر profile enabled/disabled بإعدادات compilation متحكم فيها وعلى جهاز حقيقي وبناء قريب من release. لو bottleneck network أو database lock، profile وحده لن يحل السبب.
 
+## Practical walkthrough
+
+Baseline Profile تخدم journeys المستخدم المهمة لما ART يجهز code paths من بدري، وMacrobenchmark تقيس start أو scroll بره process التطبيق. اختار رحلة launch → catalog → checkout ببيانات حقيقية الحجم، قارن compilation modes المناسبة ووجود profile من عدمه على physical device. لو startup اتحسن لكن frames لسه بتضيع بسبب query على Main، أصلح query نفسها. profile لا تعالج lock ولا allocation سيئة.
+
 ## Why it matters and how it works
 
 ART can use a Baseline Profile to compile selected code paths ahead of use, reducing interpretation/JIT work on covered journeys. Macrobenchmark automates app launch or interaction, collects startup and frame metrics, and can generate a profile from scripted critical user journeys. Benchmark results depend on compilation state, device, thermal condition, data, and build configuration. A `profileable`, non-debuggable, release-like target is preferable for trustworthy results.
@@ -56,7 +60,15 @@ Keep profile generation in CI for top journeys, review changes when flows evolve
 
 ## Interview answer — deep senior
 
-“Baseline Profiles and Macrobenchmark solve complementary problems. A shipped profile tells ART which code paths matter so new installations can receive useful ahead-of-time compilation before organic usage builds a JIT profile. Macrobenchmark is my controlled measurement harness for cold, warm, or hot startup and real UI journeys, and its profile generation can cover those critical paths. I make the script representative, with realistic data and navigation, then control compilation mode and compare runs with and without the profile on physical devices using a non-debuggable, profileable build. I inspect traces and distribution of timings rather than one best run. If the trace reveals disk I/O on Main or a network gate, I fix that root cause rather than expecting compilation to hide it. I refresh journeys as features change, keep profile artifacts in the release pipeline, and watch staged rollout startup and frame metrics for actual user benefit.”
+“Baseline Profiles and Macrobenchmark solve complementary problems. A shipped profile tells ART which code paths matter so new installations can receive useful ahead-of-time compilation before organic usage builds a JIT profile. Macrobenchmark is my controlled measurement harness for cold, warm, or hot startup and real UI journeys, and its profile generation can cover those critical paths. I make the script representative, with realistic data and navigation, then control compilation mode and compare runs with and without the profile on physical devices using a non-debuggable, profileable build. I inspect traces and distribution of timings rather than one best run. If the trace reveals disk I/O on Main or a network gate, I fix that root cause rather than expecting compilation to hide it. I refresh journeys as features change, keep profile artifacts in the release pipeline, and watch staged rollout startup and frame metrics for actual user benefit. A launch-to-checkout script is useful only if it matches real navigation and data volume. I treat profile coverage as a release artifact with an owner: when routes change, regenerate and remeasure. A startup win that leaves Main-thread database contention untouched should be reported as a partial gain, not a complete performance fix.”
+
+## How to answer in the interview
+
+- **Why:** Explain precompiled hot paths and journey measurement.
+- **How:** Generate real flows and compare controlled compilation states.
+- **Trade-off:** Profiles require upkeep as navigation and code change.
+- **Failure case:** A profile cannot repair a Main-thread lock or decode.
+- **Production solution:** Track benchmark distributions and regenerate after route changes.
 
 ## Deep-dive talking points
 
@@ -78,4 +90,4 @@ Define both tools, name a critical journey, control compilation/build/device, an
 - [Macrobenchmark overview](https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview) — journey measurement.
 - [Measure Baseline Profiles](https://developer.android.com/topic/performance/baselineprofiles/measure-baselineprofile) — enabled/disabled comparison.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The proposed benchmark was not run on a device.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The proposed benchmark was not run on a device.

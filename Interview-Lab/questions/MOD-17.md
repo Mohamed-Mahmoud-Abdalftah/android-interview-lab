@@ -26,6 +26,10 @@ When is a new feature module justified, and when is it unnecessary complexity?
 
 Feature module مبررة عندما قدرة لها owner واضح، public entry صغير، استقلال تطوير/اختبار مفيد، أو delivery/build impact مقاس. لو تطبيق صغير وفريق واحد، تقسيم شاشة واحدة إلى module مستقلة قد يزيد Gradle configuration وDI/navigation wiring دون فائدة. لا تعتمد على عدد classes وحده. اسأل: هل تغيراتها تتسبب في إعادة بناء أجزاء كثيرة؟ هل فرق تعمل بالتوازي؟ هل الميزة قابلة للتوصيل مستقلة؟ ابدأ بpackage boundary ثم استخرج module عند وجود seam مستقرة واختبارات تقيس أثرها.
 
+### Practical walkthrough in Egyptian Arabic
+
+Feature module مبررة لما تملك فريق، release/test boundary، أو dependency set مستقل مؤثر. لو مجرد شاشة واحدة تستورد معظم app وcore، module جديدة قد تزيد Gradle work ولا تعزل شيئًا. اسأل كم تغيير يعبر boundary، هل build time يتحسن، ومن يملك API؟ ابدأ package-by-feature ثم استخرج module عندما pressure حقيقي.
+
 ## Why it matters and how it works
 
 A Gradle module enforces compile visibility and can isolate changes, but every module adds configuration, dependencies, build variants and integration surface. A feature boundary that changes constantly may require frequent API edits, negating independence. Build improvements depend on the shape of the graph and tooling, not module count.
@@ -57,6 +61,14 @@ Record why each module exists, owner and public API. Track configuration time, i
 ## Interview answer — deep senior
 
 “A new feature module is an investment in a boundary. I look for a coherent capability with a clear owner and a small public integration point. Independent teams, reuse across app variants, dynamic delivery or measured build fan-out can justify that investment. I also ask whether the boundary is stable enough: if two screens exchange internal state every week, splitting them may create ceremony and an opaque event bus rather than independence. A Gradle project adds configuration, plugin setup, DI visibility, navigation contracts and integration tests, so ‘more modules’ is not a success metric. I may begin with packages and access discipline, then extract a vertical slice after its dependencies are visible. For a seller dashboard I can expose a destination and keep its implementation private; for a static About screen I would probably keep it with Settings. I benchmark clean and incremental builds and inspect cross-team changes before and after. If a module stops serving a reason and only adds indirection, I am willing to merge it. Modularity should make routine product work safer at acceptable build and coordination cost.”
+
+## How to answer in the interview
+
+- **Why:** modules should solve real coupling.
+- **How:** measure ownership and dependency isolation.
+- **Trade-off:** independence versus setup cost.
+- **Failure case:** module created as folder replacement.
+- **Production solution:** extract on evidence and verify build.
 
 ## Deep-dive talking points
 

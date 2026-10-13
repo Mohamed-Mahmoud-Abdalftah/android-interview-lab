@@ -41,6 +41,10 @@ sealed interface PaymentOutcome { data class Pending(val id: String): PaymentOut
 ```
 Server status must later confirm completion; this snippet is a contract, not a transaction implementation.
 
+## Practical walkthrough
+
+في payment routing، `when(provider)` داخل checkout policy مع كل SDK جديد هيخلط قرار البيع مع تفاصيل providers. خلي `PaymentStrategy` تقدم `submit` ونتيجة واضحة، والrouter يختار الاستراتيجية المسجلة بناءً على method معروف. الإضافة غالبًا adapter وbinding واختبارات؛ policy يفضل ثابت. لكن متقولش إن OCP يمنع تعديل registration أو إنه يضمن صحة الدفع. كل strategy لازم تلتزم بمعنى `Pending` و`Rejected`، والbackend هو اللي يؤكد final status. اختبر duplicate tap وtimeout وunknown status عشان تكتشف اختلاف implementations مبكرًا.
+
 ## Trade-offs and decision criteria
 
 For two fixed methods, an explicit `when` can be clearer. A strategy registry earns its cost when variation is frequent or provider code is large. Keep selection policy explicit; dynamic reflection discovery is not necessary for OCP.
@@ -59,11 +63,19 @@ Strategy supports OCP by moving provider-specific behavior behind a stable contr
 
 ## Interview answer — structured
 
-I define what is truly common: request ID, supported operation, typed outcome and cancellation behavior. The checkout policy depends on that contract, while card or wallet adapters translate SDK calls. A provider can be added through an implementation plus DI/registry wiring and tests, rather than scattered `when` branches. That is strategic extension, not a promise of zero edits. If providers differ too much to honor one contract, I split capabilities rather than force a misleading interface. The router should not make authorization decisions from a client-side `method` string alone. The backend must approve the method and the request. I would also persist request identity so a timeout can be reconciled instead of blindly submitting again.
+I define what is truly common: request ID, supported operation, typed outcome and cancellation behavior. The checkout policy depends on that contract, while card or wallet adapters translate SDK calls. A provider can be added through an implementation plus DI/registry wiring and tests, rather than scattered `when` branches. That is strategic extension, not a promise of zero edits. If providers differ too much to honor one contract, I split capabilities rather than force a misleading interface. The router should not make authorization decisions from a client-side `method` string alone. The backend must approve the method and the request.
 
 ## Interview answer — deep senior
 
-OCP helps when provider variation is a recurring change axis. I keep validation, duplicate-submit policy and server reconciliation outside the strategies, so adapters cannot quietly redefine business rules. Each strategy maps its SDK’s callbacks into the same semantic outcomes: confirmed rejection, pending uncertainty, and confirmed status after server verification. I run contract tests against every implementation, including timeout, cancellation and duplicate callback behavior. Registration still changes when adding a provider, and product/security review still applies. If one provider cannot satisfy the shared contract, LSP warns that the abstraction is too broad. A small app with two stable providers may use an explicit switch instead. The measure is whether a new provider changes only the adapter and composition boundary rather than many screens. The interface design is where OCP meets LSP. Each provider can differ internally, but the shared `PaymentOutcome` must mean the same thing to checkout. If one SDK reports a timeout after the server may have committed, its adapter must not fabricate a final rejection. I would define contract tests across all providers, then instrument production with correlation IDs and safe metrics. New provider work still includes DI registration, server configuration, fraud and compliance checks. An extension seam isolates code changes; it does not remove operational obligations.
+OCP helps when provider variation is a recurring change axis. I keep validation, duplicate-submit policy and server reconciliation outside the strategies, so adapters cannot quietly redefine business rules. Each strategy maps its SDK’s callbacks into the same semantic outcomes: confirmed rejection, pending uncertainty, and confirmed status after server verification. I run contract tests against every implementation, including timeout, cancellation and duplicate callback behavior. Registration still changes when adding a provider, and product/security review still applies. If one provider cannot satisfy the shared contract, LSP warns that the abstraction is too broad. A small app with two stable providers may use an explicit switch instead. A strategy boundary keeps provider-specific SDK mapping out of checkout policy. The router selects an implementation using a validated payment method, and each strategy returns the same outcome vocabulary. A new provider adds an adapter and composition binding; it should not require rewriting eligibility rules. The trade-off is indirection and the danger that a common interface hides different provider semantics. I would use contract tests for rejection, pending, cancellation, and timeout, then provider-specific integration tests. I also keep an idempotency key and server-confirmed final state in the transaction flow. Strategy design supports local extension, but it cannot itself guarantee payment correctness.
+
+## How to answer in the interview
+
+- **Why:** Identify stable checkout policy.
+- **How:** walk through adapter and router.
+- **Trade-offs:** mention indirection.
+- **Failure cases:** flag semantic mismatch and timeouts.
+- **Production solutions:** finish with contract tests and server confirmation..
 
 ## Deep-dive talking points
 
@@ -83,4 +95,4 @@ Add a third provider on paper and count which files change; include timeout and 
 - [Robert C. Martin, Open Closed Principle](https://blog.cleancoder.com/uncle-bob/2014/05/12/TheOpenClosedPrinciple.html) — strategic extension.
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — adapter/repository boundary.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

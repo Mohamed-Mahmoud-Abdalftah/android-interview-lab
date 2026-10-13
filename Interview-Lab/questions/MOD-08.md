@@ -26,6 +26,10 @@ What belongs in :core:network, :core:database, :core:ui, and feature modules?
 
 `:core:network` قد يملك HTTP client configuration، auth interceptor العام وserialization infrastructure؛ ليس checkout endpoint policy كلها. `:core:database` يملك Room setup، migration infrastructure وshared transaction primitives، لكن feature-owned tables/DAOs قد تبقى في data feature حسب graph. `:core:ui` أو design system يملك theme، tokens ومكونات عامة لا تعرف business entities. feature module يملك screen, state, events, navigation entry، وقواعد العمل الخاصة به أو تنسيق use case. السؤال الحاسم: لو feature واحدة تغيرت، هل يجب تعديل core؟ لو نعم دائمًا، core صارت مكبًا للتفاصيل.
 
+### Practical walkthrough in Egyptian Arabic
+
+`:core:network` يوفر HTTP client/config وليس product API DTO لكل feature؛ `:core:database` يوفر DB infrastructure/shared tables؛ `:core:ui` tokens/components لا feature business. Feature تملك screen, state, policy خاص بها. لو core يستورد feature model فهذا عكس الاتجاه. افصل shared contract فقط عندما يوجد أكثر من مستهلك وسلوك ثابت.
+
 ## Why it matters and how it works
 
 Core modules often have high fan-out, so changing their public API recompiles many consumers. Keeping infrastructure interfaces narrow protects that boundary. Feature modules remain cohesive when their UI and workflow policy live together. Database schema can be centralized physically yet ownership of feature migrations and tables should be explicit so teams do not edit one opaque shared module blindly.
@@ -57,6 +61,14 @@ Publish module responsibilities and codeowners, track public API churn and affec
 ## Interview answer — deep senior
 
 “The labels are useful only if they express change ownership. `:core:network` should hold stable transport configuration—client setup, common interceptors and serialization facilities—not every feature's endpoint policy. `:core:database` can own a Room database shell and migration test infrastructure, while each feature's data owner remains accountable for its schema and queries even if they compile into a shared database artifact. `:core:ui` or design system provides tokens and generic components such as an accessible button; it should not import Orders entities to decide button text. Feature modules own screen state, events, navigation entry and workflow-specific rules, with feature data mapping its API and persistence models. I watch the public API of core because a small unstable change fans out to many builds and teams. There are exceptions: a cross-feature transaction or shared authenticated transport needs central coordination. I write those owners down, test migrations and app assembly, and look at change history. If every orders change modifies core, I likely placed policy at the wrong level.”
+
+## How to answer in the interview
+
+- **Why:** core should not absorb feature logic.
+- **How:** define narrow infrastructure and feature ownership.
+- **Trade-off:** reuse versus central bottleneck.
+- **Failure case:** core imports feature DTO.
+- **Production solution:** dependency direction and API audit.
 
 ## Deep-dive talking points
 

@@ -26,6 +26,10 @@ How do version catalogs and convention plugins reduce config duplication?
 
 Gradle version catalog (`libs.versions.toml`) تجمع aliases للنسخ والإحداثيات، فتقلل تكرار strings وتسهّل رؤية اختلاف versions. لكنها لا تعني أن كل dependency تُضاف لكل module تلقائيًا. Convention plugin يطبق إعدادات متكررة مثل Android/Kotlin plugin، Java target، test setup، lint، Compose configuration على مجموعة modules، بدل copy-paste في كل `build.gradle.kts`. كلاهما يحتاج ownership وtests: تحديث plugin قد يؤثر في كل feature، وcatalog لا تحل version compatibility آليًا. تجنب plugin ضخمة فيها behavior خفي لكل الحالات.
 
+### Practical walkthrough in Egyptian Arabic
+
+Version catalog يوحد أرقام AGP/Kotlin/libraries، وconvention plugin يطبق Android/Kotlin/lint defaults مرة واحدة. لا تجعل plugin عملاق يضيف كل dependency لكل module؛ هذا يضخم classpath ويخفي ownership. بعد migration قارن task graph وbuild cache/configuration cache ونسخ dependencies. مثال `androidLibrary` convention يضبط JVM target والlint، والfeature تختار Retrofit فقط إن تحتاجه.
+
 ## Why it matters and how it works
 
 Catalog aliases centralize dependency and plugin coordinates for a multi-project build. Convention plugins package Gradle configuration logic as reusable, typed build logic and make module scripts smaller. A change to a shared convention or catalog can fan out across the graph, so its compatibility and performance impact should be checked with representative modules and variants.
@@ -57,6 +61,14 @@ Version build logic, review catalog updates, run a representative module and ful
 ## Interview answer — deep senior
 
 “I separate data from behavior in the build. `libs.versions.toml` names versions and dependency coordinates, making it easier to audit or upgrade them consistently. It does not decide that every module depends on a library, nor does it solve binary incompatibility by itself. Convention plugins encode repeated build behavior—Android library settings, Kotlin target, Compose compiler setup, test configuration and lint policy—so feature scripts can state their intent instead of copying dozens of lines. I prefer several focused plugins, such as android-feature and android-library, over a single plugin with hidden feature flags. A shared convention is also a high-fan-out code path: an accidental signing or minification change can affect every release module. I maintain tests or sample-project checks for build logic, assemble relevant variants in CI and measure configuration time after refactors. Specific SDK dependencies remain declared where used, and override points are documented. This reduces drift while keeping the actual module graph visible.”
+
+## How to answer in the interview
+
+- **Why:** duplicate config drifts across modules.
+- **How:** centralize versions and true conventions.
+- **Trade-off:** consistency versus hidden magic.
+- **Failure case:** plugin injects unused SDK everywhere.
+- **Production solution:** profile build and keep dependency local.
 
 ## Deep-dive talking points
 

@@ -26,6 +26,10 @@ How do you avoid circular dependencies and giant core/common modules?
 
 ارسم DAG مسموحة وامنع reverse imports في CI. إذا ميزتان تحتاجان بعضهما، افصل العقد المشترك الأصغر في owner مناسب أو اجعل app تنسق، وأحيانًا ادمجهما لو هما قدرة واحدة. لا ترمِ code داخل `:core:common` لمجرد إزالة cycle؛ common تصبح high-fan-out، وكل تعديل API يعيد بناء نصف التطبيق. ضع criteria لقبول code مشتركة: استخدام حقيقي متعدد، semantics مستقرة، owner واضح. راجع dependencies والشيفرة العامة دورياً.
 
+### Practical walkthrough in Egyptian Arabic
+
+Circular dependency تعني ownership مختلطة. اسحب contract صغير لطبقة أقل أو خلي `:app` ينسق، لا تنقل كل شيء إلى `:core:common`. Giant core يعيد compile الجميع عند كل تغيير ويصبح بلا owner. افحص `api` surface وdependency graph دوريًا، وضع rule يمنع feature-to-feature import إن التصميم يتطلب. أعد تسمية ownership قبل نقل الملفات.
+
 ## Why it matters and how it works
 
 Cycles prevent a topological project build and obscure responsibility. A giant core module can remain acyclic but still create a central bottleneck and expose unrelated APIs to every feature. Contract extraction works when the extracted concept is stable and owned; otherwise app orchestration or merging cohesive pieces may better reflect reality.
@@ -57,6 +61,14 @@ Automate graph and allowed-edge checks, track core public API churn and incremen
 ## Interview answer — deep senior
 
 “I want a graph whose arrows explain ownership. When Profile and Rewards depend on each other, I look at the actual information exchanged. A stable `UserSummary` might belong in a lower-level contract, while the app shell can compose navigation between the two. If both modules always change together, the original split may be artificial and merging may be simpler. I resist the familiar shortcut of moving whatever causes a cycle to `:core:common`. That can produce an acyclic graph on paper while creating a high-fan-out module that every team edits, every feature sees and every build recompiles after an API change. Shared code should have clear semantics, more than one genuine consumer and an owner responsible for compatibility. A tiny duplicate helper may be acceptable until that is true. I enforce direct and transitive graph rules in CI, inspect public API and rebuild impact of core changes, and review new cross-feature edges. A static service locator does not solve the design; it only hides the dependency from Gradle.”
+
+## How to answer in the interview
+
+- **Why:** cycles and giant core harm independence.
+- **How:** extract narrow contract and compose at top.
+- **Trade-off:** extra module versus central sprawl.
+- **Failure case:** common contains business from every feature.
+- **Production solution:** CI graph checks and API budgets.
 
 ## Deep-dive talking points
 

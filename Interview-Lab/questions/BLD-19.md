@@ -26,6 +26,10 @@ A release bundle was signed with the wrong key. How do you contain it and correc
 
 أوقف upload/promotion فورًا واعرف الحالة: AAB محلية فقط، Play رفضها لأن upload certificate غلط، أم تم قبول/توزيع artifact في قناة معينة؟ احفظ hash/logs بدون نشر secrets. قارن certificate fingerprint مع upload key المسجل، وميّزها عن app-signing key التي يستخدمها Play للأجهزة. لو مجرد wrong upload key، أصلح protected CI secret/config وأعد build أو signing من source/toolchain موثوق مع versionCode صالح، ثم افحص fingerprint قبل الرفع واختبر internal track. لو key مشبوهة أو artifact وُزع بالفعل، اتبع incident/Play recovery والـrollout halt. لا “تصلح” signed AAB بتعديل bytes يدويًا.
 
+### Practical walkthrough in Egyptian Arabic
+
+Wrong key: أوقف promotion أولًا، وحدد هل upload اترفض أم وصل track وأي users تأثروا. قارن fingerprint مع expected upload/app signing roles؛ مسارات recovery تختلف. راجع secret reference والworkflow والartifact digest، ثم ابنِ من commit موثوق بمفتاح صحيح وفق حالة Play/versionCode. لا تفترض إن تغيير certificate بسيط؛ احتفظ بـincident log وراجع access.
+
 ## Why it matters and how it works
 
 Play App Signing verifies uploads against the registered upload certificate and signs device APKs with the app-signing key. A wrong-key AAB may be rejected before distribution; its containment differs from a compromised signing identity or already served bad release. Release artifacts are cryptographically tied to their signatures, so a corrected pipeline should produce and verify a new immutable artifact.
@@ -57,6 +61,14 @@ Enforce pre-upload certificate fingerprint and artifact-hash gates, protect envi
 ## Interview answer — deep senior
 
 “My response depends on the release state. I stop the pipeline and preserve the wrong-signed AAB hash, certificate fingerprint, source revision and CI logs without exposing secrets. If Play rejected the upload, users are not affected by that artifact; I fix the protected signing job and verify it selects the registered upload key. Under Play App Signing I do not confuse this with the app-signing key used for delivered APKs. I rebuild or re-sign only through an audited, reproducible pipeline, verify certificate, versionCode and hash before upload, and validate through an internal track before resuming promotion. I also check whether the artifact had been accepted on another channel or whether a key was compromised; those require containment, access review, possibly upload-key reset and rollout controls rather than a simple retry. I add a pre-upload fingerprint gate and an environment mapping test so prod can never silently select staging credentials. I do not modify bytes in a signed bundle or create an opaque local emergency artifact. The incident record ties the correction to one immutable binary and explains user impact accurately.”
+
+## How to answer in the interview
+
+- **Why:** signing error threatens update trust.
+- **How:** contain, identify cert role and store state.
+- **Trade-off:** rapid fix versus safe key recovery.
+- **Failure case:** reupload wrong artifact/key blindly.
+- **Production solution:** fingerprint gate and protected release job.
 
 ## Deep-dive talking points
 

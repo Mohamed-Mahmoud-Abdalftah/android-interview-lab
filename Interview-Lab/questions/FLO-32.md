@@ -24,6 +24,10 @@ Explain runCatching swallowing cancellation and how to preserve structured shutd
 
 `runCatching` في Kotlin بتمسك `Throwable`، وده يشمل `CancellationException`. لو لفّينا cancellable Flow/coroutine operation بيها من غير إعادة رمي الإلغاء، هنحوّل خروج الشاشة إلى `Result.failure` عادي؛ ممكن retry تشتغل أو UI تعرض error قديم. نستخدم `try/catch` واضح: نعيد رمي cancellation ونمسك expected domain exceptions فقط.
 
+### Practical walkthrough in Egyptian Arabic
+
+في search pipeline، query جديدة تلغي القديمة بـ`flatMapLatest`. لو repository عملت `runCatching { api.search(old) }` والتقطت `CancellationException` كـfailure، ممكن تبعت Error للـquery القديمة أو retry غلط. استخدم `try/catch` يرجّع cancellation فورًا، وبعدها امسك IOException أو domain errors فقط. اختبر cancel أثناء `delay` وتأكد لا emission ولا API retry.
+
 ## Why it matters and how it works
 
 CancellationException is control flow for a cancelled Job. `runCatching` is not coroutine-aware and catches it. A Flow `catch` operator has upstream placement rules and is transparent to downstream; custom wrappers still must avoid swallowing cancellation. Timeouts that use cancellation require narrow handling at their own boundary.
@@ -63,7 +67,15 @@ A search ViewModel cancels stale requests via flatMapLatest. Repository wrapper 
 
 ## Interview answer — deep senior
 
-“The failure is subtle because the code still type-checks and tests may pass on the happy path. Structured cancellation relies on the exception propagating from a cancellable suspension. Bare `runCatching` catches it as Throwable and can convert the cancelled branch into a value; downstream `map` or retry policy then continues as though the screen were active. I audit repository wrappers, Flow operators and `Result` adapters for that pattern. Explicit catch order rethrows cancellation, maps only expected I/O/domain errors, and lets fatal errors propagate. A timeout can be intentionally converted to a Timeout result at its own boundary, but outer Job cancellation must remain distinct. Deterministic tests cancel during a delayed API call and assert no retry, no stale UI emission and released resources.”
+“The failure is subtle because the code still type-checks and tests may pass on the happy path. Structured cancellation relies on the exception propagating from a cancellable suspension. Bare `runCatching` catches it as Throwable and can convert the cancelled branch into a value; downstream `map` or retry policy then continues as though the screen were active. I audit repository wrappers, Flow operators and `Result` adapters for that pattern. Explicit catch order rethrows cancellation, maps only expected I/O/domain errors, and lets fatal errors propagate. A timeout can be intentionally converted to a Timeout result at its own boundary, but outer Job cancellation must remain distinct. Deterministic tests cancel during a delayed API call and assert no retry, no stale UI emission and released resources. I would trace a cancelled request through the wrapper. Structured coroutines signal cancellation with `CancellationException`. Kotlin `runCatching` catches `Throwable`, so a bare wrapper can convert that control signal into a normal `Result.failure`. A downstream mapper may then emit an error state for an obsolete query or a retry policy may resubscribe work the user left. I write an explicit `try/catch` that rethrows cancellation first, then maps only expected exceptions. I keep timeout handling narrow: an inner deadline can become a domain Timeout if that is the contract, but parent Job cancellation must remain cancellation. I test a delayed API call, cancel its Job, and assert no stale UI event, no retry, and resource cleanup. This is a correctness requirement, not just an exception-style preference.”
+
+## How to answer in the interview
+
+- **Why:** cancellation controls structured shutdown.
+- **How:** show runCatching catching Throwable and rethrow cancellation.
+- **Trade-off:** typed Result must not absorb lifecycle control.
+- **Failure case:** stale error or retry after query cancellation.
+- **Production solution:** deterministic cancel-during-delay test.
 
 ## Deep-dive talking points
 

@@ -24,6 +24,10 @@ Balance architecture benefit against complexity for a small app, preserving clea
 
 تطبيق صغير بشاشة أو اتنين وAPI واحدة ممكن يشتغل كويس بـViewModel + Repository واضحة من غير domain module، DTO/domain/UI copies متطابقة، أو interface لكل class. Clean Architecture تصبح overengineering لما وقت التنقل بين طبقات واختبارات forwarding أكبر من خطر التغيير الفعلي. لكن “صغير” مش مبرر تحط Retrofit في Compose أو تخبّي secret في APK؛ احتفظ بحدود data وUI وبـmain safety، واستخرج domain لما rules تتكرر أو workflow يعقد.
 
+### Practical walkthrough in Egyptian Arabic
+
+App صغيرة: لو screen واحدة وrepository بسيطة، 5 modules وinterface لكل class قد تضيف navigation cost أكبر من فائدتها. استخدم State owner واضح، repository إذا فيه data policy، واختبارات للrisks الفعلية. لما rules تتكرر أو SDK تتبدل، extract domain boundary تدريجيًا. Clean Architecture مبدأ dependency/ownership، مش عدد مجلدات ثابت.
+
 ## Why it matters and how it works
 
 Architecture has maintenance cost. Android guidance calls the domain layer optional. The smallest structure that clearly owns state, data, and failure behavior may be best until independent change pressure appears.
@@ -55,6 +59,14 @@ For a tiny app, I would begin with a ViewModel and a repository with clear data 
 ## Interview answer — deep senior
 
 I look for actual forces: independently changing data sources, shared rules, multiple teams, complex state transitions, or offline consistency. Without them, full Clean Architecture machinery can be more expensive than the problem. A small app can maintain a strong UI/data split and one repository, with domain logic inside a focused place until it deserves extraction. I avoid premature interfaces and one-to-one mappers that only rename fields. At the same time, simplicity is not permission to leak DTOs into every UI or ignore lifecycle and cancellation. I make decisions reversible, write a few behavior tests, and review the architecture when change starts scattering edits across unrelated screens. The measure is local, safe change, not adherence to a diagram. I would revisit the design using evidence: how many files change for one feature, how much business logic is duplicated, and whether tests require booting Android just to check policy. When those costs appear, a focused domain layer or module boundary can pay off. Before then, dozens of empty interfaces and one-line use cases can make the app harder to understand. Simplicity remains bounded by correctness: blocking work, secrets, lifecycle, and source-of-truth decisions still need proper owners even in a two-screen app.
+
+## How to answer in the interview
+
+- **Why:** small systems still need clear ownership.
+- **How:** start minimal and extract on pressure.
+- **Trade-off:** future flexibility versus present complexity.
+- **Failure case:** boilerplate hides simple flow.
+- **Production solution:** evolve boundaries from measured change pain.
 
 ## Deep-dive talking points
 

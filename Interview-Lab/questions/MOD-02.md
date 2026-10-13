@@ -26,6 +26,10 @@ Compare app, feature, core, data, domain, and design-system modules.
 
 `:app` هو composition/delivery entry point ويختار features وbindings وnavigation root. `:feature:*` يملك UI/use cases الخاصة بقدرة مثل checkout. `:data:*` يطبق repositories ويخاطب network/database. `:domain:*` اختياري لعقود وقواعد مستقلة عن Android إذا حجم النظام يبرره. `:core:*` لبنية مشتركة مستقرة مثل network client أو database setup، وليس مكانًا لكل كود لا يعرف صاحبه أين يضعه. `:designsystem` يوفر theme/components UI محايدة عن business. اتجاه dependencies من feature إلى contracts/core، وتطبيق implementation يركبه app؛ التفاصيل تختلف حسب الحجم.
 
+### Practical walkthrough in Egyptian Arabic
+
+`:app` يركب features والnavigation، feature modules تملك UI/logic المحلية، core محدود لعقد مشترك حقيقي، data للadapters، domain للrules إن لها قيمة، design-system للcomponents/tokens. ليس لازم كل مشروع يمتلك هذه كلها. لو feature تحتاج account ID، أعطها contract صغير بدل استيراد auth UI. راجع ما يخرج من `api` حتى لا تصبح core سلة عامة.
+
 ## Why it matters and how it works
 
 Module names encode ownership and intended dependency edges. App modules package final variants and serve as composition roots. Feature modules group user-facing behavior; data modules implement external access; domain modules can keep contracts/policies independent when reuse warrants them. Core and design-system modules expose cross-cutting primitives, and their APIs require careful governance because many consumers compile against them.
@@ -57,6 +61,14 @@ Publish a dependency rule with examples and check it in CI. Review public APIs a
 ## Interview answer — deep senior
 
 “I would describe the modules by why another module is allowed to depend on them. The app is the final composition and packaging boundary: it selects features and their implementations. A feature groups a user capability and exposes only the API needed for navigation or integration. Data modules implement persistence and remote access, often behind interfaces a feature or domain layer can see. A domain module is useful when business rules or contracts are genuinely shared or need Android-independent tests; I would not create one just to house empty forwarding classes. Core network/database modules provide stable infrastructure, while a design system provides visual tokens and components without knowing orders or payments. In an orders example, feature UI depends on an orders contract and design system; data implements the contract using core clients; app assembles them. I watch high-fan-out shared modules because public changes there trigger widespread work. The exact partition is a design choice driven by ownership, reuse and build evidence, with an acyclic graph and integration tests as guardrails.”
+
+## How to answer in the interview
+
+- **Why:** module role clarifies ownership.
+- **How:** assign app composition, feature behavior and narrow shared code.
+- **Trade-off:** reuse versus generic core sprawl.
+- **Failure case:** feature imports another feature internals.
+- **Production solution:** contract and dependency graph review.
 
 ## Deep-dive talking points
 

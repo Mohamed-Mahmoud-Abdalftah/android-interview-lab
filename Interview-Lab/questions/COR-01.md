@@ -26,6 +26,10 @@ What is a coroutine, and how is it different from a thread?
 
 الـcoroutine شغل ممكن يقف عند suspension point ويرجع يكمل من غير ما يفضل حاجز thread وهو مستني. الـthread مورد من نظام التشغيل بينفّذ التعليمات فعلًا؛ الـcoroutine نفسها مش thread جديد. ممكن آلاف coroutines تتشارك عدد أقل من threads، لكن ده مش وعد إن كل شغل هيبقى سريع: لو ناديت blocking API على Main هتجمّد الـUI. الـdispatcher بيحدد مكان التنفيذ، والـscope بيحدد عمر الشغل وإلغاؤه.
 
+## Practical walkthrough
+
+تخيّل شاشة بحث المستخدم كتب فيها 3 حروف بسرعة. كل طلب بحث coroutine منفصلة، لكن الـnetwork client يوقفها من غير ما يحجز UI thread أثناء الانتظار. لو حطّيت `Thread.sleep` في نفس المسار هتلاحظ فريمات واقفة، ولو ألغيت الـJob القديم، لازم الـclient نفسه يحترم الإلغاء أو على الأقل تمنع نتيجته المتأخرة من تحديث الشاشة.
+
 ## Why it matters and how it works
 
 On the JVM, a coroutine executes on a thread. A suspending operation can save its continuation and release that thread until the result is ready. Its dispatcher determines the execution context and it may resume on a different thread. A plain CPU loop or blocking SDK call does not become cooperative simply because it sits inside `launch`. Cancellation is cooperative: suspending functions usually check it, while custom long loops need explicit checks. Structured scope ownership lets an Activity or ViewModel stop obsolete UI work.
@@ -73,7 +77,15 @@ A search ViewModel launches request handling in `viewModelScope`; new input canc
 
 ## Interview answer — deep senior
 
-“A coroutine is a logical computation represented by a continuation and a Job, while a thread is an execution resource. The coroutine runs instructions on a thread until it suspends or completes; a truly suspending operation can release that thread, and later continuation may resume on a dispatcher-selected thread. This makes waiting work scalable, but a blocking call or CPU loop still occupies its worker and may freeze Main. I choose a scope based on ownership, such as a ViewModel for screen work, and ensure cancellation reaches downstream APIs. Shared state still needs synchronization, and operations that must survive process death need durable records and scheduling rather than merely a longer-lived coroutine.”
+“A coroutine is a logical computation represented by a continuation and a Job, while a thread is an execution resource. The coroutine runs instructions on a thread until it suspends or completes; a truly suspending operation can release that thread, and later continuation may resume on a dispatcher-selected thread. This makes waiting work scalable, but a blocking call or CPU loop still occupies its worker and may freeze Main. I choose a scope based on ownership, such as a ViewModel for screen work, and ensure cancellation reaches downstream APIs. Shared state still needs synchronization, and operations that must survive process death need durable records and scheduling rather than merely a longer-lived coroutine. For a search screen I would trace the exact call path: the ViewModel job begins on Main, the network client suspends during I/O, and only CPU or blocking boundaries move to an appropriate dispatcher. I would cancel the previous query and assert its late response cannot update state. The practical metric is frame responsiveness and obsolete-request cleanup, not the number of coroutines created.”
+
+## How to answer in the interview
+
+- **Why:** waiting requests need cheap ownership.
+- **How:** distinguish the coroutine's continuation, its dispatcher thread, and its parent Job.
+- **Trade-off:** cheap waiting does not make CPU or shared state free.
+- **Failure case:** a blocking call on Main or a late response after navigation.
+- **Production solution:** use a screen-owned scope, a main-safe client, and cancellation-aware result publication.
 
 ## Deep-dive talking points
 
@@ -94,4 +106,4 @@ Score one point each (0–5): define coroutine and thread separately; explain su
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — suspension, dispatchers, and threads.
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — Android integration and lifecycle guidance.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. The sample is a JVM illustration; Android device behavior was not tested here.
+Technically reviewed against the linked primary documentation on 2026-10-13. The sample is a JVM illustration; Android device behavior was not tested here.

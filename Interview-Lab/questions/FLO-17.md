@@ -24,6 +24,10 @@ Explain flowOn upstream context preservation and why it does not move downstream
 
 `flowOn(Dispatchers.IO)` بيغيّر context للoperators والمصدر اللي فوقه فقط؛ الـcollector والoperators اللي تحته يفضلوا في context بتاع المستدعي. ده يسمح repository تعمل blocking read بعيد عن Main وتسيب rendering على Main. ما ينفعش نستخدم `withContext(IO)` حوالين `emit` داخل `flow {}` ونكسر invariant بتاع Flow.
 
+### Practical walkthrough in Egyptian Arabic
+
+`flowOn(Dispatchers.IO)` يأثر على operators اللي قبله upstream، مش `collect` ولا الكود بعده. لو Room query سريعة و`map` فيها parsing ثقيل، حط flowOn بعد الـmap اللي عايز تنقلها، لكن متغيّرش UI state من IO مباشرة. لاحظ إنه يعمل context boundary وقد يضيف buffer وسلوك cancellation؛ اختبر thread عند كل مرحلة بدل افتراض pipeline كلها في IO.
+
 ## Why it matters and how it works
 
 Flow preserves downstream context. `flowOn` inserts an upstream execution boundary, potentially a channel and buffer when dispatcher changes. Multiple flowOn calls compose by position. Cancellation between upstream/downstream can drop in-flight values; do not treat the boundary as transactional delivery.
@@ -64,7 +68,15 @@ A repository wraps a legacy disk reader in a cold Flow on IO, while a Fragment c
 
 ## Interview answer — deep senior
 
-“The context rule is an important local reasoning guarantee. A basic `flow {}` emits from its own coroutine context; changing context around `emit` with `withContext` violates the invariant. `flowOn` is the supported operator: it shifts upstream work and can introduce a channel when execution contexts differ, so buffering and cancellation can affect in-flight values. Downstream remains in the collector context. In a real Android app I keep a blocking legacy read upstream on IO and immutable state mapping where appropriate, then collect on Main only while lifecycle is active. I profile whether the source is already main-safe, because unnecessary dispatching adds complexity without improving responsiveness. Multiple flowOn calls compose by position.”
+“The context rule is an important local reasoning guarantee. A basic `flow {}` emits from its own coroutine context; changing context around `emit` with `withContext` violates the invariant. `flowOn` is the supported operator: it shifts upstream work and can introduce a channel when execution contexts differ, so buffering and cancellation can affect in-flight values. Downstream remains in the collector context. In a real Android app I keep a blocking legacy read upstream on IO and immutable state mapping where appropriate, then collect on Main only while lifecycle is active. I profile whether the source is already main-safe, because unnecessary dispatching adds complexity without improving responsiveness. Multiple flowOn calls compose by position. I would draw a vertical line at `flowOn`. Operators above it run in the supplied context, while downstream operators and the collector remain in the collector context unless another boundary changes them. That lets a repository move blocking-safe transformation work off Main without forcing UI rendering onto IO. It is not a blanket thread switch for the whole chain. When dispatchers differ, `flowOn` can create a channel boundary; cancellation may discard in-flight values, so I avoid using it as a correctness mechanism for required events. I also check whether the data source already manages its own dispatcher, as Room often does. In a test I record thread names or use controlled dispatchers around upstream and downstream operations, then verify the UI still collects on its intended context.”
+
+## How to answer in the interview
+
+- **Why:** heavy upstream work can block the collector thread.
+- **How:** place flowOn after the operators it should move.
+- **Trade-off:** context boundary can buffer and alter timing.
+- **Failure case:** expecting downstream UI code to run on IO.
+- **Production solution:** profile and test dispatcher placement.
 
 ## Deep-dive talking points
 

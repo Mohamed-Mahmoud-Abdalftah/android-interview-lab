@@ -26,6 +26,10 @@ How do you manage dependency injection across modules?
 
 في multi-module Hilt، module تملك implementation قد تعلن `@Binds` أو `@Provides` لها، والعقد يعيش في API مناسب يراه feature. `:app` يجب يرى modules/constructor-injected types اللازمة وقت component generation، فراجع Gradle dependencies وvariant. لا تجعل كل feature تقدم binding لنفس interface بلا qualifier، ولا ترفع screen state إلى Singleton. dynamic feature حالة خاصة لأن base لا ترى classes داخلها أثناء compilation؛ استخدم entry point/component dependency أو factory boundary كما توثق Hilt. اختبر assemble/app graph، لا تكتفِ باختبار isolated feature.
 
+### Practical walkthrough in Egyptian Arabic
+
+Hilt يعمل عبر regular Gradle modules إذا app ترى transitive bindings، لكن dynamic feature dependency direction مختلف وقد تحتاج Dagger component dependency. لا تضع كل binding في app لمجرد compiler يراه؛ feature تملك modules الخاصة وعقودها. راجع scopes: Singleton لا يحتفظ Activity. اختبر production graph بعد test substitutions؛ test fake قد يخفي missing binding.
+
 ## Why it matters and how it works
 
 Generated DI components collect reachable binding declarations for an app variant. Gradle compile visibility therefore shapes graph completeness. Scopes cache objects for component lifetimes, so a binding declared in one module can still be wrong if it owns a shorter-lived Android object. A contract module permits features to compile independently of the implementation chosen by the app.
@@ -57,6 +61,14 @@ Maintain an injection graph inventory of contract, binding module, qualifier, sc
 ## Interview answer — deep senior
 
 “DI across modules is the intersection of the module DAG and object lifetime. I place the repository contract where the feature can compile without importing data internals, then keep the binding close to the implementation or at a deliberate app selection point. The final app variant must have compile visibility of the Hilt modules and injectable classes that generated components aggregate. That is why a feature compiling alone does not prove the app graph will resolve. I review qualifiers and scopes alongside edges: a Singleton binding cannot own an Activity callback just because the compiler can construct it, and two unqualified implementations should not be installed together. Tests keep direct constructor seams for logic, plus a small Hilt integration path that replaces the right qualified binding and proves actual Android injection. Dynamic features need special treatment because their dependency direction prevents the base app from seeing feature-only classes during its Hilt generation; a narrow entry point and feature Dagger component or explicit factory bridges it. CI assembles debug and release variants and reports missing bindings early. The result is explicit composition without feature-to-implementation coupling.”
+
+## How to answer in the interview
+
+- **Why:** DI graph must match module graph.
+- **How:** expose bindings through correct dependency direction.
+- **Trade-off:** convenience versus scope complexity.
+- **Failure case:** dynamic feature missing Hilt binding.
+- **Production solution:** compile graph and runtime feature test.
 
 ## Deep-dive talking points
 

@@ -26,6 +26,10 @@ How do you test and publish a reusable Android library/SDK module?
 
 Android library غالبًا تنتج AAR، لكن release ليست ملف AAR وحده: public API، dependency metadata، resources/manifest merge، consumer R8 rules، minSdk ونسخ التوافق كلها عقود للمستهلك. اختبر logic على JVM، platform behavior على جهاز/محاكي، ثم sample consumer app يبني debug/release مع minification للتأكد من التبعيات والـmanifest/keep rules. انشر artifact وmetadata عبر Gradle publishing إلى repository موثوق، وثبت version semantic قدر الإمكان، واحتفظ بrelease notes وchecksums/signing إن لزم.
 
+### Practical walkthrough in Egyptian Arabic
+
+Android library reusable تحتاج public API واضح، consumer R8 rules، manifest merging آمن، versioning وsample consumer minified build. اختبر Kotlin/JVM logic، instrumentation للAndroid contract، وخروج AAR/Maven metadata. SDK يملك transitive deps بحذر، وينشر changelog وmigration. لا تعتبر module tests وحدها إثبات compatibility مع app حقيقية.
+
 ## Why it matters and how it works
 
 An AAR packages code, resources and manifest contributions, while publishing metadata describes dependencies and variants. A library's internal tests cannot detect every consumer integration failure: an accidentally hidden API type, missing consumer keep rule or manifest conflict may appear only when another app compiles or shrinks it. Binary compatibility matters because consumers may upgrade independently.
@@ -57,6 +61,14 @@ Automate API diff checks, dependency metadata inspection, sample-app debug/relea
 ## Interview answer — deep senior
 
 “A reusable Android library is a product boundary. Its AAR contains code, resources and manifest contributions, but consumers also rely on dependency metadata, public ABI, minimum platform support and behavior under shrinking. I test the core logic on the JVM and Android-specific paths on devices, then build a separate sample consumer from the artifact as it will actually be published. That catches a dependency accidentally declared internal although its type appears in the API, a conflicting provider authority, or R8 removing a class accessed through reflection. I run both debug and minified release variants, inspect the merged manifest and consumer rules, and consider binary/API compatibility when bumping versions. The publishing pipeline records artifact hashes and source revision, uses protected credentials, and verifies the artifact can be fetched from the target repository. Release notes cover behavioral and migration changes, not just version numbers. I avoid a huge public surface because every exposed type becomes a compatibility obligation. If a bug is found, consumers need a clear fixed version or deprecation path rather than a silently replaced artifact.”
+
+## How to answer in the interview
+
+- **Why:** library contract extends beyond source code.
+- **How:** test AAR consumer and release shrinker.
+- **Trade-off:** stable API versus evolution freedom.
+- **Failure case:** consumer strips reflected class.
+- **Production solution:** publish sample and binary compatibility checks.
 
 ## Deep-dive talking points
 

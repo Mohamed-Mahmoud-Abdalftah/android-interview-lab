@@ -24,6 +24,10 @@ Whether the candidate uses boundaries to control change and testing, rather than
 
 Clean Architecture فكرة لتنظيم dependency والـbusiness rules بحيث تفاصيل زي Retrofit وRoom وCompose تتغير من غير ما تغيّر قواعد المنتج في كل مكان. الـinner policy المفروض تعرف abstractions وdomain concepts، والـouter adapters تترجم network/database/UI. مش شرط عدد layers ثابت؛ Android guidance نفسها بتعتبر domain layer اختيارية لما complexity أو reuse تبررها. المهم إن direction واضح، errors mapped، والـuse cases قابلة للاختبار. مجرد package اسمها domain مع models فارغة مش فائدة.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو شاشة الطلبات بتكلم Retrofit مباشرة وتخلط loading مع parsing، تغيير API سيكسر UI والاختبارات. افصل policy مثل “هل يسمح بإعادة المحاولة؟” عن تفاصيل HTTP، وخلي الحدود تعتمد للداخل. مش لازم 30 interface من أول يوم؛ ابدأ بالحدود التي تختلف أو تحتاج اختبار. بعد refactor اثبت إن سلوك offline/process death ما اتغيرش.
+
 ## Why it matters and how it works
 
 Dependencies point toward stable policies in the classic model; runtime control can flow outward through interfaces implemented by adapters. Android guidance uses UI and data layers, with an optional domain layer. Repositories own data access and source-of-truth decisions; UI produces display state. Boundaries isolate changing frameworks and make tests cheaper when the problem is large enough.
@@ -55,6 +59,14 @@ I start with what changes independently. UI rendering, network transport, persis
 ## Interview answer — deep senior
 
 A successful boundary survives a concrete change: replacing Retrofit, changing Room schema, or rebuilding a screen should not rewrite transfer eligibility rules. I examine the compile-time dependency graph and the public types crossing each boundary. DTOs and entities are adapter models; domain inputs and outcomes should be stable enough for business tests. Runtime calls can still travel through a repository implementation supplied by DI even though source dependencies point inward. I avoid dogma: Android guidance calls its domain layer optional, and a small app can remain maintainable with UI plus data. The senior question is whether added indirection pays for itself in isolated change, testability, and team ownership. A common failure is to create `domain` packages while allowing their signatures to return Retrofit responses or Room entities. The dependency graph may appear layered while policy still changes with external schema. I would inspect imports and public types, then write one integration test at the adapter and focused tests for rules. I would also be willing to collapse an unnecessary layer when a feature has no independent business policy; architecture should reduce change cost rather than advertise terminology.
+
+## How to answer in the interview
+
+- **Why:** separation protects policy from framework changes.
+- **How:** draw boundary from UI to domain to data.
+- **Trade-off:** clarity versus boilerplate.
+- **Failure case:** architecture becomes folders with same coupling.
+- **Production solution:** test important seams and evolve gradually.
 
 ## Deep-dive talking points
 

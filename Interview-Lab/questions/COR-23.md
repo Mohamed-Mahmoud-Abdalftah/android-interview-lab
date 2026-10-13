@@ -24,13 +24,17 @@ Explain one-shot callback adaptation with prompt cancellation and exact-once con
 
 لتحويل callback بيرجع نتيجة واحدة إلى suspend API بنستخدم `suspendCancellableCoroutine`، ونسجّل callback ثم `invokeOnCancellation` لإلغاء/فصل التسجيل إن الـSDK يسمح. لازم نعالج السباق بين callback وcancel، وما نعملش `resume` مرتين، وما نفترضش إن إلغاء coroutine يعني إلغاء العملية الخارجية تلقائيًا.
 
+## Practical walkthrough
+
+SDK callback ممكن يرجع نجاح بعد ما المستخدم خرج، أو ينادي callback مرتين، أو يعمل callback synchronously جوه `start`. `suspendCancellableCoroutine` يربط النتيجة بالـJob، لكن adapter لازم يعمل guard لنتيجة واحدة ويسجل cleanup عند الإلغاء. لو النتيجة resource قابل للقفل، عالج سباق النجاح مع الإلغاء حتى ما يتسربش. ولو callbacks متكررة أصلًا، استخدم `callbackFlow` مش suspend واحدة.
+
 ## Why it matters and how it works
 
 The continuation can be resumed with a value or exception; cancellation can race with callback delivery. The adapter should unregister a listener or cancel the underlying call on cancellation. If callback returns a closeable resource, arrange cleanup for cancellation after delivery. For multi-shot APIs use `callbackFlow` with `awaitClose`, not a one-shot continuation.
 
 ## Worked example
 
-Conceptual Kotlin/JVM adapter; `LegacyCall` specifies one terminal callback and cancellation, and must document whether callbacks can arrive after `cancel`.
+Conceptual Kotlin/JVM adapter for value results that need no closing; `LegacyCall` specifies one terminal callback and cancellation, and must document whether callbacks can arrive after `cancel`. For a closeable result, use the continuation's `resume(value) { _, lostValue, _ -> lostValue.close() }` overload so prompt cancellation cannot leak the value before the caller receives it.
 
 ```kotlin
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -79,7 +83,15 @@ A location SDK adapter unregisters its one-time listener on ViewModel cancellati
 
 ## Interview answer — deep senior
 
-“The hard part is the race at the boundary. Cancellation can happen after registration, during callback delivery or after a resource has been produced but before the caller receives it. I use the library’s prompt-cancellation support, implement an atomic single-terminal-event guard if the SDK does not guarantee exactly one callback, and release closeable results on cancellation where needed. `invokeOnCancellation` should call the SDK’s cancel/unregister method, but that only expresses local intent; a remote operation may already have committed. I keep the adapter in the data layer with a main-safe contract and test each interleaving with a controlled fake callback source. If the source emits repeatedly, `callbackFlow` is the correct abstraction.”
+“The hard part is the race at the boundary. Cancellation can happen after registration, during callback delivery or after a resource has been produced but before the caller receives it. I use the library’s prompt-cancellation support, implement an atomic single-terminal-event guard if the SDK does not guarantee exactly one callback, and release closeable results on cancellation where needed. `invokeOnCancellation` should call the SDK’s cancel/unregister method, but that only expresses local intent; a remote operation may already have committed. I keep the adapter in the data layer with a main-safe contract and test each interleaving with a controlled fake callback source. If the source emits repeatedly, `callbackFlow` is the correct abstraction. The adapter's correctness depends on the callback contract. I would test synchronous completion during registration, duplicate terminal callbacks, cancellation concurrent with callback delivery, and a callback after SDK cancellation. An atomic guard prevents double resume, and the cancellation hook calls the SDK's unregister or cancel method if it has one. If the callback returns a closeable handle, I would use the continuation's cancellation-aware resume overload to avoid losing the resource after prompt cancellation.”
+
+## How to answer in the interview
+
+- **Why:** callback-to-coroutine adaptation is a race at the ownership boundary.
+- **How:** register one-shot callback, atomically guard completion, and invoke SDK cancel/unregister on cancellation.
+- **Trade-off:** a maintained library adapter is safer when available.
+- **Failure case:** duplicate or late callback, synchronous completion, or leaked closeable result.
+- **Production solution:** test each race and use Flow for multishot events.
 
 ## Deep-dive talking points
 
@@ -98,4 +110,4 @@ Can I implement registration/cleanup, guard exactly one completion, and test lat
 
 - [Kotlin suspendCancellableCoroutine API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/suspend-cancellable-coroutine.html) — prompt cancellation and cleanup.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

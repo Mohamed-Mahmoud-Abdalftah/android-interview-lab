@@ -38,6 +38,10 @@ class AccountMenu(private val signOut: SignOut)
 ```
 The menu cannot accidentally call token-refresh internals just because they share an implementation.
 
+## Practical walkthrough
+
+لو interface اسمها `AccountOperations` فيها 20 method، ابدأ بجدول callers: `AccountMenu` تستعمل signOut، profile header تستعمل observeUserId، وخدمة sync تستعمل refreshToken. استخرج roles حسب الاستعمال الحقيقي: `SignOut` و`SessionReader` مثلاً. implementation واحدة ممكن تدعمهم كلهم. انقل caller واحد في كل مرة، وشغّل tests بدل big-bang refactor. ما تخليش كل method interface مستقلة؛ العمليات اللي بتتغير مع بعض وبتستخدم مع بعض ممكن تفضل مجموعة. الفشل المعتاد إن fake في test يضطر ينفذ 19 method فارغين.
+
 ## Trade-offs and decision criteria
 
 Many tiny interfaces cost wiring and navigation. Choose cohesive capability groups. For a private one-consumer class, a concrete API may be simpler; ISP becomes important when consumers use disjoint subsets or modules rebuild together.
@@ -56,11 +60,19 @@ I map consumers to the methods they use, then split a large interface into cohes
 
 ## Interview answer — structured
 
-A large interface with many unused methods forces every client and fake to know too much. I list call sites and group operations by meaningful capabilities, such as reading session state versus signing out. Then I introduce narrow contracts, let the current implementation implement them, and migrate one client at a time. I do not make one interface per method unless that truly matches a consumer boundary. Contract tests and build checks verify that behavior and dependencies improve. During migration, I can let the old implementation implement the new interfaces and change callers one feature at a time. That avoids a synchronized rewrite of every module. Once no client needs the wide contract, I remove it and its empty fake methods.
+A large interface with many unused methods forces every client and fake to know too much. I list call sites and group operations by meaningful capabilities, such as reading session state versus signing out. Then I introduce narrow contracts, let the current implementation implement them, and migrate one client at a time. I do not make one interface per method unless that truly matches a consumer boundary. Contract tests and build checks verify that behavior and dependencies improve. During migration, I can let the old implementation implement the new interfaces and change callers one feature at a time. That avoids a synchronized rewrite of every module.
 
 ## Interview answer — deep senior
 
-I would first measure the problem: which modules recompile for unrelated changes, which fakes have empty or throwing methods, and which clients import sensitive capabilities they never need. A call-site matrix usually reveals clusters. I define small but cohesive interfaces for those clusters and keep one underlying implementation if its state ownership remains coherent. During migration I can use an adapter so existing callers remain functional, then remove the fat contract when no longer used. I test each capability’s behavior and lifecycle, especially session logout or token refresh races. Over-segregation creates its own navigation and binding cost, so I stop where client coupling is meaningfully reduced. ISP is about what a client must see, not a fixed method count. I also check whether the proposed interfaces have stable semantics. `SessionReader` should say whether it emits cached, refreshing, or authenticated state; `SignOut` should define how in-flight work reacts. Merely slicing method lists without defining behavior can leave clients coupled through hidden shared state. I use contract tests and an integration test across the implementation, especially for logout and refresh races. The split is successful when a new export feature does not alter a read-only widget’s dependency surface or test fake.
+I would first measure the problem: which modules recompile for unrelated changes, which fakes have empty or throwing methods, and which clients import sensitive capabilities they never need. A call-site matrix usually reveals clusters. I define small but cohesive interfaces for those clusters and keep one underlying implementation if its state ownership remains coherent. During migration I can use an adapter so existing callers remain functional, then remove the fat contract when no longer used. I test each capability’s behavior and lifecycle, especially session logout or token refresh races. Over-segregation creates its own navigation and binding cost, so I stop where client coupling is meaningfully reduced. ISP is about what a client must see, not a fixed method count. I would start with a client-method matrix and change history, not arbitrary splitting. If account menu uses only sign-out and a header only observes user ID, expose those as role contracts; one class may implement both. Migrate callers gradually so the public API change is reviewable. A warning sign is a test fake with many unused methods or production implementations throwing for operations they cannot support. The trade-off is more small types, so I group operations that belong to a stable client workflow rather than one interface per method. After migration, I would remove the broad contract and verify that client modules no longer import unrelated token or account-management APIs.
+
+## How to answer in the interview
+
+- **Why:** Show client-method matrix.
+- **How:** extract role interfaces.
+- **Trade-offs:** note type count.
+- **Failure cases:** cite empty fake methods.
+- **Production solutions:** finish with staged migration and dependency checks..
 
 ## Deep-dive talking points
 
@@ -80,4 +92,4 @@ Group six methods into two or three client capabilities and explain migration wi
 - [Robert C. Martin, A Little Architecture](https://blog.cleancoder.com/uncle-bob/2016/01/04/ALittleArchitecture.html) — interface segregation.
 - [Android modularization guide](https://developer.android.com/topic/modularization) — client module boundaries.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

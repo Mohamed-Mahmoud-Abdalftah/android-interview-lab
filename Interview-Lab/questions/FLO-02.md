@@ -24,6 +24,10 @@ Predict repeated execution for two cold-flow collectors and choose sharing delib
 
 الـcold Flow مش بتبدأ upstream غير وقت collection. لو اتنين عملوا `collect` لنفس `flow {}`، block هيتنفذ مرتين، فلو فيه HTTP call ممكن تبقى طلبين. ده مفيد لو كل collector عايز execution مستقلة، لكنه مكلف لو المصدر واحد؛ ساعتها نشارك بـ`shareIn` أو `stateIn` داخل scope مملوكة.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو repository رجّعت `flow { emit(api.fetch()) }`، كل `collect` جديد يشغّل `fetch` من الأول، حتى لو نفس Flow object. ده ينفع لو عايز fresh execution، لكنه مكلف لو كل tab تجمعه. لو عايز قيمة مشتركة، استخدم sharing في scope مالكها واضح، وحدد هل subscriber الجديد يستقبل آخر قيمة ولا يستنى التالية.
+
 ## Why it matters and how it works
 
 Intermediate operators stay lazy. Each collection gets a separate flow execution unless the source itself is hot or has external cache. `shareIn` starts one sharing coroutine in a supplied scope; `stateIn` additionally keeps one latest value. Start policies determine when that upstream starts/stops.
@@ -67,7 +71,15 @@ A Room DAO Flow may run separate observations for two collectors; a ViewModel us
 
 ## Interview answer — deep senior
 
-“I would trace where side effects occur. `flow { api.load(); emit(...) }` executes that API call per collector. A `map` chain does not change that; only a terminal operation starts it. Sharing inserts one coroutine that collects upstream and broadcasts values, but now correctness depends on owner lifetime, replay count and start/stop timing. A `WhileSubscribed` policy can save work when no UI is active but may restart the source on rotation. For session data I avoid application-wide replay that could expose stale account state after logout. Tests count upstream subscriptions under two collectors and after stop/start, rather than inferring sharing from type names.”
+“I would trace where side effects occur. `flow { api.load(); emit(...) }` executes that API call per collector. A `map` chain does not change that; only a terminal operation starts it. Sharing inserts one coroutine that collects upstream and broadcasts values, but now correctness depends on owner lifetime, replay count and start/stop timing. A `WhileSubscribed` policy can save work when no UI is active but may restart the source on rotation. For session data I avoid application-wide replay that could expose stale account state after logout. Tests count upstream subscriptions under two collectors and after stop/start, rather than inferring sharing from type names. I would be precise about “cold”: the builder is a recipe, not a running producer. Each independent collector executes the upstream from the beginning. For a flow wrapping a network fetch, two collectors can trigger two requests; for a Room query, each may install its own observation. That is sometimes desirable because each collection gets a fresh execution and cancellation boundary. If duplication is expensive, I convert the upstream to a hot shared stream in an owned scope and choose `replay`, initial state, and `SharingStarted` deliberately. I would test with a counter in the builder to prove one execution per collector, then test the shared variant. A second collector is not a free cache hit just because both hold the same `Flow` reference.”
+
+## How to answer in the interview
+
+- **Why:** multiple consumers can multiply upstream cost.
+- **How:** count builder starts under two collectors.
+- **Trade-off:** cold freshness versus shared lifecycle.
+- **Failure case:** assuming one Flow instance means one network request.
+- **Production solution:** share only when ownership and replay semantics are explicit.
 
 ## Deep-dive talking points
 

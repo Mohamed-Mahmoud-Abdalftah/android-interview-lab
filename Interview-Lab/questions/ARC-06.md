@@ -24,6 +24,10 @@ Assign transport, persistence, domain and rendering models to boundaries and exp
 
 DTO شكل network contract وبيعيش جنب Retrofit/service في data. Room entity شكل الجدول وعلاقاته وبيعيش في persistence/data. Domain model يمثّل business meaning من غير HTTP أو SQL annotations، وUI model يمثّل اللي الشاشة محتاجاه بالضبط، زي formatted amount وenabled button. ساعات model واحدة تكفي في app صغير، لكن ما تستخدمش DTO كـUI model لمجرد تقليل mapping؛ تغيّر اسم field في API ممكن يكسر Compose ويكشف nullable transport noise. Mapper يعمل validation ومعالجة version/schema بوضوح.
 
+### Practical walkthrough in Egyptian Arabic
+
+DTO تمثل wire schema وقد تحتوي fields nullable، Room entity تمثل storage schema، domain model يمثل invariant، وUiModel يمثل العرض. مثال price cents: لا تسمح DTO string غير صالحة تصبح domain amount بلا validation. تغيير API name أو DB column لا يجب أن يغير Compose screen. إذا موديل واحد يكفي لتطبيق صغير ومستقر، لا تنسخ classes بلا حاجة.
+
 ## Why it matters and how it works
 
 Each model has a different reason to change: server schema, database migration, business rule, or screen design. Separate models at unstable boundaries, but avoid duplicating identical types without benefit. The data layer maps external representations into app data.
@@ -55,6 +59,14 @@ These models answer different questions. A DTO matches a server payload, an enti
 ## Interview answer — deep senior
 
 I evaluate model separation by volatility and correctness risk. Server payloads can change independently of database schema; domain invariants such as positive amount or currency units should not depend on JSON annotations; UI formatting depends on locale and design. Mapping provides a controlled place to reject malformed data, choose defaults only where valid, and track migration. Excessive one-to-one models with no distinct contract add boilerplate, so I consolidate where boundaries truly align. In an offline-first app, Room entity design also reflects query and migration needs, while repository emits domain data from the local source of truth. I never let a formatted UI string become the canonical money value or let transport nullability leak into every composable. The four-model picture is not a requirement to copy every field four times. I look for independent reasons to change: server version, database migration, business invariant, and locale/design. When those are real, mapping localizes them. A Room entity might include indexing and foreign keys that the domain should never see. A UI model might include formatted text and button enablement that should never be persisted. I validate at each ingress and keep authoritative numeric values separate from display strings.
+
+## How to answer in the interview
+
+- **Why:** different boundaries have different contracts.
+- **How:** map and validate at crossings.
+- **Trade-off:** isolation versus conversion cost.
+- **Failure case:** nullable DTO becomes trusted domain object.
+- **Production solution:** test mapping and migration edges.
 
 ## Deep-dive talking points
 

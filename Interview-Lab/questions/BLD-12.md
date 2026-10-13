@@ -26,6 +26,10 @@ How do you configure signing keys and Play App Signing safely?
 
 فعّل Play App Signing حسب سياسة التطبيق: app-signing key توقع APKs الموزعة، upload key توقع AAB المرفوعة إلى Play. خزّن upload keystore/password في secret manager أو protected release CI، لا في repo أو `gradle.properties` مشتركة؛ وفّرها فقط لمهمة التوقيع بعد مراجعة source/tests. افحص certificate fingerprint وversionCode وartifact hash قبل الرفع، واستخدم نفس AAB عبر tracks. جهز rotation/reset procedures حسب نوع المفتاح، وقيّد صلاحيات Play Console. لو key اتسرب، تعامل معها كincident وليس مجرد تغيير password.
 
+### Practical walkthrough in Egyptian Arabic
+
+Signing secrets لا تدخل repository أو PR job. Play App Signing يحتفظ بمفتاح التطبيق وفق النموذج، وpipeline تستخدم upload key محفوظة في protected environment. تحقق certificate fingerprint وpackage/version قبل الرفع، وفصل من يملك approval عن من يغير workflow. حضّر recovery لو upload key اتعرضت أو ضاعت، وسجل audit. لا تعتبر log masking ضمانًا ضد malicious build script.
+
 ## Why it matters and how it works
 
 Signing establishes update identity and authenticates release artifacts. In Play App Signing, the upload key proves the submitter while Play handles signing APKs served to devices with the app-signing key. Protected build jobs reduce exposure, but Gradle configuration can accidentally log or cache secrets if values are resolved early. Key loss and compromise have distinct recovery paths.
@@ -57,6 +61,14 @@ Pin release toolchain, restrict credential scope, verify artifact identity autom
 ## Interview answer — deep senior
 
 “I design signing as the last protected stage of a reproducible release pipeline. The build from a known source revision and pinned toolchain produces the intended minified variant; untrusted PR code never receives keystore material. In the protected job I retrieve the upload credential from a secret manager, sign the AAB, and verify its upload certificate fingerprint, versionCode and content hash. Under Play App Signing, that upload certificate authenticates submissions, while Play uses its app-signing certificate for delivered APKs. I record both identities because they answer different incident questions. I upload to an internal track and promote the same binary after validation rather than rebuild it under potentially changed dependencies. I keep secrets out of Gradle logs and avoid eager resolution into configuration-cache state. Access to Play Console is least-privilege and audited. Finally I document the current Play procedure for upload-key reset separately from app-signing key issues, and I rehearse what to do if credentials are lost or compromised. Local debug signing is not evidence that production updates will be accepted.”
+
+## How to answer in the interview
+
+- **Why:** key compromise can ship hostile updates.
+- **How:** protect upload key and verify fingerprint.
+- **Trade-off:** release friction versus blast radius.
+- **Failure case:** untrusted PR runs with signing secret.
+- **Production solution:** environment protection and recovery drill.
 
 ## Deep-dive talking points
 

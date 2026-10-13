@@ -24,6 +24,10 @@ Design debounced search with stale-request cancellation, query ownership and UI 
 
 نحفظ text كـStateFlow في ViewModel، نعمل normalize ثم debounce ثم distinct، وبعدها `flatMapLatest` لنتائج query الحالية. blank query تعرض اقتراحات/empty state متعمدة. كل emission تحمل query أو generation علشان UI ما تعرضش نتيجة قديمة لو client تجاهل cancel. Network errors تبقى state مرتبطة بالquery، و`CancellationException` ما تتحولش error.
 
+### Practical walkthrough in Egyptian Arabic
+
+الـTextField تتحدث فورًا من `query`، لكن API request تتأخر `debounce(250)` بعد آخر حرف. `distinctUntilChanged` بعد normalization تمنع نفس بحث يتكرر؛ `flatMapLatest` تلغي collection القديمة، وstate تعرض Loading/Ready/Error للquery الحالية. لو backend request ما بتتلغيش فعليًا، tag كل response بـquery وتأكد قبل commit عشان نتيجة `a` ما تغطيش `ab`.
+
 ## Why it matters and how it works
 
 `flatMapLatest` cancels prior inner collection, but an HTTP request already sent may still consume server resources or complete. A cancellable client plus query ID guard protects UI consistency. Expose one StateFlow so multiple composables do not repeat a cold network source.
@@ -35,18 +39,38 @@ Conceptual ViewModel pipeline; `SearchState`, `api.search`, and `SearchApi` are 
 ```kotlin
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 
+sealed interface SearchState {
+    data object Empty : SearchState
+    data class Loading(val query: String) : SearchState
+    data class Ready(val query: String, val items: List<String>) : SearchState
+    data class Error(val query: String, val message: String) : SearchState
+}
+interface SearchApi { suspend fun search(query: String): List<String> }
+
+@OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 class SearchViewModel(private val api: SearchApi) : ViewModel() {
     private val query = MutableStateFlow("")
-    val results = query.map { it.trim() }.debounce(300)
+    val queryText = query.asStateFlow() // field updates immediately
+    val results: StateFlow<SearchState> = query.map(String::trim).debounce(300)
         .distinctUntilChanged()
         .flatMapLatest { q ->
-            if (q.isEmpty()) flowOf(SearchState.Empty)
-            else flow { emit(SearchState.Ready(q, api.search(q))) }
+            if (q.isEmpty()) flowOf<SearchState>(SearchState.Empty)
+            else flow<SearchState> {
+                emit(SearchState.Loading(q))
+                emit(SearchState.Ready(q, api.search(q)))
+            }.catch { e ->
+                if (e is CancellationException) throw e
+                emit(SearchState.Error(q, "Search failed"))
+            }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchState.Empty)
     fun setQuery(value: String) { query.value = value }
 }
+// Keep old server work idempotent; test late responses and cancellation.
 ```
 
 ## Trade-offs and decision criteria
@@ -71,7 +95,15 @@ A marketplace search screen emits typed Loading/Ready/Error per query, logs requ
 
 ## Interview answer — deep senior
 
-“Search is a latest-state problem, so discarding old results is correct, but implementation details matter. I keep immediate text rendering separate from a debounced network path, normalize before equality filtering, and switch to a new cancellable request when the query changes. A request may already be on the wire; therefore I tag every result with the originating query or generation and refuse to commit it if it no longer matches the current input. Expected API failures map to query-scoped error state, while CancellationException propagates. I share the final stream in viewModelScope with a policy that avoids duplicate collectors, bound API load and measure latency. Tests cover rapid typing, duplicate queries, blank input, slow old response, rotation and cancellation.”
+“Search is a latest-state problem, so discarding old results is correct, but implementation details matter. I keep immediate text rendering separate from a debounced network path, normalize before equality filtering, and switch to a new cancellable request when the query changes. A request may already be on the wire; therefore I tag every result with the originating query or generation and refuse to commit it if it no longer matches the current input. Expected API failures map to query-scoped error state, while CancellationException propagates. I share the final stream in viewModelScope with a policy that avoids duplicate collectors, bound API load and measure latency. Tests cover rapid typing, duplicate queries, blank input, slow old response, rotation and cancellation. I would separate input responsiveness from network policy. The ViewModel accepts every character immediately and exposes it to the field. A separate query pipeline normalizes, debounces, removes consecutive duplicates, and uses `flatMapLatest` for repository search so old inner collections are cancelled. The UI receives an explicit Loading/Ready/Error state carrying the query identity. Cancellation may stop client observation but may not undo remote server work, so I also check that a late result belongs to the current query before committing it if the adapter is not fully cancellable. I would choose the debounce interval with product input latency in mind and test rapid `a` to `ab`, empty query, error recovery, and screen recreation.”
+
+## How to answer in the interview
+
+- **Why:** keep typing instant while reducing obsolete requests.
+- **How:** normalize, debounce, distinct, latest search, query-tagged state.
+- **Trade-off:** request latency versus network load.
+- **Failure case:** old response overwrites current query.
+- **Production solution:** inverted-delay tests and lifecycle collection.
 
 ## Deep-dive talking points
 

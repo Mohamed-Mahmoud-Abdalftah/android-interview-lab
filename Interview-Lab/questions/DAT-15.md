@@ -46,6 +46,10 @@ import androidx.room.Transaction
 }
 ```
 
+## Practical walkthrough
+
+offline edit لحظة الحفظ اعمل transaction تضم note الجديدة وoutbox command بنفس operation ID؛ لو crash بعد commit، worker يلاقي pending. worker يبعت command لما network تسمح، ويعدّل status/remote version بعد ack. لو ack ضاع، replay بنفس ID لا يخلق edit جديدة لو server idempotency contract موجود. conflict لو base version قديمة: لا تسكت وتكتب فوق تعديل جهاز تاني؛ اعرض conflict أو merge حسب field. اجعل queue مرتبطة بـuser/account، لا ترسل rows من user قديم بعد logout. اختبر crash قبل/بعد commit، أثناء send، وبعد server ack وقبل local ack.
+
 ## Trade-offs and decision criteria
 
 Optimistic local UI feels immediate but can later conflict. Waiting for server avoids conflict UX but fails offline. Outbox adds schema/worker complexity and requires a visible pending state. Ordering rules depend on domain.
@@ -68,7 +72,17 @@ A field inspection form commits edits locally, shows Pending badge, and syncs wi
 
 ## Interview answer — deep senior
 
-“I design every crash point. Before local commit, the UI cannot claim save; after commit but before enqueue, a startup scan must schedule pending rows; after server acceptance but before local acknowledgement, the next worker run must reconcile by operation ID. Room gives atomic local edit/outbox persistence, and the server provides idempotency and version checks across devices. I keep an explicit state machine: pending, sending, acknowledged, conflicted, failed with retry metadata. The worker is repeat-safe, and cancellation does not discard the row. I test airplane mode, multiple offline edits, process death at each transition, conflict with another device and expired credentials.”
+I design every crash point. Before local commit, the UI cannot claim save; after commit but before enqueue, a startup scan must schedule pending rows; after server acceptance but before local acknowledgement, the next worker run must reconcile by operation ID. Room gives atomic local edit/outbox persistence, and the server provides idempotency and version checks across devices. I keep an explicit state machine: pending, sending, acknowledged, conflicted, failed with retry metadata. The worker is repeat-safe, and cancellation does not discard the row. I test airplane mode, multiple offline edits, process death at each transition, conflict with another device and expired credentials.
+
+I make the offline write atomic locally: the edited note and its outbox command commit in the same Room transaction. That guarantees a restarted worker can find every local edit that the UI claims was saved. The worker sends with a stable operation ID and expected server version, then records acknowledgement and new version locally. A lost acknowledgement may cause another HTTP request, so server idempotency or status reconciliation is required for one logical edit. If another device changed the note, the conflict policy must preserve user intent instead of silently overwriting it. I scope queues by account and test crash windows around commit, send, and acknowledgement.
+
+## How to answer in the interview
+
+- **Why:** Offline edits need durable intent and cross-device consistency.
+- **How:** Transactionally write note plus outbox, then worker sends by stable ID.
+- **Trade-offs:** Optimistic UI requires pending/conflict visibility.
+- **Failure cases:** Lost outbox row, duplicate send, old-account queue leak.
+- **Production solution:** Version checks, reconciliation and crash-window tests.
 
 ## Deep-dive talking points
 
@@ -88,4 +102,4 @@ Can I commit edit/outbox atomically, recover each crash window and reconcile dup
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — queued writes and sync.
 - [Android persistent work](https://developer.android.com/develop/background-work/background-tasks/persistent) — restartable scheduling.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

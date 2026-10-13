@@ -25,6 +25,10 @@ A malicious pull request tries to access signing secrets. How do you prevent lea
 
 PR خبيث ممكن يضيف Gradle task أو test يقرأ environment secrets ويبعتها لخارج CI. إخفاء secret في logs مش كفاية. شغّل fork/unreviewed PRs في job بدون signing keys أو Play token وبـread-only permissions؛ privileged release job يشتغل فقط من protected branch/artifact بعد review، وما ينفذش PR head code بسياق secrets.
 
+### Practical walkthrough in Egyptian Arabic
+
+Manifest merge يجمّع declarations من app والـlibraries والـflavors؛ debug manifest ممكن يخفي provider ناقص في release. في CI ابْنِ release variant وافحص merged manifest النهائي، وتحقق `authorities` المطلوبة، `exported` وpermissions وplaceholder values. شغّل release smoke test يحاول الوصول للـprovider، لأن وجود declaration وحده لا يثبت URI behavior. احتفظ بالmerge report عشان تقدر تعرف أي dependency أو source set غيّر العقد.
+
 ## Why it matters and how it works
 
 CI executes repository code, including build scripts and plugins, so PR jobs are code execution by an untrusted author. `pull_request_target`-style privileged contexts are dangerous if they check out untrusted commits. Artifact promotion must validate provenance rather than trusting attacker-produced files.
@@ -55,7 +59,15 @@ Security review covers workflows, actions, Gradle plugins and artifact handoff. 
 
 ## Interview answer — deep senior
 
-“I threat-model CI as a code execution environment. Fork PRs, dependency updates and workflow edits are untrusted inputs. The release boundary requires branch protection, review, least-privilege tokens, isolated credentials, controlled network/artifact handoff and provenance checks. Even if a PR job uploads an artifact, a privileged job should not blindly publish it; it should verify or rebuild from reviewed source without executing attacker-controlled code with secrets. I test the policy with a benign canary PR and keep a compromise playbook for signing/upload credentials.”
+“I test the shipped manifest, not the manifest source file I happened to edit. Android Gradle Plugin merges declarations from the app, dependencies, product flavors and build type, so a debug-only provider can disappear in release or a placeholder can resolve to the wrong authority. CI builds the production release variant, inspects its merged manifest or packaged artifact, and asserts the exact authority, exported status and permissions expected for the provider. I also run a smoke test that resolves a content URI under the release-like package name and verifies allowed and denied callers as appropriate. The static assertion catches omissions early; the runtime test checks that routing and access work. I store the manifest-merger report to explain which source contributed a value. The trade-off is an extra artifact-level check, but it is cheap compared with shipping a broken share or SDK initialization path. I fail the release if a new unexpected exported component appears.”
+
+## How to answer in the interview
+
+- **Why:** source manifests differ from shipped merge.
+- **How:** inspect release merged manifest and smoke URI.
+- **Trade-off:** static speed versus runtime proof.
+- **Failure case:** placeholder resolves to wrong authority.
+- **Production solution:** gate exact authority, permissions and export state.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for build script exfiltration, privileged context danger, artifact proven
 
 ## Self-check rubric
 
-Can you explain the mechanism, apply the example, justify a trade-off, identify a failure mode, and answer both follow-ups?
+Explain fork-PR secret isolation, workflow permission minimization and avoiding privileged pull_request_target checkout of attacker code. Show a safe path for artifact validation before signing.
 
 ## References and reviewed-on date
 
 - [Play App Signing](https://developer.android.com/studio/publish/app-signing) — signing roles.
 - [Gradle dependency verification](https://docs.gradle.org/current/userguide/dependency_verification.html) — supply-chain integrity.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

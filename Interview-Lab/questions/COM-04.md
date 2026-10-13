@@ -26,6 +26,10 @@ What are state, snapshot state, and state hoisting?
 
 State هي القيمة التي تصف ما يظهر الآن؛ Compose snapshot state مثل `mutableStateOf` تجعل القراءة والكتابة مرصودتين عند الـruntime. عند تغير القيمة، scopes التي قرأتها قد تتحدث. State hoisting يعني نقل ملكية state للـcaller بدل أن يحتفظ child بنسخة مخفية: child يأخذ `value` و`onValueChange`. انقلها إلى أقل owner مشترك بين من يقرأ ويعدل؛ لا ترفع كل checkbox إلى ViewModel بلا سبب. إذا business logic أو مشاركة عدة أجزاء تحتاجها، ViewModel قد يكون المالك المناسب.
 
+### Practical walkthrough in Egyptian Arabic
+
+حقل بحث ونتائجه محتاجين نفس `query`؛ خليه عند أقرب owner مشترك وخلي `SearchField` تستقبل `value` و`onValueChange`. لو checkbox محلية لا تؤثر غير في صف واحد، سيبها محلية. التمييز هنا ملكية الـstate ومن يقدر يغيّرها، مش مجرد مكان كتابة `remember`. لو child احتفظت بنسخة من query، ممكن تعرض قيمة مختلفة عن النتائج بعد back navigation. في production اختبر إن الكتابة والمسح والرجوع للشاشة يطلعوا نفس القيمة من owner واحد.
+
 ## Why it matters and how it works
 
 Compose snapshots provide a consistency model for reads and writes of observable state. Reading a state value in composition establishes a relationship used for invalidation. Hoisted state turns a UI element into a controlled component, allowing one source of truth and easier testing. The owner applies updates; the child emits an event without mutating a hidden duplicate.
@@ -33,6 +37,21 @@ Compose snapshots provide a consistency model for reads and writes of observable
 ## Worked example
 
 `SearchField(query, onQueryChange)` receives text and emits edits. A route owner holds `query` because both the field and result list need it. By contrast, a purely decorative expanded-tooltip flag can stay local inside one composable. If a filter affects data loading and restoration, a ViewModel owns the filter and exposes UI state.
+
+### Compose/Kotlin walkthrough
+
+```kotlin
+// Caller: var query by rememberSaveable { mutableStateOf("") }
+@Composable
+fun SearchField(value: String, onValueChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text("Search products") }
+    )
+}
+// Both SearchField(query, ...) and Results(query) read the same owner value.
+```
 
 ## Trade-offs and decision criteria
 
@@ -48,15 +67,23 @@ Document owner, update event, and restoration need for each significant state. T
 
 ## Interview answer — short
 
-“State describes current UI; snapshot state is Compose-observable data. Hoisting moves ownership to a caller and gives children a value plus event callback.”
+“State describes current UI; snapshot state is Compose-observable data. Hoisting moves ownership to a caller and gives children a value plus event callback. For shared search state, the caller owns the value and the field emits edits.”
 
 ## Interview answer — structured
 
-“I separate the value from where it lives. A `mutableStateOf` value participates in Compose snapshots, so reads can be tracked and changed readers invalidated. Hoisting means a child does not secretly own a second copy: it receives `query` and sends `onQueryChange`, while the lowest common owner updates the value. A local toggle may stay in the composable; a filter shared with results or business logic belongs higher, often in a ViewModel. I choose storage and restoration separately.”
+“I separate the value from where it lives. A `mutableStateOf` value participates in Compose snapshots, so reads can be tracked and changed readers invalidated. Hoisting means a child does not secretly own a second copy: it receives `query` and sends `onQueryChange`, while the lowest common owner updates the value. A local toggle may stay in the composable; a filter shared with results or business logic belongs higher, often in a ViewModel. I choose storage and restoration separately. If both a field and results need the query, I hoist it to their nearest common owner and pass callbacks down.”
 
 ## Interview answer — deep senior
 
-“State is the model of what the user currently sees, while Compose snapshot state is one mechanism for making changes observable to composition. A read during composition registers a dependency; changing the snapshot value can invalidate the scope that read it. State hoisting is an ownership decision. If a search field and a result list need the same query, I hold it in their lowest common ancestor, send the value down, and let the field report edits through a callback. That gives a single source of truth and makes the field reusable and testable. I do not hoist every ephemeral detail to the ViewModel: a tooltip's temporary expansion may belong to one composable. If state drives business logic, must be shared across a screen, or needs saved-state coordination, the ViewModel can own it and expose a screen model. I also decide how it survives recreation; snapshot observability alone does not persist across process death. The common failure is duplicate ownership: a child caches its own text while a route holds another value, so validation and display drift. I test event flow and restoration at the relevant owner boundary.”
+“State is the model of what the user currently sees, while Compose snapshot state is one mechanism for making changes observable to composition. A read during composition registers a dependency; changing the snapshot value can invalidate the scope that read it. State hoisting is an ownership decision. If a search field and a result list need the same query, I hold it in their lowest common ancestor, send the value down, and let the field report edits through a callback. That gives a single source of truth and makes the field reusable and testable. I do not hoist every ephemeral detail to the ViewModel: a tooltip's temporary expansion may belong to one composable. If state drives business logic, must be shared across a screen, or needs saved-state coordination, the ViewModel can own it and expose a screen model. I also decide how it survives recreation; snapshot observability alone does not persist across process death. The common failure is duplicate ownership: a child caches its own text while a route holds another value, so validation and display drift. I test event flow and restoration at the relevant owner boundary. I keep a purely local expansion flag near its row so hoisting does not create needless screen-wide coordination.”
+
+## How to answer in the interview
+
+- **Why:** one source of truth keeps field and results in sync.
+- **How:** hoist to the lowest common owner and send edits upward.
+- **Trade-off:** local decoration state need not move to a ViewModel.
+- **Failure case:** a hidden child copy diverges from its parent.
+- **Production solution:** use observable state and test edits from both consumers.
 
 ## Deep-dive talking points
 

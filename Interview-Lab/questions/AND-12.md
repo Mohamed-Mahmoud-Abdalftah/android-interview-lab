@@ -34,6 +34,10 @@ Android can reclaim a background process without invoking a convenient final sav
 
 For a note editor, persist each user edit to a repository with a short debounce and a final explicit save action; keep the stable `noteId` in `SavedStateHandle`. The recreated ViewModel reads that ID and observes the stored note. A transient toolbar expansion can use `rememberSaveable`. Debounce alone is not a durability guarantee: if edits must never be lost, commit before telling the user they are saved and surface pending/failed saves. This is an architectural example; a production implementation needs a repository transaction, error state, and tests.
 
+## Practical walkthrough
+
+note editor لو حفظت draft بس في ViewModel، user ممكن يرجع بعد process kill يلاقي text ضاع. خلي `noteId` في route/`SavedStateHandle`، واعمل durable write للـdraft حسب product contract؛ لو autosave debounce، اعرض pending/failed save وما تقولش “Saved” قبل commit. بعد restart اقرأ ID، ابدأ loading، حمّل draft من repository، وبعدين رجّع cursor/toolbar state الصغير بـsaveable state لو مناسب. لو المحتوى حساس، راجع access, encryption, retention حسب threat model. في payment screen، status query واجبة بدل تكرار submit.
+
 ## Trade-offs and decision criteria
 
 Saving on every keystroke improves durability but can waste I/O; batching or debouncing reduces writes but creates an at-risk window. Use a clear saved/unsaved indicator and an explicit commit boundary for critical data. A Bundle is simple but size-limited and tied to lifecycle timing. Room handles structured drafts and transactions; DataStore fits small settings, not a rich document. Remote autosave needs conflict/version handling when another device edits concurrently.
@@ -52,10 +56,22 @@ Define a recovery matrix for rotation, background process kill, app update, forc
 
 ## Interview answer — structured
 
-“I first classify state. A tab or note ID fits SavedStateHandle or rememberSaveable; the draft itself belongs in durable local storage. After process death, Android may recreate the Activity with saved state, but it creates a new ViewModel, so that ViewModel reloads the note by ID and exposes loading/error states. I make writes visible and test lost network, missing records, and a genuine background process kill. For an in-flight payment I query status rather than resubmit. I preserve small reconstruction hints such as draft ID and cursor position in saved state, but autosave meaningful edits to Room or another durable store before the process can disappear. On recreation I reload the draft, validate current account ownership and handle deleted or unavailable records. I never replay a submit side effect from `onCreate`.”
+I first classify state. A tab or note ID fits SavedStateHandle or rememberSaveable; the draft itself belongs in durable local storage. After process death, Android may recreate the Activity with saved state, but it creates a new ViewModel, so that ViewModel reloads the note by ID and exposes loading/error states. I make writes visible and test lost network, missing records, and a genuine background process kill. For an in-flight payment I query status rather than resubmit.
+
 ## Interview answer — deep senior
 
-“Recovery starts before the kill: I establish a durable write boundary for user edits and operation identity, then treat saved-instance-state as a compact pointer into that durable model. On recreation I build a fresh dependency graph, validate account and navigation arguments, load by ID, and render explicit loading, conflict, missing, and error states. I do not execute a one-time effect merely because a composable or Activity was recreated. The data layer resolves revisions and sync conflicts, while the UI only reflects committed versus pending edits. I test a matrix of rotation, system process kill, force-stop, logout, and failed persistence because their guarantees differ. A process kill can happen while the app is backgrounded without a last-minute save callback. A restored Bundle may recover which screen or note was open, but it is not a reliable store for a large or important draft. I debounce/autosave edits with clear durability expectations, persist a draft ID, and rebuild a new ViewModel from repository data. If the note was deleted or the user logged out, the screen presents a recoverable state rather than showing another account’s data. For a submit action I persist an operation identity and query status after restart; automatically repeating the POST could duplicate an order. I test kill before and after autosave.”
+Recovery starts before the kill: I establish a durable write boundary for user edits and operation identity, then treat saved-instance-state as a compact pointer into that durable model. On recreation I build a fresh dependency graph, validate account and navigation arguments, load by ID, and render explicit loading, conflict, missing, and error states. I do not execute a one-time effect merely because a composable or Activity was recreated. The data layer resolves revisions and sync conflicts, while the UI only reflects committed versus pending edits. I test a matrix of rotation, system process kill, force-stop, logout, and failed persistence because their guarantees differ. A process kill can happen while the app is backgrounded without a last-minute save callback.
+
+The note editor gives a clear durability test: if the UI says “Saved,” the repository write must have completed according to the product’s persistence contract. Debounced autosave can reduce writes, but it creates a pending interval that must be represented honestly. On recreation I restore a note ID, reload the durable draft, then restore small cursor or expansion state if applicable. A large text body should not rely solely on a Bundle. For a payment operation the same principle applies more strongly: restore an attempt identity and query authoritative status, never replay submission merely because the UI was rebuilt.
+
+## How to answer in the interview
+
+- **Why:** Process loss should not erase user input that the app promised to save.
+- **How:** Restore a small note ID and UI position, then reload a durable draft.
+- **Trade-offs:** Debounced autosave reduces writes but needs honest pending state.
+- **Failure cases:** Name Bundle-only storage and false “Saved” confirmation.
+- **Production solution:** Commit drafts before confirmation and test real process recreation.
+
 ## Deep-dive talking points
 
 Explain saved-state timing and size, durable draft write semantics, idempotent restoration versus one-time side effects, account scoping, revision conflicts, and the difference between a simulated recreation test and a real process kill.
@@ -75,4 +91,4 @@ Classify a tab, note ID, draft text, and payment attempt by storage lifetime; st
 - [Save UI states](https://developer.android.com/topic/libraries/architecture/saving-states) — saved-state timing, size, and durable-storage distinction.
 - [ViewModel overview](https://developer.android.com/topic/libraries/architecture/viewmodel) — screen ownership and process-death boundary.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The note-editor flow is a design example; no Android instrumentation was run for this record.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The note-editor flow is a design example; no Android instrumentation was run for this record.

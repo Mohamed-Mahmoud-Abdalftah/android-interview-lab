@@ -26,6 +26,10 @@ How should feature modules communicate without direct coupling?
 
 لا تجعل `:feature:checkout` يستدعي class داخلي في `:feature:catalog`. لو يحتاج data، اعتمد على domain/API contract صغير وتطبيقه في data أو app composition. لو يحتاج فتح شاشة، استخدم navigation contract/route ID بدون استيراد UI implementation. لو يحتاج نتيجة من feature ثانية، عرّف result contract وlifecycle/delivery semantics بدل global event bus مبهم. أحيانًا app shell هو المكان الذي ينسق الميزتين. لا تجعل shared ViewModel أو singleton mutable حلًا تلقائيًا؛ حدّد source of truth واستمراره بعد process death.
 
+### Practical walkthrough in Egyptian Arabic
+
+Feature A لا تستدعي ViewModel Feature B مباشرة. استخدم interface صغير event/navigation contract أو shared state owner في طبقة أدنى، و`:app` يربط التنفيذ. مثال checkout تحتاج customer ID لا whole profile screen object. state بين features يجب تظل واحدة authoritative، وlogout يبطل requests القديمة. اختبر contract في isolation ثم app wiring.
+
 ## Why it matters and how it works
 
 Direct feature implementation imports create cycles and couple release cadence. A stable API or app-level coordinator converts the relationship into a directed edge. Navigation can pass small identifiers and results through back-stack/saved-state mechanisms where appropriate. Shared domain data belongs in a repository rather than two screens copying mutable objects.
@@ -57,6 +61,14 @@ Document contracts, event ownership and replay/acknowledgment policy. Test deep 
 ## Interview answer — deep senior
 
 “I try to keep each feature independently understandable, so I avoid importing another feature's implementation. If Checkout needs product facts, I give it a stable repository or domain contract and let the app graph supply an implementation. It receives a product ID from navigation and reloads authoritative price and availability, instead of trusting a mutable Catalog screen object. If the relationship is an action—opening Checkout or returning an order ID—I use a small navigation contract with clear back-stack result or shared repository semantics. I specify what happens when the receiver is stopped, recreated or deep-linked, because a generic hot event bus can lose a result and a replaying one can duplicate it. App-level orchestration can coordinate two features without either depending on the other's internals. I also watch for false abstraction: if two parts always evolve as one capability, merging them may be simpler. I enforce allowed edges and test the integrated path, including process recreation, to prove the contract works beyond isolated module compilation.”
+
+## How to answer in the interview
+
+- **Why:** feature internals should remain independent.
+- **How:** communicate by stable IDs/contracts.
+- **Trade-off:** decoupling versus extra routing.
+- **Failure case:** shared mutable singleton leaks state.
+- **Production solution:** integration test app composition.
 
 ## Deep-dive talking points
 

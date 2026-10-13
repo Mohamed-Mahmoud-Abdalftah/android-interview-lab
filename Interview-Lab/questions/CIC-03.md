@@ -25,6 +25,10 @@ What are build artifacts and release tracks?
 
 Build artifact هو الناتج القابل للتوزيع أو التشخيص: APK للتثبيت، AAB لـPlay delivery، mapping file لفك obfuscated crashes، native symbols وتقارير tests. Release tracks في Play بتحدد مين يستقبل النسخة: internal، closed، open أو production. المهم نفس artifact المجرّب يترقّى، مع versionCode فريد وsigning صحيح.
 
+### Practical walkthrough in Egyptian Arabic
+
+الـartifact مش مجرد ملف نحمّله: AAB/APK، mapping file، native symbols، test reports، SBOM أو provenance لو مستخدمينها، وكلها مرتبطة بالـcommit والـvariant والـversionCode. Internal track للتجربة داخل الفريق، closed/open testing لشرائح أوسع، production rollout تدريجي. الخطأ الشائع إنك تعيد build عند كل track فتتغير البايتات؛ الأفضل تروّج نفس الـartifact الذي اختبرته. لو ظهر crash، لازم تقدر تحدد أي mapping وsource أنتج النسخة فعلاً.
+
 ## Why it matters and how it works
 
 An AAB is a publishing format from which Google Play serves device-specific APKs. Tracks control audience and rollout, not source branches. Mapping/native symbols must match the exact binary for useful crash analysis.
@@ -55,7 +59,15 @@ Release manifest links commit, variant, versionCode, signing identity, artifact 
 
 ## Interview answer — deep senior
 
-“I treat the artifact as the unit of evidence. Tests, mapping, native symbols, dependency manifest and signing metadata all refer to its hash. Play may generate split APKs from an AAB, so I smoke-test delivered variants for ABI-sensitive SDKs. Tracks are audience controls, not security guarantees; testers may still hit real backends if environments are misconfigured. A rollback strategy accounts for existing installations and irreversible schema changes, often using server-side gates plus a compatible fix-forward release. Preserve immutable artifact identity.”
+“A build artifact is the immutable output I can identify and promote: for Android that is commonly an AAB or APK plus its R8 mapping, native symbols and test evidence. I attach commit, variant, version code and artifact digest so crash reports can be retraced to the correct build. Release tracks determine who can install the artifact: internal testers first, then broader test audiences, then staged production according to policy. A track is distribution scope, not a different source tree. I prefer promoting the same verified AAB rather than rebuilding for each track, because rebuilding can change dependencies, resources or signing output and invalidate prior testing. If a release-only native crash appears, I need the exact bundle and symbols from that rollout, not merely a nearby branch. The trade-off is storage and metadata discipline, but it makes incident containment and audit feasible. Before promotion I check package ID, version code, signing identity and target audience explicitly.”
+
+## How to answer in the interview
+
+- **Why:** release evidence must map to exact bytes.
+- **How:** attach commit, variant, digest, mapping and track.
+- **Trade-off:** artifact retention versus reproducible incident analysis.
+- **Failure case:** wrong mapping makes crash stack unreadable.
+- **Production solution:** promote one verified AAB and keep provenance.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for AAB/splits, matching mapping, immutable promotion, installed-version 
 
 ## Self-check rubric
 
-Can you explain this decision, apply the example, name a trade-off and failure, and answer both follow-ups without relying on a memorized slogan?
+Name the AAB/APK, mapping file, symbols and test reports as versioned artifacts; distinguish internal, closed, open and production tracks; explain how one artifact retains provenance.
 
 ## References and reviewed-on date
 
 - [Android App Bundle](https://developer.android.com/guide/app-bundle) — distribution format.
 - [Play publishing overview](https://developer.android.com/studio/publish) — release tracks.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

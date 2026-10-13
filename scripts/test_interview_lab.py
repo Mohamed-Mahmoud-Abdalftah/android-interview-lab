@@ -47,6 +47,18 @@ class InterviewLabSourceTests(unittest.TestCase):
         self.assertEqual(report["qualityPassing"], sum(
             item["automatedQuality"] == "passes-checks" for item in report["questionStatus"].values()))
 
+    def test_each_reviewed_question_has_its_own_self_check(self):
+        from pathlib import Path
+        from validate_interview_lab import ROOT, read_record
+
+        rubrics = []
+        for path in (ROOT / "Interview-Lab/questions").glob("*.md"):
+            _, body = read_record(path)
+            rubric = body.split("## Self-check rubric\n", 1)[1].split("\n## ", 1)[0]
+            rubrics.append(" ".join(rubric.casefold().split()))
+        self.assertEqual(len(rubrics), 485)
+        self.assertEqual(len(set(rubrics)), 485)
+
 
 if __name__ == "__main__":
     unittest.main()

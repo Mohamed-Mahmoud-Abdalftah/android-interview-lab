@@ -24,6 +24,10 @@ Whether the candidate can locate cancellation checks and explain that cancellati
 
 الإلغاء في coroutines تعاوني: `cancel` بيغيّر حالة الـJob، والـcoroutine تلاحظ ده عند suspending functions قابلة للإلغاء زي `delay` أو عند `ensureActive`/`yield` في loop طويل. لو الكود CPU loop من غير checks، أو driver synchronous مش بيدعم cancel، هيفضل شغال لحد ما يرجع. لازم ننقل cleanup إلى `finally` وما نبلعش `CancellationException`.
 
+## Practical walkthrough
+
+تخيّل معالجة 100 ألف record على `Default`. لو المستخدم خرج، `cancel` يعلّم الـJob ملغية لكنه مش يوقف loop tight وحده. افحص `ensureActive()` كل chunk أو استخدم `yield()` لو محتاج تدي فرصة لشغل تاني، وحط تحرير الموارد في `finally`. لو catch عام أو `runCatching` بلع `CancellationException`، الـloop ممكن يبان إنه خلص بنجاح وهو المفروض اتلغى.
+
 ## Why it matters and how it works
 
 A cancelled Job makes cancellable suspension throw `CancellationException`. `ensureActive()` explicitly checks and throws; `yield()` checks and gives other coroutines a scheduling opportunity. `finally` runs for cleanup, but suspending cleanup needs `withContext(NonCancellable)` only for a small bounded critical cleanup when required.
@@ -66,7 +70,15 @@ A ViewModel starts a large local search over cached products. New query input ca
 
 ## Interview answer — deep senior
 
-“I distinguish three layers: the coroutine Job, the code currently executing, and any external operation already started. Cancelling the Job signals intent; cooperative suspension and explicit checks make the coroutine stop. For a tight CPU loop I check often enough to meet user-visible cancellation latency. For a legacy blocking SDK I cannot promise interruption unless its own API supports it; I may close a resource or cancel a transport call, and I bound the concurrency and timeout. In `finally`, short non-suspending cleanup can run normally; a necessary suspending cleanup can use a tightly bounded `NonCancellable` region. I never swallow `CancellationException`, because that breaks parent cancellation and can publish stale UI or retry cancelled work. Rethrow cancellation before handling domain errors.”
+“I distinguish three layers: the coroutine Job, the code currently executing, and any external operation already started. Cancelling the Job signals intent; cooperative suspension and explicit checks make the coroutine stop. For a tight CPU loop I check often enough to meet user-visible cancellation latency. For a legacy blocking SDK I cannot promise interruption unless its own API supports it; I may close a resource or cancel a transport call, and I bound the concurrency and timeout. In `finally`, short non-suspending cleanup can run normally; a necessary suspending cleanup can use a tightly bounded `NonCancellable` region. I never swallow `CancellationException`, because that breaks parent cancellation and can publish stale UI or retry cancelled work. Rethrow cancellation before handling domain errors. I would test cancellation in three places: while suspended, during a CPU chunk, and while an external SDK call is in progress. `ensureActive` makes a tight loop notice the Job; `yield` also lets peer tasks run. Neither interrupts arbitrary native code. Cleanup belongs in `finally`, and any broad error mapper must rethrow `CancellationException`. My target is bounded cancellation latency with no stale UI update or leaked resource.”
+
+## How to answer in the interview
+
+- **Why:** cancellation latency affects stale work and resource use.
+- **How:** suspend points and explicit ensureActive checks observe a cancelled Job; yield also gives peers a turn.
+- **Trade-off:** checking every item adds overhead, so tune the chunk.
+- **Failure case:** runCatching turns cancellation into a Result failure or a blocking driver ignores it.
+- **Production solution:** rethrow cancellation and test cleanup.
 
 ## Deep-dive talking points
 
@@ -86,4 +98,4 @@ Can I identify a cancellation point, fix a tight loop, explain a blocking limita
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — Job and cancellation.
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — cancellation exception semantics.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

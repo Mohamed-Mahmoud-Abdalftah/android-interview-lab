@@ -25,6 +25,10 @@ A team disagrees about MVVM vs MVI. How do you lead a decision based on constrai
 
 خلاف MVVM/MVI ما يتحسمش بعدد المقالات. نحدد المشكلة: state معقدة؟ events؟ offline؟ حجم team؟ testability؟ ونقارن implementation صغير لنفس الشاشة، نقيس cognitive load، bugs وspeed. ممكن MVVM بStateFlow واحد يكفي؛ MVI يفيد لو transitions كثيرة وتحتاج reducer واضح لكنه يزيد ceremony. نوثق قرار قابل للمراجعة.
 
+### Practical walkthrough in Egyptian Arabic
+
+خلاف MVVM/MVI غالبًا خلاف على حدود state/event، مش اسم pattern. اختار شاشة واقعية فيها loading، user edits، retry وprocess death؛ ارسم event -> state -> side effect، وشوف أين يحدث duplication أو stale data. اعمل prototype صغير واختبارات، وقارن كلفة تعليم الفريق والتغيير والتشخيص. ممكن MVVM مع reducer واضح يحقق المطلوب بدون framework جديد، وممكن MVI يساعد لو state transitions معقدة. سجّل القرار وقواعد الاستثناء.
+
 ## Why it matters and how it works
 
 MVVM is a broad separation pattern; MVI-style unidirectional state/reducer is a more specific state-management approach. They can overlap rather than be mutually exclusive. The team needs conventions for one-time effects, lifecycle collection and process death regardless of label.
@@ -55,7 +59,15 @@ Facilitator invites engineers with different views, records evidence and dissent
 
 ## Interview answer — deep senior
 
-“I facilitate by making constraints explicit and separating facts from preferences. The team defines requirements such as process-death recovery, deterministic state transitions, one-time effects, accessibility and onboarding cost. We implement one representative high-risk flow with both approaches and inspect tests and code review friction. If MVI-style reducers make illegal payment transitions harder to express, that is evidence; if a simple screen gains only boilerplate, we avoid imposing it there. I record the decision, exceptions, migration strategy and metrics, then invite dissent before committing. The backend and durable repository remain authoritative regardless of UI pattern. Test duplicate callback and rotation. Document conventions in ADR.”
+“I turn a pattern debate into a decision about state ownership and failure behavior. I pick a representative screen—perhaps a checkout with editable amount, loading, unknown payment outcome and process recreation—and ask each proposal to show where events enter, how state changes, who runs effects and what survives a kill. A small prototype and tests reveal more than arguing about names. MVVM can be clear with an immutable UI state and explicit reducer; an MVI-style unidirectional loop may be useful when transitions are complex, but it adds ceremony and learning cost. I compare debugging, testability, migration and team familiarity, then choose the smallest coherent model for this codebase. I write the decision and exceptions so future reviews are consistent. I do not claim a pattern alone fixes duplicate charges; durable identity and backend idempotency remain separate contracts. The trade-off is uniformity versus tailoring, so I seek enough consistency without forcing every simple screen into a complex framework.”
+
+## How to answer in the interview
+
+- **Why:** pattern conflict hides ownership questions.
+- **How:** prototype one difficult screen and test transitions.
+- **Trade-off:** consistency versus added ceremony.
+- **Failure case:** pattern chosen but payment state remains transient.
+- **Production solution:** document decision and exceptions.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for overlapping patterns, representative pilot, criteria, dissent and dur
 
 ## Self-check rubric
 
-Can you state the context, decision evidence, alternatives, affected people, measurable result and both follow-up answers?
+Turn MVVM/MVI disagreement into explicit state, event, team and testing criteria; run a small spike, record the decision and leave room for different screens to need different patterns.
 
 ## References and reviewed-on date
 
 - [Android UI architecture](https://developer.android.com/topic/architecture/ui-layer) — UI state guidance.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — separation of concerns.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

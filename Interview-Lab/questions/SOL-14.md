@@ -32,6 +32,10 @@ A DI container resolves constructors and lifetimes. Dependency inversion concern
 
 Conceptual binding: `@Binds abstract fun bindStatus(impl: NetworkStatusSource): TransferStatusSource`. The useful part is that `TransferStatusSource` exposes domain status, not Retrofit `Response`. A manual composition root could bind the same types.
 
+## Practical walkthrough
+
+Hilt بتحل مين هيبني object graph وبأي scope، لكن لو `TransferRule` constructor بياخد `RetrofitTransferApi` يبقى policy لسه عارفة transport. اعمل `TransferStatusSource` يرجع domain status، وخلي data adapter ينفذها، وبعدها Hilt `@Binds` يربطهم. راجع `@Singleton` وViewModel scope لأن scope غلط ممكن يحتفظ بحالة قديمة أو يشارك mutable object زيادة. وفي test استخدم fake source لتجربة blocked وunknown بلا تشغيل Hilt لو logic صافي. خلي interface في المكان اللي يملك policy، مش بجوار SDK لمجرد شكل معماري.
+
 ## Trade-offs and decision criteria
 
 Hilt reduces wiring cost and supports test replacement but adds annotation processing and lifecycle scopes. Manual DI may be enough for a small project. DIP may justify an interface even if Hilt can inject concrete classes.
@@ -50,11 +54,19 @@ Hilt supplies dependencies; it does not automatically choose the right dependenc
 
 ## Interview answer — structured
 
-I can use `@Inject` everywhere and still have a use case import a concrete API service. That is DI but not useful dependency inversion. Hilt builds the graph and scopes instances; engineers decide which contracts high-level policy should reference. I would give the use case a domain-facing interface and bind a data adapter with Hilt. The interface should return domain outcomes, not DTOs. I can test the use case with a fake without starting Hilt. I would also ask whether the bound interface returns domain values or simply exposes Retrofit response wrappers. A `@Binds` annotation cannot turn a transport-shaped contract into a stable policy API. The abstraction must be designed before Hilt wires it.
+I can use `@Inject` everywhere and still have a use case import a concrete API service. That is DI but not useful dependency inversion. Hilt builds the graph and scopes instances; engineers decide which contracts high-level policy should reference. I would give the use case a domain-facing interface and bind a data adapter with Hilt. The interface should return domain outcomes, not DTOs. I can test the use case with a fake without starting Hilt. I would also ask whether the bound interface returns domain values or simply exposes Retrofit response wrappers.
 
 ## Interview answer — deep senior
 
-I inspect the graph from the use case outward. If high-level policy has a constructor parameter of `RetrofitTransferApi`, Hilt has made construction cleaner but left policy coupled to transport and HTTP errors. A good DIP boundary has a contract named for what the policy needs, with domain types and documented behavior. A data adapter implements it, and Hilt binds that implementation at app composition. The framework also manages scopes, but scope correctness is a separate question: a singleton should not capture Activity context. I do not require an interface for every helper simply because Hilt can bind it. Manual DI could provide the same inverted contract in a small app. The outcome is local change and tests that run without vendor SDKs, not a high count of annotations. There are separate failure modes to review: type coupling, scope, and graph correctness. A use case that imports Retrofit violates the intended DIP boundary even if Hilt resolves it perfectly. A Singleton adapter capturing Activity context may leak even if the abstraction direction is sound. A missing binding fails graph compilation. I use Hilt to make construction and replacement manageable, then review each boundary’s semantic types and lifetime. In unit tests I can instantiate the use case with a fake interface without Hilt, while instrumented tests verify the actual generated graph. That gives evidence for both design and wiring.
+I inspect the graph from the use case outward. If high-level policy has a constructor parameter of `RetrofitTransferApi`, Hilt has made construction cleaner but left policy coupled to transport and HTTP errors. A good DIP boundary has a contract named for what the policy needs, with domain types and documented behavior. A data adapter implements it, and Hilt binds that implementation at app composition. The framework also manages scopes, but scope correctness is a separate question: a singleton should not capture Activity context. I do not require an interface for every helper simply because Hilt can bind it. Manual DI could provide the same inverted contract in a small app. Hilt wires concrete objects and manages Android component scopes; it does not choose the right dependency direction for us. A Hilt-injected `RetrofitTransferApi` inside transfer policy is still a transport coupling. I would define a domain-shaped `TransferStatusSource`, implement it in data, and bind that adapter at the composition boundary. Then a policy unit test can use a fake without a Hilt container. The trade-off is an extra contract and binding; that is justified when it shields business logic from transport change. I would also review scope, because a broad singleton can retain mutable or stale state. Production tests must still cover real adapter mapping and lifecycle behavior.
+
+## How to answer in the interview
+
+- **Why:** Separate wiring from dependency direction.
+- **How:** show Hilt binding.
+- **Trade-offs:** mention binding/scope cost.
+- **Failure cases:** flag DTO leakage or stale singleton.
+- **Production solutions:** close with fake policy and adapter integration tests..
 
 ## Deep-dive talking points
 
@@ -74,4 +86,4 @@ Show one Hilt-injected DIP violation and repair it with a domain-facing contract
 - [Android Hilt guide](https://developer.android.com/training/dependency-injection/hilt-android) — graph and bindings.
 - [Robert C. Martin, A Little Architecture](https://blog.cleancoder.com/uncle-bob/2016/01/04/ALittleArchitecture.html) — dependency inversion.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

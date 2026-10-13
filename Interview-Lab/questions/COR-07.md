@@ -24,6 +24,10 @@ Whether the candidate maps dispatchers to execution resources while rejecting `s
 
 `Dispatchers.Main` للتعامل مع UI على Android، و`IO` معمول للـblocking I/O، و`Default` مناسب CPU-intensive work. `Unconfined` بيبدأ في thread المستدعي لحد أول suspension وبعدها ممكن يكمل حسب suspending function؛ مش اختيار آمن كـdefault لواجهة Android. اختيار dispatcher لازم يبقى بحسب طبيعة الـAPI والـscope، مش لمجرد إن الدالة `suspend`.
 
+## Practical walkthrough
+
+لو repository بيقرأ ملف ثم يفك ضغطه، قراءة الملف synchronous تتعمل على `IO`، وفك الضغط CPU-heavy على `Default`، وبعدها UI تتحدّث على `Main`. كل نقلة لها سبب واضح. `Unconfined` ممكن يكمل على thread مختلف بعد أول suspension، فمش مكان مناسب لكود view. وخلي بالك: لو network API suspend ومكتوب main-safe، إطلاقها من Main ممكن يكون صحيح.
+
 ## Why it matters and how it works
 
 Dispatcher is a context element that decides where continuation executes. Main targets the Android UI dispatcher, Default uses a shared CPU-oriented pool, and IO is elastic for blocking calls. `Unconfined` does not confine execution to one thread. Suspending operations may free a thread; synchronous calls still occupy their selected thread.
@@ -67,7 +71,15 @@ A photo repository reads bytes from a legacy file API on IO, decodes thumbnail d
 
 ## Interview answer — deep senior
 
-“For dispatcher selection I examine whether an operation blocks a thread, burns CPU, or mutates UI. A suspending network client can release the caller thread and be main-safe; a synchronous SDK call inside a `suspend` function still blocks the current dispatcher. I move that SDK boundary to IO, CPU decoding to Default, and render only on Main. I avoid Unconfined because its resume thread follows the suspending function and does not establish UI confinement. IO has capacity for blocking tasks, but unlimited fan-out can still strain memory, connections or the server, so I bound concurrency separately. Tests inject dispatchers and verify main safety; cancellation requires cooperation from the underlying operation.”
+“For dispatcher selection I examine whether an operation blocks a thread, burns CPU, or mutates UI. A suspending network client can release the caller thread and be main-safe; a synchronous SDK call inside a `suspend` function still blocks the current dispatcher. I move that SDK boundary to IO, CPU decoding to Default, and render only on Main. I avoid Unconfined because its resume thread follows the suspending function and does not establish UI confinement. IO has capacity for blocking tasks, but unlimited fan-out can still strain memory, connections or the server, so I bound concurrency separately. Tests inject dispatchers and verify main safety; cancellation requires cooperation from the underlying operation. I would inspect the hot path rather than applying IO everywhere. For a file-and-decode flow, synchronous read occupies an IO worker, CPU decode belongs on Default, and rendering returns to Main. IO's elastic views can increase concurrent blocking operations, so an external API may still need a semaphore or rate limit. An `Unconfined` continuation has no stable UI-thread contract, which makes it a poor production default for view state.”
+
+## How to answer in the interview
+
+- **Why:** the dispatcher must fit the work, not the function name.
+- **How:** Main renders, IO accommodates blocking I/O, Default runs CPU work, Unconfined has no stable thread guarantee.
+- **Trade-off:** switches cost complexity and IO is not backpressure.
+- **Failure case:** CPU decoding on Main or blocking on Default at scale.
+- **Production solution:** place switches at repository boundaries and limit fan-out separately.
 
 ## Deep-dive talking points
 
@@ -87,4 +99,4 @@ Can I map each dispatcher, reject `Unconfined` for UI confinement, identify a bl
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — dispatcher and context.
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — main safety and repository boundaries.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

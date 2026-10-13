@@ -26,6 +26,10 @@ How do you reduce slow app startup without breaking correctness?
 
 ابدأ بقياس cold start على جهاز يمثل المستخدمين، وحدد هل التأخير في `ContentProvider`/`Application.onCreate`، DI setup، disk I/O، أول composition، أو انتظار network. لا تؤجل كل شيء عشوائيًا: session/auth state اللازمة لمنع عرض بيانات حساسة يجب أن تكون صحيحة قبل توجيه المستخدم. انقل analytics أو prefetch غير ضروري بعد أول frame/وقت الخمول إذا كان آمنًا، واجعل dependencies lazy حيث لا تؤثر على أول شاشة. حافظ على شاشة loading صادقة بدل splash تخفي بطء البيانات. قس `TTID` و`TTFD` معًا، واختبر deep link والـnotification بعد process death.
 
+## Practical walkthrough
+
+في banking app، analytics init وdatabase read قبل أول frame بيطولوا cold start. trace يحدد مين فعلًا على critical path. أجّل analytics لو مش مطلوبة للواجهة الأولى، وخلي query async، لكن اعرض loading state آمنة لحد ما session/auth تتأكد؛ متعرضش account قديم عشان تكسب TTID. قس TTID وTTFD على جهاز متوسط ومنخفض، واختبر logout وoffline وdeep link بعد تغيير ترتيب initialization.
+
 ## Why it matters and how it works
 
 Cold startup includes process creation, provider initialization, Application work, Activity creation, layout/composition, and drawing. A trace shows which spans lie on the critical path. Deferring independent noncritical work can shorten that path, but delaying required state merely moves latency or creates incorrect UI. Baseline Profiles can reduce code execution overhead for covered startup paths; they cannot fix synchronous I/O or server latency.
@@ -56,7 +60,15 @@ Set per-device startup budgets for TTID and meaningful readiness. Use Macrobench
 
 ## Interview answer — deep senior
 
-“I start by defining what ‘ready’ means for the first user action, then measure cold startup on representative devices with a release-like build and controlled cache and account state. A Perfetto or Macrobenchmark trace shows provider and Application initialization, DI graph creation, disk access, Activity creation, and first render on the critical path. I remove or defer analytics and prefetch only when they are independent; required session validation and destination routing must still gate sensitive content. A lazy dependency needs a first-use latency and failure policy, or it merely shifts the delay. I compare TTID with time to fully drawn or interactive content, and use Baseline Profiles if compilation overhead is material. Finally I test cold notification and deep-link entry, offline/expired session, and process restoration, then monitor startup and crash cohorts in staged rollout.”
+“I start by defining what ‘ready’ means for the first user action, then measure cold startup on representative devices with a release-like build and controlled cache and account state. A Perfetto or Macrobenchmark trace shows provider and Application initialization, DI graph creation, disk access, Activity creation, and first render on the critical path. I remove or defer analytics and prefetch only when they are independent; required session validation and destination routing must still gate sensitive content. A lazy dependency needs a first-use latency and failure policy, or it merely shifts the delay. I compare TTID with time to fully drawn or interactive content, and use Baseline Profiles if compilation overhead is material. Finally I test cold notification and deep-link entry, offline/expired session, and process restoration, then monitor startup and crash cohorts in staged rollout. In a banking launch, deferring analytics is safe only if it does not gate navigation; deferring session validation can expose stale protected content. I measure the first usable account state, not just the first placeholder frame. A lazy dependency also needs a first-use latency and failure policy, which I exercise through logout, offline, and deep-link entry.”
+
+## How to answer in the interview
+
+- **Why:** Define a secure meaningful first interaction.
+- **How:** Trace startup critical path and defer nonessential init.
+- **Trade-off:** Deferral can shift delay into the first user action.
+- **Failure case:** Early paint may expose stale protected data.
+- **Production solution:** Measure TTID/TTFD and test offline and deep-link routing.
 
 ## Deep-dive talking points
 
@@ -78,4 +90,4 @@ Trace the critical path, identify safe deferral, protect auth/navigation, compar
 - [Macrobenchmark overview](https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview) — reproducible launch measurement.
 - [Save UI states](https://developer.android.com/topic/libraries/architecture/saving-states) — restoration boundaries.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The banking example was not device-measured.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The banking example was not device-measured.

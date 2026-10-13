@@ -41,6 +41,10 @@ suspend fun verifyAfterSave(dao: TransactionDao, id: String) {
 // Repeat read after force-stop/relaunch with the signed release variant.
 ```
 
+## Practical walkthrough
+
+release-only disappearing transaction ما تفترضش إنه Room bug. اعمل timeline: UI قالت Saved قبل DB commit؟ DB path أو account namespace اتغير؟ migration destructive؟ sync worker حذف row لأنها افتكرها ack؟ backup رجعت encrypted file بدون key؟ R8 reflection serializer فشل في release؟ سجّل attempt ID/status/schema version/file identity بدون PII، وقارن debug vs minified build. اقرأ row بعد commit وبعدين after process restart، وجرّب kill في كل window. لو المشكلة migration أو key invalidation، صمّم recovery ما تمسحش data بصمت؛ حافظ على نسخة/diagnostic consent حسب privacy policy.
+
 ## Trade-offs and decision criteria
 
 Instrumented release tests with minification catch variant-only behavior but cost more CI time. A migration test catches schema/data loss, while R8 mapping/retrace helps diagnose reflective failures. Do not disable shrinking as a permanent unexplained workaround.
@@ -63,7 +67,17 @@ A payments app logs stable operation IDs and local state transitions, reproduces
 
 ## Interview answer — deep senior
 
-“The symptom spans multiple boundaries, so I build an evidence timeline. Did the local transaction actually commit, or was the UI only optimistic? Did process death happen before fsync/acknowledgement? On reopen, is the same database file, schema and account selected? Could migration fallback clear data, a background sync delete it, or backup restore ciphertext without the original key? Release minification may break reflective serialization, so I inspect retraced exceptions and packaged keep rules. I reproduce with the exact signed release artifact and old database fixture, log only non-sensitive operation IDs, and query authoritative payment state. I add regression tests for the proven cause rather than accepting a broad `-keep` or disabling R8 without explanation. Preserve evidence and redact financial data.”
+The symptom spans multiple boundaries, so I build an evidence timeline. Did the local transaction actually commit, or was the UI only optimistic? Did process death happen before fsync/acknowledgement? On reopen, is the same database file, schema and account selected? Could migration fallback clear data, a background sync delete it, or backup restore ciphertext without the original key? Release minification may break reflective serialization, so I inspect retraced exceptions and packaged keep rules. I reproduce with the exact signed release artifact and old database fixture, log only non-sensitive operation IDs, and query authoritative payment state. I add regression tests for the proven cause rather than accepting a broad `-keep` or disabling R8 without explanation. Preserve evidence and redact financial data.
+
+I would investigate in layers, starting with evidence of the local commit rather than the UI toast. I compare the database file and account namespace before and after restart, inspect migration and destructive-fallback paths, and check whether a sync worker deleted a row prematurely. Release-only failures also point to R8-sensitive reflection or different configuration, while backup can restore encrypted data without its old key. I reproduce with a minified build, insert a trace ID and status-only telemetry, then kill at each write/ack window. A verified fix needs a restart regression test and must not replace missing data with a silent empty database.
+
+## How to answer in the interview
+
+- **Why:** “Saved then gone” crosses UI, DB, sync, migration and backup boundaries.
+- **How:** Build a commit-to-restart timeline with safe IDs/schema telemetry.
+- **Trade-offs:** Keep diagnostic detail without sensitive payload logging.
+- **Failure cases:** Destructive fallback, premature worker deletion or lost encryption key.
+- **Production solution:** Reproduce in minified release and test each crash window.
 
 ## Deep-dive talking points
 
@@ -83,4 +97,4 @@ Can I prove commit, inspect exact release artifact and rule causes in/out withou
 - [Android Room migrations](https://developer.android.com/training/data-storage/room/migrating-db-versions) — migration data preservation.
 - [Android R8 overview](https://developer.android.com/build/shrink-code) — release shrinking behavior.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

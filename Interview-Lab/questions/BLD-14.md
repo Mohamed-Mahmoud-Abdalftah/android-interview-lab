@@ -26,6 +26,10 @@ How do you diagnose missing native libraries or ABI incompatibility?
 
 اجمع `UnsatisfiedLinkError` الكامل، device `SUPPORTED_ABIS`، version/variant وطريقة التوزيع. افحص APK/AAB-derived split: هل `/lib/<abi>/libname.so` موجودة للـABI المختارة؟ وهل dependencies native الأخرى مبنية لنفس architecture/NDK/STL؟ راجع `abiFilters`, packaging options وAAR dependencies. قد يعمل arm64 لكن x86 emulator يفشل لأن vendor SDK لا يقدم x86. لا تستخدم `pickFirst` لتخفي نسختين مختلفتين دون فهم؛ ولا تعلن دعم ABI لا تستطيع اختبارها. تأكد من load order والسيمبولات إذا الملف موجود ولكن loader يرفضه.
 
+### Practical walkthrough in Egyptian Arabic
+
+`UnsatisfiedLinkError` قد يكون `.so` ناقصة، ABI غير مدعومة، transitive dependency، أو JNI symbol تغير بـR8. حدد الجهاز وABI والartifact الحقيقي، افحص split delivered من AAB، وقارن vendor support matrix. شغّل minified release على الجهاز المتأثر، لا debug universal APK فقط. لو vendor لا تدعم ABI، غيّر eligibility بقرار واضح بدل crash بعد install.
+
 ## Why it matters and how it works
 
 Android selects native code compatible with a device ABI from package paths and linked dependencies. App Bundles can deliver ABI-specific splits, so a universal APK may not match production packaging. A library can be present yet fail because of missing dependent `.so`, incompatible symbols, STL or minSdk/architecture assumptions. The loader message and packaged artifact narrow the cause.
@@ -57,6 +61,14 @@ Maintain supported ABI matrix, install bundle-derived artifacts on representativ
 ## Interview answer — deep senior
 
 “Native failures are about the binary actually loaded on one device. I start with full loader text, version, device `SUPPORTED_ABIS`, OS and whether installation came from Play splits or a local APK. I inspect the delivered package for `/lib/<abi>/libfoo.so` and its transitive native dependencies. If one is absent, I trace vendor AAR contents, Gradle ABI filters and packaging rules. If the file is present, I look for `dlopen` symbol errors, incompatible STL/NDK build or minimum-platform assumptions. An arm64 success says little about x86_64; App Bundle targeting can distribute different native sets. I do not copy an arm64 binary under an x86_64 directory or use `pickFirst` on duplicate libraries without confirming ABI and version compatibility. The product choice may be to obtain the correct vendor binary, provide a non-native fallback, or intentionally narrow supported devices after reviewing user impact and store policy. CI installs bundle-derived APK sets on the supported ABI matrix and records native startup evidence, while production telemetry is segmented by ABI.”
+
+## How to answer in the interview
+
+- **Why:** native path depends on device split.
+- **How:** inspect ABI, .so and JNI symbols.
+- **Trade-off:** reach versus compatible support.
+- **Failure case:** debug APK works but release split fails.
+- **Production solution:** test target hardware and delivery path.
 
 ## Deep-dive talking points
 

@@ -42,6 +42,10 @@ fun main() {
 }
 ```
 
+## Practical walkthrough
+
+لو عندك `fun Animal.sound()` و`fun Dog.sound()`، المتغير المعلن `Animal` هيختار extension بتاعة Animal حتى لو runtime object نوعه Dog. ده لأن extensions static resolution، ومش بتغيّر class bytecode من جواها. لو class نفسها فيها member بنفس الاسم والتوقيع، member تكسب. استخدم extension لتحويلات صغيرة قريبة من feature، مش لإخفاء business behavior لازم يكون polymorphic. في multi-module project، import لامتداد بنفس الاسم ممكن يغيّر resolution أو يخلق ambiguity؛ خليه discoverable ومسمى بوضوح.
+
 ## Trade-offs and decision criteria
 
 Use extension for focused stateless utilities; use member or interface dispatch when behavior must be polymorphic. An extension cannot access private members unless those are otherwise visible and cannot add stored properties. Excessive global extensions make APIs hard to navigate.
@@ -56,15 +60,25 @@ A mapper extension converts a Room entity into a domain model within the data mo
 
 ## Interview answer — short
 
-An extension is statically resolved helper syntax; it does not change a class or override a member. A matching member wins, and overload selection uses the declared receiver type. I use extensions for small stateless adapters.
+Extensions add convenient call syntax without changing the class. They resolve from the declared receiver type, so they do not override virtual members; a matching member takes precedence. I use them for local helpers, not polymorphic behavior.
 
 ## Interview answer — structured
 
-`fun User.toUiModel()` looks like a method call but is resolved like a function whose first argument is the receiver. That makes it handy for mappings and formatting without changing a third-party type. It is not virtual dispatch: an extension for a subtype will not be selected through a base-typed reference, and an existing matching member takes precedence. If I need overrideable behavior, I use a member/interface contract. For example, a Room entity mapper is a good extension because it is a stateless conversion near the data layer. If I need a subtype to choose different behavior at runtime, an extension is the wrong tool: a base-typed variable resolves the base extension. I keep extensions scoped and named carefully, especially on broad types such as `String` or `Context`.
+An extension looks like a method call but compiles as a statically resolved function. If a variable is declared `Animal` and holds a `Dog`, `animal.sound()` selects the `Animal` extension. A real member with a matching signature wins over an extension. This makes extensions useful for formatting or mapping third-party types while keeping call sites readable. It also makes them a poor choice for subtype-specific behavior. In a large codebase I scope imports and names carefully, because extensions are discovered through imports and competing names can make an API hard to understand.
 
 ## Interview answer — deep senior
 
-I review extensions as part of the module API surface. They should be discoverable, scoped, and named to avoid collisions. Static resolution means they cannot implement polymorphism, and extension properties have no backing field. If an upstream dependency later adds a same-named member, call resolution may change, so broad extensions on common types need extra caution. For Android data mapping, package-local extensions are useful; for security or lifecycle policy, they are not a substitute for explicit ownership. The call syntax looks like a member call, but the compiler resolves an extension against the declared receiver type. That is why `val animal: Animal = Dog()` calls an `Animal` extension even when a `Dog` extension exists. Extensions cannot store per-instance state or bypass private visibility. I use them for small pure adapters, formatting, and mapping, where static dispatch is expected. If I need polymorphism, I define an interface or member method. In Android I also consider package scope and imports: too many generic extensions make it difficult to know which helper is in play. Security policy belongs in an explicit trusted component, not an extension that merely reads nicely.
+I review extensions as part of the module API surface. They should be discoverable, scoped, and named to avoid collisions. Static resolution means they cannot implement polymorphism, and extension properties have no backing field. If an upstream dependency later adds a same-named member, call resolution may change, so broad extensions on common types need extra caution. For Android data mapping, package-local extensions are useful; for security or lifecycle policy, they are not a substitute for explicit ownership.
+
+In a payment or account policy, polymorphism must be expressed by a member, interface, or explicit `when`, because an extension selected from the declared receiver type cannot vary with the runtime subtype. A helper like `ApiUser.toDomain()` is a good extension if it stays near the mapping module and does not hide I/O. I would avoid a global `String.isValid()` extension whose meaning changes across features. A dependency adding a same-named member can also alter call resolution, so I keep extension names precise and test public library calls after upgrades.
+
+## How to answer in the interview
+
+- **Why:** Extend existing classes with domain-specific utility functions without inheriting or modifying source code.
+- **How:** Define extension functions resolved statically at compile time based on the declared receiver type.
+- **Trade-offs:** Extensions cannot access private/protected members and do not participate in virtual polymorphic dispatch.
+- **Failure cases:** Defining an extension that shares a signature with a member function; the compiler always prioritizes the member function, silently ignoring the extension.
+- **Production solution:** Use extensions for pure, stateless helper methods on Android framework or third-party classes, keeping them scoped to relevant modules.
 
 ## Deep-dive talking points
 
@@ -83,4 +97,4 @@ Predict the output for a base-typed subtype, explain member priority, and name o
 
 - [Kotlin extensions](https://kotlinlang.org/docs/extensions.html) — static resolution and member precedence.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.

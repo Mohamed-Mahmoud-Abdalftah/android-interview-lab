@@ -26,6 +26,10 @@ What is UI jank? Explain frame timing, recompositions, and excessive work on Mai
 
 الـjank يظهر لما frame يتأخر عن deadline المناسب لتردد الشاشة، فيحس المستخدم بتقطيع. عند 60Hz الميزانية حوالي 16.7ms، وعند 120Hz حوالي 8.3ms، لكن الـpipeline فيها عمل UI وRenderThread/GPU، فلا تختزل المشكلة في رقم واحد لكل جهاز. في Compose، تغيير state قد يسبب recomposition لأجزاء محتاجة التحديث؛ مش كل composable بالضرورة تعاد، والعدد وحده لا يساوي بطء. المشكلة لما عمل ثقيل، query، decode، list sorting أو layout متكرر يحصل على Main أو في مسار frame. خذ trace لسيناريو محدد وشوف أي phase تأخر.
 
+## Practical walkthrough
+
+على 120Hz الـframe interval حوالي 8.3ms، لكن في UI pipeline شغل Main وRenderThread وGPU، فمتقولش إن كل composable لازم يخلص في 8.3ms لوحده. في cart screen، sorting آلاف المنتجات داخل composition بعد كل حرف يعمل long Main slices. خذ Frame Timeline، شوف أي frames اتأخرت وليه، وانقل الحساب لطبقة state أو cache محسوب. بعد التعديل قارن tail frame time على نفس الجهاز والرحلة.
+
 ## Why it matters and how it works
 
 The display refresh cadence sets frame deadlines. Main-thread event handling, composition or View traversal, layout, draw, RenderThread, and GPU work all contribute to what appears on screen. Compose can skip unaffected groups during recomposition; unstable inputs or expensive calculations inside composables may increase work. A background coroutine does not guarantee main safety if heavy code before suspension still runs on Main. Frame timing and system traces identify where the actual delay occurs.
@@ -56,7 +60,15 @@ Define scroll and interaction journeys, measure slow/frozen frame metrics by dev
 
 ## Interview answer — deep senior
 
-“I define jank as a missed frame deadline perceived during a real interaction, not as an arbitrary count of recompositions. At 60 Hz the interval is about 16.7 ms and at 120 Hz about 8.3 ms, but work crosses Main, RenderThread, and GPU, so the trace matters. For a slow list I capture a representative scroll with production-sized data, inspect frame timeline and Main slices, and use Compose tracing to see whether invalidation caused expensive composition, layout, or draw. Compose can skip unaffected work; I would not rewrite the state graph solely because a counter increased. I look for image decode, sorting, database I/O, binder waits, and lock contention on Main. A coroutine launch without dispatcher change may still execute CPU work there. Once I isolate the expensive phase, I move or reduce that work, preserve cancellation and state consistency, and compare slow-frame percentiles and correctness before rolling out.”
+“I define jank as a missed frame deadline perceived during a real interaction, not as an arbitrary count of recompositions. At 60 Hz the interval is about 16.7 ms and at 120 Hz about 8.3 ms, but work crosses Main, RenderThread, and GPU, so the trace matters. For a slow list I capture a representative scroll with production-sized data, inspect frame timeline and Main slices, and use Compose tracing to see whether invalidation caused expensive composition, layout, or draw. Compose can skip unaffected work; I would not rewrite the state graph solely because a counter increased. I look for image decode, sorting, database I/O, binder waits, and lock contention on Main. A coroutine launch without dispatcher change may still execute CPU work there. Once I isolate the expensive phase, I move or reduce that work, preserve cancellation and state consistency, and compare slow-frame percentiles and correctness before rolling out. For a cart search that sorts thousands of items on each keystroke, I compare frame-tail timing while typing and inspect whether the sort runs during composition. Memoization can lower CPU cost but retain another large list, so I check memory too. Stable state boundaries should reduce the affected UI work without changing product ordering.”
+
+## How to answer in the interview
+
+- **Why:** Define jank by missed presentation deadlines.
+- **How:** Trace frame timeline and Main computation.
+- **Trade-off:** Memoization trades CPU for retained memory.
+- **Failure case:** Counting recompositions alone misdiagnoses jank.
+- **Production solution:** Move heavy transforms and compare frame-tail distribution.
 
 ## Deep-dive talking points
 
@@ -78,4 +90,4 @@ Define a missed frame, describe two pipeline causes, explain Compose recompositi
 - [System tracing overview](https://developer.android.com/topic/performance/tracing) — device-wide timing.
 - [Compose performance](https://developer.android.com/develop/ui/compose/performance) — recomposition and UI optimization.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The cart example was not device-benchmarked.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The cart example was not device-benchmarked.

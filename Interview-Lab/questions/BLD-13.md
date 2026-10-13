@@ -26,6 +26,10 @@ How do you manage versionCode/versionName and release notes?
 
 `versionCode` رقم داخلي يستخدمه Android/Play لترتيب updates؛ إصدار جديد لنفس package يحتاج code أعلى وفق قواعد التوزيع. `versionName` نص يظهر للمستخدم مثل `3.4.1`، ليس أساس قرار التحديث. اجعل CI يخصص versionCode فريدًا/متزايدًا للـrelease variants ويمنع إعادة استخدامه، واربطه بـcommit وAAB hash وmapping file. Release notes تشرح تغييرات المستخدم ومخاطر migration/known issues، وتُراجع قبل التوزيع. لا تعتمد على versionName وحده لتتبع hotfix؛ rollback على Android غالبًا يعني نشر build مصحح بـversionCode أعلى أو إيقاف rollout حسب القناة.
 
+### Practical walkthrough in Egyptian Arabic
+
+`versionCode` للترتيب والترقية في Android، `versionName` نص يظهر للمستخدم. CI لازم تولّد code فريد أعلى من المنشور لكل package/track، حتى hotfix من branch قديم. release notes تصف user-visible changes والمخاطر، وليست dump لعناوين commits. اربط tag والAAB والmapping والnotes بـcommit واحد، واختبر update من نسخة قديمة لا clean install فقط.
+
 ## Why it matters and how it works
 
 Android compares version codes for update eligibility and prevents ordinary downgrade to a lower code. Version name is descriptive metadata. A release pipeline should preserve a one-to-one association between code, artifact and notes; multiple tracks or flavors can complicate code allocation. Notes give users and support teams a truthful record of changed behavior and limitations.
@@ -40,7 +44,7 @@ Automated codes reduce collision risk but must remain monotonic across branches 
 
 ## Failure modes
 
-Two branches publish the same code. A high-code internal track blocks promotion of a lower-code production build. VersionName changes while code remains unchanged and users cannot update. Notes claim a fix not present in the artifact. Mapping file association uses only versionName and selects the wrong build.
+Two branches publish the same `versionCode`. A high-code internal track blocks promotion of a lower-code production build. VersionName changes while code remains unchanged and users cannot update. Notes claim a fix not present in the artifact. Mapping file association uses only versionName and selects the wrong build.
 
 ## Production perspective
 
@@ -57,6 +61,14 @@ Reserve codes centrally, verify monotonicity before upload, generate release met
 ## Interview answer — deep senior
 
 “I separate machine update identity from communication. Android uses `versionCode` to order installable updates; `versionName` is a display label and is not enough to identify a binary. CI allocates codes from a single process that accounts for branches, flavors and Play tracks, and verifies the next artifact is eligible for promotion. I keep an immutable release record: versionCode, versionName, source commit, toolchain, AAB hash, signing fingerprint, mapping file and reviewed release notes. Notes should describe actual user changes, migrations and known limitations; they should be checked against what shipped rather than copied from a ticket list. In a staged incident I halt rollout, retain the faulty build's map for crash analysis, and create a corrected artifact with a higher code if needed. I do not plan on normal device downgrade as rollback. I also watch internal-track codes so test builds do not block a later production promotion. This discipline makes customer support, crash triage and hotfixes traceable to one binary.”
+
+## How to answer in the interview
+
+- **Why:** users need valid upgrade path.
+- **How:** bind code, name, notes and artifact.
+- **Trade-off:** automation versus editorial accuracy.
+- **Failure case:** duplicate version code blocks hotfix.
+- **Production solution:** CI uniqueness check and upgrade test.
 
 ## Deep-dive talking points
 

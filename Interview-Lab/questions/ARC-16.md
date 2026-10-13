@@ -24,6 +24,10 @@ Compare navigation, cohesion, ownership and Gradle module implications of two pa
 
 Package-by-layer زي `ui/`, `domain/`, `data/` على مستوى app سهلة في البداية لكن feature واحدة بتتوزع على folders بعيدة. Package-by-feature زي `checkout/ui`, `checkout/data` تجمع الملفات اللي بتتغير مع بعض وتساعد ownership. في app كبيرة ممكن تعمل feature modules ومعاها shared core modules لعقود حقيقية؛ ما تعملش `core` garbage dump. تنظيم packages وحده ما يفرضش compile-time boundaries؛ Gradle module dependencies وvisibility/tests هي اللي تمنع imports غلط.
 
+### Practical walkthrough in Egyptian Arabic
+
+Package-by-layer تجمع كل ViewModels بعيدًا عن feature data، فيصعب تتبع change؛ package-by-feature يضع feature code قريبًا، لكن shared contracts تحتاج مكان واضح. في مشروع كبير، ابدأ feature modules أو packages بحدود dependency ومنع cycles. لا تنقل الملفات فقط وتعتبر coupling حُل؛ راجع Gradle graph وAPI exposure واختبارات كل feature.
+
 ## Why it matters and how it works
 
 Packaging improves discoverability and team ownership; modules can enforce dependency direction. Choose the shape that minimizes changes scattered across unrelated areas while preserving shared contracts.
@@ -55,6 +59,14 @@ A layer-first tree makes it easy to find all repositories or ViewModels, but wor
 ## Interview answer — deep senior
 
 I choose organization based on team workflow and change coupling. If most commits touch UI, domain, and data for one feature, grouping those files improves discoverability and review. If a cross-cutting platform layer changes independently, a dedicated module can make sense. Feature modules can help parallel ownership and incremental builds, but too many tiny modules add configuration and build overhead. Package names are not a substitute for boundaries: Kotlin code can import across packages unless visibility or module dependencies prevent it. I would define allowed module edges, keep shared contracts small, and periodically audit the `common` area for accidental centralization. The design should make changes local without making simple code hard to find. There is a build-system dimension beyond file navigation. Gradle edges can prevent one feature from importing another feature’s implementation, while packages alone cannot. More modules may improve parallel build behavior in some codebases but add configuration and dependency management; I would measure. I keep `internal` visibility where possible and audit shared modules for becoming a dumping ground. The best layout helps a new engineer find a feature and lets a team change it without surprising cross-feature rebuilds.
+
+## How to answer in the interview
+
+- **Why:** structure should match change ownership.
+- **How:** group by feature with explicit shared contracts.
+- **Trade-off:** discoverability versus duplication.
+- **Failure case:** packages move but dependencies still circular.
+- **Production solution:** module boundaries and dependency checks.
 
 ## Deep-dive talking points
 

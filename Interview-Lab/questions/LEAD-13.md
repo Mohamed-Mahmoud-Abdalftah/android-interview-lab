@@ -25,6 +25,10 @@ You discover a critical vulnerability days before launch. What is your release d
 
 ثغرة critical قبل launch لا تتخبّى ولا تتسيب عشان التاريخ. نوقف الجزء المعرّض أو نأجل release حسب exposure، نتحقق من exploit path ونطاق النسخ، نبلغ security/product/leadership بقرار مكتوب وخيارات: fix، feature gate، scope reduction أو delay. لو فيه مستخدمين بالفعل، incident response وربما تدوير secrets ومراقبة. نرجع launch بعد retest مستقل وخطة rollout.
 
+### Practical walkthrough in Egyptian Arabic
+
+Vulnerability قبل launch تحتاج قرار مبني على exploitability وimpact، لا مجرد severity label. اعرف affected versions، attack path، data/financial exposure، وهل في mitigation موثوقة. اشرك security وbackend وrelease owner، واختبر fix في release variant، وقرر go/no-go مكتوب. لو الخطر critical قابل للاستغلال وما عندكش containment مثبت، أوقف النشر. لو في users متأثرين أصلًا، حضّر disclosure وrotation وmonitoring حسب السياسة. لا تستخدم “الوقت ضيق” كبديل للأدلة.
+
 ## Why it matters and how it works
 
 Risk assessment considers affected asset, exploitability, blast radius and compensating controls. A local UI guard cannot repair server authorization flaw. Release authority and regulatory requirements may vary; technical recommendation should make residual risk explicit.
@@ -55,7 +59,15 @@ Run a focused security review and release candidate test on actual artifact, ver
 
 ## Interview answer — deep senior
 
-“I separate discovery, containment, remediation and release decision. First I reproduce safely, preserve evidence and map the trust boundary: can a tampered client move money or expose secrets? If yes, I recommend blocking the affected launch path and applying a server-controlled mitigation that covers old clients. I engage security, backend, product and incident owners promptly, quantify affected cohorts and evaluate whether unaffected features can ship safely. The fix includes negative tests for forged requests, logging/secret review and rollback compatibility. I do not trade away a critical control for a date; the decision record states risks, owner, retest evidence and monitored rollout plan. Prelaunch review finds client-only refund eligibility. An app-only patch is insufficient.”
+“I establish the facts before committing to launch: which builds are affected, what an attacker can reach, whether exploit requires authentication, and the potential user or financial impact. I involve security, mobile, backend and the release owner, inspect a reproducible exploit or reliable analysis, and identify containment that can be verified—not a hopeful feature flag. A critical exploitable issue with no proven mitigation blocks release; if a fix is available, it goes through a targeted release-like test and regression checks. I document the go/no-go rationale, owner and remaining uncertainty. If existing users are exposed, launch timing is only one part of the response: we may need credential rotation, server controls, monitoring and disclosure under the organization’s incident policy. The trade-off is schedule impact versus irreversible trust loss. I avoid promising that client obfuscation or a UI change can repair a missing backend authorization boundary. The decision is revisited when new evidence arrives, and I keep a rollback or containment path ready.”
+
+## How to answer in the interview
+
+- **Why:** security exposure can outlast launch delay.
+- **How:** verify exploitability, impact and mitigation.
+- **Trade-off:** schedule pressure versus user harm.
+- **Failure case:** untested flag called a complete fix.
+- **Production solution:** document go/no-go and validate release fix.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for exploit proof, server-side containment, old-client impact, decision o
 
 ## Self-check rubric
 
-Can you state the context, decision evidence, alternatives, affected people, measurable result and both follow-up answers?
+Describe exploitability, exposure and legal/user impact, then decide whether to block launch, mitigate or limit rollout with security ownership. State the evidence needed to resume.
 
 ## References and reviewed-on date
 
 - [Android security best practices](https://developer.android.com/privacy-and-security/security-best-practices) — platform security guidance.
 - [OWASP MASVS](https://mas.owasp.org/MASVS/) — control assessment.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

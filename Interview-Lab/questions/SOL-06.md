@@ -40,6 +40,10 @@ class CanTransfer(private val source: AccountStatusSource) {
 ```
 A Retrofit-backed class can implement the contract in data, while tests use a fake.
 
+## Practical walkthrough
+
+لو `CanTransfer` بتستورد `RetrofitTransferApi` وتفهم HTTP codes، business rule مربوط بتفاصيل الشبكة. خليها تسأل `AccountStatusSource` عن `AccountStatus` مفهومة في الدومين. الـdata adapter يترجم response وnetwork errors، والـcomposition root يربط adapter بالعقد. اختبر قرار التحويل بـfake من غير Android أو network. لازم تحدد معنى الحالة القديمة أو unknown: هل تمنع التحويل ولا تطلب refresh؟ مجرد interface حوالين Retrofit response مش DIP مفيد، لأن نوع النقل لسه متسرب جوه policy.
+
 ## Trade-offs and decision criteria
 
 A contract adds indirection and DI wiring. In a tiny feature, depending on a concrete repository may be simpler if it exposes stable app data. Use DIP where volatile implementation would otherwise reach important policy.
@@ -58,11 +62,19 @@ DIP means high-level policy depends on a stable abstraction rather than a specif
 
 ## Interview answer — structured
 
-I separate the business decision from the mechanism that fetches inputs. A transfer eligibility rule should know account status, not Retrofit response types or a particular database. It depends on a small `AccountStatusSource` contract, while a data adapter implements that contract. The app graph injects the implementation. This keeps policy tests fast and transport changes local. I add the abstraction when it protects a meaningful boundary, not for every pure helper. In a transfer feature, I would ask for an account eligibility fact, not an HTTP response object. The data adapter can decide whether that fact comes from cache or network. The use case remains testable with a fake source and unaffected by a Retrofit upgrade.
+I separate the business decision from the mechanism that fetches inputs. A transfer eligibility rule should know account status, not Retrofit response types or a particular database. It depends on a small `AccountStatusSource` contract, while a data adapter implements that contract. The app graph injects the implementation. This keeps policy tests fast and transport changes local. I add the abstraction when it protects a meaningful boundary, not for every pure helper. In a transfer feature, I would ask for an account eligibility fact, not an HTTP response object.
 
 ## Interview answer — deep senior
 
-The key is source dependency direction. The high-level policy names the information it needs in domain terms; the low-level adapter knows how to get it from a server or database. Both can be wired at runtime through DI, but using Hilt alone does not guarantee DIP if the use case still imports a concrete SDK. I inspect module edges and signature types, especially DTO or Android framework leakage. In classic Clean Architecture, contracts often belong inward with policy. Android’s practical guidance may organize the optional domain layer above data repositories, so I state the chosen model explicitly. For a critical flow I also test substitution and server authority; swapping adapters should not alter the rule’s result meaning. I also separate dependency source arrows from runtime control flow. The use case invokes a contract, and DI supplies an adapter that eventually performs I/O; that does not require the policy source code to import the adapter. I would locate the interface where the policy module can reference it without a cycle and keep its signature in domain terms. If the app follows Android’s simpler optional-domain guidance, a UI-to-data repository dependency may be adequate; I would state that model rather than claiming all apps must have the classic inward graph. The question is which changes need isolation.
+The key is source dependency direction. The high-level policy names the information it needs in domain terms; the low-level adapter knows how to get it from a server or database. Both can be wired at runtime through DI, but using Hilt alone does not guarantee DIP if the use case still imports a concrete SDK. I inspect module edges and signature types, especially DTO or Android framework leakage. In classic Clean Architecture, contracts often belong inward with policy. Android’s practical guidance may organize the optional domain layer above data repositories, so I state the chosen model explicitly. For a critical flow I also test substitution and server authority; swapping adapters should not alter the rule’s result meaning. Dependency inversion concerns the direction of source-level dependencies: high-level transfer policy should not import transport details. I would define a small status contract in the consumer's language and put the Retrofit mapping in a data adapter. Wiring can be manual or through Hilt; the mechanism of construction is a separate concern. The useful test replaces the source with an in-memory fake and checks blocked, active, and unknown states. The failure mode is an interface whose method still returns `Response<Dto>`: that merely renames the dependency while preserving the coupling. In production I would also specify stale-data behavior, cancellation, and how authorization is confirmed by the backend.
+
+## How to answer in the interview
+
+- **Why:** Show dependency direction.
+- **How:** map HTTP data into domain status.
+- **Trade-offs:** mention extra boundary cost.
+- **Failure cases:** flag `Response<Dto>` leakage.
+- **Production solutions:** end with fake tests and backend authority..
 
 ## Deep-dive talking points
 
@@ -82,4 +94,4 @@ Show an inverted account-status contract, locate its implementation, and explain
 - [Robert C. Martin, A Little Architecture](https://blog.cleancoder.com/uncle-bob/2016/01/04/ALittleArchitecture.html) — dependency inversion.
 - [Android dependency injection](https://developer.android.com/training/dependency-injection) — DI mechanics.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

@@ -24,6 +24,10 @@ Compare latest-pair combination with positional pairing.
 
 `combine` بيطلع قيمة جديدة لما أي upstream يطلع بعد ما كل مصدر قدّم قيمة أولى؛ يستخدم أحدث قيمة من كل واحد. `zip` يقرن الأولى بالأولى والتانية بالتانية وينتظر pairs؛ لو واحد خلص من غير شريك يقف. UI state من Room + filter غالبًا `combine`؛ pairing خطين من نتائج متطابقة بالترتيب قد يناسب `zip`.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو `priceFlow` و`currencyFlow` بيتغيروا بسرعات مختلفة، `combine` يطلع آخر price مع آخر currency بعد ما الاتنين يطلعوا أول قيمة؛ كل تغيير بعد كده يحدث النتيجة. `zip` يطابق أول مع أول وثاني مع ثاني وينتهي حسب اكتمال أحد المصدرين؛ مناسب pairing محدود، مش شاشة dashboard حية. جرب emissions غير متساوية في test.
+
 ## Why it matters and how it works
 
 `combine` can emit many outputs for a burst from one side using latest counterpart; it is not an atomic database snapshot across independent sources. `zip` queues/pairs emissions and completes when pairs cannot continue. Choose based on temporal semantics, not just syntax.
@@ -65,7 +69,15 @@ A catalog screen combines current cached items with text filter state, showing a
 
 ## Interview answer — deep senior
 
-“The two operators answer different time questions. Combine asks, ‘What is the latest pair now?’ and may recompute repeatedly as either stream changes. Zip asks, ‘What is pair number n?’ and naturally fits coordinated finite sequences, but a slow side backpressures pairing and an early completion ends it. For Android state, combine usually fits Room rows plus a filter or connectivity flag. I control expensive transformations and ensure the UI can represent loading before each source first emits. For price and inventory, the latest independent values may come from different server revisions; a versioned backend aggregate is needed for a consistent checkout. Tests vary source rates and completion order to expose accidental assumptions.”
+“The two operators answer different time questions. Combine asks, ‘What is the latest pair now?’ and may recompute repeatedly as either stream changes. Zip asks, ‘What is pair number n?’ and naturally fits coordinated finite sequences, but a slow side backpressures pairing and an early completion ends it. For Android state, combine usually fits Room rows plus a filter or connectivity flag. I control expensive transformations and ensure the UI can represent loading before each source first emits. For price and inventory, the latest independent values may come from different server revisions; a versioned backend aggregate is needed for a consistent checkout. Tests vary source rates and completion order to expose accidental assumptions. I would compare the pairing rule, not just the function names. `combine` waits until each upstream has produced a value, then emits a result whenever either source updates using the latest value from the other. That fits a UI derived from current account and current settings. `zip` pairs the nth value from each source and advances in lockstep, so a fast side waits for the slower side and completion can end the paired stream. It is useful for corresponding finite sequences, not for a long-lived screen that should react whenever either input changes. I would demonstrate with two flows of unequal speed and list the emitted pairs. When one input is StateFlow, combine can use its current value immediately as one side.”
+
+## How to answer in the interview
+
+- **Why:** live UI needs latest combination, finite pairs need matching positions.
+- **How:** trace unequal-rate sources.
+- **Trade-off:** combine can update often; zip waits.
+- **Failure case:** zip leaves dashboard stale.
+- **Production solution:** test first emission and completion behavior.
 
 ## Deep-dive talking points
 

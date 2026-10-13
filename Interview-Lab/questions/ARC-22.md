@@ -24,6 +24,10 @@ Identify transport-schema coupling, null/error leakage and UI churn from direct 
 
 Repository بترجع `UserDto` لـCompose يعني UI بقت مرتبطة بأسماء JSON fields، nullable transport fields، وAPI version. أي server rename أو تغيير units ينتقل للشاشة، وممكن `null` يتعرض كقيمة أو يعمل crash. كمان DTO غالبًا لا تمثل cache freshness ولا domain validation. الأحسن repository تعمل mapping لـdomain model أو app data contract، وViewModel يطلع UI model للعرض. لكن ما تعملش models متطابقة بلا سبب؛ اعزل boundaries اللي احتمال تغييرها أو فيها invariants حقيقية.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو Repository يرجع DTO لـCompose، nullable fields وHTTP enum strings تنتشر في UI، ويتغير rendering مع wire schema. اعمل mapper عند boundary إلى domain/UI model مع validation؛ unknown status لا يتحول Approved. قد يكون model واحد مقبول في feature صغيرة لو contracts متطابقة ومقيدة، لكن وضح السبب واختبر API drift. لا تضف تحويلات شكلية بلا معنى.
+
 ## Why it matters and how it works
 
 A repository should hide data sources and expose stable app data. A DTO is optimized for transport, not rendering. Mapping prevents server schema changes from rippling into UI and gives one place for validation and error classification.
@@ -55,6 +59,14 @@ A DTO represents what the server sent, not necessarily what the screen should tr
 ## Interview answer — deep senior
 
 The coupling risk is broader than a compile error. A DTO might allow missing required fields, represent cents as a nullable number, or use server enum strings that can gain unknown values. If UI chooses defaults independently, two screens may disagree or display false business facts. Repository mapping centralizes validation and preserves a stable app contract, while UI mapping handles locale and visual state. I would test payload changes and malformed cases at the adapter boundary, and avoid exposing Retrofit `Response` or exception types through the repository. There is a maintenance cost to extra models, so I choose them where transport and domain have independent reasons to change. For price, payment or account data, that protection is usually worth it. I would check whether the DTO also leaks server enum values, optional IDs or raw exception text. Those are transport concerns with different evolution and trust rules than UI. The repository should expose a model that represents validated app meaning, and the ViewModel should project it for locale and screen design. Mapping is not free, but tests at the boundary catch drift early. For business-critical values such as money, I prefer an explicit unit type and reject malformed payloads rather than substituting zero.
+
+## How to answer in the interview
+
+- **Why:** wire contracts change independently from UI.
+- **How:** map and validate before rendering.
+- **Trade-off:** boundary code versus direct simplicity.
+- **Failure case:** new backend enum crashes/silently succeeds.
+- **Production solution:** contract test and explicit unknown handling.
 
 ## Deep-dive talking points
 

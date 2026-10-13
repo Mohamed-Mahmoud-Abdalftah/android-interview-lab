@@ -23,7 +23,11 @@ A flaky test passes locally but fails on CI. Explain triage and mitigation.
 
 ## Explanation in Arabic
 
-اختبار ينجح محليًا ويفشل CI مش معناه “CI بطّيء” فقط. نجمع first failure artifacts، seed، device/API، shard، test order وtiming. نعيد على نفس image وبـstress loop، ونشوف shared state، Main dispatcher cleanup، network، animation أو race في app. Retry مؤقت ممكن يساعد التشخيص بس ما نخفيش فشل أصلي.
+Flaky test على CI فقط تحتاج triage مبني على evidence، مش `retry: 3` وخلاص. سجّل test order/shard، seed، API level، CPU pressure، screenshot، logcat وnetwork timing. شغّلها منفردة ثم بعد tests اللي قبلها؛ لو فشلت بعد logout مثلًا، راجع Singleton fake أو DB ما اتصفّرتش.
+
+## Practical walkthrough
+
+لو ترتبط بالضغط، ابحث عن fixed sleeps أو race بين listener والassertion، واستخدم fake gate أو انتظار state/semantics محددة. قارن config المحلية بـCI: locale/timezone، minified variant، parallel workers. Quarantine مؤقتة لها owner وexpiry وتغطية بديلة للflow الحرجة؛ retry يخفي نسبة الفشل ولا يصلح السبب. بعد fix، أعد التشغيل بعدد كاف وفي نفس shard الأصلي.
 
 ## Why it matters and how it works
 
@@ -51,11 +55,19 @@ Track flake rate, affected branches/devices and time-to-fix. CI publishes first-
 
 ## Interview answer — structured
 
-“I compare the failing CI shard, emulator image, API level, test order and resource load with local runs. I loop the focused test and adjacent tests, inspect screenshots/logs and replace sleeps with explicit synchronization. If shared fakes or database rows leak, I reset them; if the app has a race, I fix it and add a regression. A bounded retry or quarantine is visible and owned, not silently green. ”
+“I compare the failing CI shard, emulator image, API level, test order and resource load with local runs. I loop the focused test and adjacent tests, inspect screenshots/logs and replace sleeps with explicit synchronization. If shared fakes or database rows leak, I reset them; if the app has a race, I fix it and add a regression. A bounded retry or quarantine is visible and owned, not silently green.”
 
 ## Interview answer — deep senior
 
-“I use a hypothesis table: environment mismatch, test harness synchronization, cross-test contamination or real app concurrency bug. I preserve artifacts from attempt one, run the same container/device and shard order repeatedly, and instrument state transitions. If a critical checkout test is flaky, I cannot simply quarantine it without another gate; I may move the invariant to a deterministic domain/backend test while repairing UI coverage. I measure flake rate and CI cost, set owner/deadline, and close only after repeated clean runs on the original environment.”
+“I preserve the failed run as evidence before changing the test. I record build SHA, device or emulator image, shard, order, seed, logcat, screenshot and timing. Then I rerun the test alone and paired with its predecessor. If a checkout test fails only after logout, I inspect shared DI fakes, database rows and session singletons; if it fails under CPU load, I look for fixed sleeps and unsynchronized callbacks. I change the causal boundary—reset per-test state, inject a controlled fake, or wait for a user-visible semantics condition—and rerun the original CI shard repeatedly. I do not just increase the sleep or add three retries. Retries can be useful diagnostic sampling, but a green retry is still evidence of nondeterminism. If the test must be quarantined to unblock unrelated work, it gets an owner, expiry, incident link and another release gate for the critical behavior. I also check whether the flake reveals a genuine app race, such as a late payment result overwriting a newer screen; in that case the production code needs a fix, not only the test.”
+
+## How to answer in the interview
+
+- **Why:** CI-only flakes may reveal shared state or a real race.
+- **How:** capture shard, seed and logs, reproduce in order and fix the causal boundary.
+- **Trade-off:** temporary quarantine versus coverage loss.
+- **Failure case:** longer sleep only lowers failure frequency.
+- **Production solution:** repeated original-shard run with owned quarantine policy.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for first-failure artifact, same shard/order reproduction, race versus ha
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Reproduce the CI-only failure with its shard/order/environment, preserve logs and seed, isolate shared state or timing, then verify repeated green runs. State when a retry masks rather than fixes the defect.
 
 ## References and reviewed-on date
 
 - [Android testing guidance](https://developer.android.com/training/testing) — test environment and reliability.
 - [Compose testing](https://developer.android.com/develop/ui/compose/testing) — synchronization APIs.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

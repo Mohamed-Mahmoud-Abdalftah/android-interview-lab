@@ -25,6 +25,10 @@ Compare cryptographic keys, access tokens, refresh tokens, API keys, and passwor
 
 Cryptographic key بتستخدم في encrypt/sign؛ password سرّ المستخدم للتحقق ومينفعش يتخزن plaintext؛ access token غالبًا bearer قصير العمر للـAPI؛ refresh token أطول عمرًا ويجيب tokens جديدة؛ API key بتعرّف تطبيق أو مشروع حسب سياسة الـprovider، ومش لازم تثبت هوية مستخدم. خلطهم يخلّي team يخزن token في logs أو يفترض إن API key داخل APK سرّ مستحيل يتسرب.
 
+## Practical walkthrough
+
+في checkout، password يثبت هوية المستخدم وقت login، access token يحمل صلاحية محدودة للـAPI، refresh token يبدله، وAPI key عامة ممكن تعرّف تطبيق خرائط. مفتاح التشفير يحمي بيانات أو يوقّع challenge. كل واحد له دورة حياة مختلفة: logout يبطل refresh token من السيرفر، لكن تدوير encryption key محتاج migration للبيانات المشفّرة.
+
 ## Why it matters and how it works
 
 Each credential has a distinct issuer, verifier, scope and revocation path. Passwords are verified server-side with an appropriate salted password-hashing scheme. Access/refresh tokens are issued and checked by the identity backend. Cryptographic keys may be generated in Android Keystore. A public mobile API key can identify a project but needs server restrictions and quotas.
@@ -51,10 +55,20 @@ Document a credential inventory: owner, storage location, scope, lifetime, rotat
 
 ## Interview answer — structured
 
-“The key distinction is who verifies and revokes the credential. A password is a user secret checked server-side, an access token is typically a short-lived bearer authorization artifact, and a refresh token obtains new access tokens and needs stronger lifecycle controls. A cryptographic key performs encryption or signing, often using Keystore locally. An API key in a mobile binary can be extracted, so private provider credentials belong on the backend. I never log any of these values. I also ask which party issues and verifies each value. An access token generally authorizes a bounded API session; a refresh token obtains new tokens and needs revocation and race handling. A provider API key bundled with a mobile app may identify that app, but cannot safely grant private payment authority.”
+“I separate secrets by purpose and authority. A password authenticates the user and should never be stored plaintext. Access tokens are scoped, short-lived session credentials; refresh tokens need tighter storage and server revocation. API keys may be public mobile identifiers or privileged provider credentials, depending on the provider contract. Cryptographic keys encrypt or sign and have a different rotation problem. In a fintech app I keep high-authority provider keys on the backend and document expiry, storage and recovery for each credential.”
+
 ## Interview answer — deep senior
 
-“For a fintech app I start with a threat inventory rather than call everything a secret. I separate identity proof, session delegation and cryptographic operations. Access tokens get narrow scopes and expiry; refresh tokens get server-side revocation, rotation and race-safe handling; Keystore keys can protect necessary local data but cannot make client decisions authoritative. Passwords stay out of app persistence after login and are hashed with a suitable server scheme. Public API identifiers may be shipped with restrictions, while private payment credentials stay server-side. Incident response differs: revoke a token, rotate an API key, or re-enroll a device-bound key. For a fintech system I would make a credential inventory with scope, storage, expiry, rotation and incident response for every class. Passwords are user knowledge checked by a server-side salted password-hashing scheme; they should not persist in the app after login. Keystore keys perform operations without exporting key material, but do not prove a compromised app is trustworthy. Bearer tokens can be copied while in use, so access tokens are short-lived and refresh grants can be revoked and rotated by the issuer. A public mobile API identifier needs provider restrictions and quotas; a secret capable of charging a card remains behind a backend endpoint that validates user, amount and order state. Logs and crash reports must exclude all credential values.”
+“I classify credentials by who issues them, what authority they carry, and how they are revoked. A password proves user knowledge at login and is never stored as plaintext. A short-lived access token carries delegated API access; a refresh token extends the session and needs server rotation and revocation. An API key may only identify a mobile project, or it may be a privileged provider secret that must stay on the backend. Cryptographic keys encrypt or sign data and need their own rotation plan. For a payment app I would document these lifecycles separately, because rotating a session token is very different from migrating ciphertext under a new key. An interview answer should also cover incident response. If a refresh token leaks, revoke its session and rotate tokens; if an embedded provider secret leaks, rotate it at the provider and inspect abuse; if an encryption key is lost, migrate or recover ciphertext rather than merely issuing a new token. A credential inventory with owner, privileges, expiry and recovery path makes these actions executable instead of theoretical.”
+
+## How to answer in the interview
+
+- **Why:** calling everything a secret hides its authority.
+- **How:** classify each by issuer, storage, scope, expiry, rotation, and revocation.
+- **Trade-off:** shorter sessions improve exposure limits but add refresh traffic.
+- **Failure case:** shipping a privileged provider key in an APK.
+- **Production solution:** server-own private keys and rotate/revoke sessions explicitly.
+
 ## Deep-dive talking points
 
 Classify each credential by issuer, holder, scope, revocation and lifetime; explain why an APK API key is not equivalent to a backend private key.
@@ -73,4 +87,4 @@ Can I name issuer, verifier, lifetime, storage, and revocation for each of the f
 - [Android Keystore system](https://developer.android.com/privacy-and-security/keystore) — key operations.
 - [OWASP MASVS authentication](https://mas.owasp.org/MASVS/controls/MASVS-AUTH-1/) — authentication controls.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

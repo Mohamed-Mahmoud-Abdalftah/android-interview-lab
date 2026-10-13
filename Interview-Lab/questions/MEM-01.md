@@ -26,6 +26,10 @@ What is memory management in Android? What does garbage collection do?
 
 Android Runtime (`ART`) يدير Java/Kotlin objects داخل managed heap. الـGC يتتبع الأشياء اللي لسه reachable من roots ويستعيد مساحة غير reachable. ده لا يعني إن أي حاجة كبيرة هتختفي فورًا: لو listener أو singleton ماسك Activity، تفضل reachable وده leak. كمان bitmap/native allocations وfile descriptors ومصادر أخرى محتاجة إدارة عمرها؛ GC مش بديل عن `close()` أو lifecycle cleanup. الذاكرة المحدودة وكثرة allocations يزودوا GC pressure ويعملوا jank أو `OutOfMemoryError`، فبنقيس retained heap وallocation rate والـPSS حسب المشكلة.
 
+## Practical walkthrough
+
+في feed صور، افتح واقفل الشاشة عشر مرات على نفس الجهاز وسجّل الـPSS والـJava heap والـnative/graphics قبل وبعد كل مرة. لو الذاكرة ارتفعت أثناء العرض ثم استقرت، ده غير إن كل Activity قديمة تفضل موجودة بعد الإغلاق. الـGC ممكن يشتغل بسبب ضغط التخصيص، لكنه مش تصريح إننا نهمل streams أو caches. دور على مالك الـreference ووقت انتهائه قبل تعديل حجم الـheap.
+
 ## Why it matters and how it works
 
 ART allocates managed objects in a process heap and reclaims objects no longer reachable. Android can trim caches and kill less important processes under memory pressure; neither outcome is a contract that the current screen state survives. GC scheduling is runtime-controlled. High allocation rates can increase pauses or CPU work, while long-lived references keep an object graph alive. Native and graphics memory contribute to process footprint even when a Java heap chart looks modest.
@@ -56,7 +60,15 @@ Set representative low-memory device tests and track crash/OOM and frame metrics
 
 ## Interview answer — deep senior
 
-“I separate memory management into reachability, allocation behavior, and total process footprint. ART's collector can reclaim managed objects that are no longer reachable from roots; it cannot reclaim a destroyed Activity still referenced by a singleton or callback. It also cannot substitute for closing files, cursors, or other owned resources. A rising retained baseline suggests a leak; a stable baseline with frequent spikes and collections suggests allocation pressure; native or graphics growth may not appear as a Java heap leak. I reproduce the user flow, inspect heap retaining paths and memory categories, and correlate GC and frame timing before changing code. The fix may be lifecycle cleanup, bounded caching, or correctly sampled image decode. I verify on constrained devices and monitor OOM and jank after release.”
+“I separate memory management into reachability, allocation behavior, and total process footprint. ART's collector can reclaim managed objects that are no longer reachable from roots; it cannot reclaim a destroyed Activity still referenced by a singleton or callback. It also cannot substitute for closing files, cursors, or other owned resources. A rising retained baseline suggests a leak; a stable baseline with frequent spikes and collections suggests allocation pressure; native or graphics growth may not appear as a Java heap leak. I reproduce the user flow, inspect heap retaining paths and memory categories, and correlate GC and frame timing before changing code. The fix may be lifecycle cleanup, bounded caching, or correctly sampled image decode. I verify on constrained devices and monitor OOM and jank after release. For a feed regression, I run ten matched open-close cycles and record post-quiescence PSS, managed heap, native or graphics use, and retained screen counts. A rising high-water mark alone is inconclusive; I want a slope tied to a resource class. That experiment separates an intentional warm cache from an old Activity still reachable.”
+
+## How to answer in the interview
+
+- **Why:** Explain ART reachability and total process footprint.
+- **How:** Measure a repeated screen journey by memory category and retained count.
+- **Trade-off:** A cache may improve latency while raising steady-state memory.
+- **Failure case:** GC cannot close owned resources or collect reachable obsolete screens.
+- **Production solution:** Fix ownership and size budgets; rerun the same device trace.
 
 ## Deep-dive talking points
 
@@ -77,4 +89,4 @@ Explain reachability and collection, name two non-heap resources, distinguish ch
 - [Overview of memory management](https://developer.android.com/topic/performance/memory-overview) — ART heap and collection behavior.
 - [Manage your app's memory](https://developer.android.com/topic/performance/memory) — practical memory management.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The feed case is illustrative.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The feed case is illustrative.

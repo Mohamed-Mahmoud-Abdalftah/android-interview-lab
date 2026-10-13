@@ -24,6 +24,10 @@ Model business states and legal transitions explicitly, including persistence an
 
 State machine بتحدد حالات واضحة وانتقالات مسموحة بدل Booleans متفرقة. مثل upload: Pending → Uploading → Complete أو Retryable/Failed، مع event IDs وشروط لكل انتقال. Payment: Unknown بعد timeout لا تتحول Failed من غير server proof. نخزن states المهمة transactionally، ونرفض transitions قديمة/out-of-order، ونكتب tests لكل edge وحالة process death.
 
+## Practical walkthrough
+
+في upload، `Sending(attempt=2)` ما ينفعش ترجع `Pending` بسبب callback قديمة بعد `Complete`. اكتب transition function تقبل current state وevent وترد state جديدة أو رفض؛ خزن version مع الحالة المهمة. Payment timeout حالة Unknown، مش Failed، لحد backend يثبت النتيجة. اختبر illegal transitions وreplay والسباق بين worker وnetwork callback قبل ربطها بالـUI.
+
 ## Why it matters and how it works
 
 A reducer/transition function centralizes rules and can be pure for testability. Persistent state version or compare-and-set prevents concurrent workers overwriting newer results. External effects are issued through durable commands with stable IDs; completion events must be reconciled against authoritative source.
@@ -69,7 +73,15 @@ A payment repository stores operation state/version, applies server receipts tra
 
 ## Interview answer — deep senior
 
-“I use the state machine to capture invariants that would otherwise live in comments. Each event has an identity and precondition, transitions are validated against current version, and persistent updates are atomic. That matters when two workers or callbacks race: a delayed error must not overwrite an already confirmed success. External side effects are separate from pure state transitions, so I persist a command/operation ID before send and reconcile receipt afterward. For UI, a sealed state avoids impossible Boolean combinations; for payments, backend ledger remains authoritative and local Unknown is honest. I test every transition, duplicate event, out-of-order response, cancellation and crash window, and I log rejected transitions for diagnosis without leaking sensitive data. Migration must preserve older state encodings.”
+“I use the state machine to capture invariants that would otherwise live in comments. Each event has an identity and precondition, transitions are validated against current version, and persistent updates are atomic. That matters when two workers or callbacks race: a delayed error must not overwrite an already confirmed success. External side effects are separate from pure state transitions, so I persist a command/operation ID before send and reconcile receipt afterward. For UI, a sealed state avoids impossible Boolean combinations; for payments, backend ledger remains authoritative and local Unknown is honest. I test every transition, duplicate event, out-of-order response, cancellation and crash window, and I log rejected transitions for diagnosis without leaking sensitive data. Migration must preserve older state encodings. The key test is an out-of-order event: a delayed timeout callback arrives after a success receipt. The transition function must reject moving Complete back to Retryable. For durable workflows I would store version and state in one transaction and use compare-and-set semantics so two workers cannot both advance an operation from the same prior version. I would model Unknown explicitly for remote ambiguity and require authoritative status before terminal payment state. Pure transition tests cover allowed and forbidden edges; integration tests cover persistence races.”
+
+## How to answer in the interview
+
+- **Why:** explicit states make invariants reviewable.
+- **How:** define events, preconditions, versions, and atomic transition persistence.
+- **Trade-off:** more types and transitions require maintenance.
+- **Failure case:** delayed callback overwrites a terminal state.
+- **Production solution:** pure transition tests plus transactional compare-and-set on durable state.
 
 ## Deep-dive talking points
 
@@ -89,4 +101,4 @@ Can I enumerate states, reject illegal transitions and protect against stale con
 - [Android architecture guide](https://developer.android.com/topic/architecture) — UDF and SSOT.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — durable operation states.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

@@ -32,6 +32,10 @@ Cohesion is about related change pressure and invariants. A large class can be c
 
 Refactor plan for `CheckoutManager`: (1) test submit/timeout/duplicate tap; (2) move provider SDK mapping to adapter; (3) move eligibility into a policy component; (4) keep UI state transition in ViewModel; (5) move durable request tracking to repository. Measure changed-file locality afterward.
 
+## Practical walkthrough
+
+افتح `CheckoutManager` وشوف change history بدل عدّ الأسطر. لو تعديل provider SDK، eligibility policy، UI loading، وتخزين request ID كلهم بيعدّلوا نفس class، دي أسباب تغيير مختلفة. حدد invariants قبل النقل: no duplicate submission، timeout نتيجته unknown، وserver status هو النهائي. انقل SDK mapping إلى adapter، policy إلى component قابل للاختبار، UI state إلى ViewModel، وtracking durable إلى repository. بعد كل خطوة شغّل behavior tests عشان ما تضيعش ترتيب الأحداث. لو فُصلت functions بس ولسه كل class عارفة تفاصيل التانية، المشكلة ما اتحلتش.
+
 ## Trade-offs and decision criteria
 
 Incremental extraction temporarily leaves adapters and duplicate paths but lowers risk. A big-bang rewrite may be faster on paper yet miss hidden behavior. Avoid microscopic classes that split one invariant across too many owners.
@@ -54,7 +58,15 @@ I inspect recent edits, callers and mutable fields to see which responsibilities
 
 ## Interview answer — deep senior
 
-A useful decomposition starts with data flow and invariants. I draw how a user action reaches network, persistence and UI state, and identify which fields are shared across those paths. Change history reveals separate actors: design, server schema, pricing and compliance. I put SDK translation in data, reusable policy in a focused component, and screen state in a ViewModel, but I do not scatter a cohesive transaction invariant across many classes. Before each move I write behavior tests for success, failure, cancellation, duplicate taps and process death where applicable. Afterward I inspect module dependencies and whether a new requirement changes fewer unrelated files. I use staged rollout and telemetry for high-risk payment changes. This is SRP applied through evidence rather than line-count rules. I would also prioritize by risk. A payment provider callback mapper can cause financial uncertainty and may be worth extracting before a harmless formatter. Characterization tests preserve what users observe, but I still challenge old behavior that is clearly wrong, documenting any intentional change. After extraction I inspect imports and call sites: if the old class still coordinates every detail, I may have created indirection without cohesion. Metrics such as changed-file count, test setup complexity, and incident rate help judge whether the design improved.
+A useful decomposition starts with data flow and invariants. I draw how a user action reaches network, persistence and UI state, and identify which fields are shared across those paths. Change history reveals separate actors: design, server schema, pricing and compliance. I put SDK translation in data, reusable policy in a focused component, and screen state in a ViewModel, but I do not scatter a cohesive transaction invariant across many classes. Before each move I write behavior tests for success, failure, cancellation, duplicate taps and process death where applicable. Afterward I inspect module dependencies and whether a new requirement changes fewer unrelated files. I use staged rollout and telemetry for high-risk payment changes. I look for clusters of changes and invariants rather than simply labeling a long class bad. In a checkout manager, provider mapping, eligibility, UI state transitions, and durable request tracking have different change actors. I would capture behavior tests for duplicate taps, timeout, and recovery, then extract one cluster at a time. The adapter handles SDK translation, the policy owns eligibility, the ViewModel exposes screen state, and a repository tracks durable request IDs. The risk is a cosmetic split where the new classes call each other in a cycle and still change together. I would review dependency direction and future changed-file locality, not just class length.
+
+## How to answer in the interview
+
+- **Why:** Use change history and invariants.
+- **How:** describe extraction order.
+- **Trade-offs:** mention temporary migration cost.
+- **Failure cases:** flag cyclic cosmetic split.
+- **Production solutions:** close with behavior tests and change-locality evidence..
 
 ## Deep-dive talking points
 
@@ -74,4 +86,4 @@ Identify three change actors and one shared invariant in a God Class; propose a 
 - [Robert C. Martin, SRP](https://blog.cleancoder.com/uncle-bob/2014/05/08/SingleReponsibilityPrinciple.html) — reasons to change.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — separation of concerns.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

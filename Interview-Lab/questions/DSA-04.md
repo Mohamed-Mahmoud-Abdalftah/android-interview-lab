@@ -25,6 +25,10 @@ Does Big O necessarily describe the worst case? Explain upper bounds versus case
 
 Big O رياضيًا upper bound للنمو، مش تلقائيًا worst case. لازم تقول “worst-case O(n)” أو “average-case O(1)” وتحدد توزيع/assumptions. مثل linear search أفضل حالة O(1)، أسوأ O(n)، ومتوسط O(n) لو العنصر موزع بشكل مناسب. تقدر تقول worst-case O(n²) لعملية O(n) لكنه bound ضعيف وغير مفيد.
 
+### Practical walkthrough in Egyptian Arabic
+
+Big O upper bound، وليس مرادفًا تلقائيًا للـworst case إلا لو قلت “worst-case O(...)”. مثال hash lookup expected `O(1)` لكن pathological collisions تغير الصورة؛ binary search best case `O(1)` لو المنتصف يطابق، worst `O(log n)`. في المقابلة حدد case والافتراضات وdata distribution، ثم اربطها بـSLA/latency بدل رقم بلا سياق.
+
 ## Why it matters and how it works
 
 Formally f(n)=O(g(n)) if constants c,n0 exist with f(n)≤c·g(n) for n≥n0. The case (best/average/worst/amortized) determines which cost function f is being bounded. Big O alone does not specify that case.
@@ -55,7 +59,15 @@ For a real-time POS UI, consider tail latency and worst-case spikes, not only ex
 
 ## Interview answer — deep senior
 
-“Formally Big O says one growth function is eventually no larger than a constant multiple of another. It says nothing by itself about how inputs are selected or whether the cost is best, average, worst or amortized. I define the input model before claiming complexity. A worst-case O(n²) bound for a linear algorithm is mathematically valid but misleading; O(n) is more informative. For UI work I consider worst-case and p95/p99 behavior because a rare slow frame is visible, while expected bounds may be appropriate for throughput-oriented caches. Average-case claims depend on input distribution. State assumptions honestly.”
+“Big O is an asymptotic upper bound, so it is not automatically the worst-case running time unless we say ‘worst-case O(...)’ and identify the input model. Binary search has a best case of one midpoint comparison and a worst case logarithmic number of comparisons, provided sorted random-access input. Hash-map lookup is commonly expected O(1) with suitable hashing and load behavior; I should not promise a strict constant worst case for every implementation and key distribution. I also distinguish average case from amortized cost: an array-backed list append may occasionally resize but average out over many appends. In an Android service or UI hot path I state whether an attacker can control keys or input size, because pathological behavior may then matter. I give the interviewer the assumptions, the case being analyzed, and a concrete operation count or invariant. After the theoretical bound, I still measure latency and allocations at representative sizes, since Big O alone cannot predict a frame deadline.”
+
+## How to answer in the interview
+
+- **Why:** complexity claims need assumptions.
+- **How:** name best, average, worst and upper bound.
+- **Trade-off:** concise bound versus realistic distribution.
+- **Failure case:** claim hash lookup is guaranteed constant.
+- **Production solution:** state measurement and fallback for pathological inputs.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for formal definition, loose bound, hash assumptions and tail latency.
 
 ## Self-check rubric
 
-Can you derive the bound, explain the Android example, identify a data or memory trade-off, and answer both follow-ups?
+Distinguish an asymptotic upper bound from worst-, average- and best-case input distributions; give one algorithm with different cases and state the assumption behind each.
 
 ## References and reviewed-on date
 
 - [Kotlin Map interface](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.collections/-map/) — map semantics.
 - [Android performance](https://developer.android.com/topic/performance) — latency measurement context.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

@@ -24,6 +24,10 @@ Whether the candidate understands screen versus lifecycle versus application own
 
 `viewModelScope` عمره مرتبط بالـViewModel وبيتعمله cancel لما الـViewModel يتشال نهائيًا؛ دوران الشاشة العادي غالبًا بيحتفظ بنفسه. `lifecycleScope` مرتبط بـLifecycleOwner زي Activity أو Fragment، وبيتوقف عند `DESTROYED`. الـapplication scope مملوك للتطبيق وبننشئه فقط لشغل محتاج يعيش بعد الشاشة، لكنه لا ينجو من قتل process.
 
+## Practical walkthrough
+
+لو Fragment بتعرض `StateFlow`، اجمعه في `viewLifecycleOwner.lifecycleScope` مع `repeatOnLifecycle(STARTED)` علشان الـcollector يقف وقت ما الـview مش ظاهرة ويبدأ تاني. حساب حالة الشاشة داخل ViewModel يفضل في `viewModelScope`. إرسال analytics ممكن يتسند لمالك على مستوى التطبيق إن كان لازم يكمل بعد التنقل، لكن الدفع أو sync المطلوب بعد موت الـprocess يحتاج حفظ الحالة وWorkManager.
+
 ## Why it matters and how it works
 
 AndroidX supplies the first two scopes with suitable Main-oriented context and cancellation hooks. For repeated UI collection use `repeatOnLifecycle` rather than assuming `lifecycleScope.launch` pauses at STOP. A custom application scope needs an injected owner, SupervisorJob/failure policy and shutdown control; it is memory lifetime, not durable execution.
@@ -73,7 +77,15 @@ An upload screen queues a durable upload request in a local table and WorkManage
 
 ## Interview answer — deep senior
 
-“I distinguish three lifetimes. A retained ViewModel generally survives an ordinary configuration change but is cleared when its navigation/screen owner is gone; `viewModelScope` then cancels. An Activity or Fragment lifecycle scope cancels at destruction, but starting a collector once in it does not automatically stop emissions at STOP. For views I use the view lifecycle and `repeatOnLifecycle`, or Compose lifecycle-aware state collection. An injected application scope can run in-process tasks beyond a screen, with an explicit SupervisorJob and exception policy, yet the OS may kill that process. For a critical upload or payment reconciliation I first persist an operation identifier, then schedule restartable work and expose progress through state, treating UI coroutines only as observers.”
+“I distinguish three lifetimes. A retained ViewModel generally survives an ordinary configuration change but is cleared when its navigation/screen owner is gone; `viewModelScope` then cancels. An Activity or Fragment lifecycle scope cancels at destruction, but starting a collector once in it does not automatically stop emissions at STOP. For views I use the view lifecycle and `repeatOnLifecycle`, or Compose lifecycle-aware state collection. An injected application scope can run in-process tasks beyond a screen, with an explicit SupervisorJob and exception policy, yet the OS may kill that process. For a critical upload or payment reconciliation I first persist an operation identifier, then schedule restartable work and expose progress through state, treating UI coroutines only as observers. The practical test is navigation: an ordinary rotation may retain a ViewModel, but popping the screen clears it, while a Fragment view can be destroyed before its Fragment. That is why view-bound collection uses the view lifecycle and `repeatOnLifecycle`. For a critical write I first ask whether it merely needs to survive navigation or also process death. The latter needs persisted intent and scheduling; an application scope only covers the former.”
+
+## How to answer in the interview
+
+- **Why:** scope choice determines who can stop work.
+- **How:** tie rendering to the view lifecycle, screen state to the ViewModel, and in-process shared work to an explicit application owner.
+- **Trade-off:** longer scopes retain more work and need error handling.
+- **Failure case:** collecting against a destroyed Fragment view.
+- **Production solution:** repeat collection at STARTED and persist restartable operations.
 
 ## Deep-dive talking points
 
@@ -93,4 +105,4 @@ Can I name cancellation point for each scope, explain view lifecycle collection,
 - [Android lifecycle coroutines](https://developer.android.com/topic/libraries/architecture/coroutines) — ViewModel and lifecycle scopes, repeatOnLifecycle.
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — main-safe architecture.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

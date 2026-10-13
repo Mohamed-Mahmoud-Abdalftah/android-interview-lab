@@ -26,6 +26,10 @@ Compare LaunchedEffect(Unit) and LaunchedEffect(key).
 
 `LaunchedEffect(Unit)` key ثابت: effect يبدأ عند دخول call site للـcomposition، لا يبدأ لمجرد recomposition عادية، لكنه يتوقف عندما يخرج ويرجع يبدأ إذا دخل من جديد. `LaunchedEffect(userId)` يتوقف ويبدأ عند تغير `userId`، فيمنع طلب بيانات ID قديم من الاستمرار كأنه الحالي. استخدام Unit مع قيمة متغيرة داخل block قد يقرأ قيمة قديمة؛ إما اجعل القيمة key إذا تغيرها يغير هوية العمل، أو `rememberUpdatedState` إذا تريد أحدث callback دون restart. لا تعتمد على effect composable لعمل لازم يكمل بعد مغادرة الشاشة.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو نفس `ArticleScreen` بتعرض A وبعدين B، `LaunchedEffect(articleId)` تلغي شغل A وتبدأ B؛ `Unit` مش هتعمل restart وهي في نفس call site. عكس كده، intro animation بدون input identity ممكن تستخدم `Unit`. لو التحميل لازم يكمل حتى لو الشاشة خرجت، حطه في owner مناسب بدل effect. استخدام `Unit` لتحميل article متغير يخلّي محتوى A يظهر على B أو الطلب القديم يكمل. اختبر تغيير ID والشاشة لسه في نفس destination، وحدد هل التحميل ملك UI ولا ViewModel.
+
 ## Why it matters and how it works
 
 LaunchedEffect ties a coroutine to composition and its key set. A stable key avoids restart during ordinary recomposition at the same call site. A changed key cancels the old coroutine and starts the block again. The key should represent the identity that requires a new operation; unrelated state in the key causes needless cancellation, while missing identity causes stale work.
@@ -33,6 +37,18 @@ LaunchedEffect ties a coroutine to composition and its key set. A stable key avo
 ## Worked example
 
 `LaunchedEffect(articleId)` scrolls to or loads information for the current article. Navigating from article A to B without leaving the same composable call site cancels A's composition-owned operation and starts B's. A one-time entrance animation with no input identity can use `Unit`. If the repository load belongs to a ViewModel and must survive temporary UI absence, invoke it from that owner instead.
+
+### Compose/Kotlin walkthrough
+
+```kotlin
+@Composable
+fun ArticleScreen(articleId: String, onVisible: suspend (String) -> Unit) {
+    LaunchedEffect(articleId) { onVisible(articleId) }
+    Text("Article $articleId")
+}
+// A -> B at the same call site cancels A's effect and starts B's.
+// For a callback that can change without restarting, use rememberUpdatedState.
+```
 
 ## Trade-offs and decision criteria
 
@@ -48,15 +64,23 @@ Document each effect's identity and cancellation semantics. Test navigation betw
 
 ## Interview answer — short
 
-“`LaunchedEffect(Unit)` runs for one composition call-site lifetime; `LaunchedEffect(key)` cancels and restarts when that key changes.”
+“`LaunchedEffect(Unit)` runs for one composition call-site lifetime; `LaunchedEffect(key)` cancels and restarts when that key changes. Unit follows call-site entry; a changing key restarts the coroutine.”
 
 ## Interview answer — structured
 
-“Unit is appropriate when entering the composition is the trigger and no changing input defines the work. A meaningful key, such as `articleId`, makes the effect restart when the resource identity changes. Neither restarts on every ordinary recomposition with the same key. I avoid stale captures with the right key or `rememberUpdatedState`, and I avoid using a composition-owned effect for work that must survive leaving the screen.”
+“Unit is appropriate when entering the composition is the trigger and no changing input defines the work. A meaningful key, such as `articleId`, makes the effect restart when the resource identity changes. Neither restarts on every ordinary recomposition with the same key. I avoid stale captures with the right key or `rememberUpdatedState`, and I avoid using a composition-owned effect for work that must survive leaving the screen. On article A to B within the same call site, articleId must key composition-owned article work.”
 
 ## Interview answer — deep senior
 
-“I interpret the key as the identity of the side effect. With `LaunchedEffect(Unit)`, the block begins when that call site enters composition and is canceled when it leaves; recomposition at the same site does not restart it. That works for an entrance animation or a listener whose owner truly is the current call site, provided changing callbacks are handled correctly. With `LaunchedEffect(articleId)`, changing the article cancels the previous coroutine and starts a new one for the new ID. That is useful when old work must stop, but it can be destructive if the key is an unstable object or a rapidly changing text field. I audit which values the block captures: values that define work identity belong in the keys; callbacks that should be current without resetting registration may use `rememberUpdatedState`. I also check the scope boundary. A payment submission or repository sync that must outlive a temporary composition exit should be owned by a ViewModel or durable worker with recovery semantics, not hidden behind a Unit-keyed effect. Tests should change the key, recompose with the same key, and remove the composable to verify exactly which operations are canceled or repeated.”
+“I interpret the key as the identity of the side effect. With `LaunchedEffect(Unit)`, the block begins when that call site enters composition and is canceled when it leaves; recomposition at the same site does not restart it. That works for an entrance animation or a listener whose owner truly is the current call site, provided changing callbacks are handled correctly. With `LaunchedEffect(articleId)`, changing the article cancels the previous coroutine and starts a new one for the new ID. That is useful when old work must stop, but it can be destructive if the key is an unstable object or a rapidly changing text field. I audit which values the block captures: values that define work identity belong in the keys; callbacks that should be current without resetting registration may use `rememberUpdatedState`. I also check the scope boundary. A payment submission or repository sync that must outlive a temporary composition exit should be owned by a ViewModel or durable worker with recovery semantics, not hidden behind a Unit-keyed effect. Tests should change the key, recompose with the same key, and remove the composable to verify exactly which operations are canceled or repeated. A screen-critical repository load may belong to a ViewModel if it must survive a temporary loss of composition.”
+
+## How to answer in the interview
+
+- **Why:** keys define when composition-owned work restarts.
+- **How:** compare A to B under Unit versus articleId.
+- **Trade-off:** restarting cancels in-flight work.
+- **Failure case:** missing key leaves stale identity; excess keys cause needless restarts.
+- **Production solution:** key by work identity and move durable work to ViewModel.
 
 ## Deep-dive talking points
 

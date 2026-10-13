@@ -26,6 +26,10 @@ What is a memory leak, and how is it different from a large memory allocation?
 
 الـmemory leak يحصل لما object ما بقاش مطلوب لكن لسه reachable بسبب reference عمره أطول، مثل singleton ماسك Activity قديمة. الـlarge allocation ممكن تكون مقصودة ومؤقتة، زي decode لصورة كبيرة، وبرضه تسبب `OutOfMemoryError` لو تخطت الحدود، لكنها مش leak بالضرورة. الفرق يظهر بعد انتهاء العملية وتكرارها: هل baseline يرجع ولا retained objects تزيد؟ استخدم heap dump وretaining path لتعرف مين ماسك الحاجة. خفض حجم الصورة يحل allocation؛ إزالة listener أو تصحيح scope يحل leak.
 
+## Practical walkthrough
+
+جرب معرض صور بطريقتين: صورة 40MP واحدة تعمل peak ضخم ويمكن OOM فورًا، وسيناريو فتح وقفل المعرض 20 مرة يخلي baseline يزيد بسبب callback ماسك الشاشة. صوّر نفس خطوات التشغيل، واستنى لحد ما الشغل يهدأ، وبعدها قارن retained instances وحجم native/graphics. حل الأولى downsample حسب target، وحل الثانية فك المرجع. زيادة heap limit مش علاج لأي واحدة من غير قياس.
+
 ## Why it matters and how it works
 
 GC reclaims unreachable objects. A leaked object remains reachable through an unintended path, so repeated screen visits can accumulate old views and context references. A single oversized allocation may fail immediately despite no retained growth. Both affect memory pressure, and a large cache can be either legitimate or effectively unbounded retention depending on policy. Analyze retained size, peak allocation, and process memory categories separately.
@@ -56,7 +60,15 @@ Define a deterministic user journey and a baseline after quiescence. Measure pea
 
 ## Interview answer — deep senior
 
-“I use retention over time to distinguish the two. A leak is an unintended strong path from a GC root to data whose logical lifetime ended. Repeated navigation raises the retained baseline; a heap dump shows the owner, perhaps an observer in a singleton retaining a destroyed Activity. A large allocation can be valid yet exceed a device's available heap or graphics memory; its signature is a peak tied to one operation, possibly with a stable baseline afterward. I profile the same workload several times, inspect managed and native categories, and avoid interpreting a single high-memory sample as proof of a leak. The fix follows the cause: release the listener at the right lifecycle boundary, bound a cache, sample a bitmap, or use tiles for zoom. Then I reproduce on constrained devices and watch OOM and frame metrics.”
+“I use retention over time to distinguish the two. A leak is an unintended strong path from a GC root to data whose logical lifetime ended. Repeated navigation raises the retained baseline; a heap dump shows the owner, perhaps an observer in a singleton retaining a destroyed Activity. A large allocation can be valid yet exceed a device's available heap or graphics memory; its signature is a peak tied to one operation, possibly with a stable baseline afterward. I profile the same workload several times, inspect managed and native categories, and avoid interpreting a single high-memory sample as proof of a leak. The fix follows the cause: release the listener at the right lifecycle boundary, bound a cache, sample a bitmap, or use tiles for zoom. Then I reproduce on constrained devices and watch OOM and frame metrics. A 40-megapixel gallery image can create one dangerous decode peak, while twenty open-close cycles can expose a rising Activity count. A cache may warm and then plateau; that shape does not by itself indicate a leak. I define separate peak and post-close baseline budgets and verify both on a low-memory device.”
+
+## How to answer in the interview
+
+- **Why:** State lifetime retention versus legitimate allocation size.
+- **How:** Measure peak bytes and repeated post-close baselines.
+- **Trade-off:** Caching can increase steady-state memory for faster reloads.
+- **Failure case:** A single decode can OOM without any leaked screen.
+- **Production solution:** Size decode requests and remove stale owner references.
 
 ## Deep-dive talking points
 
@@ -77,4 +89,4 @@ Define leak and peak allocation, give one example each, propose a measurement, a
 - [Manage your app's memory](https://developer.android.com/topic/performance/memory) — memory pressure and investigation.
 - [Overview of memory management](https://developer.android.com/topic/performance/memory-overview) — GC reachability.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The gallery cases are illustrative.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The gallery cases are illustrative.

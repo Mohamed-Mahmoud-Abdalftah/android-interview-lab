@@ -26,6 +26,10 @@ When should you avoid derivedStateOf because its overhead exceeds the benefit?
 
 `derivedStateOf` مفيد عندما source state تتغير كثيرًا لكن القيمة المعروضة نادرًا ما تتغير، مثل `firstVisibleItemIndex > 0` أثناء scroll. لكنه يضيف state object وتتبع dependencies؛ إذا النتيجة تتغير مع كل input أو الحساب بسيط مثل `firstName + lastName`، فالكتابة المباشرة أو `remember` keyed حسب الحالة أوضح وأرخص غالبًا. لا تستخدمه كـcache عام لتحويل بيانات business كبيرة؛ انقل ذلك للـowner المناسب. قِس recomposition/frame cost قبل وبعد، ولا تنسَ صحة dependencies.
 
+### Practical walkthrough in Egyptian Arabic
+
+`derivedStateOf` مش default لكل calculated value. لو `fullName` بتتغير تقريبًا مع كل edit، tracking إضافي ومفيش recomposition متوفرة. استخدمها لما source تتحرك كتير والنتيجة نادرًا، زي scroll index يفضل أكبر من صفر؛ وقِس قبل وبعد لأن تكلفة المراقبة نفسها حقيقية. لو حولت `fullName` إلى derived state، غالبًا هتزود overhead من غير أي updates متوفرة. خلّي التعبير مباشر، وقارن frame cost في حالة scroll threshold قبل ما تعتبر optimization ناجح.
+
 ## Why it matters and how it works
 
 Derived state observes snapshot inputs and updates consumers when its result changes under equality semantics. It can avoid downstream recomposition for a threshold result that stays the same across many input values. Creating and maintaining that observation has overhead, so if output changes as often as input, little invalidation is saved. If a calculation is expensive but unrelated to fast snapshot reads, another memoization or data-layer strategy may fit better.
@@ -33,6 +37,23 @@ Derived state observes snapshot inputs and updates consumers when its result cha
 ## Worked example
 
 While a list scrolls from pixel offset 1 through 200 on the first item, `showTopButton = firstVisibleItemIndex > 0` remains false; a derived state can keep consumers from reacting to every offset. For a full name from two text fields, each edit usually changes the displayed string, so `derivedStateOf` adds tracking without reducing updates. A product search result belongs in a cancelable ViewModel pipeline.
+
+### Compose/Kotlin walkthrough
+
+```kotlin
+@Composable
+fun Profile(first: String, last: String, listState: LazyListState) {
+    val fullName = "$first $last" // Direct calculation: changes with an edit.
+    val showTop by remember(listState) {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 }
+    }
+    Column {
+        Text(fullName)
+        if (showTop) Text("Back to top")
+    }
+}
+// Imports: runtime.remember/derivedStateOf/getValue, foundation.lazy.LazyListState.
+```
 
 ## Trade-offs and decision criteria
 
@@ -48,15 +69,23 @@ Use a representative trace and frame benchmark, count actual output transitions 
 
 ## Interview answer — short
 
-“Avoid `derivedStateOf` when the result changes on nearly every input or is cheap to calculate; its tracking cost only pays when it suppresses meaningful downstream updates.”
+“Avoid `derivedStateOf` when the result changes on nearly every input or is cheap to calculate; its tracking cost only pays when it suppresses meaningful downstream updates. Use derivedStateOf when the result changes much less often than its inputs.”
 
 ## Interview answer — structured
 
-“I reserve it for a fast-changing snapshot input with a slower-changing derived result, such as a scroll threshold. A full name updated on every keystroke does not benefit: output changes every time and the wrapper adds observation overhead. For expensive search or domain work I use an owned pipeline or correctly keyed cache rather than assuming derived state moves work off the main thread. I profile before and after.”
+“I reserve it for a fast-changing snapshot input with a slower-changing derived result, such as a scroll threshold. A full name updated on every keystroke does not benefit: output changes every time and the wrapper adds observation overhead. For expensive search or domain work I use an owned pipeline or correctly keyed cache rather than assuming derived state moves work off the main thread. I profile before and after. A scroll threshold can justify it; a full name that changes on every edit usually cannot.”
 
 ## Interview answer — deep senior
 
-“I ask how often the source changes, how often the derived value changes, and what downstream work is actually avoided. `derivedStateOf` tracks snapshot dependencies and gives observers a value that need not update for every source change. It is useful for a threshold: a list's pixel offset changes rapidly while `showScrollToTop` remains false until the first item boundary is crossed. If both first and last name are edited and the full-name Text changes for nearly every edit, the derived wrapper adds tracking but saves no recomposition. It is also not a background executor; wrapping an expensive sort inside it can still block the UI when inputs invalidate. I would move large search or aggregation to an appropriate ViewModel/data pipeline, or use explicit `remember` keys for a small pure calculation when caching is justified. I measure release frame cost and allocations, and test that changed inputs cannot leave a stale result. The right optimization may be no abstraction at all. A small direct expression is often clearer and faster when there is no mismatch between input and output frequency.”
+“I ask how often the source changes, how often the derived value changes, and what downstream work is actually avoided. `derivedStateOf` tracks snapshot dependencies and gives observers a value that need not update for every source change. It is useful for a threshold: a list's pixel offset changes rapidly while `showScrollToTop` remains false until the first item boundary is crossed. If both first and last name are edited and the full-name Text changes for nearly every edit, the derived wrapper adds tracking but saves no recomposition. It is also not a background executor; wrapping an expensive sort inside it can still block the UI when inputs invalidate. I would move large search or aggregation to an appropriate ViewModel/data pipeline, or use explicit `remember` keys for a small pure calculation when caching is justified. I measure release frame cost and allocations, and test that changed inputs cannot leave a stale result. The right optimization may be no abstraction at all. A small direct expression is often clearer and faster when there is no mismatch between input and output frequency. I would measure whether downstream work actually fell before keeping the extra derived observation.”
+
+## How to answer in the interview
+
+- **Why:** derived state helps only when output changes less often than input.
+- **How:** compare fullName on edits with a scroll threshold.
+- **Trade-off:** dependency tracking and equality checks cost work.
+- **Failure case:** using it as a generic cache for business searches.
+- **Production solution:** keep simple values direct and measure the threshold case.
 
 ## Deep-dive talking points
 

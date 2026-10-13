@@ -38,9 +38,15 @@ sealed interface Lookup {
     data class Unavailable(val retryAfterSeconds: Int?) : Lookup
 }
 interface UserDirectory { suspend fun find(id: UserId): Lookup }
-@JvmInline value class UserId(val value: String)
+@JvmInline value class UserId(val value: String) {
+    init { require(value.isNotBlank()) { "User ID must not be blank" } }
+}
 ```
 The interface contract must also state cancellation and dispatcher behavior; this snippet is not a network implementation.
+
+## Practical walkthrough
+
+في API review، بص على `find(id: String): String?`: هل `id` user ولا order؟ وهل `null` يعني missing ولا network failure؟ بدّلها بـ`UserId` validated و`Lookup.Found/Missing/Unavailable` لو caller محتاج يميّز. بعدين راجع concurrency contract لـ`suspend fun`: هل بتعمل blocking I/O؟ مين يملك cancellation؟ لو return list، هل هي snapshot ولا mutable alias؟ للكلفة، ما تحكمش من syntax: افحص allocations في hot path أو serialization loop بـprofiler، وقارن release build. أخيرًا اختبر Java interop لو API public، وأضف tests للnull/error/cancellation بدل الاكتفاء بـhappy path.
 
 ## Trade-offs and decision criteria
 
@@ -56,15 +62,25 @@ In a code review for an Android search SDK, inspect example call sites, Java con
 
 ## Interview answer — short
 
-I review a Kotlin API from the caller: clear names and types, explicit null and error meaning, ownership and lifecycle, then measured allocation cost. I also check Java boundaries and cancellation for suspend APIs.
+I review a Kotlin API in layers: clear names and domain types, explicit null and error meaning, ownership of mutable state, and measured allocation cost. For a suspending API I also document cancellation and blocking behavior. I verify public interop and release performance.
 
 ## Interview answer — structured
 
-First I write a realistic call site and ask whether the API is easy to use correctly. I inspect nullability: does `null` mean absence, or is it hiding a network failure? I check mutable collection ownership, callback lifetime, and coroutine cancellation/main safety. Then I inspect performance only where usage is hot: copies, boxing, reflection, and cross-language calls, using release-mode profiling. I favor a slightly more explicit type if it prevents invalid states or ambiguous errors. I would test the API by writing the caller code first. Can the caller tell missing data from a failed request? Does a returned `List` represent a snapshot or a live view? Can a callback outlive an Activity, and does a suspend function propagate cancellation? Once those contracts are clear, I would profile allocations on the actual hot path, including copies, boxing, reflection, or JNI crossings, rather than optimizing every expression.
+I begin with the caller’s question: can the signature tell them what to pass and how to handle every outcome? An ambiguous `find(String): String?` hides both ID meaning and whether null means absent data or a failure, so I prefer a validated ID and a named outcome when those distinctions matter. I then check mutable aliases, thread ownership, and cancellation behavior; `suspend` alone does not promise non-blocking work. For allocation cost I profile a representative release path instead of judging a scope-function chain by appearance. Finally, I test Java callers, serialization boundaries, and failure cases before publishing the API.
 
 ## Interview answer — deep senior
 
-I use a checklist anchored in behavior. Names and parameter types should expose units and domain intent; default arguments should not hide unsafe behavior. Nullability is a contract, so platform types are normalized and expected absence is distinct from failure. I review whether returned collections are snapshots, whether callbacks escape, and whether suspend functions preserve cancellation and are main-safe. For performance I identify call frequency and data size, inspect generated code where relevant, and profile minified release builds on target devices. Finally I test representative Kotlin and Java call sites and document binary compatibility when the API is public. My review has four passes. First, I look at names and domain types: identifiers, units, and return values should make invalid calls difficult. Second, I inspect null and error semantics; `null` is appropriate for ordinary absence but not a silent stand-in for an outage, and Java platform types need boundary validation. Fourth, I measure cost where it matters. A value class may box in generics, defensive copies allocate, reflection may affect startup, and inline may bloat DEX.
+I use a checklist anchored in behavior. Names and parameter types should expose units and domain intent; default arguments should not hide unsafe behavior. Nullability is a contract, so platform types are normalized and expected absence is distinct from failure. I review whether returned collections are snapshots, whether callbacks escape, and whether suspend functions preserve cancellation and are main-safe. For performance I identify call frequency and data size, inspect generated code where relevant, and profile minified release builds on target devices. Finally I test representative Kotlin and Java call sites and document binary compatibility when the API is public.
+
+I would review a real signature such as `suspend fun find(id: String): String?`. The ID type is ambiguous and null conflates not found with unavailable, so I would consider a validated `UserId` and a sealed Lookup outcome. I would then state whether the function can block, how cancellation propagates, and whether returned collections are snapshots or aliases. Allocation review comes after measuring a hot path: a value class may box in generics, a sequence may repeat work, and defensive copies may allocate. I test malformed inputs, Java call sites, and release traces before accepting the API, while keeping simple cases simple.
+
+## How to answer in the interview
+
+- **Why:** Ensure team APIs are idiomatic, maintainable, allocation-conscious, and resilient against runtime defects.
+- **How:** Conduct code reviews assessing nullability contracts, collection mutability, scope function readability, and allocation efficiency under Android runtime constraints.
+- **Trade-offs:** Over-optimizing syntax with clever idioms often harms readability and onboarding for mid-level team members.
+- **Failure cases:** Approving PRs with ambiguous platform types, unnecessary `lateinit` properties, or unconstrained lambdas capturing UI contexts.
+- **Production solution:** Establish team API style guides, enforce automated Detekt/ktlint rules in CI, and benchmark critical data paths using Jetpack Macrobenchmark.
 
 ## Deep-dive talking points
 
@@ -85,4 +101,4 @@ Review a sample API for ambiguous null, mutable ownership, cancellation and one 
 - [Kotlin coding conventions](https://kotlinlang.org/docs/coding-conventions.html) — API readability and platform-type guidance.
 - [Android performance guide](https://developer.android.com/topic/performance) — measurement context.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. Examples are illustrative JVM snippets unless explicitly labeled conceptual; no Android device claim is made.
+Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets unless explicitly labeled conceptual; no Android device claim is made.

@@ -32,7 +32,32 @@ Dangerous permissions need runtime grant on supported Android versions and can b
 
 ## Worked example
 
-A nearby-store feature first checks coarse location permission. If granted, it loads stores; if denied, it offers manual city selection. Its Activity registers `RequestPermission()` unconditionally at creation, launches only after the user taps “Near me,” and handles false by showing the manual path. The permission check repeats when returning from Settings. This design example omits full Activity wiring; do not infer that `shouldShowRequestPermissionRationale()==false` uniquely means permanent denial.
+A nearby-store Activity registers its launcher before user interaction. This abbreviated Android snippet assumes a manifest declaration for coarse location and app methods to load nearby stores or offer a manual city.
+```kotlin
+import android.Manifest
+import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
+
+class NearbyActivity : ComponentActivity() {
+    private val requestLocation = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) loadNearby() else showManualCity()
+    }
+
+    fun onNearMeTapped() {
+        requestLocation.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+    }
+
+    private fun loadNearby() { /* app-owned location flow */ }
+    private fun showManualCity() { /* fallback UI */ }
+}
+```
+Check the current permission before loading and again after returning from Settings; a `false` callback does not by itself prove permanent denial. Offer manual city selection regardless of the denial path.
+
+## Practical walkthrough
+
+Nearby stores feature تقدر تشتغل بـmanual city لو location اتمنعت؛ اطلب permission وقت user يضغط “Near me”، بعد ما توضح الفايدة. `RequestPermission()` callback false معناها غير ممنوحة الآن، مش تشخيص قاطع لـpermanent denial؛ `shouldShowRequestPermissionRationale()` false ممكن تكون أول طلب أو حالة تانية حسب النظام. لو no dialog بعد محاولات، اعرض طريق Settings اختياري واحترم رفض المستخدم. لما يرجع من Settings، افحص permission تاني قبل data access؛ permission ممكن تتسحب لاحقًا. استخدم coarse location لو يكفي بدل fine، واختبر denied/approximate/one-time grants حسب API.
 
 ## Trade-offs and decision criteria
 
@@ -52,10 +77,22 @@ For a delivery app, keep address search usable manually and request location onl
 
 ## Interview answer — structured
 
-“I first see whether a scoped API avoids permission altogether. If not, I register a lifecycle-aware permission launcher, check current grant, show a contextual rationale when appropriate, and request only after a user action. Grant enters the feature; denial gets a non-blocking fallback. I do not assume shouldShowRequestPermissionRationale false proves permanent denial, because it has other states. If the system no longer presents a dialog, I explain an optional Settings route and check again on return. A false rationale result is ambiguous: it can occur before a first request as well as after a system policy suppresses prompts. I therefore track the user journey, offer a fallback and only suggest Settings when the app cannot request again. Permissions can be revoked later, so every use has a current check and safe error path.”
+I first see whether a scoped API avoids permission altogether. If not, I register a lifecycle-aware permission launcher, check current grant, show a contextual rationale when appropriate, and request only after a user action. Grant enters the feature; denial gets a non-blocking fallback. I do not assume shouldShowRequestPermissionRationale false proves permanent denial, because it has other states. If the system no longer presents a dialog, I explain an optional Settings route and check again on return.
+
 ## Interview answer — deep senior
 
-“Permission design is a product and platform contract. I minimize capability first, for example preferring a system picker to broad media permission when the use case allows it. A runtime request is made in context, via a lifecycle-aware launcher registered consistently, and the app remains useful on denial. Each access checks current grant and handles revocation races. I distinguish first request, rationale, repeated denial and Settings return without inferring permanent denial from a single boolean. I test across supported Android versions because permission categories evolve, and measure feature success without logging sensitive location data. Permission design begins with avoiding a permission when a scoped platform API can meet the need. For location, I might request coarse access only when the user taps Near me, while manual city selection remains available. I register the Activity Result launcher consistently, check grant at the point of use, and explain the benefit without trapping the user in repeated prompts. `shouldShowRequestPermissionRationale()` is a UI hint, not a universal permanent-denial oracle. Android permission categories and target SDK behavior change, so I test initial request, one and repeated denial, Settings return, revocation and background transitions across supported API levels. I avoid logging coordinates merely to measure the funnel.”
+Permission design is a product and platform contract. I minimize capability first, for example preferring a system picker to broad media permission when the use case allows it. A runtime request is made in context, via a lifecycle-aware launcher registered consistently, and the app remains useful on denial. Each access checks current grant and handles revocation races. I distinguish first request, rationale, repeated denial and Settings return without inferring permanent denial from a single boolean. I test across supported Android versions because permission categories evolve, and measure feature success without logging sensitive location data.
+
+I would first ask whether the feature can avoid the permission entirely, for example through manual city selection or a scoped picker. If location is justified, I request the least precise permission that meets the need when the user invokes that feature. Denial is a normal branch; `shouldShowRequestPermissionRationale()` does not uniquely identify “permanently denied,” especially before a request. I recheck permission before access and after Settings because the grant can change. Tests should cover denial, approximate or temporary grants where supported, and revocation while the app is running. The fallback keeps the feature useful.
+
+## How to answer in the interview
+
+- **Why:** Permission is a revocable user choice, not a startup formality.
+- **How:** Request in feature context, handle callback, and recheck before access.
+- **Trade-offs:** Offer manual city or scoped API when location is unnecessary.
+- **Failure cases:** Reject the claim that `shouldShowRequestPermissionRationale() == false` always means permanent denial.
+- **Production solution:** Test denial, approximate/temporary grant, Settings return, and revocation.
+
 ## Deep-dive talking points
 
 Discuss permission minimization, rationale state ambiguity, repeated denial, revocation, Activity Result registration, coarse versus fine location, settings return, and API-version test coverage.
@@ -75,4 +112,4 @@ Name a permission-free alternative; describe a just-in-time request; handle firs
 - [Request runtime permissions](https://developer.android.com/training/permissions/requesting) — request timing, rationale, denial, and revocation.
 - [Get a result from an activity](https://developer.android.com/training/basics/intents/result) — lifecycle-aware launcher registration.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The nearby-store flow is illustrative and was not Android-compiled.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The nearby-store flow is illustrative and was not Android-compiled.

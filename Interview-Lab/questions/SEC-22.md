@@ -25,6 +25,10 @@ How do you design biometric-gated access to a Keystore operation?
 
 Biometric prompt لوحده UI gate؛ لو المطلوب حماية crypto operation لازم key في Android Keystore متقيّدة بـuser authentication، ونربط `Cipher`/`CryptoObject` بـ`BiometricPrompt`. نجاح dialog من غير key policy مش دليل إن secret اتحمى. نوع authenticator، fallback ومدة صلاحية المصادقة لازم تتحدد حسب risk، مع recovery لو key اتبطلت.
 
+## Practical walkthrough
+
+لو مجرد dialog `BiometricPrompt` قفل زر التحويل، hook يقدر يتجاوز الـcallback. لو الهدف توقيع challenge، ولّد Keystore signing key تشترط user authentication واربط `Signature` بـ`CryptoObject` وقت prompt حسب دعم الـAPI. بعد التوقيع، backend يتحقق من challenge والsession والمبلغ؛ توقيع محلي من غير ربط تفاصيل العملية ممكن يتعاد استخدامه.
+
 ## Why it matters and how it works
 
 A KeyGenParameterSpec may require user authentication for key use. For an auth-per-use key, initialize a Cipher and pass it as a CryptoObject to BiometricPrompt; only after a successful result perform the operation. API and authenticator combinations vary across versions, so verify supported combinations for the app’s minimum API and AndroidX Biometric version.
@@ -55,7 +59,15 @@ For a fintech flow, threat-model which exact operation needs a gesture; use a se
 
 ## Interview answer — deep senior
 
-“A biometric gate must protect a concrete capability, not merely a screen. I decide whether I need local decryption or a challenge signature, configure KeyGenParameterSpec accordingly, and verify the AndroidX/platform authenticator rules for supported API levels. I bind a fresh server challenge and immutable transfer parameters to the signature so a replay or UI modification cannot approve a different amount. I handle cancellation, lockout, device credential fallback and invalidated keys with explicit re-enrollment. I do not claim that a biometric prompt makes a rooted client trusted; the backend remains authoritative.”
+“A biometric gate must protect a concrete capability, not merely a screen. I decide whether I need local decryption or a challenge signature, configure KeyGenParameterSpec accordingly, and verify the AndroidX/platform authenticator rules for supported API levels. I bind a fresh server challenge and immutable transfer parameters to the signature so a replay or UI modification cannot approve a different amount. I handle cancellation, lockout, device credential fallback and invalidated keys with explicit re-enrollment. I do not claim that a biometric prompt makes a rooted client trusted; the backend remains authoritative. I would decide whether the capability is local decryption or signing a server challenge, then choose a key policy compatible with the required authenticator and Android versions. The challenge should include an operation identity and expire so a signature cannot be replayed for another transfer. Enrollment changes and key invalidation require a fallback flow, usually re-enrollment or stronger server authentication. A successful prompt alone must not advance server transaction state.”
+
+## How to answer in the interview
+
+- **Why:** a biometric dialog alone is a UI gate.
+- **How:** bind an auth-required Keystore key operation to CryptoObject and sign a fresh server challenge.
+- **Trade-off:** authenticator/device support affects UX and key policy.
+- **Failure case:** a bypassed callback authorizes money.
+- **Production solution:** server challenge binding and documented recovery when biometric enrollment invalidates keys.
 
 ## Deep-dive talking points
 
@@ -75,4 +87,4 @@ Can I distinguish UI gating from cryptographic gating and describe operation-bou
 - [BiometricPrompt guide](https://developer.android.com/identity/sign-in/biometric-auth) — cryptographic authentication flow.
 - [KeyGenParameterSpec](https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec) — user-auth key constraints.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

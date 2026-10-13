@@ -24,6 +24,10 @@ Compare upstream catch, retry/retryWhen predicates and completion observation.
 
 `catch` تمسك exceptions من upstream اللي فوقها، وتقدر تطلع fallback؛ ما تمسكش خطأ `collect` اللي تحتها. `retry` و`retryWhen` يعيدوا collection للمصدر بعد failure حسب predicate، وده ممكن يعيد side effects في cold Flow. `onCompletion` يلاحظ النهاية/الخطأ/الإلغاء لكنه مش بدل catch. لازم `CancellationException` تفضل خارجة، والretry للقراءات أو operations idempotent فقط.
 
+### Practical walkthrough in Egyptian Arabic
+
+في repository Flow، `catch` تمسك errors من upstream قبلها، مش exception من collector اللي بعدها؛ `retry` و`retryWhen` يعيدوا subscription للمصدر حسب شرط. لو network call غير idempotent، retry عمياء ممكن تكرر أثر؛ ولو `CancellationException` اتبلعت، شغل ملغي يرجع. `onCompletion` للملاحظة أو cleanup من غير ما تحول failure إلى success. اختبر IOException ثم نجاح، وcancellation منفصلة.
+
 ## Why it matters and how it works
 
 Operator order defines which stages are covered. `retryWhen` exposes cause and attempt count for backoff; `retry` uses a simpler predicate. Upstream cold source is resubscribed, so repeatable side effects need safety. `onCompletion` can inspect cause and run cleanup, but failure still propagates unless separately caught.
@@ -43,7 +47,9 @@ fun readFeed(fetch: suspend () -> String): Flow<String> = flow { emit(fetch()) }
         if (retryable) kotlinx.coroutines.delay(200L * (attempt + 1))
         retryable
     }
-    .catch { emit("cached") }
+    .catch { cause ->
+        if (cause is java.io.IOException) emit("cached") else throw cause
+    }
 ```
 
 ## Trade-offs and decision criteria
@@ -68,7 +74,15 @@ A feed repository retries transient read failures with capped backoff and then e
 
 ## Interview answer — deep senior
 
-“Flow error handling is location-sensitive. I draw the pipeline and mark the upstream each catch or retry covers. A retry reruns source code, including any network side effect inside a cold builder; that is safe for many reads but dangerous for non-idempotent writes. `retryWhen` supports attempt-based capped backoff and server guidance, but I bound total time and avoid retrying auth/validation errors. `catch` can convert a final read failure to cached data while telemetry records staleness. `onCompletion` is analogous to finally for observing cause and cleanup, not a replacement for result mapping. Tests inject upstream and downstream failures separately, cancel during delay and count actual source subscriptions.”
+“Flow error handling is location-sensitive. I draw the pipeline and mark the upstream each catch or retry covers. A retry reruns source code, including any network side effect inside a cold builder; that is safe for many reads but dangerous for non-idempotent writes. `retryWhen` supports attempt-based capped backoff and server guidance, but I bound total time and avoid retrying auth/validation errors. `catch` can convert a final read failure to cached data while telemetry records staleness. `onCompletion` is analogous to finally for observing cause and cleanup, not a replacement for result mapping. Tests inject upstream and downstream failures separately, cancel during delay and count actual source subscriptions. I would explain operator placement with a small pipeline. `catch` sees exceptions from upstream of its position and can emit a fallback, but it does not magically handle failures in a downstream collector. `retry` and `retryWhen` resubscribe to the upstream flow, so they can repeat its side effects; they must be reserved for retry-safe operations and bounded by a policy. `retryWhen` adds attempt and cause inspection for backoff decisions. `onCompletion` observes normal completion, failure, or cancellation; it is not a substitute for recovery and should not hide cancellation. I rethrow or let cancellation propagate and catch expected errors only. In production I classify transient network failures separately from authentication or validation failures and test retries after an already-executed remote operation.”
+
+## How to answer in the interview
+
+- **Why:** error operators can repeat work or hide failures.
+- **How:** show upstream boundary and retry resubscription.
+- **Trade-off:** resilience versus duplicate side effects.
+- **Failure case:** catching downstream errors or retrying cancellation.
+- **Production solution:** classify failures and test retry counts.
 
 ## Deep-dive talking points
 

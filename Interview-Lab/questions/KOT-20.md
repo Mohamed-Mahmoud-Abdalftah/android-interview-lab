@@ -39,6 +39,10 @@ fun names(users: List<User>): List<String> = users.map { user ->
 fun main() = println(names(listOf(User(" Ada "))))
 ```
 
+## Practical walkthrough
+
+في `users.map { user -> user.name.let { raw -> raw.trim() } }`، `map` و`let` بيمرّروا argument فالأسماء الصريحة بتمنع اختلاط `it`. `run` و`apply` بيخلّوا object هو implicit receiver `this`؛ ده لطيف في config قصيرة لكن nested receivers تخلي `name` تبع مين مش واضح. كمان return type مهم: `apply` يرجع original object و`run` يرجع lambda result. لما chain فيها mutation أو logging، فكها لمتغيرات محلية؛ readability أهم من عدد السطور. Scope functions ما بتغيّرش thread ولا lifecycle ولا ownership.
+
 ## Trade-offs and decision criteria
 
 Use receiver style when configuring one object and member access dominates. Use argument style when the value participates alongside other values or nested scopes. Explicit names or ordinary statements beat clever chains when several receivers are active.
@@ -53,15 +57,25 @@ A request builder uses a short `apply` block to set fields. Mapping a response w
 
 ## Interview answer — short
 
-Receiver lambdas expose the object as `this`; argument lambdas expose it as `it` or a named parameter. I choose receiver style for focused configuration and argument style when explicit naming helps. I also check whether the function returns the object or the lambda result.
+Receiver lambdas use implicit `this`; argument lambdas pass the value as `it` or a named parameter. I choose based on clarity in the surrounding scope, especially when lambdas are nested. Return value is a separate choice: `apply` returns the receiver, while `run` returns the computed result.
 
 ## Interview answer — structured
 
-`apply`, `run`, and `with` use a lambda receiver, so members are available through `this`. `let` and `also` pass the object as an argument, normally `it`. That affects how names resolve in nested code. Separately, `apply` and `also` return the original object, while `let`, `run`, and `with` return the lambda result. In review I trace both axes and avoid nested implicit receivers when they make mutation ambiguous. If I am comparing two values or nesting operations, an explicit argument name is safer. I also trace what each function returns: after `apply` I still have the request, while after `run` I have the computed result. That prevents a chain from subtly changing type or applying a fallback for the wrong reason.
+I look at a scope function’s function signature, not its fashionable name. `let` and `also` give the lambda an argument, which I name explicitly in nested code. `run`, `apply`, and `with` give an implicit receiver, which is concise for a short configuration block but ambiguous with nested receivers. I separately check whether the function returns the original object or the lambda result. In a code review, if a chain hides which `name` or `this` is used, I split it into named locals. These functions organize expression scope; they do not change concurrency or lifecycle behavior.
 
 ## Interview answer — deep senior
 
-These are ordinary higher-order functions with different function signatures. A receiver lambda creates an implicit receiver in the lexical context; nesting it inside another receiver can make unqualified member access surprising. An argument lambda is often easier to name explicitly, especially in mapping code with several values. Return semantics determine the type of a chain and can change null behavior: Elvis after `?.let` may trigger because the lambda returned null. I prefer local variables when the chain hides validation, ownership, or side effects. `this` in `apply`, `run`, or `with` is an implicit receiver, so member names can be concise but can also collide with outer receivers. The second axis is return value: `apply` and `also` preserve the receiver; `let`, `run`, and `with` return the lambda result. None of these constructs changes thread or lifecycle semantics. The same reasoning applies to nested DSLs. If two receivers expose `name`, unqualified access may bind to the wrong one, so I introduce names or use qualified receivers. I prefer one clear transformation over a compact chain that a reviewer must mentally execute.
+These are ordinary higher-order functions with different function signatures. A receiver lambda creates an implicit receiver in the lexical context; nesting it inside another receiver can make unqualified member access surprising. An argument lambda is often easier to name explicitly, especially in mapping code with several values. Return semantics determine the type of a chain and can change null behavior: Elvis after `?.let` may trigger because the lambda returned null. I prefer local variables when the chain hides validation, ownership, or side effects. `this` in `apply`, `run`, or `with` is an implicit receiver, so member names can be concise but can also collide with outer receivers. The second axis is return value: `apply` and `also` preserve the receiver; `let`, `run`, and `with` return the lambda result.
+
+A nested builder block illustrates the ambiguity: inside `apply`, an unqualified `name` might belong to the builder; inside another receiver block it might refer to a different object. I name the argument in `let` or split the operations into locals when that matters. I also check null behavior: `source?.let { parse(it) } ?: fallback` uses fallback if either source or parse result is null. If those are distinct failures, I write explicit branches. These functions execute synchronously in their caller’s context; they neither dispatch work nor attach it to a lifecycle, so hidden I/O or mutation deserves ordinary statements.
+
+## How to answer in the interview
+
+- **Why:** Choose the appropriate scope function based on whether the context is accessible via `this` (receiver) or `it` (parameter).
+- **How:** Use `apply`/`run` for receiver context (`this`), and `let`/`also` for argument context (`it`).
+- **Trade-offs:** Accessing properties via `this` can shadow outer class members when nested; `it` requires explicit naming when disambiguation is needed.
+- **Failure cases:** Writing multi-line transformations inside `apply` and expecting the return value to be the transformation result; `apply` always returns the original receiver.
+- **Production solution:** Use `apply` strictly for object initialization/configuration, `let` for null-safe mapping and scope restriction, and always name nested parameters explicitly.
 
 ## Deep-dive talking points
 
@@ -80,4 +94,4 @@ Name the receiver functions and argument functions, trace a chain return type, a
 
 - [Kotlin scope functions](https://kotlinlang.org/docs/scope-functions.html) — receiver and return semantics.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.

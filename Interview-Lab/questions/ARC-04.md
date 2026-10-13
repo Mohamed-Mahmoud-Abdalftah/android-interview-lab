@@ -24,6 +24,10 @@ Define repository as data abstraction/source coordination and use case as busine
 
 Repository interface أو class بتقدّم app data وتخفي هل جت من Room أو network أو cache، وكمان تحدد refresh/conflict/source-of-truth policy. UseCase بيمثل فعل business محدد زي `PlaceOrder` أو `ObserveEligibleOffers`، وممكن يجمع أكتر من repository أو يطبق rule. مش كل repository method محتاجة UseCase wrapper؛ لو الـViewModel بس بيقرأ products من repo بسيط، wrapper فارغ يزوّد ملفات من غير فائدة. Repository ما يسرّبش DTOs للـUI، وUseCase ما يتحوّلش لمكان لكل logic بلا ownership.
 
+### Practical walkthrough in Egyptian Arabic
+
+Repository يمثل data contract مثل `observeOrders()` مع سياسة cache/server، وUseCase يمثل action أو policy مثل `SubmitOrder` أو `GetEligibleOffers`. مش كل DAO يحتاج repository wrapper فارغ، ومش كل getter يحتاج UseCase. لو payment retry له قواعد، ضعه في use case/domain، بينما request mapping والstatus endpoint في repository. اجعل الاختبار يثبت القرار والأثر.
+
 ## Why it matters and how it works
 
 Data repositories are entry points to data and may coordinate multiple sources. Use cases are optional units of domain behavior in Android guidance, useful for reuse and complex logic. Boundaries should expose domain results and clearly state freshness, errors, and cancellation.
@@ -31,6 +35,44 @@ Data repositories are entry points to data and may coordinate multiple sources. 
 ## Worked example
 
 Conceptual design: `OrdersRepository.observeOrder(id): Flow<Order>` reads Room as source of truth while refresh writes server updates. `PlaceOrderUseCase(repo, limits)` validates amount, sends a request key, and returns `Accepted`, `Rejected`, or `PendingVerification`. The ViewModel maps those outcomes into screen state.
+
+A small JVM contract shows the split: the use case owns input policy; the repository owns persistence/transport behind its interface. This does not prove the actual HTTP or Room adapter, which needs integration tests.
+
+```kotlin
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Test
+
+data class OrderDraft(val sku: String, val quantity: Int)
+data class Receipt(val id: String)
+interface OrderRepository { fun submit(draft: OrderDraft): Receipt }
+
+class SubmitOrder(private val repository: OrderRepository) {
+    fun invoke(draft: OrderDraft): Receipt {
+        require(draft.sku.isNotBlank() && draft.quantity > 0)
+        return repository.submit(draft)
+    }
+}
+
+class SubmitOrderExampleTest {
+    @Test fun validatesBeforeRepositoryCall() {
+        var calls = 0
+        val repository = object : OrderRepository {
+            override fun submit(draft: OrderDraft): Receipt {
+                calls++
+                return Receipt("order-1")
+            }
+        }
+        val submit = SubmitOrder(repository)
+        assertThrows(IllegalArgumentException::class.java) {
+            submit.invoke(OrderDraft("sku", 0))
+        }
+        assertEquals(0, calls)
+        assertEquals(Receipt("order-1"), submit.invoke(OrderDraft("sku", 1)))
+        assertEquals(1, calls)
+    }
+}
+```
 
 ## Trade-offs and decision criteria
 
@@ -55,6 +97,14 @@ I use a repository to define how the app obtains and updates data, not simply as
 ## Interview answer — deep senior
 
 The separation becomes valuable when data consistency and business policy evolve independently. A repository decides whether local storage is the source of truth, how remote refresh is applied, and what failures are surfaced. A use case can validate rules, coordinate repositories, and return a domain outcome that is not tied to transport details. I keep cancellation and error semantics explicit and do not pretend a use case alone survives process death. For a tiny app I may call a repository from a ViewModel; for a multi-feature payment workflow I likely want a use case with focused tests. I review the direction of dependencies and model types, because a beautifully named repository that returns Retrofit DTOs still leaks its boundary. For an offline-first feed, repository consistency is substantial work: choose local truth, refresh, map, and preserve cached data on failure. A use case above it might calculate what the user may do with those articles, but should not reimplement refresh logic. I test the repository against races and stale data, and the use case against policy inputs. If the operation must survive process death, persisted work and scheduling sit outside a screen coroutine.
+
+## How to answer in the interview
+
+- **Why:** data access and business decision differ.
+- **How:** define repository contract and use case policy.
+- **Trade-off:** extra layers versus meaningful separation.
+- **Failure case:** pass-through classes hide responsibility.
+- **Production solution:** test policy and real adapter separately.
 
 ## Deep-dive talking points
 

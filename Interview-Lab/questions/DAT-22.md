@@ -41,6 +41,10 @@ interface DbMigrationJournal {
 // Keep source file until destination verification and safe switch complete.
 ```
 
+## Practical walkthrough
+
+encrypted/unencrypted DB migration فيها خطرين: data transform وkey availability. اعمل inventory للمستخدمين حسب old version ونوع DB، وخلي source file untouched لحد ما temporary destination تكتمل وتتراجع: row counts، FK integrity، business invariants، وربما checksums لحقول غير حساسة. state marker durable يحدد COPYING/VERIFYING/SWITCHED عشان crash يعيد بأمان؛ file switch/backup strategy لازم تناسب library/OS filesystem contract. Android Keystore key قد لا ينتقل مع backup، فلا تعد recovery تلقائيًا لو ciphertext وصلت بلا key؛ صمّم user re-auth/server rehydrate أو explicit failure UX. اختبر low storage، wrong key، process kill بكل stage، وترقية متعددة الإصدارات.
+
 ## Trade-offs and decision criteria
 
 In-place migration is faster but risks irreversible loss; copy-and-swap needs extra storage and careful file handling. Encryption protects data at rest only under a sound key/backup threat model. Rolling back to an old app may not read new format, so rollout must plan compatibility.
@@ -63,7 +67,17 @@ A health app migrates legacy plaintext records to encrypted storage in a staged 
 
 ## Interview answer — deep senior
 
-“I treat this as a transactional file migration under adversarial conditions. The source database remains untouched until a temporary destination has been fully populated and verified against row counts, checksums where appropriate, foreign keys and business invariants. A durable stage marker and safe rename/switch protocol make retries idempotent after crash. I separately design key management: Android Keystore keys may not migrate with backup, so restored ciphertext can be unreadable and needs a documented recovery path. Copy-and-swap costs disk space, which I check before starting; in-place conversion is faster but riskier. I run fixtures from every shipped version on target devices, simulate power loss/kill and low storage, stage rollout, and never log plaintext or silently erase user data.”
+I treat this as a transactional file migration under adversarial conditions. The source database remains untouched until a temporary destination has been fully populated and verified against row counts, checksums where appropriate, foreign keys and business invariants. A durable stage marker and safe rename/switch protocol make retries idempotent after crash. I separately design key management: Android Keystore keys may not migrate with backup, so restored ciphertext can be unreadable and needs a documented recovery path. Copy-and-swap costs disk space, which I check before starting; in-place conversion is faster but riskier. I run fixtures from every shipped version on target devices, simulate power loss/kill and low storage, stage rollout, and never log plaintext or silently erase user data.
+
+I would run this as a recoverable data migration, not a one-shot copy followed by deletion. I classify installations by old schema and encryption state, keep the source database untouched, and write a temporary destination. Before switching, I verify row counts, foreign keys, and domain invariants; checksums can help where they do not expose sensitive contents. A durable stage marker makes crash retry idempotent. Encryption adds a separate key lifecycle: Keystore material may not be restored with backed-up ciphertext, so I need an explicit re-authentication or server rehydration plan rather than silently wiping data. I test low storage, wrong keys, interruption at each stage, and supported upgrade paths on devices.
+
+## How to answer in the interview
+
+- **Why:** Migration failure can destroy both data and decryptability.
+- **How:** Classify source, copy to temporary destination, verify, switch with stage marker.
+- **Trade-offs:** Keep source until validated; design key/backup recovery separately.
+- **Failure cases:** Wrong key, low storage, mid-switch crash, silent destructive fallback.
+- **Production solution:** Device tests for each stage and explicit recovery UX.
 
 ## Deep-dive talking points
 
@@ -84,4 +98,4 @@ Can I preserve original, verify copy, recover each crash stage and handle non-re
 - [Android backup guidance](https://developer.android.com/identity/data/backup) — backup/restore behavior.
 - [Android Keystore guide](https://developer.android.com/privacy-and-security/keystore) — key storage.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

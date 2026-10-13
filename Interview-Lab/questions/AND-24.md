@@ -53,6 +53,10 @@ fun receiptIdFromLink(uri: Uri): String? {
 
 The parser only creates a typed ID. Before showing a receipt, the destination requests it from the backend; `404`/`403` get deliberate UI states. Test encoded path separators and mixed-case hosts against the actual URI parser and routing contract.
 
+## Practical walkthrough
+
+deep link جاي من خارج app حتى لو verified App Link؛ verify link ownership بيحدد مين يستقبل URI، مش مين مسموح له يشوف receipt. parser لازم يحدد `https`، host مطابق بالكامل، path shape، encoded segments، طول/format ID، ورفض query/fragment غير المتوقعة؛ تجنب prefix host check زي `endsWith("example.com")` اللي قد يقبل نطاق ضار. بعد parsing اعمل sign-in gate وserver ownership check، ولا تنفّذ side effect حساس بمجرد فتح link. اختبر double encoding، encoded slash، null/blank، accounts مختلفة، cold start، process restore. خلّي bad link يروح safe route بدون crash.
+
 ## Trade-offs and decision criteria
 
 Allowlisting exact hosts/routes is restrictive but audit-friendly; accepting flexible redirects increases ambiguity and attack surface. Verified App Links reduce hijacking risk for owned web domains, but custom schemes remain claimable by other apps. A signed one-time link can prove a server-issued token if the backend validates its expiry and audience, yet sensitive actions should still enforce session, CSRF/replay protection as applicable, and server-side authorization.
@@ -71,10 +75,22 @@ Define a typed link contract per destination, validate it at one ingress boundar
 
 ## Interview answer — structured
 
-“The exported Activity should parse the incoming URI into a typed route only after exact scheme and host checks, path-shape and ID validation, and rejection of unknown parameters. I do not pass arbitrary nested Intents or URLs into privileged components or WebViews. A receipt link then goes through login if necessary and a backend ownership check. I test malformed encodings, host lookalikes, account switching, and Android App Link verification. Verified App Links improve domain routing but do not validate every path or authorize the referenced account. I parse an exact normalized host, expected scheme, path shape and ID format; then authenticate and ask the backend whether the user owns the target. I reject embedded Intents and arbitrary WebView destinations.”
+The exported Activity should parse the incoming URI into a typed route only after exact scheme and host checks, path-shape and ID validation, and rejection of unknown parameters. I do not pass arbitrary nested Intents or URLs into privileged components or WebViews. A receipt link then goes through login if necessary and a backend ownership check. I test malformed encodings, host lookalikes, account switching, and Android App Link verification. Verified App Links improve domain routing but do not validate every path or authorize the referenced account.
+
 ## Interview answer — deep senior
 
-“I separate three trust boundaries: OS routing, application parsing, and backend authorization. Domain verification reduces who can intercept an HTTPS link, but any sender can still construct a URL and the app can be launched through other paths. At ingress I enforce a typed, minimal route contract and reject malformed/extra data; downstream code receives only validated IDs. Session and account context come from trusted state, not URI parameters, and the backend checks object ownership. For sensitive actions I use a server-issued, expiring, replay-aware token or an explicit in-app confirmation as appropriate, and never trigger a transfer solely by opening a URL. I test adversarial URI encodings and process-restored navigation. A deep link is an external input crossing into navigation. I validate scheme and host by parsed URI fields, not string containment; `example.com.attacker.test` must not pass an `example.com` check. I constrain path segment count and query keys, decode carefully once under a documented policy, and reject unexpected fragments or nested redirect targets. Navigation uses a stable resource ID and reloads from the repository. Even a correctly verified HTTPS App Link says something about routing, not the caller’s account permissions, so backend authorization remains essential. I test cold start, logged-out state, malformed encoding, duplicate parameters and links to another user’s record. Analytics records only safe link categories.”
+I separate three trust boundaries: OS routing, application parsing, and backend authorization. Domain verification reduces who can intercept an HTTPS link, but any sender can still construct a URL and the app can be launched through other paths. At ingress I enforce a typed, minimal route contract and reject malformed/extra data; downstream code receives only validated IDs. Session and account context come from trusted state, not URI parameters, and the backend checks object ownership. For sensitive actions I use a server-issued, expiring, replay-aware token or an explicit in-app confirmation as appropriate, and never trigger a transfer solely by opening a URL. I test adversarial URI encodings and process-restored navigation.
+
+A receipt link is a route request, not a privilege. I require an exact HTTPS scheme and host, expected path segment count, bounded opaque ID format, and a deliberate policy for query and fragment data. Prefix or suffix host checks can accept attacker-controlled domains, and encoded slashes can change how a naive parser interprets the path. After parsing I gate sign-in and ask the backend whether the current account owns the receipt. The handler should fail to a safe destination, not crash or perform a write. I test cold launch, wrong accounts, double encoding, and process-restored navigation.
+
+## How to answer in the interview
+
+- **Why:** An external URI crosses into privileged in-app navigation.
+- **How:** Parse exact scheme, host, route shape, encoding, and expected parameters.
+- **Trade-offs:** Reject unknown forms explicitly; keep route IDs opaque and bounded.
+- **Failure cases:** Mention host-suffix bypass, encoded path tricks, and treating App Links as authorization.
+- **Production solution:** Authenticate and server-authorize the receipt before rendering it.
+
 ## Deep-dive talking points
 
 Distinguish App Link verification from payload trust; explain exact host matching, encoded path ambiguities, typed routes, account switching, backend object authorization, and avoiding unsafe nested Intents or WebView targets.
@@ -94,4 +110,4 @@ Give exact scheme/host/path/parameter checks; explain why App Links are not auth
 - [Unsafe use of deep links](https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks) — validation and authorization risks.
 - [About Android App Links](https://developer.android.com/training/app-links/about) — verified-domain routing boundary.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The parser is illustrative and has not been compiled against an Android SDK in this repository.
+Technically reviewed against these primary sources on 2026-10-13 by editorial review. The parser is illustrative and has not been compiled against an Android SDK in this repository.

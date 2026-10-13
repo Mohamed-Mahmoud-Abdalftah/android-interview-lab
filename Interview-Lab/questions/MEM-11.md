@@ -26,6 +26,10 @@ Why must Fragment ViewBinding references be released with the view lifecycle?
 
 الـFragment instance ممكن يفضل موجود على back stack بعد ما الـview اتدمرت. `ViewBinding` ماسكة root view وباقي شجرة الواجهة، فلو خزنتها في property وما صفّرتهاش في `onDestroyView()`، الـFragment يفضل ماسك views قديمة وContext بتاعها. عند الرجوع ممكن يتعمل view جديد، وساعتها عندك نسخة قديمة ونسخة جديدة. استخدم nullable backing field خلال عمر الـview فقط، وخلي observation بـ`viewLifecycleOwner` بدل Fragment lifecycle. إلغاء الـcollector لا يغني عن تصفير binding لو الـproperty نفسها ماسكة view.
 
+## Practical walkthrough
+
+في Fragment على back stack، الـFragment نفسه ممكن يعيش والـview تتدمر. binding field القديمة تمسك root view وما تحتها؛ بعد الرجوع هتتعمل view جديدة وقد تفضل القديمة جنبها. في `onDestroyView` صفّر `_binding` وألغِ أي listener مربوط بالـview؛ وخلي collectors مربوطين بـ`viewLifecycleOwner`. اختبر push/pop عشر مرات وتأكد مفيش غير view tree الحالية في heap.
+
 ## Why it matters and how it works
 
 FragmentManager can retain a Fragment while tearing down its view. The binding generated for that view holds references to its hierarchy. A Fragment field containing the binding creates a strong path to the obsolete hierarchy after `onDestroyView`. The next `onCreateView` may create a new binding. View lifecycle APIs provide the correct owner for LiveData or Flow render subscriptions and are destroyed before the Fragment itself.
@@ -33,6 +37,35 @@ FragmentManager can retain a Fragment while tearing down its view. The binding g
 ## Worked example
 
 The AndroidX pattern is `private var _binding: ProfileBinding? = null`, with a non-null `binding` getter valid only while the view exists. Assign `_binding = ProfileBinding.inflate(inflater, container, false)` in `onCreateView()`, return `binding.root`, and set `_binding = null` in `onDestroyView()`. Collect screen state with `viewLifecycleOwner.lifecycleScope` and `repeatOnLifecycle(STARTED)`. This is an abbreviated pattern; the actual Fragment needs imports, dependency setup, and a render implementation.
+
+This AndroidX sketch assumes generated `ProfileBinding`; it is illustrative and was not compiled here.
+
+```kotlin
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.fragment.app.Fragment
+
+class ProfileFragment : Fragment() {
+    private var _binding: ProfileBinding? = null
+    private val binding get() = requireNotNull(_binding)
+
+    override fun onCreateView(
+        inflater: LayoutInflater, container: ViewGroup?, state: Bundle?
+    ): View {
+        _binding = ProfileBinding.inflate(inflater, container, false)
+        return binding.root
+    }
+
+    override fun onDestroyView() {
+        _binding = null
+        super.onDestroyView()
+    }
+}
+```
+
+Collectors and view listeners must use the same view lifetime; clearing the field alone does not remove subscriptions owned elsewhere.
 
 ## Trade-offs and decision criteria
 
@@ -56,7 +89,15 @@ For a product detail Fragment, keep product ID and data in the ViewModel/reposit
 
 ## Interview answer — deep senior
 
-“The important distinction is the Fragment lifecycle versus its separate view lifecycle. Back-stack operations can destroy the view while retaining the Fragment instance. A binding field is a strong reference to the entire old view hierarchy, so failing to clear it can retain Activity Context, drawables, and listeners across repeated navigation. I create the binding for each `onCreateView`, clear the nullable field in `onDestroyView`, and scope render collectors to `viewLifecycleOwner` with a visibility state appropriate to the screen. Clearing the field is necessary but not sufficient if a callback or coroutine captured the binding independently; I remove or cancel those subscriptions too. The ViewModel holds product state and a stable ID, never the view. I test rapid navigation and delayed responses, then inspect heap retaining paths to verify old view instances disappear without dropping legitimate state.”
+“The important distinction is the Fragment lifecycle versus its separate view lifecycle. Back-stack operations can destroy the view while retaining the Fragment instance. A binding field is a strong reference to the entire old view hierarchy, so failing to clear it can retain Activity Context, drawables, and listeners across repeated navigation. I create the binding for each `onCreateView`, clear the nullable field in `onDestroyView`, and scope render collectors to `viewLifecycleOwner` with a visibility state appropriate to the screen. Clearing the field is necessary but not sufficient if a callback or coroutine captured the binding independently; I remove or cancel those subscriptions too. The ViewModel holds product state and a stable ID, never the view. I test rapid navigation and delayed responses, then inspect heap retaining paths to verify old view instances disappear without dropping legitimate state. A delayed callback makes the boundary easy to test: navigate away before it runs, then return to create a new view. The old binding must be absent from the heap and the callback must not render into it. A nullable getter should fail fast if code touches it after teardown, revealing a lifecycle bug rather than silently retaining the old tree.”
+
+## How to answer in the interview
+
+- **Why:** Separate Fragment lifetime from view lifetime.
+- **How:** Create and clear binding at view boundaries.
+- **Trade-off:** Nullable binding requires lifecycle-aware access.
+- **Failure case:** A delayed callback can touch a destroyed view.
+- **Production solution:** Use view owner for collectors and repeat back-stack heap checks.
 
 ## Deep-dive talking points
 
@@ -77,4 +118,4 @@ Describe two lifecycles, implement binding cleanup, scope observation to the vie
 - [View binding](https://developer.android.com/topic/libraries/view-binding) — Fragment binding cleanup pattern.
 - [Fragment lifecycle](https://developer.android.com/guide/fragments/lifecycle) — independent view lifecycle.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The abbreviated snippet was not Android-compiled.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The abbreviated snippet was not Android-compiled.

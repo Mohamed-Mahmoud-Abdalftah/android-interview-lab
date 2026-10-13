@@ -25,6 +25,10 @@ How do you handle multiple environments and flavors?
 
 Product flavors بتحدد variants زي dev/staging/prod، وbuild types زي debug/release بتحدد debuggability/minification/signing. مش كل combination لازم ينشر. نخلي `applicationId`، backend URL، Play app وsigning policy صريحة ومتحققة في CI؛ لا نحط private secrets في `BuildConfig` لأن APK قابل للفحص.
 
+### Practical walkthrough in Egyptian Arabic
+
+Flavors مفيدة لبيئات backend أو branding، لكن لا تخلي `debug` يروح production endpoint أو `release` يحتفظ staging key. عرّف endpoint وapplication ID وfeature gates في source set/config واضح، واعمل assertions على كل variant حرج. Secrets الحقيقية لا تدخل `BuildConfig` في client على إنها سر؛ أي قيمة في APK قابلة للاستخراج. اختبر minified release flavor للـproduction، وCI تمنع نشر package/endpoint غلط. كثرة flavors تضرب build time واحتمال combinations غير مختبرة.
+
 ## Why it matters and how it works
 
 Gradle combines flavor dimensions and build types into variants. Source sets and manifest placeholders can alter permissions, providers and endpoints. CI should inspect the final merged manifest and artifact metadata, not infer from variant name alone.
@@ -55,7 +59,15 @@ Release checklist records variant, applicationId, signing identity, backend host
 
 ## Interview answer — deep senior
 
-“I design environment separation as a defense against wrong-target releases. The pipeline validates package name, host, signing certificate and Play app/track as one tuple, then promotes only the intended artifact. Backend also rejects test credentials or tenants in production. I keep feature toggles separate from environment identity so a flag does not create an uncontrolled flavor explosion. Tests run common logic once, variant-specific configuration on each shipped variant, and production-like R8/ABI checks before rollout.”
+“I model environments as explicit variant configuration, not manual edits before release. Build types express properties such as debuggability and shrinking; product flavors can express environment or brand dimensions, producing variants whose application ID, endpoint, signing and feature policy I can inspect. I keep backend URLs and safe public configuration in versioned configuration, while server secrets remain server-side because anything packaged in an APK can be extracted. CI compiles representative variants and checks the exact production release variant for package ID, endpoint, manifest and signing identity before upload. I make internal builds visually distinct when useful so testers do not mistake staging for production. The trade-off is a larger variant matrix and build cost, so I avoid creating flavor dimensions for every flag and target the combinations with real distribution value. A wrong-flavor incident should be caught by an artifact-level assertion, not by someone noticing after installation.”
+
+## How to answer in the interview
+
+- **Why:** environment drift can ship wrong backend.
+- **How:** make variant properties explicit and test artifact.
+- **Trade-off:** variant coverage versus build matrix size.
+- **Failure case:** release embeds staging endpoint.
+- **Production solution:** assert package, endpoint and signing before upload.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for variant tuple, merged manifest, test/prod account separation and flav
 
 ## Self-check rubric
 
-Can you explain the mechanism, apply the example, justify a trade-off, identify a failure mode, and answer both follow-ups?
+Map each environment/flavor to app ID, endpoint and signing boundary; prevent production secrets and wrong-backend variants from entering test builds; verify the exact variant in CI.
 
 ## References and reviewed-on date
 
 - [Android build variants](https://developer.android.com/build/build-variants) — flavors and build types.
 - [Android app signing](https://developer.android.com/studio/publish/app-signing) — signing identity.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

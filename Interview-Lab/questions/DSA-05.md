@@ -25,6 +25,10 @@ Compare arrays, linked lists, stacks, queues, hash maps, and sets.
 
 Array/`ArrayList` random access سريع O(1) ونقل عناصر عند insert في النص O(n). Linked list insert قرب node O(1) لكن الوصول لمكانها O(n) وmemory/cache أسوأ غالبًا. Stack LIFO، queue FIFO؛ استخدم `ArrayDeque` مناسب في Kotlin. HashMap key→value وHashSet membership متوقع O(1) لكن memory إضافية وhash quality مهمة.
 
+### Practical walkthrough in Egyptian Arabic
+
+اختيار structure حسب operations: array/list لفهرسة وتصفح، linked list لinsert/delete مع node معلوم، stack للرجوع، queue للشغل بالترتيب، map للlookup بمفتاح، set للmembership. في Kotlin `List` interface لا يضمن random access لكل implementation. لو عندك product feed، غالبًا `ArrayList` للعرض وmap جانبية للـID أفضل من البحث الخطي لكل row.
+
 ## Why it matters and how it works
 
 Data structure choice depends on operations: lookup, ordered traversal, insertion, deletion and bounded memory. Stack/queue are access disciplines that can be implemented on arrays/deques or linked nodes. Complexity statements assume a particular implementation and resizing/collision behavior.
@@ -55,7 +59,15 @@ For Android choose structures from actual access pattern, profile allocation/jan
 
 ## Interview answer — deep senior
 
-“For a product feed I usually keep an array-backed immutable snapshot because iteration and indexed access dominate; for ID joins I build a map once rather than scan per row. For a retry queue I may use FIFO discipline in memory for execution, but the source of truth is a durable database, not an ArrayDeque. I account for amortized resize, hash collision, object overhead and thread confinement. A LinkedList’s O(1) insertion claim is irrelevant if each insertion first performs O(n) search. ”
+“I choose a data structure from the operations the feature performs. An array-backed list supports efficient indexed reads and iteration but insertion in the middle shifts elements. A linked list can splice a known node cheaply yet finding that node and indexing are expensive and each node costs memory. A stack gives last-in-first-out behavior for undo, a queue gives first-in-first-out behavior for pending work, a hash map maps IDs to values with expected fast lookup, and a set represents membership or uniqueness. I do not assume Kotlin’s `List` interface implies one physical structure or O(1) indexed access. For a product feed, I might keep a list for display order and a map for lookup by stable ID, accepting extra memory to avoid repeated per-row scans. For financial operations, an in-memory set is not durable deduplication. I state time and space costs for the actual operations, define mutation and concurrency ownership, then test edge cases and measure on target devices.”
+
+## How to answer in the interview
+
+- **Why:** operations determine structure.
+- **How:** compare lookup, insert, order and memory.
+- **Trade-off:** index speed versus update cost.
+- **Failure case:** assuming every List index is constant.
+- **Production solution:** pick collection from access pattern.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for operation matrix, locating linked node, hash caveat, durable queue ve
 
 ## Self-check rubric
 
-Can you derive the bound, explain the Android example, identify a data or memory trade-off, and answer both follow-ups?
+Choose array, linked list, stack, queue, map or set for one Android data-flow need; compare lookup/insertion order, locality and memory cost rather than memorizing only Big O.
 
 ## References and reviewed-on date
 
 - [Kotlin collections overview](https://kotlinlang.org/docs/collections-overview.html) — standard collections.
 - [Kotlin ArrayDeque API](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.collections/-array-deque/) — deque semantics.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

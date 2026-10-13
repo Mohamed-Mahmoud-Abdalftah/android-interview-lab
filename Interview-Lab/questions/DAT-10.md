@@ -39,14 +39,21 @@ import kotlinx.coroutines.sync.withLock
 class TokenRefresh(private val store: TokenStore, private val api: AuthApi) {
     private val lock = Mutex()
     suspend fun tokenAfter401(sent: String): String = lock.withLock {
+        val generation = store.generation()
         val current = store.accessToken()
         if (current != sent) return@withLock current
         val pair = api.refresh(store.refreshToken())
-        store.replaceAtomically(pair)
+        check(store.replaceIfGeneration(generation, pair)) { "session changed" }
         pair.access
     }
 }
+// TokenStore must atomically compare session generation and replace both tokens;
+// a logout increments the generation. These are app-owned contracts.
 ```
+
+## Practical walkthrough
+
+mutex حوالين refresh لوحده مش كفاية؛ لازم recheck للـaccess token بعد ما caller يستنى lock. مثال: A وB اتلقوا 401 لتوكن v1؛ A يحدّث لـv2، B يدخل lock بعده فيلاحظ v2 ويرجع retry به بدل refresh تاني. خزّن access+refresh كزوج في عملية واحدة، واربطه بـsession generation عشان logout أثناء refresh ما يتراجعش. لو refresh server رجّع invalid_grant، أنهِ session حسب العقد؛ لو timeout، ما تعلنش logged out تلقائيًا. في OkHttp Authenticator sync، تجنب lock coroutine مع blocking `runBlocking` على نفس dispatcher/client من غير تصميم دقيق.
 
 ## Trade-offs and decision criteria
 
@@ -70,7 +77,17 @@ A session repository stores tokens with generation, serializes refresh and repla
 
 ## Interview answer — deep senior
 
-“I design refresh as a single-flight state transition. The key invariant is one refresh operation per observed expired token for a session. A lock or in-flight Deferred coordinates callers, and every waiter rechecks current token after waiting. Token-pair persistence and session generation checks must be atomic with respect to logout; otherwise a late response can resurrect a cleared session. In an OkHttp Authenticator integration I remember that the callback is synchronous and avoid recursion through the same auth client or exhausting its executor. I test two, ten and cancelled callers, server token rotation, refresh failure and logout during refresh. Permanent invalid credentials clear session; transient network failure does not automatically mean the user is unauthenticated. Refreshing without recheck duplicates rotation.”
+I design refresh as a single-flight state transition. The key invariant is one refresh operation per observed expired token for a session. A lock or in-flight Deferred coordinates callers, and every waiter rechecks current token after waiting. Token-pair persistence and session generation checks must be atomic with respect to logout; otherwise a late response can resurrect a cleared session. In an OkHttp Authenticator integration I remember that the callback is synchronous and avoid recursion through the same auth client or exhausting its executor. I test two, ten and cancelled callers, server token rotation, refresh failure and logout during refresh. Permanent invalid credentials clear session; transient network failure does not automatically mean the user is unauthenticated. Refreshing without recheck duplicates rotation.
+
+The invariant is one logical refresh per expired token in one live session. I would coordinate callers with a lock or in-flight task, then recheck the stored access token after waiting: if another request already replaced v1 with v2, I retry with v2 instead of rotating again. I store the new access and refresh token together, conditional on the session generation so logout cannot be undone by a late response. I treat permanent invalid-grant differently from a transient network error. Because OkHttp’s Authenticator is synchronous, the adapter must not block a dispatcher or connection path needed by its own refresh call. Concurrency tests should force both 401 responses at once.
+
+## How to answer in the interview
+
+- **Why:** Multiple expired requests must share one logical rotation.
+- **How:** Lock, recheck token inside lock, refresh once, persist pair conditionally.
+- **Trade-offs:** Coordinate waiters without coupling to a cancelled screen scope.
+- **Failure cases:** Double rotation, stale post-logout write, refresh deadlock.
+- **Production solution:** Deterministic concurrent-401 and logout-race tests.
 
 ## Deep-dive talking points
 
@@ -90,4 +107,4 @@ Can I prove one refresh, atomic pair save, bounded retries and no logout resurre
 - [Kotlin shared mutable state](https://kotlinlang.org/docs/shared-mutable-state-and-concurrency.html) — Mutex coordination.
 - [OkHttp calls guide](https://lysine.dev/okhttp/features/calls/) — authentication follow-up.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

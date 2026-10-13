@@ -24,6 +24,10 @@ Whether the candidate can explain the parent-child tree, completion waiting, can
 
 `structured concurrency` معناها إن كل coroutine جديدة ليها owner واضح في شجرة `Job`. الأب ما يخلصش غير لما أولاده يخلصوا، وإلغاء الأب يلغيهم. ده بيمنع requests قديمة تفضل شغالة بعد خروج المستخدم من الشاشة، وبيخلّي الفشل والانتظار قابلين للتتبع بدل شغل سايب في الخلفية.
 
+## Practical walkthrough
+
+في شاشة checkout لازم السعر والمخزون ينجحوا سوا. `coroutineScope` يخلي الاتنين أبناء لنفس الطلب؛ لو واحد فشل، التاني يتلغي، والدالة ما ترجعش قبل ما الشجرة تخلص. ده برضه معناه إن إغلاق الشاشة يلغي الطلب كله. لو البيانات مستقلة زي كروت dashboard، اختار supervision مع نتيجة منفصلة لكل كارت بدل فرض نجاح جماعي.
+
 ## Why it matters and how it works
 
 `coroutineScope` creates a suspending boundary: it returns after all children finish. A failing child normally cancels siblings and the scope, and cancellation moves down the tree. `supervisorScope` changes sibling failure propagation, not parent cancellation. A separate `CoroutineScope` with a new Job breaks the hierarchy intentionally and needs its own owner.
@@ -68,7 +72,15 @@ A product-details request concurrently loads price and availability that must ag
 
 ## Interview answer — deep senior
 
-“The important contract is ownership, not just concise syntax. A child Job is part of parent completion; cancelling the parent cancels descendants, while ordinary failure in a child cancels its parent and siblings. That lets a ViewModel cancel obsolete requests and lets a caller know that `combine` has truly completed. I use `coroutineScope` for dependent parallel calls and model one failure state. If partial success is valid, a `supervisorScope` can isolate sibling failures, but every child still needs an outcome and cancellation must be rethrown. A process can die regardless of scope, so critical persistence requires a durable queue or WorkManager rather than a detached coroutine.”
+“The important contract is ownership, not just concise syntax. A child Job is part of parent completion; cancelling the parent cancels descendants, while ordinary failure in a child cancels its parent and siblings. That lets a ViewModel cancel obsolete requests and lets a caller know that `combine` has truly completed. I use `coroutineScope` for dependent parallel calls and model one failure state. If partial success is valid, a `supervisorScope` can isolate sibling failures, but every child still needs an outcome and cancellation must be rethrown. A process can die regardless of scope, so critical persistence requires a durable queue or WorkManager rather than a detached coroutine. The exception case reveals whether the structure matches the product: with two required reads, the first failure should cancel its sibling, wait for cleanup, and reject the aggregate. With independent dashboard cards, that behavior may be too strict; I would supervise direct children and turn each into an outcome. In both designs the screen's parent can still cancel everything. I would test the subtree is quiescent before the function returns.”
+
+## How to answer in the interview
+
+- **Why:** callers need a completion and cancellation boundary they can trust.
+- **How:** put child calls inside coroutineScope and return only after their subtree settles.
+- **Trade-off:** all-or-nothing suits required data, supervision suits optional widgets.
+- **Failure case:** detached children outlive the screen.
+- **Production solution:** match the Job tree to the feature's consistency rule and test sibling cancellation.
 
 ## Deep-dive talking points
 
@@ -88,4 +100,4 @@ Can I draw the Job tree, predict completion and cancellation, choose all-or-noth
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — parent-child structure.
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — failure propagation.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

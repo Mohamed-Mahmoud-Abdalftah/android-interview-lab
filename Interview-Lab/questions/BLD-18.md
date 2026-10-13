@@ -26,6 +26,10 @@ A release manifest merge drops a required ContentProvider authority. What CI che
 
 CI تبني `prodRelease` وتفحص merged manifest الناتجة بعد كل source sets وAAR manifests و`tools:` merge rules؛ assert على `provider android:name` و`android:authorities` المتوقعة (مع applicationId suffix)، وربما `exported`, permissions وgrantUri حسب contract. مجرد فحص `src/main/AndroidManifest.xml` لا يكفي؛ release source set أو library قد تغير/تحذف العقدة. استخدم manifest merger report لتفسير من غيّرها، ثم APK/AAB-derived manifest أو instrumented smoke test يؤكد ما شُحن. لا تحل المشكلة بإضافة authority ثابتة قد تصطدم بين flavors.
 
+### Practical walkthrough in Egyptian Arabic
+
+في CI ابنِ `productionRelease` وافحص merged manifest النهائي أو packaged manifest: authority الصحيحة، exported flag، permission وplaceholder values. لو provider من library تغير مع manifest merger، source file وحده لا يكفي. أضف smoke test ل`ContentResolver` وURI grant إن الفعل مهم، واحتفظ بتقرير merger. افحص unexpected exports كذلك لأنها security boundary.
+
 ## Why it matters and how it works
 
 AGP merges manifests by source-set/library priority and explicit tools markers. The final application has one merged manifest; a provider can be replaced, removed or have an authority placeholder resolved differently for a variant. A CI assertion on that output catches a silent release-only configuration regression before upload. A runtime test can additionally verify provider resolution and URI access semantics.
@@ -57,6 +61,14 @@ Check required manifest contracts per published variant, store merger reports on
 ## Interview answer — deep senior
 
 “The check belongs after manifest merging for the artifact we intend to publish. AGP merges `main`, flavor, build-type and library manifests with priority and `tools:` rules, so a source file can look correct while the final `prodRelease` manifest has no provider or a different authority. I add a CI task that parses the merged manifest or final packaged manifest and asserts the exact provider class and resolved `applicationId`-specific authority. Depending on the contract I also assert exported state, permissions and URI grant settings, because a present provider with wrong access rules can still break or expose data. I store the merger decision report as a diagnostic artifact when the assertion fails. Then a focused release-variant integration test exercises the URI path on an emulator. I avoid a raw grep of `src/main` and avoid a fixed authority that collides across flavors or test installs. The check is small, deterministic and tied to the variant, while the device test verifies behavior that static XML cannot.”
+
+## How to answer in the interview
+
+- **Why:** manifest merge changes shipped contract.
+- **How:** assert release authority and runtime URI path.
+- **Trade-off:** static fast check versus device proof.
+- **Failure case:** debug provider absent in release.
+- **Production solution:** artifact gate and smoke test.
 
 ## Deep-dive talking points
 

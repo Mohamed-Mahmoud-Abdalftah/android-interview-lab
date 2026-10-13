@@ -25,6 +25,10 @@ Build a rate limiter or deduplication map for requests. What data structure fits
 
 Rate limiter ممكن يستخدم `HashMap<key, bucket>` يخزن tokens/time window لكل user، مع priority queue أو timer لتنظيف expiries. Dedup map يخزن operation ID→result/status مدة محددة، ولازم atomic check-and-set على server لو أكثر من process. Local Android map يمنع double tap في UI فقط؛ ما يضمنش عدم duplicate charge بعد restart أو جهاز تاني.
 
+### Practical walkthrough in Egyptian Arabic
+
+Rate limiter المحلي في المثال يوقف تكرار search خلال window، لكنه لا يضمن منع دفع مكرر عبر جهازين أو بعد process kill. عرف key، clock monotonic، window، eviction وسياسة concurrent calls. للعمليات المالية استخدم operation ID durable وserver idempotency؛ للـUI debounce أو token bucket حسب UX. اختبر الحد عند 999/1000ms وليس فقط happy path.
+
 ## Why it matters and how it works
 
 Token bucket stores tokens, capacity and last-refill time per key; each request refills by elapsed monotonic time and consumes atomically. Dedup state maps stable identity to immutable parameters and prior result, with TTL and concurrency control. Eviction must not precede provider retention/reconciliation needs.
@@ -32,6 +36,43 @@ Token bucket stores tokens, capacity and last-refill time per key; each request 
 ## Worked example
 
 For search typing, an in-memory map keyed by query can coalesce requests and expire entries. For payment POST, backend durable store has unique operation ID and compares amount/order; Android persists same ID and queries status after timeout. Do not use a client LRU as financial ledger.
+
+This in-process limiter is only a UI/network-load guard; it is not a financial deduplication authority. Injecting monotonic time makes boundary tests deterministic, and a server-side durable key remains necessary for one business effect.
+
+```kotlin
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Test
+
+private class RequestLimiter(
+    private val windowMillis: Long,
+    private val nowMillis: () -> Long
+) {
+    private val lastAccepted = mutableMapOf<String, Long>()
+
+    fun accept(key: String): Boolean {
+        val now = nowMillis()
+        val previous = lastAccepted[key]
+        if (previous != null && now - previous < windowMillis) return false
+        lastAccepted[key] = now
+        return true
+    }
+}
+
+class RateLimiterExampleTest {
+    @Test fun acceptsAtBoundaryForSameKey() {
+        var now = 0L
+        val limiter = RequestLimiter(1_000) { now }
+        assertEquals(true, limiter.accept("search"))
+        now = 999
+        assertEquals(false, limiter.accept("search"))
+        now = 1_000
+        assertEquals(true, limiter.accept("search"))
+        assertEquals(true, limiter.accept("other"))
+    }
+}
+```
+
+The simple map needs a retention policy and synchronization if callers access it concurrently; a distributed rate limit belongs on the server.
 
 ## Trade-offs and decision criteria
 
@@ -55,7 +96,15 @@ Production limits by authenticated identity and endpoint, monitors denial rates,
 
 ## Interview answer — deep senior
 
-“I separate throttling from idempotency. A limiter answers ‘may this actor send now?’ using token/window state and monotonic elapsed time; a dedup store answers ‘is this the same intended operation?’ using immutable parameters and a stable ID. Both need atomic updates under concurrency and bounded retention. A distributed backend may use a transaction/unique constraint, while an in-memory Android map is disposable and bypassable. I test concurrent requests, time jumps, expiry, process death and a lost payment response. I never claim exactly-once network execution from a map. Concurrent check-then-put without lock permits duplicates. Test eviction, concurrency and process death.”
+“I start by defining the scope and contract. A local map keyed by request identity with a time window can suppress repeated search taps; a token bucket or sliding window can allow controlled bursts. I inject a monotonic clock for deterministic tests and define eviction so the map cannot grow forever. Concurrent callers need synchronization or an atomic store; otherwise both may pass the check. The example is an in-process guard, not a payment safety boundary: process death, another device or two servers can bypass it. For a financial operation I persist a stable operation ID and require server-side idempotency and status lookup, with provider-specific limits understood. The trade-off in a UI limiter is responsiveness versus unnecessary requests and false suppression of legitimate repeated actions. I test just-before and exactly-at window boundaries, key separation, clock behavior and concurrent access. I monitor rejected counts and user impact, then tune the policy from observed traffic rather than a magic interval.”
+
+## How to answer in the interview
+
+- **Why:** duplicate requests waste capacity or money.
+- **How:** define key, clock, window and concurrency.
+- **Trade-off:** memory/burst allowance versus throttling.
+- **Failure case:** in-memory map called payment dedup.
+- **Production solution:** server identity for business effects.
 
 ## Deep-dive talking points
 
@@ -68,11 +117,11 @@ Prompt for token bucket state, atomic check-and-set, monotonic time, TTL and pay
 
 ## Self-check rubric
 
-Can you derive the bound, explain the Android example, identify a trade-off/failure, and answer both follow-ups?
+Choose map/set plus timestamp or token bucket according to exact rate/dedup semantics; bound memory, define expiration and concurrency, and test collisions and burst behavior.
 
 ## References and reviewed-on date
 
 - [Kotlin Map API](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.collections/-map/) — map operations.
 - [Stripe idempotent requests](https://docs.stripe.com/api/idempotent_requests) — financial retry semantics.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

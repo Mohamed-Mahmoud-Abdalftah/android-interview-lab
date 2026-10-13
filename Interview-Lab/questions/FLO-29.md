@@ -24,6 +24,10 @@ Choose backpressure strategy for a fast source and slow UI without dropping requ
 
 لو upstream سريعة والرسم بطيء، نسأل الأول: كل emission مهمة ولا آخر snapshot بس؟ للـUI frame أو progress، `conflate` أو `collectLatest` ممكن يقلل شغل قديم؛ `buffer` يخلي المصدر يسبق ضمن capacity لكن ممكن يزيد latency. لو data لكل emission مهمة، نخزنها durable أو نعالجها بعقد backpressure، وما نسقطهاش عشان الرسم بطيء.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو upstream تبعت sensor value كل 5ms والرسم بياخد 30ms، اسأل هل كل sample مهمة؟ للـUI اللي يهمها آخر وضع، `conflate` أو `collectLatest` ممكن يقلل backlog، لكن الفرق إن collectLatest تلغي render القديمة. لو بيانات محاسبية أو telemetry لازم كاملة، ما تسقطش؛ خزنها أو عالجها بعيد عن UI. قِس queue والـframe time.
+
 ## Why it matters and how it works
 
 Conflate drops intermediate values; collectLatest cancels previous processing; buffer queues within capacity and then applies backpressure. Throttle/sample can reduce render rate for telemetry, but their semantics differ and must be measured. Keep durable ingestion separate from lossy visualization.
@@ -34,12 +38,12 @@ JVM illustration; chart frames are replaceable snapshots. `draw` must cooperate 
 
 ```kotlin
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.collectLatest
 
 suspend fun chart(frames: Flow<List<Float>>, draw: suspend (List<Float>) -> Unit) {
-    frames.conflate().collectLatest { draw(it) }
+    frames.collectLatest { draw(it) }
 }
+// Use conflate() instead if the handler must finish but queued frames can drop.
 ```
 
 ## Trade-offs and decision criteria
@@ -64,7 +68,15 @@ A real-time chart persists every sensor sample in a bounded ingestion pipeline, 
 
 ## Interview answer — deep senior
 
-“I split data correctness from visualization. In a sensor app, raw samples may be legally or operationally important and go through a durable, bounded ingestion path. The chart is a derived latest-state view, so dropping intermediate frames is acceptable. `buffer` trades memory for throughput but can increase latency to what the user sees; `conflate` keeps the newest value; `collectLatest` cancels a running draw if it cooperates. I choose based on whether the render function has side effects, the maximum tolerable staleness and available memory. I instrument queue depth, render time and dropped-frame count, and test slow-device behavior rather than applying operators by habit.”
+“I split data correctness from visualization. In a sensor app, raw samples may be legally or operationally important and go through a durable, bounded ingestion path. The chart is a derived latest-state view, so dropping intermediate frames is acceptable. `buffer` trades memory for throughput but can increase latency to what the user sees; `conflate` keeps the newest value; `collectLatest` cancels a running draw if it cooperates. I choose based on whether the render function has side effects, the maximum tolerable staleness and available memory. I instrument queue depth, render time and dropped-frame count, and test slow-device behavior rather than applying operators by habit. I would start with the business contract, not choose the fastest operator by habit. If the screen only needs the latest position or progress, conflation can drop intermediate queued values and keep it current; `collectLatest` can cancel an expensive render block already in progress. If every sample matters, I use a bounded buffer and a durable processing path rather than losing records. `buffer` can improve producer-consumer overlap but may increase memory and latency when the consumer never catches up. I measure emission rate, handler duration, queue growth, and frame-time distribution, then test with a deliberately slow collector to see the actual loss or cancellation behavior. A UI optimization must not change the meaning of financial or audit events.”
+
+## How to answer in the interview
+
+- **Why:** a slow consumer creates backlog or latency.
+- **How:** choose latest-only, cancellation, or durable processing by semantics.
+- **Trade-off:** memory versus dropped values.
+- **Failure case:** conflate loses required records.
+- **Production solution:** load-test rate, queue, and frames.
 
 ## Deep-dive talking points
 

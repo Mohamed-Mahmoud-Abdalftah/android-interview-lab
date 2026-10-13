@@ -25,6 +25,10 @@ A team puts a private API key in BuildConfig from local.properties. Why is this 
 
 `local.properties` يحمي private key من commit بالصدفة؛ لكن لما Gradle ينسخه إلى `BuildConfig` يبقى constant في APK. أي مستخدم يقدر يستخرجها بالـdecompile أو يراقب call اللي بتستخدمها. لو key بتدي صلاحية private API أو charge، اتعامل معها كـleaked: rotate، audit، وانقل العملية لـbackend.
 
+## Practical walkthrough
+
+لو `BuildConfig.PAYMENT_PRIVATE_KEY` اتبنت من `local.properties`, APK النهائي فيه القيمة حتى لو Git نظيف. افحص artifacts اللي اتوزعت، أبطل المفتاح من provider، راجع الاستخدام غير المتوقع، وانقل private call إلى backend. قيود package/signature نافعة فقط لو provider صمم key موبايل public؛ ما تعالجش secret بR8 أو JNI أو تقسيم string.
+
 ## Why it matters and how it works
 
 BuildConfig values are compiled into the distributed client. R8 name changes and JNI relocation cannot create a server-controlled secret. Provider package/signature restrictions and quotas may help for public mobile identifiers, but private operations require server custody and authorization.
@@ -55,7 +59,15 @@ CI scans source and packaged artifacts, while secret-management controls restric
 
 ## Interview answer — deep senior
 
-“I separate prevention and remediation. For prevention, private provider credentials never enter mobile build inputs; CI scans artifacts as well as Git. For remediation, I revoke the distributed key at the provider, inspect abuse, roll backend credentials and release an app without it. Server endpoints enforce least privilege, rate limits, idempotency and audit trails. If a key is intentionally public for a mobile SDK, I apply documented package/signing restrictions and quotas, but I still assume extraction and do not grant financial authority through it.”
+“I separate prevention and remediation. For prevention, private provider credentials never enter mobile build inputs; CI scans artifacts as well as Git. For remediation, I revoke the distributed key at the provider, inspect abuse, roll backend credentials and release an app without it. Server endpoints enforce least privilege, rate limits, idempotency and audit trails. If a key is intentionally public for a mobile SDK, I apply documented package/signing restrictions and quotas, but I still assume extraction and do not grant financial authority through it. For incident response I would identify affected APK versions and provider credentials, revoke the old key, review transaction history for abuse, then ship a backend-mediated flow. I would keep only public identifiers in mobile artifacts and test provider restrictions where relevant. An artifact scanner catches accidental reintroduction, but no scanner changes the central fact that the mobile binary is attacker accessible. The backend must validate every requested operation.”
+
+## How to answer in the interview
+
+- **Why:** compilation copies the credential into an attacker-owned binary.
+- **How:** inspect build artifacts and runtime use, then classify the key's privilege.
+- **Trade-off:** backend proxy adds an integration step.
+- **Failure case:** leaked key can authorize calls outside user context.
+- **Production solution:** revoke, investigate, rotate, and remove private credentials from mobile builds.
 
 ## Deep-dive talking points
 
@@ -75,4 +87,4 @@ Can I trace the secret into APK, describe full incident response and redesign pr
 - [Android build configuration](https://developer.android.com/build/gradle-tips) — build-time constants.
 - [OWASP MASVS resilience](https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/) — reverse-engineering limits.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

@@ -23,7 +23,11 @@ How do you test Flow, StateFlow, and SharedFlow with Turbine?
 
 ## Explanation in Arabic
 
-`Flow` البارد يبدأ عند collect؛ `StateFlow` hot وله current value وconflation بالمساواة؛ `SharedFlow` hot وreplay/buffer حسب configuration. Turbine تساعد `awaitItem()` و`expectNoEvents()` و`cancelAndIgnoreRemainingEvents()`، لكن لازم subscriber يبدأ قبل event لو replay=0. `runTest` وtest dispatcher يخلّوا التوقيت واضح.
+اختبار `Flow` يبدأ من contract: cold Flow ما تشتغلش إلا عند collect، أما `StateFlow` فهي hot ولها current value وتمنع emission لقيمة مساوية، و`SharedFlow` hot وسلوك replay/buffer فيها يتحدد بالإعداد. مع Turbine، استهلك `awaitItem()` بالترتيب ثم `awaitComplete()` للـcold أو اترك `test` تلغي collector في النهاية. ابدأ اشتراك `SharedFlow(replay=0)` قبل emission؛ الحدث السابق للـsubscriber لن يُستعاد.
+
+## Practical walkthrough
+
+عشان تختبر `Loading → Success` في ViewModel، fake repository تفضل معلقة بعد Loading وتطلقها بعد assertion؛ لو كتبت قيم StateFlow بسرعة، conflation قد تخفي مرحلة. `runTest` يتحكم في scheduler، لكنه لا يثبت أن UI lifecycle ستستقبل event أثناء STOP؛ ده يحتاج اختبار Route/Android منفصل. لا تغيّر replay لمجرد إسكات test فاشل.
 
 ## Why it matters and how it works
 
@@ -92,7 +96,15 @@ Test collector start, configuration recreation, lifecycle stop/start, equal-valu
 
 ## Interview answer — deep senior
 
-“I write tests around the semantic contract, not just an expected list. For StateFlow I decide whether intermediate Loading is observable under my scheduler; conflation can erase rapid transitions, so I control the fake repository’s timing. For SharedFlow I test subscriber timing, replay, extra-buffer capacity and overflow, especially after configuration changes. Turbine’s timeout and cancellation behavior help detect hanging collectors, but the app’s actual lifecycle collection is still a device/UI concern. I avoid changing replay to satisfy a flaky test without deciding whether duplicate event delivery is acceptable.”
+“I test the semantics of the stream, not just a list of expected strings. A cold `Flow` starts when collected and can complete or fail; Turbine lets me assert items and terminal events. A `StateFlow` is already active, exposes its current value immediately and suppresses equal values. I use a controlled fake and test scheduler if I need to observe Loading before Success, because rapid updates can conflate. A replay-zero `SharedFlow` sends to current subscribers; I establish the collector before emitting, and separately test what the product should do if no screen is collecting. With Turbine I consume expected events, assert no extras when appropriate, and let the test scope cancel a hot collector rather than leak it. I also check retry, cancellation and error paths instead of changing dispatcher behavior merely to satisfy a timing assertion. The JVM test proves the Flow contract under its scheduler. It does not prove Activity STOP/START collection, configuration recreation or accessibility feedback; those need focused Android UI tests. For one-time navigation, I decide whether loss or replay is acceptable before choosing SharedFlow, Channel or acknowledged state.”
+
+## How to answer in the interview
+
+- **Why:** cold and hot flows deliver events under different timing rules.
+- **How:** demonstrate Turbine assertions for cold completion, StateFlow current/equality and SharedFlow subscription.
+- **Trade-off:** replay helps late collectors but can duplicate one-shot actions.
+- **Failure case:** emission before replay-zero subscription is lost.
+- **Production solution:** test Flow policy on JVM and lifecycle collection on device.
 
 ## Deep-dive talking points
 
@@ -105,7 +117,7 @@ Prompt for cold/hot collection, StateFlow equality, SharedFlow replay and collec
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Assert a cold Flow starts at collection, StateFlow exposes its current value and suppresses equal updates, and replay-zero SharedFlow requires an active collector. Use Turbine to consume or cancel all events and explain one lifecycle gap.
 
 ## References and reviewed-on date
 

@@ -23,7 +23,11 @@ Compare StandardTestDispatcher and UnconfinedTestDispatcher.
 
 ## Explanation in Arabic
 
-`StandardTestDispatcher` بيجدول coroutine على `TestCoroutineScheduler` ومش بيشغّل `launch` فورًا؛ لازم `runCurrent` أو تقدم الوقت. `UnconfinedTestDispatcher` يبدأ coroutine الجديدة eagerly لحد أول suspension، فاختبارات بسيطة تبقى أسهل لكن order ممكن يختلف عن production. الاتنين يشاركوا virtual scheduler لو اتبْنوا صح.
+`StandardTestDispatcher` يصفّ coroutine جديدة على scheduler؛ غالبًا لازم `runCurrent()` أو تقدم الوقت عشان تبدأ، وده مفيد لما عايز تتأكد من Loading قبل Success. `UnconfinedTestDispatcher` يبدأ الشغل eagerly لحد أول suspension، فيسهّل بعض hot-flow collectors، لكنه ممكن يخلي state intermediate تختفي من الاختبار لو النتيجة اتنشرت بسرعة. الاتنين أدوات اختبار، مش بديل تلقائي للـproduction dispatcher.
+
+## Practical walkthrough
+
+لما تخلطهم في اختبار واحد، استخدم نفس `TestCoroutineScheduler` واحسب ترتيب الإطلاق والاشتراك. في StateFlow مثلًا لا تفترض إن كل value سريعة ستُرى؛ اتحكم في fake repository أو gates قبل الانتقال للـSuccess. اختبر السلوك الذي يعتمد عليه المستخدم، مش مصادفة ترتيب scheduler.
 
 ## Why it matters and how it works
 
@@ -55,7 +59,15 @@ Team test conventions use Standard by default for state machines, with documente
 
 ## Interview answer — deep senior
 
-“For a senior-level concurrency test, I first state the happens-before relationships I need. With Standard I can stop before dispatch, after launch, after a virtual delay and after cancellation, asserting state at each point. With Unconfined I may start a Flow collector eagerly so it does not miss an event, but I keep that use local and explicit. Sharing one TestCoroutineScheduler across injected dispatchers prevents unexplained hangs. I also test real adapter behavior where thread confinement or race conditions depend on Android/runtime scheduling.”
+“The choice is about when coroutines start relative to my assertions. `StandardTestDispatcher` queues newly launched work on a `TestCoroutineScheduler`; I explicitly run current tasks or advance virtual time. That is useful when I need to assert an initial Loading state before releasing a fake repository response. `UnconfinedTestDispatcher` enters a launched coroutine eagerly until suspension, which can simplify starting a hot-flow collector before an event, but it can also make the test observe only the final state if I do not control the producer. I do not infer production thread ordering from either dispatcher. If both are used, they should share the scheduler created by `runTest`, and the test should state why one collector starts eagerly. For a ViewModel, I would gate the fake result, assert Loading, release it, and assert Success or Error. For a replay-zero SharedFlow, I establish the subscription before emitting. When a test changes behavior just because the dispatcher changes, I first inspect whether the product relies on an unstated timing assumption, rather than switching dispatchers only to make a flaky assertion green.”
+
+## How to answer in the interview
+
+- **Why:** launch timing changes what intermediate UI states a test can see.
+- **How:** contrast queued Standard and eager Unconfined execution on one scheduler.
+- **Trade-off:** easier collector startup versus hidden ordering assumptions.
+- **Failure case:** instant fake success makes Loading disappear.
+- **Production solution:** gate responses and assert state transitions deliberately.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for eager entry, queue progress, shared scheduler and ordering-risk trade
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Predict when a launched child begins under each dispatcher, demonstrate the observable Loading state with a shared scheduler, and explain when eager execution is useful without accidentally hiding intermediate states.
 
 ## References and reviewed-on date
 
 - [Kotlin TestDispatcher API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/) — dispatcher semantics.
 - [Android coroutine testing](https://developer.android.com/kotlin/coroutines/test) — dispatcher usage.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-12; automated technical review only, not human review.

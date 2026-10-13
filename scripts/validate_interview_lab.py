@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from import_interview_lab import ROOT, SOURCE, parse_source
@@ -65,6 +65,7 @@ def validate() -> dict:
         errors.append(f"extra canonical record: {extra}")
     fingerprints = Counter()
     code_fingerprints = Counter()
+    rubric_ids = defaultdict(list)
     placeholder_count = 0
     for q in source:
         topic_coverage[q["code"]]["total"] += 1
@@ -122,6 +123,9 @@ def validate() -> dict:
                     errors.append(f"copied {len(copied)} long sentences into {depth}: {q['id']}")
             explanation = body.split('## Explanation in Arabic\n', 1)[-1].split('\n## ', 1)[0].strip()
             fingerprints[re.sub(r"\s+", " ", explanation)] += 1
+            rubric = re.sub(r"\s+", " ", sections.get("Self-check rubric", "")).strip().casefold()
+            if rubric:
+                rubric_ids[rubric].append(q["id"])
             for code in re.findall(r"```kotlin\n([\s\S]*?)```", body):
                 code_fingerprints[code.strip()] += 1
         else:
@@ -132,6 +136,9 @@ def validate() -> dict:
     for code, count in code_fingerprints.items():
         if code and count > 1:
             errors.append(f"duplicate Kotlin example used {count} times")
+    for ids in rubric_ids.values():
+        if len(ids) > 1:
+            errors.extend(f"duplicate self-check rubric shared by {len(ids)} questions: {qid}" for qid in ids)
     for qid, item in question_status.items():
         if item["status"] == "reviewed":
             item["automatedQuality"] = "needs-fix" if any(error.endswith(f": {qid}") for error in errors) else "passes-checks"

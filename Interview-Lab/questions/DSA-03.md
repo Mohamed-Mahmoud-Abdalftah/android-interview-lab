@@ -25,6 +25,10 @@ Why are constants and lower-order terms omitted in asymptotic analysis?
 
 لو `T(n)=4n²+30n+200`، مع n كبير `n²` هي اللي تسيطر؛ لذلك Big O نكتب O(n²) ونسقط constants والterms الأقل. ده ما يقولش إنهم غير مهمين في app حقيقية: على list من 20 عنصر، allocation أو database call ثابتة ممكن تكون أغلى من اختلاف class التعقيد.
 
+### Practical walkthrough in Egyptian Arabic
+
+لما تقول `3n + 20` يصبح `O(n)`، أنت بتوصف السلوك مع n كبيرة، لكن في شاشة فيها 10 عناصر قد تكون تكلفة 20 أو allocation أهم. لا تستخدم حذف constants لتبرير API ثقيل أو عمل على Main. اعرض asymptotic class أولًا، ثم benchmark وmemory profile بالحجم الواقعي والجهاز الأقل قدرة.
+
 ## Why it matters and how it works
 
 Big O is an upper bound up to positive constants beyond some threshold; it communicates scaling class. Constants depend on hardware, data layout, cache, GC and implementation. For bounded mobile inputs, benchmark is necessary.
@@ -55,7 +59,15 @@ Profile production-like input distributions and low-end devices, then document c
 
 ## Interview answer — deep senior
 
-“Asymptotic notation deliberately ignores implementation constants to make algorithm families comparable independent of hardware. I still define the input range and workload: on Android, a 16 ms frame budget can be broken by allocations or I/O even for O(1), and a tiny O(n²) algorithm may be acceptable. I model both growth and frequency—per frame, per keystroke or once at startup—then measure low-end devices. The goal is not to chase the smallest O class at the cost of correctness or maintainability.”
+“Asymptotic notation describes growth as n becomes large. If a routine performs `3n + 20` operations, the linear term dominates eventually, so we call it O(n). We omit constant factors and lower-order terms to compare classes independent of a particular machine or implementation. I would not use that simplification to ignore user-visible latency: for a screen with ten items, the fixed setup cost or allocations may dominate. Two O(n) implementations can differ greatly if one allocates a new collection every frame. I first derive a clear upper bound and identify input variables, then profile the actual range and call frequency. For a list transform, I might prefer a readable eager chain until a trace shows GC pressure; then I can combine passes or cache a stable result. The mistake is either obsessing over a constant in code that never runs at scale or assuming all algorithms in the same Big O class have equal production cost.”
+
+## How to answer in the interview
+
+- **Why:** asymptotic notation isolates growth.
+- **How:** show dominating term and real input range.
+- **Trade-off:** clean model versus constants that matter in practice.
+- **Failure case:** an O(n) path allocates too much each frame.
+- **Production solution:** benchmark realistic sizes.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for formal dominant term, practical input range, repeated-query crossover
 
 ## Self-check rubric
 
-Can you derive the bound, explain the Android example, identify a data or memory trade-off, and answer both follow-ups?
+Simplify a polynomial to its dominant term under an explicit large-n assumption, then name a real-device situation where constants or memory allocation still decide performance.
 
 ## References and reviewed-on date
 
 - [Kotlin collections overview](https://kotlinlang.org/docs/collections-overview.html) — operation context.
 - [Android performance](https://developer.android.com/topic/performance) — measurement context.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

@@ -24,6 +24,10 @@ Integrate concurrency, deadlines, retry and idempotency by operation semantics.
 
 نرسم operation boundaries: هل 3 calls كلهم مطلوبين؟ `coroutineScope` تفشل معًا؛ مستقلين؟ supervision مع outcomes منفصلة. timeout local deadline، مش rollback للسيرفر. retries للأخطاء المؤقتة فقط مع cap/backoff/jitter، وwrite لها operation ID ثابت وserver idempotency/status query. Shared state تحتاج Mutex/transaction حسب مكان invariant، وUI cancellation لا تلغي durable business work.
 
+## Practical walkthrough
+
+لو Home فيها 3 services مستقلين، supervision تعرض الناجح وتعلّم الفاشل؛ لو quote دفع لازم الثلاثة، فشل واحدة يلغي siblings. Timeout يحدد انتظار العميل بس، والـwrite ممكن تكون وصلت. Retry للقراءة المؤقتة بbackoff/jitter، أما write محتاجة ID ثابت وstatus query. حدد concurrency cap وسقف زمن إجمالي، ولا تعتبر `cancel` rollback لأي أثر على السيرفر.
+
 ## Why it matters and how it works
 
 Scope hierarchy controls local lifetime, dispatcher selects execution, semaphore bounds fan-out, and database/server transactions protect invariants. Set per-call and overall deadlines, classify transient/permanent failures, respect 429 guidance and preserve CancellationException. Process death requires persisted pending operations and repeat-safe workers.
@@ -65,7 +69,15 @@ A checkout aggregates required quote calls with structured cancellation, limits 
 
 ## Interview answer — deep senior
 
-“I would define a per-operation policy matrix. It states dependency graph, failure aggregation, maximum parallelism, per-call/overall deadline, retryable errors and whether the operation has external side effects. Coroutines and scopes govern local cancellation; they do not roll back network work. A semaphore protects downstream capacity, Room transactions protect local invariants and backend transactions protect financial state. A timed-out read can often retry; a timed-out write is Unknown until server reconciliation using the same stable key. WorkManager provides restartable attempts after process death, and each attempt is repeat-safe. I test one child failing, slow cancellation, token refresh races, 429 backoff, duplicate worker runs and server-commit/client-response-loss. Catching CancellationException can trigger obsolete retries.”
+“I would define a per-operation policy matrix. It states dependency graph, failure aggregation, maximum parallelism, per-call/overall deadline, retryable errors and whether the operation has external side effects. Coroutines and scopes govern local cancellation; they do not roll back network work. A semaphore protects downstream capacity, Room transactions protect local invariants and backend transactions protect financial state. A timed-out read can often retry; a timed-out write is Unknown until server reconciliation using the same stable key. WorkManager provides restartable attempts after process death, and each attempt is repeat-safe. I test one child failing, slow cancellation, token refresh races, 429 backoff, duplicate worker runs and server-commit/client-response-loss. Catching CancellationException can trigger obsolete retries. I would make the policy per endpoint rather than globally retrying every exception. A GET can retry selected transient failures within an overall deadline; a payment POST needs stable identity, provider deduplication and status lookup after ambiguity. Parallelism is capped to protect the device and service, and cancellation must propagate through backoff delays and sibling jobs. I would test a failure during retry, timeout after remote commit, and parent cancellation. Operational metrics should distinguish user cancellation from service errors.”
+
+## How to answer in the interview
+
+- **Why:** operation semantics determine concurrency and retry policy.
+- **How:** classify dependencies, set deadlines and limits, and assign stable IDs to writes.
+- **Trade-off:** retries improve transient success but add load and latency.
+- **Failure case:** timed-out payment retried with a new identity.
+- **Production solution:** cancellation tests, idempotent backend contract, and status reconciliation.
 
 ## Deep-dive talking points
 
@@ -85,4 +97,4 @@ Can I separate local concurrency from server effects and justify deadline/retry/
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — structured cancellation.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — durable retry.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

@@ -24,6 +24,10 @@ Design notification delivery with server authority, deep links and security vali
 
 Notifications تبدأ من server event له stable ID وrecipient، ثم push يوقظ التطبيق إن أمكن؛ push مش durable database ولا ضمان ترتيب/وصول. عند tap، PendingIntent/deep link تفتح destination وتتحقق من auth، account وresource permissions من backend. لو app كانت مقتولة أو المستخدم logged out، نعيد بناء state من repository ونوجّه لـlogin ثم الهدف إذا مصرح. قناة notification وأذونتها حسب Android version.
 
+## Practical walkthrough
+
+Push notification ممكن توصل مرتين أو ما توصلش خالص؛ اعتبرها إشارة، مش قاعدة البيانات. السيرفر يخزن event بـID ومستلم، وعند tap التطبيق يفتح explicit PendingIntent ويعيد تحميل resource بعد auth. لو user غيّر account أو resource اتحذف، اعرض حالة مناسبة بدل ما تتبع `resourceId` في push كأنه تصريح. جرّب tap والتطبيق مقتول وlogged out والرسالة قديمة.
+
 ## Why it matters and how it works
 
 Use notification payload as a hint/identifier, not trusted authorization or secret data. Persist user-visible inbox/history server-side if delivery matters. Android 13+ notification runtime permission affects display; channel configuration affects user control. Deep links must validate URI/arguments and avoid open redirects.
@@ -63,7 +67,15 @@ A messaging app stores messages on backend, sends push with opaque event ID, ded
 
 ## Interview answer — deep senior
 
-“The system has several failure windows: push never arrives, arrives twice, user taps after account switch, app process is dead, or the resource is deleted. I make the server event store authoritative and push only a wake/display hint with a stable ID. The app uses an explicit PendingIntent and allowlisted route, validates arguments and checks backend authorization after login before rendering. I avoid putting secrets in notification text or extras, respect user channel/permission controls, and support in-app inbox recovery. Metrics distinguish server event creation, push provider acceptance, app receipt, display and open; none alone proves the user saw it. Tests cover forged deep links, duplicate push, cold start, process death and version skew.”
+“The system has several failure windows: push never arrives, arrives twice, user taps after account switch, app process is dead, or the resource is deleted. I make the server event store authoritative and push only a wake/display hint with a stable ID. The app uses an explicit PendingIntent and allowlisted route, validates arguments and checks backend authorization after login before rendering. I avoid putting secrets in notification text or extras, respect user channel/permission controls, and support in-app inbox recovery. Metrics distinguish server event creation, push provider acceptance, app receipt, display and open; none alone proves the user saw it. Tests cover forged deep links, duplicate push, cold start, process death and version skew. I would keep a server inbox or event endpoint so a missed push can be recovered on next launch. Notification payloads carry opaque IDs, not sensitive account data or final authorization. An explicit immutable PendingIntent routes to an app destination, but the destination rechecks authentication and fetches the resource for the current account. I would test duplicate delivery, tap after logout, deleted resource, cold start and notification permission denial. Metrics should compare event creation with delivery and open rates without treating push as guaranteed transport.”
+
+## How to answer in the interview
+
+- **Why:** push delivery and user context are not guaranteed.
+- **How:** store server event identity, route taps through authenticated resource lookup.
+- **Trade-off:** re-fetch adds latency but prevents stale or cross-account display.
+- **Failure case:** duplicate push or tap after account switch.
+- **Production solution:** idempotent inbox state, immutable intent, and cold-start tests.
 
 ## Deep-dive talking points
 
@@ -83,4 +95,4 @@ Can I distinguish push from durable truth, validate deep links and handle duplic
 - [Android notifications](https://developer.android.com/develop/ui/views/notifications) — channels and permission.
 - [Android deep links](https://developer.android.com/training/app-links/deep-linking) — routing/security.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

@@ -32,6 +32,10 @@ Scattered provider conditionals indicate a missing variation boundary. A narrow 
 
 Migration sketch: extract one `PaymentGateway` contract from existing provider path, write contract tests, route current provider through adapter, then add second provider adapter and composition binding. Keep server-side provider credentials and final transaction verification.
 
+## Practical walkthrough
+
+لما provider جديد يلمس 10 classes، ارسم طريق التغيير: selection، policy، UI، analytics، SDK، backend mapping. مش كل تعديل خطأ؛ registration واختبارات provider الجديدة متوقعة. لكن تكرار `when` عبر الطبقات علامة إن variation مش في مكان واحد. اعمل `PaymentGateway` contract ضيق، adapter للموجود، tests مشتركة، ثم ضيف الجديد. خليك صريح إن provider ممكن يحتاج policy مختلفة أو legal flow خاص، فلا تضغط الاختلاف الحقيقي في interface كاذبة. راقب عدد الملفات المتغيرة في الإضافة التالية، وتأكد من server confirmation وidempotency.
+
 ## Trade-offs and decision criteria
 
 A strategy layer is worth the cost if providers change or SDKs differ materially. For one stable provider, a concrete repository may be simpler. Avoid a god-factory that knows every SDK and business rule.
@@ -50,11 +54,19 @@ I would use OCP and DIP to create a narrow provider strategy boundary, SRP to se
 
 ## Interview answer — structured
 
-Ten edited classes suggest provider decisions are scattered. I would first map those edits, then extract a `PaymentGateway` or strategy contract that checkout policy can use without knowing SDK types. Provider adapters translate callbacks and errors. The interface should include only shared capabilities and every implementation must preserve result and cancellation semantics. This localizes future additions, though DI registration, tests and server configuration still need changes. I would migrate the current provider first to verify the seam. I would first migrate the existing provider into the new seam and confirm no behavior changes, then add the next one. That sequence tests whether the abstraction is truthful before making it public. I would also check that result codes and retry policy are not duplicated in each ViewModel.
+Ten edited classes suggest provider decisions are scattered. I would first map those edits, then extract a `PaymentGateway` or strategy contract that checkout policy can use without knowing SDK types. Provider adapters translate callbacks and errors. The interface should include only shared capabilities and every implementation must preserve result and cancellation semantics. This localizes future additions, though DI registration, tests and server configuration still need changes. I would migrate the current provider first to verify the seam. I would first migrate the existing provider into the new seam and confirm no behavior changes, then add the next one.
 
 ## Interview answer — deep senior
 
-I would not immediately build a plugin framework; I would trace why ten classes change. If UI, ViewModel and repositories all branch on provider code, I separate stable checkout policy from variable SDK operations. OCP motivates an extension seam, DIP sets source dependency direction, SRP keeps mapping out of UI, ISP keeps the gateway narrow, and LSP demands substitutable outcomes. I write contract tests for accepted, declined, timeout, duplicate callbacks and cancellation before adding another adapter. The backend still owns credentials and authoritative payment status; a timeout may require reconciliation rather than retry. New provider work should then mostly touch its adapter, app wiring and targeted integration tests. If differences cannot fit one truthful contract, I split capabilities instead of creating a god-factory with hidden special cases. The ten edits are evidence of a variation axis, but I would not assume all ten are bad: some may be legitimate tests or registration changes. I categorize them into provider implementation, composition, shared policy, and UI. The goal is to localize provider-specific logic while still making server-approved options and user-facing labels explicit. Contract tests enforce timeout and cancellation semantics, and backend reconciliation handles uncertain outcomes. If adding the third provider still requires ten scattered behavioral edits, the seam likely failed or the providers are not truly substitutable under one contract.
+I would not immediately build a plugin framework; I would trace why ten classes change. If UI, ViewModel and repositories all branch on provider code, I separate stable checkout policy from variable SDK operations. OCP motivates an extension seam, DIP sets source dependency direction, SRP keeps mapping out of UI, ISP keeps the gateway narrow, and LSP demands substitutable outcomes. I write contract tests for accepted, declined, timeout, duplicate callbacks and cancellation before adding another adapter. The backend still owns credentials and authoritative payment status; a timeout may require reconciliation rather than retry. New provider work should then mostly touch its adapter, app wiring and targeted integration tests. If differences cannot fit one truthful contract, I split capabilities instead of creating a god-factory with hidden special cases. I would inspect the ten edits before naming a principle. Some are legitimate, such as provider registration, copy, and tests; repeated branching through UI, policy, and data is the problem. OCP suggests a provider extension seam, DIP keeps policy from importing SDK types, SRP separates mapping from eligibility, and LSP requires every adapter to honor the shared outcome contract. I would migrate the existing provider through the contract first and add contract tests before adding the new one. The trade-off is extra indirection and potentially divergent provider capabilities. If legal or authorization rules truly differ, I would model that explicitly instead of forcing false uniformity. The backend remains authoritative for transaction state.
+
+## How to answer in the interview
+
+- **Why:** Trace the ten edits.
+- **How:** propose one variation seam.
+- **Trade-offs:** note legitimate registration edits.
+- **Failure cases:** flag false uniformity.
+- **Production solutions:** finish with adapter contracts and backend verification..
 
 ## Deep-dive talking points
 
@@ -74,4 +86,4 @@ Name three principles relevant to provider churn, show one contract, and include
 - [Robert C. Martin, OCP](https://blog.cleancoder.com/uncle-bob/2014/05/12/TheOpenClosedPrinciple.html) — extension boundaries.
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — adapter ownership.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

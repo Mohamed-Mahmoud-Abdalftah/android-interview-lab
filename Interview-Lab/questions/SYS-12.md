@@ -24,6 +24,10 @@ Design reusable Android SDK with narrow stable API, lifecycle ownership and comp
 
 SDK عامة لازم API صغيرة واضحة لا تسرّب Activity أو تفاصيل transport، وتعرّف threading, cancellation, errors وresource ownership. ننشر semantic versions ونحدد minSdk/AGP/Kotlin compatibility وconsumer R8 rules لو reflection/JNI. نختبر sample app debug/release، API binary compatibility، Java/Kotlin callers، process death حسب الحاجة، ومين مسؤول عن secrets؛ SDK client مش موثوق لسر server.
 
+## Practical walkthrough
+
+لو SDK عامة اسمها PaymentsClient، المستهلك لازم يعرف هل `status()` main-safe، إمتى Flow تنتهي، إزاي يلغي الطلب، ومن يملك `close()`. لا تطلع Retrofit DTO أو Activity في API العامة لو مش جزء من العقد. جهّز sample app Java/Kotlin واختبر minified release والـbinary compatibility عند كل نسخة؛ تغيير error type أو callback thread ممكن يكسر العملاء حتى لو compiler ساكت.
+
 ## Why it matters and how it works
 
 Public API changes impose compatibility burden; use interfaces/data types cautiously and keep implementation internal. Avoid global singleton state that crosses users or leaks Context. Lifecycle-sensitive operations should accept an owner or expose suspend/Flow APIs with explicit cancellation. Provide dependency injection or factory configuration without forcing host architecture.
@@ -65,7 +69,15 @@ A payments SDK publishes core Kotlin API, optional UI adapter, consumer R8 rules
 
 ## Interview answer — deep senior
 
-“I would set the public contract before coding: inputs, outputs, error taxonomy, thread/coroutine behavior, ownership and shutdown. Public ABI changes are expensive, so implementation details stay internal and cross-cutting adapters are optional artifacts. A client may expose suspend/Flow calls but must define whether collecting twice starts two requests and how cancellation affects transport. I avoid retaining Activity references, document DI/factory configuration and test with host apps across supported minSdk, Kotlin/AGP versions and R8 minification. Consumer keep rules are shipped only when required by reflection/JNI, then verified in release. I publish API diffs and migration notes, and I never pretend a mobile SDK can securely hold a server secret or guarantee payment idempotency alone. Embedded API secrets can be extracted.”
+“I would set the public contract before coding: inputs, outputs, error taxonomy, thread/coroutine behavior, ownership and shutdown. Public ABI changes are expensive, so implementation details stay internal and cross-cutting adapters are optional artifacts. A client may expose suspend/Flow calls but must define whether collecting twice starts two requests and how cancellation affects transport. I avoid retaining Activity references, document DI/factory configuration and test with host apps across supported minSdk, Kotlin/AGP versions and R8 minification. Consumer keep rules are shipped only when required by reflection/JNI, then verified in release. I publish API diffs and migration notes, and I never pretend a mobile SDK can securely hold a server secret or guarantee payment idempotency alone. Embedded API secrets can be extracted. The SDK's binary and behavioral compatibility need separate checks. I would publish an API surface report, test consumers built with supported Kotlin and Java versions, and run a sample app with shrinking enabled. The public contract states whether a suspend call is main-safe, which dispatcher invokes callbacks, what cancellation means for in-flight external work, and when `close()` releases resources. I would version deprecations, provide migration guidance, and avoid leaking Retrofit, Activity or internal DTO types into a public signature.”
+
+## How to answer in the interview
+
+- **Why:** SDK consumers depend on behavior as well as signatures.
+- **How:** define stable inputs, errors, threading, cancellation, lifecycle, and version policy.
+- **Trade-off:** narrow API limits flexibility but reduces compatibility cost.
+- **Failure case:** reflection breaks only in minified consumer builds.
+- **Production solution:** sample apps, ABI tests, consumer rules, and deprecation windows.
 
 ## Deep-dive talking points
 
@@ -85,4 +97,4 @@ Can I specify API/lifecycle contracts, test host release builds and protect back
 - [Android library publishing](https://developer.android.com/build/publish-library) — artifacts and consumers.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — ownership boundaries.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

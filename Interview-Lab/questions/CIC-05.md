@@ -25,6 +25,10 @@ Compare git reset --soft versus --hard.
 
 `git reset --soft <commit>` يرجّع HEAD للcommit المطلوب ويترك index وworking tree كما هما؛ تغييرات commits الملغاة تبقى staged. `git reset --hard <commit>` يرجّع HEAD ويطابق index وworking tree للهدف، فممكن يضيّع uncommitted changes. الاتنين يغيروا branch history لو branch منشور، فلا تستخدمهم على main المشترك بدون تنسيق.
 
+### Practical walkthrough in Egyptian Arabic
+
+`git reset --soft HEAD~1` يرجّع مؤشر HEAD خطوة لكنه يترك تغييرات الـcommit في staging، مناسب لو بتعيد صياغة commit محلي. `git reset --hard HEAD~1` يغيّر HEAD والـindex والـworking tree، وقد يزيل شغل غير محفوظ؛ استخدمه فقط وأنت عارف حالة الفرع والملفات. في shared release branch، بدل reset لcommit منشور استخدم `revert` بحيث يبقى سبب التراجع ظاهرًا. قبل أي reset اعرض `git status` و`git log` وخذ نسخة لو فيه تغييرات مهمة.
+
 ## Why it matters and how it works
 
 Reset moves the current branch ref (or HEAD). Soft leaves staged snapshots available for recommit. Hard writes target tree into index/worktree and discards tracked local changes; untracked files are a separate concern. Reflog may help recover commit objects but should not be a substitute for caution.
@@ -55,7 +59,15 @@ Team rules protect main from force-push and document recovery with reflog. CI re
 
 ## Interview answer — deep senior
 
-“The choice is about three trees: commit/HEAD, index and working directory. Soft moves only HEAD; hard aligns all three with the target for tracked paths. Before hard reset I verify branch, SHA and uncommitted work, and I know untracked files may remain. On a published branch, moving the ref backward would require a force push and break other clones/CI provenance, so I use revert or fix-forward. This distinction is especially important for Android releases where an AAB is tied to a specific commit and mapping file.”
+“I explain reset in terms of three places: HEAD, the index and the working tree. `git reset --soft <commit>` moves HEAD while leaving the index and working tree intact, so the changes from removed local commits remain staged. `git reset --hard <commit>` moves HEAD and makes the index and tracked working-tree files match the target; it can discard uncommitted tracked work. Neither operation is a safe way to erase an already published commit from a protected shared branch. For a private commit I may use soft reset to split it into reviewable pieces, after checking `git status` and the target commit. I use hard reset only when I have deliberately chosen to discard that local state and have preserved anything valuable. For a production regression I add a revert commit and run the release gate, retaining the audit trail. I also remember that untracked files are a separate concern, so I do not describe hard reset as a universal filesystem cleanup command.”
+
+## How to answer in the interview
+
+- **Why:** reset changes which work is retained.
+- **How:** name HEAD, index and working-tree effects.
+- **Trade-off:** local cleanup versus loss of work.
+- **Failure case:** hard reset discards tracked edits.
+- **Production solution:** inspect status and use revert for shared history.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for three trees, staged result, tracked loss, untracked caveat and shared
 
 ## Self-check rubric
 
-Can you explain this decision, apply the example, name a trade-off and failure, and answer both follow-ups without relying on a memorized slogan?
+Given three local commits, predict HEAD, index and working tree after reset --soft versus --hard. Explain why a hard reset on a shared branch can discard work and confuse collaborators.
 
 ## References and reviewed-on date
 
 - [Git reset documentation](https://git-scm.com/docs/git-reset) — mode effects.
 - [Android app publishing](https://developer.android.com/studio/publish) — released artifact context.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

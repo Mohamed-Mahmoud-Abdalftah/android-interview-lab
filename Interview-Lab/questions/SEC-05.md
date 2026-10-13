@@ -25,6 +25,10 @@ Can an API secret bundled into an APK ever be fully secret?
 
 لا، أي secret متضمّن في APK لازم نفترض إنه قابل للاستخراج. الـattacker عنده نسخة من binary ويقدر يعمل decompile، يتابع memory وnetwork، أو يhook الدالة اللي تستخدم المفتاح. تقسيمه على strings أو JNI أو R8 يزوّد المجهود بس ما يمنعش الوصول. السؤال الحقيقي: المفتاح بيدي صلاحية إيه، وإزاي نمنع إساءة استخدامها؟
 
+## Practical walkthrough
+
+لو key بتسمح بتسجيل charge، وجودها داخل JNI أو string مقسّمة مش بيخليها سر: المهاجم يقدر يوقف البرنامج عند لحظة استخدامها ويقرأها. أما key خرائط مصممة للموبايل، ممكن تتوزع مع قيود package/signature وquota حسب provider. السؤال العملي: إيه صلاحية المفتاح لو اتنسخ؟ لو عالية، لازم يبقى في backend.
+
 ## Why it matters and how it works
 
 Client-side code and resources are delivered to the adversary. Even if a value is encrypted in the package, the app must have a way to decrypt it, and that path can be observed. A server can retain private credentials and issue narrowly scoped, short-lived artifacts after authenticating the user.
@@ -51,10 +55,20 @@ Classify all mobile credentials by privilege during design review. Use server-si
 
 ## Interview answer — structured
 
-“An APK is distributed to untrusted devices. An attacker can inspect code, strings and resources, or hook the use site at runtime. JNI, string splitting and R8 only increase effort. Therefore I classify keys by privilege: a public mobile identifier may be embedded with provider restrictions, while a key that can charge money or access private data stays on the backend. The backend authenticates the user and authorizes each operation. The key distinction is privilege. A map SDK identifier may be distributed with package restrictions and usage monitoring, whereas a credential that can move money belongs on a server that checks the user and transaction. Encryption inside the APK only moves the extraction point to the decryption path.”
+“I treat an APK as public to its users. An attacker can inspect strings, resources and native code, or hook the call where a value is used. Obfuscation only raises effort. If a credential can authorize payments or read private provider data, it must remain server-side. A key intended for mobile distribution may stay in the app under the provider's package or signing restrictions, quota and monitoring. The key question is what misuse is possible after extraction.”
+
 ## Interview answer — deep senior
 
-“I assume eventual extraction and design around it. I ask whether a key grants a dangerous operation without user context; if yes, it cannot be shipped. The server owns that credential, validates purchase state, amount and account ownership, invokes the provider and records an idempotent operation. If a provider requires a mobile identifier, I constrain package and signing identity where supported, set quotas and monitor abuse, while acknowledging those are abuse controls rather than secrecy. For an already leaked private key, I rotate it and audit provider calls. I assume an attacker can control their installed binary, decompile it and instrument the point where a credential is used. String splitting, native libraries and obfuscation can increase effort but cannot change that trust model. For a private provider credential, I would keep it in backend secret storage, expose a narrow authenticated endpoint and enforce canonical price, account ownership, rate limits and idempotency there. If a public mobile key must ship, I would use the provider’s restrictions, quotas and anomaly alerts while acknowledging extraction. A leaked privileged key requires rotation and an audit of historical calls. This design prevents an attacker from turning knowledge of an APK value into payment authority.”
+“I assume any value shipped in the APK can eventually be extracted, whether it is in a resource, native library, or split string. The real design question is what an attacker can do with it. If a key can authorize charges, it belongs on the server, where requests are tied to authenticated users and server-derived amounts. A maps SDK identifier designed for mobile distribution can be embedded with package or signing restrictions, quota, and monitoring if the provider supports them. Obfuscation may raise effort, but it is not a secret boundary. I would test the backend with forged client requests rather than trusting an app-side check. I would test the claim by decompiling a release APK and instrumenting the method that passes the key to its SDK. Even if the literal string is hidden, the value or resulting privileged request appears at use time. For a client-distributed identifier, I would verify the provider's restriction semantics on a modified APK and a different signing certificate, then monitor quota spikes and have a rotation path.”
+
+## How to answer in the interview
+
+- **Why:** attackers receive the binary and can observe runtime use.
+- **How:** classify embedded values by privilege and provider restrictions.
+- **Trade-off:** public client identifiers may be acceptable with quotas.
+- **Failure case:** a bundled payment secret authorizes arbitrary calls.
+- **Production solution:** keep high-authority credentials server-side and monitor misuse.
+
 ## Deep-dive talking points
 
 Describe static extraction, runtime hooking and network observation of a bundled secret; choose a backend proxy and short-lived client credential instead.
@@ -73,4 +87,4 @@ Can I explain why package encryption fails, identify a public key use case, and 
 - [OWASP MASVS resilience](https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/) — resistance limits.
 - [Android security best practices](https://developer.android.com/privacy-and-security/security-best-practices) — client security guidance.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.

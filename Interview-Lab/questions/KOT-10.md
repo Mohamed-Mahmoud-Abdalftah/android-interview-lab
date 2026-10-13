@@ -43,6 +43,10 @@ fun main() {
 }
 ```
 
+## Practical walkthrough
+
+`by lazy` بيشغّل initializer أول access وبعدها يخزّن النتيجة؛ مناسب لـparser/config ثابتة بتتعمل عند الطلب. الافتراضي synchronized initialization، ولو استخدمت `LazyThreadSafetyMode.NONE` لازم تتأكد إن access محصور في thread واحد. `lateinit var` وعد إنك هتعيّن القيمة قبل القراءة؛ القراءة بدري ترمي `UninitializedPropertyAccessException`. في Android view binding داخل Fragment، اربطها بعمر الـview وامسحها في `onDestroyView` أو استخدم pattern أوضح؛ `lateinit` لو احتفظت بالـview بعد destroy يسبب leak. الاتنين مش بديل لـdependency injection lifecycle.
+
 ## Trade-offs and decision criteria
 
 Prefer constructor injection when a dependency is required immediately. `lazy` is useful for an expensive optional value; its synchronized mode has small coordination cost. `lateinit` fits framework-driven assignment, such as test setup or view binding inside a controlled lifecycle, but nullable property plus explicit state may be clearer.
@@ -57,15 +61,25 @@ A repository lazily builds a rarely used parser with a stable application-scoped
 
 ## Interview answer — short
 
-`lazy` initializes a `val` on first access and caches it; `lateinit` lets a non-null `var` be assigned later. `lateinit` throws if read before assignment. I choose based on who performs initialization and the object’s lifecycle.
+`lazy` computes a `val` on first access and caches it. `lateinit` lets a non-null `var` be assigned later, but reading it first throws. I choose based on who creates the value and when it must be valid, including lifecycle cleanup.
 
 ## Interview answer — structured
 
-With `lazy`, I supply the initializer and the value is computed on first read, normally once under the default synchronized mode. With `lateinit`, some later code must assign a non-null property before use. I prefer constructor injection for required dependencies and use these tools only when deferral has a reason. On Android I check that the owner does not outlive the View or Activity it holds. If I can construct a dependency at object creation, constructor injection is usually clearer. If an expensive parser is optional, `lazy` lets me defer it until needed and caches it. For Android view references I tie storage to the view lifecycle rather than a longer-lived singleton.
+I use `lazy` when construction can be deferred and the object can live as long as its owner, such as a parser configuration. Its default mode synchronizes first initialization; other modes need an explicit threading decision. I use `lateinit` when an external step assigns a non-null property, such as test setup, and I make that initialization order clear. In Android I am careful with view references: a Fragment can outlive its view, so a retained binding needs to be cleared at view destruction. Neither keyword makes a lifecycle contract safe on its own.
 
 ## Interview answer — deep senior
 
-The key questions are initialization timing, publication across threads, and cleanup. `lazy` delegates value creation and caching; alternative thread-safety modes change guarantees. `lateinit` expresses a mutable initialization gap and can be checked with `::property.isInitialized` where visible, but that is not a replacement for a sound lifecycle. In a Fragment, view-scoped resources must be cleared when the view is destroyed. For dependency injection, constructor parameters are clearer when the object cannot function without the dependency. `lazy` and `lateinit` solve different problems. A `lazy val` owns an initializer and computes on first read; the default mode synchronizes initialization, while other modes trade guarantees for overhead. The cached value may still be mutable, so lazy initialization does not make later operations thread-safe. A `lateinit var` has no initializer and must be assigned before access, otherwise Kotlin throws `UninitializedPropertyAccessException`. It is limited to suitable non-null property types and can be checked for initialization in the right scope, but that is a symptom check rather than a lifecycle design. In a Fragment, a binding belongs to the View lifetime, which may end before the Fragment itself. Required dependencies are better supplied through the constructor.
+The key questions are initialization timing, publication across threads, and cleanup. `lazy` delegates value creation and caching; alternative thread-safety modes change guarantees. `lateinit` expresses a mutable initialization gap and can be checked with `::property.isInitialized` where visible, but that is not a replacement for a sound lifecycle. In a Fragment, view-scoped resources must be cleared when the view is destroyed. For dependency injection, constructor parameters are clearer when the object cannot function without the dependency. `lazy` and `lateinit` solve different problems. A `lazy val` owns an initializer and computes on first read; the default mode synchronizes initialization, while other modes trade guarantees for overhead. The cached value may still be mutable, so lazy initialization does not make later operations thread-safe.
+
+A regex used by a parser can be a `lazy val`: the initializer is owned by the property and only runs when needed. A test fixture populated by setup may use `lateinit`, but a missing setup step becomes an immediate access exception; constructor injection is better for a mandatory dependency. In a Fragment, a binding follows the view lifetime rather than the Fragment object, so a `lateinit` binding that never clears can retain a destroyed view. I would choose a nullable backing field or a view-lifecycle delegate, and verify access is impossible after `onDestroyView`.
+
+## How to answer in the interview
+
+- **Why:** Defer expensive object initialization until needed, or accommodate lifecycle-driven dependency injection.
+- **How:** Use `by lazy` for immutable thread-safe deferred initialization, and `lateinit var` for mutable properties initialized before first use (e.g., in `onCreate`).
+- **Trade-offs:** `by lazy` allocates a delegate object and synchronizes by default; `lateinit` lacks compile-time null safety and does not support primitive types.
+- **Failure cases:** Accessing a `lateinit` property before initialization throws `UninitializedPropertyAccessException`, or holding Fragment view bindings in `lateinit` causes view leaks past `onDestroyView`.
+- **Production solution:** Null out Fragment view bindings in `onDestroyView`, use `lazy(LazyThreadSafetyMode.NONE)` when thread safety is guaranteed, and verify `isInitialized` where necessary.
 
 ## Deep-dive talking points
 
@@ -85,4 +99,4 @@ Explain which construct owns initialization, predict an early `lateinit` read, a
 - [Kotlin delegated properties](https://kotlinlang.org/docs/delegated-properties.html) — lazy delegation.
 - [Kotlin properties](https://kotlinlang.org/docs/properties.html) — `lateinit` semantics.
 
-Technically reviewed against the linked primary documentation on 2026-10-11. Examples are illustrative JVM snippets; no Android device claim is made.
+Technically reviewed against the linked primary documentation on 2026-10-13. Examples are illustrative JVM snippets; no Android device claim is made.

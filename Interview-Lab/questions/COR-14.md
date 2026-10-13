@@ -24,22 +24,43 @@ Can the candidate place `CoroutineExceptionHandler` at an uncaught boundary and 
 
 `CoroutineExceptionHandler` آخر محطة لملاحظة exception غير ممسوكة من coroutine، خصوصًا root `launch` أو supervised `launch`. مش بديل `try/catch` حوالين API عايز تحول فشله إلى UI state، ومش طريقة ترجع نتيجة من `async`. في child عادي الفشل يروح للـparent؛ handler مركّب على child مش بالضرورة يستقبلها هناك.
 
+## Practical walkthrough
+
+لو `launch` تحت supervisor فشل من غير `try/catch`، ممكن `CoroutineExceptionHandler` يستقبل الخطأ بعد انتهاء الـcoroutine علشان logging. لكنه ما يرجّعش قيمة ولا يعمل retry ولا يمنع فشل business flow. `async` بيحتفظ بالخطأ للـ`await`، وتحت parent عادي الفشل يمشي عبر الـJob tree. لذلك الحل العملي غالبًا catch قريب من عملية الطلب مع حالة UI واضحة.
+
 ## Why it matters and how it works
 
 The handler observes uncaught exceptions after propagation/termination; it cannot resume the failed coroutine. `async` captures its exception in `Deferred` and `await` throws it. A handler on a normal child is usually not the effective handling point because parent propagation owns the failure. CancellationExceptions are normal control flow and are not generally reported as failures.
 
 ## Worked example
 
-JVM illustration shows an owned supervisor with a root-like `launch`; `report` is an application logger. Production work still needs task-level state.
+JVM illustration shows an owned supervisor and an actual `launch`. Expected I/O failure is mapped near the call; the handler reports unexpected terminal failure. The owner calls `scope.cancel()` at shutdown.
 
 ```kotlin
-import kotlinx.coroutines.*
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 fun ownedScope(report: (Throwable) -> Unit): CoroutineScope {
     val handler = CoroutineExceptionHandler { _, error -> report(error) }
     return CoroutineScope(SupervisorJob() + Dispatchers.Default + handler)
 }
-// Owner calls scope.cancel() at shutdown; each task also returns status to its caller.
+
+fun launchSync(
+    scope: CoroutineScope,
+    sync: suspend () -> Unit,
+    onNetworkError: (IOException) -> Unit,
+): Job = scope.launch {
+    try { sync() }
+    catch (e: CancellationException) { throw e }
+    catch (e: IOException) { onNetworkError(e) }
+    // Any other uncaught failure reaches the scope's handler.
+}
 ```
 
 ## Trade-offs and decision criteria
@@ -64,7 +85,15 @@ An application sync coordinator uses a supervisor and handler to report unexpect
 
 ## Interview answer — deep senior
 
-“I would not use `CoroutineExceptionHandler` as a blanket safety net. It is invoked when an exception is uncaught at an appropriate coroutine boundary, after the failed coroutine cannot continue; it is for reporting, not retrying or producing a value. In a normal hierarchy child failures are delegated to parents, whereas a supervised `launch` can have an uncaught failure without cancelling peers. `async` intentionally exposes its exception through `await`, so an unawaited Deferred is an ownership smell. In production I define each operation’s error contract, convert expected network errors to state, preserve cancellation, and use the handler for unexpected telemetry. I also test that failure clears loading indicators and does not silently leave a durable operation stuck.”
+“I would not use `CoroutineExceptionHandler` as a blanket safety net. It is invoked when an exception is uncaught at an appropriate coroutine boundary, after the failed coroutine cannot continue; it is for reporting, not retrying or producing a value. In a normal hierarchy child failures are delegated to parents, whereas a supervised `launch` can have an uncaught failure without cancelling peers. `async` intentionally exposes its exception through `await`, so an unawaited Deferred is an ownership smell. In production I define each operation’s error contract, convert expected network errors to state, preserve cancellation, and use the handler for unexpected telemetry. I also test that failure clears loading indicators and does not silently leave a durable operation stuck. I would put an expected network failure inside the operation's `try/catch` so the UI can show retry state. The handler is useful when a supervised `launch` reaches an unexpected terminal exception with no ordinary propagation path, and should send telemetry that can be correlated with the owning task. A handler attached to a normal child will not override its parent's failure path, and a handler on `async` does not replace awaiting the result.”
+
+## How to answer in the interview
+
+- **Why:** a last-resort handler cannot recover a failed operation.
+- **How:** CoroutineExceptionHandler observes an uncaught terminal failure with no normal propagation path.
+- **Trade-off:** centralized reporting is useful, local handling enables recovery.
+- **Failure case:** putting a handler on a child of a normal parent or on async and expecting it to catch there.
+- **Production solution:** handle expected errors at the operation and use the handler for reporting.
 
 ## Deep-dive talking points
 
@@ -84,4 +113,4 @@ Can I place a handler correctly, explain its limits, map domain errors locally, 
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — handler semantics and async.
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — UI error ownership.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

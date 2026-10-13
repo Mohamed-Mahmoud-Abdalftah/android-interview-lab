@@ -24,6 +24,10 @@ Choose simple MVVM or additional Clean Architecture boundaries by complexity and
 
 لتطبيق صغير، ViewModel + repository + data sources مع unidirectional state غالبًا كفاية؛ use case لكل getter يزود boilerplate بلا قيمة. لما business rules تتكرر في شاشات أو تحتاج independence/testability قوية، domain layer/use cases أو interfaces مستقلة تستحق الكلفة. المهم single source of truth، lifecycle، error/cancellation contract، مش اسم pattern.
 
+## Practical walkthrough
+
+تطبيق notes صغير: Screen → ViewModel → Repository → Room/HTTP كفاية. لو pricing rule تستخدمها checkout والreceipt والrefund، حطها في domain use case مستقل باختبارات واضحة. Clean Architecture مش عدد طبقات ثابت؛ نقل logic للـViewModel يربطها بالـUI، ونقل كل getter لـuse case فارغة يعمل boilerplate. اختر seam حسب reuse وتغيّر dependencies، واحتفظ بSSOT وstate flow واضحة.
+
 ## Why it matters and how it works
 
 Android architecture recommends UI and data layers, optional domain layer. MVVM is a UI state-holder pattern; Clean Architecture describes dependency and business-rule boundaries, so they are not mutually exclusive. Add abstractions when they isolate volatility or shared complex policy.
@@ -61,7 +65,15 @@ A small notes app uses ViewModel+Repository. A checkout app extracts pricing/dis
 
 ## Interview answer — deep senior
 
-“I begin with explicit responsibilities rather than a pattern diagram. UI renders immutable state; ViewModel coordinates screen lifetime; repository owns data sources and conflict policy. That may be enough for one team and a simple feature. When the same business rule spans several ViewModels, background work or alternative data implementations, I introduce a domain boundary with stable inputs/outputs and tests. I avoid both a god ViewModel that contains SQL/network logic and a maze of pass-through use cases that add no invariant. Process death, cancellation, offline source of truth and server authority remain the same regardless of pattern label. I measure change impact and test friction before expanding layers. A small notes app uses ViewModel+Repository.”
+“I begin with explicit responsibilities rather than a pattern diagram. UI renders immutable state; ViewModel coordinates screen lifetime; repository owns data sources and conflict policy. That may be enough for one team and a simple feature. When the same business rule spans several ViewModels, background work or alternative data implementations, I introduce a domain boundary with stable inputs/outputs and tests. I avoid both a god ViewModel that contains SQL/network logic and a maze of pass-through use cases that add no invariant. Process death, cancellation, offline source of truth and server authority remain the same regardless of pattern label. I measure change impact and test friction before expanding layers. A small notes app uses ViewModel+Repository. For the small notes app, a ViewModel and repository can give testable state flow without a use-case class for every read. When a pricing rule is shared by checkout, receipt and refund, extracting a domain operation provides one place for the invariant and independent tests. I would avoid putting network DTOs into the UI or making the domain layer mirror every repository method. The choice is reversible: start simple, measure repeated logic and change coupling, then add the boundary that solves a real problem.”
+
+## How to answer in the interview
+
+- **Why:** architecture layers should protect real business rules.
+- **How:** keep ViewModel for screen state and repository for data; extract reusable domain policy when justified.
+- **Trade-off:** more abstraction helps independent testing but costs navigation and code.
+- **Failure case:** pass-through use cases obscure simple flows.
+- **Production solution:** evolve from measured coupling and test invariants at the right boundary.
 
 ## Deep-dive talking points
 
@@ -81,4 +93,4 @@ Can I choose by complexity, keep business rules out of UI and avoid ceremonial l
 - [Android architecture guide](https://developer.android.com/topic/architecture) — optional domain layer.
 - [Android data layer](https://developer.android.com/topic/architecture/data-layer) — repository responsibilities.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

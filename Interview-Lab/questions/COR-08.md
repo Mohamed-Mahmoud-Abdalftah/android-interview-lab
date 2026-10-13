@@ -24,6 +24,10 @@ Can the candidate identify Android Main as the UI Looper thread and IO as shared
 
 على Android، `Dispatchers.Main` بيجدول continuation على الـUI thread المرتبط بالـmain Looper؛ لو شغّلت عليه blocking call هتوقف الرسم واللمس. `Dispatchers.IO` مش thread خاص بكل coroutine، لكنه dispatcher معمول للعمليات اللي بتحجز thread وهي مستنية I/O. الاتنين بيحددوا التنفيذ، مش عمر الشغل ولا ضمان إلغاء الـSDK.
 
+## Practical walkthrough
+
+في ANR trace ممكن تلاقي `Main` واقف داخل SDK sync call رغم إن الكود مكتوب `launch`. الـdispatcher هنا حدّد thread التنفيذ فقط. نقل النداء إلى `IO` يحمي الـLooper، لكنه مش بيضمن إن SDK هيتوقف فورًا مع cancel، ومش بيحط سقف لعدد sockets أو requests. لازم تقيس زمن النداء وتقيّد عدد العمليات حسب قدرة الخدمة.
+
 ## Why it matters and how it works
 
 Coroutines may resume on a different worker after suspension. The IO dispatcher is shared and elastic for blocking operations; it is not a promise of a fixed one-to-one thread pool or an unlimited safe number of requests. `Main.immediate` can run undispatched when already on the main thread, where available, and must still avoid long blocking work.
@@ -65,7 +69,15 @@ A repository wraps a synchronous encrypted-file read on IO and exposes a main-sa
 
 ## Interview answer — deep senior
 
-“I would inspect the actual call chain before declaring it safe. Main is the UI Looper thread in an Android runtime; a synchronous Binder or disk call there can delay frames and lead to an ANR. IO has shared elastic capacity for blocking work, but does not create one permanent thread per coroutine and does not make an uncooperative SDK interruptible. A suspending network client may already be safe from Main because it suspends without holding the thread. I inject dispatchers where useful for tests, cap concurrent requests according to downstream limits, and monitor latency and ANR traces. A switch back to Main after `withContext(IO)` lets the screen render safely, provided the owner is still active. Measure and limit fan-out separately.”
+“I would inspect the actual call chain before declaring it safe. Main is the UI Looper thread in an Android runtime; a synchronous Binder or disk call there can delay frames and lead to an ANR. IO has shared elastic capacity for blocking work, but does not create one permanent thread per coroutine and does not make an uncooperative SDK interruptible. A suspending network client may already be safe from Main because it suspends without holding the thread. I inject dispatchers where useful for tests, cap concurrent requests according to downstream limits, and monitor latency and ANR traces. A switch back to Main after `withContext(IO)` lets the screen render safely, provided the owner is still active. Measure and limit fan-out separately. A thread dump can prove the difference: if Main is inside a synchronous Binder call, the coroutine has not suspended and input frames cannot progress. Moving that boundary to IO restores UI responsiveness but does not make the call interruptible or the backend more capable. I would cap outstanding work, measure queue latency, and ensure cancellation prevents late result publication. A main-safe network client should not receive an arbitrary extra IO hop.”
+
+## How to answer in the interview
+
+- **Why:** naming a pool does not prove an API is safe.
+- **How:** Main dispatches to Android's UI Looper; IO shares worker capacity for blocking calls.
+- **Trade-off:** more concurrent blocking calls can saturate a backend.
+- **Failure case:** Main freezes or unbounded IO fan-out exhausts resources.
+- **Production solution:** verify the client contract, offload blocking work, and enforce a concurrency limit.
 
 ## Deep-dive talking points
 
@@ -85,4 +97,4 @@ Can I name the actual Android thread, explain IO sharing, diagnose a blocking Ma
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — main-safety contract.
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — dispatchers and threads.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

@@ -25,6 +25,10 @@ What is time complexity versus space complexity?
 
 Time complexity تقيس نمو عدد العمليات لما input size `n` يكبر، وspace complexity تقيس memory إضافية تستخدمها الخوارزمية. ممكن algorithm أسرع لكن محتاجة `HashSet` بحجم `n`، وممكن أقل memory لكنها تعمل nested scan بوقت `n²`. لازم نحدد هل بنحسب auxiliary space فقط ولا output نفسه، وإيه معنى `n` في المشكلة.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو عندك list فيها آلاف المنتجات، اسأل هل bottleneck حسابي ولا رسم UI. `O(n)` loop ممكن يكون مقبول لو مرة واحدة خارج Main، و`O(n²)` على كل scroll كارثة. Space complexity تحسب الـextra memory، مثل `HashSet` لتجنب scan متكرر. اذكر حجم الإدخال الفعلي، التخصيصات، وتأثير GC؛ Big O يصف النمو لا زمنًا مطلقًا.
+
 ## Why it matters and how it works
 
 Asymptotic notation abstracts hardware constants and measures scaling under a defined case. Space includes live allocations, recursion stack and data structures; input and required output may be excluded by convention only if stated. On Android, allocations also create GC pressure and jank.
@@ -55,7 +59,15 @@ For a Compose list transformation, estimate CPU and allocations per update, then
 
 ## Interview answer — deep senior
 
-“I define `n` and a cost model before using notation. For a list transformation I count iterations, lookups, temporary collections and recursion depth; I state whether output space is included. An expected O(n) hash approach may degrade with collisions or memory pressure, and an O(n log n) sort may be better when data can be reordered in place. On a device, constant factors, cache behavior and GC determine the crossover. I use asymptotic reasoning to find risks, then measure the actual hot path. Define cost model and profile.”
+“I separate how work grows from how much additional memory it retains. Time complexity counts operations as the input grows; space complexity counts extra storage, excluding or including the input only after stating the convention. For example, scanning product IDs with a nested search can take quadratic comparisons but little extra memory. Building a `HashSet` gives expected linear time with linear extra space. That does not mean the set is always preferable: for twenty items on a rarely used settings screen, allocation and simplicity may dominate. For thousands of rows refreshed on every keystroke, quadratic work on Main can cause dropped frames. I state the input size and frequency, derive the complexity, then measure representative devices and release builds. I also distinguish total work from a single UI frame: an `O(n)` transform done once in a repository can be harmless, while the same transform repeated for every visible item is not. The production decision balances latency, memory pressure, correctness and maintainability.”
+
+## How to answer in the interview
+
+- **Why:** estimate scaling before a large input ships.
+- **How:** state input size, operations and extra allocations.
+- **Trade-off:** faster lookup versus more memory.
+- **Failure case:** small benchmark hides quadratic growth.
+- **Production solution:** profile representative device/data.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for input definition, auxiliary versus output space, HashSet trade-off an
 
 ## Self-check rubric
 
-Can you derive the bound, explain the Android example, identify a data or memory trade-off, and answer both follow-ups?
+State input size, count time operations and auxiliary memory separately for a concrete list algorithm; explain how an Android allocation or latency limit changes the practical choice.
 
 ## References and reviewed-on date
 
 - [Kotlin collections overview](https://kotlinlang.org/docs/collections-overview.html) — collection representations.
 - [Android performance guidance](https://developer.android.com/topic/performance) — device costs.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

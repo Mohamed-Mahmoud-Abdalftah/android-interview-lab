@@ -24,6 +24,10 @@ Whether the candidate chooses a result-bearing `async` versus side-effect `launc
 
 `launch` بيبدأ شغل ويرجع `Job` علشان تستنى نهايته أو تلغيه، من غير قيمة مرجعة. `async` بيرجع `Deferred<T>` يمثل نتيجة مستقبلية و`await` بيرجعها أو يرمي الخطأ. الاتنين بياخدوا scope وبيفضلوا جزء من شجرة الـJob؛ استخدام `async` من غير `await` مش طريقة آمنة لإخفاء exception.
 
+## Practical walkthrough
+
+لو شاشة بتجمع `profile` و`notifications`، شغّل الاتنين بـ`async` فقط لو الطلبين مستقلين، وبعدها `await` للنتيجتين. لو المطلوب مجرد كتابة log مرتبطة بالشاشة، `launch` يرجع `Job` من غير value. تشغيل `async` ثم تجاهل الـDeferred مش error handling؛ تحت parent عادي، فشل child ممكن يلغي باقي الشغل قبل ما توصل لـ`await`.
+
 ## Why it matters and how it works
 
 Both builders start immediately by default and inherit the scope context. `join` waits for termination but does not return a value; `await` waits and retrieves the value, throwing its failure. In a normal parent scope, child failure can cancel the parent even if the `Deferred` is never awaited. Concurrent `async` calls only help when independent latency can overlap.
@@ -68,7 +72,15 @@ A home screen fetches account and notification count concurrently because the AP
 
 ## Interview answer — deep senior
 
-“Builders do not replace reasoning about dependency and failure. Both `launch` and `async` inherit the parent Job unless a new one is supplied, and both start eagerly by default. `Deferred` stores a result or exception for `await`, but child failure in a normal scope still cancels its parent. For an all-or-nothing header I use a structured `coroutineScope` and let a failed child cancel siblings. For independent cards I use supervision with explicit per-child results, and I distinguish user cancellation from an API error. I also cap fan-out, measure actual latency, and avoid extra coroutines for sequential calls that gain nothing from concurrency.”
+“Builders do not replace reasoning about dependency and failure. Both `launch` and `async` inherit the parent Job unless a new one is supplied, and both start eagerly by default. `Deferred` stores a result or exception for `await`, but child failure in a normal scope still cancels its parent. For an all-or-nothing header I use a structured `coroutineScope` and let a failed child cancel siblings. For independent cards I use supervision with explicit per-child results, and I distinguish user cancellation from an API error. I also cap fan-out, measure actual latency, and avoid extra coroutines for sequential calls that gain nothing from concurrency. I would also challenge unnecessary concurrency. If the second call needs the first call's ID, wrapping both in `async` does not make them independent; it adds jobs without reducing latency. Under a normal parent, failure of an `async` child starts parent cancellation when it occurs, not only at `await`. For optional results I handle expected errors inside supervised children; for required results I let the structured failure terminate the aggregate.”
+
+## How to answer in the interview
+
+- **Why:** choose a builder by whether the caller needs a value.
+- **How:** launch returns Job; async returns Deferred and await rethrows its stored failure.
+- **Trade-off:** parallel reads may reduce latency but consume capacity.
+- **Failure case:** unawaited Deferred or a late catch after parent cancellation.
+- **Production solution:** use direct suspend calls for sequential work and explicit supervised outcomes for optional results.
 
 ## Deep-dive talking points
 
@@ -88,4 +100,4 @@ Can I choose the right builder, predict result and exception behavior, justify c
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — `launch`, `async`, Job and Deferred.
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — failure observation and propagation.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

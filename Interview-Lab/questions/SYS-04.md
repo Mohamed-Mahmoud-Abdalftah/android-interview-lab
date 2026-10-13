@@ -24,6 +24,10 @@ Design offline-first system around local SSOT, versioned sync and durable outbox
 
 نخلي UI تقرأ من Room فقط، والremote sync تحدّث Room transactionally؛ ده يمنع cache وnetwork يتسابقوا على الشاشة. المستخدم يعدّل offline فنحفظ row + outbox operation مع stable ID وbase version في transaction. WorkManager يرسلها لاحقًا، backend يعمل deduplication وversion conflict، وUI تعرض stale/pending/conflicted. لازم نحدد policy لكل domain بدل last-write-wins عمياء.
 
+## Practical walkthrough
+
+مثال مندوب يكتب ملاحظة وهو offline. UI تقرأ من Room، وتعديل الملاحظة والـoutbox operation يتحفظوا في transaction واحدة بـID ثابت وbase version. Worker يرسل لما الشبكة ترجع، وbackend يحدد conflict لو نفس السجل اتعدل من جهاز تاني. الشاشة تعرض Pending أو Conflict بوضوح بدل نجاح نهائي؛ ولو الجهاز اتقفل بعد الحفظ وقبل الإرسال، العملية لسه موجودة للاستعادة.
+
 ## Why it matters and how it works
 
 The local database is the UI source, while backend is authoritative for shared state. Sync uses cursors/ETags, transactional page application and outbox IDs. Worker repeats are expected, so server idempotency and status lookup protect writes. Session logout partitions/clears data under privacy requirements.
@@ -61,7 +65,15 @@ A field service app stores forms, photos and outbox rows locally, syncs when con
 
 ## Interview answer — deep senior
 
-“I start with authority: Room owns the currently rendered snapshot, while the backend owns shared business truth. A sync engine applies server changes by cursor/version in database transactions, preserving pending edits. Each local edit and outbox record commits together, then a repeat-safe worker sends under a stable ID and reconciles ambiguous responses. Conflict policy depends on data—notes may merge, balances must follow server ledger. Cache TTL and reconnect refresh define freshness; account partitioning and backup policy protect privacy. I test offline startup, out-of-order pages, duplicate worker runs, lost responses, process death after each commit and conflicts from another device. Observability tracks pending age, stale age and sync failure classification.”
+“I start with authority: Room owns the currently rendered snapshot, while the backend owns shared business truth. A sync engine applies server changes by cursor/version in database transactions, preserving pending edits. Each local edit and outbox record commits together, then a repeat-safe worker sends under a stable ID and reconciles ambiguous responses. Conflict policy depends on data—notes may merge, balances must follow server ledger. Cache TTL and reconnect refresh define freshness; account partitioning and backup policy protect privacy. I test offline startup, out-of-order pages, duplicate worker runs, lost responses, process death after each commit and conflicts from another device. Observability tracks pending age, stale age and sync failure classification. The conflict policy depends on the entity. A draft note might allow a user-visible merge, while stock or payment balance must use server authority and reject stale base versions. I would include an outbox schema with operation ID, entity version, payload and retry state, and make workers idempotent under repeated invocation. I would test power loss after local commit, after remote acceptance but before acknowledgement, and during conflict resolution. The UI must distinguish locally accepted from server confirmed.”
+
+## How to answer in the interview
+
+- **Why:** users need consistent state despite disconnection and process death.
+- **How:** render Room, atomically persist edit plus outbox, and sync with stable IDs and versions.
+- **Trade-off:** offline writes add conflict UX and storage complexity.
+- **Failure case:** local edit without durable outbox disappears after crash.
+- **Production solution:** WorkManager recovery, server deduplication, and conflict policy per entity.
 
 ## Deep-dive talking points
 
@@ -81,4 +93,4 @@ Can I choose SSOT, handle pending writes, version conflicts and process death?
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — local source and sync.
 - [Android task scheduling](https://developer.android.com/develop/background-work/background-tasks/persistent) — restartable work.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

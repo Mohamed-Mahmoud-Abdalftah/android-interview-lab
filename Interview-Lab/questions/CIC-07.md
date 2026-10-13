@@ -25,6 +25,10 @@ What are git stash, cherry-pick, and fork?
 
 `stash` يخزن working-tree/index changes مؤقتًا بعيد عن commit الحالي؛ `cherry-pick` ينسخ أثر commit محدد لفرع آخر بcommit جديد؛ `fork` نسخة repository تحت حساب آخر غالبًا لcontribution. دول بيحلوا مشاكل مختلفة: تنضيف workspace مؤقت، نقل hotfix، أو فصل صلاحيات التعاون.
 
+### Practical walkthrough in Egyptian Arabic
+
+`stash` رف مؤقت لتغييرات غير جاهزة، لكنه مش backup دائم؛ سميه وراجع محتواه قبل `apply`/`pop`. `cherry-pick` ينسخ أثر commit محدد لفرع تاني بهوية commit جديدة، مفيد hotfix بين release وmain مع مراجعة conflicts. `fork` نسخة repository تحت حساب/مساحة منفصلة لساهم خارجي، وتحتاج sync مع upstream. مثال: لا تعمل cherry-pick لسطر security fix وتنسى test أو migration الذي جاء في commit آخر.
+
 ## Why it matters and how it works
 
 Stash entries are local refs and can conflict when reapplied. Cherry-pick replays a patch and creates a different commit hash, so repeated picks can duplicate logical changes. A fork is a repository-level collaboration boundary, not a Git command that synchronizes automatically.
@@ -55,7 +59,15 @@ Team hotfix runbook specifies source branch, target branches and mapping between
 
 ## Interview answer — deep senior
 
-“In a release incident, I first preserve the dirty working tree, create the fix from the correct release base, test it, and propagate it with a traceable merge or cherry-pick as branch strategy requires. I verify the patch is semantically complete, not merely conflict-free. A fork supports permission isolation, but untrusted fork PR code must not access signing secrets or privileged CI tokens. Stash is a local convenience, not durable collaboration or backup. Inspect dependencies and run tests. External PRs run without signing secrets.”
+“These tools solve different collaboration problems. Stash shelves a local worktree/index state so I can switch context, but it is not a durable review or release artifact; I name it and inspect what was captured. Cherry-pick applies the changes from a specific commit to another branch, creating a new commit identity. It is useful for a narrow hotfix across supported release branches, but I review dependencies, conflicts and tests in the destination context rather than assuming the copied patch has the same meaning. A fork is a separate repository lineage, often used for outside contributions, with an upstream remote for syncing. In an Android release I might stash unrelated local UI edits, branch from a production tag, fix a crash and cherry-pick the tested fix to main. I would not cherry-pick only the implementation and forget its migration or instrumentation test. The trade-off of selective commits is speed versus the risk of splitting one logical change.”
+
+## How to answer in the interview
+
+- **Why:** context switching and branch transfer have different needs.
+- **How:** stash local state, cherry-pick a commit, fork a repository.
+- **Trade-off:** selective patch speed versus dependency risk.
+- **Failure case:** hotfix lacks its paired migration.
+- **Production solution:** review destination diff and run its tests.
 
 ## Deep-dive talking points
 
@@ -68,11 +80,11 @@ Prompt for local versus repo scope, new commit SHA, dependent commits, fork PR s
 
 ## Self-check rubric
 
-Can you explain this decision, apply the example, name a trade-off and failure, and answer both follow-ups without relying on a memorized slogan?
+Use stash for temporary local changes, cherry-pick for one selected commit and fork for an independent repository. State how conflicts and upstream synchronization are handled.
 
 ## References and reviewed-on date
 
 - [Git stash documentation](https://git-scm.com/docs/git-stash) — local stash behavior.
 - [Android app publishing](https://developer.android.com/studio/publish) — release branch context.
 
-Technically reviewed against the cited primary documentation on 2026-10-11; automated technical review only, not human review.
+Technically reviewed against the cited primary documentation on 2026-10-13; automated technical review only, not human review.

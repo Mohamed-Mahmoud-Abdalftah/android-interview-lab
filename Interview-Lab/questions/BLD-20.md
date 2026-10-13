@@ -26,6 +26,10 @@ A feature works on arm64 but fails on another ABI. How do you debug packaging?
 
 سجّل ABI المتأثرة و`UnsatisfiedLinkError`/crash كاملة، version/variant وطريقة التثبيت. استخرج APKs من AAB للـdevice spec بـbundletool، وقارن `lib/arm64-v8a` مع `lib/x86_64` أو ABI المعنية: أسماء .so، transitive dependencies، checksum وpackaging rules. لو .so ناقصة، افحص AAR/NDK build و`abiFilters`; لو موجودة لكن loader يرفضها، ابحث عن symbols/STL/minSdk/CPU instructions. لا تنقل arm64 binary إلى مجلد ABI أخرى. أصلح vendor SDK/build config أو أعلن عدم دعم ABI بعد تقييم المستخدمين، ثم اختبر release split على جهاز/محاكي مناسب.
 
+### Practical walkthrough in Egyptian Arabic
+
+arm64 يعمل وABI تانية لا: افحص `SUPPORTED_ABIS` والerror، ثم native inventory للـAAB/split والجهاز. قد تكون `.so` vendor غير متاحة أو ABI filter/resource packaging حذفها. اختبر Play-generated split للـrelease minified، وقارن firmware/device support. لو لا يوجد دعم رسمي، امنع install أو capability بوضوح بدل crash. راقب crash segment حسب ABI أثناء staged rollout.
+
 ## Why it matters and how it works
 
 Native machine code is ABI-specific. Play may deliver a different set of split APKs per device, so arm64 success does not prove x86_64 package integrity. A shared library can depend on another `.so` or symbol that is absent or incompatible even when its own file is packaged. The loader message and artifact contents distinguish these paths.
@@ -57,6 +61,14 @@ Keep a supported ABI matrix and generate/install artifact sets for each represen
 ## Interview answer — deep senior
 
 “I investigate the binary the failing device actually received, not the one that happened to work on my arm64 phone. I record version, variant, install channel, `SUPPORTED_ABIS` and complete `UnsatisfiedLinkError` or native tombstone. I use bundletool or Play testing to extract the device-targeted APKs and inspect `lib/<abi>` contents. Then I compare the transitive native closure: `libscan.so` may be present but depend on a helper missing only for x86_64. If files exist, I inspect unresolved symbols, STL linkage, NDK/minimum platform and instruction assumptions. Gradle `abiFilters`, packaging options or vendor AAR content may explain an omission; `pickFirst` is not a safe general repair for duplicate versions. I obtain the correct ABI binary or document a supported fallback, and only narrow ABI support with product/device impact review. CI installs the minified bundle-derived artifact on representative ABIs and exercises the feature, while crash telemetry is segmented by architecture. The causal fix is demonstrated on the ABI that failed.”
+
+## How to answer in the interview
+
+- **Why:** ABI mix changes shipped native set.
+- **How:** inspect split and vendor matrix.
+- **Trade-off:** reach versus compatibility.
+- **Failure case:** universal APK gives false confidence.
+- **Production solution:** release device-matrix test.
 
 ## Deep-dive talking points
 

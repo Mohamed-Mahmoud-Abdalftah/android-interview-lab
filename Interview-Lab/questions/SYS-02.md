@@ -24,6 +24,10 @@ Design scalable multi-feature Android app with team boundaries, data ownership a
 
 تطبيق كبير محتاج boundaries حسب features والملكية، مش مجرد 100 modules. نحدد `:app` composition، feature modules للواجهات، core صغيرة لقدرات مشتركة، data repositories تملك المصادر، وdomain layer فقط لو business logic مشتركة/معقدة. UI تستقبل immutable state وتبعث events، وdependencies تبقى acyclic. نستثمر في contracts, CI, build metrics وrelease ownership بين الفرق.
 
+## Practical walkthrough
+
+في تطبيق فيه catalog وcheckout وaccount، خَلّي `:app` يركب الـnavigation والـDI، وكل feature تملك UI وpublic contract صغير. الـrepository تملك local/remote data، وbackend يملك قرارات payment. لو عشر فرق بتعدل `:core` في كل feature، ده مش modularization ناجحة؛ اقسّم حسب ownership وحدود التغيير، وقس incremental build والـdependency graph قبل وبعد.
+
 ## Why it matters and how it works
 
 Android architecture recommends UI/data layers and optional domain. Modularization can improve separation and parallel team work but adds configuration and API maintenance cost. Use stable public interfaces for cross-feature communication and navigation contracts. Local data source of truth and server APIs remain explicit.
@@ -62,7 +66,15 @@ A 20-team commerce app has team-owned feature APIs, central session/payment cont
 
 ## Interview answer — deep senior
 
-“Scalability has runtime and organizational dimensions. Runtime design uses persistent models, offline behavior, bounded concurrency and server-authoritative contracts. Team design uses feature ownership and a dependency graph that prevents implementation coupling: feature modules expose narrow APIs, data modules implement repositories, and the app wires them together. I avoid a giant core/common jar that becomes a recompilation and review bottleneck. I define navigation/deep-link contracts, DI boundaries, API compatibility checks and test fixtures that allow teams to work independently. I track clean/incremental build time, cycle violations, change lead time, crash/ANR metrics and ownership incidents; I split or merge modules based on those measurements. Duplicated token/session ownership yields inconsistent logout.”
+“Scalability has runtime and organizational dimensions. Runtime design uses persistent models, offline behavior, bounded concurrency and server-authoritative contracts. Team design uses feature ownership and a dependency graph that prevents implementation coupling: feature modules expose narrow APIs, data modules implement repositories, and the app wires them together. I avoid a giant core/common jar that becomes a recompilation and review bottleneck. I define navigation/deep-link contracts, DI boundaries, API compatibility checks and test fixtures that allow teams to work independently. I track clean/incremental build time, cycle violations, change lead time, crash/ANR metrics and ownership incidents; I split or merge modules based on those measurements. Duplicated token/session ownership yields inconsistent logout. I would validate the module graph with real change scenarios: how many modules recompile when checkout changes, who approves a payments API change, and whether a feature can be tested without the whole app. The app module composes implementations; feature modules consume contracts instead of importing each other's internals. Runtime scale still needs bounded requests, database design and backend capacity. A 100-module build with a giant shared core is organizationally expensive without delivering isolation.”
+
+## How to answer in the interview
+
+- **Why:** runtime and team scaling both depend on boundaries.
+- **How:** define feature owners, narrow APIs, acyclic dependencies, and data authority.
+- **Trade-off:** modules add Gradle and contract maintenance costs.
+- **Failure case:** a giant shared core or feature-to-feature implementation dependency.
+- **Production solution:** measure change impact and build time, then split at stable ownership seams.
 
 ## Deep-dive talking points
 
@@ -82,4 +94,4 @@ Can I assign data/team ownership, draw acyclic dependencies and identify runtime
 - [Android architecture guide](https://developer.android.com/topic/architecture) — UI/data layers and SSOT.
 - [Android modularization guide](https://developer.android.com/topic/modularization) — module boundaries.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.

@@ -32,6 +32,10 @@ Cohesion around one reason to change keeps unrelated changes from breaking each 
 
 Scenario: `ProfileViewModel` both converts JSON and produces `ProfileUiState`. When server renames `avatar_url`, the ViewModel must change even though the screen contract did not. Move DTO mapping to repository/data; keep `ProfileUiState` logic in ViewModel. Test both boundaries separately.
 
+## Practical walkthrough
+
+لو `ProfileViewModel` بتقرأ JSON، تخزن في Room، وتجهز نصوص الشاشة، أي تغيير في API schema أو قاعدة البيانات أو التصميم هيعدل نفس الملف. افصل DTO mapping في data layer، وقرارات عرض الحالة في ViewModel، وخلي repository ينسق مصدر البيانات. الاختبار العملي: غيّر `avatar_url` في fixture؛ المفروض test المابّر فقط يتغير، مش UI state tests. المسؤولية هنا سبب التغيير، مش عدد الدوال ولا شرط إن كل class صغيرة. لو استخراج class جديد بيمرر parameters بلا منطق، يمكن تكون بتفكك زيادة.
+
 ## Trade-offs and decision criteria
 
 Extract only independently changing concerns. A small class may legitimately contain several methods supporting one responsibility. Too many microscopic classes can obscure the use case and increase DI/build overhead.
@@ -50,11 +54,19 @@ SRP says a module should have one coherent reason to change. In Android, I keep 
 
 ## Interview answer — structured
 
-I do not interpret SRP as “one method per class.” I look for independent change pressures. If a ViewModel parses Retrofit DTOs, calculates discounts and formats screen text, server, business and UI changes all hit one file. I would move transport mapping into data and reusable discount policy into a focused domain component, while leaving screen state in the ViewModel. A small cohesive class can have many methods. The goal is fewer unrelated regressions, not a maximum number of files. A useful review technique is to look at three recent pull requests. If a server field rename, discount change, and screen copy update all modified the same ViewModel, it probably has several independent change pressures. I would extract one at a time and verify the same UI states still appear.
+I do not interpret SRP as “one method per class.” I look for independent change pressures. If a ViewModel parses Retrofit DTOs, calculates discounts and formats screen text, server, business and UI changes all hit one file. I would move transport mapping into data and reusable discount policy into a focused domain component, while leaving screen state in the ViewModel. A small cohesive class can have many methods. The goal is fewer unrelated regressions, not a maximum number of files. A useful review technique is to look at three recent pull requests. If a server field rename, discount change, and screen copy update all modified the same ViewModel, it probably has several independent change pressures.
 
 ## Interview answer — deep senior
 
-I would examine recent changes and ask which stakeholder or requirement caused each one. SRP is violated when one module must respond to independent policies, such as a server schema, pricing rule and UI design. In a real app I would first capture behavior, then extract one boundary at a time so errors and cancellation do not change accidentally. Data maps DTOs to stable app values; a policy component computes discount eligibility; ViewModel maps those outcomes to UI state. I would not split every helper into a separate class if all of them change together for the same feature. The design is successful when a new pricing rule stays in pricing tests and a server rename stays in adapter tests, with no surprise edits in presentation. The actor framing prevents a common mistake: a repository with several methods can still be cohesive if all methods respond to one data-policy concern. Conversely, a short class can violate SRP if it mixes authentication policy with formatting. I would not refactor solely for a line count. I would measure whether a business-rule change can now be tested without Android, and whether a network schema change stays in an adapter. If extraction introduces more mutable shared state or hides failure semantics, it has not improved the design.
+I would examine recent changes and ask which stakeholder or requirement caused each one. SRP is violated when one module must respond to independent policies, such as a server schema, pricing rule and UI design. In a real app I would first capture behavior, then extract one boundary at a time so errors and cancellation do not change accidentally. Data maps DTOs to stable app values; a policy component computes discount eligibility; ViewModel maps those outcomes to UI state. I would not split every helper into a separate class if all of them change together for the same feature. The design is successful when a new pricing rule stays in pricing tests and a server rename stays in adapter tests, with no surprise edits in presentation. The actor framing prevents a common mistake: a repository with several methods can still be cohesive if all methods respond to one data-policy concern. I would identify the separate change actors before moving code: the backend can rename a field, design can change presentation, and product can change eligibility. Each deserves a test boundary when its change is independent. In a profile screen, the data layer maps the API DTO to an app model, while the ViewModel maps that model to UI state and handles user actions. I would use a repository for data access, consistent with Android architecture guidance. A failure sign is a ViewModel test that needs Retrofit or JSON fixtures just to check a loading label. But I would not split every helper into a use case if it adds no reusable rule or clarity.
+
+## How to answer in the interview
+
+- **Why:** Define reason to change.
+- **How:** walk through the DTO/ViewModel split.
+- **Trade-offs:** avoid class-count dogma.
+- **Failure cases:** mention schema-coupled UI tests.
+- **Production solutions:** end with narrow tests per boundary..
 
 ## Deep-dive talking points
 
@@ -74,4 +86,4 @@ Identify three reasons to change in one ViewModel, propose owners, and explain w
 - [Robert C. Martin, Single Responsibility Principle](https://blog.cleancoder.com/uncle-bob/2014/05/08/SingleReponsibilityPrinciple.html) — change actors and cohesion.
 - [Android UI layer](https://developer.android.com/topic/architecture/ui-layer) — ViewModel role.
 
-Technically reviewed against the linked primary design/language/Android guidance on 2026-10-11. Conceptual examples are not device-tested.
+Technically reviewed against the linked primary design/language/Android guidance on 2026-10-13. Conceptual examples are not device-tested.

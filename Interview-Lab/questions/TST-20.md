@@ -23,7 +23,11 @@ Write tests for a payment retry path guaranteeing no duplicate charge.
 
 ## Explanation in Arabic
 
-اختبار “no duplicate charge” لازم يحاكي server نفّذ charge لكن response ضاع. العميل يحتفظ بنفس operation ID والamount، يحوّل state لـunknown، ويسأل status أو يعيد بنفس key تحت عقد provider. Unit test يثبت client ما يولّدش UUID جديد؛ backend/provider integration test يثبت dedup atomically. من غير server contract ما نقدرش نضمن الأثر المالي.
+جملة “no duplicate charge” لا تثبتها unit test على العميل وحده. أخطر sequence إن backend سجّل approval لكن response ضاع؛ العميل يرى timeout، يخزن Unknown ولا يولّد `UUID` جديدة. test العميل تبدأ بـintent محفوظة فيها key وamount ثابتين، fake server يعمل commit ثم يقطع الرد، وبعد restart تعمل retry أو status lookup وتؤكد نفس key/parameters.
+
+## Practical walkthrough
+
+لكن fake فيها dedup متوقع لا تثبت production؛ backend integration test تبعت طلبين بنفس key بالتوازي وتتأكد من charge record واحدة، وترفض نفس key بمبلغ مختلف. provider sandbox يختبر retention/status contract الخاص به. لو key انتهت صلاحيتها أو status ما اتحسمتش، يلزم reconciliation/operations escalation بدل charge عمياء. اختبر duplicate taps، crash بعد persist، وlog redaction.
 
 ## Why it matters and how it works
 
@@ -111,7 +115,15 @@ CI has unit/client HTTP tests, backend concurrency/idempotency tests, and provid
 
 ## Interview answer — deep senior
 
-“The critical assertion spans a trust boundary. A client test proves it does not change operation identity after timeout, including restart and duplicate taps; an HTTP test proves the header/body remain stable; a backend transaction test proves concurrent requests converge; a provider sandbox test validates its documented idempotency and status lookup. I inject the fault after the server commits, not before send, because that is the dangerous ambiguity. I also test key expiry and unresolved status, which require reconciliation rather than a blind new charge. No test justifies claiming exactly-once packet delivery.”
+“I split the guarantee across trust boundaries. The client test proves it persists one immutable payment intent before sending, keeps the same idempotency key and amount after a timeout or process restart, and shows Unknown instead of Declined when the reply is ambiguous. My HTTP test records the actual header and body and injects the failure after the fake server commits; dropping the response before the send would miss the dangerous case. A local fake can model deduplication, but it cannot prove the production ledger. I run a backend concurrency test with two same-key requests and assert one business effect, and another test that rejects changed parameters under the same key. A provider sandbox test checks its documented retention, status lookup and reconciliation behavior. I also test duplicate taps, a crash between durable intent creation and send, and retry after an unresolved status. If the key expires or the authority cannot be reached, the UI must remain pending or unknown with a support reference and operational reconciliation; a new key is not a safe default. I never promise exactly-once network delivery—only duplicate-safe effects under an explicit server and provider contract.”
+
+## How to answer in the interview
+
+- **Why:** timeout after commit creates duplicate-charge risk.
+- **How:** persist one key, commit then lose reply, restart and retry same key.
+- **Trade-off:** truthful Unknown UX versus unsafe instant success/failure.
+- **Failure case:** a fake server is mistaken for production dedup proof.
+- **Production solution:** backend concurrent same-key test and provider reconciliation.
 
 ## Deep-dive talking points
 
@@ -124,7 +136,7 @@ Prompt for after-commit fault, immutable parameters, concurrent server test, ret
 
 ## Self-check rubric
 
-Can you explain the mechanism, reproduce the example, justify the trade-off, identify the failure case, and answer both follow-ups for this question?
+Inject a lost reply after server commit, restart the client and assert the same key and immutable amount are sent. Then test concurrent same-key requests against the backend and verify one charge; do not claim a fake server proves that guarantee.
 
 ## References and reviewed-on date
 

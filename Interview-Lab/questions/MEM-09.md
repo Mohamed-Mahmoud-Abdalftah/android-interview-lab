@@ -26,6 +26,10 @@ Can a ViewModel or coroutine leak memory? How?
 
 الـ`ViewModel` يعيش أطول من Activity instance أثناء rotation، لذلك لو خزّن `View` أو `Activity` أو binding مباشرة ممكن يمسك الشاشة القديمة. الـcoroutine كمان ممكن تحتفظ بكل variables الملتقطة وهي شغالة أو معلقة؛ لو شغّلتها في `GlobalScope` أو application scope بدون حدّ عمر، تقدر تحتفظ بـscreen reference بعد إغلاقها. `viewModelScope` يتلغى عند `onCleared`، لكن ما يمنعش leak لو ViewModel نفسه مسجل listener بدون unregister، أو احتفظ بكائن UI خلال فترة بقائه. اربط شغل الـview بـ`viewLifecycleOwner`، وخلي ViewModel يحتفظ بـstate وIDs لا بـViews.
 
+## Practical walkthrough
+
+لو `ViewModel` ماسكة `binding`، rotation يسيب الـview القديمة عايشة. ولو job في application scope ملتقطة نفس binding، حتى `onCleared` مش هيفيد. خلّي الـViewModel تطلع state فقط، والـFragment تجمعه بـview lifecycle وترسم في binding الحالية. جرّب خروج سريع من الشاشة أثناء request بطيء؛ بعدها افحص هل job اتلغت، وهل callback قديمة لسه ماسكة view أو بتحاول ترسم عليها.
+
 ## Why it matters and how it works
 
 Coroutines are objects with continuations and captured references. Cancellation ends appropriately scoped work cooperatively; blocking work or child jobs detached into a longer scope may outlive the screen. A ViewModel is retained across ordinary configuration changes, so an Activity reference in it keeps the old instance alive. A hot Flow collected forever in an application scope can similarly keep a UI callback alive. Examine the scope, captured objects, and registration lifetime.
@@ -33,6 +37,27 @@ Coroutines are objects with continuations and captured references. Cancellation 
 ## Worked example
 
 Bad design: a ViewModel stores `lateinit var binding: ScreenBinding` and launches a retry loop in `GlobalScope` that calls `binding.status.text = ...`. Correct design: ViewModel exposes `StateFlow<ScreenState>` from `viewModelScope`; the Fragment collects with `viewLifecycleOwner.repeatOnLifecycle(STARTED)` and renders into its current binding. The latter is an architecture sketch; omit the full AndroidX imports and Fragment wiring here rather than presenting it as standalone compilable code.
+
+This Android sketch assumes `ScreenState` and `repository.load()` exist. The ViewModel exposes data rather than a `View` or `Activity`; AndroidX lifecycle dependencies are required and the snippet is illustrative.
+
+```kotlin
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+
+class ReceiptViewModel(private val repository: ReceiptRepository) : ViewModel() {
+    private val _state = MutableStateFlow<ScreenState>(ScreenState.Loading)
+    val state: StateFlow<ScreenState> = _state
+
+    fun load(id: String) = viewModelScope.launch {
+        _state.value = ScreenState.Ready(repository.load(id))
+    }
+}
+```
+
+A real app defines error and cancellation states and collects `state` from the current view lifecycle.
 
 ## Trade-offs and decision criteria
 
@@ -56,7 +81,15 @@ For a search screen, ViewModel owns query and results, while Fragment owns rende
 
 ## Interview answer — deep senior
 
-“I inspect ownership across three lifetimes: view, screen ViewModel, and application or durable work. A ViewModel surviving rotation must not hold the old Activity or its binding. A coroutine captures variables in its continuation, so even a suspended job can retain a large graph; `GlobalScope` or an application scope is especially risky for a UI callback. `viewModelScope` gives structured cancellation at `onCleared`, yet cancellation is cooperative and does not unregister arbitrary external listeners. I expose immutable UI state, collect it with the view lifecycle, cancel superseded requests, and remove listeners explicitly. If an operation must continue after navigation, I move it to a repository or worker with stable IDs instead of a View. I confirm the fix with repeatable navigation, job inspection, and a heap retaining path.”
+“I inspect ownership across three lifetimes: view, screen ViewModel, and application or durable work. A ViewModel surviving rotation must not hold the old Activity or its binding. A coroutine captures variables in its continuation, so even a suspended job can retain a large graph; `GlobalScope` or an application scope is especially risky for a UI callback. `viewModelScope` gives structured cancellation at `onCleared`, yet cancellation is cooperative and does not unregister arbitrary external listeners. I expose immutable UI state, collect it with the view lifecycle, cancel superseded requests, and remove listeners explicitly. If an operation must continue after navigation, I move it to a repository or worker with stable IDs instead of a View. I confirm the fix with repeatable navigation, job inspection, and a heap retaining path. My test starts a slow load, navigates away, and rotates before completion. I verify the old view is no longer reachable and the result cannot render into a stale binding. With a blocking driver I separately test whether cancellation actually stops I/O; scope cancellation does not force that driver to cooperate.”
+
+## How to answer in the interview
+
+- **Why:** Explain three distinct lifetime scopes.
+- **How:** Expose state and collect against the current view lifecycle.
+- **Trade-off:** Longer scopes can preserve work but also retain captures.
+- **Failure case:** A noncooperative job may outlive screen cancellation.
+- **Production solution:** Test navigate-away and inspect retained views and stale updates.
 
 ## Deep-dive talking points
 
@@ -78,4 +111,4 @@ Explain retention through ViewModel and continuation, choose scopes for view/scr
 - [Coroutines best practices](https://developer.android.com/kotlin/coroutines/coroutines-best-practices) — scope and cancellation ownership.
 - [Fragment lifecycle](https://developer.android.com/guide/fragments/lifecycle) — view lifecycle boundary.
 
-Technically reviewed against these primary sources on 2026-10-11 by automated editorial review. The architecture sketch was not Android-compiled.
+Technically reviewed against these primary sources on 2026-10-13 by automated editorial review. The architecture sketch was not Android-compiled.

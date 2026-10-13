@@ -30,7 +30,7 @@ HTTP method semantics guide retry safety, but API implementations must honor the
 
 ## Worked example
 
-Conceptual Kotlin API interface; backend must document key retention and duplicate handling.
+Conceptual Kotlin API interface. `ChargeResponse` is an app-defined DTO and the configured Retrofit converter is omitted; the backend must document key retention and duplicate handling.
 
 ```kotlin
 import retrofit2.http.Body
@@ -46,6 +46,10 @@ interface PaymentsApi {
     ): ChargeResponse
 }
 ```
+
+## Practical walkthrough
+
+HTTP method مش “اسم function” فقط: GET للقراءة، POST غالبًا إنشاء/command، PUT استبدال تحت URI معروف، PATCH تعديل جزئي، DELETE إزالة. HTTP بيعرّف GET/PUT/DELETE idempotent في intended effect، لكن implementation ممكن تكسر العقد؛ POST ممكن يبقى logically idempotent لو backend عامل key retention وpayload matching. 200/201/204 نجاح بأجسام مختلفة، 400 خطأ request، 401 auth، 403 authorization، 404 absent، 409 conflict، 429 rate limit، و5xx server. timeout بعد POST ما يقولش العملية فشلت؛ احتفظ operation ID، اسأل status، ولا تعيد بمفتاح جديد. parse `Retry-After` حسب العقد، ومتتعاملش مع كل 4xx كretry.
 
 ## Trade-offs and decision criteria
 
@@ -69,7 +73,17 @@ A payment client persists a stable operation key before POST, marks outcome Pend
 
 ## Interview answer — deep senior
 
-“A robust retry decision combines method semantics, endpoint contract, status code and operation identity. HTTP defines safe and idempotent methods, but a backend can implement them badly, and a POST can be made logically repeat-safe with a documented idempotency-key system. On timeout, I cannot know if the server committed. I persist one operation ID, reuse the same key within its retention policy, query authoritative status and avoid duplicate UI actions. I distinguish 401 refresh, 403 denial, 409 conflict, 429 throttling and transient 5xx. I set bounded backoff and honor Retry-After; I never claim exactly-once network execution from a key.”
+A robust retry decision combines method semantics, endpoint contract, status code and operation identity. HTTP defines safe and idempotent methods, but a backend can implement them badly, and a POST can be made logically repeat-safe with a documented idempotency-key system. On timeout, I cannot know if the server committed. I persist one operation ID, reuse the same key within its retention policy, query authoritative status and avoid duplicate UI actions. I distinguish 401 refresh, 403 denial, 409 conflict, 429 throttling and transient 5xx. I set bounded backoff and honor Retry-After; I never claim exactly-once network execution from a key.
+
+I would separate HTTP semantics from a particular server contract. GET is a safe read; PUT and DELETE are defined as idempotent in intended effect, while POST is not automatically so. A backend can make a POST logically repeat-safe with an idempotency key, but the client must know key retention and what happens if the payload changes. Status classes guide the first branch, then endpoint details matter: a 401 may call for session repair, a 409 for conflict handling, and a 429 for rate-limit delay. If a payment POST times out, I cannot infer failure from silence; I reuse the persisted operation identity and query status. That decision prevents a duplicate side effect.
+
+## How to answer in the interview
+
+- **Why:** Retry safety depends on operation semantics, not just a status number.
+- **How:** Define common methods and statuses, then explain idempotent intended effect.
+- **Trade-offs:** Use key-backed POST retries only under documented server rules.
+- **Failure cases:** Treating timeout as failed payment or retrying all 4xx.
+- **Production solution:** Persist operation ID, honor `Retry-After`, and reconcile uncertain writes.
 
 ## Deep-dive talking points
 
@@ -89,4 +103,4 @@ Can I state method semantics, classify key status codes and design one safe writ
 - [HTTP Semantics RFC 9110](https://httpwg.org/specs/rfc9110.html) — method and status semantics.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — retryable writes.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

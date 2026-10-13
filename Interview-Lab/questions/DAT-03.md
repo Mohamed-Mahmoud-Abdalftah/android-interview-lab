@@ -44,6 +44,10 @@ val client = OkHttpClient.Builder()
     .build()
 ```
 
+## Practical walkthrough
+
+في mobile network، اتصال ممكن يعلق قبل TCP/TLS، أو server يبدأ الرد وبعدين bytes تتأخر، أو upload body يتعطل. `connectTimeout` لمرحلة الاتصال، `readTimeout` انتظار قراءة bytes، `writeTimeout` للكتابة، و`callTimeout` سقف للcall كلها من بدايتها لنهايتها. لو request فيها redirect/retry، whole-call deadline يمنعها تتمط للأبد. Coroutine `withTimeout` يحط deadline لانتظار caller، لكن لو side effect وصل server، cancellation ما ترجّعوش. اختار budgets حسب endpoint وحجم payload، سجّل phase اللي حصل فيها timeout من غير أسرار، واختبر شبكة بطيئة وresponse ضايع منفصلين.
+
 ## Trade-offs and decision criteria
 
 Short deadlines improve responsiveness but can fail on poor networks; long deadlines tie up resources and UX. A whole-call deadline bounds overall wait, while phase timeouts diagnose particular stalls. Different upload/download sizes may need different policies.
@@ -66,7 +70,17 @@ A media client uses longer write timeout for uploads and exposes progress; a sea
 
 ## Interview answer — deep senior
 
-“Timeouts are not interchangeable. A call can fail during DNS/connection, stall on response bytes, or take too long overall through redirects and retries. OkHttp exposes phase-specific and whole-call controls; I configure them per endpoint class, observe timeout type and avoid universally tiny defaults on mobile networks. A coroutine `withTimeout` adds a structured caller deadline, but an uncooperative SDK or server action may continue after it fires. For uploads I report progress and use appropriate write/call deadlines. For money I interpret a lost response as unknown, persist a stable operation ID, and reconcile authoritative status before any repeat. Tests simulate each phase and cancellation.”
+Timeouts are not interchangeable. A call can fail during DNS/connection, stall on response bytes, or take too long overall through redirects and retries. OkHttp exposes phase-specific and whole-call controls; I configure them per endpoint class, observe timeout type and avoid universally tiny defaults on mobile networks. A coroutine `withTimeout` adds a structured caller deadline, but an uncooperative SDK or server action may continue after it fires. For uploads I report progress and use appropriate write/call deadlines. For money I interpret a lost response as unknown, persist a stable operation ID, and reconcile authoritative status before any repeat. Tests simulate each phase and cancellation.
+
+I set timeouts by failure phase and by the user’s total waiting budget. Connect covers establishing a connection, read and write cover socket I/O inactivity, and call timeout bounds the complete call including redirects or retries. An application deadline may be shorter for an autocomplete request than for an upload, but an extremely small universal value would fail on real mobile networks. A coroutine timeout cancels local waiting; it cannot prove that a server-side write was not committed. For an order submit I therefore pair a call deadline with a persisted request ID and reconciliation. I test slow connect, stalled response, and lost reply separately to see which timeout fired.
+
+## How to answer in the interview
+
+- **Why:** Different stalls need different budgets and diagnosis.
+- **How:** Walk through connect, read, write and whole-call phases.
+- **Trade-offs:** Tune by endpoint and network conditions, not one tiny global timeout.
+- **Failure cases:** Confusing local cancellation with rollback of a server write.
+- **Production solution:** Measure timeout phase and reconcile ambiguous submissions.
 
 ## Deep-dive talking points
 
@@ -86,4 +100,4 @@ Can I map all four deadlines, choose by operation and handle ambiguous writes?
 - [OkHttpClient.Builder API](https://github.com/lysine-dev/okhttp/blob/main/okhttp/src/commonJvmAndroid/kotlin/okhttp3/OkHttpClient.kt) — timeout definitions.
 - [Kotlin withTimeout API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout.html) — caller deadline.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

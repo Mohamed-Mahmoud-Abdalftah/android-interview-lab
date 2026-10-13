@@ -26,6 +26,10 @@ How do navigation contracts work across modules?
 
 Feature يمكنها إعلان public destination contract مثل route/type ومعلمات صغيرة (`orderId`) في API module، بينما implementation تعرف Composable أو Fragment. app shell تجمع graph وتربط contract بالتنفيذ؛ feature أخرى تطلب navigation للـcontract دون استيراد screen class. للـdeep link اختبر validation/auth وفشل ID مفقود؛ لا تمرر domain object كامل. العقد نفسه public API يحتاج versioning إذا تغير argument أو route. في dynamic feature يجب التأكد من install قبل فتح destination.
 
+### Practical walkthrough in Egyptian Arabic
+
+Navigation contract بين modules يمرر stable ID/route typed ومعروف، لا Parcelable ضخمة من feature أخرى. Destination تعيد data من repository وتتحقق session/authorization، و`:app` ينسق graph. Deep link والnotification قد يبدأوا cold process، لذا route لا تفترض ViewModel موجود. اختبر back stack وmissing feature وprocess recreation.
+
 ## Why it matters and how it works
 
 Navigation is a cross-feature capability but destination implementations should remain encapsulated. A route contract can express stable identifiers and expected arguments, while an app graph or registry contributes actual destination code. The back stack and saved state can restore small arguments after eligible process recreation; the destination reloads data from a repository.
@@ -57,6 +61,14 @@ Version and test public routes, deep links, argument parsing, app graph assembly
 ## Interview answer — deep senior
 
 “A navigation contract is a public API between feature boundaries. It should describe a destination and minimal arguments, not expose the other feature's screen class or ViewModel. I might place `OrderDetails(orderId)` in a small Orders API module and let the app composition root register the actual Orders UI. Checkout or a notification can request that contract without knowing how Orders renders. The route uses a stable identifier so the back stack and deep link can be restored; the Orders owner reloads data and enforces authorization, because a crafted link can supply any ID. I consider route changes like API changes: renaming a path or parameter can break notifications, bookmarks or other modules, so compatibility and tests matter. A graph-contribution mechanism can avoid a giant app file, but it must keep dependency direction visible. With dynamic delivery, a navigator first resolves installation state and only then opens the destination. I test the assembled graph, deep-link parsing, missing/deleted IDs, back-stack behavior and eligible process restoration.”
+
+## How to answer in the interview
+
+- **Why:** route can outlive process and feature owner.
+- **How:** pass small validated IDs.
+- **Trade-off:** light contract versus reload cost.
+- **Failure case:** large object arg stale after death.
+- **Production solution:** cold-start navigation test.
 
 ## Deep-dive talking points
 

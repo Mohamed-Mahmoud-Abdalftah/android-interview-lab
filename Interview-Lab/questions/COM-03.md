@@ -26,6 +26,10 @@ What triggers recomposition, and what can be skipped?
 
 Compose يعيد composition عندما state مقروءة في scope تتغير، أو parent يعيد الاستدعاء بمدخلات مختلفة، أو عوامل أخرى تتطلب تحديث الـcomposition. لكنه يستطيع تجاوز child calls إذا parameters ومعايير الـcompiler تسمح. `mutableStateOf` مرصود؛ تغيير property داخل plain mutable object دون observable wrapper قد لا يظهر. ونقل قراءة state إلى child ضيق يحدّ invalidation، لكن قراءة value في parent الكبير توسع العمل. عدد recompositions وحده ليس دليل بطء؛ قياس frame time مهم.
 
+### Practical walkthrough in Egyptian Arabic
+
+لو `query` مقروءة في root كبيرة، كل حرف ممكن يرجّع scope واسع؛ لو القراءة داخل جزء البحث، أثرها أضيق. لكن child ممكن يتعمله skip حسب inputs وcompiler configuration، فمتقولش إن كل parent recomposition تعني كل child اشتغل. جرّب تغيّر `query` وراقب trace قبل أي refactor. لو النتيجة بطّيئة، ابدأ بـtrace للـframe وشوف القراءة حصلت فين بدل ما تقسّم كل Text. لو السبب image decode أو layout، نقل state read وحده مش هيحل المشكلة.
+
 ## Why it matters and how it works
 
 Snapshot state records reads within composition scopes. A write that changes a value according to its mutation policy invalidates dependent readers. A parent recomposition may call children, but skipping depends on compiler-inferred stability and whether arguments changed; exact rules can evolve with Compose versions. Reads during layout or draw can defer work to those phases instead of restarting composition.
@@ -33,6 +37,24 @@ Snapshot state records reads within composition scopes. A write that changes a v
 ## Worked example
 
 A shopping screen has a changing `searchText` and a large static promotion panel. If the root reads `searchText` and computes every result and panel decoration inline, each keystroke traverses a broad scope. Move the text-dependent query UI into a smaller composable, keep stable inputs for the panel, and measure the frame trace before and after. Do not hide the search change in a plain mutable list.
+
+### Compose/Kotlin walkthrough
+
+```kotlin
+// Keep the frequently changing read inside the small search region.
+@Composable
+fun Catalog(query: State<String>, onQuery: (String) -> Unit) {
+    Column {
+        Text("Featured")
+        SearchBox(query, onQuery) // Catalog does not read query.value.
+    }
+}
+@Composable
+private fun SearchBox(query: State<String>, onQuery: (String) -> Unit) {
+    OutlinedTextField(query.value, onValueChange = onQuery, label = { Text("Search") })
+}
+// Import androidx.compose.runtime.State; owner passes observable State.
+```
 
 ## Trade-offs and decision criteria
 
@@ -48,15 +70,23 @@ Use compiler metrics, Layout Inspector or trace tools appropriate to the install
 
 ## Interview answer — short
 
-“Changed observable state invalidates scopes that read it, and changed inputs can propagate through parents. Compose can skip eligible child calls when its parameter stability and change checks allow.”
+“Changed observable state invalidates scopes that read it, and changed inputs can propagate through parents. Compose can skip eligible child calls when its parameter stability and change checks allow. A changed state read invalidates its scope; eligible children may still be skipped.”
 
 ## Interview answer — structured
 
-“I locate where state is read. A write to snapshot state can invalidate those composition scopes; a parent may also re-execute because its inputs changed. Children with suitable unchanged parameters may be skipped, but I would not promise that for every composable or every compiler version. I isolate rapidly changing reads, keep data truly observable, and profile the frame. A high count alone is less useful than knowing whether composition, layout or draw is expensive.”
+“I locate where state is read. A write to snapshot state can invalidate those composition scopes; a parent may also re-execute because its inputs changed. Children with suitable unchanged parameters may be skipped, but I would not promise that for every composable or every compiler version. I isolate rapidly changing reads, keep data truly observable, and profile the frame. A high count alone is less useful than knowing whether composition, layout or draw is expensive. For search, I would locate where query is read before assuming the entire catalog is doing work.”
 
 ## Interview answer — deep senior
 
-“Recomposition is driven by the dependency between observable state reads and composition scopes, plus input changes flowing through callers. When a snapshot value changes, Compose schedules readers that depend on it. It can avoid repeating eligible calls with unchanged inputs, subject to the compiler's stability model and the actual version. I do not treat it as a simple ‘the whole screen rerenders’ rule. If typing is slow, I first trace the state read: perhaps a root composable reads every character and performs filtering, formatting and expensive subtree construction. I can move the read closer to the search results, pass stable values to unrelated children, and shift heavy work to an appropriate layer. I confirm that the data is observable; mutating an ordinary collection in place is a correctness bug, not a clever way to avoid recomposition. I then measure composition, layout and draw separately on a release build. Stability annotations are contracts about change visibility, so falsely marking a mutable model stable to raise skip counts risks stale UI. My success measure is correct behavior with improved frame timing.”
+“Recomposition is driven by the dependency between observable state reads and composition scopes, plus input changes flowing through callers. When a snapshot value changes, Compose schedules readers that depend on it. It can avoid repeating eligible calls with unchanged inputs, subject to the compiler's stability model and the actual version. I do not treat it as a simple ‘the whole screen rerenders’ rule. If typing is slow, I first trace the state read: perhaps a root composable reads every character and performs filtering, formatting and expensive subtree construction. I can move the read closer to the search results, pass stable values to unrelated children, and shift heavy work to an appropriate layer. I confirm that the data is observable; mutating an ordinary collection in place is a correctness bug, not a clever way to avoid recomposition. I then measure composition, layout and draw separately on a release build. Stability annotations are contracts about change visibility, so falsely marking a mutable model stable to raise skip counts risks stale UI. My success measure is correct behavior with improved frame timing. If a field inside a plain mutable object changes without an observable write, no skip tuning will make the UI correct.”
+
+## How to answer in the interview
+
+- **Why:** a broad state read can increase work per edit.
+- **How:** name the snapshot read, its invalidated scope, and possible child skipping.
+- **Trade-off:** extra boundaries cost readability if no measured issue.
+- **Failure case:** plain mutable fields do not notify Compose.
+- **Production solution:** inspect traces and compiler reports before changing the model.
 
 ## Deep-dive talking points
 

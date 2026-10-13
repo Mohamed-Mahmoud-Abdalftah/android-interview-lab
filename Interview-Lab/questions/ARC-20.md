@@ -24,6 +24,10 @@ Define independent tests for UI transitions, business rules and data consistency
 
 Presentation test تحقن fake repository/use case وتتحقق من `UiState` بعد events، loading، error، cancellation، من غير network. Domain use case test تحقن fake contracts وتتحقق من rules وedge cases. Data test تستخدم fake service وin-memory Room أو test DB لتتأكد من mapping، transactions، cache/server ordering؛ وinstrumented test لما Android behavior مهم. ما تكتفيش mocks بتأكد إن method اتنادت؛ اختبر observable behavior. ولا تسمّي JVM tests إثبات lifecycle/device behavior؛ Compose UI أو Room على الجهاز تحتاج suite مناسبة.
 
+### Practical walkthrough in Egyptian Arabic
+
+Presentation test يرسل event ويتحقق من UiState، Domain test يثبت rule/edge case، Data integration test يختبر Room migration/HTTP mapping. Fakes مفيدة لحدود، لكنها لا تثبت SQL أو wire contract. مثال timeout payment: VM يعرض Unknown، use case لا يكرر key جديد، backend contract يضمن one effect. اربط كل test بما يستطيع إثباته.
+
 ## Why it matters and how it works
 
 Layered tests isolate logic and localize failures. Fakes at boundaries make state transitions deterministic; integration tests catch mapper and storage interactions that isolated tests miss. Android-specific behavior needs Android-capable tests.
@@ -55,6 +59,14 @@ For Presentation, I drive user events and assert the emitted UI state with a fak
 ## Interview answer — deep senior
 
 Independent tests should match ownership. The ViewModel contract is state over time after events; the domain contract is policy outcomes over boundary inputs; the data contract is consistency across sources. I use fakes that expose meaningful scenarios, not mocks that merely record method calls. A Room transaction needs a real test database; a server contract needs representative payloads, including malformed and versioned cases. I separately test DI wiring and Compose rendering, accessibility and recreation where Android runtime behavior matters. Coroutine tests control scheduling and verify cancellation. CI labels JVM simulations versus instrumented/device evidence honestly. This mix finds logic defects quickly while still catching integration mistakes and process/lifecycle edge cases. I also choose the environment honestly. JVM unit tests can validate pure logic and coroutine transitions, but they do not prove Android lifecycle, Room migration or Compose accessibility. Room needs an appropriate database test, and selected device tests should cover recreation and visible UI states. I prefer fakes that produce meaningful outcomes over mocks that simply verify calls, because a method can be invoked while the wrong state is emitted. CI should report each suite and its limits separately.
+
+## How to answer in the interview
+
+- **Why:** different layers fail in different ways.
+- **How:** test state, policy and real adapters separately.
+- **Trade-off:** fast feedback versus integration cost.
+- **Failure case:** fake passes while Room migration fails.
+- **Production solution:** risk-based suite across boundaries.
 
 ## Deep-dive talking points
 

@@ -26,6 +26,10 @@ A shared model change forces recompilation of many modules. How would you shrink
 
 افحص build scan/task graph: هل shared model public ABI لعدد كبير؟ هل `api` dependency تصدّر types أوسع من اللازم؟ هل Kotlin inline/generated code يزيد أثر التغيير؟ بدلاً من `CommonUserModel` ضخمة تستخدمها 15 feature، قد تحتاج عقود صغيرة مستقرة (`UserId`, `DisplayName`) وfeature UI models محلية؛ data mapping تحوّل بينها. لا تنسخ domain invariant بين modules لمجرد تسريع compile. قِس قبل وبعد incremental build، وتأكد أن تغيير schema أو serialization ما زال ينتقل للمستهلكين الصحيحين.
 
+### Practical walkthrough in Egyptian Arabic
+
+Shared model في `:core` عام جدًا يجعل تعديل field يعيد compile feature كثيرة. افصل stable public contract من DTO/storage representation، قلل `api` exposure، ومرر narrow IDs/value objects. راجع Build Scan لمعرفة invalidated tasks؛ لا تفترض module split وحدها تكفي. اختبر mapping والمستهلكين بعد تقليل surface حتى لا تتغير semantics.
+
 ## Why it matters and how it works
 
 Changing a type in a high-fan-out API can invalidate downstream compile inputs. `api` edges and public signatures propagate visibility. Breaking one giant shared model into stable domain primitives and local presentation models can localize feature changes, but only if the contracts truly differ. Gradle configuration, annotation processing and resources may still drive work beyond ABI effects.
@@ -57,6 +61,14 @@ Track ABI and public API churn of high-fan-out modules, compare representative i
 ## Interview answer — deep senior
 
 “I would first prove the cause. A shared model change can alter public ABI, but annotation processing, resources or broad `api` classpaths may also expand work. I compare task graphs from a controlled one-line model change and inspect who imports the type through public signatures. If a `User` object combines profile presentation, payment eligibility and admin flags, every consumer sees changes it does not need. I separate stable identity and policy contracts from feature-specific presentation models, mapping at owned boundaries. I narrow `api` exports to types that genuinely appear in ABI and keep private SDK dependencies as `implementation`. I do not duplicate critical eligibility logic just to improve compilation; one authoritative domain owner still decides it. I test mappings, serialization and behavior in affected features, then rerun warm incremental builds and record compile fan-out and wall time. A smaller API should also make independent feature changes easier, not simply move complexity into dozens of trivial micro-modules. If build scans show code generation rather than the model as the bottleneck, I address that mechanism instead.”
+
+## How to answer in the interview
+
+- **Why:** public model churn propagates.
+- **How:** narrow API and implementation edges.
+- **Trade-off:** duplication versus compile isolation.
+- **Failure case:** DTO made public to all features.
+- **Production solution:** profile affected modules after change.
 
 ## Deep-dive talking points
 

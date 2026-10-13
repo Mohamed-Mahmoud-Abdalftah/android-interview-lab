@@ -49,6 +49,10 @@ import kotlinx.coroutines.flow.Flow
 }
 ```
 
+## Practical walkthrough
+
+`@Entity` بتحدد جدول وprimary key، `@Dao` بتحدد SQL/insert/update، `@Transaction` بتربط عمليات محلية لازم تنجح أو تفشل مع بعض. لو حفظت order header وبعدين items في call منفصل، crash بين الاتنين يسيب order ناقصة؛ خليهم transaction واحدة. `Flow` query تراقب invalidation وتطلع snapshot جديد عند تغييرات tables ذات الصلة، لكنها مش server push ومش ضمان إن كل intermediate state هتتشاف. migration بين versions لازم تحافظ على صفوف المستخدم وتختبر exported schemas والقيود. لا تعمل network call جوه transaction عشان ما تمسكش DB lock مدة I/O.
+
 ## Trade-offs and decision criteria
 
 Room improves SQL safety and observability but does not decide remote conflict policy or encryption. Auto migrations handle supported schema changes; complex transforms need manual migration. Transactional writes can still fail from disk full and need error handling.
@@ -71,7 +75,17 @@ An offline order repository stores header/items atomically, exposes DAO Flow to 
 
 ## Interview answer — deep senior
 
-“For a real order workflow, schema, consistency and observation are separate concerns. Entities and DAOs define local representation and access. I put header/item changes in one Room transaction, because a process crash between two independent writes would leave an invalid order. A migration preserves existing files across releases; I export schemas and run upgrade tests from every supported shipped version, including representative rows and constraints. A Flow query is an invalidation-driven snapshot stream, so UI can render the current state after a transaction, but it is not a transaction history. Server synchronization needs IDs, versions and conflict rules outside Room’s local atomicity. I also test disk-full and corrupted-file paths.”
+For a real order workflow, schema, consistency and observation are separate concerns. Entities and DAOs define local representation and access. I put header/item changes in one Room transaction, because a process crash between two independent writes would leave an invalid order. A migration preserves existing files across releases; I export schemas and run upgrade tests from every supported shipped version, including representative rows and constraints. A Flow query is an invalidation-driven snapshot stream, so UI can render the current state after a transaction, but it is not a transaction history. Server synchronization needs IDs, versions and conflict rules outside Room’s local atomicity. I also test disk-full and corrupted-file paths.
+
+I would design the local invariant first: an order header, lines, and a pending-sync marker must appear together. An Entity defines stored rows, a DAO owns typed operations, and a Room transaction gives local all-or-nothing behavior for those operations. A Flow query lets UI observe database invalidation and reload, but it is not a live network feed and should be collected with lifecycle awareness. A migration is a shipped-data contract, not just a version increment. I export schemas and test upgrades from supported old versions with realistic rows and foreign keys. I keep remote calls outside the DB transaction and handle server consistency with a separate protocol.
+
+## How to answer in the interview
+
+- **Why:** Preserve local invariants across crashes and upgrades.
+- **How:** Tie Entity, DAO, transaction, migration and Flow query to one order.
+- **Trade-offs:** Keep transactions short; use Flow for observation, not sync itself.
+- **Failure cases:** Half-written order, destructive migration, or network wait in transaction.
+- **Production solution:** Export schemas and test representative upgrade paths.
 
 ## Deep-dive talking points
 
@@ -91,4 +105,4 @@ Can I define each component, explain Flow invalidation and test a migration with
 - [Android Room guide](https://developer.android.com/training/data-storage/room) — entities, DAOs and database.
 - [Android Room migrations](https://developer.android.com/training/data-storage/room/migrating-db-versions) — schema evolution tests.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed against linked primary documentation on 2026-10-13. Examples are conceptual unless explicitly stated otherwise; no Android device execution is claimed.

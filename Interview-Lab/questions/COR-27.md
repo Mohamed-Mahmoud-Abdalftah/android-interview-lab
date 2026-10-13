@@ -24,26 +24,45 @@ Handle payment timeout as an ambiguous server outcome using durable keys and rec
 
 لو payment request وصلت السيرفر والعميل عمل timeout، النتيجة **unknown** مش failed. إعادة الإرسال بـidempotency key جديد ممكن تعمل charge مرتين. نسجل operation ID ثابت قبل الإرسال، نستخدم نفس key عند retry حسب عقد الـbackend، ونسأل السيرفر عن حالة العملية أو نعمل reconciliation مع webhook/ledger. UI تفضل Pending لحد الحالة الموثوقة.
 
+## Practical walkthrough
+
+لو request الدفع وصلت السيرفر ثم client عمل timeout، رسالة `failed` للمستخدم ممكن تكون كدب؛ العملية قد تكون اتسجلت. خزّن `operationId` و`idempotencyKey` وpayload hash قبل الإرسال. عند retry استخدم نفس key حسب عقد backend، واسأل status أو اعمل reconciliation. لو key انتهت صلاحيتها، لا تعمل charge جديد بشكل أعمى؛ اعتمد على ledger أو دعم backend.
+
 ## Why it matters and how it works
 
 Coroutine timeout cancels client waiting, not necessarily the HTTP transport or server transaction. A server-side idempotency contract can deduplicate retries with the same stable key, but it does not prove exactly-once network execution. Persist pending state and key transactionally before request; recover after process death and verify authoritative status before any repeat.
 
 ## Worked example
 
-Conceptual Android repository skeleton; `gateway` must document its idempotency and lookup contract. The local store persists before network send.
+Conceptual Android repository skeleton; `gateway` must enforce one charge per stable key and document its retention and payload-matching contract. The store persists before network send. A pending operation is reconciled later by status lookup.
 
 ```kotlin
+import java.net.SocketTimeoutException
+
 data class PaymentOp(val id: String, val key: String)
-interface PaymentStore { suspend fun savePending(op: PaymentOp) }
+sealed interface PaymentOutcome {
+    data class Confirmed(val receipt: String) : PaymentOutcome
+    data object Pending : PaymentOutcome
+}
+interface PaymentStore {
+    suspend fun savePending(op: PaymentOp)
+    suspend fun markConfirmed(id: String, receipt: String)
+}
 interface PaymentGateway {
     suspend fun charge(op: PaymentOp): String
     suspend fun status(id: String): String
 }
 suspend fun submit(
     op: PaymentOp, store: PaymentStore, gateway: PaymentGateway,
-): String {
+): PaymentOutcome {
     store.savePending(op)
-    return gateway.charge(op) // same op.key for every authorized retry
+    val receipt = try {
+        gateway.charge(op) // retry only with the same key and payload
+    } catch (e: SocketTimeoutException) {
+        return PaymentOutcome.Pending // do not infer server rejection
+    }
+    store.markConfirmed(op.id, receipt)
+    return PaymentOutcome.Confirmed(receipt)
 }
 ```
 
@@ -69,7 +88,15 @@ A checkout creates a unique operation, stores it as Pending, submits with a stab
 
 ## Interview answer — deep senior
 
-“There are two independent facts: the coroutine or HTTP client timed out, and the payment server may already have committed. Cancellation cannot roll back the second fact. My design records a stable operation ID, amount and key before transmission, and the server maps that key to one logical payment under an explicit retention and payload contract. After ambiguous timeout or process death, the client queries transaction status or awaits a backend reconciliation signal. A retry, if allowed, reuses the same key and is safe only within the server’s contract; I never claim exactly-once network delivery. I instrument state transitions, suppress sensitive logging, and test crash points before send, after server commit and before local acknowledgement. A human-readable Pending state prevents the user from triggering a duplicate.”
+“There are two independent facts: the coroutine or HTTP client timed out, and the payment server may already have committed. Cancellation cannot roll back the second fact. My design records a stable operation ID, amount and key before transmission, and the server maps that key to one logical payment under an explicit retention and payload contract. After ambiguous timeout or process death, the client queries transaction status or awaits a backend reconciliation signal. A retry, if allowed, reuses the same key and is safe only within the server’s contract; I never claim exactly-once network delivery. I instrument state transitions, suppress sensitive logging, and test crash points before send, after server commit and before local acknowledgement. A human-readable Pending state prevents the user from triggering a duplicate. The tricky case is a timeout after the provider accepted the request. The local HTTP exception describes client observation, not the financial result. I would persist one operation identity and payload before the send, reuse its idempotency key only within the provider's documented contract, and query authoritative status after uncertainty. A worker can reconcile Pending after process death. Support tooling needs an audit trail, while the UI must avoid offering a fresh charge before the old operation is resolved.”
+
+## How to answer in the interview
+
+- **Why:** client timeout cannot establish payment outcome.
+- **How:** persist a stable operation identity before sending and reconcile status after ambiguity.
+- **Trade-off:** idempotency contracts and pending UX add complexity.
+- **Failure case:** generating a new key on retry produces a duplicate charge.
+- **Production solution:** server-enforced deduplication, an authoritative ledger, and auditable Pending state.
 
 ## Deep-dive talking points
 
@@ -89,4 +116,4 @@ Can I name every crash window, use a stable key, reconcile status and avoid decl
 - [Kotlin withTimeout API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout.html) — local deadline semantics.
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — durable queued writes/reconciliation patterns.
 
-Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-11; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
+Technically reviewed by automated technical/editorial inspection against the linked primary documentation on 2026-10-13; no human review or Android device test is claimed. The example is illustrative unless explicitly stated otherwise.
