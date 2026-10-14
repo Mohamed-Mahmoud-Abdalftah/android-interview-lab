@@ -92,20 +92,22 @@ Clean Architecture is overengineering for small apps or simple CRUD utilities wi
 
 Architecture is an economic trade-off: abstractions buy decoupling and maintainability at the expense of complexity, file count, and development velocity.
 
-In small applications (e.g. proof-of-concept MVPs, single-developer tools, simple display apps with no offline sync or complex calculations), full Clean Architecture is textbook **overengineering**.
+In small applications (e.g. Proof-of-concept MVPs, single-developer tools, simple display apps with no offline sync or complex calculations), full Clean Architecture is textbook **overengineering**.
 
-The warning signs of overengineering in small projects include:
-1. **Passthrough Use Cases**: Every Use Case consists of a single line: `invoke() = repo.getData()`.
-2. **Mapping Exhaustion**: Converting `NewsDto` -> `NewsEntity` -> `NewsDomain` -> `NewsUiModel` when all four classes contain identical properties.
-3. **Micro-Modularization Overhead**: Splitting a 5-screen app into 12 Gradle modules, multiplying build setup times for zero architectural gain.
+The warning signs of overengineering in small projects include.
+
+First, with Passthrough Use Cases, every Use Case consists of a single line: `invoke() = repo.getData()`. Next, with Mapping Exhaustion, converting `NewsDto` -> `NewsEntity` -> `NewsDomain` -> `NewsUiModel` when all four classes contain identical properties.
+Finally, with Micro-Modularization Overhead, splitting a 5-screen app into 12 Gradle modules, multiplying build setup times for zero architectural gain.
 
 In such scenarios, senior engineers adopt **Pragmatic MVVM**: ViewModels consume concrete Repositories directly, sharing concise data models while retaining reactive state flows.
+
 
 ## Interview answer — deep senior
 
 Architecture should be **evolutionary, not speculative** (YAGNI - You Aren't Gonna Need It). Starting with a pragmatic two-tier architecture (Presentation and Data) does not prevent adopting Clean Architecture later. Because code is properly decoupled at the ViewModel-Repository boundary, extracting a Domain layer and Use Cases takes mere hours once true business complexity or multi-screen logic emerges.
 
 Google's modern architecture documentation reinforces this pragmatism: the Domain layer is officially documented as optional. A senior engineer's value lies not in applying the maximum possible abstractions, but in applying the minimum abstractions necessary to satisfy current requirements and near-term maintainability.
+
 
 ## How to answer in the interview
 

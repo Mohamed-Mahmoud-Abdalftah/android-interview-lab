@@ -96,15 +96,11 @@ Refactor a 1,000-line ViewModel incrementally using the Strangler Fig pattern: w
 
 Refactoring a monolithic 1,000-line ViewModel requires a surgical, incremental migration strategy without halting feature delivery.
 
-1. **Step 1: Characterization Testing**: Before modifying code, write baseline unit tests against the existing ViewModel. Capture its current inputs, outputs, and side-effects. This provides a safety net guaranteeing that subsequent extractions cause zero behavioral regressions.
-
-2. **Step 2: Extract Data Access into a Repository**: Identify raw Retrofit calls, Room DAO queries, and SharedPreferences accesses. Move them into a concrete `FeatureRepositoryImpl` behind a clean interface. Inject the repository into the ViewModel. The ViewModel now consumes repository methods, shedding hundreds of lines of HTTP configuration and mapping.
-
-3. **Step 3: Extract Domain Rules into Use Cases**: Identify dense business calculations (validation algorithms, discount computations, cross-repository logic). Extract each calculation into a dedicated, single-responsibility Use Case with pure JVM unit tests.
-
-4. **Step 4: Consolidate State**: Migrate scattered `LiveData` variables (`isLoading`, `user`, `error`, `items`) into a single consolidated `StateFlow<ScreenUiState>`.
+First, with Step 1: Characterization Testing, before modifying code, write baseline unit tests against the existing ViewModel. Capture its current inputs, outputs, and side-effects. This provides a safety net guaranteeing that subsequent extractions cause zero behavioral regressions. Next, with Step 2: Extract Data Access into a Repository, identify raw Retrofit calls, Room DAO queries, and SharedPreferences accesses. Move them into a concrete `FeatureRepositoryImpl` behind a clean interface. Inject the repository into the ViewModel. The ViewModel now consumes repository methods, shedding hundreds of lines of HTTP configuration and mapping.
+Additionally, with Step 3: Extract Domain Rules into Use Cases, identify dense business calculations (validation algorithms, discount computations, cross-repository logic). Extract each calculation into a dedicated, single-responsibility Use Case with pure JVM unit tests. Finally, with Step 4: Consolidate State, migrate scattered `LiveData` variables (`isLoading`, `user`, `error`, `items`) into a single consolidated `StateFlow<ScreenUiState>`.
 
 Ship each step as an independent, fully tested Pull Request.
+
 
 ## Interview answer — deep senior
 
@@ -113,6 +109,7 @@ The cardinal mistake in legacy refactoring is attempting a **Big Bang Rewrite** 
 Using the **Strangler Fig pattern**, the legacy ViewModel delegates portions of its work to new clean components while continuing to serve production traffic. At any point during the multi-sprint refactoring, the application builds, tests pass, and features remain deployable.
 
 Once all responsibilities are delegated, the legacy ViewModel collapses from 1,000 lines down to a lightweight 60-80 line coordinator whose only job is holding `uiState` and binding user gestures to Use Cases.
+
 
 ## How to answer in the interview
 

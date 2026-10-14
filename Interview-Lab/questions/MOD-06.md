@@ -100,11 +100,12 @@ Dynamic Feature Modules enable modular delivery via Android App Bundles, downloa
 
 Dynamic Feature Modules (DFMs) leverage Google Play Feature Delivery to modularize app distribution rather than just code compilation.
 
-Key mechanisms:
-1. **Delivery Modes**: Modules can be configured as **Install-time** (packaged as separate splits), **On-demand** (downloaded in the background only when the user triggers that specific flow), or **Conditional** (installed based on user country, minimum SDK, or hardware device features like camera sensors).
-2. **Initial Download Reduction**: Heavy, infrequently used features—such as KYC facial scanning, AR viewers, or complex PDF report generators—are removed from the base APK, significantly boosting Play Store install conversion rates by reducing initial download size.
+Key mechanisms.
+
+First, with Delivery Modes, modules can be configured as **Install-time** (packaged as separate splits), **On-demand** (downloaded in the background only when the user triggers that specific flow), or **Conditional** (installed based on user country, minimum SDK, or hardware device features like camera sensors). Finally, with Initial Download Reduction, heavy, infrequently used features—such as KYC facial scanning, AR viewers, or complex PDF report generators—are removed from the base APK, significantly boosting Play Store install conversion rates by reducing initial download size.
 
 However, DFMs introduce serious engineering complexity: Gradle dependencies are inverted (`:dfm` depends on `:app`), feature access requires asynchronous download UI states via `SplitInstallManager`, and features cannot be accessed offline if they haven't been downloaded yet.
+
 
 ## Interview answer — deep senior
 
@@ -113,6 +114,7 @@ Under the hood, dynamic delivery relies on **Android APK Splits and SplitCompat*
 When Google Play installs a base APK on Android 5.0+ (API 21+), the OS mounts additional split APKs directly into the application process. However, when a split is installed dynamically while the app process is **already running**, Android cannot automatically update the running app's classloader and asset path. Developers must call `SplitCompat.installActivity(context)` inside the Activity's `attachBaseContext()` to merge the newly downloaded split's Dex files and native `.so` libraries into the live ClassLoader.
 
 Furthermore, navigation to DFMs cannot use direct Kotlin class references (`Intent(this, DfmActivity::class.java)`), because `:app` does not have compile-time visibility of `:dfm`. Instead, you must navigate via explicit class reflection, string deep links, or Android Jetpack Navigation dynamic feature artifacts.
+
 
 ## How to answer in the interview
 

@@ -87,27 +87,21 @@ An APK is a monolithic, directly installable package containing all languages, s
 
 ## Interview answer — structured
 
-Comparing APK and Android App Bundle (AAB) highlights a shift from fat client binaries to dynamic server-side artifact delivery:
+Comparing APK and Android App Bundle (AAB) highlights a shift from fat client binaries to dynamic server-side artifact delivery.
 
-1. **Monolithic APK (Android Package)**:
-   - Directly installable via `adb install`. Traditionally packages all density assets (hdpi to xxxhdpi), localized string tables, and native CPU architectures (`armeabi-v7a`, `arm64-v8a`, `x86_64`). This bloats download sizes and wastes user bandwidth.
+First, **Monolithic APK (Android Package)**. Next, directly installable via `adb install`. Traditionally packages all density assets (hdpi to xxxhdpi), localized string tables, and native CPU architectures (`armeabi-v7a`, `arm64-v8a`, `x86_64`). This bloats download sizes and wastes user bandwidth.
+**Android App Bundle (AAB)**. Google Play's mandatory publishing format (since August 2021). Developers upload a single `.aab` file containing compiled DEX, compiled resources, and modular splits.
+Google Play uses `bundletool` server-side to generate optimized **Split APKs**: a small Base APK accompanied by targeted configuration splits matching only the user's specific ABI, screen density, and device language. **Dynamic Delivery Capabilities**.
+Finally, aAB enables **Play Feature Delivery** (downloading optional modules on-demand or based on conditional hardware capabilities) and **Play Asset Delivery** for multi-gigabyte media packages, avoiding external downloader architectures.
 
-2. **Android App Bundle (AAB)**:
-   - Google Play's mandatory publishing format (since August 2021). Developers upload a single `.aab` file containing compiled DEX, compiled resources, and modular splits.
-   - Google Play uses `bundletool` server-side to generate optimized **Split APKs**: a small Base APK accompanied by targeted configuration splits matching only the user's specific ABI, screen density, and device language.
-
-3. **Dynamic Delivery Capabilities**:
-   - AAB enables **Play Feature Delivery** (downloading optional modules on-demand or based on conditional hardware capabilities) and **Play Asset Delivery** for multi-gigabyte media packages, avoiding external downloader architectures.
 
 ## Interview answer — deep senior
 
-From a release engineering perspective, adopting AAB introduces cryptographic and QA testing considerations:
+From a release engineering perspective, adopting AAB introduces cryptographic and QA testing considerations.
 
-1. **Play App Signing Prerequisite**: Publishing with AAB mandates Google Play App Signing. Developers sign the AAB using an Upload Key, while Google manages the master App Signing Key inside Google's secure infrastructure to sign generated Split APKs. If the upload key is lost, Google can reset it without abandoning the application ID.
+First, with Play App Signing Prerequisite, publishing with AAB mandates Google Play App Signing. Developers sign the AAB using an Upload Key, while Google manages the master App Signing Key inside Google's secure infrastructure to sign generated Split APKs. If the upload key is lost, Google can reset it without abandoning the application ID. Next, with Local QA Verification with bundletool, because `.aab` files cannot be installed via `adb install` directly, QA teams must use Google's `bundletool` CLI. Generate device-spec JSON files (`bundletool get-device-spec --output=device.json`), produce the APKS set, and test split APK installation across local test devices.
+Finally, with Language Switching In-App Pitfall, on older Android versions, Split APKs only bundle the system language selected at install. If an app provides an in-app language picker to switch to French, but French strings were stripped out by dynamic delivery, the app crashes or shows missing strings. Apps must use AndroidX `PlayCore` / `SplitInstallManager` to request deferred language splits.
 
-2. **Local QA Verification with bundletool**: Because `.aab` files cannot be installed via `adb install` directly, QA teams must use Google's `bundletool` CLI. Generate device-spec JSON files (`bundletool get-device-spec --output=device.json`), produce the APKS set, and test split APK installation across local test devices.
-
-3. **Language Switching In-App Pitfall**: On older Android versions, Split APKs only bundle the system language selected at install. If an app provides an in-app language picker to switch to French, but French strings were stripped out by dynamic delivery, the app crashes or shows missing strings. Apps must use AndroidX `PlayCore` / `SplitInstallManager` to request deferred language splits.
 
 ## How to answer in the interview
 

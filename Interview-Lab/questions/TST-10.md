@@ -172,30 +172,22 @@ Test cancellation by asserting job.cancel() propagates and cleanup blocks execut
 
 ## Interview answer — structured
 
-Testing asynchronous failure modes requires coordinating virtual clocks and exception dispatchers:
+Testing asynchronous failure modes requires coordinating virtual clocks and exception dispatchers.
 
-1. **Testing Coroutine Cancellation**:
-   - Launch a coroutine job under test, verify it enters active processing, and invoke `job.cancel()`.
-   - Assert that `job.isCancelled` becomes true, child jobs terminate, and cleanup routines (e.g. closing network streams or wiping memory buffers) inside `withContext(NonCancellable)` or `finally` execute completely.
-   - Assert that code never swallows `CancellationException`, which breaks structured concurrency.
+First, **Testing Coroutine Cancellation**. Next, launch a coroutine job under test, verify it enters active processing, and invoke `job.cancel()`.
+Assert that `job.isCancelled` becomes true, child jobs terminate, and cleanup routines (e.g. Closing network streams or wiping memory buffers) inside `withContext(NonCancellable)` or `finally` execute completely. Assert that code never swallows `CancellationException`, which breaks structured concurrency.
+**Testing Timeouts (`withTimeout`)**. Execute code wrapped in `withTimeout(5000L)` inside `runTest`.
+Advance virtual time via `advanceTimeBy(5001L)`. Assert that `TimeoutCancellationException` is thrown, or that `withTimeoutOrNull` safely returns `null` without hanging the test.
+**Testing Exponential Backoff and Retries**. Finally, simulate network failures and step through retry intervals using `advanceTimeBy()`. Validate that calls occur at exact mathematical intervals (1s, 2s, 4s) and assert that terminal failures surface the original exception once maximum retry thresholds are reached.
 
-2. **Testing Timeouts (`withTimeout`)**:
-   - Execute code wrapped in `withTimeout(5000L)` inside `runTest`.
-   - Advance virtual time via `advanceTimeBy(5001L)`.
-   - Assert that `TimeoutCancellationException` is thrown, or that `withTimeoutOrNull` safely returns `null` without hanging the test.
-
-3. **Testing Exponential Backoff and Retries**:
-   - Simulate network failures and step through retry intervals using `advanceTimeBy()`. Validate that calls occur at exact mathematical intervals (1s, 2s, 4s) and assert that terminal failures surface the original exception once maximum retry thresholds are reached.
 
 ## Interview answer — deep senior
 
-From an advanced concurrency testing perspective, handling exception boundaries requires strict isolation:
+From an advanced concurrency testing perspective, handling exception boundaries requires strict isolation.
 
-1. **CoroutineExceptionHandler in Unit Tests**: Unhandled exceptions launched via `launch` bubble to the parent scope and crash `runTest`. To assert that a ViewModel handles unexpected network errors gracefully, supply a custom `CoroutineExceptionHandler` or wrap repository results in `runCatching` / `Result<T>`.
+First, with CoroutineExceptionHandler in Unit Tests, unhandled exceptions launched via `launch` bubble to the parent scope and crash `runTest`. To assert that a ViewModel handles unexpected network errors gracefully, supply a custom `CoroutineExceptionHandler` or wrap repository results in `runCatching` / `Result<T>`. Next, with SupervisorScope Isolation, when testing concurrent operations where one worker fails (e.g., three parallel API requests), wrap child jobs in `supervisorScope`. Assert that an exception in child A does not cancel child B or child C, verifying resilient partial execution.
+Finally, with Testing Jitter Distributions, when retries use randomized jitter (`Random.nextLong(0, delay)`), inject a deterministic pseudo-random generator or seed so that backoff test assertions do not flake due to unpredictable random values.
 
-2. **SupervisorScope Isolation**: When testing concurrent operations where one worker fails (e.g., three parallel API requests), wrap child jobs in `supervisorScope`. Assert that an exception in child A does not cancel child B or child C, verifying resilient partial execution.
-
-3. **Testing Jitter Distributions**: When retries use randomized jitter (`Random.nextLong(0, delay)`), inject a deterministic pseudo-random generator or seed so that backoff test assertions do not flake due to unpredictable random values.
 
 ## How to answer in the interview
 

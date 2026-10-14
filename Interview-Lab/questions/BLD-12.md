@@ -81,28 +81,21 @@ Configure signing safely by enrolling in Google Play App Signing, which isolates
 
 ## Interview answer — structured
 
-Modern Android release signing delegates distribution authority to Google Play App Signing while protecting developer upload credentials:
+Modern Android release signing delegates distribution authority to Google Play App Signing while protecting developer upload credentials.
 
-1. **The Dual-Key Security Model**:
-   - **Upload Key**: Held by the developer or CI pipeline. Used exclusively to sign the uploaded `.aab` bundle to prove developer authenticity to Google Play.
-   - **App Signing Key**: Stored securely in Google's enterprise Key Management Service (KMS). Google validates the upload bundle, strips the upload signature, and signs end-user split APKs using the master app signing key.
+First, **The Dual-Key Security Model**. Next, with Upload Key, held by the developer or CI pipeline. Used exclusively to sign the uploaded `.aab` bundle to prove developer authenticity to Google Play.
+Additionally, an App Signing Key is stored securely in Google's enterprise Key Management Service (KMS). Google validates the upload bundle, strips the upload signature, and signs end-user split APKs using the master app signing key. **Disaster Recovery Benefit**.
+If a developer machine is lost or an upload key compromised, an account owner can request an upload key reset via the Google Play Console. Google registers the new upload certificate within 48 hours without breaking installed user upgrade lineages. **Automated CI/CD Key Injection**.
+Encode the upload keystore binary into a Base64 string and store it inside CI secrets (`ANDROID_KEYSTORE_BASE64`). Finally, during the release pipeline execution, the runner decodes the string to a transient temporary file, compiles and signs the bundle, and deterministically wipes the file before job termination.
 
-2. **Disaster Recovery Benefit**:
-   - If a developer machine is lost or an upload key compromised, an account owner can request an upload key reset via the Google Play Console. Google registers the new upload certificate within 48 hours without breaking installed user upgrade lineages.
-
-3. **Automated CI/CD Key Injection**:
-   - Encode the upload keystore binary into a Base64 string and store it inside CI secrets (`ANDROID_KEYSTORE_BASE64`).
-   - During the release pipeline execution, the runner decodes the string to a transient temporary file, compiles and signs the bundle, and deterministically wipes the file before job termination.
 
 ## Interview answer — deep senior
 
-From a cryptographic governance perspective, deploying Play App Signing requires managing certificate dependencies across ecosystems:
+From a cryptographic governance perspective, deploying Play App Signing requires managing certificate dependencies across ecosystems.
 
-1. **Third-Party API Certificate Binding**: APIs like Google Maps, SafetyNet/Play Integrity, Firebase Phone Auth, and OAuth2 clients validate requests by checking the app's signing certificate SHA-1/SHA-256 fingerprint. When enrolled in Play App Signing, you must register **Google's App Signing certificate fingerprint** in developer consoles, not your local upload key fingerprint, or production authentication will fail.
+First, with Third-Party API Certificate Binding, APIs like Google Maps, SafetyNet/Play Integrity, Firebase Phone Auth, and OAuth2 clients validate requests by checking the app's signing certificate SHA-1/SHA-256 fingerprint. When enrolled in Play App Signing, you must register **Google's App Signing certificate fingerprint** in developer consoles, not your local upload key fingerprint, or production authentication will fail. Next, with Dual-Distribution (Play Store + Alternative Stores), if an app is distributed on both Google Play and alternative app stores (e.g. Huawei AppGallery, Samsung Galaxy Store, or direct APK downloads), managing different keys is required unless you export the original signing key to both stores, which partially undermines the isolation benefit.
+Finally, with Hardware-Backed Key Generation, for maximum enterprise security, generate upload keys within Hardware Security Modules (HSM) or YubiKeys supporting PKCS#11, preventing exportable private key bytes from touching local developer hard drives.
 
-2. **Dual-Distribution (Play Store + Alternative Stores)**: If an app is distributed on both Google Play and alternative app stores (e.g. Huawei AppGallery, Samsung Galaxy Store, or direct APK downloads), managing different keys is required unless you export the original signing key to both stores, which partially undermines the isolation benefit.
-
-3. **Hardware-Backed Key Generation**: For maximum enterprise security, generate upload keys within Hardware Security Modules (HSM) or YubiKeys supporting PKCS#11, preventing exportable private key bytes from touching local developer hard drives.
 
 ## How to answer in the interview
 

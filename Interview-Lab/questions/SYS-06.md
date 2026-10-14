@@ -127,29 +127,22 @@ Design caching and pagination using a multi-tiered architecture: L1 in-memory Lr
 
 ## Interview answer — structured
 
-Designing scalable pagination and caching balances UI responsiveness, memory limits, and data freshness:
+Designing scalable pagination and caching balances UI responsiveness, memory limits, and data freshness.
 
-1. **Multi-Tiered Cache Architecture**:
-   - **L1 Memory (LruCache)**: Fast access for decoded bitmaps and active view models; bounded by a strict memory cap (e.g. 25% of available heap).
-   - **L2 Disk (Room Database)**: Persistent single source of truth surviving process death.
-   - **L3 HTTP Layer**: Leverage OkHttp's disk cache with `ETag` and `If-None-Match` to avoid re-downloading unmodified server payloads (`304 Not Modified`).
+First, **Multi-Tiered Cache Architecture**. Next, with L1 Memory (LruCache), fast access for decoded bitmaps and active view models; bounded by a strict memory cap (e.g. 25% of available heap).
+Additionally, with L2 Disk (Room Database), persistent single source of truth surviving process death. With L3 HTTP Layer, leverage OkHttp's disk cache with `ETag` and `If-None-Match` to avoid re-downloading unmodified server payloads (`304 Not Modified`).
+**Cursor-Based Pagination with Jetpack Paging 3**. Avoid traditional `offset/limit` pagination because inserting new items at the head of a live feed causes duplicate items or skipped records during scrolling. Use cursor keys (timestamps or opaque server tokens).
+Use `RemoteMediator` to coordinate between network requests and the database. The mediator triggers network loads only when the user approaches the end of cached content, persisting pages directly to Room in an atomic transaction. **Cache Eviction Strategy**.
+Finally, enforce an LRU eviction policy with a 200MB ceiling or TTL expiration. When refreshing lists, keep the top N items and evict stale records beyond page 5 to conserve device storage.
 
-2. **Cursor-Based Pagination with Jetpack Paging 3**:
-   - Avoid traditional `offset/limit` pagination because inserting new items at the head of a live feed causes duplicate items or skipped records during scrolling. Use cursor keys (timestamps or opaque server tokens).
-   - Use `RemoteMediator` to coordinate between network requests and the database. The mediator triggers network loads only when the user approaches the end of cached content, persisting pages directly to Room in an atomic transaction.
-
-3. **Cache Eviction Strategy**:
-   - Enforce an LRU eviction policy with a 200MB ceiling or TTL expiration. When refreshing lists, keep the top N items and evict stale records beyond page 5 to conserve device storage.
 
 ## Interview answer — deep senior
 
-From an advanced performance and memory perspective, pagination architectures must prevent memory leaks and UI stutter:
+From an advanced performance and memory perspective, pagination architectures must prevent memory leaks and UI stutter.
 
-1. **Paging 3 Flow Lifecycle & Invalidation**: Expose paged streams as `Flow<PagingData<Item>>` cached in `viewModelScope` using `.cachedIn(viewModelScope)`. This ensures that screen rotations or configuration changes do not re-fetch or re-paginate data from scratch, retaining the exact scroll position in Compose `LazyColumn`.
+First, with Paging 3 Flow Lifecycle & Invalidation, expose paged streams as `Flow<PagingData<Item>>` cached in `viewModelScope` using `.cachedIn(viewModelScope)`. This ensures that screen rotations or configuration changes do not re-fetch or re-paginate data from scratch, retaining the exact scroll position in Compose `LazyColumn`. Next, with Boundary Conditions & Placeholders, enable placeholders in `PagingConfig` when list items have fixed heights. This allows `LazyColumn` to allocate scrollbar travel accurately without jumping or layout thrashing when new pages append.
+Finally, with Network Resilience & Partial Failures, if a page fails to load, `RemoteMediator` returns `MediatorResult.Error(e)`. The UI catches this in `CombinedLoadStates.append` and renders a retry button at the bottom of the list without wiping the already-loaded items from the screen.
 
-2. **Boundary Conditions & Placeholders**: Enable placeholders in `PagingConfig` when list items have fixed heights. This allows `LazyColumn` to allocate scrollbar travel accurately without jumping or layout thrashing when new pages append.
-
-3. **Network Resilience & Partial Failures**: If a page fails to load, `RemoteMediator` returns `MediatorResult.Error(e)`. The UI catches this in `CombinedLoadStates.append` and renders a retry button at the bottom of the list without wiping the already-loaded items from the screen.
 
 ## How to answer in the interview
 

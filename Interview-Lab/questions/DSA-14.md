@@ -85,28 +85,21 @@ Distinguish bottlenecks using Android Studio CPU Profiler and Perfetto. If execu
 
 ## Interview answer — structured
 
-Diagnosing list stutter on low-end hardware requires systematic profiling to separate computational complexity from layout rendering pipeline limits:
+Diagnosing list stutter on low-end hardware requires systematic profiling to separate computational complexity from layout rendering pipeline limits.
 
-1. **Profiling Trace Analysis via Perfetto**:
-   - **Algorithmic Complexity Signature**: The main thread thread-state shows continuous `Running` blocks with stack traces anchored in application domain logic: data parsing, reflection mappers, unmemoized sorting, or linear collection searches. Frame drops happen because calculations starve the UI thread of frame budgets.
-   - **Rendering Bottleneck Signature**: Time is spent inside Android framework methods: `View.measure()`, `View.layout()`, `View.draw()`, or Compose `LayoutNode.remeasure()`. Systrace reveals heavy `Choreographer#doFrame` stretches and RenderThread GPU sync stalls.
+First, **Profiling Trace Analysis via Perfetto**. Next, an Algorithmic Complexity Signature is the main thread thread-state shows continuous `Running` blocks with stack traces anchored in application domain logic: data parsing, reflection mappers, unmemoized sorting, or linear collection searches. Frame drops happen because calculations starve the UI thread of frame budgets.
+Additionally, with Rendering Bottleneck Signature, time is spent inside Android framework methods: `View.measure()`, `View.layout()`, `View.draw()`, or Compose `LayoutNode.remeasure()`. Systrace reveals heavy `Choreographer#doFrame` stretches and RenderThread GPU sync stalls. **Empirical A/B Isolation Test**.
+Temporarily replace complex row items with a plain lightweight `Text("Item")`. If scrolling remains laggy, the root cause is upstream algorithmic computation (e.g. DiffUtil recalculations or reactive stream thrashing). If scrolling instantly stabilizes at 60fps, the culprit is layout complexity or image decoding. **Resolution Pathways**.
+Fix algorithmic lag by offloading computations to `Dispatchers.Default` and caching calculations. Finally, fix rendering lag by flattening view hierarchies, optimizing Compose keys, and removing transparent Overdraw layers.
 
-2. **Empirical A/B Isolation Test**:
-   - Temporarily replace complex row items with a plain lightweight `Text("Item")`. If scrolling remains laggy, the root cause is upstream algorithmic computation (e.g. DiffUtil recalculations or reactive stream thrashing). If scrolling instantly stabilizes at 60fps, the culprit is layout complexity or image decoding.
-
-3. **Resolution Pathways**:
-   - Fix algorithmic lag by offloading computations to `Dispatchers.Default` and caching calculations.
-   - Fix rendering lag by flattening view hierarchies, optimizing Compose keys, and removing transparent Overdraw layers.
 
 ## Interview answer — deep senior
 
-On low-end Android hardware (e.g. Android Go with weak Quad-Core Cortex-A53 processors), hardware limits exacerbate specific failure modes:
+On low-end Android hardware (e.g. Android Go with weak Quad-Core Cortex-A53 processors), hardware limits exacerbate specific failure modes.
 
-1. **Core Starvation & Priority Inversion**: On weak devices, running heavy background algorithmic tasks on `Dispatchers.Default` can saturate all CPU cores, starving the UI thread of operating system scheduling slots. Explicitly tuning background thread priorities (`Process.setThreadPriority(THREAD_PRIORITY_BACKGROUND)`) ensures the UI thread preempts background calculations.
+First, with Core Starvation & Priority Inversion, on weak devices, running heavy background algorithmic tasks on `Dispatchers.Default` can saturate all CPU cores, starving the UI thread of operating system scheduling slots. Explicitly tuning background thread priorities (`Process.setThreadPriority(THREAD_PRIORITY_BACKGROUND)`) ensures the UI thread preempts background calculations. Next, with Garbage Collection Pauses as Root Cause, often, a list freeze is neither pure math nor pure rendering—it is memory churn. Low-end devices with 2GB RAM run ART with minimal heap ceilings. If item binding creates temporary lambdas, string builders, or boxed primitives, ART triggers blocking GC passes that pause all threads.
+Finally, with Compose Modifier Re-instantiation, in Jetpack Compose, declaring complex inline modifiers without caching allocates new modifier chains on every recomposition. Caching modifiers or using `@Stable` state models eliminates layout phase invalidation.
 
-2. **Garbage Collection Pauses as Root Cause**: Often, a list freeze is neither pure math nor pure rendering—it is memory churn. Low-end devices with 2GB RAM run ART with minimal heap ceilings. If item binding creates temporary lambdas, string builders, or boxed primitives, ART triggers blocking GC passes that pause all threads.
-
-3. **Compose Modifier Re-instantiation**: In Jetpack Compose, declaring complex inline modifiers without caching allocates new modifier chains on every recomposition. Caching modifiers or using `@Stable` state models eliminates layout phase invalidation.
 
 ## How to answer in the interview
 

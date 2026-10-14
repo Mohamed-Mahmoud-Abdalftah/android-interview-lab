@@ -93,13 +93,13 @@ LeakCanary detects leaks automatically in debug builds by tracking destroyed Act
 
 Analyzing memory leaks requires capturing a heap dump (.hprof file) and finding the shortest strong reference path from a GC Root to a destroyed object.
 
-In development, **LeakCanary** automates this entire workflow:
-1. It hooks into lifecycle callbacks (`ActivityLifecycleCallbacks`, `FragmentManager`).
-2. When `onDestroy()` occurs, it passes the instance to an `ObjectWatcher` wrapped in a `KeyedWeakReference` with an associated reference queue.
-3. If the reference is not cleared after 5 seconds, LeakCanary triggers a GC. If the object persists, it is flagged as *retained*.
-4. Once a threshold is reached, it dumps the heap and invokes **Shark** (Square's high-speed Kotlin HPROF parser) on a background thread to compute the leak trace.
+In development, **LeakCanary** automates this entire workflow.
+
+First, it hooks into lifecycle callbacks (`ActivityLifecycleCallbacks`, `FragmentManager`). Next, when `onDestroy()` occurs, it passes the instance to an `ObjectWatcher` wrapped in a `KeyedWeakReference` with an associated reference queue.
+If the reference is not cleared after 5 seconds, LeakCanary triggers a GC. If the object persists, it is flagged as *retained*. Finally, once a threshold is reached, it dumps the heap and invokes **Shark** (Square's high-speed Kotlin HPROF parser) on a background thread to compute the leak trace.
 
 When analyzing the leak trace, we focus on the transition from `Leaking: NO` to `Leaking: YES`. That exact boundary points to the field or closure holding the rogue reference, allowing us to nullify the reference or unbind the lifecycle observer.
+
 
 ## Interview answer — deep senior
 
@@ -108,6 +108,7 @@ In complex production scenarios where LeakCanary is impractical due to heap dump
 In MAT, we run the **Dominator Tree** and **Leak Suspects** report. The Dominator Tree groups objects such that object A dominates object B if every path from a GC Root to B must pass through A. Looking at the **Retained Size** (the total memory that would be freed if an object were collected) immediately reveals culprit classes holding dozens of megabytes.
 
 To monitor leaks in production, we can use LeakCanary's Shark library paired with WorkManager to upload stripped, deduplicated leak signatures without transmitting sensitive user PII from the full memory dump.
+
 
 ## How to answer in the interview
 

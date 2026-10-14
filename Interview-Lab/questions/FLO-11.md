@@ -114,6 +114,7 @@ These intermediate operators form the core transformation pipeline of Kotlin Flo
 
 **`launchIn(scope)`** is a concise terminal shorthand: instead of writing `scope.launch { flow.collect() }`, calling `.launchIn(scope)` launches collection in the given scope and returns the resulting `Job` for lifecycle management.
 
+
 ## Interview answer — deep senior
 
 Under the hood, intermediate operators like `map`, `filter`, and `transform` do not launch coroutines. They simply return a new `Flow` instance that wraps the upstream flow's collector with custom logic. For instance, `map` compiles down to:
@@ -127,6 +128,7 @@ inline fun <T, R> Flow<T>.map(crossinline transform: suspend (T) -> R): Flow<R> 
 Because `transform` is inlined, chaining multiple operators like `filter { ... }.map { ... }` generates virtually zero intermediate object allocations in hot paths, executing within the collector's original coroutine frame.
 
 Contrast this with `launchIn(scope)`: `launchIn` is a terminal operator that invokes `scope.launch { collect() }`. In clean architecture, we prefer `launchIn` or `repeatOnLifecycle` at the UI layer, but avoid launching unconfined streams inside pure repository layers.
+
 
 ## How to answer in the interview
 

@@ -118,27 +118,21 @@ Play Integrity API evaluates app binary authenticity, licensing, and device inte
 
 ## Interview answer — structured
 
-Play Integrity API provides attestation of app authenticity and device trustworthiness:
+Play Integrity API provides attestation of app authenticity and device trustworthiness.
 
-1. **Evaluation Signals**:
-   - **App Recognition**: Validates whether the running APK matches the package name and signing certificate registered in Google Play.
-   - **App Licensing**: Verifies whether the user acquired the app legitimately through Google Play.
-   - **Device Recognition**: Returns graduated verdicts (`MEETS_BASIC_INTEGRITY` for emulators/rooted devices without active tampering, `MEETS_DEVICE_INTEGRITY` for certified CTS-compliant Android devices, `MEETS_STRONG_INTEGRITY` for hardware-backed keystore and bootloader locking).
+First, **Evaluation Signals**. Next, with App Recognition, validates whether the running APK matches the package name and signing certificate registered in Google Play.
+Additionally, with App Licensing, verifies whether the user acquired the app legitimately through Google Play. With Device Recognition, returns graduated verdicts (`MEETS_BASIC_INTEGRITY` for emulators/rooted devices without active tampering, `MEETS_DEVICE_INTEGRITY` for certified CTS-compliant Android devices, `MEETS_STRONG_INTEGRITY` for hardware-backed keystore and bootloader locking).
+**Mandatory Server-Side Verification**. Decrypting or validating verdicts on the Android client is an anti-pattern because client memory and conditional branches can be hooked.
+The server initiates an action by generating a cryptographically random, short-lived `nonce`. The mobile client requests an integrity token embedding this nonce, and forwards the token to the backend. Finally, the backend validates the verdict payload directly via Google APIs or Google's public keys, verifying the nonce, timestamp, package name, and integrity level.
 
-2. **Mandatory Server-Side Verification**:
-   - Decrypting or validating verdicts on the Android client is an anti-pattern because client memory and conditional branches can be hooked.
-   - The server initiates an action by generating a cryptographically random, short-lived `nonce`. The mobile client requests an integrity token embedding this nonce, and forwards the token to the backend.
-   - The backend validates the verdict payload directly via Google APIs or Google's public keys, verifying the nonce, timestamp, package name, and integrity level.
 
 ## Interview answer — deep senior
 
-Senior architects implement Play Integrity using risk-based decision ladders rather than binary kill-switches:
+Senior architects implement Play Integrity using risk-based decision ladders rather than binary kill-switches.
 
-1. **Tiered Risk Responses**: Failing `MEETS_STRONG_INTEGRITY` should not immediately block app usage. Budget devices, custom vendor builds, or uncertified devices can pass `MEETS_BASIC_INTEGRITY`. High-risk financial operations (wire transfers, password resets) can mandate `MEETS_DEVICE_INTEGRITY`, while read-only browsing can proceed under basic integrity with stepped-up MFA requirements.
+First, with Tiered Risk Responses, failing `MEETS_STRONG_INTEGRITY` should not immediately block app usage. Budget devices, custom vendor builds, or uncertified devices can pass `MEETS_BASIC_INTEGRITY`. High-risk financial operations (wire transfers, password resets) can mandate `MEETS_DEVICE_INTEGRITY`, while read-only browsing can proceed under basic integrity with stepped-up MFA requirements. Next, play Integrity Standard vs. Classic Requests is the standard API offers cached attestation tokens for low latency, while classic requests communicate directly with Google Play servers. For sensitive payments, classic requests bound to dynamic nonces guarantee fresh, un-cached hardware validation.
+Finally, with Fallback & Graceful Degradation, google Play Services may be temporarily unavailable or throttled. Backend architectures must establish fallback policies (e.g., rate-limiting requests or requiring SMS OTP) rather than completely blocking legitimate users during Google outages.
 
-2. **Play Integrity Standard vs. Classic Requests**: The standard API offers cached attestation tokens for low latency, while classic requests communicate directly with Google Play servers. For sensitive payments, classic requests bound to dynamic nonces guarantee fresh, un-cached hardware validation.
-
-3. **Fallback & Graceful Degradation**: Google Play Services may be temporarily unavailable or throttled. Backend architectures must establish fallback policies (e.g., rate-limiting requests or requiring SMS OTP) rather than completely blocking legitimate users during Google outages.
 
 ## How to answer in the interview
 

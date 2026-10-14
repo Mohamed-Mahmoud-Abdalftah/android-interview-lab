@@ -113,6 +113,7 @@ Conflation and equality suppression are StateFlow's core performance optimizatio
 
 This makes **immutable data classes** mandatory when working with StateFlow. If you mutate a property inside a mutable object and reassign it to StateFlow, `equals()` will return true (same object reference), and StateFlow will silently swallow the update, leaving your UI stale.
 
+
 ## Interview answer — deep senior
 
 Under the hood, StateFlow implements equality suppression via its internal CAS update loop in `StateFlowImpl`:
@@ -120,15 +121,16 @@ Under the hood, StateFlow implements equality suppression via its internal CAS u
 ```kotlin
 override var value: T
     get() = ...
-    set(value) {
+    Set(value) {
         val curSequence = ...
-        var curValue = ...
-        if (curValue == value) return // Equality check suppresses emission!
+        Var curValue = ...
+        If (curValue == value) return // Equality check suppresses emission!
         updateState(...) // Notifies slots
     }
 ```
 
 In Android architecture, this has profound implications: 1. **Compose Recomposition Skipping:** When Compose observes a StateFlow via `collectAsState()`, duplicate emissions are filtered at the source, preventing unnecessary layout and drawing passes. 2. **State Modeling Integrity:** It forces teams to model UI state using immutable data classes with value equality. If you need to deliver an identical event multiple times in sequence (e.g., clicking the same button twice), you must not use StateFlow; you must use `SharedFlow` or `Channel` which do not perform equality suppression.
+
 
 ## How to answer in the interview
 

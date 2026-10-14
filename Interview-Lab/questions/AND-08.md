@@ -92,19 +92,20 @@ A Jetpack ViewModel is designed to hold and manage UI-related state in a lifecyc
 It survives configuration changes because it is retained by a `ViewModelStore`. During rotation, Android passes the `ViewModelStore` from the destroyed Activity to the newly created Activity via `onRetainNonConfigurationInstance()`.
 
 **When it is cleared (`onCleared()`):**
-`onCleared()` is invoked when the associated `ViewModelStoreOwner` is permanently finished and destroyed:
+`onCleared()` is invoked when the associated `ViewModelStoreOwner` is permanently finished and destroyed.
 
-1. When an Activity finishes intentionally (user taps Back or `finish()` is called, where `isFinishing == true`).
-2. When a Fragment is permanently removed or popped from the backstack.
-3. When a Jetpack Compose navigation route (`NavBackStackEntry`) is popped from the backstack.
+First, when an Activity finishes intentionally (user taps Back or `finish()` is called, where `isFinishing == true`). Next, when a Fragment is permanently removed or popped from the backstack.
+Finally, when a Jetpack Compose navigation route (`NavBackStackEntry`) is popped from the backstack.
 
 When cleared, the framework automatically cancels the built-in `viewModelScope`, cleaning up all active coroutines.
+
 
 ## Interview answer — deep senior
 
 Under the hood, `ViewModelProvider` retrieves existing ViewModels from `ViewModelStore` using a String key (e.g., `androidx.lifecycle.ViewModelProvider.DefaultKey:MyViewModel`). If an instance exists, it returns the existing object without invoking the constructor. If not, it uses the `ViewModelProvider.Factory` to instantiate it.
 
 In modern multi-fragment or Compose architectures, you can scope ViewModels to different owners: - **Activity-scoped (`activityViewModels()`):** Shares state across sibling fragments or tabs. - **Navigation Graph-scoped (`navGraphViewModels(R.id.checkout_graph)`):** Scopes the ViewModel to a specific multi-step user flow (like Checkout). When the flow finishes, the ViewModel clears automatically, releasing memory. - **Fragment/Destination-scoped:** Clears when that specific screen terminates.
+
 
 ## How to answer in the interview
 

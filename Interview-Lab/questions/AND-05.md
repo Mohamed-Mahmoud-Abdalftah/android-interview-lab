@@ -82,19 +82,18 @@ An Activity Context is strictly mandatory when showing Dialogs (which require an
 
 ## Interview answer — structured
 
-An Activity Context is strictly mandatory for any operation that interacts with the Android Window Manager, requires a Window Token, or depends on theme styling:
+An Activity Context is strictly mandatory for any operation that interacts with the Android Window Manager, requires a Window Token, or depends on theme styling.
 
-1. **Showing Dialogs and Popups:** Showing an `AlertDialog`, `BottomSheetDialog`, or `PopupWindow` requires a valid **Window Token** provided exclusively by an active Activity window. Attempting to show a dialog using `ApplicationContext` crashes instantly with `WindowManager.BadTokenException`.
+First, **Showing Dialogs and Popups:** Showing an `AlertDialog`, `BottomSheetDialog`, or `PopupWindow` requires a valid **Window Token** provided exclusively by an active Activity window. Attempting to show a dialog using `ApplicationContext` crashes instantly with `WindowManager.BadTokenException`. Next, **Layout Inflation and View Creation:** Views created programmatically or inflated via `LayoutInflater` require an Activity Context to resolve theme attributes (`?attr/colorPrimary`, custom styles, and dynamic colors). Using Application Context falls back to raw system defaults, ignoring your app's custom Activity theme.
+Finally, **In-Task Navigation:** Starting an Activity using an Activity Context preserves the natural backstack within the current task. Using Application Context forces `FLAG_ACTIVITY_NEW_TASK`, creating fragmented task stacks.
 
-2. **Layout Inflation and View Creation:** Views created programmatically or inflated via `LayoutInflater` require an Activity Context to resolve theme attributes (`?attr/colorPrimary`, custom styles, and dynamic colors). Using Application Context falls back to raw system defaults, ignoring your app's custom Activity theme.
-
-3. **In-Task Navigation:** Starting an Activity using an Activity Context preserves the natural backstack within the current task. Using Application Context forces `FLAG_ACTIVITY_NEW_TASK`, creating fragmented task stacks.
 
 ## Interview answer — deep senior
 
 At the Android OS system level, the distinction lies in the **IBinder Window Token** registered with `WindowManagerService` (WMS). When an Activity transitions to `onResume()`, WMS assigns a unique surface token to its window hierarchy. When a Dialog attempts to display, it queries its context's `WindowManager.addView()`. WMS verifies whether the token attached to the context is an active, valid window token. Since `ApplicationContext` is owned by the app process rather than a surface window, its token is null, prompting the fatal `BadTokenException`.
 
 Furthermore, with the introduction of **Android 12/13 per-app language preferences and Dynamic Theming (Material You)**, theme attributes and configuration overrides (like configuration night mode or font scaling) are tied to specific Activity configurations. An Application Context does not receive Activity-level configuration overrides, leading to visual bugs and broken dark/light theme rendering.
+
 
 ## How to answer in the interview
 

@@ -120,15 +120,12 @@ Android Keystore generates and stores cryptographic keys in isolated environment
 
 ## Interview answer — structured
 
-The Android Keystore system fundamentally changes key management by making cryptographic key material **non-exportable**:
+The Android Keystore system fundamentally changes key management by making cryptographic key material **non-exportable**.
 
-1. **Non-Exportable Key Material**: In software cryptography, AES keys exist in JVM heap memory as raw byte arrays, easily dumpable via Frida or memory dump tools on rooted devices. With Android Keystore, the private/secret key never enters the application process. The app receives an opaque handle (`Key`), delegating encryption/decryption operations to system security daemons.
+First, with Non-Exportable Key Material, in software cryptography, AES keys exist in JVM heap memory as raw byte arrays, easily dumpable via Frida or memory dump tools on rooted devices. With Android Keystore, the private/secret key never enters the application process. The app receives an opaque handle (`Key`), delegating encryption/decryption operations to system security daemons. Next, **Hardware-Backed Isolation Tiers**.
+Additionally, with TEE (Trusted Execution Environment), runs on the primary SoC using hardware virtualization (e.g., ARM TrustZone). Cryptographic operations run under a microkernel isolated from the Android Linux kernel. A StrongBox Keymaster (API 28+) is a physically separate, tamper-resistant hardware security module (HSM, such as Google Titan M or Samsung Knox Vault). StrongBox has its own dedicated CPU, secure storage, and true random number generator, resisting physical hardware side-channel attacks.
+Finally, with Security Boundary Distinction, hardware-backed Keystore protects **keys from extraction**, but it does not protect the plaintext data *after* decryption in application RAM.
 
-2. **Hardware-Backed Isolation Tiers**:
-   - **TEE (Trusted Execution Environment)**: Runs on the primary SoC using hardware virtualization (e.g., ARM TrustZone). Cryptographic operations run under a microkernel isolated from the Android Linux kernel.
-   - **StrongBox Keymaster (API 28+)**: A physically separate, tamper-resistant hardware security module (HSM, such as Google Titan M or Samsung Knox Vault). StrongBox has its own dedicated CPU, secure storage, and true random number generator, resisting physical hardware side-channel attacks.
-
-3. **Security Boundary Distinction**: Hardware-backed Keystore protects **keys from extraction**, but it does not protect the plaintext data *after* decryption in application RAM.
 
 ## Interview answer — deep senior
 
@@ -144,6 +141,7 @@ val securityLevel = keyInfo.securityLevel // SECURITY_LEVEL_TRUSTED_ENVIRONMENT 
 ```
 
 If `isInsideSecureHardware` returns false, the key is stored in software (legacy software Keymaster emulation), which is vulnerable to kernel-level exploitation on rooted devices. In high-assurance fintech and banking apps, policies can mandate that high-value operations proceed only when `keyInfo.isInsideSecureHardware == true`.
+
 
 ## How to answer in the interview
 

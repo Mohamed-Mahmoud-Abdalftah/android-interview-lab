@@ -111,6 +111,7 @@ I use `ensureActive()` when I strictly want cancellation responsiveness with max
 
 I use `yield()` when a CPU-bound task is heavy and I want fair scheduling. `yield()` checks for cancellation just like `ensureActive()`, but if active, it suspends the coroutine and dispatches it to the back of the dispatcher's work queue. This temporarily releases the OS thread so other waiting coroutines on the same dispatcher can execute, preventing thread starvation.
 
+
 ## Interview answer — deep senior
 
 Under the hood, `ensureActive()` is an inline extension function on `CoroutineScope` and `Job` that executes:
@@ -124,6 +125,7 @@ Because it is inlined, it compiles directly to a simple conditional jump in byte
 `yield()`, by contrast, is a true suspending function. It captures the current `Continuation` and dispatches it via `dispatcher.dispatchYield()`. If the dispatcher's event queue is empty, the runtime immediately reschedules and resumes the coroutine on the same thread with minimal latency. If other tasks are enqueued, they execute first.
 
 In high-frequency loops (e.g., iterating 100,000 times), calling `yield()` on every single iteration causes excessive scheduling overhead and degrades throughput. The senior engineering pattern is batching: call `ensureActive()` on every iteration, and throttle `yield()` to once every 100 or 500 iterations.
+
 
 ## How to answer in the interview
 

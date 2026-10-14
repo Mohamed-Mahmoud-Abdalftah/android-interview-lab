@@ -147,22 +147,20 @@ For a complex payment state machine, MVI decisively outperforms MVVM. MVVM's sca
 
 For mission-critical workflows with dense state transitions—such as a fintech payment pipeline—**MVI is dramatically superior to MVVM**.
 
-1. **The Fragility of MVVM in High-Stakes Flows**:
-   - In standard MVVM, state is often scattered across multiple observable properties: `isPaying`, `challengeActive`, `error`, `success`.
-   - This creates an illegal state vulnerability: rapid user taps or unexpected network retries can place the ViewModel into an indeterminate state where `isPaying = true` and `error != null` coexist, causing race conditions or duplicate transactions.
-
-2. **The Rigor of MVI as a Finite State Machine (FSM)**:
-   - MVI enforces a **Deterministic Finite State Machine**: states are modeled as a `sealed interface PaymentState` (`Idle`, `Authorizing`, `Challenge3DS`, `Success`, `Failed`).
-   - State transitions occur strictly through a **Reducer** taking `(CurrentState, Intent) -> NewState`.
-   - If an `AuthorizePayment` intent arrives while the state is already `Authorizing`, the reducer rejects the transition deterministically. Invalid states are structurally impossible.
+First, **The Fragility of MVVM in High-Stakes Flows**. Next, in standard MVVM, state is often scattered across multiple observable properties: `isPaying`, `challengeActive`, `error`, `success`.
+This creates an illegal state vulnerability: rapid user taps or unexpected network retries can place the ViewModel into an indeterminate state where `isPaying = true` and `error != null` coexist, causing race conditions or duplicate transactions. **The Rigor of MVI as a Finite State Machine (FSM)**.
+MVI enforces a **Deterministic Finite State Machine**: states are modeled as a `sealed interface PaymentState` (`Idle`, `Authorizing`, `Challenge3DS`, `Success`, `Failed`). State transitions occur strictly through a **Reducer** taking `(CurrentState, Intent) -> NewState`.
+Finally, if an `AuthorizePayment` intent arrives while the state is already `Authorizing`, the reducer rejects the transition deterministically. Invalid states are structurally impossible.
 
 This mathematical determinism guarantees transaction safety and auditability in enterprise fintech applications.
+
 
 ## Interview answer — deep senior
 
 Under the hood, implementing an enterprise payment FSM in MVI benefits from **State Transition Logging**. Because every state transition is a discrete pair of `(OldState, Intent) -> NewState`, we can attach an audit logger that streams state transitions directly to analytics/Datadog. If a customer experiences a payment drop, customer support can inspect the exact chronological state machine graph to identify where the flow halted.
 
 Furthermore, testing is exceptionally robust. Instead of verifying mocks, testing a payment reducer is a pure mathematical function test: `assertEquals(PaymentState.Authorizing, reducer.reduce(PaymentState.Idle, Intent.Authorize))`. We can run property-based testing across thousands of random intent combinations to mathematically prove that the state machine can never enter an illegal double-charge state.
+
 
 ## How to answer in the interview
 

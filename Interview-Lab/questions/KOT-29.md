@@ -83,11 +83,13 @@ If hardcoded as raw strings, any attacker running the standard command-line util
 
 The golden rule of mobile security is that the client cannot be trusted with true secrets. High-privilege API keys, database credentials, and signing secrets must reside strictly on your backend server. The mobile app should authenticate via ephemeral OAuth tokens, protected by Play Integrity and Firebase App Check.
 
+
 ## Interview answer — deep senior
 
 From a threat modeling and penetration testing perspective, native binaries are merely compiled machine instructions. A reverse engineer uses a combination of static analysis (Ghidra, Hopper, IDA Pro) and dynamic binary analysis (Frida, GDB, lldb, eBPF) to inspect program memory.
 
 When security teams insist on storing client-identifying keys locally—such as non-sensitive third-party client tokens (e.g., Google Maps API key, Algolia search-only key)—native code with string splitting, runtime XOR masking, and JNI integrity checks can raise the barrier to entry against script kiddies. However, protecting sensitive assets requires defense-in-depth: 1. Architecture: use a Backend-For-Frontend (BFF) proxy pattern where the mobile app never communicates directly with third-party paid APIs using sensitive tokens. 2. Attestation: integrate the Google Play Integrity API to cryptographically verify device and app binary authenticity before granting access to backend endpoints. 3. R8 / DexGuard: apply code obfuscation and root/hook detection (detecting Frida, Magisk, and debugger attachments), acknowledging that client-side protections can always eventually be bypassed by an adversary with root hardware access.
+
 
 ## How to answer in the interview
 

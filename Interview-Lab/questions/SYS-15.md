@@ -90,29 +90,22 @@ Monoliths offer rapid initial prototyping and simple refactoring, but degrade in
 
 ## Interview answer — structured
 
-Choosing between monolithic and multi-module architectures is an engineering trade-off governed by team size, build performance, and domain complexity:
+Choosing between monolithic and multi-module architectures is an engineering trade-off governed by team size, build performance, and domain complexity.
 
-1. **Monolithic Architecture (`:app`)**:
-   - **Strengths**: Zero module configuration overhead, trivial dependency injection setups, effortless cross-cutting refactoring, and rapid early iteration velocity.
-   - **Failure Modes at Scale**: Long clean build times (20–40 minutes), frequent Git merge conflicts on shared manifests and navigation files, lack of enforcement boundaries leading to tight coupling between domains.
+First, **Monolithic Architecture (`:app`)**. Next, with Strengths, zero module configuration overhead, trivial dependency injection setups, effortless cross-cutting refactoring, and rapid early iteration velocity.
+Additionally, with Failure Modes at Scale, long clean build times (20–40 minutes), frequent Git merge conflicts on shared manifests and navigation files, lack of enforcement boundaries leading to tight coupling between domains. **Multi-Module Architecture**.
+Strengths enables Gradle parallel execution, distributed build caching, and incremental compilation where modifying one feature only recompiles its isolated module. Provides strict encapsulation via Kotlin's `internal` modifier and defines clear team ownership. With Costs, increased Gradle maintenance, dependency version alignment overhead, and indirection in cross-feature navigation and dependency injection graphs.
+**Pragmatic Decision Threshold**. With 1–4 Engineers, maintain a modular-ready monolith organized cleanly by package-by-feature.
+Finally, with 5+ Engineers / Multi-Feature Products, modularize into `:core` and `:feature` boundaries to protect build velocity and establish autonomous team ownership.
 
-2. **Multi-Module Architecture**:
-   - **Strengths**: Enables Gradle parallel execution, distributed build caching, and incremental compilation where modifying one feature only recompiles its isolated module. Provides strict encapsulation via Kotlin's `internal` modifier and defines clear team ownership.
-   - **Costs**: Increased Gradle maintenance, dependency version alignment overhead, and indirection in cross-feature navigation and dependency injection graphs.
-
-3. **Pragmatic Decision Threshold**:
-   - **1–4 Engineers**: Maintain a modular-ready monolith organized cleanly by package-by-feature.
-   - **5+ Engineers / Multi-Feature Products**: Modularize into `:core` and `:feature` boundaries to protect build velocity and establish autonomous team ownership.
 
 ## Interview answer — deep senior
 
-From a staff platform architecture viewpoint, premature modularization can be just as damaging as an overgrown monolith:
+From a staff platform architecture viewpoint, premature modularization can be just as damaging as an overgrown monolith.
 
-1. **The Cost of Granular Over-Modularization**: Splitting every screen into its own Gradle module creates dozens of small modules. Each module incurs Gradle configuration-time evaluation overhead. In large projects, configuring 150+ tiny modules can add 30 seconds to every build before compilation even begins. Modularize around bounded domain contexts, not individual UI screens.
+First, with The Cost of Granular Over-Modularization, splitting every screen into its own Gradle module creates dozens of small modules. Each module incurs Gradle configuration-time evaluation overhead. In large projects, configuring 150+ tiny modules can add 30 seconds to every build before compilation even begins. Modularize around bounded domain contexts, not individual UI screens. Next, with Convention Plugins (build-logic), manage multi-module build scripts cleanly by creating custom Gradle Convention Plugins in `build-logic`. Define shared conventions (`android-feature`, `android-library`, `android-compose`) in composite builds rather than duplicating Groovy/Kotlin script blocks across dozens of `build.gradle.kts` files.
+Finally, a Micro-Apps (Sample Apps) for Velocity is the true superpower of modularization is sample app generation. An engineer working on `:feature:search:impl` runs a dedicated `:feature:search:sample` app, booting the local feature in an emulator in 4 seconds without compiling the rest of the application.
 
-2. **Convention Plugins (build-logic)**: Manage multi-module build scripts cleanly by creating custom Gradle Convention Plugins in `build-logic`. Define shared conventions (`android-feature`, `android-library`, `android-compose`) in composite builds rather than duplicating Groovy/Kotlin script blocks across dozens of `build.gradle.kts` files.
-
-3. **Micro-Apps (Sample Apps) for Velocity**: The true superpower of modularization is sample app generation. An engineer working on `:feature:search:impl` runs a dedicated `:feature:search:sample` app, booting the local feature in an emulator in 4 seconds without compiling the rest of the application.
 
 ## How to answer in the interview
 

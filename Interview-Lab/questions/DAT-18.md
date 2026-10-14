@@ -97,25 +97,19 @@ Investigate R8 obfuscation stripping Entity properties or default constructors, 
 
 ## Interview answer — structured
 
-A release-only database disappearance that succeeds in debug points to production compilation transforms or platform backup mechanisms:
+A release-only database disappearance that succeeds in debug points to production compilation transforms or platform backup mechanisms.
 
-1. **R8 / ProGuard Obfuscation**: R8 processes release builds aggressively. If Entity classes or TypeConverters lack keep rules (`@Keep` or `-keep @androidx.room.Entity class * { *; }`), R8 renames fields or strips reflective no-arg constructors. Room may fail to deserialize existing rows on subsequent launches, failing silently or catching an internal reflection error and returning empty datasets.
+First, with R8 / ProGuard Obfuscation, r8 processes release builds aggressively. If Entity classes or TypeConverters lack keep rules (`@Keep` or `-keep @androidx.room.Entity class * { *; }`), R8 renames fields or strips reflective no-arg constructors. Room may fail to deserialize existing rows on subsequent launches, failing silently or catching an internal reflection error and returning empty datasets. Next, with Android Auto Backup Collision, if `android:allowBackup="true"` is enabled in `AndroidManifest.xml`, the OS can restore an older cloud backup over the SQLite database file during installation or app restoration, replacing the newly written database with a stale snapshot.
+Additionally, with Silent Destructive Migration, if the release build has an unversioned migration gap and `fallbackToDestructiveMigration()` is active, Room wipes the entire SQLite file on startup rather than crashing with an `IllegalStateException`. Finally, with Keystore Invalidation (SQLCipher / Encrypted DBs), if the database is encrypted, ensure the master key in Android Keystore wasn't flagged with `setUserAuthenticationRequired(true)` or invalidated by device lockscreen configuration changes.
 
-2. **Android Auto Backup Collision**: If `android:allowBackup="true"` is enabled in `AndroidManifest.xml`, the OS can restore an older cloud backup over the SQLite database file during installation or app restoration, replacing the newly written database with a stale snapshot.
-
-3. **Silent Destructive Migration**: If the release build has an unversioned migration gap and `fallbackToDestructiveMigration()` is active, Room wipes the entire SQLite file on startup rather than crashing with an `IllegalStateException`.
-
-4. **Keystore Invalidation (SQLCipher / Encrypted DBs)**: If the database is encrypted, ensure the master key in Android Keystore wasn't flagged with `setUserAuthenticationRequired(true)` or invalidated by device lockscreen configuration changes.
 
 ## Interview answer — deep senior
 
-To diagnose this systematically in production:
+To diagnose this systematically in production.
 
-1. **Inspect the Physical SQLite File**: Using Android Studio Device File Explorer or an internal debug menu on a signed release build, inspect `/data/data/<package>/databases/app.db`. Check file size and dump table contents via the `sqlite3` CLI tool to verify if rows were committed to disk.
+First, with Inspect the Physical SQLite File, using Android Studio Device File Explorer or an internal debug menu on a signed release build, inspect `/data/data/<package>/databases/app.db`. Check file size and dump table contents via the `sqlite3` CLI tool to verify if rows were committed to disk. Next, with Verify WAL (Write-Ahead Logging) Checkpoints, SQLite WAL mode writes transactions into a separate `app.db-wal` file. If the process is killed abruptly before a WAL checkpoint completes and the app configuration disables WAL on restart, uncheckpointed transactions can disappear.
+Finally, with Rule Out Optimistic UI Illusions, ensure the repository actually committed the transaction to SQLite rather than only updating a MutableStateFlow in memory.
 
-2. **Verify WAL (Write-Ahead Logging) Checkpoints**: SQLite WAL mode writes transactions into a separate `app.db-wal` file. If the process is killed abruptly before a WAL checkpoint completes and the app configuration disables WAL on restart, uncheckpointed transactions can disappear.
-
-3. **Rule Out Optimistic UI Illusions**: Ensure the repository actually committed the transaction to SQLite rather than only updating a MutableStateFlow in memory.
 
 ## How to answer in the interview
 

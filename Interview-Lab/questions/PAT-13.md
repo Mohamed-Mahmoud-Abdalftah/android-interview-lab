@@ -116,11 +116,9 @@ Callbacks are primitive, lifecycle-unaware Observer implementations prone to lea
 
 All three mechanisms implement the Observer pattern, but they solve fundamentally different lifecycle, threading, and backpressure challenges.
 
-1. **Callbacks and Listeners**: Primitive and lifecycle-unaware. If an Activity registers a callback on a long-lived singleton and fails to unregister in `onDestroy`, you leak the entire UI hierarchy. Furthermore, error handling, threading, and composition must be wired by hand.
+First, with Callbacks and Listeners, primitive and lifecycle-unaware. If an Activity registers a callback on a long-lived singleton and fails to unregister in `onDestroy`, you leak the entire UI hierarchy. Furthermore, error handling, threading, and composition must be wired by hand. Next, with LiveData, built specifically to prevent leaks in Android UI. It is a hot, single-value holder that only dispatches emissions to active lifecycle owners (`STARTED` or `RESUMED`). However, its limitations are severe: it is coupled to the Android framework, confined to the Main Thread, drops rapid updates in `postValue()`, and lacks operators for asynchronous transformations.
+Finally, with Flow (Cold Flow & StateFlow), flow is pure Kotlin, structured-concurrency native, and completely decoupled from Android SDK. Cold Flows compute on-demand per collector. Hot `StateFlow` replaces LiveData for state retention with thread-safety and conflation. In Android UI, we bridge callback SDKs using `callbackFlow` with `awaitClose`, and collect via `repeatOnLifecycle` to get perfect lifecycle safety without sacrificing Kotlin's rich functional operators.
 
-2. **LiveData**: Built specifically to prevent leaks in Android UI. It is a hot, single-value holder that only dispatches emissions to active lifecycle owners (`STARTED` or `RESUMED`). However, its limitations are severe: it is coupled to the Android framework, confined to the Main Thread, drops rapid updates in `postValue()`, and lacks operators for asynchronous transformations.
-
-3. **Flow (Cold Flow & StateFlow)**: Flow is pure Kotlin, structured-concurrency native, and completely decoupled from Android SDK. Cold Flows compute on-demand per collector. Hot `StateFlow` replaces LiveData for state retention with thread-safety and conflation. In Android UI, we bridge callback SDKs using `callbackFlow` with `awaitClose`, and collect via `repeatOnLifecycle` to get perfect lifecycle safety without sacrificing Kotlin's rich functional operators.
 
 ## Interview answer — deep senior
 
@@ -131,6 +129,7 @@ Callbacks have zero backpressure mechanism; if a sensor emits 120 times a second
 In contrast, Kotlin Flow handles backpressure natively via coroutine suspension. If a downstream collector is suspended, an upstream `flow { ... }` suspends at `emit()`. In `callbackFlow`, because callbacks are driven by non-suspending platform threads, we use `trySend()` backed by a `BufferOverflow` strategy (e.g., `BufferOverflow.DROP_OLDEST`) or `channelFlow` with explicit buffering.
 
 Finally, regarding Lifecycle: LiveData listens directly to `Lifecycle.Event.ON_START` and `ON_STOP`. Flow is lifecycle-agnostic by design. To prevent background battery drain when using Flow in UI layers, Google introduced `repeatOnLifecycle` or `flowWithLifecycle`, which internally cancel the collecting coroutine when the lifecycle drops below `STARTED` and recreate it upon resumption.
+
 
 ## How to answer in the interview
 

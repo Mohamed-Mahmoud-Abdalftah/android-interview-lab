@@ -90,27 +90,21 @@ Chaining Kotlin standard collection operators eagerly creates intermediate Array
 
 ## Interview answer — structured
 
-Chained transformations on standard Kotlin collections trigger significant heap allocation overhead due to eager evaluation:
+Chained transformations on standard Kotlin collections trigger significant heap allocation overhead due to eager evaluation.
 
-1. **Eager Evaluation Mechanics**:
-   - Operators on `Iterable` (`filter`, `map`, `distinct`) execute eagerly. Each chained step instantiates and populates a new intermediate `ArrayList`. A chain of 4 operations over 50,000 objects allocates 4 distinct collections and hundreds of thousands of heap references.
+First, **Eager Evaluation Mechanics**. Next, operators on `Iterable` (`filter`, `map`, `distinct`) execute eagerly. Each chained step instantiates and populates a new intermediate `ArrayList`. A chain of 4 operations over 50,000 objects allocates 4 distinct collections and hundreds of thousands of heap references.
+**Android Runtime Impact**. The rapid generation of short-lived intermediate lists saturates the ART young generation space, triggering frequent Garbage Collection cycles. On the main thread, GC pauses preempt frame rendering budgets, manifesting as noticeable UI stutter.
+**Resolution via Kotlin Sequences (`asSequence()`)**. Sequences evaluate lazily: elements are piped through the entire transformation pipeline one by one. Terminal operations (`toList()`, `first()`) consume elements on-demand, eliminating intermediate list allocations entirely.
+Finally, short-circuit operations like `take(5)` terminate processing immediately after finding 5 matches, skipping remaining items.
 
-2. **Android Runtime Impact**:
-   - The rapid generation of short-lived intermediate lists saturates the ART young generation space, triggering frequent Garbage Collection cycles. On the main thread, GC pauses preempt frame rendering budgets, manifesting as noticeable UI stutter.
-
-3. **Resolution via Kotlin Sequences (`asSequence()`)**:
-   - Sequences evaluate lazily: elements are piped through the entire transformation pipeline one by one. Terminal operations (`toList()`, `first()`) consume elements on-demand, eliminating intermediate list allocations entirely.
-   - Short-circuit operations like `take(5)` terminate processing immediately after finding 5 matches, skipping remaining items.
 
 ## Interview answer — deep senior
 
-From a performance benchmarking perspective, choosing between Collections, Sequences, and Loops requires nuance:
+From a performance benchmarking perspective, choosing between Collections, Sequences, and Loops requires nuance.
 
-1. **The Sequence Overhead Penalty for Small Collections**: Sequences wrap operations in iterator and lambda closure state machines. For small collections ($n < 50$), the iterator object overhead exceeds the cost of a simple eager list allocation. Sequences deliver substantial net benefits primarily on large datasets ($n > 500$) or chains with multiple filtering steps.
+First, with The Sequence Overhead Penalty for Small Collections, sequences wrap operations in iterator and lambda closure state machines. For small collections ($n < 50$), the iterator object overhead exceeds the cost of a simple eager list allocation. Sequences deliver substantial net benefits primarily on large datasets ($n > 500$) or chains with multiple filtering steps. Next, with Stateful Sequence Operators, not all sequence operators are completely memory-free. Stateful operators like `sorted()` or `distinct()` must buffer elements internally to establish ordering or uniqueness before emitting, though they still avoid multi-step intermediate list duplication.
+Finally, with Zero-Allocation Imperative Hot Paths, in high-frequency Android code paths (Canvas `onDraw`, custom gesture detectors, physics calculations), neither collections nor sequences are acceptable. Engineers write manual `for` loops utilizing pre-sized reusable buffers to maintain a 100% allocation-free runtime.
 
-2. **Stateful Sequence Operators**: Not all sequence operators are completely memory-free. Stateful operators like `sorted()` or `distinct()` must buffer elements internally to establish ordering or uniqueness before emitting, though they still avoid multi-step intermediate list duplication.
-
-3. **Zero-Allocation Imperative Hot Paths**: In high-frequency Android code paths (Canvas `onDraw`, custom gesture detectors, physics calculations), neither collections nor sequences are acceptable. Engineers write manual `for` loops utilizing pre-sized reusable buffers to maintain a 100% allocation-free runtime.
 
 ## How to answer in the interview
 

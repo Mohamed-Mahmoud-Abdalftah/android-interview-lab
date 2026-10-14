@@ -15,7 +15,7 @@ export default defineConfig({
   webServer: {
     command: 'python3 scripts/serve-subpath.py 2>/dev/null',
     url: 'http://127.0.0.1:4539/android-interview-lab/',
-    reuseExistingServer: false,
+    reuseExistingServer: true,
     timeout: 60_000,
   },
 });

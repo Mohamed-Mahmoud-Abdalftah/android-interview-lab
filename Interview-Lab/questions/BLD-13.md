@@ -89,28 +89,21 @@ Manage versionCode monotonically via CI build numbers or git commit counts (git 
 
 ## Interview answer — structured
 
-Automating versioning and release notes eliminates human deployment errors and prevents rejected Play Console uploads:
+Automating versioning and release notes eliminates human deployment errors and prevents rejected Play Console uploads.
 
-1. **Deterministic `versionCode` Management**:
-   - Must strictly be a positive monotonically increasing integer (max 2,100,000,000). Google Play rejects any upload with a `versionCode` less than or equal to previous active builds.
-   - Best automated via Git commit depth (`git rev-list --count HEAD`) or CI build run counters (`GITHUB_RUN_NUMBER + OFFSET`). This guarantees that every PR merge produces a unique, incremented code without manual commit modifications.
+First, **Deterministic `versionCode` Management**. Next, must strictly be a positive monotonically increasing integer (max 2,100,000,000). Google Play rejects any upload with a `versionCode` less than or equal to previous active builds.
+Best automated via Git commit depth (`git rev-list --count HEAD`) or CI build run counters (`GITHUB_RUN_NUMBER + OFFSET`). This guarantees that every PR merge produces a unique, incremented code without manual commit modifications. **Semantic `versionName` Modeling**.
+Follow Semantic Versioning: `MAJOR.MINOR.PATCH`. Defined in a central `version.properties` file or extracted from Git release tags (`git describe --tags`). **Automated Release Notes Deployment**.
+Maintain localized changelog text files under source control: `distribution/whatsnew/whatsnew-en-US` and `whatsnew-ar-SA`. Finally, in CI/CD, tools like **Gradle Play Publisher (GPP)** or **Fastlane Supply** bundle these release notes alongside the compiled AAB directly to Play Store tracks.
 
-2. **Semantic `versionName` Modeling**:
-   - Follow Semantic Versioning: `MAJOR.MINOR.PATCH`. Defined in a central `version.properties` file or extracted from Git release tags (`git describe --tags`).
-
-3. **Automated Release Notes Deployment**:
-   - Maintain localized changelog text files under source control: `distribution/whatsnew/whatsnew-en-US` and `whatsnew-ar-SA`.
-   - In CI/CD, tools like **Gradle Play Publisher (GPP)** or **Fastlane Supply** bundle these release notes alongside the compiled AAB directly to Play Store tracks.
 
 ## Interview answer — deep senior
 
-From an advanced multi-architecture and release pipeline perspective, versioning involves ABI offsets and track management:
+From an advanced multi-architecture and release pipeline perspective, versioning involves ABI offsets and track management.
 
-1. **ABI Version Code Offsets (For Split APKs)**: When distributing multiple APKs partitioned by ABI, each APK must have a distinct `versionCode`. Standard industry convention uses structured offsets: `64-bit ARM (prefix 2) -> 2001024`, `32-bit ARM (prefix 1) -> 1001024`. The 64-bit build must always have the higher `versionCode` so 64-bit devices prefer the 64-bit APK.
+First, with ABI Version Code Offsets (For Split APKs), when distributing multiple APKs partitioned by ABI, each APK must have a distinct `versionCode`. Standard industry convention uses structured offsets: `64-bit ARM (prefix 2) -> 2001024`, `32-bit ARM (prefix 1) -> 1001024`. The 64-bit build must always have the higher `versionCode` so 64-bit devices prefer the 64-bit APK. Next, with Continuous Deployment with Internal Test Tracks, configure CI to publish every successful main branch commit to Google Play Internal Testing Track using automated release tags. This allows QA and beta testers to receive updates within 15 minutes of code merge.
+Finally, with Version Catalog Integration, centralize app versioning metadata within `gradle/libs.versions.toml` or `build-logic` convention plugins to keep multi-module sample apps and release flavors synchronized.
 
-2. **Continuous Deployment with Internal Test Tracks**: Configure CI to publish every successful main branch commit to Google Play Internal Testing Track using automated release tags. This allows QA and beta testers to receive updates within 15 minutes of code merge.
-
-3. **Version Catalog Integration**: Centralize app versioning metadata within `gradle/libs.versions.toml` or `build-logic` convention plugins to keep multi-module sample apps and release flavors synchronized.
 
 ## How to answer in the interview
 

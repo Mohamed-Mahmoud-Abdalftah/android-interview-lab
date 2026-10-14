@@ -88,13 +88,11 @@ Android manages memory via the Android Runtime (ART) with per-app heap limits. T
 
 Android manages memory through the Android Runtime (ART), assigning each application a sandboxed virtual machine with a strict heap limit (typically 192MB-512MB).
 
-The **Garbage Collector (GC)** is the automated memory manager that reclaims heap memory occupied by objects that are no longer referenced or reachable by the application:
+The **Garbage Collector (GC)** is the automated memory manager that reclaims heap memory occupied by objects that are no longer referenced or reachable by the application.
 
-1. **Tracing Reachability**: The GC starts from a set of **GC Roots** (active thread stacks, static variables, JNI global references) and traverses object reference graphs. Any object that cannot be reached from any GC Root is marked as garbage.
+First, a Tracing Reachability is the GC starts from a set of **GC Roots** (active thread stacks, static variables, JNI global references) and traverses object reference graphs. Any object that cannot be reached from any GC Root is marked as garbage. Next, with Generational Collection, aRT separates objects into generations: newly allocated objects reside in the *Young Generation*, while long-lived objects advance to the *Old Generation*. Minor GCs clean short-lived objects rapidly with minimal latency.
+Finally, with Performance Impact, while ART employs concurrent garbage collection, high allocation churn (creating thousands of temporary objects in loops or `onDraw()`) triggers frequent GC sweeps that briefly pause application threads, causing dropped frames (jank).
 
-2. **Generational Collection**: ART separates objects into generations: newly allocated objects reside in the *Young Generation*, while long-lived objects advance to the *Old Generation*. Minor GCs clean short-lived objects rapidly with minimal latency.
-
-3. **Performance Impact**: While ART employs concurrent garbage collection, high allocation churn (creating thousands of temporary objects in loops or `onDraw()`) triggers frequent GC sweeps that briefly pause application threads, causing dropped frames (jank).
 
 ## Interview answer — deep senior
 
@@ -103,6 +101,7 @@ Under the hood, ART has evolved through multiple GC implementations: from the Da
 However, ART still enforces hard memory ceilings (`getMemoryClass()` and `getLargeMemoryClass()`). If an allocation request exceeds the available process heap and the GC cannot reclaim sufficient contiguous memory through collection and compaction, ART throws an irrecoverable `OutOfMemoryError` (OOM).
 
 In Android profiling, we monitor the **Allocations Track** in Android Studio Profiler to identify memory churn: high saw-tooth allocation spikes immediately indicate unnecessary object creation in high-frequency rendering paths.
+
 
 ## How to answer in the interview
 

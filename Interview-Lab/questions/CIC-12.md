@@ -91,31 +91,22 @@ Slash Android CI build times by configuring Gradle Remote Build Cache (Develocit
 
 ## Interview answer — structured
 
-Accelerating cold and warm CI builds requires addressing Gradle's configuration and execution phases systematically:
+Accelerating cold and warm CI builds requires addressing Gradle's configuration and execution phases systematically.
 
-1. **Remote Build Cache Infrastructure**:
-   - Ephemeral CI containers start without local cache. Enabling a remote HTTP build cache (e.g. Gradle Enterprise/Develocity or self-hosted HTTP cache) allows tasks that match input hashes to pull pre-compiled bytecode with `FROM-CACHE`, cutting build times by 50–70%.
+First, **Remote Build Cache Infrastructure**. Next, ephemeral CI containers start without local cache. Enabling a remote HTTP build cache (e.g. Gradle Enterprise/Develocity or self-hosted HTTP cache) allows tasks that match input hashes to pull pre-compiled bytecode with `FROM-CACHE`, cutting build times by 50–70%.
+**Gradle Execution Flags**. Enable `org.gradle.parallel=true` to process independent Gradle subprojects concurrently.
+Enable `org.gradle.configuration-cache=true` to skip the configuration phase on subsequent invocations. Enable `org.gradle.caching=true`.
+**Affected Module Detection**. In large multi-module repositories, use tools like Dropbox's `AffectedModuleDetector` or custom Git diff inspection. Run tests and static analysis exclusively on changed modules and their transitive downstream dependents rather than the entire project.
+**JVM & Memory Tuning for CI Runners**. Finally, ephemeral runners typically suffer from memory thrashing. Configure `-Xmx4g` to `-Xmx6g` with `-XX:+UseParallelGC` to minimize garbage collection pauses during intensive compilation.
 
-2. **Gradle Execution Flags**:
-   - Enable `org.gradle.parallel=true` to process independent Gradle subprojects concurrently.
-   - Enable `org.gradle.configuration-cache=true` to skip the configuration phase on subsequent invocations.
-   - Enable `org.gradle.caching=true`.
-
-3. **Affected Module Detection**:
-   - In large multi-module repositories, use tools like Dropbox's `AffectedModuleDetector` or custom Git diff inspection. Run tests and static analysis exclusively on changed modules and their transitive downstream dependents rather than the entire project.
-
-4. **JVM & Memory Tuning for CI Runners**:
-   - Ephemeral runners typically suffer from memory thrashing. Configure `-Xmx4g` to `-Xmx6g` with `-XX:+UseParallelGC` to minimize garbage collection pauses during intensive compilation.
 
 ## Interview answer — deep senior
 
-From an architectural systems engineering angle, cache hygiene and task avoidability drive performance:
+From an architectural systems engineering angle, cache hygiene and task avoidability drive performance.
 
-1. **Task Cache Miss Hunting**: If a single task includes absolute file paths or system timestamps in its `@Input`, Gradle invalidates the task's cache key on every runner, turning `FROM-CACHE` into expensive recompilations. Teams run Gradle Build Scans regularly to audit task inputs and enforce path sensitivity (`PathSensitivity.RELATIVE`).
+First, with Task Cache Miss Hunting, if a single task includes absolute file paths or system timestamps in its `@Input`, Gradle invalidates the task's cache key on every runner, turning `FROM-CACHE` into expensive recompilations. Teams run Gradle Build Scans regularly to audit task inputs and enforce path sensitivity (`PathSensitivity.RELATIVE`). Next, with Push vs. Pull Cache Access Control, never allow every unverified PR to push to the remote build cache; a corrupted or poisoned cache entry on a feature branch can infect other builds. The main branch CI should be the only agent configured with `isPush = true` permissions, while PR builds have read-only (`isPush = false`) pull access.
+Finally, with KSP vs. KAPT Migration, kAPT relies on Java stub generation which severely hampers build parallelization and cache performance. Migrating annotation processors to Kotlin Symbol Processing (KSP) delivers up to 2x faster compilation speed and native incremental processing.
 
-2. **Push vs. Pull Cache Access Control**: Never allow every unverified PR to push to the remote build cache; a corrupted or poisoned cache entry on a feature branch can infect other builds. The main branch CI should be the only agent configured with `isPush = true` permissions, while PR builds have read-only (`isPush = false`) pull access.
-
-3. **KSP vs. KAPT Migration**: KAPT relies on Java stub generation which severely hampers build parallelization and cache performance. Migrating annotation processors to Kotlin Symbol Processing (KSP) delivers up to 2x faster compilation speed and native incremental processing.
 
 ## How to answer in the interview
 

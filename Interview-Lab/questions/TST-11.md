@@ -126,31 +126,23 @@ Test Room DAOs using in-memory databases with allowMainThreadQueries() to ensure
 
 ## Interview answer — structured
 
-Room database testing divides into DAO functional validation and schema migration verification:
+Room database testing divides into DAO functional validation and schema migration verification.
 
-1. **In-Memory DAO Testing**:
-   - Instantiate tests using `Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()`.
-   - In-memory databases exist strictly in RAM and are completely destroyed upon `db.close()`, guaranteeing test isolation without disk file leftovers.
-   - Test reactive DAO flows using Turbine to assert that SQL inserts/updates emit fresh lists to active flow collectors.
+First, **In-Memory DAO Testing**. Next, instantiate tests using `Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()`.
+In-memory databases exist strictly in RAM and are completely destroyed upon `db.close()`, guaranteeing test isolation without disk file leftovers. Test reactive DAO flows using Turbine to assert that SQL inserts/updates emit fresh lists to active flow collectors.
+**Automated Migration Testing (`MigrationTestHelper`)**. Use Room's `MigrationTestHelper` in instrumented tests.
+Step 1: `helper.createDatabase(DB_NAME, 1)` boots SQLite using the version 1 JSON schema. Insert sample records via raw SQL. Step 2: `helper.runMigrationsAndValidate(DB_NAME, 2, true, MIGRATION_1_2)` applies the migration and automatically validates SQLite column types and foreign keys against the version 2 JSON schema.
+Step 3: Query the migrated database to assert that historical records survived uncorrupted and new columns received default values. **Transaction Atomicity Verification**.
+Finally, test methods marked `@Transaction`. Inject an intentional exception halfway through a batch operation, and assert that previously written rows in that transaction were rolled back completely.
 
-2. **Automated Migration Testing (`MigrationTestHelper`)**:
-   - Use Room's `MigrationTestHelper` in instrumented tests.
-   - Step 1: `helper.createDatabase(DB_NAME, 1)` boots SQLite using the version 1 JSON schema. Insert sample records via raw SQL.
-   - Step 2: `helper.runMigrationsAndValidate(DB_NAME, 2, true, MIGRATION_1_2)` applies the migration and automatically validates SQLite column types and foreign keys against the version 2 JSON schema.
-   - Step 3: Query the migrated database to assert that historical records survived uncorrupted and new columns received default values.
-
-3. **Transaction Atomicity Verification**:
-   - Test methods marked `@Transaction`. Inject an intentional exception halfway through a batch operation, and assert that previously written rows in that transaction were rolled back completely.
 
 ## Interview answer — deep senior
 
-From an enterprise storage engineering perspective, database tests must validate SQLite constraints and threading boundaries:
+From an enterprise storage engineering perspective, database tests must validate SQLite constraints and threading boundaries.
 
-1. **Foreign Key Constraint Verification**: By default, SQLite disables foreign key enforcement unless explicitly enabled via `PRAGMA foreign_keys = ON;`. In-memory tests must configure Room callbacks or open helper factories to enable foreign keys, ensuring tests catch constraint violations before production.
+First, with Foreign Key Constraint Verification, by default, SQLite disables foreign key enforcement unless explicitly enabled via `PRAGMA foreign_keys = ON;`. In-memory tests must configure Room callbacks or open helper factories to enable foreign keys, ensuring tests catch constraint violations before production. Next, with Multi-Version Migration Chains (v1 -> v4), write automated test permutations that test direct multi-version hops (`1->4`) alongside sequential hops (`1->2->3->4`), verifying that legacy users upgrading across multiple years do not encounter `IllegalStateException` on launch.
+Finally, with Robolectric SQLite vs. Real Device SQLite, while Robolectric runs SQLite tests on the host machine using SQLite4Java or native macOS/Linux SQLite libraries, OEM Android devices run customized SQLite engines. Always execute complex migration and WAL concurrency tests on real Android instrumented test runners.
 
-2. **Multi-Version Migration Chains (v1 -> v4)**: Write automated test permutations that test direct multi-version hops (`1->4`) alongside sequential hops (`1->2->3->4`), verifying that legacy users upgrading across multiple years do not encounter `IllegalStateException` on launch.
-
-3. **Robolectric SQLite vs. Real Device SQLite**: While Robolectric runs SQLite tests on the host machine using SQLite4Java or native macOS/Linux SQLite libraries, OEM Android devices run customized SQLite engines. Always execute complex migration and WAL concurrency tests on real Android instrumented test runners.
 
 ## How to answer in the interview
 

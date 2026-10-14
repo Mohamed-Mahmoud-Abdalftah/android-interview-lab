@@ -103,28 +103,23 @@ Design cross-feature session state by hoisting it into a lower-level `:core:sess
 
 Managing cross-cutting account and session state across features without inducing circular dependencies requires strict architectural layering.
 
-1. **The Core Session Inversion Pattern**:
-   - Features (`:feature:checkout`, `:feature:settings`, `:feature:chat`) must never depend on each other horizontally.
-   - Instead, we hoist identity and session contracts into a dedicated foundational module: **`:core:session`** (or `:core:model`).
-   - `:core:session` has zero feature dependencies. All feature modules depend unidirectionally downward onto `:core:session`.
+First, **The Core Session Inversion Pattern**. Next, features (`:feature:checkout`, `:feature:settings`, `:feature:chat`) must never depend on each other horizontally.
+Instead, we hoist identity and session contracts into a dedicated foundational module: **`:core:session`** (or `:core:model`). `:core:session` has zero feature dependencies. All feature modules depend unidirectionally downward onto `:core:session`.
+**Reactive Session Repository**. Inside `:core:session`, a singleton `SessionRepository` manages active authentication credentials, exposing `val activeSession: StateFlow<UserSession?>`.
+Feature ViewModels inject `SessionRepository` to inspect user identity or observe permission changes. **Global Session Invalidation (401 Handling)**.
+An OkHttp Authenticator in `:core:network` catches HTTP 401 Unauthorized responses. It calls `sessionRepository.clearSession()`. Finally, the top-level `RootNavHost` in the `:app` module observes `activeSession`. When nullified, it tears down active feature graphs and routes immediately to authentication.
 
-2. **Reactive Session Repository**:
-   - Inside `:core:session`, a singleton `SessionRepository` manages active authentication credentials, exposing `val activeSession: StateFlow<UserSession?>`.
-   - Feature ViewModels inject `SessionRepository` to inspect user identity or observe permission changes.
-
-3. **Global Session Invalidation (401 Handling)**:
-   - An OkHttp Authenticator in `:core:network` catches HTTP 401 Unauthorized responses. It calls `sessionRepository.clearSession()`.
-   - The top-level `RootNavHost` in the `:app` module observes `activeSession`. When nullified, it tears down active feature graphs and routes immediately to authentication.
 
 ## Interview answer — deep senior
 
 Under the hood, in Gradle multi-module builds, circular dependencies (`:feature:A -> :feature:B -> :feature:A`) cause fatal compilation graph cycles. By applying the **Dependency Inversion Principle**, if Feature A needs to trigger an action in Feature B (e.g. Payment completed, navigate to Order History in Account), Feature A must **never import Feature B directly**.
 
-Instead, we use **API/Impl splits** or **Event/Navigation Hoisting**:
-- Feature A exposes an output navigation lambda: `onPaymentSuccess: (OrderId) -> Unit`.
-- The top-level orchestration module (`:app`), which knows both `:feature:payment` and `:feature:account`, wires the navigation call from Payment to Account.
+Instead, we use **API/Impl splits** or **Event/Navigation Hoisting**.
+
+First, feature A exposes an output navigation lambda: `onPaymentSuccess: (OrderId) -> Unit`. Finally, the top-level orchestration module (`:app`), which knows both `:feature:payment` and `:feature:account`, wires the navigation call from Payment to Account.
 
 This preserves complete compilation independence: the payment team can build and test `:feature:payment` in total isolation without compiling the account module.
+
 
 ## How to answer in the interview
 

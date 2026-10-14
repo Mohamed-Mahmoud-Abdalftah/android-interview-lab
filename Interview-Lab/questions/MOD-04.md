@@ -91,13 +91,12 @@ High cohesion means elements inside a module belong together and serve a single,
 
 ## Interview answer — structured
 
-Cohesion and coupling are the twin pillars of sustainable software architecture, applied directly at the Gradle module level:
+Cohesion and coupling are the twin pillars of sustainable software architecture, applied directly at the Gradle module level.
 
-1. **High Cohesion (Inside the Module)**: All components within a module change for the same business reason and serve a tightly focused domain responsibility. For example, `:feature:search` contains only query processing, search results UI, and recent searches storage. If a module contains auth helpers, date formatters, and payment models, it suffers from low cohesion and becomes an unmaintainable junk drawer.
-
-2. **Low Coupling (Between Modules)**: Modules minimize their knowledge of and dependencies on other modules. Instead of depending on concrete implementations or peer feature modules, they interact across clean boundaries using dependency inversion and API contracts.
+First, with High Cohesion (Inside the Module), all components within a module change for the same business reason and serve a tightly focused domain responsibility. For example, `:feature:search` contains only query processing, search results UI, and recent searches storage. If a module contains auth helpers, date formatters, and payment models, it suffers from low cohesion and becomes an unmaintainable junk drawer. Finally, with Low Coupling (Between Modules), modules minimize their knowledge of and dependencies on other modules. Instead of depending on concrete implementations or peer feature modules, they interact across clean boundaries using dependency inversion and API contracts.
 
 Architecturally, high cohesion ensures that when a feature changes, developers only modify files within that single module. Low coupling ensures that changes made inside that module never trigger unexpected regressions or recompilations in other modules.
+
 
 ## Interview answer — deep senior
 
@@ -105,9 +104,10 @@ A common architectural trap in Android modularization is **False Cohesion throug
 
 Teams often create a `:core:common` module containing utility extension functions, custom views, and network DTOs. Developers assume this is 'high reuse'. In reality, `:core:common` exhibits **extremely low cohesion and catastrophic high coupling**—every feature module imports it. When an engineer modifies a string utility in `:core:common`, the ABI change invalidates the build cache for 100% of the downstream feature modules.
 
-To achieve true high cohesion and low coupling:
-- Break `:core:common` into hyper-focused modules: `:core:model`, `:core:network`, `:core:ui`.
-- Tolerate minor duplication of trivial helper functions (e.g., 2 lines of string formatting) rather than introducing a global shared dependency that couples otherwise independent features.
+To achieve true high cohesion and low coupling.
+
+First, break `:core:common` into hyper-focused modules: `:core:model`, `:core:network`, `:core:ui`. Finally, tolerate minor duplication of trivial helper functions (e.g., 2 lines of string formatting) rather than introducing a global shared dependency that couples otherwise independent features.
+
 
 ## How to answer in the interview
 

@@ -87,14 +87,14 @@ I use a suspend function when an operation has a discrete beginning and end that
 
 I use Flow when the UI needs to observe continuous state or event changes over time—such as observing real-time Room database changes, streaming GPS location updates, or listening to WebSocket push notifications. Flow is cold by default, handles backpressure automatically through coroutine suspension, and provides rich transformation operators like map, filter, and combine.
 
+
 ## Interview answer — deep senior
 
-Under the hood, `Flow` is defined as a clean interface with a single method: `suspend fun collect(collector: FlowCollector<T>)`. Because `collect` is a suspending function, the entire lifecycle of a Flow is executed within the caller's CoroutineContext. This gives Flow a massive advantage over older reactive frameworks like RxJava:
+Under the hood, `Flow` is defined as a clean interface with a single method: `suspend fun collect(collector: FlowCollector<T>)`. Because `collect` is a suspending function, the entire lifecycle of a Flow is executed within the caller's CoroutineContext. This gives Flow a massive advantage over older reactive frameworks like RxJava.
 
-1. **Zero Thread Hopping Overhead:** Flow does not need complex schedulers; it cooperatively suspends on the collector's thread.
-2. **Built-in Backpressure:** Emission via `emit()` is a suspending function. If the collector is slow or doing heavy rendering, the emitter's coroutine is suspended until the collector finishes processing the previous element. No special buffer strategy is required for basic safety.
+First, **Zero Thread Hopping Overhead:** Flow does not need complex schedulers; it cooperatively suspends on the collector's thread. Next, **Built-in Backpressure:** Emission via `emit()` is a suspending function. If the collector is slow or doing heavy rendering, the emitter's coroutine is suspended until the collector finishes processing the previous element. No special buffer strategy is required for basic safety.
+Finally, **Structured Concurrency:** If the collector coroutine is cancelled (e.g., the user rotates the screen and the ViewModel clears), the Flow's upstream emitter is automatically cancelled immediately without any manual disposal boilerplate.
 
-3. **Structured Concurrency:** If the collector coroutine is cancelled (e.g., the user rotates the screen and the ViewModel clears), the Flow's upstream emitter is automatically cancelled immediately without any manual disposal boilerplate.
 
 ## How to answer in the interview
 

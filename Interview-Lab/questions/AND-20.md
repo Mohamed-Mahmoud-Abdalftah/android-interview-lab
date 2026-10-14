@@ -83,15 +83,11 @@ Android IPC is powered by the Linux Binder driver. Choose AIDL for multi-threade
 
 Inter-Process Communication (IPC) in Android is powered at the kernel level by the **Binder** driver, which allows processes to invoke methods and exchange data across Linux sandbox boundaries with hardware-backed performance and UID verification.
 
-We choose between four standard IPC mechanisms depending on requirements:
+We choose between four standard IPC mechanisms depending on requirements.
 
-1. **AIDL (Android Interface Definition Language)**: The most powerful IPC mechanism. Generates typed Binder stub interfaces that support direct client-to-server RPC calls across processes with concurrent multithreading. Used for complex inter-app SDKs.
+First, an AIDL (Android Interface Definition Language) is the most powerful IPC mechanism. Generates typed Binder stub interfaces that support direct client-to-server RPC calls across processes with concurrent multithreading. Used for complex inter-app SDKs. Next, a Messenger is a lightweight wrapper built on top of Binder that serializes messages through a single-threaded `Handler`. Best when thread-safety and sequential message processing are required without the concurrency complexities of AIDL.
+Additionally, a ContentProvider is the standard abstraction for sharing structured data (tables, files) across processes via SQL-like queries (`ContentResolver`). Finally, with FileProvider, crucial for sharing large binary assets (bitmaps, PDFs, videos). Because Binder transactions fail with `TransactionTooLargeException` if payloads exceed 1MB, we never pass heavy data over Binder; we pass secure `content://` URIs granted via temporary URI permissions.
 
-2. **Messenger**: A lightweight wrapper built on top of Binder that serializes messages through a single-threaded `Handler`. Best when thread-safety and sequential message processing are required without the concurrency complexities of AIDL.
-
-3. **ContentProvider**: The standard abstraction for sharing structured data (tables, files) across processes via SQL-like queries (`ContentResolver`).
-
-4. **FileProvider**: Crucial for sharing large binary assets (bitmaps, PDFs, videos). Because Binder transactions fail with `TransactionTooLargeException` if payloads exceed 1MB, we never pass heavy data over Binder; we pass secure `content://` URIs granted via temporary URI permissions.
 
 ## Interview answer — deep senior
 
@@ -100,6 +96,7 @@ Under the hood, Binder achieves high performance through **Shared Memory Mapping
 However, the Binder transaction buffer is capped at 1MB per process group. In multi-process applications (e.g., declaring `android:process=":remote"`), data objects passed across Binder must implement `Parcelable`.
 
 For security, the server process must inspect `Binder.getCallingUid()` and `Binder.getCallingPid()` to cryptographically verify that the calling process has the appropriate package identity and signature before executing privileged remote actions.
+
 
 ## How to answer in the interview
 

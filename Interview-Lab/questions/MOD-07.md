@@ -93,17 +93,13 @@ Design a large-scale app using a layered DAG: an assembly :app module, feature m
 
 ## Interview answer — structured
 
-A production-grade multi-module architecture for an enterprise Android app balances compilation speed, encapsulation, and team velocity:
+A production-grade multi-module architecture for an enterprise Android app balances compilation speed, encapsulation, and team velocity.
 
-1. **Layered Module Architecture**:
-   - **`:app`**: Thin composition root. Assembles the final APK, provisions Hilt graph roots, and attaches top-level navigation graphs.
-   - **`:feature:*:impl`**: Contains UI Composables, ViewModels, and internal presentation logic. Feature implementations never depend directly on sibling feature implementations.
-   - **`:feature:*:api`**: Lightweight contract modules containing only navigation routes, shared events, and public interfaces. Features interact exclusively through peer API modules.
-   - **`:core:*`**: Horizontal foundations (`:core:designsystem`, `:core:network`, `:core:database`, `:core:model`, `:core:analytics`).
+First, **Layered Module Architecture**. Next, with :app, thin composition root. Assembles the final APK, provisions Hilt graph roots, and attaches top-level navigation graphs.
+**`:feature:*:impl`**: Contains UI Composables, ViewModels, and internal presentation logic. Feature implementations never depend directly on sibling feature implementations. **`:feature:*:api`**: Lightweight contract modules containing only navigation routes, shared events, and public interfaces. Features interact exclusively through peer API modules.
+**`:core:*`**: Horizontal foundations (`:core:designsystem`, `:core:network`, `:core:database`, `:core:model`, `:core:analytics`). **Standardized Build Governance**.
+Centralized dependency coordinates via `libs.versions.toml`. Finally, custom Gradle Convention Plugins in `build-logic` (`android.library`, `android.feature`, `android.compose`) to eliminate 95% of boilerplate from individual `build.gradle.kts` files.
 
-2. **Standardized Build Governance**:
-   - Centralized dependency coordinates via `libs.versions.toml`.
-   - Custom Gradle Convention Plugins in `build-logic` (`android.library`, `android.feature`, `android.compose`) to eliminate 95% of boilerplate from individual `build.gradle.kts` files.
 
 ## Interview answer — deep senior
 
@@ -111,10 +107,11 @@ A critical pitfall in large-scale modularization is **Uncontrolled Micro-Modular
 
 Every Gradle module introduces overhead: configuration evaluation time, IDE indexing load, and task scheduling overhead. If modules are too granular, cold build times and Android Studio sync times explode.
 
-To maintain an optimal balance:
-- Extract a module only when there is a **real compile boundary** (independent team ownership, distinct release cycle, or high rebuild frequency).
-- Use the `:api` / `:impl` split primarily for high-traffic features that multiple teams interact with, rather than dogmatically splitting every trivial screen.
-- Implement continuous CI graph validation (enforcing no feature-to-feature direct implementation dependencies) to protect the DAG from accidental erosion.
+To maintain an optimal balance.
+
+First, extract a module only when there is a **real compile boundary** (independent team ownership, distinct release cycle, or high rebuild frequency). Next, use the `:api` / `:impl` split primarily for high-traffic features that multiple teams interact with, rather than dogmatically splitting every trivial screen.
+Finally, implement continuous CI graph validation (enforcing no feature-to-feature direct implementation dependencies) to protect the DAG from accidental erosion.
+
 
 ## How to answer in the interview
 

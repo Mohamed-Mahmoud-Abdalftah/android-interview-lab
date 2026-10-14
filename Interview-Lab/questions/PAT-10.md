@@ -107,21 +107,18 @@ Factory Method creates a single product by delegating instantiation to a method 
 
 The distinction between Factory Method and Abstract Factory hinges on product scope and familial relationship guarantees.
 
-1. **Factory Method (Single Product Focus)**:
-   - Defines an interface with a method that creates a **single product object**.
-   - Subclasses or implementers decide which concrete class to instantiate.
-   - *Android Example*: `ViewModelProvider.Factory`. It defines `create(modelClass: Class<T>): T`, instantiating a single specific ViewModel requested by the UI controller.
+First, **Factory Method (Single Product Focus)**. Next, defines an interface with a method that creates a **single product object**.
+Subclasses or implementers decide which concrete class to instantiate. *Android Example*: `ViewModelProvider.Factory`. It defines `create(modelClass: Class<T>): T`, instantiating a single specific ViewModel requested by the UI controller.
+**Abstract Factory (Product Family Focus)**. Defines an interface with multiple methods designed to create **an entire family of mutually compatible products**.
+Guarantees that clients never accidentally mix incompatible products (e.g. Mixing an iOS-styled button with an Android Material dialog). Finally, *Android Example*: A multi-brand design system where `BrandFactory` exposes `createButton()`, `createCard()`, and `createTextField()`. The `EnterpriseBrandFactory` produces enterprise-styled variants of all three components, guaranteeing complete visual cohesion across the suite.
 
-2. **Abstract Factory (Product Family Focus)**:
-   - Defines an interface with multiple methods designed to create **an entire family of mutually compatible products**.
-   - Guarantees that clients never accidentally mix incompatible products (e.g. mixing an iOS-styled button with an Android Material dialog).
-   - *Android Example*: A multi-brand design system where `BrandFactory` exposes `createButton()`, `createCard()`, and `createTextField()`. The `EnterpriseBrandFactory` produces enterprise-styled variants of all three components, guaranteeing complete visual cohesion across the suite.
 
 ## Interview answer — deep senior
 
 Under the hood, an Abstract Factory is often implemented as a class whose individual methods are Factory Methods. In modern Dagger/Hilt architectures, **Dagger Component and Subcomponent interfaces are essentially compile-time Abstract Factories**! When Dagger declares an interface providing various dependencies for an Activity scope, Dagger generates the concrete factory implementation under the hood.
 
 In Kotlin, using Factory patterns can often be simplified using top-level functions or companion objects: `companion object { fun create(...) = ... }`. Senior architects reserve explicit Factory and Abstract Factory classes for scenarios where instantiation requires dynamic dependency injection or complex configuration policies.
+
 
 ## How to answer in the interview
 

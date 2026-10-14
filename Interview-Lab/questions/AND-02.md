@@ -101,13 +101,13 @@ Activity transitions through onCreate() (initialization), onStart() (visible), o
 
 The Android lifecycle represents the operating system's mechanism for managing memory constraints, window visibility, and user interaction states:
 
-The six core Activity callbacks form matched pairs:
+The six core Activity callbacks form matched pairs.
 
-1. **`onCreate()` / `onDestroy()`**: Represents the entire lifespan of the Activity instance in memory. In `onCreate`, we initialize dependencies, ViewModels, and UI layouts.
-2. **`onStart()` / `onStop()`**: Represents the visible lifespan. In `onStart`, the UI is visible to the user. In `onStop`, the Activity is completely hidden from view (e.g., app backgrounded). This is where heavy rendering and sensor listeners should pause.
-3. **`onResume()` / `onPause()`**: Represents the foreground, interactive lifespan. In `onResume`, the window has full touch focus. In `onPause`, the window has lost focus (e.g., covered by a multi-window app or a system permission dialog).
+First, onCreate()` / `onDestroy() represents the entire lifespan of the Activity instance in memory. In `onCreate`, we initialize dependencies, ViewModels, and UI layouts. Next, onStart()` / `onStop() represents the visible lifespan. In `onStart`, the UI is visible to the user. In `onStop`, the Activity is completely hidden from view (e.g., app backgrounded). This is where heavy rendering and sensor listeners should pause.
+Finally, onResume()` / `onPause() represents the foreground, interactive lifespan. In `onResume`, the window has full touch focus. In `onPause`, the window has lost focus (e.g., covered by a multi-window app or a system permission dialog).
 
 Fragments mirror these states, but critically decouple the Fragment object lifecycle from the view lifecycle (`viewLifecycleOwner`), which can be destroyed and recreated independently when placed on the Fragment backstack.
+
 
 ## Interview answer — deep senior
 
@@ -116,6 +116,7 @@ From an architectural standpoint, modern Android applications avoid placing busi
 Consider state preservation across the transition to `onStop()`: Between `onPause()` and `onStop()`, the OS invokes `onSaveInstanceState(Bundle)`. Once `onStop()` is called, the app process enters the 'killable' pool: if system RAM runs low, the OS kernel can terminate the entire Linux process without ever calling `onDestroy()`.
 
 In modern Jetpack architecture, `androidx.lifecycle.Lifecycle` abstracts these callbacks into states (`INITIALIZED`, `CREATED`, `STARTED`, `RESUMED`, `DESTROYED`) and events. Coroutines observe these states via `repeatOnLifecycle(Lifecycle.State.STARTED)`, which automatically cancels background collectors in `onStop()` and restarts them in `onStart()`.
+
 
 ## How to answer in the interview
 

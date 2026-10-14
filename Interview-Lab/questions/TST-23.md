@@ -77,31 +77,22 @@ Create a risk-based test plan by ranking features by financial and security impa
 
 ## Interview answer — structured
 
-A risk-based security test plan prioritizes engineering verification according to asset criticality and threat modeling:
+A risk-based security test plan prioritizes engineering verification according to asset criticality and threat modeling.
 
-1. **Threat Modeling & Risk Stratification**:
-   - Categorize application components into Risk Tiers. Tier 1 (Critical): Authentication tokens, Keystore encryption, biometric authorization, payment checkout. Tier 2 (Moderate): Profile management, deep link routing. Tier 3 (Low): Static marketing content.
+First, **Threat Modeling & Risk Stratification**. Next, categorize application components into Risk Tiers. Tier 1 (Critical): Authentication tokens, Keystore encryption, biometric authorization, payment checkout. Tier 2 (Moderate): Profile management, deep link routing. Tier 3 (Low): Static marketing content.
+**Automated Security Gates in CI**. With Static Analysis, enforce custom Android Lint and Semgrep rules scanning for hardcoded secrets, missing `FLAG_SECURE`, cleartext traffic permissions, and insecure `FLAG_MUTABLE` PendingIntents.
+With Dependency Vulnerability Scanning, run automated CVE scans against all third-party Gradle dependencies. **Dynamic On-Device Security Assertions**.
+Execute instrumented tests verifying that Keystore keys mandate `setUserAuthenticationRequired(true)`. Assert that invoking biometric callbacks without valid hardware `CryptoObject` releases triggers `UserNotAuthenticatedException`.
+**Data Exfiltration Audits**. Finally, audit release build outputs: inspect Logcat outputs, memory heap dumps, and SQLite database files to assert that PAN numbers, CVVs, and auth tokens are strictly absent from unencrypted storage.
 
-2. **Automated Security Gates in CI**:
-   - **Static Analysis**: Enforce custom Android Lint and Semgrep rules scanning for hardcoded secrets, missing `FLAG_SECURE`, cleartext traffic permissions, and insecure `FLAG_MUTABLE` PendingIntents.
-   - **Dependency Vulnerability Scanning**: Run automated CVE scans against all third-party Gradle dependencies.
-
-3. **Dynamic On-Device Security Assertions**:
-   - Execute instrumented tests verifying that Keystore keys mandate `setUserAuthenticationRequired(true)`.
-   - Assert that invoking biometric callbacks without valid hardware `CryptoObject` releases triggers `UserNotAuthenticatedException`.
-
-4. **Data Exfiltration Audits**:
-   - Audit release build outputs: inspect Logcat outputs, memory heap dumps, and SQLite database files to assert that PAN numbers, CVVs, and auth tokens are strictly absent from unencrypted storage.
 
 ## Interview answer — deep senior
 
-From an organizational compliance and release governance perspective, high-assurance releases require multi-party sign-offs:
+From an organizational compliance and release governance perspective, high-assurance releases require multi-party sign-offs.
 
-1. **Independent Penetration Testing (OWASP MASTG)**: Validate the release candidate against OWASP Mobile Application Security Testing Guide (MASTG) benchmarks. Engage external penetration testers to attempt dynamic method hooking (Frida), local storage extraction (`adb backup`), and proxy interception (Burp Suite).
+First, with Independent Penetration Testing (OWASP MASTG), validate the release candidate against OWASP Mobile Application Security Testing Guide (MASTG) benchmarks. Engage external penetration testers to attempt dynamic method hooking (Frida), local storage extraction (`adb backup`), and proxy interception (Burp Suite). Next, with Server-Side Zero Trust Verification, test that backend endpoints reject requests if the client's Play Integrity verdict indicates a tampered APK or unrecognized signing certificate SHA-256.
+Finally, with Rollback & Blast-Radius Mitigation, ensure the security release is backed by active remote feature kill switches. If an unanticipated issue occurs post-release, the security feature can be disarmed remotely without deploying an emergency app store update.
 
-2. **Server-Side Zero Trust Verification**: Test that backend endpoints reject requests if the client's Play Integrity verdict indicates a tampered APK or unrecognized signing certificate SHA-256.
-
-3. **Rollback & Blast-Radius Mitigation**: Ensure the security release is backed by active remote feature kill switches. If an unanticipated issue occurs post-release, the security feature can be disarmed remotely without deploying an emergency app store update.
 
 ## How to answer in the interview
 

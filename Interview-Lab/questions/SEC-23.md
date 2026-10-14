@@ -100,28 +100,21 @@ Insecure backups allow full sandbox extraction via adb backup or Google Drive sy
 
 ## Interview answer — structured
 
-Local storage vulnerabilities stem from assumptions about sandbox persistence and physical isolation:
+Local storage vulnerabilities stem from assumptions about sandbox persistence and physical isolation.
 
-1. **Insecure Backup Vulnerabilities**:
-   - If `android:allowBackup="true"` is present in `AndroidManifest.xml`, an attacker with physical access and USB debugging enabled can run `adb backup` to extract the entire application sandbox—including shared preferences, cached HTTP responses, and SQLite databases—into a plaintext tar archive on a desktop machine.
-   - In cloud backups, sensitive data syncs to the user's Google Drive, where it may be exposed to secondary account compromise.
+First, **Insecure Backup Vulnerabilities**. Next, if `android:allowBackup="true"` is present in `AndroidManifest.xml`, an attacker with physical access and USB debugging enabled can run `adb backup` to extract the entire application sandbox—including shared preferences, cached HTTP responses, and SQLite databases—into a plaintext tar archive on a desktop machine.
+In cloud backups, sensitive data syncs to the user's Google Drive, where it may be exposed to secondary account compromise. **Unencrypted Database Risks**.
+Standard Room / SQLite databases store records in plaintext binary pages. Anyone with root access, physical flash extraction tools, or system debugging privileges can run `sqlite3` on `/data/data/<package>/databases/` to inspect transaction histories and PII. **Defensive Architecture**.
+Set `android:allowBackup="false"` for security-critical apps, or define granular `dataExtractionRules` excluding all databases and datastores. Finally, encrypt databases using **SQLCipher for Android**, passing a 256-bit passphrase derived from Android Keystore directly into Room's `SupportFactory`.
 
-2. **Unencrypted Database Risks**:
-   - Standard Room / SQLite databases store records in plaintext binary pages. Anyone with root access, physical flash extraction tools, or system debugging privileges can run `sqlite3` on `/data/data/<package>/databases/` to inspect transaction histories and PII.
-
-3. **Defensive Architecture**:
-   - Set `android:allowBackup="false"` for security-critical apps, or define granular `dataExtractionRules` excluding all databases and datastores.
-   - Encrypt databases using **SQLCipher for Android**, passing a 256-bit passphrase derived from Android Keystore directly into Room's `SupportFactory`.
 
 ## Interview answer — deep senior
 
-From a compliance and forensics perspective, securing data-at-rest requires comprehensive storage hygiene:
+From a compliance and forensics perspective, securing data-at-rest requires comprehensive storage hygiene.
 
-1. **SQLCipher Key Management**: The security of SQLCipher is entirely dependent on its encryption key. Hardcoding a passphrase in Kotlin or using a static salt renders SQLCipher completely ineffective against reverse engineering. The passphrase must be generated randomly on first launch, encrypted using an `AndroidKeyStore` AES-GCM master key, and loaded into memory only during database initialization.
+First, a SQLCipher Key Management is the security of SQLCipher is entirely dependent on its encryption key. Hardcoding a passphrase in Kotlin or using a static salt renders SQLCipher completely ineffective against reverse engineering. The passphrase must be generated randomly on first launch, encrypted using an `AndroidKeyStore` AES-GCM master key, and loaded into memory only during database initialization. Next, with Database Wal & Journal Leaks, SQLite uses Write-Ahead Logging (WAL) and rollback journals (`.db-wal` and `.db-shm`). When SQLCipher is used, WAL files are also encrypted under the same cipher. However, if unencrypted SQLite is used, deleting rows does not immediately wipe data from disk pages until a `VACUUM` command is issued, leaving deleted records recoverable in forensic memory scraps.
+Finally, with Scoped Storage Realities, never store databases or sensitive temporary export files in shared public storage (`/sdcard/` or `MediaStore`). Maintain all sensitive relational and file stores strictly within internal application directory spaces (`context.filesDir`, `context.noBackupFilesDir`).
 
-2. **Database Wal & Journal Leaks**: SQLite uses Write-Ahead Logging (WAL) and rollback journals (`.db-wal` and `.db-shm`). When SQLCipher is used, WAL files are also encrypted under the same cipher. However, if unencrypted SQLite is used, deleting rows does not immediately wipe data from disk pages until a `VACUUM` command is issued, leaving deleted records recoverable in forensic memory scraps.
-
-3. **Scoped Storage Realities**: Never store databases or sensitive temporary export files in shared public storage (`/sdcard/` or `MediaStore`). Maintain all sensitive relational and file stores strictly within internal application directory spaces (`context.filesDir`, `context.noBackupFilesDir`).
 
 ## How to answer in the interview
 

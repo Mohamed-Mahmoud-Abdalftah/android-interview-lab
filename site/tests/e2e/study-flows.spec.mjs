@@ -91,21 +91,60 @@ test('export, reset, and import restore local progress', async ({ page }) => {
   await expect(page.locator('lab-question').getByRole('button', { name: 'Remove bookmark' })).toBeVisible();
 });
 
-test('mobile RTL prose and LTR code fit the viewport', async ({ page }) => {
+test('mobile viewport rendering for both English LTR and Arabic RTL', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 720 });
+  // English page: LTR HTML, LTR code, no overflow
   await page.goto(`${base}lab/questions/kot-01/`);
-  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   expect(await page.locator('pre').first().evaluate((node) => getComputedStyle(node).direction)).toBe('ltr');
-  const width = await page.evaluate(() => ({ body: document.documentElement.scrollWidth, viewport: innerWidth }));
-  expect(width.body).toBeLessThanOrEqual(width.viewport + 1);
-  await page.goto(`${base}lab/questions/sec-01/`);
-  const arabicProseWithCode = page.locator('.sl-markdown-content').locator('p:has(code), li:has(code)').first();
+  const enWidth = await page.evaluate(() => ({ body: document.documentElement.scrollWidth, viewport: innerWidth }));
+  expect(enWidth.body).toBeLessThanOrEqual(enWidth.viewport + 1);
+
+  // Arabic page: RTL HTML, LTR code, no overflow
+  await page.goto(`${base}ar/lab/questions/kot-01/`);
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await expect(page.locator('html')).toHaveAttribute('lang', /^ar/);
+  expect(await page.locator('pre').first().evaluate((node) => getComputedStyle(node).direction)).toBe('ltr');
+  const arWidth = await page.evaluate(() => ({ body: document.documentElement.scrollWidth, viewport: innerWidth }));
+  expect(arWidth.body).toBeLessThanOrEqual(arWidth.viewport + 1);
+
+  await page.goto(`${base}ar/lab/questions/sec-01/`);
+  const arabicProseWithCode = page.locator('.sl-markdown-content').locator('p:not([dir="ltr"]):has(code), li:has(code)').first();
   await expect(arabicProseWithCode).toBeVisible();
   expect(await arabicProseWithCode.evaluate((node) => getComputedStyle(node).direction)).toBe('rtl');
   const inlineCode = arabicProseWithCode.locator('code').first();
   expect(await inlineCode.evaluate((node) => getComputedStyle(node).direction)).toBe('ltr');
   const secWidth = await page.evaluate(() => ({ body: document.documentElement.scrollWidth, viewport: innerWidth }));
   expect(secWidth.body).toBeLessThanOrEqual(secWidth.viewport + 1);
+});
+
+test('bilingual language switching and shared progress persistence', async ({ page }) => {
+  // 1. Start in English default
+  await page.goto(`${base}lab/questions/kot-01/`);
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.getByRole('heading', { name: 'Interview answer — deep senior' })).toBeVisible();
+
+  const practiceEn = page.locator('lab-question');
+  await practiceEn.getByRole('button', { name: 'Bookmark', exact: true }).click();
+  await practiceEn.getByRole('textbox', { name: 'Private note / your answer' }).fill('Bilingual persistence test note.');
+  await expect(practiceEn.getByText('Saved locally')).toBeVisible();
+
+  // 2. Switch to Arabic page
+  await page.goto(`${base}ar/lab/questions/kot-01/`);
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await expect(page.locator('html')).toHaveAttribute('lang', /^ar/);
+  await expect(page.getByRole('heading', { name: 'إجابة المقابلة — مناقشة Senior متعمقة' })).toBeVisible();
+
+  // Verify progress is shared across language switch!
+  const practiceAr = page.locator('lab-question');
+  await expect(practiceAr.getByRole('button', { name: 'إزالة من المفضلة' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(practiceAr.getByRole('textbox', { name: 'ملاحظة خاصة / إجابتك الشخصية' })).toHaveValue('Bilingual persistence test note.');
+
+  // 3. Switch back to English page
+  await page.goto(`${base}lab/questions/kot-01/`);
+  await expect(practiceEn.getByRole('button', { name: 'Remove bookmark' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(practiceEn.getByRole('textbox', { name: 'Private note / your answer' })).toHaveValue('Bilingual persistence test note.');
 });
 
 test('flashcard grades update schedule and explorer shows an empty state', async ({ page }) => {

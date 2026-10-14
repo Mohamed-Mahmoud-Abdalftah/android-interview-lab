@@ -100,22 +100,20 @@ Publish a dependency rule with examples and check it in CI. Review public APIs a
 
 ## Interview answer — structured
 
-A disciplined taxonomy assigns distinct responsibilities and strict dependency rules across module categories:
+A disciplined taxonomy assigns distinct responsibilities and strict dependency rules across module categories.
 
-1. **`:app`**: The composition root. It applies `com.android.application`, aggregates all feature and data modules, configures the Hilt root component, registers global navigation, and generates the final APK/AAB. It contains zero business logic.
-2. **`:feature:*`**: User-facing vertical slices (`:feature:login`, `:feature:feed`). Contains UI composables, ViewModels, navigation routes, and presentation state. Features must never depend directly on sibling feature implementation modules.
-3. **`:domain:*`**: Pure Kotlin/JVM modules without Android framework imports. Houses domain entities, Use Cases, and abstract repository interfaces. It represents the most stable layer of the architecture.
-4. **`:data:*`**: Implements domain repository contracts using local databases and remote network APIs, encapsulating caching and network resilience.
-5. **`:core:*`**: Horizontal infrastructure libraries (`:core:network`, `:core:analytics`, `:core:database`) reusable across any feature.
-6. **`:core:designsystem`**: Houses shared theme tokens (colors, typography, shapes) and stateless reusable UI components (buttons, headers, empty states). It must remain strictly agnostic of business domains.
+First, :app is the composition root. It applies `com.android.application`, aggregates all feature and data modules, configures the Hilt root component, registers global navigation, and generates the final APK/AAB. It contains zero business logic. Next, **`:feature:*`**: User-facing vertical slices (`:feature:login`, `:feature:feed`). Contains UI composables, ViewModels, navigation routes, and presentation state. Features must never depend directly on sibling feature implementation modules.
+**`:domain:*`**: Pure Kotlin/JVM modules without Android framework imports. Houses domain entities, Use Cases, and abstract repository interfaces. It represents the most stable layer of the architecture. **`:data:*`**: Implements domain repository contracts using local databases and remote network APIs, encapsulating caching and network resilience.
+**`:core:*`**: Horizontal infrastructure libraries (`:core:network`, `:core:analytics`, `:core:database`) reusable across any feature. Finally, with :core:designsystem, houses shared theme tokens (colors, typography, shapes) and stateless reusable UI components (buttons, headers, empty states). It must remain strictly agnostic of business domains.
+
 
 ## Interview answer — deep senior
 
-When enforcing module boundaries in enterprise codebases, architects use **dependency analysis tools (like Dependency Analysis Gradle Plugin)** and custom lint checks to enforce directional contracts:
+When enforcing module boundaries in enterprise codebases, architects use **dependency analysis tools (like Dependency Analysis Gradle Plugin)** and custom lint checks to enforce directional contracts.
 
-- **Rule 1 (The Gravity Rule)**: Dependencies only flow downward toward higher stability. A low-level module like `:core:designsystem` or `:core:network` must **NEVER** import a `:feature` module. Doing so inverts the architecture and causes instant cyclic dependency locks.
-- **Rule 2 (Domain Purity)**: The `:domain` module should use the standard `kotlin("jvm")` plugin rather than `com.android.library`. This guarantees that Android framework dependencies (like `android.content.Context` or `android.os.Bundle`) cannot compile inside domain logic, keeping business rules testable on local JVMs in single-digit milliseconds.
-- **Rule 3 (Data Encapsulation)**: DAOs, Retrofit interfaces, and Room entities are `internal` to the `:data` module. Features only see domain repository interfaces.
+First, with Rule 1 (The Gravity Rule), dependencies only flow downward toward higher stability. A low-level module like `:core:designsystem` or `:core:network` must **NEVER** import a `:feature` module. Doing so inverts the architecture and causes instant cyclic dependency locks. Next, a Rule 2 (Domain Purity) is the `:domain` module should use the standard `kotlin("jvm")` plugin rather than `com. Android.library`. This guarantees that Android framework dependencies (like `android.content.Context` or `android.os.Bundle`) cannot compile inside domain logic, keeping business rules testable on local JVMs in single-digit milliseconds.
+Finally, with Rule 3 (Data Encapsulation), dAOs, Retrofit interfaces, and Room entities are `internal` to the `:data` module. Features only see domain repository interfaces.
+
 
 ## How to answer in the interview
 

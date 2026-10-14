@@ -94,29 +94,21 @@ Contain a compromised feature flag by immediately blocking the vulnerable path a
 
 ## Interview answer — structured
 
-Containing an accidental rollout of a security-sensitive code path requires executing a prioritized, multi-tiered incident response playbook:
+Containing an accidental rollout of a security-sensitive code path requires executing a prioritized, multi-tiered incident response playbook.
 
-1. **Immediate Server-Side Gateway Mitigation (Minutes 0–5)**:
-   - Never rely on mobile clients to patch themselves. Mobile clients may be offline, backgrounded, or caching stale configs. The immediate containment step is blocking or rate-limiting the vulnerable endpoint at the backend API Gateway / WAF level, rejecting compromised requests with `403 Forbidden`.
+First, **Immediate Server-Side Gateway Mitigation (Minutes 0–5)**. Next, never rely on mobile clients to patch themselves. Mobile clients may be offline, backgrounded, or caching stale configs. The immediate containment step is blocking or rate-limiting the vulnerable endpoint at the backend API Gateway / WAF level, rejecting compromised requests with `403 Forbidden`.
+**Remote Kill Switch Flip (Minutes 5–10)**. Set the flag value to `false` in the remote configuration provider (LaunchDarkly, Firebase Remote Config). Purge edge CDN caches to ensure subsequent client config fetches retrieve the disabled state.
+**High-Priority Silent Invalidation (Minutes 10–20)**. Dispatch high-priority silent FCM push messages to active mobile clients. The client's background service immediately clears in-memory flag caches, rewrites persistent storage, and terminates compromised views.
+**Session Invalidation & Audit**. Finally, if the flaw exposed unauthorized privilege escalation or data leakage, the backend identifies users who traversed the endpoint, revokes their active refresh tokens, and prompts for credential resets.
 
-2. **Remote Kill Switch Flip (Minutes 5–10)**:
-   - Set the flag value to `false` in the remote configuration provider (LaunchDarkly, Firebase Remote Config). Purge edge CDN caches to ensure subsequent client config fetches retrieve the disabled state.
-
-3. **High-Priority Silent Invalidation (Minutes 10–20)**:
-   - Dispatch high-priority silent FCM push messages to active mobile clients. The client's background service immediately clears in-memory flag caches, rewrites persistent storage, and terminates compromised views.
-
-4. **Session Invalidation & Audit**:
-   - If the flaw exposed unauthorized privilege escalation or data leakage, the backend identifies users who traversed the endpoint, revokes their active refresh tokens, and prompts for credential resets.
 
 ## Interview answer — deep senior
 
-From an engineering governance and post-mortem perspective, systemic controls must prevent recurrence:
+From an engineering governance and post-mortem perspective, systemic controls must prevent recurrence.
 
-1. **The Four-Eyes Principle for Sensitive Flags**: Classify feature flags by risk tier. Operational or UI flags can be flipped by individual engineers; security, auth, and financial flags mandate two-person cryptographic sign-off (Four-Eyes Principle) in release management consoles before propagation.
+First, with The Four-Eyes Principle for Sensitive Flags, classify feature flags by risk tier. Operational or UI flags can be flipped by individual engineers; security, auth, and financial flags mandate two-person cryptographic sign-off (Four-Eyes Principle) in release management consoles before propagation. Next, with Default-Deny In-Code Security Assertions, client code protected by feature flags must still adhere to defense-in-depth. If a flag enables a new payment feature, the underlying code must still enforce token validation, biometric challenges, and server nonces. A feature flag should only toggle UI exposure, never disable core cryptographic checks.
+Finally, with Canary Phased Ring Deployment, enforce mandatory phased rollout rings: Internal Dogfood (1%) -> Beta (5%) -> General Canary (10%) with automated 24-hour observation windows, preventing accidental 100% blast-radius rollouts.
 
-2. **Default-Deny In-Code Security Assertions**: Client code protected by feature flags must still adhere to defense-in-depth. If a flag enables a new payment feature, the underlying code must still enforce token validation, biometric challenges, and server nonces. A feature flag should only toggle UI exposure, never disable core cryptographic checks.
-
-3. **Canary Phased Ring Deployment**: Enforce mandatory phased rollout rings: Internal Dogfood (1%) -> Beta (5%) -> General Canary (10%) with automated 24-hour observation windows, preventing accidental 100% blast-radius rollouts.
 
 ## How to answer in the interview
 

@@ -91,19 +91,19 @@ AndroidManifest.xml is the root declarative contract between the app and the And
 
 The `AndroidManifest.xml` file is the fundamental configuration contract between an application and the Android OS PackageManager.
 
-Before launching any application code, the OS parses this manifest at installation time to understand the app's capabilities, entry points, and security boundaries:
+Before launching any application code, the OS parses this manifest at installation time to understand the app's capabilities, entry points, and security boundaries.
 
-1. **Component Registration**: All Activities, Services, and ContentProviders (plus manifest-declared BroadcastReceivers) must be declared here. Attempting to start an undeclared Activity crashes with `ActivityNotFoundException`.
-2. **Permissions**: Declares user permissions required by the app (`<uses-permission>`), such as INTERNET, CAMERA, or POST_NOTIFICATIONS, as well as custom permissions defined by the app to protect its own components.
-3. **Hardware Filtering (`<uses-feature>`)**: Dictates hardware prerequisites (like Bluetooth LE or NFC) that Google Play uses to filter out incompatible devices.
-4. **Intent Filters**: Exposes entry points to the OS, such as the launcher icon, deep links, or sharing handlers.
-5. **Application Attributes**: Configures app-wide behavior such as themes, custom `Application` class name, backup rules, and network security configs.
+First, with Component Registration, all Activities, Services, and ContentProviders (plus manifest-declared BroadcastReceivers) must be declared here. Attempting to start an undeclared Activity crashes with `ActivityNotFoundException`. Next, permissions declares user permissions required by the app (`<uses-permission>`), such as INTERNET, CAMERA, or POST_NOTIFICATIONS, as well as custom permissions defined by the app to protect its own components.
+Additionally, with Hardware Filtering (`<uses-feature>`), dictates hardware prerequisites (like Bluetooth LE or NFC) that Google Play uses to filter out incompatible devices. With Intent Filters, exposes entry points to the OS, such as the launcher icon, deep links, or sharing handlers.
+Finally, with Application Attributes, configures app-wide behavior such as themes, custom `Application` class name, backup rules, and network security configs.
+
 
 ## Interview answer — deep senior
 
 During the Gradle build process, AGP (Android Gradle Plugin) executes **Manifest Merging**. It merges the main app manifest with manifests from third-party libraries and build variants (debug/release). Conflicting attributes are resolved via `tools:node="replace"` or `tools:node="remove"`.
 
 From an Android 12+ security standpoint, the attribute **`android:exported`** is now strictly mandatory for any component containing an `<intent-filter>`. If `android:exported` is set to `true`, external apps can launch that component. If `false`, it is strictly internal to your app. Leaving `exported="true"` on internal components without permission checks creates severe security vulnerabilities, permitting malicious third-party apps to launch privileged internal activities directly.
+
 
 ## How to answer in the interview
 

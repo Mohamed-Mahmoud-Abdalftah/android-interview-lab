@@ -122,23 +122,18 @@ Design an instant offline-first paginated feed by configuring Paging 3 with Room
 
 ## Interview answer — structured
 
-Designing an instant-opening, paginated feed that works seamlessly offline requires four integrated architectural pillars:
+Designing an instant-opening, paginated feed that works seamlessly offline requires four integrated architectural pillars.
 
-1. **Room as the Single Source of Truth**: The UI collects `Flow<PagingData<T>>` served exclusively by Room's generated `PagingSource`. When the app launches, local SQLite records render onto the screen in under 5ms without displaying full-screen loading spinners.
+First, a Room as the Single Source of Truth is the UI collects `Flow<PagingData<T>>` served exclusively by Room's generated `PagingSource`. When the app launches, local SQLite records render onto the screen in under 5ms without displaying full-screen loading spinners. Next, with Background Pagination Coordination (`RemoteMediator`), `RemoteMediator` intercepts scroll boundaries. When the user nears the bottom, it requests the next page from the API and writes the items and page cursors (`RemoteKeys`) into SQLite within a single `roomDatabase.withTransaction { }`.
+Additionally, with Zero Scroll-Jumping UX, in Jetpack Compose, pass stable item keys (`key = articles.itemKey { it.id }`). When fresh items are inserted into SQLite, Compose calculates precise diffs, maintaining the user's scroll position rather than snapping to the top. Finally, with Graceful Offline Degradation, network errors during background fetches are routed to `LoadState.Error`. The existing cached list remains fully interactive, and a subtle inline snackbar offers a 'Retry' action without blanking the screen.
 
-2. **Background Pagination Coordination (`RemoteMediator`)**: `RemoteMediator` intercepts scroll boundaries. When the user nears the bottom, it requests the next page from the API and writes the items and page cursors (`RemoteKeys`) into SQLite within a single `roomDatabase.withTransaction { }`.
-
-3. **Zero Scroll-Jumping UX**: In Jetpack Compose, pass stable item keys (`key = articles.itemKey { it.id }`). When fresh items are inserted into SQLite, Compose calculates precise diffs, maintaining the user's scroll position rather than snapping to the top.
-
-4. **Graceful Offline Degradation**: Network errors during background fetches are routed to `LoadState.Error`. The existing cached list remains fully interactive, and a subtle inline snackbar offers a 'Retry' action without blanking the screen.
 
 ## Interview answer — deep senior
 
-To achieve true enterprise-grade performance with large feeds:
+To achieve true enterprise-grade performance with large feeds.
 
-1. **`InitializeAction.SKIP_INITIAL_REFRESH`**: In `RemoteMediator.initialize()`, inspect the timestamp of the last successful sync. If local data is less than 15 minutes old, return `SKIP_INITIAL_REFRESH`. This eliminates redundant API calls on frequent app launches, saving battery and server costs.
+First, with InitializeAction.SKIP_INITIAL_REFRESH, in `RemoteMediator.initialize()`, inspect the timestamp of the last successful sync. If local data is less than 15 minutes old, return `SKIP_INITIAL_REFRESH`. This eliminates redundant API calls on frequent app launches, saving battery and server costs. Finally, with Cache Pruning and Database Compaction, if an infinite feed appends hundreds of articles daily, the SQLite database will bloat over time. Implement an automated cleanup task in `RemoteMediator` on `REFRESH`: retain the most recent 200 articles and delete older items (`DELETE FROM articles WHERE id NOT IN (SELECT id FROM articles ORDER BY publishedAt DESC LIMIT 200)`).
 
-2. **Cache Pruning and Database Compaction**: If an infinite feed appends hundreds of articles daily, the SQLite database will bloat over time. Implement an automated cleanup task in `RemoteMediator` on `REFRESH`: retain the most recent 200 articles and delete older items (`DELETE FROM articles WHERE id NOT IN (SELECT id FROM articles ORDER BY publishedAt DESC LIMIT 200)`).
 
 ## How to answer in the interview
 

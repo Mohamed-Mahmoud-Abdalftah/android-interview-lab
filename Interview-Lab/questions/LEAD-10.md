@@ -83,33 +83,23 @@ Decide build versus buy using the Core vs. Context framework: build custom solut
 
 ## Interview answer — structured
 
-Navigating the Build vs. Buy architectural dilemma requires balancing strategic differentiation against long-term maintenance overhead:
+Navigating the Build vs. Buy architectural dilemma requires balancing strategic differentiation against long-term maintenance overhead.
 
-1. **Strategic Core vs. Context Alignment**:
-   - **Core**: Capabilities that directly drive competitive differentiation and customer value (e.g. proprietary financial transaction routing). Build internally to maintain intellectual property, latency control, and roadmap flexibility.
-   - **Context**: Commodity capabilities required for application operation (e.g., payment gateway bridges, push notification delivery, video streaming pipelines). Buy SaaS or adopt tier-1 open-source solutions to maximize speed to market.
+First, **Strategic Core vs. Context Alignment**. Next, with Core, capabilities that directly drive competitive differentiation and customer value (e.g. Proprietary financial transaction routing). Build internally to maintain intellectual property, latency control, and roadmap flexibility.
+Additionally, with Context, commodity capabilities required for application operation (e.g., payment gateway bridges, push notification delivery, video streaming pipelines). Buy SaaS or adopt tier-1 open-source solutions to maximize speed to market. **Total Cost of Ownership (TCO) Calculation**.
+Building internally carries massive hidden costs: opportunity cost of diverged engineering talent, continuous maintenance across annual Android OS breaking changes (e.g., photo picker migrations, background service restrictions), bug remediation, and documentation overhead. **Mobile-Specific Vendor Due Diligence**.
+Audit candidate SDKs against strict mobile criteria. With Binary Footprint, impact on download size (AAB/APK size) and method count limits.
+With Stability & Performance, background thread usage, memory consumption, and Crashlytics reputation. With Security & Privacy, adherence to Google Play User Data policies, runtime permissions, and transparent network telemetry.
+**Encapsulation via the Adapter Pattern**. Finally, never allow vendor SDK classes to leak across domain code. Wrap external SDKs behind an internal abstraction interface, insulating the codebase from vendor deprecation or pricing hikes.
 
-2. **Total Cost of Ownership (TCO) Calculation**:
-   - Building internally carries massive hidden costs: opportunity cost of diverged engineering talent, continuous maintenance across annual Android OS breaking changes (e.g., photo picker migrations, background service restrictions), bug remediation, and documentation overhead.
-
-3. **Mobile-Specific Vendor Due Diligence**:
-   - Audit candidate SDKs against strict mobile criteria:
-     - **Binary Footprint**: Impact on download size (AAB/APK size) and method count limits.
-     - **Stability & Performance**: Background thread usage, memory consumption, and Crashlytics reputation.
-     - **Security & Privacy**: Adherence to Google Play User Data policies, runtime permissions, and transparent network telemetry.
-
-4. **Encapsulation via the Adapter Pattern**:
-   - Never allow vendor SDK classes to leak across domain code. Wrap external SDKs behind an internal abstraction interface, insulating the codebase from vendor deprecation or pricing hikes.
 
 ## Interview answer — deep senior
 
-From an engineering governance and risk management angle, third-party mobile SDKs represent major supply-chain vulnerabilities:
+From an engineering governance and risk management angle, third-party mobile SDKs represent major supply-chain vulnerabilities.
 
-1. **Supply-Chain Security Audits**: Malicious SDK updates can silently introduce credential harvesting or violate user privacy policies, leading to immediate Google Play store de-platforming. Enforce dependency hash pinning, monitor CVE vulnerability databases, and review SDK ProGuard/R8 rules to ensure sensitive classes are not un-obfuscated.
+First, with Supply-Chain Security Audits, malicious SDK updates can silently introduce credential harvesting or violate user privacy policies, leading to immediate Google Play store de-platforming. Enforce dependency hash pinning, monitor CVE vulnerability databases, and review SDK ProGuard/R8 rules to ensure sensitive classes are not un-obfuscated. Next, with Vendor Lock-In and Exit Strategy, always define an explicit exit gate before integrating proprietary SDKs. If a vendor doubles their license pricing in year 2, how long would it take the squad to migrate? If migration takes more than 2 sprints due to deep framework entanglement, the architecture lacks sufficient abstraction.
+Finally, with Open-Source Health Metrics, when considering open-source libraries, audit commit frequency, issue triage velocity, corporate backing (e.g. Square, Google, JetBrains), and active Kotlin Multiplatform roadmaps to avoid adopting abandonware.
 
-2. **Vendor Lock-In and Exit Strategy**: Always define an explicit exit gate before integrating proprietary SDKs. If a vendor doubles their license pricing in year 2, how long would it take the squad to migrate? If migration takes more than 2 sprints due to deep framework entanglement, the architecture lacks sufficient abstraction.
-
-3. **Open-Source Health Metrics**: When considering open-source libraries, audit commit frequency, issue triage velocity, corporate backing (e.g. Square, Google, JetBrains), and active Kotlin Multiplatform roadmaps to avoid adopting abandonware.
 
 ## How to answer in the interview
 

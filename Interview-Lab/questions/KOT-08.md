@@ -87,13 +87,15 @@ Conversely, let and run return the lambda's result. I use let primarily for safe
 
 In production, my team bans deeply nested scope functions because they obscure variable ownership and make debugging stack traces difficult.
 
+
 ## Interview answer — deep senior
 
 Scope functions are inline extension functions (except with, which is a regular function taking a receiver). Because they are inlined, they introduce zero runtime allocation or method call overhead on the JVM.
 
 However, the architectural trade-off is cognitive load and code review readability. When using receiver-based functions (run, with, apply), implicit this scoping can accidentally shadow properties of an outer enclosing class, especially inside Android Activities or Fragments. For example, calling finish() inside a WebView.apply block might invoke the Activity's finish() method if WebView lacks a matching signature.
 
-When using argument-based functions (let, also), the default it identifier can create confusion if nested. In production guidelines, we require renaming it to explicit parameter names if let blocks exceed two lines. We also restrict scope chains to a maximum of two operations (e.g. parse().apply { ... }.also { log(it) }), preferring explicit local variables for complex flows.
+When using argument-based functions (let, also), the default it identifier can create confusion if nested. In production guidelines, we require renaming it to explicit parameter names if let blocks exceed two lines. We also restrict scope chains to a maximum of two operations (e.g. Parse().apply { ... }.also { log(it) }), preferring explicit local variables for complex flows.
+
 
 ## How to answer in the interview
 

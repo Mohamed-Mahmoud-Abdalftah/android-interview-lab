@@ -100,23 +100,20 @@ Navigation contracts decouple screen transitions in multi-module apps. Route des
 
 ## Interview answer — structured
 
-In multi-module applications, features cannot reference peer screen classes directly. Navigation contracts solve this by decoupling the destination definition from the screen implementation:
+In multi-module applications, features cannot reference peer screen classes directly. Navigation contracts solve this by decoupling the destination definition from the screen implementation.
 
-1. **Contract in `:feature:*:api`**: We define the navigation target as a serializable route type (`@Serializable data class UserProfileRoute(val id: String)`) inside a lightweight API module. Any feature needing to navigate to the profile imports only this tiny API contract.
+First, **Contract in `:feature:*:api`**: We define the navigation target as a serializable route type (`@Serializable data class UserProfileRoute(val id: String)`) inside a lightweight API module. Any feature needing to navigate to the profile imports only this tiny API contract. Next, **Implementation in `:feature:*:impl`**: The feature implementation module exposes an extension function on `NavGraphBuilder` (e.g. `fun NavGraphBuilder.userProfileScreen(...)`) registering the composable entry.
+Finally, assembly in `:app is the `:app` module imports both modules and configures the top-level `NavHost`. When feature `A` triggers navigation, it passes the typed contract from `feature-b-api` to the controller. The destination matches without feature `A` ever knowing how the destination screen is implemented or tested.
 
-2. **Implementation in `:feature:*:impl`**: The feature implementation module exposes an extension function on `NavGraphBuilder` (e.g. `fun NavGraphBuilder.userProfileScreen(...)`) registering the composable entry.
-
-3. **Assembly in `:app`**: The `:app` module imports both modules and configures the top-level `NavHost`. When feature `A` triggers navigation, it passes the typed contract from `feature-b-api` to the controller. The destination matches without feature `A` ever knowing how the destination screen is implemented or tested.
 
 ## Interview answer — deep senior
 
 With modern **Type-Safe Compose Navigation (Navigation 2.8+)**, navigation contracts achieve compile-time safety without raw string URLs.
 
-Under the hood, routes are typed Kotlin classes serialized via `kotlinx.serialization`. However, when architecting navigation contracts across modules, two runtime constraints must be respected:
+Under the hood, routes are typed Kotlin classes serialized via `kotlinx.serialization`. However, when architecting navigation contracts across modules, two runtime constraints must be respected.
 
-1. **Serializable Model Independence**: Never include complex domain models inside navigation route arguments (e.g. `data class CheckoutRoute(val cart: CartDomainModel)`). Large objects violate Android's `Bundle` size limits (risking `TransactionTooLargeException`) and violate encapsulation. Route arguments must strictly be lightweight primitives (IDs, keys, or query tokens). The destination screen fetches full data from its own repository.
+First, with Serializable Model Independence, never include complex domain models inside navigation route arguments (e.g. `data class CheckoutRoute(val cart: CartDomainModel)`). Large objects violate Android's `Bundle` size limits (risking `TransactionTooLargeException`) and violate encapsulation. Route arguments must strictly be lightweight primitives (IDs, keys, or query tokens). The destination screen fetches full data from its own repository. Finally, with State Restoration Across Process Death, type-safe navigation routes automatically serialize into the `SavedStateHandle`. When Android OS terminates the process in the background and restores it, Compose Navigation deserializes the route arguments flawlessly without manual bundle parsing.
 
-2. **State Restoration Across Process Death**: Type-safe navigation routes automatically serialize into the `SavedStateHandle`. When Android OS terminates the process in the background and restores it, Compose Navigation deserializes the route arguments flawlessly without manual bundle parsing.
 
 ## How to answer in the interview
 

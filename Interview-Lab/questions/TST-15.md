@@ -94,35 +94,21 @@ Eliminate UI flakiness by banning Thread.sleep(), disabling system animations on
 
 ## Interview answer — structured
 
-Flaky UI tests degrade engineering trust and stall deployment pipelines. Eliminating flakiness requires controlling concurrency, animation timing, and environment isolation:
+Flaky UI tests degrade engineering trust and stall deployment pipelines. Eliminating flakiness requires controlling concurrency, animation timing, and environment isolation.
 
-1. **Ban Arbitrary Sleeps**:
-   - Never write `Thread.sleep(2000)`. Use synchronization hooks: in Espresso, register `CountingIdlingResource`; in Compose, rely on native auto-synchronization or manually advance `composeTestRule.mainClock`.
+First, **Ban Arbitrary Sleeps**. Next, never write `Thread.sleep(2000)`. Use synchronization hooks: in Espresso, register `CountingIdlingResource`; in Compose, rely on native auto-synchronization or manually advance `composeTestRule.mainClock`.
+**Disable System Animations on CI Devices**. UI tests click coordinates based on settled layout trees. If a window transition or fade animation is midway, clicks miss targets. Execute shell commands on CI emulators to disable all animation scales (`window_animation_scale 0`, `transition_animation_scale 0`, `animator_duration_scale 0`).
+**Hermetic Test Environments**. Flakiness often mirrors network flakiness. Mock external HTTP endpoints using `MockWebServer` running on `localhost`. Isolate storage by resetting test databases between tests.
+**Android Test Orchestrator**. Finally, enable `execution 'ANDROIDX_TEST_ORCHESTRATOR'`. Orchestrator launches each test method in its own fresh `Instrumentation` process, clearing application memory, static singletons, and SQLite files between runs.
 
-2. **Disable System Animations on CI Devices**:
-   - UI tests click coordinates based on settled layout trees. If a window transition or fade animation is midway, clicks miss targets. Execute shell commands on CI emulators to disable all animation scales (`window_animation_scale 0`, `transition_animation_scale 0`, `animator_duration_scale 0`).
-
-3. **Hermetic Test Environments**:
-   - Flakiness often mirrors network flakiness. Mock external HTTP endpoints using `MockWebServer` running on `localhost`. Isolate storage by resetting test databases between tests.
-
-4. **Android Test Orchestrator**:
-   - Enable `execution 'ANDROIDX_TEST_ORCHESTRATOR'`. Orchestrator launches each test method in its own fresh `Instrumentation` process, clearing application memory, static singletons, and SQLite files between runs.
 
 ## Interview answer — deep senior
 
-From an infrastructure resilience perspective, managing flaky tests at scale requires quarantine policies and sharding:
+From an infrastructure resilience perspective, managing flaky tests at scale requires quarantine policies and sharding.
 
-1. **Automated Quarantine Pipelines**: Implement CI tooling (e.g., Flank or Test Grid) that tracks test pass rates over 14 days. If a test fails intermittently without code changes, automatically flag it as `@FlakyTest`, quarantine it into a non-blocking diagnostic suite, and alert the owning team.
+First, with Automated Quarantine Pipelines, implement CI tooling (e.g., Flank or Test Grid) that tracks test pass rates over 14 days. If a test fails intermittently without code changes, automatically flag it as `@FlakyTest`, quarantine it into a non-blocking diagnostic suite, and alert the owning team. Next, with Targeted Polling Matchers (`waitUntil`), when awaiting complex asynchronous conditions in Compose, use explicit condition timeouts: ```kotlin composeTestRule.waitUntil(timeoutMillis = 5000) { composeTestRule.onAllNodesWithText("Ready").fetchSemanticsNodes().isNotEmpty() } ``` This polls at frame boundaries, proceeding immediately when the condition is satisfied rather than waiting for worst-case time ceilings.
+Finally, with Device Matrix Sharding, shard instrumentation suites across 4–8 parallel emulators in CI. Sharding keeps individual runner sessions under 5 minutes, preventing emulator memory bloat and thermal throttling that cause late-suite test timeouts.
 
-2. **Targeted Polling Matchers (`waitUntil`)**: When awaiting complex asynchronous conditions in Compose, use explicit condition timeouts:
-   ```kotlin
-   composeTestRule.waitUntil(timeoutMillis = 5000) {
-       composeTestRule.onAllNodesWithText("Ready").fetchSemanticsNodes().isNotEmpty()
-   }
-   ```
-   This polls at frame boundaries, proceeding immediately when the condition is satisfied rather than waiting for worst-case time ceilings.
-
-3. **Device Matrix Sharding**: Shard instrumentation suites across 4–8 parallel emulators in CI. Sharding keeps individual runner sessions under 5 minutes, preventing emulator memory bloat and thermal throttling that cause late-suite test timeouts.
 
 ## How to answer in the interview
 

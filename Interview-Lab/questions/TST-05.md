@@ -142,28 +142,21 @@ runTest is the official coroutine test runner that executes tests inside a TestS
 
 ## Interview answer — structured
 
-`runTest` (from `kotlinx-coroutines-test`) provides deterministic coroutine execution by orchestrating virtual time via `TestScope` and `TestScheduler`:
+`runTest` (from `kotlinx-coroutines-test`) provides deterministic coroutine execution by orchestrating virtual time via `TestScope` and `TestScheduler`.
 
-1. **Automatic Delay Skipping**:
-   - Calls to `delay(60_000L)` inside coroutines run under `runTest` do not block thread execution for 60 seconds. The underlying `TestScheduler` detects scheduled delays and advances virtual time (`currentTime`) instantaneously, executing tests in milliseconds.
+First, **Automatic Delay Skipping**. Next, calls to `delay(60_000L)` inside coroutines run under `runTest` do not block thread execution for 60 seconds. The underlying `TestScheduler` detects scheduled delays and advances virtual time (`currentTime`) instantaneously, executing tests in milliseconds.
+**Fine-Grained Virtual Time Manipulation**. `advanceTimeBy(millis)`: Advances virtual time by an exact duration, triggering tasks scheduled within that temporal window.
+`runCurrent()`: Executes tasks currently scheduled at the active virtual timestamp without advancing time. `advanceUntilIdle()`: Continuously drains the scheduler until no pending or delayed tasks remain in the queue.
+**Automatic Leak & Exception Detection**. Finally, upon exiting the `runTest` block, the runner asserts that all active children coroutines have concluded. If an orphaned background job remains running, `runTest` throws an `UncompletedCoroutinesError`, guaranteeing clean test boundaries.
 
-2. **Fine-Grained Virtual Time Manipulation**:
-   - `advanceTimeBy(millis)`: Advances virtual time by an exact duration, triggering tasks scheduled within that temporal window.
-   - `runCurrent()`: Executes tasks currently scheduled at the active virtual timestamp without advancing time.
-   - `advanceUntilIdle()`: Continuously drains the scheduler until no pending or delayed tasks remain in the queue.
-
-3. **Automatic Leak & Exception Detection**:
-   - Upon exiting the `runTest` block, the runner asserts that all active children coroutines have concluded. If an orphaned background job remains running, `runTest` throws an `UncompletedCoroutinesError`, guaranteeing clean test boundaries.
 
 ## Interview answer — deep senior
 
-From an advanced concurrency testing perspective, understanding the relationship between runTest, TestScope, and MainDispatcherRule is vital:
+From an advanced concurrency testing perspective, understanding the relationship between runTest, TestScope, and MainDispatcherRule is vital.
 
-1. **Sharing the TestScheduler**: A frequent testing pitfall occurs when a ViewModel launches coroutines on a `TestDispatcher` that does not share the same `TestScheduler` as `runTest`. In `kotlinx.coroutines.test`, `runTest` creates a root `TestScope`. When replacing `Dispatchers.Main`, you must bind it to the active `testScheduler` (e.g. `StandardTestDispatcher(testScheduler)`) so that time advances synchronously across all coroutine scopes.
+First, a Sharing the TestScheduler is a frequent testing pitfall occurs when a ViewModel launches coroutines on a `TestDispatcher` that does not share the same `TestScheduler` as `runTest`. In `kotlinx.coroutines.test`, `runTest` creates a root `TestScope`. When replacing `Dispatchers.Main`, you must bind it to the active `testScheduler` (e.g. `StandardTestDispatcher(testScheduler)`) so that time advances synchronously across all coroutine scopes. Next, with Handling Infinite Loop Coroutines, if code under test launches an infinite ticker (e.g. `while(isActive) { delay(1000); emit() }`), invoking `advanceUntilIdle()` triggers an infinite loop and crashes with an out-of-memory or timeout error. For infinite loops, advance time incrementally with `advanceTimeBy()` and explicitly cancel the parent job before exiting `runTest`.
+Finally, with Default Timeout (60 Seconds), `runTest` enforces a 60-second virtual time timeout to prevent hanging test suites if non-virtual blocking operations (like standard `Thread.sleep` or un-yielded loops) block the thread.
 
-2. **Handling Infinite Loop Coroutines**: If code under test launches an infinite ticker (e.g. `while(isActive) { delay(1000); emit() }`), invoking `advanceUntilIdle()` triggers an infinite loop and crashes with an out-of-memory or timeout error. For infinite loops, advance time incrementally with `advanceTimeBy()` and explicitly cancel the parent job before exiting `runTest`.
-
-3. **Default Timeout (60 Seconds)**: `runTest` enforces a 60-second virtual time timeout to prevent hanging test suites if non-virtual blocking operations (like standard `Thread.sleep` or un-yielded loops) block the thread.
 
 ## How to answer in the interview
 

@@ -101,6 +101,7 @@ I use `async` when I need to compute a value asynchronously, especially when run
 
 A critical pitfall to avoid is calling `await()` immediately on the same line as `async`. That forces sequential execution. To get true concurrency, you must start all `async` deferreds first, and only then await their results.
 
+
 ## Interview answer — deep senior
 
 Under the hood, `launch` creates a `StandaloneCoroutine`, whereas `async` creates a `DeferredCoroutine<T>`. This architectural difference heavily impacts exception behavior. In a root coroutine created with `async` outside of structured supervision, uncaught exceptions are encapsulated inside the `Deferred` object and will not be thrown until `await()` is invoked. If the caller never calls `await()`, the exception could be silently dropped.
@@ -108,6 +109,7 @@ Under the hood, `launch` creates a `StandaloneCoroutine`, whereas `async` create
 However, within structured concurrency (like inside `coroutineScope { }`), `async` failures behave differently: the moment an `async` child fails, its uncaught exception cancels its parent and all sibling coroutines immediately, regardless of whether `await()` was called.
 
 From a performance perspective, `async` allocates both a `DeferredCoroutine` and a result completion object in the heap. Therefore, using `async` purely to trigger a side effect without needing a return value wastes memory; `launch` is always the leaner and more idiomatic choice for non-returning tasks.
+
 
 ## How to answer in the interview
 

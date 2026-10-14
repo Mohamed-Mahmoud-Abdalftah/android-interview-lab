@@ -100,23 +100,23 @@ The Single Responsibility Principle (SRP) states that a software component shoul
 
 A 'reason to change' aligns directly with the business actor who requests the modification. If a single class caters to requests from the UI designer, the security officer, and the database administrator simultaneously, it severely violates SRP.
 
-In Android, a textbook SRP violation is a monolithic Activity or ViewModel that performs:
-1. Input validation (e.g. password complexity rules).
-2. Network API invocation and HTTP header management.
-3. SQLite / SharedPreferences token persistence.
-4. UI layout manipulation and dialog animations.
+In Android, a textbook SRP violation is a monolithic Activity or ViewModel that performs.
 
-To resolve this, we break responsibilities into cohesive units:
-- `PasswordValidator`: Pure validation rules (responds to security policy changes).
-- `AuthRepository`: Encapsulates network communication and token persistence (responds to backend API/storage changes).
-- `RegisterUserUseCase`: Orchestrates the registration business flow.
-- `RegisterViewModel`: Projects results into `RegisterUiState` (responds to UI workflow changes).
+First, input validation (e.g. Password complexity rules). Next, network API invocation and HTTP header management.
+SQLite / SharedPreferences token persistence. Finally, UI layout manipulation and dialog animations.
+
+To resolve this, we break responsibilities into cohesive units.
+
+First, `PasswordValidator`: Pure validation rules (responds to security policy changes). Next, `AuthRepository`: Encapsulates network communication and token persistence (responds to backend API/storage changes).
+`RegisterUserUseCase`: Orchestrates the registration business flow. Finally, `RegisterViewModel`: Projects results into `RegisterUiState` (responds to UI workflow changes).
+
 
 ## Interview answer — deep senior
 
 A subtle pitfall when applying SRP is **over-fragmentation** (creating a new class for every single function). SRP is about **cohesion around a single actor**, not making classes microscopic. If five utility functions all serve the exact same business responsibility and change together, keeping them in one cohesive class respects SRP.
 
 In unit testing, SRP delivers immediate gains. Testing `PasswordValidator` requires a 10-line JVM unit test verifying strings. If password rules were buried inside `RegistrationActivity`, testing them would require booting an Android Activity, finding view IDs, and dealing with Robolectric or espresso overhead.
+
 
 ## How to answer in the interview
 

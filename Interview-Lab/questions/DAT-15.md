@@ -126,30 +126,21 @@ Sync offline writes by committing the optimistic edit and an outbox queue record
 
 ## Interview answer — structured
 
-Synchronizing offline writes requires the **Outbox Pattern** backed by WorkManager to guarantee eventual consistency:
+Synchronizing offline writes requires the **Outbox Pattern** backed by WorkManager to guarantee eventual consistency.
 
-1. **Atomic Local Outbox Commit**:
-   - When a user performs an offline edit, we do not simply mutate the UI state. We open a `roomDatabase.withTransaction { }`.
-   - Inside the transaction, we write the optimistic entity state to Room (`status = PENDING_SYNC`) AND insert a mutation command record into an internal `sync_outbox` table (`operationId = UUID`, `payload`, `timestamp`). Both succeed or fail together.
-   - The UI reflects the change in 5ms.
+First, **Atomic Local Outbox Commit**. Next, when a user performs an offline edit, we do not simply mutate the UI state. We open a `roomDatabase.withTransaction { }`.
+Inside the transaction, we write the optimistic entity state to Room (`status = PENDING_SYNC`) AND insert a mutation command record into an internal `sync_outbox` table (`operationId = UUID`, `payload`, `timestamp`). Both succeed or fail together. The UI reflects the change in 5ms.
+**Durable Sync Dispatcher (`WorkManager`)**. Enqueue a unique WorkManager job (`ExistingWorkPolicy.APPEND_OR_REPLACE`) requiring `NetworkType.CONNECTED`.
+WorkManager guarantees execution across app process death, phone reboots, and background constraints. **Idempotent Sequential Processing**.
+The worker drains the outbox in chronological order. Each HTTP call transmits `Idempotency-Key: <operationId>`. Finally, only upon receiving an explicit HTTP 200/201 response does the worker remove the mutation from the outbox and flip the entity status to `SYNCED` in SQLite.
 
-2. **Durable Sync Dispatcher (`WorkManager`)**:
-   - Enqueue a unique WorkManager job (`ExistingWorkPolicy.APPEND_OR_REPLACE`) requiring `NetworkType.CONNECTED`.
-   - WorkManager guarantees execution across app process death, phone reboots, and background constraints.
-
-3. **Idempotent Sequential Processing**:
-   - The worker drains the outbox in chronological order. Each HTTP call transmits `Idempotency-Key: <operationId>`.
-   - Only upon receiving an explicit HTTP 200/201 response does the worker remove the mutation from the outbox and flip the entity status to `SYNCED` in SQLite.
 
 ## Interview answer — deep senior
 
-Two severe failure modes occur in production offline sync engines:
+Two severe failure modes occur in production offline sync engines.
 
-1. **Out-of-Order Execution (The Chronological Bug)**:
-   If a user edits an item offline and then deletes it 5 seconds later, firing two independent parallel network requests risks the Delete arriving *before* the Edit. The server executes Delete, then executes Edit, resurrecting the deleted item! To prevent this, the outbox processor must process mutations for the same `entityId` strictly sequentially (FIFO) or collapse intermediate states before syncing.
+First, with Out-of-Order Execution (The Chronological Bug), if a user edits an item offline and then deletes it 5 seconds later, firing two independent parallel network requests risks the Delete arriving *before* the Edit. The server executes Delete, then executes Edit, resurrecting the deleted item! To prevent this, the outbox processor must process mutations for the same `entityId` strictly sequentially (FIFO) or collapse intermediate states before syncing. Finally, with The Zombie Pending Mutation (Process Kill during Sync), if the worker sends the mutation, the server commits it, but the cellular radio drops before the client receives the acknowledgment, the mutation remains in `sync_outbox`. When connectivity restores, the worker re-submits the mutation. Because the request carries the exact same `operationId` as its Idempotency Key, the backend recognizes it as a duplicate and acknowledges success without repeating side effects.
 
-2. **The Zombie Pending Mutation (Process Kill during Sync)**:
-   If the worker sends the mutation, the server commits it, but the cellular radio drops before the client receives the acknowledgment, the mutation remains in `sync_outbox`. When connectivity restores, the worker re-submits the mutation. Because the request carries the exact same `operationId` as its Idempotency Key, the backend recognizes it as a duplicate and acknowledges success without repeating side effects.
 
 ## How to answer in the interview
 

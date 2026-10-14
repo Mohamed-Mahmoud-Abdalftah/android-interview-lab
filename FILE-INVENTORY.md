@@ -1,6 +1,6 @@
 # Actual academy source inventory — 2026-10-13
 
-These 1082 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
+These 1090 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
 
 ```text
 .github/workflows/ci.yml
@@ -945,6 +945,7 @@ scripts/complete_core_path.py
 scripts/complete_specialists_and_mocks.py
 scripts/dedupe_spoken_answers.py
 scripts/elevations/data/and.json
+scripts/elevations/data/arabic_lab_metadata.json
 scripts/elevations/data/arc.json
 scripts/elevations/data/bg.json
 scripts/elevations/data/bld.json
@@ -1070,6 +1071,11 @@ site/src/components/ModuleGrid.astro
 site/src/components/QuestionExplorer.astro
 site/src/components/StudyPath.astro
 site/src/content.config.ts
+site/src/content/docs/ar/glossary.mdx
+site/src/content/docs/ar/index.mdx
+site/src/content/docs/ar/mocks.mdx
+site/src/content/docs/ar/question-bank.mdx
+site/src/content/docs/ar/study-path.mdx
 site/src/content/docs/glossary.mdx
 site/src/content/docs/index.mdx
 site/src/content/docs/mocks.mdx
@@ -1077,6 +1083,8 @@ site/src/content/docs/modules/index.mdx
 site/src/content/docs/question-bank.mdx
 site/src/content/docs/study-path.mdx
 site/src/content/i18n/ar-EG.json
+site/src/content/i18n/ar.json
+site/src/content/i18n/en.json
 site/src/styles/academy.css
 site/tests/e2e/accessibility.spec.mjs
 site/tests/e2e/study-flows.spec.mjs

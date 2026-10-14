@@ -94,6 +94,7 @@ Third, minification failures: R8 and ProGuard aggressively shrink and obfuscate 
 
 Modern Android architecture avoids runtime reflection by relying on compile-time code generation via KSP or Kotlin compiler plugins, as seen in kotlinx.serialization, Moshi codegen, Room, and Hilt.
 
+
 ## Interview answer — deep senior
 
 From an engine perspective, ART (Android Runtime) optimizes regular Kotlin/Java calls through Ahead-Of-Time (AOT) and Just-In-Time (JIT) compilation, devirtualizing calls and inlining short methods directly into caller machine code. Reflection defeats all of this: `Method.invoke()` cannot be inlined, allocations are made for parameter arrays, and primitives are boxed onto the heap.
@@ -101,6 +102,7 @@ From an engine perspective, ART (Android Runtime) optimizes regular Kotlin/Java 
 Furthermore, Kotlin Reflection (`KClass`, `KProperty`, `KFunction`) relies on parsing the `@Metadata` annotation embedded in Kotlin class bytecode. Parsing this metadata on an Android mobile device causes noticeable startup latency and heap spike during app cold starts.
 
 In our CI/CD and architecture governance, we enforce zero runtime reflection policies for data models. By adopting Kotlin Symbol Processing (KSP) and kotlinx.serialization, adapters and dependency graphs are generated as plain, type-safe Kotlin files during compilation. This ensures full R8 optimization, zero metadata parsing overhead, and compile-time verification of model integrity.
+
 
 ## How to answer in the interview
 

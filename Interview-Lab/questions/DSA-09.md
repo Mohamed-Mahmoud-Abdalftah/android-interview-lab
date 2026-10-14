@@ -98,28 +98,21 @@ Calculate complexity for dependent nested loops by writing out the exact mathema
 
 ## Interview answer — structured
 
-Evaluating dependent nested loop complexity requires formulating and solving mathematical summations:
+Evaluating dependent nested loop complexity requires formulating and solving mathematical summations.
 
-1. **Formulating the Summation**:
-   - Instead of multiplying outer loop limit by inner loop limit, represent total operations as $\sum_{i} T(i)$, where $T(i)$ is the number of operations executed by the inner loop for a specific value of $i$.
+First, **Formulating the Summation**. Next, instead of multiplying outer loop limit by inner loop limit, represent total operations as $\sum_{i} T(i)$, where $T(i)$ is the number of operations executed by the inner loop for a specific value of $i$.
+**The Arithmetic Dependent Loop ($O(n^2)$)**. In algorithms like Selection Sort or pair combinations (`for i in 0 until n`, `for j in i until n`), the inner loop runs $n, n-1, n-2, \dots, 1$ times.
+The summation $\sum_{i=1}^n i = \frac{n(n + 1)}{2} = \frac{1}{2}n^2 + \frac{1}{2}n$. Applying asymptotic rules (dropping constant $\frac{1}{2}$ and lower-order $\frac{1}{2}n$) confirms $O(n^2)$. **The Geometric Dependent Loop ($O(n)$)**.
+When the outer loop scales geometrically ($i = 1, 2, 4, 8, \dots, n$) and the inner loop executes $i$ steps, total work is $\sum_{k=0}^{\log_2 n} 2^k = 2^{\log_2 n + 1} - 1 = 2n - 1 = O(n)$. Finally, despite having nested loops, total work scales strictly linearly.
 
-2. **The Arithmetic Dependent Loop ($O(n^2)$)**:
-   - In algorithms like Selection Sort or pair combinations (`for i in 0 until n`, `for j in i until n`), the inner loop runs $n, n-1, n-2, \dots, 1$ times.
-   - The summation $\sum_{i=1}^n i = \frac{n(n + 1)}{2} = \frac{1}{2}n^2 + \frac{1}{2}n$. Applying asymptotic rules (dropping constant $\frac{1}{2}$ and lower-order $\frac{1}{2}n$) confirms $O(n^2)$.
-
-3. **The Geometric Dependent Loop ($O(n)$)**:
-   - When the outer loop scales geometrically ($i = 1, 2, 4, 8, \dots, n$) and the inner loop executes $i$ steps, total work is $\sum_{k=0}^{\log_2 n} 2^k = 2^{\log_2 n + 1} - 1 = 2n - 1 = O(n)$.
-   - Despite having nested loops, total work scales strictly linearly.
 
 ## Interview answer — deep senior
 
-From an algorithmic analysis and optimization angle, dependent loop bounds frequently emerge in string algorithms and parsers:
+From an algorithmic analysis and optimization angle, dependent loop bounds frequently emerge in string algorithms and parsers.
 
-1. **Amortized Analysis in Two Pointers**: In sliding window algorithms (e.g. longest substring without repeating characters), a `while` loop is nested inside a `for` loop. A naive glance suggests $O(n^2)$. However, because the inner window pointer `left` only advances forward and never resets backward, the inner pointer moves at most $n$ times across the entire algorithm lifecycle. The amortized complexity is $O(n + n) = O(n)$.
+First, with Amortized Analysis in Two Pointers, in sliding window algorithms (e.g. Longest substring without repeating characters), a `while` loop is nested inside a `for` loop. A naive glance suggests $O(n^2)$. However, because the inner window pointer `left` only advances forward and never resets backward, the inner pointer moves at most $n$ times across the entire algorithm lifecycle. The amortized complexity is $O(n + n) = O(n)$. Next, with Quadratic String Concatenation, in legacy Java/Android code, running a loop where a string is concatenated inside an outer loop creates a hidden dependent quadratic loop. Because strings are immutable, each `str += char` creates a new character array copying $1 + 2 + 3 + \dots + n$ characters, exploding into $O(n^2)$ time and massive heap churn. `StringBuilder` eliminates this by buffering in amortized $O(1)$.
+Finally, with Big O Master Theorem & Recurrence Trees, for recursive dependent problems (e.g. Divide and conquer), summation trees determine whether work is dominated by leaf nodes, root nodes, or balanced across tree levels.
 
-2. **Quadratic String Concatenation**: In legacy Java/Android code, running a loop where a string is concatenated inside an outer loop creates a hidden dependent quadratic loop. Because strings are immutable, each `str += char` creates a new character array copying $1 + 2 + 3 + \dots + n$ characters, exploding into $O(n^2)$ time and massive heap churn. `StringBuilder` eliminates this by buffering in amortized $O(1)$.
-
-3. **Big O Master Theorem & Recurrence Trees**: For recursive dependent problems (e.g. divide and conquer), summation trees determine whether work is dominated by leaf nodes, root nodes, or balanced across tree levels.
 
 ## How to answer in the interview
 

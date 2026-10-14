@@ -96,28 +96,23 @@ Identify cohesive responsibilities in a God Class by analyzing field-method clus
 
 Dismantling a God Class requires an objective, metric-driven analysis of internal cohesion rather than subjective guesswork.
 
-1. **Variable-Method Clustering (LCOM - Lack of Cohesion of Methods)**:
-   - Map out the class fields and observe which methods access which properties.
-   - In a God Class, methods naturally form isolated clusters: Methods A, B, and C only read and write location coordinates; Methods D and E only touch the network client; Methods F and G only manipulate formatting and UI dialogs.
-   - Each distinct cluster represents a distinct cohesive class waiting to be extracted.
+First, **Variable-Method Clustering (LCOM - Lack of Cohesion of Methods)**. Next, map out the class fields and observe which methods access which properties.
+In a God Class, methods naturally form isolated clusters: Methods A, B, and C only read and write location coordinates; Methods D and E only touch the network client; Methods F and G only manipulate formatting and UI dialogs. Each distinct cluster represents a distinct cohesive class waiting to be extracted.
+**Actor Alignment (Single Reason to Change)**. Group methods by the business stakeholder who commands their changes.
+Methods requested by UI designers belong in the Presentation/UI layer. Methods requested by accountants or product rules (tax rules, loyalty points) belong in Domain Use Cases.
+Methods requested by infrastructure or backend changes belong in the Data Repository. **Linguistic Clustering (Naming & Verb Analysis)**.
+Finally, look for method prefixes: `validate*()` indicates a Validator, `format*()` indicates a Mapper/Formatter, `sync*()` or `save*()` indicates a Repository.
 
-2. **Actor Alignment (Single Reason to Change)**:
-   - Group methods by the business stakeholder who commands their changes:
-     * Methods requested by UI designers belong in the Presentation/UI layer.
-     * Methods requested by accountants or product rules (tax rules, loyalty points) belong in Domain Use Cases.
-     * Methods requested by infrastructure or backend changes belong in the Data Repository.
-
-3. **Linguistic Clustering (Naming & Verb Analysis)**:
-   - Look for method prefixes: `validate*()` indicates a Validator, `format*()` indicates a Mapper/Formatter, `sync*()` or `save*()` indicates a Repository.
 
 ## Interview answer — deep senior
 
 Static analysis tools (like SonarQube, Detekt, or Konsist) formalize this process. Detekt flags classes violating `ComplexInterface`, `LargeClass` (e.g. >600 LOC), or `TooManyFunctions` (>15 methods). When these metrics trigger, we run an automated dependency structure matrix (DSM) in IntelliJ/Android Studio to visualize coupling blocks.
 
-Once clusters are identified, refactor using the **Extract Class refactoring technique**:
-- Step 1: Create the new focused class (`DeliveryCalculator`).
-- Step 2: Delegate the God Class's methods to an instance of the new class.
-- Step 3: Update client callers to inject the new class directly, gradually strangling the legacy God Class.
+Once clusters are identified, refactor using the **Extract Class refactoring technique**.
+
+First, step 1: Create the new focused class (`DeliveryCalculator`). Next, step 2: Delegate the God Class's methods to an instance of the new class.
+Finally, step 3: Update client callers to inject the new class directly, gradually strangling the legacy God Class.
+
 
 ## How to answer in the interview
 

@@ -89,15 +89,16 @@ Android Studio Profiler provides real-time diagnostics: the Memory Profiler visu
 
 The Android Studio Profiler is our primary first-party suite for diagnosing runtime regressions.
 
-In the **Memory Profiler**:
-1. We observe real-time allocation timelines. A saw-tooth pattern indicates heavy allocation churn and frequent GC sweeps.
-2. We capture Heap Dumps to inspect object instances, filtering by package name. We sort by **Retained Size** to locate heavyweight objects and inspect the **Reference Tree** to see which field holds the strong reference preventing collection.
-3. We use Live Allocation Tracking during scrolling to identify unexpected temporary allocations inside adapters or rendering passes.
+In the **Memory Profiler**.
 
-In the **CPU Profiler**:
-1. We run **System Trace** to observe thread scheduling against 16.6ms frame boundaries (`Choreographer.doFrame`).
-2. We inspect the **Flame Chart** to identify wide blocks, representing long-running functions stalling the UI thread.
-3. We switch to **Bottom-Up View** to find methods with the highest self-time, isolating CPU-bound bottlenecks for asynchronous dispatching.
+First, we observe real-time allocation timelines. A saw-tooth pattern indicates heavy allocation churn and frequent GC sweeps. Next, we capture Heap Dumps to inspect object instances, filtering by package name. We sort by **Retained Size** to locate heavyweight objects and inspect the **Reference Tree** to see which field holds the strong reference preventing collection.
+Finally, we use Live Allocation Tracking during scrolling to identify unexpected temporary allocations inside adapters or rendering passes.
+
+In the **CPU Profiler**.
+
+First, we run **System Trace** to observe thread scheduling against 16.6ms frame boundaries (`Choreographer.doFrame`). Next, we inspect the **Flame Chart** to identify wide blocks, representing long-running functions stalling the UI thread.
+Finally, we switch to **Bottom-Up View** to find methods with the highest self-time, isolating CPU-bound bottlenecks for asynchronous dispatching.
+
 
 ## Interview answer — deep senior
 
@@ -106,6 +107,7 @@ When profiling memory for low-end devices, analyzing the **Native** heap segment
 For CPU analysis, **Flame Charts** invert traditional call stacks: the X-axis represents execution time while the Y-axis shows call depth. A wide flame chart bar that remains unchanged across multiple frame intervals immediately pinpoints code blocking the Choreographer.
 
 In CI/CD automation, we run headless Android Studio profiling via Macrobenchmark, capturing trace files programmatically to ensure pull requests don't exceed frame timing or memory allocation thresholds.
+
 
 ## How to answer in the interview
 

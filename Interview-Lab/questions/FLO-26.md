@@ -103,12 +103,12 @@ To display the most recent UI state immediately after screen rotation, the requi
 
 When an Android device rotates, the Activity is destroyed and recreated. Because the ViewModel survives configuration changes, any state retained in the ViewModel is preserved in memory.
 
-StateFlow is tailor-made for this scenario:
+StateFlow is tailor-made for this scenario.
 
-1. It is a **hot stream** that holds the most recent state in its `.value` property.
-2. When the newly created Activity or Composable subscribes, StateFlow immediately replays that latest cached state, allowing the UI to render the complete screen instantly on its very first frame.
+First, it is a **hot stream** that holds the most recent state in its `.value` property. Finally, when the newly created Activity or Composable subscribes, StateFlow immediately replays that latest cached state, allowing the UI to render the complete screen instantly on its very first frame.
 
 If you used a plain cold Flow, the new Activity would trigger a fresh execution of the flow, repeating database reads or network calls. If you used a SharedFlow with `replay = 0`, the new Activity would receive nothing and render an empty blank screen.
+
 
 ## Interview answer — deep senior
 
@@ -121,6 +121,7 @@ val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 ```
 
 Compose reads the cached value on initial composition, preventing any flash of an empty state or loading spinner.
+
 
 ## How to answer in the interview
 

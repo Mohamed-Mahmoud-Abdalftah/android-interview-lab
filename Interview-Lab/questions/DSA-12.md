@@ -101,28 +101,21 @@ Accidental O(n²) transformations occur when calling linear-time operations like
 
 ## Interview answer — structured
 
-Accidental quadratic operations in Android list adapters represent the leading cause of scrolling jank:
+Accidental quadratic operations in Android list adapters represent the leading cause of scrolling jank.
 
-1. **The Classic Vulnerability Pattern**:
-   - Calling `list.contains(id)` inside item binding. Because `List.contains()` performs an $O(m)$ linear scan, evaluating it across $n$ list items multiplies complexity to $O(n \times m) \approx O(n^2)$. Under rapid scrolling, this triggers thousands of redundant object comparisons on the Main Thread.
+First, **The Classic Vulnerability Pattern**. Next, calling `list.contains(id)` inside item binding. Because `List.contains()` performs an $O(m)$ linear scan, evaluating it across $n$ list items multiplies complexity to $O(n \times m) \approx O(n^2)$. Under rapid scrolling, this triggers thousands of redundant object comparisons on the Main Thread.
+**Detection Techniques**. With Android Studio CPU Profiler, record a trace during fast fling scrolling. Look for call-tree hotspots dominated by `ArrayList.contains()`, `ArrayList.indexOf()`, or `equals()` invocations.
+With AndroidX JankStats, flags dropped frames exceeding 16.6ms. **Architectural Remediation**.
+With Collection Indexing, convert secondary lookup collections to `HashSet` or `Map`, reducing membership lookups from $O(m)$ to $O(1)$. Finally, with ViewModel Pre-Mapping, never compute data relations inside Composable bodies or ViewHolders. Map entities into composite UI state models (`ProductItemUiState(item, isSelected)`) on `Dispatchers.Default` before emitting to the UI.
 
-2. **Detection Techniques**:
-   - **Android Studio CPU Profiler**: Record a trace during fast fling scrolling. Look for call-tree hotspots dominated by `ArrayList.contains()`, `ArrayList.indexOf()`, or `equals()` invocations.
-   - **AndroidX JankStats**: Flags dropped frames exceeding 16.6ms.
-
-3. **Architectural Remediation**:
-   - **Collection Indexing**: Convert secondary lookup collections to `HashSet` or `Map`, reducing membership lookups from $O(m)$ to $O(1)$.
-   - **ViewModel Pre-Mapping**: Never compute data relations inside Composable bodies or ViewHolders. Map entities into composite UI state models (`ProductItemUiState(item, isSelected)`) on `Dispatchers.Default` before emitting to the UI.
 
 ## Interview answer — deep senior
 
-From an ART compilation and Compose recomposition perspective, hidden quadratic costs ripple through layout cycles:
+From an ART compilation and Compose recomposition perspective, hidden quadratic costs ripple through layout cycles.
 
-1. **Compose Recomposition Amplification**: In Jetpack Compose, if `selectedIdsList` changes, every item in `LazyColumn` reading that unstable list recomposes. If each item recalculates an $O(n)$ check, the main thread locks up during animations. Using `@Immutable` state holders and pre-calculated booleans prevents nested recomposition passes.
+First, with Compose Recomposition Amplification, in Jetpack Compose, if `selectedIdsList` changes, every item in `LazyColumn` reading that unstable list recomposes. If each item recalculates an $O(n)$ check, the main thread locks up during animations. Using `@Immutable` state holders and pre-calculated booleans prevents nested recomposition passes. Next, with RecyclerView DiffUtil Complexity Multiplication, `DiffUtil.calculateDiff` runs in $O(n \cdot d)$. If your `areItemsTheSame` or `areContentsTheSame` callbacks inadvertently execute linear scans (e.g. Comparing inner lists), the diffing calculation explodes beyond $O(n^2)$, stalling UI updates. DiffUtil callbacks must execute strictly in $O(1)$ constant time.
+Finally, with Zero-Allocation Primitive Collections, for selection sets of primitive IDs (`Long`), using AndroidX's `LongSparseArray` or primitive `LongArray` with binary search avoids autoboxing overhead while keeping lookup costs tightly bounded.
 
-2. **RecyclerView DiffUtil Complexity Multiplication**: `DiffUtil.calculateDiff` runs in $O(n \cdot d)$. If your `areItemsTheSame` or `areContentsTheSame` callbacks inadvertently execute linear scans (e.g. comparing inner lists), the diffing calculation explodes beyond $O(n^2)$, stalling UI updates. DiffUtil callbacks must execute strictly in $O(1)$ constant time.
-
-3. **Zero-Allocation Primitive Collections**: For selection sets of primitive IDs (`Long`), using AndroidX's `LongSparseArray` or primitive `LongArray` with binary search avoids autoboxing overhead while keeping lookup costs tightly bounded.
 
 ## How to answer in the interview
 

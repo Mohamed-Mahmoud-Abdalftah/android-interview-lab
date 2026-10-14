@@ -83,26 +83,25 @@ SOLID stands for Single Responsibility, Open/Closed, Liskov Substitution, Interf
 
 SOLID represents five foundational object-oriented design principles aimed at creating maintainable, testable, and scalable software systems.
 
-1. **Single Responsibility (SRP)**: A class should have one, and only one, reason to change.
-2. **Open/Closed (OCP)**: Software entities should be open for extension (adding new features via polymorphism or composition) but closed for modification (not editing existing tested code).
-3. **Liskov Substitution (LSP)**: Subtypes must be substitutable for their base types without altering program correctness or throwing unexpected exceptions.
-4. **Interface Segregation (ISP)**: Clients should not be forced to depend on interfaces they do not use; prefer many fine-grained interfaces over one fat interface.
-5. **Dependency Inversion (DIP)**: High-level business policies should not depend on low-level infrastructure details; both should depend on abstractions.
+First, a Single Responsibility (SRP) is a class should have one, and only one, reason to change. Next, with Open/Closed (OCP), software entities should be open for extension (adding new features via polymorphism or composition) but closed for modification (not editing existing tested code).
+Additionally, with Liskov Substitution (LSP), subtypes must be substitutable for their base types without altering program correctness or throwing unexpected exceptions. With Interface Segregation (ISP), clients should not be forced to depend on interfaces they do not use; prefer many fine-grained interfaces over one fat interface.
+Finally, with Dependency Inversion (DIP), high-level business policies should not depend on low-level infrastructure details; both should depend on abstractions.
 
 In Android, violating SOLID leads to fragile 'God Activities', tight coupling to SDK lifecycles, and impossible unit testing. Adhering to SOLID keeps domain logic decoupled from framework churn.
+
 
 ## Interview answer — deep senior
 
 Under the hood, SOLID principles are not dogmatic laws—they are tools to manage **coupling and cohesion**. High cohesion means code that changes together stays together; loose coupling means changes in one module do not ripple into others.
 
-In modern Android architectures (Clean Architecture + Jetpack Compose + Kotlin Coroutines), SOLID principles manifest concretely:
-- SRP drives the separation between ViewModels, Use Cases, Repositories, and DataSources.
-- OCP enables feature extensions via Strategy patterns and polymorphic sealed classes.
-- LSP eliminates rigid, deeply nested inheritance hierarchies like bloated `BaseActivity` classes in favor of composable delegates.
-- ISP creates focused repository interfaces (`UserReader`, `UserWriter`) rather than monolithic CRUD interfaces.
-- DIP powers inversion of control where the Domain layer defines repository contracts implemented by the Data layer.
+In modern Android architectures (Clean Architecture + Jetpack Compose + Kotlin Coroutines), SOLID principles manifest concretely.
+
+First, sRP drives the separation between ViewModels, Use Cases, Repositories, and DataSources. Next, oCP enables feature extensions via Strategy patterns and polymorphic sealed classes.
+LSP eliminates rigid, deeply nested inheritance hierarchies like bloated `BaseActivity` classes in favor of composable delegates. ISP creates focused repository interfaces (`UserReader`, `UserWriter`) rather than monolithic CRUD interfaces.
+Finally, dIP powers inversion of control where the Domain layer defines repository contracts implemented by the Data layer.
 
 We balance SOLID against the YAGNI principle to prevent speculative overengineering in early-stage features.
+
 
 ## How to answer in the interview
 

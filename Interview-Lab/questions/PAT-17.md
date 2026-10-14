@@ -122,20 +122,19 @@ Global mutable singletons (`object` with `var`) persist state across test execut
 
 A global mutable singleton (`object Session { var user: User? }`) violates single ownership and destroys test determinism. Because JVM test runners reuse the same classloader process to run multiple test suites, mutations made by Test A persist into Test B. Tests become order-dependent: running Test B alone passes, but running the whole test suite fails.
 
-To fix this, we redesign state ownership:
-1. **Demote `object` to a Standard Class**: We replace the Kotlin `object` with an interface and a concrete class (`SessionManager`). The class encapsulates its state within thread-safe abstractions like `StateFlow`.
-2. **Explicit Constructor Injection**: Any ViewModel, Repository, or Interactor that needs session information declares `SessionManager` in its constructor. Nothing accesses ambient global state.
-3. **Container-Managed Scope**: In production, the DI container (Hilt) manages a single instance scoped with `@Singleton`. In JVM tests, we instantiate a fresh `FakeSessionManager` in `@Before`, guaranteeing 100% test isolation and determinism.
+To fix this, we redesign state ownership.
+
+First, with Demote `object` to a Standard Class, we replace the Kotlin `object` with an interface and a concrete class (`SessionManager`). The class encapsulates its state within thread-safe abstractions like `StateFlow`. Next, with Explicit Constructor Injection, any ViewModel, Repository, or Interactor that needs session information declares `SessionManager` in its constructor. Nothing accesses ambient global state.
+Finally, with Container-Managed Scope, in production, the DI container (Hilt) manages a single instance scoped with `@Singleton`. In JVM tests, we instantiate a fresh `FakeSessionManager` in `@Before`, guaranteeing 100% test isolation and determinism.
+
 
 ## Interview answer — deep senior
 
-Beyond test ordering bugs, global mutable singletons introduce severe Android runtime vulnerabilities:
+Beyond test ordering bugs, global mutable singletons introduce severe Android runtime vulnerabilities.
 
-1. **Process Death Vulnerability**: When Android terminates an app process in the background due to low memory, static variables are purged. When the user returns, the Activity is recreated, but the global singleton's state is reset to `null`, causing widespread `NullPointerExceptions` or forcing unexpected logouts. Proper ownership means persisting critical state to Room or encrypted DataStore, with the session manager reloading state reactively.
+First, with Process Death Vulnerability, when Android terminates an app process in the background due to low memory, static variables are purged. When the user returns, the Activity is recreated, but the global singleton's state is reset to `null`, causing widespread `NullPointerExceptions` or forcing unexpected logouts. Proper ownership means persisting critical state to Room or encrypted DataStore, with the session manager reloading state reactively. Next, with Concurrency and Visibility Hazards, naive global singletons with `var` fields lack memory barriers. If thread A writes `user = newProfile` and thread B reads it on another thread, thread B can observe stale cached CPU register values unless fields are `@Volatile` or guarded by a Mutex.
+Finally, with Stateless Utilities vs. State Holders, Kotlin `object` is perfectly appropriate for stateless utilities (math functions, date formatters, serializers). It becomes toxic only when it holds mutable state. By moving state into injected repositories, we gain observability, thread-safety, and test parallelizability.
 
-2. **Concurrency and Visibility Hazards**: Naive global singletons with `var` fields lack memory barriers. If thread A writes `user = newProfile` and thread B reads it on another thread, thread B can observe stale cached CPU register values unless fields are `@Volatile` or guarded by a Mutex.
-
-3. **Stateless Utilities vs. State Holders**: Kotlin `object` is perfectly appropriate for stateless utilities (math functions, date formatters, serializers). It becomes toxic only when it holds mutable state. By moving state into injected repositories, we gain observability, thread-safety, and test parallelizability.
 
 ## How to answer in the interview
 

@@ -109,19 +109,16 @@ DTOs live in Data/remote matching API schemas. Room entities live in Data/local 
 
 Separating models across architectural layers guarantees isolation and prevents external schema changes from cascading across the application.
 
-1. **DTOs (Data Transfer Objects)**: Reside in the **Data Layer** (`remote/dto`). They represent network serialization schemas, annotated with `@Serializable` or `@SerializedName`. They are designed around API payloads and should never leak past the repository boundary.
+First, with DTOs (Data Transfer Objects), reside in the **Data Layer** (`remote/dto`). They represent network serialization schemas, annotated with `@Serializable` or `@SerializedName`. They are designed around API payloads and should never leak past the repository boundary. Next, with Room Entities, reside in the **Data Layer** (`local/entity`). They represent SQLite table schemas, annotated with `@Entity`, `@PrimaryKey`, and foreign keys. They reflect persistence requirements (indexes, table relations), not UI or business needs.
+Additionally, with Domain Models, reside in the **Domain Layer** (`domain/model`). Pure Kotlin data classes representing business truth. They contain zero serialization or database annotations, enforcing invariant validity across the app. Finally, with UI Models, reside in the **Presentation Layer** (`presentation/model`). They contain pre-formatted strings, localized labels, and visual state properties tailored for instant, allocation-free rendering in Compose.
 
-2. **Room Entities**: Reside in the **Data Layer** (`local/entity`). They represent SQLite table schemas, annotated with `@Entity`, `@PrimaryKey`, and foreign keys. They reflect persistence requirements (indexes, table relations), not UI or business needs.
-
-3. **Domain Models**: Reside in the **Domain Layer** (`domain/model`). Pure Kotlin data classes representing business truth. They contain zero serialization or database annotations, enforcing invariant validity across the app.
-
-4. **UI Models**: Reside in the **Presentation Layer** (`presentation/model`). They contain pre-formatted strings, localized labels, and visual state properties tailored for instant, allocation-free rendering in Compose.
 
 ## Interview answer — deep senior
 
 Why not use a single model class annotated with `@Serializable`, `@Entity`, and consumed directly in Compose? This shortcut—common in junior tutorials—creates catastrophic tight coupling: changing an API property name alters the local SQLite column, forces a Room database migration, and breaks the UI layout simultaneously!
 
 Furthermore, UI models optimize rendering performance in Jetpack Compose. Instead of letting a Composable format dates or currency on every recomposition pass (`format(product.priceCents)`), the ViewModel maps the domain model into a `ProductUiModel` where `formattedPrice = "$19.99"` is computed once. This keeps the Composable function pure, lightweight, and skippable.
+
 
 ## How to answer in the interview
 

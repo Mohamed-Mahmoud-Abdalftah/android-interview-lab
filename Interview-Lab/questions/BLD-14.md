@@ -93,30 +93,22 @@ Diagnose UnsatisfiedLinkError by inspecting the APK's lib/ directory with APK An
 
 ## Interview answer — structured
 
-`java.lang.UnsatisfiedLinkError` occurs when the Android dynamic linker (`dlopen`) fails to locate or load a required native shared object (`.so`) for the current CPU architecture:
+`java.lang.UnsatisfiedLinkError` occurs when the Android dynamic linker (`dlopen`) fails to locate or load a required native shared object (`.so`) for the current CPU architecture.
 
-1. **The 32-bit vs. 64-bit Asymmetry Trap**:
-   - If any third-party SDK includes a 64-bit binary in `lib/arm64-v8a/`, the Android OS launches the app inside a 64-bit Zygote process.
-   - Once running in 64-bit mode, the OS dynamic linker looks **strictly** inside `lib/arm64-v8a/` and will never fall back to 32-bit folders.
-   - If a second library in your project only supplied 32-bit `armeabi-v7a` binaries, calls to load that library crash immediately with `UnsatisfiedLinkError: dlopen failed: library not found`.
+First, **The 32-bit vs. 64-bit Asymmetry Trap**. Next, if any third-party SDK includes a 64-bit binary in `lib/arm64-v8a/`, the Android OS launches the app inside a 64-bit Zygote process.
+Once running in 64-bit mode, the OS dynamic linker looks **strictly** inside `lib/arm64-v8a/` and will never fall back to 32-bit folders. If a second library in your project only supplied 32-bit `armeabi-v7a` binaries, calls to load that library crash immediately with `UnsatisfiedLinkError: dlopen failed: library not found`.
+**Inspection & Diagnosis**. Open the compiled APK in Android Studio's **APK Analyzer** or execute `unzip -l app.apk "lib/*"`.
+Verify that the exact same set of `.so` library names exists across all supported ABI folders. **Resolution Strategies**.
+With Preferred, procure or compile 64-bit `.so` binaries for the missing dependencies (mandatory for Google Play compliance). Finally, with Fallback, enforce uniform 32-bit packaging via `ndk.abiFilters.add("armeabi-v7a")` until 64-bit dependencies are available.
 
-2. **Inspection & Diagnosis**:
-   - Open the compiled APK in Android Studio's **APK Analyzer** or execute `unzip -l app.apk "lib/*"`.
-   - Verify that the exact same set of `.so` library names exists across all supported ABI folders.
-
-3. **Resolution Strategies**:
-   - **Preferred**: Procure or compile 64-bit `.so` binaries for the missing dependencies (mandatory for Google Play compliance).
-   - **Fallback**: Enforce uniform 32-bit packaging via `ndk.abiFilters.add("armeabi-v7a")` until 64-bit dependencies are available.
 
 ## Interview answer — deep senior
 
-From an OS loader and systems architecture perspective, native linking errors can also stem from missing transitive dependencies and text relocations:
+From an OS loader and systems architecture perspective, native linking errors can also stem from missing transitive dependencies and text relocations.
 
-1. **Missing Transitive Dependencies (`NEEDED` ELF headers)**: A `.so` file often depends on secondary libraries (e.g. `libnative.so` depends on `libcrypto.so`). If `libcrypto.so` is missing from the APK or stripped by packaging excludes, `dlopen("libnative.so")` fails with `library "libcrypto.so" not found`. Inspect ELF dependencies using `readelf -d libnative.so | grep NEEDED`.
+First, missing Transitive Dependencies (`NEEDED` ELF headers) is a `. So` file often depends on secondary libraries (e.g. `libnative.so` depends on `libcrypto.so`). If `libcrypto.so` is missing from the APK or stripped by packaging excludes, `dlopen("libnative.so")` fails with `library "libcrypto.so" not found`. Inspect ELF dependencies using `readelf -d libnative.so | grep NEEDED`. Next, with Text Relocations (API 23+), since Android 6.0, Android blocks libraries with text relocations (`W^X` memory protection). Libraries compiled with legacy NDK toolchains without `-fPIC` throw `dlopen failed: has text relocations` and crash on modern devices.
+Finally, with Automated ABI Verification in CI, add an automated assertion test in CI that unpacks the built APK and asserts that the file lists under `lib/arm64-v8a/` and `lib/armeabi-v7a/` are identical, failing the build on asymmetric native packaging.
 
-2. **Text Relocations (API 23+)**: Since Android 6.0, Android blocks libraries with text relocations (`W^X` memory protection). Libraries compiled with legacy NDK toolchains without `-fPIC` throw `dlopen failed: has text relocations` and crash on modern devices.
-
-3. **Automated ABI Verification in CI**: Add an automated assertion test in CI that unpacks the built APK and asserts that the file lists under `lib/arm64-v8a/` and `lib/armeabi-v7a/` are identical, failing the build on asymmetric native packaging.
 
 ## How to answer in the interview
 

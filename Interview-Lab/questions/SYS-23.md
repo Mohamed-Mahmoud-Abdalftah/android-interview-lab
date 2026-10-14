@@ -117,30 +117,22 @@ Migrate legacy XML to Jetpack Compose incrementally: build new screens entirely 
 
 ## Interview answer — structured
 
-Migrating an enterprise Android app from the View system to Jetpack Compose requires an incremental coexistence strategy rather than a risky all-at-once rewrite:
+Migrating an enterprise Android app from the View system to Jetpack Compose requires an incremental coexistence strategy rather than a risky all-at-once rewrite.
 
-1. **Pragmatic Migration Direction**:
-   - **Top-Down for New Features**: Mandate that all net-new screens are written exclusively in 100% Jetpack Compose using `ComponentActivity.setContent { }`.
-   - **Bottom-Up for Existing Screens**: Convert leaf components (buttons, custom cards, headers) first. Embed them inside legacy XML layouts using `ComposeView`.
+First, **Pragmatic Migration Direction**. Next, with Top-Down for New Features, mandate that all net-new screens are written exclusively in 100% Jetpack Compose using `ComponentActivity.setContent { }`.
+Additionally, with Bottom-Up for Existing Screens, convert leaf components (buttons, custom cards, headers) first. Embed them inside legacy XML layouts using `ComposeView`. **Lifecycle & Memory Management in Fragments**.
+In Android Fragments, the Fragment View lifecycle is distinct from the Fragment instance lifecycle. When using `ComposeView` in Fragments, always set `setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)`. Failing to do so leaks View compositions across fragment backstack transactions. **Design System & Theme Bridging**.
+Maintain visual parity by bridging your existing XML theme attributes into Compose `MaterialTheme` tokens (using `accompanist/themeadapter-material` or custom mappers). This ensures that XML views and Compose widgets share identical colors, shapes, and typography during migration. **RecyclerView to LazyColumn Transition**.
+Finally, as individual `ViewHolder` items are migrated to Composables, avoid leaving hundreds of tiny `ComposeView` wrappers inside a `RecyclerView` due to layout measurement overhead. Once item viewholders are composed, replace the parent `RecyclerView` with a native Compose `LazyColumn`.
 
-2. **Lifecycle & Memory Management in Fragments**:
-   - In Android Fragments, the Fragment View lifecycle is distinct from the Fragment instance lifecycle. When using `ComposeView` in Fragments, always set `setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)`. Failing to do so leaks View compositions across fragment backstack transactions.
-
-3. **Design System & Theme Bridging**:
-   - Maintain visual parity by bridging your existing XML theme attributes into Compose `MaterialTheme` tokens (using `accompanist/themeadapter-material` or custom mappers). This ensures that XML views and Compose widgets share identical colors, shapes, and typography during migration.
-
-4. **RecyclerView to LazyColumn Transition**:
-   - As individual `ViewHolder` items are migrated to Composables, avoid leaving hundreds of tiny `ComposeView` wrappers inside a `RecyclerView` due to layout measurement overhead. Once item viewholders are composed, replace the parent `RecyclerView` with a native Compose `LazyColumn`.
 
 ## Interview answer — deep senior
 
-From an architectural governance and performance perspective, managing hybrid View/Compose runtimes requires strict profiling:
+From an architectural governance and performance perspective, managing hybrid View/Compose runtimes requires strict profiling.
 
-1. **Interoperability Layout Overhead**: Nesting Views inside Compose via `AndroidView` or nesting Compose inside Views via `ComposeView` incurs measurement overhead. Hybrid lists with `ComposeView` inside `RecyclerView` can drop frames during fast flings unless items use fixed height modifiers or enable Baseline Profiles.
+First, with Interoperability Layout Overhead, nesting Views inside Compose via `AndroidView` or nesting Compose inside Views via `ComposeView` incurs measurement overhead. Hybrid lists with `ComposeView` inside `RecyclerView` can drop frames during fast flings unless items use fixed height modifiers or enable Baseline Profiles. Next, with Baseline Profiles for Startup & Jank, jetpack Compose relies on runtime compilation (AOT/JIT). Uncompiled Compose code can cause significant jank on first run. Generate and bundle **Baseline Profiles** using Macrobenchmark to pre-compile critical Composable paths during app installation, restoring 60fps scrolling.
+Finally, with State Management Bridging, legacy ViewModels exposing `LiveData` should be converted to reactive `StateFlow`. In Compose, observe them via `collectAsStateWithLifecycle()` to automatically halt collection when the host Activity/Fragment is backgrounded.
 
-2. **Baseline Profiles for Startup & Jank**: Jetpack Compose relies on runtime compilation (AOT/JIT). Uncompiled Compose code can cause significant jank on first run. Generate and bundle **Baseline Profiles** using Macrobenchmark to pre-compile critical Composable paths during app installation, restoring 60fps scrolling.
-
-3. **State Management Bridging**: Legacy ViewModels exposing `LiveData` should be converted to reactive `StateFlow`. In Compose, observe them via `collectAsStateWithLifecycle()` to automatically halt collection when the host Activity/Fragment is backgrounded.
 
 ## How to answer in the interview
 

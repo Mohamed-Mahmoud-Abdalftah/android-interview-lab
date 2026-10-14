@@ -86,17 +86,19 @@ by lazy is used for read-only val properties, initializing them on first access 
 
 I distinguish by lazy and lateinit var by ownership, mutability, and lifecycle.
 
-by lazy is strictly for val properties. It initializes the object on its first access using a lambda and caches the result. It is thread-safe by default using double-checked locking, but we can optimize it using LazyThreadSafetyMode.NONE for Main-thread-only UI components.
+By lazy is strictly for val properties. It initializes the object on its first access using a lambda and caches the result. It is thread-safe by default using double-checked locking, but we can optimize it using LazyThreadSafetyMode.NONE for Main-thread-only UI components.
 
-lateinit var is for mutable var properties where the value is assigned later by an external caller, such as Hilt field injection or Activity lifecycle callbacks. It only works with non-primitive object types. If accessed before initialization, it throws an UninitializedPropertyAccessException, which can be guarded using ::property.isInitialized.
+Lateinit var is for mutable var properties where the value is assigned later by an external caller, such as Hilt field injection or Activity lifecycle callbacks. It only works with non-primitive object types. If accessed before initialization, it throws an UninitializedPropertyAccessException, which can be guarded using ::property.isInitialized.
 
 In Android, I prefer by lazy for self-contained dependencies and lateinit var for framework-injected dependencies.
+
 
 ## Interview answer — deep senior
 
 Under the hood, by lazy utilizes Kotlin's property delegation mechanism. The compiler generates a delegate field of type Lazy<T>. When the property getter is invoked, it delegates to Lazy.value. Under the default SYNCHRONIZED mode, it uses an internal lock and double-checked locking to ensure single initialization across threads. In Android UI layers where code executes exclusively on the Looper main thread, allocating that synchronization monitor is unnecessary overhead. Setting LazyThreadSafetyMode.NONE eliminates synchronization locks completely.
 
-lateinit var generates a standard mutable backing field without getter/setter indirection. The compiler inserts a null check into the getter: if the internal reference is null, it throws an UninitializedPropertyAccessException. Because primitive types on the JVM cannot hold null, lateinit cannot support Int, Double, or Boolean. In modern Android development, lateinit is commonly used in Fragment ViewBinding, where it must be cleared in onDestroyView to prevent memory leaks.
+Lateinit var generates a standard mutable backing field without getter/setter indirection. The compiler inserts a null check into the getter: if the internal reference is null, it throws an UninitializedPropertyAccessException. Because primitive types on the JVM cannot hold null, lateinit cannot support Int, Double, or Boolean. In modern Android development, lateinit is commonly used in Fragment ViewBinding, where it must be cleared in onDestroyView to prevent memory leaks.
+
 
 ## How to answer in the interview
 

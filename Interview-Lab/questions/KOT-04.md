@@ -80,6 +80,7 @@ On the other hand, === checks whether two references point to the exact same ins
 
 In Android, we rely on this distinction heavily in places like DiffUtil or Compose recomposition. For example, in DiffUtil, areItemsTheSame checks if unique IDs match, while areContentsTheSame uses == to check if property values changed. Using === for content comparison would trigger unnecessary UI redraws whenever new immutable instances are emitted from a repository.
 
+
 ## Interview answer — deep senior
 
 Structural equality (==) and referential identity (===) differ in both intent and bytecode compilation. When compiling ==, Kotlin emits a call to Intrinsics.areEqual(a, b), which handles null checks before invoking equals(). For primitives, == maps directly to JVM primitive comparison instructions unless they are boxed into nullable types or generics.
@@ -87,6 +88,7 @@ Structural equality (==) and referential identity (===) differ in both intent an
 A subtle pitfall arises with boxed primitives due to JVM Integer caching. Integers between -128 and 127 are cached by the JVM runtime. Comparing two boxed Int? values like 100 with === returns true because they share the cached instance. But comparing two boxed Int? values of 1000 with === evaluates to false because they are distinct heap allocations. This is why you must never rely on === for value types.
 
 Another nuance is floating-point equality. IEEE 754 states that Float.NaN == Float.NaN is false. However, Kotlin adheres to total order equality when floats are statically typed as Any, boxed in collections, or compared in equals(): in that context, NaN equals NaN, and -0.0 is considered less than 0.0. In production, we override equals() and hashCode() carefully in custom classes, ensure consistency with data classes, and avoid === outside of performance caches or identity maps.
+
 
 ## How to answer in the interview
 

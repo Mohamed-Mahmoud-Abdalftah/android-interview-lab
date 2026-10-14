@@ -85,15 +85,11 @@ ViewModel stores complex state in RAM across rotation but dies on process death;
 
 ## Interview answer — structured
 
-These four state mechanisms represent distinct tiers across longevity, storage location, and size limits:
+These four state mechanisms represent distinct tiers across longevity, storage location, and size limits.
 
-1. **`ViewModel`**: Resides in RAM heap. Survives configuration changes, but is completely destroyed upon process death. Ideal for rich domain models, complex UI states, and active coroutine streams.
+First, viewModel resides in RAM heap. Survives configuration changes, but is completely destroyed upon process death. Ideal for rich domain models, complex UI states, and active coroutine streams. Next, savedStateHandle is integrated into the ViewModel, backed by Android's `onSaveInstanceState` Bundle in the OS system server. Survives both configuration change and process death. Strictly bounded by Binder IPC limits (<50KB), ideal for saving navigation arguments, active search text, and record IDs.
+Additionally, with rememberSaveable, Compose's UI-layer equivalent of `SavedStateHandle`. Restores transient Composable UI state (scroll positions, expanded dropdown flags, tab indices) across rotation and process death. Finally, with Persistent Storage (Room / DataStore), written directly to flash storage on disk. Survives process death, device reboots, and app updates. Used for domain databases, offline caching, and user authentication credentials.
 
-2. **`SavedStateHandle`**: Integrated into the ViewModel, backed by Android's `onSaveInstanceState` Bundle in the OS system server. Survives both configuration change and process death. Strictly bounded by Binder IPC limits (<50KB), ideal for saving navigation arguments, active search text, and record IDs.
-
-3. **`rememberSaveable`**: Compose's UI-layer equivalent of `SavedStateHandle`. Restores transient Composable UI state (scroll positions, expanded dropdown flags, tab indices) across rotation and process death.
-
-4. **Persistent Storage (Room / DataStore)**: Written directly to flash storage on disk. Survives process death, device reboots, and app updates. Used for domain databases, offline caching, and user authentication credentials.
 
 ## Interview answer — deep senior
 
@@ -112,6 +108,7 @@ class OrderViewModel(savedStateHandle: SavedStateHandle, repository: OrderReposi
 ```
 
 In Compose, `rememberSaveable` manages the local UI scroll state, `SavedStateHandle` tracks the screen's core query, `ViewModel` manages the active stream, and `Room` provides the durable data.
+
 
 ## How to answer in the interview
 

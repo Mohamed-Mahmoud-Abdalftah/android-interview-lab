@@ -95,12 +95,13 @@ Modularization splits a codebase into separate Gradle build units, enforcing str
 
 Modularization is the practice of breaking a monolithic application into discrete Gradle subprojects, establishing physical compilation and ownership boundaries.
 
-Key engineering advantages:
-1. **Compilation Scalability**: Leverages Gradle parallel execution and build caching. Unmodified modules are fetched directly from the local or remote cache as compiled AARs/JARs, slashing developer feedback loops.
-2. **Strict Encapsulation & Guardrails**: Internal package details (`internal` visibility) cannot be accessed across Gradle module boundaries. It makes architectural erosion impossible at compile time.
-3. **Team Autonomy**: Feature teams own designated modules with distinct `CODEOWNERS` rules, eliminating merge contention and decoupling release cadences.
+Key engineering advantages.
+
+First, with Compilation Scalability, leverages Gradle parallel execution and build caching. Unmodified modules are fetched directly from the local or remote cache as compiled AARs/JARs, slashing developer feedback loops. Next, with Strict Encapsulation & Guardrails, internal package details (`internal` visibility) cannot be accessed across Gradle module boundaries. It makes architectural erosion impossible at compile time.
+Finally, with Team Autonomy, feature teams own designated modules with distinct `CODEOWNERS` rules, eliminating merge contention and decoupling release cadences.
 
 However, modularization is not free. It introduces significant build logic maintenance overhead, demands centralized convention plugins, complicates inter-feature navigation and dependency injection, and can degrade build configuration times if over-fragmented into hundreds of micro-modules.
+
 
 ## Interview answer — deep senior
 
@@ -109,6 +110,7 @@ From a build system engineering perspective, modularization impacts the **Gradle
 While modularization shrinks execution time for incremental builds, it **increases configuration time**. Gradle must evaluate every `build.gradle.kts` during the configuration phase before tasks can execute. Without modern optimizations—such as the **Gradle Configuration Cache**, **Isolated Projects**, and avoiding imperative configuration loops (`subprojects { ... }`)—a project with 150+ modules can spend 20+ seconds just configuring before compiling a single file.
 
 Furthermore, module design directly determines ABI fan-out: if a foundational low-level module (`:core:model`) is declared with `api` instead of `implementation`, a one-line change to an entity forces Gradle to invalidate the cache and recompile every single downstream feature module in the dependency tree.
+
 
 ## How to answer in the interview
 

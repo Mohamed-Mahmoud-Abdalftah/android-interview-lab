@@ -93,22 +93,21 @@ Software engineering maturity is recognizing that **premature abstraction is far
 
 As phrased by Sandi Metz: *'Duplication is far cheaper than the wrong abstraction.'* When engineers dogmatically enforce DRY (Don't Repeat Yourself) at the syntax level, they frequently merge two pieces of code that look identical today but evolve for completely different reasons tomorrow.
 
-**When to Deliberately Accept Duplication**:
-1. **Accidental Duplication vs True Duplication**: If two mapping routines in `:feature:catalog` and `:feature:profile` look identical, but one responds to catalog marketing needs and the other responds to user account settings, the duplication is accidental. Unifying them creates an artificial coupling between two unrelated business domains.
+**When to Deliberately Accept Duplication**.
 
-2. **Feature Module Boundaries**: In multi-module architectures, forcing two independent feature modules to share an abstraction just to eliminate 15 lines of UI formatting creates a shared compile-time dependency, slowing builds and creating merge friction. Duplicating those 15 lines preserves independent module deployability.
+First, with Accidental Duplication vs True Duplication, if two mapping routines in `:feature:catalog` and `:feature:profile` look identical, but one responds to catalog marketing needs and the other responds to user account settings, the duplication is accidental. Unifying them creates an artificial coupling between two unrelated business domains. Next, with Feature Module Boundaries, in multi-module architectures, forcing two independent feature modules to share an abstraction just to eliminate 15 lines of UI formatting creates a shared compile-time dependency, slowing builds and creating merge friction. Duplicating those 15 lines preserves independent module deployability.
+Finally, with Early Stage / Exploratory Features, when a feature is brand-new, requirements mutate rapidly. Prematurely creating a rigid generic base class forces engineers to add boolean parameter flags (`isCaseB = true`) until the abstraction becomes an unmaintainable monster.
 
-3. **Early Stage / Exploratory Features**: When a feature is brand-new, requirements mutate rapidly. Prematurely creating a rigid generic base class forces engineers to add boolean parameter flags (`isCaseB = true`) until the abstraction becomes an unmaintainable monster.
 
 ## Interview answer — deep senior
 
-The life cycle of the **Wrong Abstraction** follows a predictable, destructive pattern:
-1. Developer A sees two similar routines and unifies them into `GenericHelper`.
-2. Feature requirements diverge. Developer B needs a slight difference, so they add an `if (flag)` parameter.
-3. Developer C needs another variation, adding another flag.
-4. A year later, `GenericHelper` takes 8 boolean flags, has 20 conditional branches, and nobody dares touch it.
+The life cycle of the **Wrong Abstraction** follows a predictable, destructive pattern.
+
+First, developer A sees two similar routines and unifies them into `GenericHelper`. Next, feature requirements diverge. Developer B needs a slight difference, so they add an `if (flag)` parameter.
+Developer C needs another variation, adding another flag. Finally, a year later, `GenericHelper` takes 8 boolean flags, has 20 conditional branches, and nobody dares touch it.
 
 We adhere strictly to the **Rule of Three**: allow duplication to happen twice. Only when the exact same pattern recurs a third time across stable, mature requirements do we extract an abstraction, because by the third time, the true invariant shape of the abstraction is obvious.
+
 
 ## How to answer in the interview
 

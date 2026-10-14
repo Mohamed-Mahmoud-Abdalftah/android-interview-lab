@@ -82,17 +82,16 @@ Stack is fast, thread-local LIFO memory holding primitive local variables, funct
 
 The Stack and Heap represent the two foundational memory areas in Android runtime execution:
 
-**The Stack**:
+**The Stack**.
 
-- **Scope & Lifecycle**: Thread-local. Every OS thread has its own dedicated call stack.
-- **What lives here**: Function call frames, local primitive variables (`int`, `boolean`, `double`), and reference pointers pointing to objects in the heap.
-- **Management**: Managed directly by CPU instruction pointer registers in a LIFO order. Memory allocation and deallocation happen in O(1) instant time when functions are pushed and popped. Zero GC involvement.
+First, with Scope & Lifecycle, thread-local. Every OS thread has its own dedicated call stack. Next, with What lives here, function call frames, local primitive variables (`int`, `boolean`, `double`), and reference pointers pointing to objects in the heap.
+Finally, with Management, managed directly by CPU instruction pointer registers in a LIFO order. Memory allocation and deallocation happen in O(1) instant time when functions are pushed and popped. Zero GC involvement.
 
-**The Heap**:
+**The Heap**.
 
-- **Scope & Lifecycle**: Globally shared across all threads within the app process.
-- **What lives here**: All instantiated objects (`class`, `data class`), arrays, collections, boxed primitives (`Integer`), coroutine state machines, and string contents.
-- **Management**: Dynamically allocated and asynchronously reclaimed by the Garbage Collector.
+First, with Scope & Lifecycle, globally shared across all threads within the app process. Next, with What lives here, all instantiated objects (`class`, `data class`), arrays, collections, boxed primitives (`Integer`), coroutine state machines, and string contents.
+Finally, with Management, dynamically allocated and asynchronously reclaimed by the Garbage Collector.
+
 
 ## Interview answer — deep senior
 
@@ -108,6 +107,7 @@ fun track() {
 ```
 
 Because the lambda outlives the `track()` function's stack frame, the compiler promotes `count` from the stack to the heap, wrapping it in a heap-allocated `Ref.IntRef` object. This is known as **Variable Escaping**.
+
 
 ## How to answer in the interview
 

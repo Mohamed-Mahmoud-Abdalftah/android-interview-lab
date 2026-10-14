@@ -95,17 +95,12 @@ The primary principle to apply is Open/Closed Principle (OCP) using the Strategy
 
 If integrating a single new payment provider requires editing 10 existing classes across your application, the codebase is suffering from severe **shotgun surgery** caused by violating core SOLID principles.
 
-1. **Open/Closed Principle (OCP) - The Primary Cure**:
-   - The 10 classes are littered with type checks (`when (paymentType)` or `if (type == "STRIPE")`).
-   - **The Fix**: Abstract provider behavior behind a cohesive `PaymentGateway` interface (The Strategy Pattern). The payment orchestrator dynamically delegates to an injected collection (`Set<PaymentGateway>`), closing existing classes to modification.
+First, **Open/Closed Principle (OCP) - The Primary Cure**. Next, the 10 classes are littered with type checks (`when (paymentType)` or `if (type == "STRIPE")`).
+Additionally, with The Fix, abstract provider behavior behind a cohesive `PaymentGateway` interface (The Strategy Pattern). The payment orchestrator dynamically delegates to an injected collection (`Set<PaymentGateway>`), closing existing classes to modification. **Single Responsibility Principle (SRP)**.
+Payment details (validation, fee calculation, API invocation, receipt rendering) are smeared across 10 unrelated classes (Activities, ViewModels, Analytics, Storage). With The Fix, encapsulate all provider-specific behaviors inside the concrete `PaymentGateway` implementation. A new provider now requires authoring **exactly one new class**.
+**Dependency Inversion Principle (DIP)**. Consumers depend directly on concrete third-party payment SDKs (Stripe SDK, PayPal SDK) rather than an internal domain abstraction.
+Finally, a The Fix is the domain layer defines the payment abstraction, and adapters in the data layer isolate third-party SDK dependencies.
 
-2. **Single Responsibility Principle (SRP)**:
-   - Payment details (validation, fee calculation, API invocation, receipt rendering) are smeared across 10 unrelated classes (Activities, ViewModels, Analytics, Storage).
-   - **The Fix**: Encapsulate all provider-specific behaviors inside the concrete `PaymentGateway` implementation. A new provider now requires authoring **exactly one new class**.
-
-3. **Dependency Inversion Principle (DIP)**:
-   - Consumers depend directly on concrete third-party payment SDKs (Stripe SDK, PayPal SDK) rather than an internal domain abstraction.
-   - **The Fix**: The domain layer defines the payment abstraction, and adapters in the data layer isolate third-party SDK dependencies.
 
 ## Interview answer — deep senior
 
@@ -114,6 +109,7 @@ In software metrics, this code smell is called **Shotgun Surgery** (a single con
 Shotgun surgery introduces high regression risk: if an engineer forgets to update class #9 or #10, the bug only surfaces in production under specific edge cases.
 
 By encapsulating the provider behind a Strategy interface and leveraging Dagger Multibindings (`@IntoSet`), adding a new provider becomes an **additive-only change**: create `GooglePayGateway.kt`, bind it in Hilt, and create its dedicated unit test. Zero existing classes are touched, zero merge conflicts occur, and existing payment flows remain completely safe.
+
 
 ## How to answer in the interview
 

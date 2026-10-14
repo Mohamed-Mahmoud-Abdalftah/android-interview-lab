@@ -121,28 +121,21 @@ Design feature flags using a tiered evaluation model: bundled in-app defaults fo
 
 ## Interview answer — structured
 
-A production feature flag and staged rollout infrastructure separates deployment from release while insulating the app from network latency:
+A production feature flag and staged rollout infrastructure separates deployment from release while insulating the app from network latency.
 
-1. **Multi-Layered Flag Evaluation**:
-   - **Static Defaults**: Hardcoded compile-time defaults ensure instant fallback if network or disk fails.
-   - **Local Disk Cache**: Persistent values stored in DataStore allow instant synchronous evaluation on app cold start without blocking UI rendering.
-   - **Remote Provider (Firebase Remote Config / LaunchDarkly)**: Fetches remote updates in the background based on user targeting cohorts and percentage rollouts.
+First, **Multi-Layered Flag Evaluation**. Next, with Static Defaults, hardcoded compile-time defaults ensure instant fallback if network or disk fails.
+Additionally, with Local Disk Cache, persistent values stored in DataStore allow instant synchronous evaluation on app cold start without blocking UI rendering. With Remote Provider (Firebase Remote Config / LaunchDarkly), fetches remote updates in the background based on user targeting cohorts and percentage rollouts.
+**Activate-On-Next-Launch Policy**. Never mutate feature flags dynamically while the user is navigating an active flow. Changing flags mid-session causes jarring UI rebuilds, state fragmentation, or mid-transaction crashes. Fetch updates in the background, cache them locally, and activate on the next application restart.
+**Emergency Remote Kill Switch**. Finally, reserve a high-priority bypass channel for critical operational kill switches (e.g. Disabling a broken payment gateway). Critical kill-switch flags can be observed reactively to terminate broken components immediately.
 
-2. **Activate-On-Next-Launch Policy**:
-   - Never mutate feature flags dynamically while the user is navigating an active flow. Changing flags mid-session causes jarring UI rebuilds, state fragmentation, or mid-transaction crashes. Fetch updates in the background, cache them locally, and activate on the next application restart.
-
-3. **Emergency Remote Kill Switch**:
-   - Reserve a high-priority bypass channel for critical operational kill switches (e.g. disabling a broken payment gateway). Critical kill-switch flags can be observed reactively to terminate broken components immediately.
 
 ## Interview answer — deep senior
 
-From an architectural governance and technical debt standpoint, feature flag systems require strict lifecycle management:
+From an architectural governance and technical debt standpoint, feature flag systems require strict lifecycle management.
 
-1. **Flag Expiration & Technical Debt Cleanup**: Flags that remain in codebases indefinitely create exponential combinatorial testing permutations and dead code paths. Enforce an expiration SLA (e.g., maximum 60 days). Once a feature is rolled out to 100% and proven stable, schedule technical debt tickets to delete the flag checks, retire remote configurations, and inline the permanent implementation.
+First, with Flag Expiration & Technical Debt Cleanup, flags that remain in codebases indefinitely create exponential combinatorial testing permutations and dead code paths. Enforce an expiration SLA (e.g., maximum 60 days). Once a feature is rolled out to 100% and proven stable, schedule technical debt tickets to delete the flag checks, retire remote configurations, and inline the permanent implementation. Next, with Consistent Hashing for Percentage Rollouts, rollout buckets must be deterministic. Calculate user cohorts using consistent hashing over the `userId` combined with the `flagKey`: `hash(userId + flagKey) % 100 < rolloutPercentage`. This guarantees that an individual user remains in their assigned bucket across app restarts without state drift.
+Finally, with A/B Testing & Metric Correlation, correlate feature flag exposure events directly with analytics pipelines. When a user evaluates a flag, emit an exposure log so data platforms can measure business metric lift (conversion, retention, crashes) between control and treatment groups.
 
-2. **Consistent Hashing for Percentage Rollouts**: Rollout buckets must be deterministic. Calculate user cohorts using consistent hashing over the `userId` combined with the `flagKey`: `hash(userId + flagKey) % 100 < rolloutPercentage`. This guarantees that an individual user remains in their assigned bucket across app restarts without state drift.
-
-3. **A/B Testing & Metric Correlation**: Correlate feature flag exposure events directly with analytics pipelines. When a user evaluates a flag, emit an exposure log so data platforms can measure business metric lift (conversion, retention, crashes) between control and treatment groups.
 
 ## How to answer in the interview
 

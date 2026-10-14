@@ -116,6 +116,7 @@ It only triggers under strict conditions: 1) It must be installed on a **root co
 
 Where it does NOT help: First, it has zero effect when attached to child coroutines. A child coroutine always delegates unhandled exceptions upward to its parent, ignoring its own CEH. Second, it does not catch exceptions from `async` coroutines, which encapsulate errors inside the `Deferred` until `await()` is called. Third, it cannot recover or resume execution—by the time CEH runs, the coroutine has already crashed and unwound.
 
+
 ## Interview answer — deep senior
 
 Under the hood, exception handling in structured concurrency operates through a hierarchical delegation chain. When a child coroutine throws an unhandled exception, it checks if it has a parent. If a parent Job exists, the child passes the exception to the parent via `parent.childCancelled(cause)` and terminates. It completely bypasses its own context's `CoroutineExceptionHandler`.
@@ -123,6 +124,7 @@ Under the hood, exception handling in structured concurrency operates through a 
 Only when the exception reaches the root `Job` (a Job with no parent), does the coroutine machinery check the root context for a `CoroutineExceptionHandler`. If present, it invokes `handleException(context, exception)`. If no CEH is found in the root context, it delegates to the JVM's `Thread.currentThread().uncaughtExceptionHandler`, which results in a fatal Android app crash.
 
 In production architecture, CEH should never replace standard `try-catch` blocks or domain Result wrapping in repositories and ViewModels. It should only be configured once on top-level scopes (like custom application-level scopes) as a safety net against unexpected runtime crashes.
+
 
 ## How to answer in the interview
 

@@ -129,13 +129,11 @@ Non-static Handlers retain outer Activity references; delayed messages in the Me
 
 Memory leaks from callbacks, Handlers, observers, and static references stem from breaking object lifecycle symmetry.
 
-1. **Handlers & MessageQueue**: A non-static Handler holds an implicit reference to its enclosing Activity. When a message is scheduled with `postDelayed()`, the `Message` in the main thread's `MessageQueue` holds a reference to the Handler target, which holds the Activity. Until the message executes or is cleared with `removeCallbacksAndMessages(null)`, the entire Activity graph is retained as a GC Root.
-
-2. **Static References**: Any `companion object` property or static variable persists across the entire application process. Assigning an Activity or View to a static field directly prevents GC reclamation.
-
-3. **Unregistered Observers**: When an Activity registers as a listener with a long-lived publisher—such as `LocationManager`, `SensorManager`, or a singleton EventBus—the publisher stores a strong reference. Failing to unregister symmetry (`unregisterListener()` in `onStop()` or `onDestroy()`) creates a permanent leak.
+First, a Handlers & MessageQueue is a non-static Handler holds an implicit reference to its enclosing Activity. When a message is scheduled with `postDelayed()`, the `Message` in the main thread's `MessageQueue` holds a reference to the Handler target, which holds the Activity. Until the message executes or is cleared with `removeCallbacksAndMessages(null)`, the entire Activity graph is retained as a GC Root. Next, with Static References, any `companion object` property or static variable persists across the entire application process. Assigning an Activity or View to a static field directly prevents GC reclamation.
+Finally, with Unregistered Observers, when an Activity registers as a listener with a long-lived publisher—such as `LocationManager`, `SensorManager`, or a singleton EventBus—the publisher stores a strong reference. Failing to unregister symmetry (`unregisterListener()` in `onStop()` or `onDestroy()`) creates a permanent leak.
 
 In modern Android development, we prevent these by replacing raw Handlers with lifecycle-aware coroutines (`lifecycleScope`), binding observers with `LifecycleOwner`, and utilizing `AutoCloseable` or structured cleanup patterns.
+
 
 ## Interview answer — deep senior
 
@@ -144,6 +142,7 @@ Under the hood, Java and Kotlin inner classes differ in reference semantics: a s
 When dealing with Handlers specifically, the classic Java remedy was declaring a static class paired with a `WeakReference<Activity>`. However, in modern Kotlin, Handlers are largely legacy; suspending coroutines with `delay()` within `lifecycleScope` are automatically cancelled via cooperative cancellation when the `LifecycleOwner` reaches `DESTROYED`, dropping the continuation and preventing the leak entirely.
 
 In enterprise monitoring, LeakCanary excels at pinpointing these leaks by identifying the `target` field in queued `android.os.Message` instances or scanning registered observer arrays in system managers.
+
 
 ## How to answer in the interview
 

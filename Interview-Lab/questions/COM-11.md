@@ -113,9 +113,8 @@ Document each effect's identity and cancellation semantics. Test navigation betw
 
 The difference between `LaunchedEffect(Unit)` and `LaunchedEffect(key)` lies in restart semantics based on key equality.
 
-1. **`LaunchedEffect(Unit)`**: Because `Unit` is a constant singleton, its key never changes. The coroutine launches when the composable initially enters the composition and remains running until the composable leaves the composition tree. It is ideal for fire-and-forget one-off operations that are independent of changing inputs, such as playing a screen-entry sound or showing an introductory prompt.
+First, with LaunchedEffect(Unit), because `Unit` is a constant singleton, its key never changes. The coroutine launches when the composable initially enters the composition and remains running until the composable leaves the composition tree. It is ideal for fire-and-forget one-off operations that are independent of changing inputs, such as playing a screen-entry sound or showing an introductory prompt. Finally, with LaunchedEffect(key), takes one or more dynamic keys (e.g. `query`, `filterId`). On every recomposition pass, Compose compares current keys against their previous instances using `equals()`. If any key has changed, Compose automatically cancels the running coroutine job cooperatively and launches a new one with the updated values. This is essential for operations like dynamic querying, pagination, or debouncing input.
 
-2. **`LaunchedEffect(key)`**: Takes one or more dynamic keys (e.g. `query`, `filterId`). On every recomposition pass, Compose compares current keys against their previous instances using `equals()`. If any key has changed, Compose automatically cancels the running coroutine job cooperatively and launches a new one with the updated values. This is essential for operations like dynamic querying, pagination, or debouncing input.
 
 ## Interview answer — deep senior
 
@@ -124,6 +123,7 @@ A dangerous production bug occurs when developers use `LaunchedEffect(Unit)` whi
 Conversely, passing unstable or constantly changing keys (like `currentTimeMillis()` or non-memoized objects) triggers **restart thrashing**: canceling and spawning hundreds of coroutines per second, pegging the CPU and dropping frames.
 
 If an effect depends on multiple inputs, Compose supports vararg keys: `LaunchedEffect(key1, key2)`. The effect restarts if either key changes.
+
 
 ## How to answer in the interview
 

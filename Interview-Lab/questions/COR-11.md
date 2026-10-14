@@ -239,6 +239,7 @@ For example, imagine a home screen loading the profile, offers, and notification
 
 One important detail is that `supervisorScope` doesn't handle exceptions for you. I still need to convert expected failures into meaningful results, and I must let `CancellationException` propagate when the screen is cancelled.
 
+
 ## Interview answer — deep senior
 
 The important distinction is failure propagation, not just whether we're using `async`. In `coroutineScope`, a child throwing an uncaught exception cancels the parent scope and its sibling jobs. Catching a failure only when calling `await()` may be too late, because the child can already have cancelled the scope.
@@ -248,6 +249,7 @@ In `supervisorScope`, a direct child's failure doesn't cancel the other children
 Say the dashboard has three independent endpoints. I'd launch them in a `supervisorScope`, catch expected network failures inside each child, map each outcome to a typed UI result, and explicitly rethrow cancellation. That lets the screen display two successful sections and a retry action for the failed one. I'd use `runTest` to verify partial success and to confirm that cancelling the parent stops the pending requests.
 
 For operations that must all succeed together, such as gathering mandatory inputs for a financial calculation, I'd normally prefer `coroutineScope`. The choice comes from the product invariant, not personal preference. And neither scope means an already accepted network request has been rolled back, so external side effects need their own idempotency and reconciliation rules.
+
 
 ## How to answer in the interview
 

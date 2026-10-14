@@ -103,6 +103,7 @@ Here is how I architecturally classify each stream primitive in modern Android d
 
 **LiveData** is Android's legacy, lifecycle-aware observable. While it automatically pauses observers in the background, it is tightly coupled to Android platform lifecycles (breaking KMP), is restricted to main-thread dispatches, and lacks the composability and operator depth of Coroutines Flow. Modern projects standardize on StateFlow.
 
+
 ## Interview answer — deep senior
 
 The primary technical driver for migrating from LiveData to StateFlow is architectural purity and Kotlin Multiplatform (KMP) readiness. LiveData requires the `androidx.lifecycle` Android dependency, polluting pure Kotlin Domain and UseCase layers with platform imports.
@@ -110,6 +111,7 @@ The primary technical driver for migrating from LiveData to StateFlow is archite
 Furthermore, LiveData's threading model has known edge cases: calling `postValue()` from background threads conflates intermediate values if posted faster than the main Looper can dispatch them, leading to lost events in rapid succession.
 
 With StateFlow and Jetpack Compose, the integration is seamless via `collectAsStateWithLifecycle()`. In XML layouts, `lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED) { stateFlow.collect { ... } } }` achieves identical or superior lifecycle safety to LiveData without any platform lock-in.
+
 
 ## How to answer in the interview
 

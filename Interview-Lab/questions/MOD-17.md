@@ -80,18 +80,14 @@ A new feature module is justified when driven by independent team ownership, hig
 
 ## Interview answer — structured
 
-Creating a new Gradle module carries a permanent maintenance and build cost. A senior engineer evaluates module extraction against four concrete criteria:
+Creating a new Gradle module carries a permanent maintenance and build cost. A senior engineer evaluates module extraction against four concrete criteria.
 
-1. **When It Is Justified**:
-   - **Team Ownership Boundaries**: A dedicated team owns the feature (e.g., `:feature:checkout` owned by the Payments team), supported by explicit GitHub `CODEOWNERS` rules.
-   - **Compilation Velocity & Caching**: The feature experiences high code churn. Isolating it ensures that hundreds of daily commits do not trigger recompilations of stable sibling modules.
-   - **Dynamic Feature Delivery**: The feature is delivered conditionally or on-demand via Android App Bundles (e.g. heavy ML or AR features).
-   - **Fast Isolated Feedback**: The team requires an isolated sample app (`:feature:x:sample`) that compiles in 4 seconds to test UI flows without launching the monolithic app.
+First, **When It Is Justified**. Next, team Ownership Boundaries is a dedicated team owns the feature (e.g., `:feature:checkout` owned by the Payments team), supported by explicit GitHub `CODEOWNERS` rules.
+Additionally, a Compilation Velocity & Caching is the feature experiences high code churn. Isolating it ensures that hundreds of daily commits do not trigger recompilations of stable sibling modules. A Dynamic Feature Delivery is the feature is delivered conditionally or on-demand via Android App Bundles (e.g. Heavy ML or AR features).
+A Fast Isolated Feedback is the team requires an isolated sample app (`:feature:x:sample`) that compiles in 4 seconds to test UI flows without launching the monolithic app. **When It Is Accidental Complexity**.
+With Trivial Read-Only Screens, creating dedicated modules for 'About Us' or 'Legal Terms'. With Tightly Coupled Sub-flows, splitting screens that inherently share view models, state machines, and atomic transactions.
+Finally, with Premature Granularity, splitting code into hundreds of micro-modules, degrading Android Studio IDE sync times and increasing Gradle configuration overhead.
 
-2. **When It Is Accidental Complexity**:
-   - **Trivial Read-Only Screens**: Creating dedicated modules for 'About Us' or 'Legal Terms'.
-   - **Tightly Coupled Sub-flows**: Splitting screens that inherently share view models, state machines, and atomic transactions.
-   - **Premature Granularity**: Splitting code into hundreds of micro-modules, degrading Android Studio IDE sync times and increasing Gradle configuration overhead.
 
 ## Interview answer — deep senior
 
@@ -100,6 +96,7 @@ The performance trade-off of modularization is governed by the ratio between **G
 In a project with 300 micro-modules, Gradle must evaluate 300 `build.gradle.kts` files, configure 300 compile tasks, and Android Studio must index 300 module source sets. If modules are too small, the configuration phase takes 15 seconds, while the actual compilation takes 2 seconds—making the developer experience painfully sluggish.
 
 A pragmatic rule of thumb: **Start with cohesive package structures inside a single module**. Only extract a package into a discrete Gradle module when package-level boundaries are established, compilation frequency is high, or cross-team collaboration friction demands physical enforcement.
+
 
 ## How to answer in the interview
 

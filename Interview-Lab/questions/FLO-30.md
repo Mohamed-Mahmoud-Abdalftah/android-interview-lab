@@ -92,19 +92,19 @@ replay is guaranteed to retain up to N latest items in memory for future subscri
 
 ## Interview answer — structured
 
-This is one of the most critical and frequently misunderstood memory guarantees in Kotlin Coroutines:
+This is one of the most critical and frequently misunderstood memory guarantees in Kotlin Coroutines.
 
-1. **`replay` guarantees retention:** The replay cache is permanent and memory-resident. If `replay = 2`, `SharedFlow` retains the last 2 emitted items in memory indefinitely, even if there are zero active subscribers. When a new collector subscribes in the future, it is guaranteed to receive those 2 replayed items immediately.
-
-2. **`extraBufferCapacity` provides ZERO retention with 0 subscribers:** A common misconception is that an extra buffer of 10 will hold 10 items while waiting for subscribers. It does not. The extra buffer capacity exists solely to absorb backpressure for *active, currently connected* slow subscribers. If `subscriptionCount == 0`, emissions beyond the `replay` count are dropped immediately and permanently, regardless of how large `extraBufferCapacity` is configured.
+First, **`replay` guarantees retention:** The replay cache is permanent and memory-resident. If `replay = 2`, `SharedFlow` retains the last 2 emitted items in memory indefinitely, even if there are zero active subscribers. When a new collector subscribes in the future, it is guaranteed to receive those 2 replayed items immediately. Finally, **`extraBufferCapacity` provides ZERO retention with 0 subscribers:** A common misconception is that an extra buffer of 10 will hold 10 items while waiting for subscribers. It does not. The extra buffer capacity exists solely to absorb backpressure for *active, currently connected* slow subscribers. If `subscriptionCount == 0`, emissions beyond the `replay` count are dropped immediately and permanently, regardless of how large `extraBufferCapacity` is configured.
 
 If your architecture requires guaranteed delivery of queued events to future subscribers, you must use a buffered **Channel** (`Channel(Channel.BUFFERED)`), not a SharedFlow.
+
 
 ## Interview answer — deep senior
 
 Under the hood, in `SharedFlowImpl`, the internal buffer consists of a `head` and `tail` pointer array representing replay slots and extra buffer slots. When `emit()` or `tryEmit()` is called, the implementation checks `if (nSubscribers == 0)`. If true, the code path strictly executes `updateReplayCache(value)` and returns immediately. It completely skips queuing items into the extra buffer indices.
 
 This behavior is by design: `SharedFlow` models broadcast pub-sub, not a persistent task queue. If a SharedFlow preserved unconsumed items without subscribers, a ViewModel that emits analytics or telemetry while unobserved would grow memory without bound until a subscriber attached. For guaranteed queueing semantics across lifecycles, `Channel.send()` is the appropriate concurrency primitive.
+
 
 ## How to answer in the interview
 

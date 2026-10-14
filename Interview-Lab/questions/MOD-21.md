@@ -77,25 +77,21 @@ Dynamic Feature Modules are inappropriate for critical paths (login, checkout), 
 
 ## Interview answer — structured
 
-Dynamic Feature Modules (DFMs) solve APK download size constraints, but they introduce severe runtime failure vectors that make them inappropriate for core application functionality:
+Dynamic Feature Modules (DFMs) solve APK download size constraints, but they introduce severe runtime failure vectors that make them inappropriate for core application functionality.
 
-1. **Critical Path User Journeys**: Onboarding, Authentication, Catalog browsing, and Checkout must **never** be dynamic features. Requiring a user to wait for a 15MB download before they can log in or swipe their credit card causes catastrophic conversion drops.
+First, with Critical Path User Journeys, onboarding, Authentication, Catalog browsing, and Checkout must **never** be dynamic features. Requiring a user to wait for a 15MB download before they can log in or swipe their credit card causes catastrophic conversion drops. Next, with Offline-First Architectural Constraints, if an application must operate without active cellular connectivity (e.g., warehouse inventory scanning, field inspections, emergency response), an uninstalled on-demand module is completely unreachable, turning core features into dead buttons.
+Finally, with Store Vendor Lock-in, google Play Feature Delivery relies strictly on the Google Play Core library and Play Store client infrastructure. If the app is distributed via sideloading, enterprise MDM, Amazon Appstore, or Huawei AppGallery, dynamic split downloading is unsupported.
 
-2. **Offline-First Architectural Constraints**: If an application must operate without active cellular connectivity (e.g., warehouse inventory scanning, field inspections, emergency response), an uninstalled on-demand module is completely unreachable, turning core features into dead buttons.
+Reserve DFMs strictly for non-critical, heavy, infrequently used capabilities (e.g. A 40MB AR furniture previewer or an annual tax calculator). Core capabilities should always be bundled into the base APK using standard Gradle library modules.
 
-3. **Store Vendor Lock-in**: Google Play Feature Delivery relies strictly on the Google Play Core library and Play Store client infrastructure. If the app is distributed via sideloading, enterprise MDM, Amazon Appstore, or Huawei AppGallery, dynamic split downloading is unsupported.
-
-Reserve DFMs strictly for non-critical, heavy, infrequently used capabilities (e.g. a 40MB AR furniture previewer or an annual tax calculator). Core capabilities should always be bundled into the base APK using standard Gradle library modules.
 
 ## Interview answer — deep senior
 
-When analyzing failure modes for on-demand DFMs in production telemetry:
+When analyzing failure modes for on-demand DFMs in production telemetry.
 
-1. **High Download Drop-off**: Network metrics reveal that 10% to 25% of on-demand download requests fail due to mobile network handoffs, slow roaming data, or insufficient device disk storage (`ERROR_INSUFFICIENT_STORAGE`).
+First, with High Download Drop-off, network metrics reveal that 10% to 25% of on-demand download requests fail due to mobile network handoffs, slow roaming data, or insufficient device disk storage (`ERROR_INSUFFICIENT_STORAGE`). Next, with User Drop-off During Progress Spinners, even when the download succeeds, placing a 10-second download progress bar between a user's tap and screen presentation causes over 30% of users to abandon the funnel.
+Finally, with The Architectural Sweet Spot, if module size reduction is the primary goal, senior teams evaluate asset streaming (downloading heavy 3D assets or ML models from a standard CDN to local disk) rather than dynamic code splits. Streaming assets keeps code paths in the base APK with full compile-time type safety while keeping initial download sizes minimal.
 
-2. **User Drop-off During Progress Spinners**: Even when the download succeeds, placing a 10-second download progress bar between a user's tap and screen presentation causes over 30% of users to abandon the funnel.
-
-3. **The Architectural Sweet Spot**: If module size reduction is the primary goal, senior teams evaluate asset streaming (downloading heavy 3D assets or ML models from a standard CDN to local disk) rather than dynamic code splits. Streaming assets keeps code paths in the base APK with full compile-time type safety while keeping initial download sizes minimal.
 
 ## How to answer in the interview
 

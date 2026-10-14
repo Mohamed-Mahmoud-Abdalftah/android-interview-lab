@@ -95,15 +95,11 @@ Manage multi-module DI by keeping interfaces in domain/api modules, implementati
 
 ## Interview answer — structured
 
-Managing dependency injection cleanly in a multi-module architecture relies on Hilt's decentralized compilation model:
+Managing dependency injection cleanly in a multi-module architecture relies on Hilt's decentralized compilation model.
 
-1. **Contract Definition**: Domain and API modules define pure interfaces (e.g. `AuthRepository`) without depending on Hilt or Android frameworks.
+First, with Contract Definition, domain and API modules define pure interfaces (e.g. `AuthRepository`) without depending on Hilt or Android frameworks. Next, with Implementation & Module Packaging, data and implementation modules contain the concrete class with an `@Inject constructor`. Alongside the implementation, the module includes a Hilt `@Module` annotated with `@InstallIn(SingletonComponent::class)` using `@Binds` to bind the interface to the concrete class.
+Additionally, with Consumer Decoupling, feature modules inject the interface into their `@HiltViewModel` constructors, depending only on the interface module. They have zero compile-time dependencies on the implementation module. Finally, a Root Aggregation is the `:app` module aggregates all implementation modules at compile time, resolving the full Dagger graph with zero manual component wiring.
 
-2. **Implementation & Module Packaging**: Data and implementation modules contain the concrete class with an `@Inject constructor`. Alongside the implementation, the module includes a Hilt `@Module` annotated with `@InstallIn(SingletonComponent::class)` using `@Binds` to bind the interface to the concrete class.
-
-3. **Consumer Decoupling**: Feature modules inject the interface into their `@HiltViewModel` constructors, depending only on the interface module. They have zero compile-time dependencies on the implementation module.
-
-4. **Root Aggregation**: The `:app` module aggregates all implementation modules at compile time, resolving the full Dagger graph with zero manual component wiring.
 
 ## Interview answer — deep senior
 
@@ -112,6 +108,7 @@ A critical pitfall in multi-module DI is **Accidental Dependency Leakage via Hil
 Because Hilt aggregates modules across the entire classpath of `:app`, if two feature modules accidentally bind the same interface without qualifiers, Dagger fails at the root `:app` compilation level with a `DuplicateBindingException`, even though both feature modules compiled individually without errors!
 
 Furthermore, for **Dynamic Feature Modules (Play Feature Delivery)**, standard Hilt `@InstallIn` cannot be resolved because `:app` does not depend on dynamic feature modules. To provide dependencies into dynamic features, developers must use `@EntryPoint` to explicitly retrieve base graph dependencies from the `applicationContext`.
+
 
 ## How to answer in the interview
 

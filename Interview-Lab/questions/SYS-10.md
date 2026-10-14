@@ -139,29 +139,21 @@ Model states and transitions using an explicit finite state machine with Kotlin 
 
 ## Interview answer — structured
 
-Modeling complex UI and domain journeys using explicit State Machines eliminates the 'boolean flag explosion' where disparate variables create invalid state permutations:
+Modeling complex UI and domain journeys using explicit State Machines eliminates the 'boolean flag explosion' where disparate variables create invalid state permutations.
 
-1. **Making Invalid States Unrepresentable**:
-   - Replace scattered variables (`var isLoading`, `var isError`, `var data`) with a single immutable sealed hierarchy (`Loading`, `Empty`, `Content`, `Error`). A screen cannot be simultaneously in `Loading` and `Error` because the type system strictly forbids it.
+First, **Making Invalid States Unrepresentable**. Next, replace scattered variables (`var isLoading`, `var isError`, `var data`) with a single immutable sealed hierarchy (`Loading`, `Empty`, `Content`, `Error`). A screen cannot be simultaneously in `Loading` and `Error` because the type system strictly forbids it.
+**Typed Events as Transition Triggers**. Define a sealed interface representing all valid inputs (`UiEvent`). The UI emits intent events into the ViewModel without directly mutating data.
+**Deterministic State Transitions (Reducers)**. Transition logic follows a pure functional pattern: `f(State, Event) -> State`. Disallowed transitions are ignored or logged as violations, protecting flows like payments from duplicate executions during transitions.
+**Isolating Side Effects**. Finally, decouple continuous UI state (rendered by Compose) from discrete one-off side effects (navigation commands, analytics triggers, toast messages). Channel side effects through a buffered `Channel<UiEffect>` consumed once via `LaunchedEffect`.
 
-2. **Typed Events as Transition Triggers**:
-   - Define a sealed interface representing all valid inputs (`UiEvent`). The UI emits intent events into the ViewModel without directly mutating data.
-
-3. **Deterministic State Transitions (Reducers)**:
-   - Transition logic follows a pure functional pattern: `f(State, Event) -> State`. Disallowed transitions are ignored or logged as violations, protecting flows like payments from duplicate executions during transitions.
-
-4. **Isolating Side Effects**:
-   - Decouple continuous UI state (rendered by Compose) from discrete one-off side effects (navigation commands, analytics triggers, toast messages). Channel side effects through a buffered `Channel<UiEffect>` consumed once via `LaunchedEffect`.
 
 ## Interview answer — deep senior
 
-From an architectural rigor standpoint, finite state machines provide unparalleled testability and auditability:
+From an architectural rigor standpoint, finite state machines provide unparalleled testability and auditability.
 
-1. **Exhaustive Unit Test Coverage**: Because state transitions are modeled as deterministic functions taking `(State, Event)`, unit testing requires zero mocking of Android framework components. You can assert that submitting `SubmitPayment` while in `ProcessingPayment` state is a no-op, preventing double-submission bugs with simple pure unit tests.
+First, with Exhaustive Unit Test Coverage, because state transitions are modeled as deterministic functions taking `(State, Event)`, unit testing requires zero mocking of Android framework components. You can assert that submitting `SubmitPayment` while in `ProcessingPayment` state is a no-op, preventing double-submission bugs with simple pure unit tests. Next, with State Restoration & Process Death, explicit state machines serialize seamlessly into Android `SavedStateHandle`. If the state machine is composed of parcelable primitives or identifiers, restoring the exact step of a multi-stage KYC or checkout flow post-process death requires deserializing a single state token.
+Finally, with Hierarchical State Machines (Statecharts), for massive multi-step workflows (e.g., identity verification with camera capture, document review, and address confirmation), nest smaller child state machines within a parent coordinator state machine, ensuring sub-flow encapsulation.
 
-2. **State Restoration & Process Death**: Explicit state machines serialize seamlessly into Android `SavedStateHandle`. If the state machine is composed of parcelable primitives or identifiers, restoring the exact step of a multi-stage KYC or checkout flow post-process death requires deserializing a single state token.
-
-3. **Hierarchical State Machines (Statecharts)**: For massive multi-step workflows (e.g., identity verification with camera capture, document review, and address confirmation), nest smaller child state machines within a parent coordinator state machine, ensuring sub-flow encapsulation.
 
 ## How to answer in the interview
 

@@ -105,21 +105,20 @@ Collecting without lifecycle awareness continues active flow processing in the b
 
 ## Interview answer — structured
 
-Collecting flows indefinitely without lifecycle awareness (such as launching directly in `lifecycleScope.launch` without `repeatOnLifecycle`, or using plain `collectAsState()` in Compose) leads to three severe production defects:
+Collecting flows indefinitely without lifecycle awareness (such as launching directly in `lifecycleScope.launch` without `repeatOnLifecycle`, or using plain `collectAsState()` in Compose) leads to three severe production defects.
 
-1. **Severe Battery and Network Drain:** If the flow is connected to an upstream sensor, location updates, WebSocket, or polling repository, collection remains completely active even when the phone is locked in a user's pocket. Google Play Console will flag the app for excessive background execution and wake-locks.
-
-2. **Memory Leaks:** The active coroutine retains references to the View or Composable in its closure. If the user navigates between screens, destroyed views cannot be garbage-collected as long as the background collection coroutine is alive.
-
-3. **IllegalState Crashes:** When an emission arrives while the app is in the background, attempting to trigger fragment navigation or show dialogs throws `IllegalStateException: Can not perform this action after onSaveInstanceState`.
+First, **Severe Battery and Network Drain:** If the flow is connected to an upstream sensor, location updates, WebSocket, or polling repository, collection remains completely active even when the phone is locked in a user's pocket. Google Play Console will flag the app for excessive background execution and wake-locks. Next, **Memory Leaks:** The active coroutine retains references to the View or Composable in its closure. If the user navigates between screens, destroyed views cannot be garbage-collected as long as the background collection coroutine is alive.
+Finally, **IllegalState Crashes:** When an emission arrives while the app is in the background, attempting to trigger fragment navigation or show dialogs throws `IllegalStateException: Can not perform this action after onSaveInstanceState`.
 
 Enforcing `repeatOnLifecycle(STARTED)` or `collectAsStateWithLifecycle()` eliminates all these issues by pausing collection the moment the UI leaves the foreground.
+
 
 ## Interview answer — deep senior
 
 At the systems level, Android's OS kernel prioritizes foreground processes (OOM adj 0) and demotes background apps down the OOM adj score list. If a background app continuously spins CPU threads or makes network sockets because of an unpaused Flow collection, Android's system watchdog detects high battery consumption via Batterystats and issues a warning in Android Vitals.
 
 Furthermore, pairing lifecycle-aware collectors with `WhileSubscribed(5000)` in the ViewModel creates an end-to-end reactive circuit: When `repeatOnLifecycle` cancels the collector upon entering `STOPPED`, the ViewModel's `StateFlow.subscriptionCount` drops to 0. After 5 seconds, the ViewModel shuts down upstream Room or Network observations, freeing SQLite cursor locks and closing network sockets at the operating system level.
+
 
 ## How to answer in the interview
 

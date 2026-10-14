@@ -95,23 +95,20 @@ Composition over inheritance favors assembling components with 'has-a' relations
 
 The principle of 'Composition over Inheritance' advocates that classes should achieve polymorphic reuse by containing instances of other classes ('has-a') rather than inheriting state and behavior from a superclass ('is-a').
 
-1. **The Fragility of Inheritance**:
-   - Inheritance creates the tightest possible compile-time coupling: changes to private or protected implementations in a superclass ripple unpredictably across derived subclasses (the *Fragile Base Class problem*).
-   - Subclasses inherit irrelevant or unwanted behaviors (violating LSP).
-   - Single inheritance in Kotlin/Java prevents combining multiple orthogonal features (e.g. an Activity cannot inherit from both `BaseCameraActivity` and `BaseBillingActivity`).
-
-2. **The Power of Composition**:
-   - Components encapsulate isolated concerns (`AnalyticsHelper`, `SessionTracker`, `ToolbarCoordinator`).
-   - Components can be dynamically plugged in, swapped, or mocked in unit tests.
-   - Promotes high cohesion and clean unit testability.
+First, **The Fragility of Inheritance**. Next, inheritance creates the tightest possible compile-time coupling: changes to private or protected implementations in a superclass ripple unpredictably across derived subclasses (the *Fragile Base Class problem*).
+Subclasses inherit irrelevant or unwanted behaviors (violating LSP). Single inheritance in Kotlin/Java prevents combining multiple orthogonal features (e.g. An Activity cannot inherit from both `BaseCameraActivity` and `BaseBillingActivity`).
+**The Power of Composition**. Components encapsulate isolated concerns (`AnalyticsHelper`, `SessionTracker`, `ToolbarCoordinator`).
+Components can be dynamically plugged in, swapped, or mocked in unit tests. Finally, promotes high cohesion and clean unit testability.
 
 Jetpack Compose is the ultimate manifestation of this principle: Compose completely abandons the 15-year-old `android.view.View` inheritance tree in favor of pure, composable function graphs.
+
 
 ## Interview answer — deep senior
 
 Kotlin offers first-class language support for composition via **Class Delegation (`by`)**. By declaring `class MyActivity : AppCompatActivity(), AnalyticsManager by analyticsManager`, Kotlin generates forwarding bytecode calls under the hood. This delivers the syntactic convenience of inheritance while preserving the architectural purity and loose coupling of composition.
 
 In Android Jetpack, `LifecycleObserver` and `LifecycleEventObserver` represent the official migration from inheritance to composition: instead of overriding `onStart()` in a `BaseActivity`, self-contained components observe `lifecycle.addObserver(myComponent)`, managing their own cleanup automatically.
+
 
 ## How to answer in the interview
 

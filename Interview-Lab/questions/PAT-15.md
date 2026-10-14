@@ -126,19 +126,21 @@ To support multiple payment providers without creating a God Factory, define a c
 
 When designing a multi-payment architecture, the common failure is building a monolithic 'God Factory' that imports every vendor SDK, configures their credentials, handles their distinct callback listeners, and manages UI presentation logic in a giant `when` statement.
 
-A clean production architecture decouples this into three distinct layers:
-1. **Unified Strategy Contract**: We declare a high-level `PaymentStrategy` interface exposing common transaction semantics: `suspend fun pay(orderId: String, amount: Money): PaymentResult`.
-2. **Isolated Vendor Adapters**: Each provider (Stripe, PayPal, Google Pay) lives in its own class—or even its own Gradle module. The adapter handles SDK initialization, maps vendor exceptions into typed domain results, and keeps third-party imports quarantined.
-3. **Registry via DI Multibindings**: Instead of a monolithic factory class, we use Dagger/Hilt multibindings (`@IntoSet` or `@IntoMap`). The `PaymentProcessor` receives an injected `Map<PaymentMethod, PaymentStrategy>`. Adding a new payment provider requires writing one new adapter class and one binding module; existing code is completely untouched, honoring the Open/Closed Principle.
+A clean production architecture decouples this into three distinct layers.
+
+First, with Unified Strategy Contract, we declare a high-level `PaymentStrategy` interface exposing common transaction semantics: `suspend fun pay(orderId: String, amount: Money): PaymentResult`. Next, with Isolated Vendor Adapters, each provider (Stripe, PayPal, Google Pay) lives in its own class—or even its own Gradle module. The adapter handles SDK initialization, maps vendor exceptions into typed domain results, and keeps third-party imports quarantined.
+Finally, with Registry via DI Multibindings, instead of a monolithic factory class, we use Dagger/Hilt multibindings (`@IntoSet` or `@IntoMap`). The `PaymentProcessor` receives an injected `Map<PaymentMethod, PaymentStrategy>`. Adding a new payment provider requires writing one new adapter class and one binding module; existing code is completely untouched, honoring the Open/Closed Principle.
+
 
 ## Interview answer — deep senior
 
 The subtle architectural challenge in multi-payment systems is that payment providers rarely share identical lifecycle and UI capabilities. For example, Google Pay presents a native Android BottomSheet sheet, Stripe requires a 3D Secure Webview/Activity redirect, while direct card entry requires PCI-DSS compliant tokenization fields.
 
-If you force all these divergent requirements into a single synchronous `pay()` method, your Strategy abstraction leaks. To address this in enterprise systems:
-1. **Capability Interfaces**: We break the strategy into capabilities: `DirectCheckoutStrategy` for headless API payments, and `InteractiveCheckoutStrategy` for providers requiring an Activity result launcher (`ActivityResultLauncher`).
-2. **Idempotency and Reconciliation**: The payment processor must be backed by an idempotency key generated prior to engaging the strategy. If the user completes 3DS verification and the app process dies while returning, the app queries the backend status rather than retrying through the strategy.
-3. **Feature Flagging & Remote Fallbacks**: Strategies can be decorated with a `CircuitBreakerDecorator` or remote configuration flag. If Stripe experiences an outage in a specific region, the processor dynamically removes Stripe from the UI and falls back to PayPal without deploying a new app binary.
+If you force all these divergent requirements into a single synchronous `pay()` method, your Strategy abstraction leaks. To address this in enterprise systems.
+
+First, with Capability Interfaces, we break the strategy into capabilities: `DirectCheckoutStrategy` for headless API payments, and `InteractiveCheckoutStrategy` for providers requiring an Activity result launcher (`ActivityResultLauncher`). Next, an Idempotency and Reconciliation is the payment processor must be backed by an idempotency key generated prior to engaging the strategy. If the user completes 3DS verification and the app process dies while returning, the app queries the backend status rather than retrying through the strategy.
+Finally, with Feature Flagging & Remote Fallbacks, strategies can be decorated with a `CircuitBreakerDecorator` or remote configuration flag. If Stripe experiences an outage in a specific region, the processor dynamically removes Stripe from the UI and falls back to PayPal without deploying a new app binary.
+
 
 ## How to answer in the interview
 

@@ -100,19 +100,18 @@ Choose WhileSubscribed(5000) for ViewModel UI states to conserve battery in the 
 
 ## Interview answer — structured
 
-Choosing the right `SharingStarted` strategy is an exercise in balancing battery conservation, memory retention, and UI latency across three architectural tiers:
+Choosing the right `SharingStarted` strategy is an exercise in balancing battery conservation, memory retention, and UI latency across three architectural tiers.
 
-1. **`WhileSubscribed(5000)` for ViewModel UI State:** This is the default standard for feature screens. It activates upstream collection only when UI collectors are active. When the user backgrounds the app, it cancels upstream after a 5-second grace period to save battery, but survives screen rotation without re-fetching. It is essential for offline-first Room or network observation flows.
+First, **`WhileSubscribed(5000)` for ViewModel UI State:** This is the default standard for feature screens. It activates upstream collection only when UI collectors are active. When the user backgrounds the app, it cancels upstream after a 5-second grace period to save battery, but survives screen rotation without re-fetching. It is essential for offline-first Room or network observation flows. Next, **`Lazily` for In-Memory Shared Caches:** In singleton repositories or domain services, `Lazily` delays expensive upstream initialization until the very first consumer requests the data. Once started, it remains active in memory, caching emissions for all subsequent app features without redundant restarts.
+Finally, **`Eagerly` for Mission-Critical Infrastructure:** For application-wide monitors that must begin capturing state immediately upon app launch—such as monitoring network connectivity flags or device security posture—`Eagerly` ensures the flow is immediately active before any UI subscribes.
 
-2. **`Lazily` for In-Memory Shared Caches:** In singleton repositories or domain services, `Lazily` delays expensive upstream initialization until the very first consumer requests the data. Once started, it remains active in memory, caching emissions for all subsequent app features without redundant restarts.
-
-3. **`Eagerly` for Mission-Critical Infrastructure:** For application-wide monitors that must begin capturing state immediately upon app launch—such as monitoring network connectivity flags or device security posture—`Eagerly` ensures the flow is immediately active before any UI subscribes.
 
 ## Interview answer — deep senior
 
 The battery implications of these choices are profound in production Android vitals. If an engineer naively defaults to `SharingStarted.Eagerly` in a ViewModel, and that ViewModel observes an upstream location flow or a continuous Room database query, that query will run indefinitely in the background whenever that screen is in the backstack! Over hundreds of thousands of users, this results in significant battery drain and elevated uninstallation rates.
 
 By implementing `WhileSubscribed(5000)`: The 5-second timer is specifically calibrated to Android OS lifecycle timings. An Activity recreation during rotation typically takes between 100ms and 500ms. A 5,000ms timeout provides a 10x safety margin, guaranteeing zero flow thrashing during rotation while reliably shutting down within 5 seconds when the user navigates away or presses the home button.
+
 
 ## How to answer in the interview
 

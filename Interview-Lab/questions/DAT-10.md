@@ -122,19 +122,18 @@ Avoid concurrent refresh-token races using a synchronized single-flight lock wit
 
 When an app launches, multiple parallel network calls (profile, notifications, feed) often receive `401 Unauthorized` simultaneously. If each thread independently issues a refresh call under Refresh Token Rotation (RTR), the server treats subsequent calls using the old single-use token as credential theft, forcibly revoking the user's session.
 
-The industry-standard solution is the **Single-Flight Lock with Double-Check Protocol**:
+The industry-standard solution is the **Single-Flight Lock with Double-Check Protocol**.
 
-1. **Synchronized Lock**: All 401 handling is funneled through a shared lock (`Mutex` in coroutines, or `synchronized` in OkHttp Authenticator).
+First, with Synchronized Lock, all 401 handling is funneled through a shared lock (`Mutex` in coroutines, or `synchronized` in OkHttp Authenticator). Next, with Double-Check Verification, when a thread acquires the lock, it compares the token that triggered its 401 against the current in-memory token. If another thread already completed a refresh while this thread was waiting, `currentToken != failedToken`. The thread immediately skips the refresh API call and retries with the new token.
+Finally, an Atomic Session Update is the winning thread executes exactly one refresh call, atomically saving both the new access token and the new refresh token to secure storage before releasing the lock.
 
-2. **Double-Check Verification**: When a thread acquires the lock, it compares the token that triggered its 401 against the current in-memory token. If another thread already completed a refresh while this thread was waiting, `currentToken != failedToken`. The thread immediately skips the refresh API call and retries with the new token.
-
-3. **Atomic Session Update**: The winning thread executes exactly one refresh call, atomically saving both the new access token and the new refresh token to secure storage before releasing the lock.
 
 ## Interview answer — deep senior
 
 In modern asynchronous architectures using Kotlin Coroutines, senior teams often implement this using **`CompletableDeferred` or `SharedFlow` single-flight coordination**.
 
 Instead of blocking JVM threads with `synchronized`, the token manager maintains an atomic reference to an active refresh job: `private val activeRefresh = AtomicReference<Deferred<String>?>()`. When a coroutine hits 401, it inspects the atomic reference. If an active job exists, it simply awaits the existing `Deferred`. If no job exists, it creates a new `async` job, atomically swaps it into the reference, and notifies all awaiting coroutines upon completion, clearing the reference in a `finally` block. This yields 100% non-blocking coroutine safety.
+
 
 ## How to answer in the interview
 

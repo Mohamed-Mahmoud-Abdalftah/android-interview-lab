@@ -99,27 +99,21 @@ Test pure business rules, ViewModels, UseCases, mappers, and state machines on t
 
 ## Interview answer — structured
 
-Allocating tests between the local JVM and real devices balances execution economics against operational fidelity:
+Allocating tests between the local JVM and real devices balances execution economics against operational fidelity.
 
-1. **Local JVM Tests (`src/test/`) — The 80% Rule**:
-   - **Scope**: ViewModels, pure domain UseCases, reactive StateFlow pipelines, business algorithms, DTO mappers, and state machines.
-   - **Why JVM**: Executes in milliseconds. Zero emulator boot overhead. Allows rapid Test-Driven Development (TDD) iteration without blocking local machines.
+First, **Local JVM Tests (`src/test/`) — The 80% Rule**. Next, with Scope, viewModels, pure domain UseCases, reactive StateFlow pipelines, business algorithms, DTO mappers, and state machines.
+Additionally, a Why JVM executes in milliseconds. Zero emulator boot overhead. Allows rapid Test-Driven Development (TDD) iteration without blocking local machines. **On-Device / Emulator Tests (`src/androidTest/`) — The 20% Rule**.
+With Hardware & Security Boundaries, Android Keystore hardware-backed keys, Secure Element operations, and `BiometricPrompt` flows (the JVM has no Keymaster TEE daemon). With Real SQLite Engine, Room database migrations and complex multi-threaded WAL transactions (desktop SQLite diverges from mobile OEM SQLite builds).
+With Framework IPC, validating exported ContentProviders, BroadcastReceivers, and Deep Link intent filter matching. Finally, with Performance Profiling, baseline Profiles and Macrobenchmark measuring real frame rendering and startup latency.
 
-2. **On-Device / Emulator Tests (`src/androidTest/`) — The 20% Rule**:
-   - **Hardware & Security Boundaries**: Android Keystore hardware-backed keys, Secure Element operations, and `BiometricPrompt` flows (the JVM has no Keymaster TEE daemon).
-   - **Real SQLite Engine**: Room database migrations and complex multi-threaded WAL transactions (desktop SQLite diverges from mobile OEM SQLite builds).
-   - **Framework IPC**: Validating exported ContentProviders, BroadcastReceivers, and Deep Link intent filter matching.
-   - **Performance Profiling**: Baseline Profiles and Macrobenchmark measuring real frame rendering and startup latency.
 
 ## Interview answer — deep senior
 
-From an engineering resource allocation and cloud cost perspective, minimizing on-device testing saves thousands of engineering hours:
+From an engineering resource allocation and cloud cost perspective, minimizing on-device testing saves thousands of engineering hours.
 
-1. **The Infrastructure Cost Calculation**: 1,000 local unit tests execute in ~10 seconds on a standard GitHub Actions runner. 1,000 instrumented tests require spinning up dozens of nested-virtualization emulator containers, consuming 40+ minutes of cloud runner compute and thousands of dollars in monthly CI billing.
+First, with The Infrastructure Cost Calculation, 1,000 local unit tests execute in ~10 seconds on a standard GitHub Actions runner. 1,000 instrumented tests require spinning up dozens of nested-virtualization emulator containers, consuming 40+ minutes of cloud runner compute and thousands of dollars in monthly CI billing. Next, with Robolectric as the Middle Tier, where code requires light Android framework abstractions (e.g. `Bundle`, `Intent`, `Parcelable`, or `ColorRes`), use Robolectric on the JVM. This keeps tests in `src/test/` while providing simulated framework fidelity without emulator overhead.
+Finally, with Architectural Separation as an Enabler, when architecture cleanly decouples domain logic into pure Kotlin modules (`:core:domain`), developers are physically prevented from importing Android framework classes, ensuring code remains 100% JVM testable by design.
 
-2. **Robolectric as the Middle Tier**: Where code requires light Android framework abstractions (e.g. `Bundle`, `Intent`, `Parcelable`, or `ColorRes`), use Robolectric on the JVM. This keeps tests in `src/test/` while providing simulated framework fidelity without emulator overhead.
-
-3. **Architectural Separation as an Enabler**: When architecture cleanly decouples domain logic into pure Kotlin modules (`:core:domain`), developers are physically prevented from importing Android framework classes, ensuring code remains 100% JVM testable by design.
 
 ## How to answer in the interview
 

@@ -88,16 +88,13 @@ Depend on interfaces across module boundaries where independent substitution, te
 
 ## Interview answer — structured
 
-The decision to depend on an interface versus a concrete type is an architectural choice balancing flexibility against ceremony:
+The decision to depend on an interface versus a concrete type is an architectural choice balancing flexibility against ceremony.
 
-1. **Depend on an Interface**:
-   - **Architectural Seams**: Between domain layers and data layers (Repositories, Gateways). This allows UI and Domain logic to be tested on the JVM with fast Fakes without compiling Room or Retrofit.
-   - **Cross-Module API Contracts**: When splitting modules into `:feature:api` and `:feature:impl` to break rebuild cascades and circular dependencies.
-   - **Polymorphism**: When multiple implementations exist (e.g., debug mock data source vs. production network data source).
+First, **Depend on an Interface**. Next, with Architectural Seams, between domain layers and data layers (Repositories, Gateways). This allows UI and Domain logic to be tested on the JVM with fast Fakes without compiling Room or Retrofit.
+Additionally, with Cross-Module API Contracts, when splitting modules into `:feature:api` and `:feature:impl` to break rebuild cascades and circular dependencies. With Polymorphism, when multiple implementations exist (e.g., debug mock data source vs. Production network data source).
+**Depend on a Concrete Type**. With Data Models and Value Objects, immutable data classes (`User`, `TransactionDetails`) should never be wrapped in interfaces. They carry data, not behavior.
+Finally, with Same-Module Collaborators, internal helpers within a single feature module that will never need polymorphic variation or independent substitution.
 
-2. **Depend on a Concrete Type**:
-   - **Data Models and Value Objects**: Immutable data classes (`User`, `TransactionDetails`) should never be wrapped in interfaces. They carry data, not behavior.
-   - **Same-Module Collaborators**: Internal helpers within a single feature module that will never need polymorphic variation or independent substitution.
 
 ## Interview answer — deep senior
 
@@ -106,6 +103,7 @@ From a build system perspective, an interface serves as an **ABI firewall**.
 If module `A` depends on concrete class `DatabaseUserRepository` in module `B`, any private change inside `DatabaseUserRepository` (even changing a private helper method or adding a local variable) alters `B`'s bytecode. Depending on Gradle caching granularity, this can trigger recompilations.
 
 If module `A` instead depends on `interface UserRepository` in `:domain:user-api`, module `A`'s compile classpath references **only the interface's ABI**. You can rewrite the entire SQL query, add caching, or refactor private methods inside `DatabaseUserRepository` in `:data:user`, and Gradle will **never recompile module `A`**. This compile-time insulation is one of the primary drivers of developer velocity in 100+ module repositories.
+
 
 ## How to answer in the interview
 

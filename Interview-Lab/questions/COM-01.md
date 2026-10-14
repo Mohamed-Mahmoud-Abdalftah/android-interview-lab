@@ -114,9 +114,10 @@ XML Views are imperative and stateful: developers manually mutate mutable view h
 
 The architectural shift from XML to Jetpack Compose is a paradigm transition from imperative view mutation to declarative state projection.
 
-In legacy Android Views, UI widgets are stateful objects maintaining their own internal state. To update a screen, developers write imperative glue code to look up views and mutate properties—calling `setText()`, `setVisibility()`, or animating frames. Because data sources and UI widgets hold separate copies of state, screens frequently suffer from **state desynchronization bugs** (e.g. a spinner running while content is already displayed).
+In legacy Android Views, UI widgets are stateful objects maintaining their own internal state. To update a screen, developers write imperative glue code to look up views and mutate properties—calling `setText()`, `setVisibility()`, or animating frames. Because data sources and UI widgets hold separate copies of state, screens frequently suffer from **state desynchronization bugs** (e.g. A spinner running while content is already displayed).
 
 Jetpack Compose replaces mutable view objects with composable functions that describe the UI as a direct projection of data: **`UI = f(State)`**. When state updates, Compose's runtime executes **Recomposition**, intelligently re-running only the composables that observe the modified state while skipping unchanged nodes. It is 100% Kotlin, eliminating XML attribute boilerplate, supporting compile-time safety, and enforcing a single-pass measurement model that eradicates layout nesting penalties.
+
 
 ## Interview answer — deep senior
 
@@ -125,6 +126,7 @@ Under the hood, Compose eliminates the overhead of `View` and `ViewGroup` object
 Regarding layout passes: Android Views often perform multi-pass measurements (such as `RelativeLayout` or nested weights in `LinearLayout`), leading to $O(2^n)$ measurement complexity. Compose strictly enforces that no node in the UI tree can be measured more than once per layout pass (`Single-Pass Measurement`), while providing **Intrinsic Measurements** when children need to negotiate sizes before full measurement.
 
 Interoperability is seamless: legacy code embeds Compose via `ComposeView`, while Compose embeds legacy views using `AndroidView`, enabling low-risk incremental migration.
+
 
 ## How to answer in the interview
 

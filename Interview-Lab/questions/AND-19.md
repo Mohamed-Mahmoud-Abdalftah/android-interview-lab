@@ -98,19 +98,18 @@ Foreground Services perform operations noticeable to the user and require an ong
 
 A Foreground Service is an Android execution component that performs operations noticeable to the user, granted elevated process priority by the OS in exchange for transparency.
 
-The foundational requirements are:
+The foundational requirements are.
 
-1. **Ongoing Notification**: The service must display a persistent, non-dismissible notification (`NotificationCompat.Builder`) within a valid `NotificationChannel`. In Android 13+, the user must grant the runtime `POST_NOTIFICATIONS` permission.
+First, an Ongoing Notification is the service must display a persistent, non-dismissible notification (`NotificationCompat. Builder`) within a valid `NotificationChannel`. In Android 13+, the user must grant the runtime `POST_NOTIFICATIONS` permission. Next, with Mandatory Service Types (Android 14+), Android 14 (API 34) forbids generic foreground services. Developers must declare a specific `android:foregroundServiceType` in the manifest (e.g., `camera`, `location`, `mediaPlayback`, `microphone`, `phoneCall`, `health`) and declare corresponding type-specific permissions (`FOREGROUND_SERVICE_LOCATION`). Launching a foreground service with an undeclared type throws an immediate `MissingForegroundServiceTypeException`.
+Finally, with Appropriate Usage, they should be used strictly for user-active tasks (GPS turn-by-turn navigation, audio playback, active VoIP calls). For background data syncing or file uploading, modern architecture mandates **WorkManager** instead.
 
-2. **Mandatory Service Types (Android 14+)**: Android 14 (API 34) forbids generic foreground services. Developers must declare a specific `android:foregroundServiceType` in the manifest (e.g., `camera`, `location`, `mediaPlayback`, `microphone`, `phoneCall`, `health`) and declare corresponding type-specific permissions (`FOREGROUND_SERVICE_LOCATION`). Launching a foreground service with an undeclared type throws an immediate `MissingForegroundServiceTypeException`.
-
-3. **Appropriate Usage**: They should be used strictly for user-active tasks (GPS turn-by-turn navigation, audio playback, active VoIP calls). For background data syncing or file uploading, modern architecture mandates **WorkManager** instead.
 
 ## Interview answer — deep senior
 
 From an OS scheduling and policy perspective, starting a foreground service from the background was largely blocked in Android 12 (Background Start Restrictions). Calling `startForegroundService()` while the app is in the background throws a fatal `ForegroundServiceStartNotAllowedException`, with very few exceptions (like high-priority FCM push notifications or exact alarms).
 
 Furthermore, in Android 14, Google Play enforces strict policy reviews: if your app uses `foregroundServiceType="dataSync"`, you must demonstrate to Google Play reviewers that the work cannot be handled by WorkManager or the DownloadManager. Failing this justification will lead to app rejection. For network requests that need to complete after the user leaves the screen, WorkManager's `CoroutineWorker` paired with `setForeground()` is the recommended, compliant approach.
+
 
 ## How to answer in the interview
 

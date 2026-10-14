@@ -119,11 +119,9 @@ StrictMode catches accidental disk, network, and leak violations on the main thr
 
 These three tools form a complete performance lifecycle: StrictMode for code-time prevention, Perfetto for low-level diagnosis, and Android Vitals for production governance.
 
-1. **StrictMode**: Configured in debug builds, it monitors the main thread for violations via `ThreadPolicy` (detecting disk I/O, network requests, and slow binder calls) and `VmPolicy` (detecting leaked SQLite cursors, unclosed streams, and retained Activities). Violations can log warnings or crash immediately to enforce cleanliness during feature development.
+First, a StrictMode is configured in debug builds, it monitors the main thread for violations via `ThreadPolicy` (detecting disk I/O, network requests, and slow binder calls) and `VmPolicy` (detecting leaked SQLite cursors, unclosed streams, and retained Activities). Violations can log warnings or crash immediately to enforce cleanliness during feature development. Next, a Perfetto / System Trace is the modern Linux-kernel tracing platform for Android. It tracks thread scheduling, context switches, binder transactions, CPU frequency scaling, and render pipeline stages (`Choreographer` and `SurfaceFlinger`), revealing the exact system interaction that caused a dropped frame.
+Finally, with Android Vitals, google Play's real-user monitoring metric suite. It tracks core health metrics—specifically user-perceived ANRs, crash rates, slow render frames (>16ms), and frozen frames (>700ms). Breaching Google Play's 'bad behavior thresholds' harms store ranking and organic discovery.
 
-2. **Perfetto / System Trace**: The modern Linux-kernel tracing platform for Android. It tracks thread scheduling, context switches, binder transactions, CPU frequency scaling, and render pipeline stages (`Choreographer` and `SurfaceFlinger`), revealing the exact system interaction that caused a dropped frame.
-
-3. **Android Vitals**: Google Play's real-user monitoring metric suite. It tracks core health metrics—specifically user-perceived ANRs, crash rates, slow render frames (>16ms), and frozen frames (>700ms). Breaching Google Play's 'bad behavior thresholds' harms store ranking and organic discovery.
 
 ## Interview answer — deep senior
 
@@ -132,6 +130,7 @@ Under the hood, Perfetto uses a kernel ring buffer (`ftrace`) combined with user
 In Android Vitals, Google Play enforces strict thresholds: for instance, a user-perceived ANR rate above 0.47% or a crash rate above 1.09% places an app into Google Play's bad behavior threshold, which triggers search demotion and warnings on the app store listing.
 
 In our enterprise release pipeline, we integrate Google Play Developer API to pull Android Vitals automatically into our Datadog/Grafana dashboards, establishing automated rollback gates during phased rollouts.
+
 
 ## How to answer in the interview
 

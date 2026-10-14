@@ -104,32 +104,22 @@ A production Android CI pipeline consists of: Checkout and cache restoration, st
 
 ## Interview answer — structured
 
-A well-architected Android CI pipeline is structured into tiered, parallel stages designed to fail fast:
+A well-architected Android CI pipeline is structured into tiered, parallel stages designed to fail fast.
 
-1. **Environment Setup & Cache Hydration**:
-   - Checks out repository code, sets up the target JDK, and restores the remote Gradle build cache and dependency cache to avoid redundant network and compilation overhead.
+First, **Environment Setup & Cache Hydration**. Next, checks out repository code, sets up the target JDK, and restores the remote Gradle build cache and dependency cache to avoid redundant network and compilation overhead.
+**Static Analysis & Linting**. Runs Spotless/ktlint for formatting, Detekt for code smell detection, and Android Lint with `--baseline` for framework deprecation and resource issues.
+**Local Unit Tests**. Executes `testDebugUnitTest` across all modules in parallel on the host JVM. This validates domain rules, ViewModels, and state machines within minutes.
+**Compilation & Assembly Verification**. Compiles debug and release variants (`assembleDebug`, `bundleRelease`) to detect missing dependencies or R8 configuration failures early.
+**Instrumentation & Performance Gates**. Finally, executes end-to-end UI tests on emulators or cloud farms (Firebase Test Lab), accompanied by size regression diffing using tools like Diffuse to prevent bundle bloating.
 
-2. **Static Analysis & Linting**:
-   - Runs Spotless/ktlint for formatting, Detekt for code smell detection, and Android Lint with `--baseline` for framework deprecation and resource issues.
-
-3. **Local Unit Tests**:
-   - Executes `testDebugUnitTest` across all modules in parallel on the host JVM. This validates domain rules, ViewModels, and state machines within minutes.
-
-4. **Compilation & Assembly Verification**:
-   - Compiles debug and release variants (`assembleDebug`, `bundleRelease`) to detect missing dependencies or R8 configuration failures early.
-
-5. **Instrumentation & Performance Gates**:
-   - Executes end-to-end UI tests on emulators or cloud farms (Firebase Test Lab), accompanied by size regression diffing using tools like Diffuse to prevent bundle bloating.
 
 ## Interview answer — deep senior
 
-Optimizing CI stages for team velocity requires strict pipeline choreography and tiering:
+Optimizing CI stages for team velocity requires strict pipeline choreography and tiering.
 
-1. **Fail-Fast Parallelization**: Do not run stages sequentially. Run static code checks and local unit tests in parallel. If ktlint or a unit test fails at minute 1, terminate remaining jobs immediately to conserve cloud runner credits and provide instant developer feedback.
+First, with Fail-Fast Parallelization, do not run stages sequentially. Run static code checks and local unit tests in parallel. If ktlint or a unit test fails at minute 1, terminate remaining jobs immediately to conserve cloud runner credits and provide instant developer feedback. Next, with Decoupling PR CI from Merge CI, running instrumented UI tests on every single commit inside an open PR creates bottlenecks and wastes resources. Mature teams run static analysis and unit tests on PR commits, while delegating heavy instrumented test suites and release bundle generation to nightly builds or the post-merge staging pipeline.
+Finally, an Artifact Retention & Reproducibility is the pipeline must produce and store build outputs: test result XMLs for CI dashboards, R8 mapping files for crash de-obfuscation in production monitoring, and Baseline Profile outputs. Without automated mapping artifact archiving, tracing field crashes becomes impossible.
 
-2. **Decoupling PR CI from Merge CI**: Running instrumented UI tests on every single commit inside an open PR creates bottlenecks and wastes resources. Mature teams run static analysis and unit tests on PR commits, while delegating heavy instrumented test suites and release bundle generation to nightly builds or the post-merge staging pipeline.
-
-3. **Artifact Retention & Reproducibility**: The pipeline must produce and store build outputs: test result XMLs for CI dashboards, R8 mapping files for crash de-obfuscation in production monitoring, and Baseline Profile outputs. Without automated mapping artifact archiving, tracing field crashes becomes impossible.
 
 ## How to answer in the interview
 

@@ -85,11 +85,13 @@ Eager collection operations process the entire dataset horizontally at each step
 
 The primary difference lies in how elements flow through transformation pipelines: eagerly horizontally versus lazily vertically. With standard Kotlin collections, operations like filter and map are eager. Each step iterates across the entire list, creates a brand-new intermediate list on the heap, and passes that to the next step. Sequences evaluate lazily. Intermediate operations merely chain iterator decorators without executing any work. When a terminal operation like toList() or first() is invoked, elements flow vertically one-by-one through the entire pipeline: element zero passes through filter, then map, then destination, before element one is even touched. This gives two massive benefits: zero intermediate collection allocations and short-circuiting. If you call take(5) or find, the sequence halts as soon as five matching items are found, ignoring the rest of the dataset.
 
+
 ## Interview answer — deep senior
 
 In Android development, deciding between Sequences and Collections comes down to allocation profiling versus CPU cycle overhead. Eager collections compile down to straightforward for-loops operating over primitive arrays. Because there are no intermediate abstraction layers, the JVM and ART can optimize loop bounds and capitalize on hardware CPU cache lines (L1/L2 cache locality). For small collections—typically under 100 to 200 items—eager processing is almost always faster in wall-clock time, even with a small temporary array allocation.
 
 Sequences introduce indirection. Each intermediate step instantiates a Sequence and an Iterator wrapper (such as FilteringSequence and TransformingSequence). Every element access requires a virtual method call to hasNext() and next(). If your pipeline has 5 steps, every single item makes 5 virtual method calls per element. However, when dealing with thousands of records—like parsing large telemetry batches or heavy contact lists—the GC pressure of allocating 3 or 4 intermediate ArrayLists of thousands of objects will trigger ART garbage collection pauses, which can cause UI frame drops. In those scenarios, or whenever short-circuiting operations like firstOrNull or any are used, Sequences are unequivocally superior.
+
 
 ## How to answer in the interview
 

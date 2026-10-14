@@ -103,6 +103,7 @@ Under the hood, `mutableListOf()` instantiates a `java.util.ArrayList`. ArrayLis
 
 To handle concurrent collections in production, I use one of three strategies: 1) synchronize access using a Coroutines `Mutex`; 2) use thread-safe data structures like `CopyOnWriteArrayList` for read-heavy scenarios; or 3) follow functional state management with `MutableStateFlow` and immutable lists, updating state atomically via `_state.update { current -> current + newItem }`.
 
+
 ## Interview answer — deep senior
 
 At the memory architecture level, standard Java collections like ArrayList do not use memory barriers or volatile writes for internal array elements. This means writes from thread A may remain cached in CPU L1/L2 caches and never become visible to thread B in a timely fashion, violating the happens-before relationship defined by the Java Memory Model (JMM).
@@ -110,6 +111,7 @@ At the memory architecture level, standard Java collections like ArrayList do no
 In modern Android architecture, using traditional Java synchronization like `synchronized(lock)` or `Collections.synchronizedList()` is discouraged because it blocks operating system threads, which can cause ANR (Application Not Responding) if invoked on the main thread.
 
 Instead, we adopt structured concurrency paradigms: 1. Confinement: confine state mutation to a single coroutine dispatcher, or use a dedicated Actor / single-threaded dispatcher (`Dispatchers.Default.limitedParallelism(1)`). 2. Non-blocking synchronization: use Kotlin Coroutines `Mutex`, ensuring suspending calls rather than thread-blocking locks. 3. Pure immutability: store only persistent immutable lists (`persistentListOf()`), replacing the reference atomically via compare-and-swap (CAS) loops inside `AtomicReference` or `StateFlow.update()`.
+
 
 ## How to answer in the interview
 

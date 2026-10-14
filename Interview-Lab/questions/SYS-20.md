@@ -114,32 +114,23 @@ Never retry timed-out payments blindly. Persist a client-generated UUID idempote
 
 ## Interview answer — structured
 
-When a payment request times out, the client cannot distinguish between a failure during request delivery versus a failure during response delivery. Recovering gracefully requires a strict reconciliation workflow:
+When a payment request times out, the client cannot distinguish between a failure during request delivery versus a failure during response delivery. Recovering gracefully requires a strict reconciliation workflow.
 
-1. **Pre-Flight Local Persistence**:
-   - Before dispatching the payment request, insert an atomic transaction record into Room containing the order ID, a client-generated UUID `idempotencyKey`, and status `IN_FLIGHT`.
+First, **Pre-Flight Local Persistence**. Next, before dispatching the payment request, insert an atomic transaction record into Room containing the order ID, a client-generated UUID `idempotencyKey`, and status `IN_FLIGHT`.
+**Handling Timeouts Without Blind Retries**. If the network drops or the socket times out, **do not replay the charge mutation**. Re-invoking charge mutations without idempotency guarantees creates duplicate charges.
+Transition local state to `PENDING_RECONCILIATION` and disable immediate retry buttons on the UI. **Idempotent Reconciliation Protocol**.
+Dispatch a read-only reconciliation query (`GET /payments/status?idempotency_key=<key>`). If the backend returns `CAPTURED` or `AUTHORIZED`, update local storage to `SUCCESS` and navigate to the order confirmation screen.
+If the backend returns `TRANSACTION_NOT_FOUND`, the original request never reached the payment gateway. The client can now safely retry the charge using the identical idempotency key. **Startup Reconciliation Hooks**.
+Finally, if the app crashed or was killed during timeout, check for unresolved `PENDING_RECONCILIATION` records on next launch, reconciliate them in the background, and notify the user via a banner.
 
-2. **Handling Timeouts Without Blind Retries**:
-   - If the network drops or the socket times out, **do not replay the charge mutation**. Re-invoking charge mutations without idempotency guarantees creates duplicate charges.
-   - Transition local state to `PENDING_RECONCILIATION` and disable immediate retry buttons on the UI.
-
-3. **Idempotent Reconciliation Protocol**:
-   - Dispatch a read-only reconciliation query (`GET /payments/status?idempotency_key=<key>`).
-   - If the backend returns `CAPTURED` or `AUTHORIZED`, update local storage to `SUCCESS` and navigate to the order confirmation screen.
-   - If the backend returns `TRANSACTION_NOT_FOUND`, the original request never reached the payment gateway. The client can now safely retry the charge using the identical idempotency key.
-
-4. **Startup Reconciliation Hooks**:
-   - If the app crashed or was killed during timeout, check for unresolved `PENDING_RECONCILIATION` records on next launch, reconciliate them in the background, and notify the user via a banner.
 
 ## Interview answer — deep senior
 
-From a distributed systems and fintech compliance perspective, client reconciliation must interface with server webhooks:
+From a distributed systems and fintech compliance perspective, client reconciliation must interface with server webhooks.
 
-1. **Server Webhook Authority**: The payment processor (e.g. Stripe/Adyen) notifies your backend asynchronously via cryptographic webhooks (`payment_intent.succeeded`). Even if the mobile device stays offline for hours, the backend marks the order paid and sends a push notification.
+First, a Server Webhook Authority is the payment processor (e.g. Stripe/Adyen) notifies your backend asynchronously via cryptographic webhooks (`payment_intent.succeeded`). Even if the mobile device stays offline for hours, the backend marks the order paid and sends a push notification. Next, with Polling Backoff & Timeout Windows, implement a polling state machine with exponential backoff for the reconciliation endpoint (polling at 2s, 4s, 8s intervals, capping at 30s). If reconciliation remains unresolved after 30 seconds, transition the UI to an asynchronous pending screen: 'Your payment is being verified with your bank. We will notify you shortly.'
+Finally, with Customer Support Idempotency Traceability, display the idempotency key or a short human-readable transaction reference on the pending UI screen. If customer support is contacted, agents can query the payment gateway logs instantly using that exact key.
 
-2. **Polling Backoff & Timeout Windows**: Implement a polling state machine with exponential backoff for the reconciliation endpoint (polling at 2s, 4s, 8s intervals, capping at 30s). If reconciliation remains unresolved after 30 seconds, transition the UI to an asynchronous pending screen: 'Your payment is being verified with your bank. We will notify you shortly.'
-
-3. **Customer Support Idempotency Traceability**: Display the idempotency key or a short human-readable transaction reference on the pending UI screen. If customer support is contacted, agents can query the payment gateway logs instantly using that exact key.
 
 ## How to answer in the interview
 

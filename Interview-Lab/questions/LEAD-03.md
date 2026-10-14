@@ -80,33 +80,23 @@ Technical debt is the accrued engineering cost of past shortcuts that compounds 
 
 ## Interview answer — structured
 
-Managing technical debt requires framing engineering hygiene in terms of business velocity and risk mitigation:
+Managing technical debt requires framing engineering hygiene in terms of business velocity and risk mitigation.
 
-1. **Translate Technical Problems to Business Metrics**:
-   - Product Managers do not prioritize abstract purity. Translate debt into business impact:
-     - 'Refactoring the payment module' becomes: 'Our checkout failure rate is 2.4% due to legacy state race conditions, directly losing \$40,000 monthly in gross merchandise value.'
-     - 'Updating Gradle build scripts' becomes: 'CI takes 45 minutes per PR, delaying release cycles and wasting 20 engineering hours weekly.'
+First, **Translate Technical Problems to Business Metrics**. Next, product Managers do not prioritize abstract purity. Translate debt into business impact.
+'Refactoring the payment module' becomes: 'Our checkout failure rate is 2.4% due to legacy state race conditions, directly losing \$40,000 monthly in gross merchandise value.' 'Updating Gradle build scripts' becomes: 'CI takes 45 minutes per PR, delaying release cycles and wasting 20 engineering hours weekly.'
+**Categorize and Prioritize Debt**. Evaluate debt using an Impact vs. Effort matrix.
+With High Impact, Low Effort (Quick Wins), immediate priority. With High Impact, High Effort (Strategic Refactors), requires dedicated architectural epics.
+With Low Impact, Low Effort, resolved organically via Boy Scout rule. With Low Impact, High Effort, explicitly ignored or deprioritized.
+**Establish a Standing Capacity Agreement**. Finally, negotiate a fixed 80/20 capacity split with product leadership: 80% dedicated to product feature delivery, 20% strictly allocated to architectural health, tooling, dependency upgrades, and test coverage.
 
-2. **Categorize and Prioritize Debt**:
-   - Evaluate debt using an Impact vs. Effort matrix:
-     - **High Impact, Low Effort (Quick Wins)**: Immediate priority.
-     - **High Impact, High Effort (Strategic Refactors)**: Requires dedicated architectural epics.
-     - **Low Impact, Low Effort**: Resolved organically via Boy Scout rule.
-     - **Low Impact, High Effort**: Explicitly ignored or deprioritized.
-
-3. **Establish a Standing Capacity Agreement**:
-   - Negotiate a fixed 80/20 capacity split with product leadership: 80% dedicated to product feature delivery, 20% strictly allocated to architectural health, tooling, dependency upgrades, and test coverage.
 
 ## Interview answer — deep senior
 
-From an engineering leadership and organizational health standpoint, distinguishing debt types prevents toxic cycles:
+From an engineering leadership and organizational health standpoint, distinguishing debt types prevents toxic cycles.
 
-1. **Prudent vs. Reckless Debt (Martin Fowler's Debt Quadrant)**:
-   - Not all tech debt is bad. **Prudent deliberate debt** (taking a known shortcut to hit a regulatory launch date with an immediate plan to refactor) is a valid business tool. **Reckless inadvertent debt** (sloppy code produced by lack of design standards or testing) poisons the codebase. Leaders celebrate prudent trade-offs while ruthlessly eliminating reckless practices.
+First, **Prudent vs. Reckless Debt (Martin Fowler's Debt Quadrant)**. Next, not all tech debt is bad. **Prudent deliberate debt** (taking a known shortcut to hit a regulatory launch date with an immediate plan to refactor) is a valid business tool. **Reckless inadvertent debt** (sloppy code produced by lack of design standards or testing) poisons the codebase. Leaders celebrate prudent trade-offs while ruthlessly eliminating reckless practices.
+Additionally, a The Refactor-Rewrite Fallacy is a classic junior mistake is requesting a complete ground-up app rewrite ('Let's throw away the legacy app and rewrite it in Compose!'). Rewrites take 3x longer than estimated, halt product delivery, and re-introduce obscure bugs that the legacy app solved over 5 years. Senior leaders advocate for incremental in-place strangler-fig pattern refactorings. Finally, with Visualizing Debt in Sprint Boards, tag debt items explicitly with a `tech-debt` label in Jira/Linear and track cycle times. If the ratio of bugs to features climbs above 30%, freeze feature development for a stabilization sprint.
 
-2. **The Refactor-Rewrite Fallacy**: A classic junior mistake is requesting a complete ground-up app rewrite ('Let's throw away the legacy app and rewrite it in Compose!'). Rewrites take 3x longer than estimated, halt product delivery, and re-introduce obscure bugs that the legacy app solved over 5 years. Senior leaders advocate for incremental in-place strangler-fig pattern refactorings.
-
-3. **Visualizing Debt in Sprint Boards**: Tag debt items explicitly with a `tech-debt` label in Jira/Linear and track cycle times. If the ratio of bugs to features climbs above 30%, freeze feature development for a stabilization sprint.
 
 ## How to answer in the interview
 

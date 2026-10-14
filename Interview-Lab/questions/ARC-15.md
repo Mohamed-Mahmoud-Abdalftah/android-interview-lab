@@ -88,15 +88,11 @@ Introduce interfaces at architectural boundaries to invert dependencies (e.g. Do
 
 Deciding when to introduce interfaces distinguishes pragmatic senior engineers from dogmatic architects suffering from 'Interface-itis'.
 
-1. **When Interfaces are Genuinely Necessary**:
-   - **Inversion of Control across Boundaries**: The quintessential Clean Architecture contract: the Domain layer declares `interface OrderRepository`, and the Data layer implements it, keeping the Domain pure.
-   - **Multiple Real Implementations**: When the system genuinely supports swappable implementations (e.g. `interface PaymentGateway` implemented by `StripeGateway` and `PayPalGateway`).
-   - **Abstracting Flaky External Systems**: Wrapping hardware, system frameworks, or third-party SDKs (`LocationManager`, `BluetoothScanner`, `BiometricAuth`) behind an interface allows creating high-speed `Fake` implementations for JVM unit testing.
+First, **When Interfaces are Genuinely Necessary**. Next, inversion of Control across Boundaries is the quintessential Clean Architecture contract: the Domain layer declares `interface OrderRepository`, and the Data layer implements it, keeping the Domain pure.
+Additionally, with Multiple Real Implementations, when the system genuinely supports swappable implementations (e.g. `interface PaymentGateway` implemented by `StripeGateway` and `PayPalGateway`). With Abstracting Flaky External Systems, wrapping hardware, system frameworks, or third-party SDKs (`LocationManager`, `BluetoothScanner`, `BiometricAuth`) behind an interface allows creating high-speed `Fake` implementations for JVM unit testing.
+**When Concrete Classes are Sufficient**. An Use Cases (Interactors) is a Use Case encapsulates a single business scenario in pure Kotlin. Creating `interface CheckoutUseCase` paired with `CheckoutUseCaseImpl` is 100% redundant boilerplate.
+ViewModels have a single implementation bound to UI state. Finally, with Internal Utilities, helper classes and mappers.
 
-2. **When Concrete Classes are Sufficient**:
-   - **Use Cases (Interactors)**: A Use Case encapsulates a single business scenario in pure Kotlin. Creating `interface CheckoutUseCase` paired with `CheckoutUseCaseImpl` is 100% redundant boilerplate.
-   - **ViewModels**: ViewModels have a single implementation bound to UI state.
-   - **Internal Utilities**: Helper classes and mappers.
 
 ## Interview answer — deep senior
 
@@ -105,6 +101,7 @@ A legacy justification for interfaces was testability in Java: developers couldn
 In large multi-module codebases, interfaces enable **Compilation Avoidance**. If an interface lives in an API module (`:feature:chat:api`) and its implementation lives in an implementation module (`:feature:chat:impl`), changing the internal implementation logic does not invalidate or recompile the dozens of downstream modules that only depend on the API module.
 
 We adhere to the Rule of Three: do not abstract with an interface until you have two distinct implementations or a strict architectural dependency boundary.
+
 
 ## How to answer in the interview
 

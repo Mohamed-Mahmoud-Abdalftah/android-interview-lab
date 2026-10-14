@@ -122,34 +122,26 @@ Using ordinary coroutineScope may cancel all three on one child failure. Bare ru
 A commerce Home loads offers, order status and support tips independently, each with its own state and targeted retry. A server correlation ID and per-card metrics identify outages; process death rebuilds from cached Room snapshots.
 
 ## Interview answer — short
- 
+
 Design aggregate screens for partial failure by fetching independent services concurrently using isolated supervisor scopes with cancellation-preserving error handling. Represent sections with independent state streams in a unified UI state, fall back to local cached data where available, and render inline section retries without blocking or failing the entire screen.
- 
+
 ## Interview answer — structured
- 
-Aggregating multiple microservices into a single mobile dashboard requires defensive concurrency and resilient UI state composition:
- 
-1. **Avoid All-or-Nothing Composition**:
-   - Combining calls via `zip`, `combine` with synchronous throws, or `awaitAll` creates an all-or-nothing anti-pattern. If a non-essential service (e.g. Recommendations) throws a 500 or times out, the entire screen fails.
- 
-2. **Independent Section Concurrency**:
-   - Launch three independent coroutine jobs within a supervisory scope (`supervisorScope`), capturing exceptions while strictly preserving `CancellationException`. If the Recommendations service fails, its exception is caught in isolation, allowing the Feed and Hero Banners to load and render immediately.
 
-3. **Modular State Modeling**:
-   - Model the overall screen state as an aggregate data class holding individual `SectionState<T>` wrappers (`Loading`, `Success`, `Error`). Compose renders each section according to its discrete state.
+Aggregating multiple microservices into a single mobile dashboard requires defensive concurrency and resilient UI state composition.
 
-4. **Graceful UI Degradation & Cache Fallbacks**:
-   - If a service fails, check Room persistence for cached records. If cached data exists, render it with a subtle 'Offline' chip. If no cache exists, render an inline retry placeholder or cleanly collapse the section without breaking the parent layout.
+First, **Avoid All-or-Nothing Composition**. Next, combining calls via `zip`, `combine` with synchronous throws, or `awaitAll` creates an all-or-nothing anti-pattern. If a non-essential service (e.g. Recommendations) throws a 500 or times out, the entire screen fails.
+**Independent Section Concurrency**. Launch three independent coroutine jobs within a supervisory scope (`supervisorScope`), capturing exceptions while strictly preserving `CancellationException`. If the Recommendations service fails, its exception is caught in isolation, allowing the Feed and Hero Banners to load and render immediately.
+**Modular State Modeling**. Model the overall screen state as an aggregate data class holding individual `SectionState<T>` wrappers (`Loading`, `Success`, `Error`). Compose renders each section according to its discrete state.
+**Graceful UI Degradation & Cache Fallbacks**. Finally, if a service fails, check Room persistence for cached records. If cached data exists, render it with a subtle 'Offline' chip. If no cache exists, render an inline retry placeholder or cleanly collapse the section without breaking the parent layout.
+
 
 ## Interview answer — deep senior
 
-From a staff-level systems perspective, partial failure resilience extends into network protocol design and backend orchestration:
+From a staff-level systems perspective, partial failure resilience extends into network protocol design and backend orchestration.
 
-1. **Backend-for-Frontend (BFF) vs. Client Aggregation**: In enterprise architectures, mobile clients should ideally query a single mobile BFF gateway. The BFF aggregates the 3 microservices concurrently on high-speed datacenter backbones. If recommendations time out within 150ms, the BFF returns a partial JSON payload containing banners and feed items along with a partial-error metadata flag, saving mobile battery and round-trips.
+First, with Backend-for-Frontend (BFF) vs. Client Aggregation, in enterprise architectures, mobile clients should ideally query a single mobile BFF gateway. The BFF aggregates the 3 microservices concurrently on high-speed datacenter backbones. If recommendations time out within 150ms, the BFF returns a partial JSON payload containing banners and feed items along with a partial-error metadata flag, saving mobile battery and round-trips. Next, with Independent Section Pull-to-Refresh, when the user performs a pull-to-refresh gesture, trigger refresh jobs across all three sections concurrently. Keep already-rendered cached content on screen while refreshing, transitioning sections to loading indicators only if no data was previously visible.
+Finally, with Targeted Telemetry & Alerting, log individual endpoint failure rates. If Recommendations fail for 15% of sessions while Core Feed succeeds, telemetry surfaces microservice-specific degradation rather than generic app-level crash alarms.
 
-2. **Independent Section Pull-to-Refresh**: When the user performs a pull-to-refresh gesture, trigger refresh jobs across all three sections concurrently. Keep already-rendered cached content on screen while refreshing, transitioning sections to loading indicators only if no data was previously visible.
-
-3. **Targeted Telemetry & Alerting**: Log individual endpoint failure rates. If Recommendations fail for 15% of sessions while Core Feed succeeds, telemetry surfaces microservice-specific degradation rather than generic app-level crash alarms.
 
 ## How to answer in the interview
 

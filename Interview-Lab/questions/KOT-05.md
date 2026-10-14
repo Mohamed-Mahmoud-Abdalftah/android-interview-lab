@@ -82,6 +82,7 @@ An object declares a lazy, thread-safe singleton initialized upon first classloa
 
 Finally, a companion object acts like static members in Java but remains a first-class object that can implement interfaces. I primarily use companion objects for factory methods like fromDto or storing class-scoped constants.
 
+
 ## Interview answer — deep senior
 
 Under the hood on the JVM, these four constructs compile into very different bytecode patterns.
@@ -91,6 +92,7 @@ A data class generates bytecode for equals() that compares every primary constru
 An object compiles into a final class with a private constructor and a public static final INSTANCE field initialized in the static initializer (<clinit>). The JVM specification guarantees that class loading is synchronized, making object instantiation inherently thread-safe without explicit locking. However, using objects to store mutable state creates global state, complicates unit testing, and risks memory leaks if Android Context is stored.
 
 A companion object compiles into an inner class named Companion, with a static instance held by the enclosing class. When called from Kotlin, it provides concise syntax, but from Java, callers must use EnclosingClass.Companion.method() unless annotated with @JvmStatic. In production architecture, I use data classes for immutable UI states and DTOs, companion objects for test factories or serializers, and avoid stateful objects in favor of dependency injection with Hilt.
+
 
 ## How to answer in the interview
 

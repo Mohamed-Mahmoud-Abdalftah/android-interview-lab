@@ -275,29 +275,22 @@ The test pyramid balances 70% fast local unit tests at the base, 20% integration
 
 ## Interview answer — structured
 
-The testing pyramid structures test investments to maximize regression detection while minimizing execution duration:
+The testing pyramid structures test investments to maximize regression detection while minimizing execution duration.
 
-1. **The Modern Android Test Pyramid**:
-   - **Base (Unit Tests ~70%)**: High-volume, fast local JVM tests verifying business algorithms, ViewModels, UseCases, and state reducers in milliseconds.
-   - **Middle (Integration Tests ~20%)**: Medium-volume tests validating component boundaries: Room database transactions, WorkManager scheduling, and network DTO parsers.
-   - **Apex (UI / E2E ~10%)**: Low-volume, high-fidelity instrumentation and Compose tests verifying core customer conversion funnels (checkout, login).
+First, **The Modern Android Test Pyramid**. Next, with Base (Unit Tests ~70%), high-volume, fast local JVM tests verifying business algorithms, ViewModels, UseCases, and state reducers in milliseconds.
+Additionally, with Middle (Integration Tests ~20%), medium-volume tests validating component boundaries: Room database transactions, WorkManager scheduling, and network DTO parsers. With Apex (UI / E2E ~10%), low-volume, high-fidelity instrumentation and Compose tests verifying core customer conversion funnels (checkout, login).
+**Positioning Contract Tests**. Contract tests reside in the **Integration Layer**.
+Rather than relying on slow, brittle E2E tests against live backend staging clusters to verify that API responses match client expectations, contract tests validate client-server JSON schemas (using Pact, WireMock, or OpenAPI schema validators) locally on the JVM in seconds. **Value Proposition**.
+Finally, contract testing catches API contract drift, unexpected nullability shifts, and renamed JSON fields early in CI before code merges, eliminating a major source of production outages.
 
-2. **Positioning Contract Tests**:
-   - Contract tests reside in the **Integration Layer**.
-   - Rather than relying on slow, brittle E2E tests against live backend staging clusters to verify that API responses match client expectations, contract tests validate client-server JSON schemas (using Pact, WireMock, or OpenAPI schema validators) locally on the JVM in seconds.
-
-3. **Value Proposition**:
-   - Contract testing catches API contract drift, unexpected nullability shifts, and renamed JSON fields early in CI before code merges, eliminating a major source of production outages.
 
 ## Interview answer — deep senior
 
-From an organizational architecture perspective, contract testing enables autonomous cross-team deployments:
+From an organizational architecture perspective, contract testing enables autonomous cross-team deployments.
 
-1. **Consumer-Driven Contract Testing (Pact)**: The mobile client defines the contract by publishing a Pact file specifying the exact request parameters and response fields it consumes. When the backend team runs their CI pipeline, Pact replays the mobile contract against their active API routes. If a backend PR drops a field required by the mobile app, backend CI fails before deployment.
+First, a Consumer-Driven Contract Testing (Pact) is the mobile client defines the contract by publishing a Pact file specifying the exact request parameters and response fields it consumes. When the backend team runs their CI pipeline, Pact replays the mobile contract against their active API routes. If a backend PR drops a field required by the mobile app, backend CI fails before deployment. Next, with The Testing Trophy Alternative, some engineering leaders propose the **Testing Trophy** model (advocated by Kent C. Dodds), which places heavy emphasis on integration tests over isolated unit tests. In modern Android, integration tests combining ViewModels, Repositories, and in-memory Fakes provide higher confidence than unit tests mocking every collaborator.
+Finally, an Automated Flake Monitoring is the apex of the pyramid (E2E) must have strict reliability budgets. If an E2E test fails more than 1% of the time due to non-deterministic timeouts, quarantine it immediately to maintain developer trust in CI gates.
 
-2. **The Testing Trophy Alternative**: Some engineering leaders propose the **Testing Trophy** model (advocated by Kent C. Dodds), which places heavy emphasis on integration tests over isolated unit tests. In modern Android, integration tests combining ViewModels, Repositories, and in-memory Fakes provide higher confidence than unit tests mocking every collaborator.
-
-3. **Automated Flake Monitoring**: The apex of the pyramid (E2E) must have strict reliability budgets. If an E2E test fails more than 1% of the time due to non-deterministic timeouts, quarantine it immediately to maintain developer trust in CI gates.
 
 ## How to answer in the interview
 

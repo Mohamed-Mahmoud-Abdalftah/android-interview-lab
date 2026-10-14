@@ -105,29 +105,22 @@ Recover an in-doubt transaction after sudden power loss by auditing the database
 
 ## Interview answer — structured
 
-Handling power loss during the authorization commit window is a core requirement of POS terminal certification:
+Handling power loss during the authorization commit window is a core requirement of POS terminal certification.
 
-1. **The In-Doubt Dilemma**:
-   - The acquiring host approved the transaction and sent the SMS to the cardholder, but terminal volatile RAM was destroyed before the approval code hit SQLite or the thermal printer engaged.
+First, **The In-Doubt Dilemma**. Next, the acquiring host approved the transaction and sent the SMS to the cardholder, but terminal volatile RAM was destroyed before the approval code hit SQLite or the thermal printer engaged.
+**The Systematic Recovery Protocol**. With Boot-Time Ledger Scan, upon application startup, a `StartupRecoveryService` scans the persistent Room ledger for records lingering in `PROCESSING` or `INITIATED` status.
+A Host Status Inquiry is the terminal dispatches a Status Inquiry request (`GET /v1/payments/status`) presenting the durable `idempotency_key` and original `correlation_id`. With Branch A (Gateway Captured), if the host confirms approval, the terminal transitions the local state to `APPROVED`, persists the authorization code, and automatically prints a marked duplicate receipt (`RECOVERED TRANSACTION RECEIPT`) so the merchant can release goods.
+With Branch B (Host Incomplete / Pending), if the host reports the transaction as pending or unconfirmed, the terminal generates an automated reversal (0400 Reversal message) to release the authorization hold, marks local state as `REVERSED`, and prints a void notification. **End-of-Day Batch Reconciliation Safety Net**.
+Finally, if connectivity fails completely during boot inquiry, the record is flagged for end-of-day batch reconciliation. During clearing, host and terminal ledgers are reconciled before merchant settlement payout.
 
-2. **The Systematic Recovery Protocol**:
-   - **Boot-Time Ledger Scan**: Upon application startup, a `StartupRecoveryService` scans the persistent Room ledger for records lingering in `PROCESSING` or `INITIATED` status.
-   - **Host Status Inquiry**: The terminal dispatches a Status Inquiry request (`GET /v1/payments/status`) presenting the durable `idempotency_key` and original `correlation_id`.
-   - **Branch A (Gateway Captured)**: If the host confirms approval, the terminal transitions the local state to `APPROVED`, persists the authorization code, and automatically prints a marked duplicate receipt (`RECOVERED TRANSACTION RECEIPT`) so the merchant can release goods.
-   - **Branch B (Host Incomplete / Pending)**: If the host reports the transaction as pending or unconfirmed, the terminal generates an automated reversal (0400 Reversal message) to release the authorization hold, marks local state as `REVERSED`, and prints a void notification.
-
-3. **End-of-Day Batch Reconciliation Safety Net**:
-   - If connectivity fails completely during boot inquiry, the record is flagged for end-of-day batch reconciliation. During clearing, host and terminal ledgers are reconciled before merchant settlement payout.
 
 ## Interview answer — deep senior
 
-From an EMV Level 2 transaction state machine perspective, hardware terminal certification enforces specific rules:
+From an EMV Level 2 transaction state machine perspective, hardware terminal certification enforces specific rules.
 
-1. **EMV Second Generate AC (Application Cryptogram) Failure**: In chip transactions, after receiving host authorization, the terminal must feed the issuer script back to the physical chip to generate the final Application Cryptogram (TC - Transaction Certificate). If power is lost before the chip generates TC, the transaction is **legally incomplete under EMV rules**, even if the issuer approved it! In this scenario, EMV compliance mandates issuing an automatic reversal because the chip never confirmed the sale.
+First, with EMV Second Generate AC (Application Cryptogram) Failure, in chip transactions, after receiving host authorization, the terminal must feed the issuer script back to the physical chip to generate the final Application Cryptogram (TC - Transaction Certificate). If power is lost before the chip generates TC, the transaction is **legally incomplete under EMV rules**, even if the issuer approved it! In this scenario, EMV compliance mandates issuing an automatic reversal because the chip never confirmed the sale. Next, with Preventing Cashier Panic Retries, during boot recovery, the UI must display a non-dismissible modal: 'Reconciling pending transactions, please wait...' This prevents a hurried cashier from attempting a second card swipe before the system has determined the fate of the first charge.
+Finally, merchant Protection Receipts is the thermal printer must produce physical receipts with clear cryptographic audit markers (STAN, RRN, Auth Code, masked PAN) so the merchant is protected against chargeback disputes.
 
-2. **Preventing Cashier Panic Retries**: During boot recovery, the UI must display a non-dismissible modal: 'Reconciling pending transactions, please wait...' This prevents a hurried cashier from attempting a second card swipe before the system has determined the fate of the first charge.
-
-3. **Merchant Protection Receipts**: The thermal printer must produce physical receipts with clear cryptographic audit markers (STAN, RRN, Auth Code, masked PAN) so the merchant is protected against chargeback disputes.
 
 ## How to answer in the interview
 

@@ -98,12 +98,12 @@ Encapsulate listeners inside standalone classes implementing DefaultLifecycleObs
 
 The modern, professional way to manage lifecycle-dependent listeners is by implementing **`DefaultLifecycleObserver`** inside a dedicated, self-contained component rather than cluttering Activity callbacks.
 
-To prevent memory leaks and battery drain, listeners must follow strict **symmetric lifecycle pairing**:
+To prevent memory leaks and battery drain, listeners must follow strict **symmetric lifecycle pairing**.
 
-1. **`onStart()` and `onStop()` (Standard Default)**: Use for location updates, network monitoring, and UI data streams. The listener registers when the app is visible and unregisters the moment the app is backgrounded, conserving device battery.
-2. **`onResume()` and `onPause()`**: Use for exclusive foreground hardware that cannot be shared in multi-window mode, such as the camera hardware or high-frequency accelerometer sensors.
+First, with onStart()` and `onStop()` (Standard Default), use for location updates, network monitoring, and UI data streams. The listener registers when the app is visible and unregisters the moment the app is backgrounded, conserving device battery. Finally, with onResume()` and `onPause(), use for exclusive foreground hardware that cannot be shared in multi-window mode, such as the camera hardware or high-frequency accelerometer sensors.
 
 The calling Activity or Fragment simply hooks the component using `lifecycle.addObserver(myListener)`. When the host is destroyed, the lifecycle observer is automatically torn down without manual Activity boilerplate.
+
 
 ## Interview answer — deep senior
 
@@ -125,6 +125,7 @@ DisposableEffect(lifecycleOwner) {
 ```
 
 `onDispose` guarantees that the listener is detached when the Composable leaves composition, preventing dangling callbacks.
+
 
 ## How to answer in the interview
 

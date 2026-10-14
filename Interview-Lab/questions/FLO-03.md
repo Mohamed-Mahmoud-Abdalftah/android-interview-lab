@@ -98,14 +98,15 @@ StateFlow and SharedFlow are 'hot' streams because their lifecycles are complete
 
 **SharedFlow** is a general-purpose, highly configurable multicaster designed for broadcasting events to multiple collectors. It does not require an initial value, supports configurable replay buffer sizes (`replay = N`), and handles backpressure buffer overflow strategies (`BufferOverflow.DROP_OLDEST` or `SUSPEND`).
 
+
 ## Interview answer — deep senior
 
-Under the hood, `StateFlow` is actually a specialized, optimized subtype of `SharedFlow`. Specifically, `StateFlow` behaves identically to a `SharedFlow` configured with `replay = 1` and `onBufferOverflow = BufferOverflow.DROP_OLDEST`, augmented with two critical characteristics:
+Under the hood, `StateFlow` is actually a specialized, optimized subtype of `SharedFlow`. Specifically, `StateFlow` behaves identically to a `SharedFlow` configured with `replay = 1` and `onBufferOverflow = BufferOverflow.DROP_OLDEST`, augmented with two critical characteristics.
 
-1. **Synchronous Value Access:** You can read `stateFlow.value` at any time from any thread without launching a coroutine.
-2. **State Deduplication:** When you write `_stateFlow.value = newState`, it compares `newState == oldState`. If true, the update is a no-op; it skips notifying collectors and avoids triggering Jetpack Compose recompositions.
+First, **Synchronous Value Access:** You can read `stateFlow.value` at any time from any thread without launching a coroutine. Finally, **State Deduplication:** When you write `_stateFlow.value = newState`, it compares `newState == oldState`. If true, the update is a no-op; it skips notifying collectors and avoids triggering Jetpack Compose recompositions.
 
 In contrast, `MutableSharedFlow` allows duplicate identical emissions. If you emit `SnackbarMessage("Error")` twice, collectors receive both events sequentially, which is why SharedFlow is chosen for discrete user actions and events.
+
 
 ## How to answer in the interview
 

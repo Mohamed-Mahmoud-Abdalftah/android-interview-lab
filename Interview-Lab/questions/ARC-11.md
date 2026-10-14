@@ -102,16 +102,13 @@ Expose loading, content, empty, and error states using either a Sealed Interface
 
 Modeling screen states requires choosing the correct abstraction between mutually exclusive transitions and persistent content overlays.
 
-1. **The Sealed Interface Pattern (Mutually Exclusive)**:
-   - Ideal for screen-level states where only one visual representation can exist at a time (e.g. initial load, fatal error, empty catalog, or success grid).
-   - By defining `sealed interface UiState { Loading, Empty, Success(data), Error(msg) }`, the compiler enforces exhaustive `when` expressions in Compose.
-   - It makes invalid states—such as showing a full-screen loading spinner and an error message simultaneously—structurally impossible to represent.
-
-2. **The Consolidated Data Class Pattern (Overlay / Partial Updates)**:
-   - Ideal for screens supporting pull-to-refresh, pagination, or non-fatal errors.
-   - When a user pulls to refresh, wiping the screen to show a full-screen spinner is terrible UX. Instead, a data class retaining `items`, `isRefreshing = true`, and `transientError = null` keeps existing items visible while displaying a top progress bar.
+First, **The Sealed Interface Pattern (Mutually Exclusive)**. Next, ideal for screen-level states where only one visual representation can exist at a time (e.g. Initial load, fatal error, empty catalog, or success grid).
+By defining `sealed interface UiState { Loading, Empty, Success(data), Error(msg) }`, the compiler enforces exhaustive `when` expressions in Compose. It makes invalid states—such as showing a full-screen loading spinner and an error message simultaneously—structurally impossible to represent.
+**The Consolidated Data Class Pattern (Overlay / Partial Updates)**. Ideal for screens supporting pull-to-refresh, pagination, or non-fatal errors.
+Finally, when a user pulls to refresh, wiping the screen to show a full-screen spinner is terrible UX. Instead, a data class retaining `items`, `isRefreshing = true`, and `transientError = null` keeps existing items visible while displaying a top progress bar.
 
 Both patterns avoid the legacy anti-pattern of exposing multiple independent reactive booleans that easily desynchronize.
+
 
 ## Interview answer — deep senior
 
@@ -120,6 +117,7 @@ Under the hood, in Compose, transitioning between sealed interface branches requ
 When dealing with `Empty` states specifically, senior architects differentiate between a **true empty list** (the query returned zero records) and an **uninitialized state** (the query has not started). Modeling `data object Empty : UiState` provides dedicated UI real estate (illustration, helper text, clear filter button) that encourages user engagement.
 
 In unit testing, testing a sealed interface is remarkably expressive: asserting `assertThat(state).isInstanceOf<UiState.Success>()` provides instant, type-safe validation of state progression.
+
 
 ## How to answer in the interview
 

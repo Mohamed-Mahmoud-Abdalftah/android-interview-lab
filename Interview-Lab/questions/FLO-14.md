@@ -109,11 +109,13 @@ These three flattening operators transform incoming values into child flows, dif
 
 **`flatMapLatest`** cancels the currently executing child flow as soon as a new upstream value arrives, switching collection to the new child flow immediately. This is the definitive operator for search queries and UI filters: if the user types a new character, the previous in-flight network request is cancelled immediately.
 
+
 ## Interview answer — deep senior
 
 Under the hood, `flatMapLatest` is an experimental shorthand composed of `mapLatest { transform(it) }.flattenConcat()`. Because it relies on cooperative coroutine cancellation, if the child flow invokes non-suspending, blocking network calls or un-cancellable loops, cancellation will fail to terminate the background work until the call returns.
 
 In enterprise Android architectures, using `flatMapLatest` for read operations (search, filters, suggestions) is recommended. However, **never use `flatMapLatest` for write or mutation operations** (such as placing an order, uploading receipts, or database migrations). If a user taps a submit button twice rapidly, `flatMapLatest` will cancel the first purchase mid-flight, leaving backend transactions in an inconsistent or orphaned state. For mutations, use `flatMapConcat` or discrete sequential coroutines.
+
 
 ## How to answer in the interview
 

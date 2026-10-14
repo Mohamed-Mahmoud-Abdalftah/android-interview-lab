@@ -109,30 +109,22 @@ Manage concurrency via structured coroutines and Mutex locks, enforce fine-grain
 
 ## Interview answer — structured
 
-Building resilient network and data layers requires coordinating concurrency, time bounds, and retry semantics:
+Building resilient network and data layers requires coordinating concurrency, time bounds, and retry semantics.
 
-1. **Structured Concurrency & Race Conditions**:
-   - Scope coroutines strictly to their lifecycle owners (`viewModelScope`, WorkManager). Avoid unstructured `GlobalScope`.
-   - Eliminate shared mutable state using atomic primitives or `Mutex`. For search autocomplete or rapid filter clicks, use `collectLatest` or cancel active jobs to drop obsolete responses.
+First, **Structured Concurrency & Race Conditions**. Next, scope coroutines strictly to their lifecycle owners (`viewModelScope`, WorkManager). Avoid unstructured `GlobalScope`.
+Eliminate shared mutable state using atomic primitives or `Mutex`. For search autocomplete or rapid filter clicks, use `collectLatest` or cancel active jobs to drop obsolete responses. **Fine-Grained Timeouts**.
+Configure distinct OkHttp timeouts: short connect timeouts (10s) to detect dead networks rapidly, and appropriate read/write timeouts (15–30s) for payloads. Wrap sensitive domain operations in `withTimeoutOrNull` to guarantee UI unblocking. **Exponential Backoff with Full Jitter**.
+When an outage occurs, millions of mobile clients retrying at synchronized intervals will overwhelm recovered servers. Calculate delays using exponential backoff randomized with full jitter: `delay = Random(0, base * 2^attempt)`. Never retry non-idempotent 4xx client errors (e.g. 400, 401, 422). **Idempotency Keys**.
+Finally, for state-altering mutations (payments, order creation), attach a client-generated UUID `Idempotency-Key` header. If a network timeout prompts a retry, the backend processes the request safely without duplicating effects.
 
-2. **Fine-Grained Timeouts**:
-   - Configure distinct OkHttp timeouts: short connect timeouts (10s) to detect dead networks rapidly, and appropriate read/write timeouts (15–30s) for payloads. Wrap sensitive domain operations in `withTimeoutOrNull` to guarantee UI unblocking.
-
-3. **Exponential Backoff with Full Jitter**:
-   - When an outage occurs, millions of mobile clients retrying at synchronized intervals will overwhelm recovered servers. Calculate delays using exponential backoff randomized with full jitter: `delay = Random(0, base * 2^attempt)`. Never retry non-idempotent 4xx client errors (e.g. 400, 401, 422).
-
-4. **Idempotency Keys**:
-   - For state-altering mutations (payments, order creation), attach a client-generated UUID `Idempotency-Key` header. If a network timeout prompts a retry, the backend processes the request safely without duplicating effects.
 
 ## Interview answer — deep senior
 
-From a staff-level systems perspective, retry and concurrency policies must be designed end-to-end:
+From a staff-level systems perspective, retry and concurrency policies must be designed end-to-end.
 
-1. **The Circuit Breaker Pattern on Mobile**: If network calls repeatedly fail with 503 Service Unavailable or consecutive timeouts, the mobile client should trip a local **Circuit Breaker**. For the next 60 seconds, fail requests immediately with cached error state without hitting the cellular radio, preserving device battery and giving the backend breathing room.
+First, with The Circuit Breaker Pattern on Mobile, if network calls repeatedly fail with 503 Service Unavailable or consecutive timeouts, the mobile client should trip a local **Circuit Breaker**. For the next 60 seconds, fail requests immediately with cached error state without hitting the cellular radio, preserving device battery and giving the backend breathing room. Next, with Safe Idempotent Methods vs. Unsafe Mutations, rFC 7231 defines GET, PUT, and DELETE as inherently idempotent. Retrying GET or PUT is safe. Retrying POST is hazardous. Explicitly distinguish between safe retry policies (transparently retrying idempotent read queries) and guarded retry policies (requiring user confirmation or idempotency keys for mutations).
+Finally, with Coroutine Cancellation Cooperativeness, ensure custom background loops and heavy data parsing check `isActive` or invoke `ensureActive()`. If a coroutine does not yield, cancellation requests triggered by screen departures or timeouts will be ignored, resulting in leaked background compute.
 
-2. **Safe Idempotent Methods vs. Unsafe Mutations**: RFC 7231 defines GET, PUT, and DELETE as inherently idempotent. Retrying GET or PUT is safe. Retrying POST is hazardous. Explicitly distinguish between safe retry policies (transparently retrying idempotent read queries) and guarded retry policies (requiring user confirmation or idempotency keys for mutations).
-
-3. **Coroutine Cancellation Cooperativeness**: Ensure custom background loops and heavy data parsing check `isActive` or invoke `ensureActive()`. If a coroutine does not yield, cancellation requests triggered by screen departures or timeouts will be ignored, resulting in leaked background compute.
 
 ## How to answer in the interview
 

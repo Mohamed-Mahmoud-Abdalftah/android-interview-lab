@@ -95,11 +95,13 @@ These operators provide distinct concurrency and backpressure buffering strategi
 
 **`collectLatest`** takes cancellation further: rather than letting the slow collector finish, it cancels the active collector block immediately the instant a new emission arrives, switching work immediately to the latest value.
 
+
 ## Interview answer — deep senior
 
 Under the hood, `conflate()` is literally defined in the Kotlin standard library as `buffer(Channel.CONFLATED)`. A conflated channel holds a buffer of size 1 and uses `BufferOverflow.DROP_OLDEST`. This makes `conflate` allocation-friendly: it retains a single slot on the heap and overwrites the pointer without allocating queue nodes.
 
 The difference between `conflate` and `collectLatest` is a frequent staff-level interview distinction: With `conflate`, the collector **never gets interrupted** while working on an item; it completes its current iteration fully, and only then reads the latest element from the buffer. With `collectLatest`, the collector **is aggressively interrupted and cancelled** via `CancellationException` mid-execution whenever an upstream item arrives. If your collector block modifies persistent storage (like saving a file), `collectLatest` can abort mid-write, while `conflate` lets each write complete cleanly.
+
 
 ## How to answer in the interview
 

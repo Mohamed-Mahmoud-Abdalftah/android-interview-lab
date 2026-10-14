@@ -107,28 +107,21 @@ Design for extreme constraints using compact binary payloads (Protobuf), WebP im
 
 ## Interview answer — structured
 
-Designing for poor connectivity and sudden power loss treats resource scarcity as the default operating environment:
+Designing for poor connectivity and sudden power loss treats resource scarcity as the default operating environment.
 
-1. **Bandwidth Thrift & Binary Encoding**:
-   - Replace verbose JSON payloads with Protocol Buffers (gRPC/Protobuf) or enforce HTTP GZIP/Brotli compression, reducing network payload size by up to 70%.
-   - Downsample media server-side to match the exact physical display density. Serve modern image formats (WebP or AVIF), deferring high-resolution asset downloads until unmetered Wi-Fi is detected.
+First, **Bandwidth Thrift & Binary Encoding**. Next, replace verbose JSON payloads with Protocol Buffers (gRPC/Protobuf) or enforce HTTP GZIP/Brotli compression, reducing network payload size by up to 70%.
+Downsample media server-side to match the exact physical display density. Serve modern image formats (WebP or AVIF), deferring high-resolution asset downloads until unmetered Wi-Fi is detected. **Resilience Against Sudden Power Loss**.
+Budget devices frequently experience sudden shutdowns due to degraded batteries under load. Prevent SQLite database corruption by enabling **Write-Ahead Logging (WAL)** mode in Room. Execute multi-table writes strictly inside atomic `database.withTransaction { }` blocks. If power drops mid-write, SQLite rolls back to the last consistent checkpoint on reboot without corrupting database pages.
+**Battery-Aware Scheduling via WorkManager**. Finally, schedule background data syncs with explicit hardware constraints: `.setRequiresBatteryNotLow(true)` and `.setRequiredNetworkType(NetworkType.CONNECTED)`. This prevents the application from waking up the CPU when battery levels drop below 15%.
 
-2. **Resilience Against Sudden Power Loss**:
-   - Budget devices frequently experience sudden shutdowns due to degraded batteries under load. Prevent SQLite database corruption by enabling **Write-Ahead Logging (WAL)** mode in Room.
-   - Execute multi-table writes strictly inside atomic `database.withTransaction { }` blocks. If power drops mid-write, SQLite rolls back to the last consistent checkpoint on reboot without corrupting database pages.
-
-3. **Battery-Aware Scheduling via WorkManager**:
-   - Schedule background data syncs with explicit hardware constraints: `.setRequiresBatteryNotLow(true)` and `.setRequiredNetworkType(NetworkType.CONNECTED)`. This prevents the application from waking up the CPU when battery levels drop below 15%.
 
 ## Interview answer — deep senior
 
-From a low-level platform architecture perspective, intermittent connectivity requires intelligent connection management:
+From a low-level platform architecture perspective, intermittent connectivity requires intelligent connection management.
 
-1. **Adaptive Network Quality Telemetry**: Monitor cellular connection quality using Android's `ConnectivityManager.NetworkCallback` and bandwidth meters. When throughput drops below 50 kbps (2G/Edge), switch the app dynamically into 'Data Saver Mode': disable auto-playing videos, suppress decorative graphics, and request low-bandwidth text payloads from the backend.
+First, with Adaptive Network Quality Telemetry, monitor cellular connection quality using Android's `ConnectivityManager.NetworkCallback` and bandwidth meters. When throughput drops below 50 kbps (2G/Edge), switch the app dynamically into 'Data Saver Mode': disable auto-playing videos, suppress decorative graphics, and request low-bandwidth text payloads from the backend. Next, with Atomic Disk File Operations, when saving downloaded files or JSON caches to disk, never write directly to the target file path. Write data to a temporary file (`temp_file.tmp`) and atomically rename it using `File.renameTo()` or `AtomicFile`. If power cuts out mid-write, the original file remains uncorrupted.
+Finally, with Aggressive Offline Queuing (The Outbox Pattern), queue all user actions in persistent SQLite tables. Users in the field can continue creating invoices, taking notes, or logging deliveries offline with 100% responsiveness, confident that the synchronization engine will replay records deterministically when cellular coverage returns.
 
-2. **Atomic Disk File Operations**: When saving downloaded files or JSON caches to disk, never write directly to the target file path. Write data to a temporary file (`temp_file.tmp`) and atomically rename it using `File.renameTo()` or `AtomicFile`. If power cuts out mid-write, the original file remains uncorrupted.
-
-3. **Aggressive Offline Queuing (The Outbox Pattern)**: Queue all user actions in persistent SQLite tables. Users in the field can continue creating invoices, taking notes, or logging deliveries offline with 100% responsiveness, confident that the synchronization engine will replay records deterministically when cellular coverage returns.
 
 ## How to answer in the interview
 

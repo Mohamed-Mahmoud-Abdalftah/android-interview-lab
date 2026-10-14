@@ -98,23 +98,18 @@ Encryption provides reversible confidentiality using keys (AES/RSA). Hashing pro
 
 ## Interview answer — structured
 
-Selecting the correct cryptographic primitive depends on whether the security goal is confidentiality, integrity, authenticity, or non-repudiation:
+Selecting the correct cryptographic primitive depends on whether the security goal is confidentiality, integrity, authenticity, or non-repudiation.
 
-1. **Encryption (Confidentiality - Reversible)**: Transforms plaintext into ciphertext. Requires a key to decrypt back to plaintext. Symmetric encryption (AES-256 GCM) is fast for local data storage and payload encryption. Asymmetric encryption (RSA/ECC) encrypts data with a public key that only the matching private key can decrypt.
+First, an Encryption (Confidentiality - Reversible) transforms plaintext into ciphertext. Requires a key to decrypt back to plaintext. Symmetric encryption (AES-256 GCM) is fast for local data storage and payload encryption. Asymmetric encryption (RSA/ECC) encrypts data with a public key that only the matching private key can decrypt. Next, a Hashing (Integrity - Irreversible) is a deterministic, one-way mathematical function mapping arbitrary-length inputs to a fixed-length digest (e.g. SHA-256). Changing a single bit completely changes the hash. Used for APK checksum verification and password hashing (with salt and slow KDFs like Argon2).
+Additionally, with HMAC (Keyed Integrity & Authenticity - Symmetric), computes a hash combined with a shared secret key (`HmacSHA256`). Confirms that the message was not modified in transit AND that it was created by an entity possessing the shared secret. Finally, with Digital Signatures (Authenticity & Non-Repudiation - Asymmetric), signs a message hash with a private key; verifiable by anyone using the corresponding public key (e.g. ECDSA, RSA). Guarantees **non-repudiation**: the signer cannot claim they didn't author the message, making it mandatory for financial payment authorizations and APK code signing.
 
-2. **Hashing (Integrity - Irreversible)**: A deterministic, one-way mathematical function mapping arbitrary-length inputs to a fixed-length digest (e.g. SHA-256). Changing a single bit completely changes the hash. Used for APK checksum verification and password hashing (with salt and slow KDFs like Argon2).
-
-3. **HMAC (Keyed Integrity & Authenticity - Symmetric)**: Computes a hash combined with a shared secret key (`HmacSHA256`). Confirms that the message was not modified in transit AND that it was created by an entity possessing the shared secret.
-
-4. **Digital Signatures (Authenticity & Non-Repudiation - Asymmetric)**: Signs a message hash with a private key; verifiable by anyone using the corresponding public key (e.g. ECDSA, RSA). Guarantees **non-repudiation**: the signer cannot claim they didn't author the message, making it mandatory for financial payment authorizations and APK code signing.
 
 ## Interview answer — deep senior
 
-Cryptographic Failure Modes in Android Applications:
+Cryptographic Failure Modes in Android Applications.
 
-1. **Using Unauthenticated Encryption (AES-CBC without HMAC)**: Susceptible to **Padding Oracle Attacks** and bit-flipping attacks. Always use **Authenticated Encryption with Associated Data (AEAD)**, specifically **AES-GCM (Galois/Counter Mode)**, which generates a cryptographic authentication tag validating both ciphertext integrity and payload confidentiality.
+First, with Using Unauthenticated Encryption (AES-CBC without HMAC), susceptible to **Padding Oracle Attacks** and bit-flipping attacks. Always use **Authenticated Encryption with Associated Data (AEAD)**, specifically **AES-GCM (Galois/Counter Mode)**, which generates a cryptographic authentication tag validating both ciphertext integrity and payload confidentiality. Finally, with Hashing Passwords with Fast Hashes, using SHA-256 or MD5 for passwords is an immediate security vulnerability because modern GPUs compute billions of SHA-256 hashes per second via rainbow tables. Password hashing must use slow, memory-hard Key Derivation Functions (PBKDF2 with 100,000+ iterations, bcrypt, or Argon2id).
 
-2. **Hashing Passwords with Fast Hashes**: Using SHA-256 or MD5 for passwords is an immediate security vulnerability because modern GPUs compute billions of SHA-256 hashes per second via rainbow tables. Password hashing must use slow, memory-hard Key Derivation Functions (PBKDF2 with 100,000+ iterations, bcrypt, or Argon2id).
 
 ## How to answer in the interview
 

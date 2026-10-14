@@ -115,21 +115,18 @@ OkHttp handles low-level transport: socket pooling, TLS handshakes, interceptors
 
 ## Interview answer — structured
 
-In a production Android networking stack, Retrofit and OkHttp divide responsibilities cleanly across presentation and transport layers:
+In a production Android networking stack, Retrofit and OkHttp divide responsibilities cleanly across presentation and transport layers.
 
-1. **OkHttp (Transport & Protocol Layer)**: Operates at the socket level. It manages TCP connection pooling, HTTP/2 multiplexing, TLS handshakes, certificate pinning, and caching. Its interceptor pipeline (`Application` and `Network` interceptors) centralizes cross-cutting concerns like OAuth authentication, telemetry logging, and gzip compression.
+First, with OkHttp (Transport & Protocol Layer), operates at the socket level. It manages TCP connection pooling, HTTP/2 multiplexing, TLS handshakes, certificate pinning, and caching. Its interceptor pipeline (`Application` and `Network` interceptors) centralizes cross-cutting concerns like OAuth authentication, telemetry logging, and gzip compression. Next, with Retrofit (Type-Safe API Abstraction), built directly on top of OkHttp. It translates annotated Kotlin interfaces (`@GET`, `@POST`) into concrete OkHttp HTTP calls using dynamic proxies and reflection. It leverages Converter Factories (Kotlinx Serialization, Moshi) to deserialize JSON into Data Transfer Objects (DTOs), and Call Adapters to support Kotlin coroutines (`suspend fun`).
+Finally, with Architectural Isolation, neither Retrofit nor OkHttp types should ever leak into ViewModels or UI composables. A Repository orchestrates network calls, intercepts HTTP exceptions, and maps network DTOs into stable, immutable Domain entities.
 
-2. **Retrofit (Type-Safe API Abstraction)**: Built directly on top of OkHttp. It translates annotated Kotlin interfaces (`@GET`, `@POST`) into concrete OkHttp HTTP calls using dynamic proxies and reflection. It leverages Converter Factories (Kotlinx Serialization, Moshi) to deserialize JSON into Data Transfer Objects (DTOs), and Call Adapters to support Kotlin coroutines (`suspend fun`).
-
-3. **Architectural Isolation**: Neither Retrofit nor OkHttp types should ever leak into ViewModels or UI composables. A Repository orchestrates network calls, intercepts HTTP exceptions, and maps network DTOs into stable, immutable Domain entities.
 
 ## Interview answer — deep senior
 
-A critical distinction senior engineers inspect under the hood is the difference between **OkHttp Application Interceptors and Network Interceptors**:
+A critical distinction senior engineers inspect under the hood is the difference between **OkHttp Application Interceptors and Network Interceptors**.
 
-- **Application Interceptors (`addInterceptor`)**: Executed once per high-level call at the very top of OkHttp's interceptor chain. They observe the request before redirects, retries, and caching. This is the only safe location for authentication token injection and high-level request tracing.
+First, application Interceptors (`addInterceptor`) is executed once per high-level call at the very top of OkHttp's interceptor chain. They observe the request before redirects, retries, and caching. This is the only safe location for authentication token injection and high-level request tracing. Finally, network Interceptors (`addNetworkInterceptor`) is executed at the wire level just before data is written to the socket. If an HTTP request encounters a 302 redirect or is served directly from OkHttp's local HTTP disk cache, network interceptors will not execute, or may execute multiple times for retried requests. They are meant strictly for monitoring wire traffic and modifying transport headers (e.g., inspecting transfer encoding or cache headers).
 
-- **Network Interceptors (`addNetworkInterceptor`)**: Executed at the wire level just before data is written to the socket. If an HTTP request encounters a 302 redirect or is served directly from OkHttp's local HTTP disk cache, network interceptors will not execute, or may execute multiple times for retried requests. They are meant strictly for monitoring wire traffic and modifying transport headers (e.g., inspecting transfer encoding or cache headers).
 
 ## How to answer in the interview
 

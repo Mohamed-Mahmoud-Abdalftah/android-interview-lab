@@ -106,17 +106,16 @@ Builder is essential in SDK and public API design for constructing complex confi
 
 While Kotlin data classes with default arguments eliminate builders for internal domain models, the Builder pattern remains indispensable in **public SDK design and framework architecture**.
 
-1. **Java Interoperability**: If an Android library or SDK is consumed by Java codebases, Kotlin's named parameters are inaccessible. Without a Builder, Java developers are forced to invoke telescoping constructors with dozens of null parameters. A Builder provides a clean, fluent Java API.
+First, with Java Interoperability, if an Android library or SDK is consumed by Java codebases, Kotlin's named parameters are inaccessible. Without a Builder, Java developers are forced to invoke telescoping constructors with dozens of null parameters. A Builder provides a clean, fluent Java API. Next, with Cross-Field Validation & Invariant Enforcement, in complex SDK configurations (e.g. `WorkRequest.Builder`, `OkHttpClient.Builder`), parameters have interdependencies (e.g. 'if backoff policy is exponential, delay cannot be under 10 seconds'). A constructor cannot execute multi-step validation cleanly; the builder stages mutable state and executes comprehensive invariant checks atomically inside `.build()` before constructing the object.
+Finally, an Enforcing Immutability is the builder can be mutable while building, but the resulting object is strictly immutable and thread-safe post-build, preventing clients from mutating network configurations or security keys at runtime.
 
-2. **Cross-Field Validation & Invariant Enforcement**: In complex SDK configurations (e.g. `WorkRequest.Builder`, `OkHttpClient.Builder`), parameters have interdependencies (e.g. 'if backoff policy is exponential, delay cannot be under 10 seconds'). A constructor cannot execute multi-step validation cleanly; the builder stages mutable state and executes comprehensive invariant checks atomically inside `.build()` before constructing the object.
-
-3. **Enforcing Immutability**: The builder can be mutable while building, but the resulting object is strictly immutable and thread-safe post-build, preventing clients from mutating network configurations or security keys at runtime.
 
 ## Interview answer — deep senior
 
 In modern Kotlin SDK design, senior architects provide the best of both worlds using **Type-Safe Builders with Kotlin DSLs**: By pairing a standard Builder with a trailing lambda function utilizing an extension receiver (`fun analyticsConfig(apiKey: String, block: Builder.() -> Unit): AnalyticsConfig`), Kotlin developers enjoy idiomatic DSL syntax: `analyticsConfig("key") { setBatchSize(100) }`, while Java developers enjoy standard fluent method chaining: `new Builder("key").setBatchSize(100).build()`.
 
 This dual API design guarantees maximum adoption across heterogeneous enterprise teams.
+
 
 ## How to answer in the interview
 

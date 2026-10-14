@@ -88,19 +88,19 @@ Use 'conflate()' or 'sample(periodMillis)'. conflate() drops intermediate unrend
 
 When an upstream flow emits data faster than the Android UI layer can render it, applying the right backpressure throttling strategy is mandatory to avoid frame drops (jank) and ANRs.
 
-The two best backpressure strategies are:
+The two best backpressure strategies are.
 
-1. **`conflate()`**: If the UI thread is busy rendering a frame or layout pass, `conflate()` silently drops intermediate upstream emissions in memory. The moment the UI becomes idle, it immediately receives the single most recent state. This is ideal for real-time dashboards, stock tickers, or sensor gauges where only the freshest value matters.
-
-2. **`sample(100L)`**: If emissions are high-frequency bursts (e.g., streaming audio decibel meters), `sample(period)` periodically polls and emits the latest value once every N milliseconds, strictly capping the UI update rate to 10 FPS or 60 FPS.
+First, with conflate(), if the UI thread is busy rendering a frame or layout pass, `conflate()` silently drops intermediate upstream emissions in memory. The moment the UI becomes idle, it immediately receives the single most recent state. This is ideal for real-time dashboards, stock tickers, or sensor gauges where only the freshest value matters. Finally, with sample(100L), if emissions are high-frequency bursts (e.g., streaming audio decibel meters), `sample(period)` periodically polls and emits the latest value once every N milliseconds, strictly capping the UI update rate to 10 FPS or 60 FPS.
 
 Never use unconstrained `buffer()` in this scenario: buffering high-frequency streams will accumulate thousands of items in memory, creating significant GC pressure and causing the UI to permanently lag seconds behind real-time reality.
+
 
 ## Interview answer — deep senior
 
 At the systems level, Android displays refresh at 60Hz (16.6ms per frame) or 120Hz (8.3ms per frame). Dispatching UI updates to Compose or Views at rates exceeding the display refresh rate (e.g., 200 emissions/sec) wastes CPU cycles on layout recalculations that will never be drawn to the screen.
 
 Under the hood, `conflate()` compiles to an internal `ConflatedChannel` of capacity 1 with `BufferOverflow.DROP_OLDEST`. It decouples the producer thread from the consumer thread via an atomic pointer swap. This ensures zero memory allocation churn and zero lock contention during high-throughput bursts, allowing the upstream sensor or socket parser to run at maximum native speed while keeping UI rendering pinned at a buttery-smooth 60/120 FPS.
+
 
 ## How to answer in the interview
 

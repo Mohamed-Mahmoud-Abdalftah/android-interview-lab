@@ -257,32 +257,22 @@ Design an offline-first system by treating the local database as the single sour
 
 ## Interview answer — structured
 
-An offline-first mobile architecture treats network connectivity as an intermittent enhancement rather than a prerequisite:
+An offline-first mobile architecture treats network connectivity as an intermittent enhancement rather than a prerequisite.
 
-1. **Local Database as Single Source of Truth (SSOT)**:
-   - The UI observes Room database tables via reactive Coroutine `Flow`. The UI never awaits remote API responses to render content; it renders immediately from SQLite.
+First, **Local Database as Single Source of Truth (SSOT)**. Next, the UI observes Room database tables via reactive Coroutine `Flow`. The UI never awaits remote API responses to render content; it renders immediately from SQLite.
+**Optimistic Mutations & The Outbox Pattern**. When a user performs an action (create, update, delete), the app immediately writes the mutation to the local database flagged with `SYNC_PENDING` and a client-generated UUID.
+The UI reflects the change instantaneously without loading spinners. A corresponding record is added to an internal `outbox_mutations` queue table.
+**Resilient Synchronization via WorkManager**. Background workers trigger when network connectivity meets constraints (`NetworkType.CONNECTED`). The worker drains the outbox queue sequentially, dispatches requests to the server with idempotency keys, and updates local records to `SYNCED` with authoritative server IDs.
+**Conflict Resolution Policy**. Finally, in most business apps, implement **Server-Reconciliation with Version Vectors**: the client submits its last-known version. If the server detects a concurrent edit, it merges non-conflicting fields or returns a 409 Conflict, prompting client-side user reconciliation.
 
-2. **Optimistic Mutations & The Outbox Pattern**:
-   - When a user performs an action (create, update, delete), the app immediately writes the mutation to the local database flagged with `SYNC_PENDING` and a client-generated UUID.
-   - The UI reflects the change instantaneously without loading spinners.
-   - A corresponding record is added to an internal `outbox_mutations` queue table.
-
-3. **Resilient Synchronization via WorkManager**:
-   - Background workers trigger when network connectivity meets constraints (`NetworkType.CONNECTED`). The worker drains the outbox queue sequentially, dispatches requests to the server with idempotency keys, and updates local records to `SYNCED` with authoritative server IDs.
-
-4. **Conflict Resolution Policy**:
-   - In most business apps, implement **Server-Reconciliation with Version Vectors**: the client submits its last-known version. If the server detects a concurrent edit, it merges non-conflicting fields or returns a 409 Conflict, prompting client-side user reconciliation.
 
 ## Interview answer — deep senior
 
-From an advanced distributed systems viewpoint, offline-first mobile clients operate as distributed database nodes:
+From an advanced distributed systems viewpoint, offline-first mobile clients operate as distributed database nodes.
 
-1. **Handling Deleted Items (Tombstones)**:
-   - Never delete rows directly in offline SQLite when a user deletes an item while offline. If deleted locally, subsequent sync pulls from the server will interpret the missing row as 'new' and re-insert it! Mark rows as deleted using **Tombstones** (`is_deleted = true`). The sync worker notifies the server to delete the entity remotely, and only removes the row locally once confirmed.
+First, **Handling Deleted Items (Tombstones)**. Next, never delete rows directly in offline SQLite when a user deletes an item while offline. If deleted locally, subsequent sync pulls from the server will interpret the missing row as 'new' and re-insert it! Mark rows as deleted using **Tombstones** (`is_deleted = true`). The sync worker notifies the server to delete the entity remotely, and only removes the row locally once confirmed.
+Additionally, with Two-Way Delta Synchronization, avoid downloading entire datasets. Implement delta sync endpoints accepting `last_sync_timestamp` or pagination cursors. The server returns only mutations (`created`, `updated`, `deleted`) that occurred since that timestamp, drastically reducing bandwidth and battery consumption. Finally, with Queue Compaction & Deduplication, if an offline user edits the same note 5 times, compact the outbox mutations locally before transmitting, collapsing intermediate updates into a single final payload.
 
-2. **Two-Way Delta Synchronization**: Avoid downloading entire datasets. Implement delta sync endpoints accepting `last_sync_timestamp` or pagination cursors. The server returns only mutations (`created`, `updated`, `deleted`) that occurred since that timestamp, drastically reducing bandwidth and battery consumption.
-
-3. **Queue Compaction & Deduplication**: If an offline user edits the same note 5 times, compact the outbox mutations locally before transmitting, collapsing intermediate updates into a single final payload.
 
 ## How to answer in the interview
 

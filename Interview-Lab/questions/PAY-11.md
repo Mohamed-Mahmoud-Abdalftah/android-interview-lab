@@ -133,26 +133,20 @@ Test SDK timeouts and hardware disconnects programmatically using a configurable
 
 ## Interview answer — structured
 
-Verifying peripheral hardware failures deterministically requires software-mediated fault injection:
+Verifying peripheral hardware failures deterministically requires software-mediated fault injection.
 
-1. **The Configurable Test Double Architecture**:
-   - Because proprietary payment kernels cannot run in cloud CI environments, implement a full-fidelity `FakeCardReaderManager`. Expose explicit programmatic fault hooks: `simulateTimeout()`, `simulateDisconnection()`, and `simulateTamperEvent()`.
+First, **The Configurable Test Double Architecture**. Next, because proprietary payment kernels cannot run in cloud CI environments, implement a full-fidelity `FakeCardReaderManager`. Expose explicit programmatic fault hooks: `simulateTimeout()`, `simulateDisconnection()`, and `simulateTamperEvent()`.
+**Virtual Time Testing with `runTest`**. In Kotlin Coroutines, test timeout logic using `runTest`. Calling `advanceTimeBy(30_000L)` instantly advances virtual time without delaying CI execution by real clock seconds. Assert that the underlying timeout handler triggers, cancels the active peripheral flow, marks the transaction as `UNKNOWN`, and persists a reversal payload.
+**Simulating Asynchronous Disconnection Events**. Finally, emit abrupt disconnection errors mid-transaction (e.g. Between `PinRequired` and `CardReadSuccess`). Verify that the presentation layer clears confidential screens immediately and logs the hardware fault telemetry without leaving leaked coroutines or corrupted database locks.
 
-2. **Virtual Time Testing with `runTest`**:
-   - In Kotlin Coroutines, test timeout logic using `runTest`. Calling `advanceTimeBy(30_000L)` instantly advances virtual time without delaying CI execution by real clock seconds. Assert that the underlying timeout handler triggers, cancels the active peripheral flow, marks the transaction as `UNKNOWN`, and persists a reversal payload.
-
-3. **Simulating Asynchronous Disconnection Events**:
-   - Emit abrupt disconnection errors mid-transaction (e.g. between `PinRequired` and `CardReadSuccess`). Verify that the presentation layer clears confidential screens immediately and logs the hardware fault telemetry without leaving leaked coroutines or corrupted database locks.
 
 ## Interview answer — deep senior
 
-From an Android instrumentation and edge-case testing perspective, integration testing extends to OS hardware simulations:
+From an Android instrumentation and edge-case testing perspective, integration testing extends to OS hardware simulations.
 
-1. **USB Host State Simulation via ADB**: On instrumented test devices connected via ADB, developers can simulate USB OTG disconnection by altering Android USB power states via ADB shell: `adb shell am broadcast -a android.hardware.usb.action.USB_DEVICE_DETACHED`. This verifies that Android `BroadcastReceiver` lifecycle handlers fire and gracefully release hardware device handles.
+First, with USB Host State Simulation via ADB, on instrumented test devices connected via ADB, developers can simulate USB OTG disconnection by altering Android USB power states via ADB shell: `adb shell am broadcast -a android.hardware.usb.action.USB_DEVICE_DETACHED`. This verifies that Android `BroadcastReceiver` lifecycle handlers fire and gracefully release hardware device handles. Next, with Chaos Fault Injection in Android Services, in high-end fintech teams, an automated Chaos Proxy intercepts IPC Binder calls between the main app and vendor hardware daemon services. The proxy randomly injects a 3% rate of dead-object exceptions (`DeadObjectException`) to continuously verify that client retry and recovery state machines are bulletproof.
+Finally, with Verifying WorkManager Escalation, ensure tests verify that when a hardware disconnect causes a timeout reversal, the scheduled `ReversalDispatchWorker` is properly registered with WorkManager and ready for eventual background execution.
 
-2. **Chaos Fault Injection in Android Services**: In high-end fintech teams, an automated Chaos Proxy intercepts IPC Binder calls between the main app and vendor hardware daemon services. The proxy randomly injects a 3% rate of dead-object exceptions (`DeadObjectException`) to continuously verify that client retry and recovery state machines are bulletproof.
-
-3. **Verifying WorkManager Escalation**: Ensure tests verify that when a hardware disconnect causes a timeout reversal, the scheduled `ReversalDispatchWorker` is properly registered with WorkManager and ready for eventual background execution.
 
 ## How to answer in the interview
 

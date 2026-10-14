@@ -85,6 +85,7 @@ Because they are static methods, they are dispatched statically at compile time 
 
 In Android, I use them extensively for UI ergonomics, like View.show() or Context.toast(), but I avoid defining them globally without proper package scoping to prevent polluting autocomplete.
 
+
 ## Interview answer — deep senior
 
 The static resolution of extension functions has major architectural implications. Consider a hierarchy where Dog inherits from Animal. If you define an extension function speak() on Animal and another on Dog, invoking speak() on a variable declared as Animal that holds a Dog instance will execute Animal's extension, not Dog's. The JVM bytecode executes a static method call based on the reference type resolved by kotlinc during compilation.
@@ -92,6 +93,7 @@ The static resolution of extension functions has major architectural implication
 Another powerful capability is nullable receiver extensions. By declaring fun CharSequence?.isNullOrEmpty(): Boolean, the function handles null checks internally. Callers can write str.isNullOrEmpty() without safe calls (?.), making call sites cleaner while guaranteeing zero NPEs.
 
 In enterprise codebases, we enforce strict extension visibility rules. Global extension functions placed in the root package pollute the entire IDE autocomplete. We scope extensions to specific modules or file-private declarations. Furthermore, we never use extension functions to hide complex business logic or heavy I/O operations; extensions should feel like natural, lightweight utility methods.
+
 
 ## How to answer in the interview
 

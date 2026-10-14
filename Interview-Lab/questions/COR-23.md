@@ -118,6 +118,7 @@ The critical architectural step that separates senior engineers from juniors is 
 
 Never use the older `suspendCoroutine` builder because it cannot respond to coroutine cancellation.
 
+
 ## Interview answer — deep senior
 
 Under the hood, `suspendCancellableCoroutine` provides strict safety guarantees regarding resume calls. A continuation can only be resumed once. If a third-party SDK accidentally triggers both a success and an error callback, or triggers a callback after cancellation, `CancellableContinuation` guards against illegal multi-resumes by ignoring or throwing an IllegalStateException.
@@ -133,6 +134,7 @@ fun observeLocation(): Flow<Location> = callbackFlow {
 ```
 
 `callbackFlow` uses `awaitClose` to guarantee listener cleanup when flow collection halts.
+
 
 ## How to answer in the interview
 

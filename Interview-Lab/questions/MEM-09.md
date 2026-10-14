@@ -125,6 +125,7 @@ A `ViewModel` is scoped to survive configuration changes. If it stores a referen
 
 Similarly, a coroutine leaks memory when launched in an unmanaged scope—such as `GlobalScope` or an uncancelled custom `CoroutineScope`. If that coroutine suspends indefinitely (such as awaiting a long network request or observing a cold flow) and captures a reference to a View or Activity within its lambda closure, the underlying `Continuation` object acts as an active GC Root pinning the entire UI graph in memory. Using `viewModelScope` and `lifecycleScope` ensures automatic cooperative cancellation when the host lifecycle terminates.
 
+
 ## Interview answer — deep senior
 
 Under the hood, Kotlin coroutines compile suspension points into state machines where local variables and captured closures are stored inside a heap-allocated `Continuation` object. If a coroutine is suspended waiting on a non-cancelling callback or an uncompleted `CompletableDeferred`, ART's GC traverses: Active Thread -> Event Loop / CoroutineDispatcher -> Continuation -> Captured Outer Scope (Activity/View). This creates a persistent leak even if the coroutine isn't actively doing CPU work.
@@ -132,6 +133,7 @@ Under the hood, Kotlin coroutines compile suspension points into state machines 
 Another subtle leak occurs with `suspendCancellableCoroutine` if developers forget to install `invokeOnCancellation { ... }` when wrapping legacy asynchronous SDKs. If the coroutine scope cancels, but the underlying third-party listener remains registered, the callback retains the resumed continuation indefinitely.
 
 In production testing, we verify coroutine cleanup by ensuring unit tests run with `runTest` and that `StandardTestDispatcher` detects uncompleted child jobs, and we use LeakCanary to detect stranded `DispatchedContinuation` instances.
+
 
 ## How to answer in the interview
 

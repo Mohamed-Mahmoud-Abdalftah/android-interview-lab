@@ -97,29 +97,21 @@ Configure PR checks by chaining Spotless/ktlint for formatting, Detekt for stati
 
 ## Interview answer — structured
 
-A production PR quality gate is designed to enforce strict code standards without crippling developer velocity:
+A production PR quality gate is designed to enforce strict code standards without crippling developer velocity.
 
-1. **Fail-Fast Pipeline Structure**:
-   - Separate lightweight checks into parallel jobs: (a) formatting and static analysis (Spotless/ktlint, Detekt), and (b) local JVM unit tests (`testDebugUnitTest`). This provides feedback within 2–3 minutes.
+First, **Fail-Fast Pipeline Structure**. Next, separate lightweight checks into parallel jobs: (a) formatting and static analysis (Spotless/ktlint, Detekt), and (b) local JVM unit tests (`testDebugUnitTest`). This provides feedback within 2–3 minutes.
+**Baseline Management for Legacy Projects**. Enforce zero-tolerance for new issues in legacy codebases by generating Lint and Detekt baselines (`lintOptions { baseline = file("lint-baseline.xml") }`). Existing issues are recorded and grandfathered in, while newly introduced violations fail the PR build immediately.
+**Inline PR Feedback & Actionable Reporting**. Integrate tools like Danger or reviewdog to parse Lint XML reports and publish inline GitHub PR comments directly on offending lines, eliminating the need for engineers to download raw CI log files.
+**Execution Resilience**. Finally, use the `--continue` Gradle flag so the runner executes all static checks in a single pass, reporting formatting, lint, and unit test failures simultaneously rather than forcing repeated CI runs for sequential errors.
 
-2. **Baseline Management for Legacy Projects**:
-   - Enforce zero-tolerance for new issues in legacy codebases by generating Lint and Detekt baselines (`lintOptions { baseline = file("lint-baseline.xml") }`). Existing issues are recorded and grandfathered in, while newly introduced violations fail the PR build immediately.
-
-3. **Inline PR Feedback & Actionable Reporting**:
-   - Integrate tools like Danger or reviewdog to parse Lint XML reports and publish inline GitHub PR comments directly on offending lines, eliminating the need for engineers to download raw CI log files.
-
-4. **Execution Resilience**:
-   - Use the `--continue` Gradle flag so the runner executes all static checks in a single pass, reporting formatting, lint, and unit test failures simultaneously rather than forcing repeated CI runs for sequential errors.
 
 ## Interview answer — deep senior
 
-From an engineering governance and CI infrastructure standpoint, PR checks require careful caching and branch protection rules:
+From an engineering governance and CI infrastructure standpoint, PR checks require careful caching and branch protection rules.
 
-1. **Branch Protection Enforcement**: In GitHub or GitLab settings, mandate 'Require status checks to pass before merging' and 'Require branches to be up to date before merging'. This prevents race conditions where two PRs pass CI independently but break when merged together.
+First, with Branch Protection Enforcement, in GitHub or GitLab settings, mandate 'Require status checks to pass before merging' and 'Require branches to be up to date before merging'. This prevents race conditions where two PRs pass CI independently but break when merged together. Next, with Targeted Subproject Execution, in a multi-module architecture of 80+ modules, running `./gradlew check` across the entire project on every 3-line PR wastes massive compute. Teams configure path filters or tools like Gradle's configuration-cache and affected-module-detector to run tests only on modules impacted by the PR's git diff.
+Finally, enable Gradle's remote build cache (`org.gradle.caching=true`) backed by an S3/GCS or Develocity instance. If an engineer refactors a leaf module, upstream modules are retrieved from cache with `FROM-CACHE` status in seconds.
 
-2. **Targeted Subproject Execution**: In a multi-module architecture of 80+ modules, running `./gradlew check` across the entire project on every 3-line PR wastes massive compute. Teams configure path filters or tools like Gradle's configuration-cache and affected-module-detector to run tests only on modules impacted by the PR's git diff.
-
-3. **Remote Build Cache**: Enable Gradle's remote build cache (`org.gradle.caching=true`) backed by an S3/GCS or Develocity instance. If an engineer refactors a leaf module, upstream modules are retrieved from cache with `FROM-CACHE` status in seconds.
 
 ## How to answer in the interview
 

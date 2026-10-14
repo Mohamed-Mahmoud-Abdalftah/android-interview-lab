@@ -105,18 +105,19 @@ callbackFlow converts multi-event callback APIs into cold Flows using trySend() 
 
 Inside the block, we register the callback listener and use **`trySend(value)`** to emit values thread-safely into the flow channel.
 
-The critical component is **`awaitClose { ... }`**, which serves two vital purposes:
+The critical component is **`awaitClose { ... }`**, which serves two vital purposes.
 
-1. It suspends the coroutine block, keeping the flow channel open as long as collectors are actively observing.
-2. It acts as the mandatory cleanup hook: when the downstream collector cancels its coroutine (e.g., the screen is backgrounded or destroyed), `awaitClose` wakes up and executes its lambda, where you must unregister the listener from the Android system service.
+First, it suspends the coroutine block, keeping the flow channel open as long as collectors are actively observing. Finally, it acts as the mandatory cleanup hook: when the downstream collector cancels its coroutine (e.g., the screen is backgrounded or destroyed), `awaitClose` wakes up and executes its lambda, where you must unregister the listener from the Android system service.
 
 If you omit `awaitClose`, the flow builder executes top-to-bottom and closes immediately, terminating before any callbacks can fire.
+
 
 ## Interview answer — deep senior
 
 Under the hood, `callbackFlow` is built on top of `channelFlow` with an extra safety invariant: the builder checks that `awaitClose` is explicitly invoked before the block completes. If you attempt to exit a `callbackFlow` without calling `awaitClose`, it throws an `IllegalStateException` at runtime.
 
 Another critical detail is using `trySend()` versus `send()`: `trySend()` is non-suspending and thread-safe. Because Android callbacks often trigger on arbitrary Binder IPC or background threads that cannot call suspending functions, `trySend()` allows posting events without launching extra coroutines. However, if the channel buffer overflows, `trySend().isFailure` will be true. To prevent dropping sensor or location events, we frequently chain `.buffer(Channel.UNLIMITED)` or `.conflate()` onto the `callbackFlow`.
+
 
 ## How to answer in the interview
 

@@ -88,26 +88,20 @@ Constants and lower-order terms are dropped in asymptotic analysis because Big O
 
 ## Interview answer — structured
 
-Asymptotic analysis focuses on the limiting behavior of functions as inputs scale toward infinity ($n \to \infty$):
+Asymptotic analysis focuses on the limiting behavior of functions as inputs scale toward infinity ($n \to \infty$).
 
-1. **Dominance of Highest-Order Terms**:
-   - Given an algorithm with operational steps $f(n) = 3n^3 + 50n^2 + 1000n + 4000$, as $n$ scales to millions, the $n^3$ term accounts for greater than 99.99% of total computation. Lower-order terms ($n^2, n, \text{constants}$) become statistically insignificant.
+First, **Dominance of Highest-Order Terms**. Next, given an algorithm with operational steps $f(n) = 3n^3 + 50n^2 + 1000n + 4000$, as $n$ scales to millions, the $n^3$ term accounts for greater than 99.99% of total computation. Lower-order terms ($n^2, n, \text{constants}$) become statistically insignificant.
+**Machine and Platform Independence**. Constant factors (e.g. $c \cdot n$) vary widely across execution environments: CPU clock speed, hardware memory bus bandwidth, JIT compiler optimizations, and ARM vs x86 instruction sets. Big O abstracts away hardware discrepancies to categorize the fundamental mathematical scalability of the algorithm.
+**Practical Engineering Caveat**. Finally, in mobile client development, data sizes are frequently bounded ($n \le 100$). In bounded spaces, constants matter tremendously: an $O(n)$ algorithm that allocates 100 heavy objects in each iteration will run slower and cause more GC pauses than an $O(n \log n)$ primitive array sort.
 
-2. **Machine and Platform Independence**:
-   - Constant factors (e.g. $c \cdot n$) vary widely across execution environments: CPU clock speed, hardware memory bus bandwidth, JIT compiler optimizations, and ARM vs x86 instruction sets. Big O abstracts away hardware discrepancies to categorize the fundamental mathematical scalability of the algorithm.
-
-3. **Practical Engineering Caveat**:
-   - In mobile client development, data sizes are frequently bounded ($n \le 100$). In bounded spaces, constants matter tremendously: an $O(n)$ algorithm that allocates 100 heavy objects in each iteration will run slower and cause more GC pauses than an $O(n \log n)$ primitive array sort.
 
 ## Interview answer — deep senior
 
-From an engineering architecture perspective, ignoring constants can lead to catastrophic real-world mobile choices:
+From an engineering architecture perspective, ignoring constants can lead to catastrophic real-world mobile choices.
 
-1. **The 'Hidden Constant' Trap**: Consider an $O(1)$ operation that performs a synchronous disk read or SQLite transaction on the main thread. Theoretically it is constant time $O(1)$, but the constant $c \approx 15\text{ms}$ drops frames immediately. Conversely, an $O(n)$ in-memory scan of a 100-element primitive array takes $0.005\text{ms}$. Developers must never prioritize theoretical Big O over real wall-clock latency.
+First, with The 'Hidden Constant' Trap, consider an $O(1)$ operation that performs a synchronous disk read or SQLite transaction on the main thread. Theoretically it is constant time $O(1)$, but the constant $c \approx 15\text{ms}$ drops frames immediately. Conversely, an $O(n)$ in-memory scan of a 100-element primitive array takes $0.005\text{ms}$. Developers must never prioritize theoretical Big O over real wall-clock latency. Next, with Amortized Analysis Constants, in resizable data structures like `ArrayList`, inserting an item is amortized $O(1)$. However, when the internal buffer reaches capacity, it reallocates a new array with $1.5\times$ size and copies all elements, incurring an $O(n)$ spike. On the main thread, that sudden spike can stutter an ongoing Compose scroll gesture.
+Finally, with Algorithmic Threshold Switching, advanced libraries leverage both concepts: Java/Kotlin's TimSort switches from MergeSort ($O(n \log n)$) to Binary Insertion Sort ($O(n^2)$) whenever sub-arrays drop below 32 elements, explicitly exploiting low constants on small inputs.
 
-2. **Amortized Analysis Constants**: In resizable data structures like `ArrayList`, inserting an item is amortized $O(1)$. However, when the internal buffer reaches capacity, it reallocates a new array with $1.5\times$ size and copies all elements, incurring an $O(n)$ spike. On the main thread, that sudden spike can stutter an ongoing Compose scroll gesture.
-
-3. **Algorithmic Threshold Switching**: Advanced libraries leverage both concepts: Java/Kotlin's TimSort switches from MergeSort ($O(n \log n)$) to Binary Insertion Sort ($O(n^2)$) whenever sub-arrays drop below 32 elements, explicitly exploiting low constants on small inputs.
 
 ## How to answer in the interview
 

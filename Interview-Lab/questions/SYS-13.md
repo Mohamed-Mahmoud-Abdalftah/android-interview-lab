@@ -101,30 +101,22 @@ Manage Room database migrations using explicit Migration classes or AutoMigratio
 
 ## Interview answer — structured
 
-Database migrations represent a high-stakes failure vector in mobile apps, as failed schema transitions crash the app upon startup:
+Database migrations represent a high-stakes failure vector in mobile apps, as failed schema transitions crash the app upon startup.
 
-1. **Never Use Destructive Fallbacks in Production**:
-   - `fallbackToDestructiveMigration()` drops and recreates the SQLite database when a migration path is missing. This completely wipes offline user data, outbox queues, and cached credentials. It must be disabled in production releases.
+First, **Never Use Destructive Fallbacks in Production**. Next, `fallbackToDestructiveMigration()` drops and recreates the SQLite database when a migration path is missing. This completely wipes offline user data, outbox queues, and cached credentials. It must be disabled in production releases.
+**Explicit Migration Architecture**. For straightforward changes (adding new tables or nullable columns), leverage Room's `@AutoMigration` with `exportSchema = true`.
+For non-trivial schema changes (renaming columns, changing primary keys, table splitting), write manual `Migration(from, to)` objects using explicit SQLite DDL statements. **Handling SQLite Limitations**.
+SQLite versions prior to 3.35.0 do not support `ALTER TABLE DROP COLUMN`. Complex migrations require creating a temporary table, copying data, dropping the old table, and renaming the temporary table. **Automated Migration Testing**.
+Finally, use Room's `MigrationTestHelper` in Android instrumented tests. The test runner boots SQLite with the v1 schema JSON, inserts sample fixtures, executes the migration to v2, and validates that all records remain intact and match the new schema hash.
 
-2. **Explicit Migration Architecture**:
-   - For straightforward changes (adding new tables or nullable columns), leverage Room's `@AutoMigration` with `exportSchema = true`.
-   - For non-trivial schema changes (renaming columns, changing primary keys, table splitting), write manual `Migration(from, to)` objects using explicit SQLite DDL statements.
-
-3. **Handling SQLite Limitations**:
-   - SQLite versions prior to 3.35.0 do not support `ALTER TABLE DROP COLUMN`. Complex migrations require creating a temporary table, copying data, dropping the old table, and renaming the temporary table.
-
-4. **Automated Migration Testing**:
-   - Use Room's `MigrationTestHelper` in Android instrumented tests. The test runner boots SQLite with the v1 schema JSON, inserts sample fixtures, executes the migration to v2, and validates that all records remain intact and match the new schema hash.
 
 ## Interview answer — deep senior
 
-From a data resilience perspective, senior architects prepare for edge cases in database lifecycle and multi-version jumps:
+From a data resilience perspective, senior architects prepare for edge cases in database lifecycle and multi-version jumps.
 
-1. **Handling Multi-Version Hops (1 -> 5)**: Users do not update their apps on every release. A user jumping from version 1 directly to version 5 must traverse the migration chain (`1->2`, `2->3`, `3->4`, `4->5`). Room chains matching migrations automatically. Ensure every sequential migration path exists and is covered by automated integration test matrices.
+First, with Handling Multi-Version Hops (1 -> 5), users do not update their apps on every release. A user jumping from version 1 directly to version 5 must traverse the migration chain (`1->2`, `2->3`, `3->4`, `4->5`). Room chains matching migrations automatically. Ensure every sequential migration path exists and is covered by automated integration test matrices. Next, with Transaction Atomicity, Room executes migration blocks inside a single SQLite transaction. If an error occurs midway, SQLite rolls back changes to prevent partial or corrupted database states. Ensure manual migrations do not attempt non-transactional SQLite operations.
+Finally, with Data Repair & Corruption Fallback, if hardware flash corruption or unrecoverable disk faults corrupt the database file, catch `SQLiteDatabaseCorruptException`. Rather than crashing permanently in an infinite loop, gracefully back up corrupted remnants to a diagnostics dump, re-initialize the database cleanly, and trigger a fresh background synchronization from the server.
 
-2. **Transaction Atomicity**: Room executes migration blocks inside a single SQLite transaction. If an error occurs midway, SQLite rolls back changes to prevent partial or corrupted database states. Ensure manual migrations do not attempt non-transactional SQLite operations.
-
-3. **Data Repair & Corruption Fallback**: If hardware flash corruption or unrecoverable disk faults corrupt the database file, catch `SQLiteDatabaseCorruptException`. Rather than crashing permanently in an infinite loop, gracefully back up corrupted remnants to a diagnostics dump, re-initialize the database cleanly, and trigger a fresh background synchronization from the server.
 
 ## How to answer in the interview
 

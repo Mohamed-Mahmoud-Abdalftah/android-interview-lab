@@ -92,30 +92,22 @@ Manage flaky tests by addressing root causes (animations, unconfined coroutines,
 
 ## Interview answer — structured
 
-Flaky tests undermine engineering trust and require an operational and technical mitigation policy:
+Flaky tests undermine engineering trust and require an operational and technical mitigation policy.
 
-1. **Root-Cause Remediation**:
-   - Replace asynchronous delays and `Thread.sleep` with Kotlin Coroutines' `runTest` and `advanceUntilIdle()`.
-   - Enforce hermetic test environments: disable emulator animations via ADB, mock network layers with OkHttp MockWebServer, and use in-memory Room databases with strict `@Before`/`@After` teardowns.
+First, **Root-Cause Remediation**. Next, replace asynchronous delays and `Thread.sleep` with Kotlin Coroutines' `runTest` and `advanceUntilIdle()`.
+Enforce hermetic test environments: disable emulator animations via ADB, mock network layers with OkHttp MockWebServer, and use in-memory Room databases with strict `@Before`/`@After` teardowns. **Bounded Retries in CI**.
+Implement the Gradle Test Retry plugin configured to retry failed tests at most once (`maxRetries = 1`). Retries act as a temporary velocity buffer to prevent blocking innocent PRs while logging telemetry. **Automated Quarantine Protocol**.
+If a test passes only on retry, CI logs it as a flake metric. The test is immediately tagged (`@FlakyTest`) and quarantined from the blocking PR gate to a non-blocking scheduled suite. **SLA-Driven Resolution**.
+Finally, a P1 technical debt ticket is automatically generated for the owning squad. If not resolved within a defined SLA (e.g. 5 days), the quarantined test is deleted to keep test suites lean and trustworthy.
 
-2. **Bounded Retries in CI**:
-   - Implement the Gradle Test Retry plugin configured to retry failed tests at most once (`maxRetries = 1`). Retries act as a temporary velocity buffer to prevent blocking innocent PRs while logging telemetry.
-
-3. **Automated Quarantine Protocol**:
-   - If a test passes only on retry, CI logs it as a flake metric. The test is immediately tagged (`@FlakyTest`) and quarantined from the blocking PR gate to a non-blocking scheduled suite.
-
-4. **SLA-Driven Resolution**:
-   - A P1 technical debt ticket is automatically generated for the owning squad. If not resolved within a defined SLA (e.g. 5 days), the quarantined test is deleted to keep test suites lean and trustworthy.
 
 ## Interview answer — deep senior
 
-From an engineering telemetry and cultural perspective, flaky test tracking must be automated:
+From an engineering telemetry and cultural perspective, flaky test tracking must be automated.
 
-1. **Flakiness Observability Dashboard**: Measure 'Flake Rate' across CI builds (total retries / total runs). If an organization's flake rate exceeds 1%, engineering leadership must treat test stabilization as a sprint blocker. Without visibility, engineers develop 'retry fatigue' where they blindly restart entire CI pipelines.
+First, with Flakiness Observability Dashboard, measure 'Flake Rate' across CI builds (total retries / total runs). If an organization's flake rate exceeds 1%, engineering leadership must treat test stabilization as a sprint blocker. Without visibility, engineers develop 'retry fatigue' where they blindly restart entire CI pipelines. Next, with De-flaking via Repeated Local Execution, when debugging a suspect test, run it 100 times in a loop locally using Gradle `--rerun-tasks`: `./gradlew test --tests 'com.app.SuspectTest' --repeat 100`. This reliably forces race conditions and coroutine leaks to surface.
+Finally, with The Anti-Pattern of Infinite Retries, treating retries as a permanent fix rather than an alert mechanism creates dangerous compounding flakiness. Two flaky tests with 90% pass rates have an 81% combined pass rate; 10 such tests drop overall pipeline reliability below 35%, rendering CI useless.
 
-2. **De-flaking via Repeated Local Execution**: When debugging a suspect test, run it 100 times in a loop locally using Gradle `--rerun-tasks`: `./gradlew test --tests 'com.app.SuspectTest' --repeat 100`. This reliably forces race conditions and coroutine leaks to surface.
-
-3. **The Anti-Pattern of Infinite Retries**: Treating retries as a permanent fix rather than an alert mechanism creates dangerous compounding flakiness. Two flaky tests with 90% pass rates have an 81% combined pass rate; 10 such tests drop overall pipeline reliability below 35%, rendering CI useless.
 
 ## How to answer in the interview
 

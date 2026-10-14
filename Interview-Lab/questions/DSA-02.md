@@ -88,32 +88,22 @@ O(1) executes in constant time regardless of size (HashMap lookup). O(log n) hal
 
 ## Interview answer — structured
 
-Big O notations represent fundamental algorithmic growth curves:
+Big O notations represent fundamental algorithmic growth curves.
 
-1. **$O(1)$ — Constant Time**:
-   - Execution time is invariant to input size. Examples include direct array indexing (`array[i]`), pushing to a stack, or average-case HashMap lookups.
+First, **$O(1)$ — Constant Time**. Next, execution time is invariant to input size. Examples include direct array indexing (`array[i]`), pushing to a stack, or average-case HashMap lookups.
+**$O(\log n)$ — Logarithmic Time**. The operational problem space is divided by a constant factor (usually 2) at every iteration. Examples include binary search on a sorted collection and `SparseArray` lookups.
+**$O(n)$ — Linear Time**. Operations scale in direct proportion to input size. Examples include iterating through a list, computing a sum, or searching an unsorted array.
+**$O(n \log n)$ — Linearithmic Time**. The mathematical benchmark for optimal comparison-based sorting algorithms (TimSort, MergeSort). Common in Android when sorting UI feeds via `list.sortedBy { ... }`.
+**$O(n^2)$ — Quadratic Time**. Finally, operations scale with the square of the input size. Typically caused by nested loops over collections, or calling `list.contains()` inside a `filter()` block. With 5,000 items, $n^2$ produces 25,000,000 operations, freezing the UI thread.
 
-2. **$O(\log n)$ — Logarithmic Time**:
-   - The operational problem space is divided by a constant factor (usually 2) at every iteration. Examples include binary search on a sorted collection and `SparseArray` lookups.
-
-3. **$O(n)$ — Linear Time**:
-   - Operations scale in direct proportion to input size. Examples include iterating through a list, computing a sum, or searching an unsorted array.
-
-4. **$O(n \log n)$ — Linearithmic Time**:
-   - The mathematical benchmark for optimal comparison-based sorting algorithms (TimSort, MergeSort). Common in Android when sorting UI feeds via `list.sortedBy { ... }`.
-
-5. **$O(n^2)$ — Quadratic Time**:
-   - Operations scale with the square of the input size. Typically caused by nested loops over collections, or calling `list.contains()` inside a `filter()` block. With 5,000 items, $n^2$ produces 25,000,000 operations, freezing the UI thread.
 
 ## Interview answer — deep senior
 
-In mobile systems engineering, the inflection point where higher-order curves overtake lower-order curves depends on constants and hardware:
+In mobile systems engineering, the inflection point where higher-order curves overtake lower-order curves depends on constants and hardware.
 
-1. **Asymptotic Dominance vs. Small $n$**: For small datasets ($n < 20$), an $O(n^2)$ insertion sort or linear search through a contiguous array often runs faster than an $O(n \log n)$ mergesort or $O(1)$ HashMap. The high constant overhead of object allocations, hash calculation, and branch mispredictions makes simple algorithms faster for tiny datasets.
+First, with Asymptotic Dominance vs. Small $n$, for small datasets ($n < 20$), an $O(n^2)$ insertion sort or linear search through a contiguous array often runs faster than an $O(n \log n)$ mergesort or $O(1)$ HashMap. The high constant overhead of object allocations, hash calculation, and branch mispredictions makes simple algorithms faster for tiny datasets. Next, with The Hidden $O(n^2)$ in UI Diffing, Android's `DiffUtil` runs Eugene Myers' diff algorithm with an average complexity of $O(n + d^2)$ where $d$ is the number of edits. If a dataset of 2,000 items changes drastically without stable IDs, DiffUtil calculation spikes on the CPU. Moving DiffUtil off the main thread to `Dispatchers.Default` (as in `ListAdapter` / `AsyncListDiffer`) prevents frame drops.
+Finally, with Big O Exponential Danger ($O(2^n)$ / $O(n!)$), algorithms with exponential complexity (unmemoized recursive backtracking or naive permission permutations) freeze client devices completely even with $n=30$. Detecting and bounding these paths via dynamic programming is critical.
 
-2. **The Hidden $O(n^2)$ in UI Diffing**: Android's `DiffUtil` runs Eugene Myers' diff algorithm with an average complexity of $O(n + d^2)$ where $d$ is the number of edits. If a dataset of 2,000 items changes drastically without stable IDs, DiffUtil calculation spikes on the CPU. Moving DiffUtil off the main thread to `Dispatchers.Default` (as in `ListAdapter` / `AsyncListDiffer`) prevents frame drops.
-
-3. **Big O Exponential Danger ($O(2^n)$ / $O(n!)$)**: Algorithms with exponential complexity (unmemoized recursive backtracking or naive permission permutations) freeze client devices completely even with $n=30$. Detecting and bounding these paths via dynamic programming is critical.
 
 ## How to answer in the interview
 

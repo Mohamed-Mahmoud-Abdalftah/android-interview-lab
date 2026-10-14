@@ -89,13 +89,12 @@ implementation keeps a dependency private to the module's compile classpath, hid
 
 ## Interview answer — structured
 
-The difference between `api` and `implementation` in Gradle determines whether a dependency leaks into the consumer's compile classpath:
+The difference between `api` and `implementation` in Gradle determines whether a dependency leaks into the consumer's compile classpath.
 
-1. **`implementation` (Default Choice)**: The dependency is present on the compile classpath of the current module and on the runtime classpath of consumers, but **hidden from the compile classpath of consumers**. If module `B` uses `implementation(A)`, module `C` depending on `B` cannot reference types from `A`. This enforces strict encapsulation and dramatically accelerates incremental compilation.
-
-2. **`api` (Public ABI Exposure)**: Transitively exposes the dependency to any module that depends on this module. If `B` declares `api(A)`, `C` can import symbols from `A` directly.
+First, implementation` (Default Choice) is the dependency is present on the compile classpath of the current module and on the runtime classpath of consumers, but **hidden from the compile classpath of consumers**. If module `B` uses `implementation(A)`, module `C` depending on `B` cannot reference types from `A`. This enforces strict encapsulation and dramatically accelerates incremental compilation. Finally, with api` (Public ABI Exposure), transitively exposes the dependency to any module that depends on this module. If `B` declares `api(A)`, `C` can import symbols from `A` directly.
 
 The golden architectural rule: use `implementation` by default. Only promote a dependency to `api` if its types appear directly in the module's public function parameters, return types, or inherited interfaces (part of its public Application Binary Interface - ABI).
+
 
 ## Interview answer — deep senior
 
@@ -103,10 +102,10 @@ Under the hood, Gradle distinguishes between a module's **Compile Classpath** an
 
 When Gradle compiles a module, it generates an ABI hash representing only public and protected method signatures, return types, and fields. Method implementation bodies (private logic inside a function) do not change the ABI hash.
 
-- When module `B` uses `implementation(A)`, Gradle excludes `A` from `C`'s compile classpath. If a developer changes private code inside `A`, `A` recompiles, but `B`'s ABI remains unchanged, and Gradle completely skips recompiling `C`.
-- When `B` uses `api(A)`, `A` is part of `B`'s public interface. Any ABI change in `A` invalidates the ABI of `B`, triggering a massive recompile cascade across the entire downstream dependency tree.
+First, when module `B` uses `implementation(A)`, Gradle excludes `A` from `C`'s compile classpath. If a developer changes private code inside `A`, `A` recompiles, but `B`'s ABI remains unchanged, and Gradle completely skips recompiling `C`. Finally, when `B` uses `api(A)`, `A` is part of `B`'s public interface. Any ABI change in `A` invalidates the ABI of `B`, triggering a massive recompile cascade across the entire downstream dependency tree.
 
 Using `implementation` isolates compile boundaries, maximizes Gradle's `UP-TO-DATE` task checks, and keeps developer build loops lightning-fast.
+
 
 ## How to answer in the interview
 

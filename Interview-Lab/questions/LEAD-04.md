@@ -89,34 +89,23 @@ Estimate unfamiliar features by separating discovery from delivery using a timeb
 
 ## Interview answer — structured
 
-Estimating novel or high-uncertainty mobile features requires disciplined risk engineering rather than speculative guessing:
+Estimating novel or high-uncertainty mobile features requires disciplined risk engineering rather than speculative guessing.
 
-1. **The Timeboxed Technical Spike Protocol**:
-   - When facing unfamiliar domain territory (e.g. BLE, custom NDK audio, complex biometrics), refuse to provide a full release estimate immediately. Instead, scope a 2-to-3-day timeboxed 'Spike'. The sole objective of the spike is building a disposable proof-of-concept to validate framework APIs, verify hardware compatibility, and uncover hidden constraints.
+First, **The Timeboxed Technical Spike Protocol**. Next, when facing unfamiliar domain territory (e.g. BLE, custom NDK audio, complex biometrics), refuse to provide a full release estimate immediately. Instead, scope a 2-to-3-day timeboxed 'Spike'. The sole objective of the spike is building a disposable proof-of-concept to validate framework APIs, verify hardware compatibility, and uncover hidden constraints.
+**Granular Work Breakdown (WBS)**. Following the spike, decompose the epic into discrete sub-tasks: domain models, background services, UI presentation states, offline error recovery, automated tests, and regression testing.
+**Three-Point Probabilistic Estimation (PERT)**. Present estimates as ranges rather than single integers.
+Optimistic ($O$): Everything works smoothly without device anomalies. Nominal ($M$): Expected delivery with standard iteration.
+Pessimistic ($P$): Vendor bugs, OEM permission hurdles, and store review delays. Expected duration: $E = \frac{O + 4M + P}{6}$.
+**Explicit Risk & Dependency Transparency**. Finally, clearly enumerate external blockers: backend API delivery dates, physical test hardware availability, and third-party vendor SDK support.
 
-2. **Granular Work Breakdown (WBS)**:
-   - Following the spike, decompose the epic into discrete sub-tasks: domain models, background services, UI presentation states, offline error recovery, automated tests, and regression testing.
-
-3. **Three-Point Probabilistic Estimation (PERT)**:
-   - Present estimates as ranges rather than single integers:
-     - Optimistic ($O$): Everything works smoothly without device anomalies.
-     - Nominal ($M$): Expected delivery with standard iteration.
-     - Pessimistic ($P$): Vendor bugs, OEM permission hurdles, and store review delays.
-     - Expected duration: $E = \frac{O + 4M + P}{6}$.
-
-4. **Explicit Risk & Dependency Transparency**:
-   - Clearly enumerate external blockers: backend API delivery dates, physical test hardware availability, and third-party vendor SDK support.
 
 ## Interview answer — deep senior
 
-From an engineering leadership and stakeholder communication perspective, managing expectations prevents project crises:
+From an engineering leadership and stakeholder communication perspective, managing expectations prevents project crises.
 
-1. **The Cone of Uncertainty**: Communicate the 'Cone of Uncertainty' to product and executive stakeholders. Early in the discovery phase, estimates carry a $4\times$ variance. As the spike concludes and architecture solidifies, variance drops to $1.2\times$. Explaining this mathematically protects team credibility.
+First, with The Cone of Uncertainty, communicate the 'Cone of Uncertainty' to product and executive stakeholders. Early in the discovery phase, estimates carry a $4\times$ variance. As the spike concludes and architecture solidifies, variance drops to $1.2\times$. Explaining this mathematically protects team credibility. Next, with Mobile-Specific Hardware Fragmentation Variance, mobile estimates carry unique risks that backend projects do not: vendor-specific battery managers (e.g. Samsung vs. Xiaomi killing background workers), camera driver discrepancies, and Play Store policy scrutiny. Factor an explicit 'Device Matrix Testing' buffer into unfamiliar hardware features.
+**Descoping Strategy (MVP vs. Full Scope)**. Finally, always present a staged delivery path: 'If the deadline is non-negotiable for an upcoming trade show, we can deliver the MVP (foreground sync only) in 2 weeks with minimal risk, and schedule automated background syncing for the subsequent release.'
 
-2. **Mobile-Specific Hardware Fragmentation Variance**: Mobile estimates carry unique risks that backend projects do not: vendor-specific battery managers (e.g. Samsung vs. Xiaomi killing background workers), camera driver discrepancies, and Play Store policy scrutiny. Factor an explicit 'Device Matrix Testing' buffer into unfamiliar hardware features.
-
-3. **Descoping Strategy (MVP vs. Full Scope)**:
-   - Always present a staged delivery path: 'If the deadline is non-negotiable for an upcoming trade show, we can deliver the MVP (foreground sync only) in 2 weeks with minimal risk, and schedule automated background syncing for the subsequent release.'
 
 ## How to answer in the interview
 

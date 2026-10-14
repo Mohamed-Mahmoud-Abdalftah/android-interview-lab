@@ -93,24 +93,20 @@ A shared model change triggers massive rebuilds due to high fan-out and ABI inva
 
 ## Interview answer — structured
 
-When modifying a shared data model causes dozens of modules to recompile, the root cause is **Unconstrained Module Fan-Out combined with Public ABI Invalidation**:
+When modifying a shared data model causes dozens of modules to recompile, the root cause is **Unconstrained Module Fan-Out combined with Public ABI Invalidation**.
 
-1. **Root Cause**: A foundational module (like `:core:model`) exports an oversized entity (e.g. `User` with 40 fields) consumed transitively by 30+ feature modules. Adding or modifying a single property alters the compiled bytecode signatures (the ABI digest). Gradle detects the ABI mismatch and invalidates the compile classpath for every downstream module.
+First, a Root Cause is a foundational module (like `:core:model`) exports an oversized entity (e.g. `User` with 40 fields) consumed transitively by 30+ feature modules. Adding or modifying a single property alters the compiled bytecode signatures (the ABI digest). Gradle detects the ABI mismatch and invalidates the compile classpath for every downstream module. Next, **Architectural Remediation**.
+Additionally, with Domain Model Segregation, split the monolithic entity into bounded-context models. The payment feature needs `BillingAccount`, the delivery feature needs `DeliveryRecipient`, and the auth feature needs `AuthIdentity`. Each lives in its respective domain module. With Feature-Level UI Models & Adapters, feature modules should map domain models into internal UI state data classes (`CheckoutUiState`). A change in backend metadata does not alter the feature's internal ABI.
+Finally, with Eliminate `inline` Functions on Models, never declare inline utility functions on shared models; inline bytecode embedding guarantees full caller recompilation.
 
-2. **Architectural Remediation**:
-   - **Domain Model Segregation**: Split the monolithic entity into bounded-context models. The payment feature needs `BillingAccount`, the delivery feature needs `DeliveryRecipient`, and the auth feature needs `AuthIdentity`. Each lives in its respective domain module.
-   - **Feature-Level UI Models & Adapters**: Feature modules should map domain models into internal UI state data classes (`CheckoutUiState`). A change in backend metadata does not alter the feature's internal ABI.
-   - **Eliminate `inline` Functions on Models**: Never declare inline utility functions on shared models; inline bytecode embedding guarantees full caller recompilation.
 
 ## Interview answer — deep senior
 
-To diagnose and monitor fan-out rebuild cascades quantitatively:
+To diagnose and monitor fan-out rebuild cascades quantitatively.
 
-1. **Run Gradle with Profiling**: Execute `./gradlew assembleDebug --profile --scan`. The Gradle Build Scan's 'Timeline' and 'Performance' tabs reveal exactly which task invalidated the cache and triggered the cascade.
+First, with Run Gradle with Profiling, execute `./gradlew assembleDebug --profile --scan`. The Gradle Build Scan's 'Timeline' and 'Performance' tabs reveal exactly which task invalidated the cache and triggered the cascade. Next, with Inspect the ABI Diff, compare task inputs using Gradle's verbose log: `./gradlew assembleDebug --info | grep -i "ABI changed"`. This confirms whether a public signature or private method triggered downstream compilation.
+Finally, with Graph Fan-Out Metrics, in CI, track the **Fan-In (afferent coupling)** of core modules. If a single module's fan-in exceeds 50% of the repository's modules, it is an architectural hazard and must be prioritized for decomposition into independent, stable API slices.
 
-2. **Inspect the ABI Diff**: Compare task inputs using Gradle's verbose log: `./gradlew assembleDebug --info | grep -i "ABI changed"`. This confirms whether a public signature or private method triggered downstream compilation.
-
-3. **Graph Fan-Out Metrics**: In CI, track the **Fan-In (afferent coupling)** of core modules. If a single module's fan-in exceeds 50% of the repository's modules, it is an architectural hazard and must be prioritized for decomposition into independent, stable API slices.
 
 ## How to answer in the interview
 

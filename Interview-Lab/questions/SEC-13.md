@@ -101,23 +101,19 @@ Biometric Keystore keys are permanently invalidated via KeyPermanentlyInvalidate
 
 ## Interview answer — structured
 
-Managing the cryptographic key lifecycle across OS events requires planning for three distinct operational hazards:
+Managing the cryptographic key lifecycle across OS events requires planning for three distinct operational hazards.
 
-1. **Biometric Key Invalidation**: When keys are generated with `setInvalidatedByBiometricEnrollment(true)`, the hardware invalidates the key if the device user adds, removes, or modifies biometric enrollments. Future cryptographic operations throw `KeyPermanentlyInvalidatedException`. Production code must catch this specific exception, purge local biometric credentials, and route the user to re-authenticate with primary credentials (password/OTP).
+First, with Biometric Key Invalidation, when keys are generated with `setInvalidatedByBiometricEnrollment(true)`, the hardware invalidates the key if the device user adds, removes, or modifies biometric enrollments. Future cryptographic operations throw `KeyPermanentlyInvalidatedException`. Production code must catch this specific exception, purge local biometric credentials, and route the user to re-authenticate with primary credentials (password/OTP). Next, with The Auto Backup / Reinstall Pitfall, Android Cloud Auto Backup transfers private app files to Google Drive, but Keystore hardware keys are physically locked to the device's TEE/SE and are never exported. When restored on a new device, encrypted files exist without the decryption key, causing permanent decryption failure. Apps must exclude encrypted databases and DataStore files in `backup_rules.xml` or disable `android:allowBackup="false"`.
+Finally, production key rotation uses versioned aliases (e.g., `key_alias_v2`). The app reads data encrypted with `v1`, decrypts it, generates `v2` in Keystore, re-encrypts the payload, updates an encrypted metadata pointer, and securely destroys `v1`.
 
-2. **The Auto Backup / Reinstall Pitfall**: Android Cloud Auto Backup transfers private app files to Google Drive, but Keystore hardware keys are physically locked to the device's TEE/SE and are never exported. When restored on a new device, encrypted files exist without the decryption key, causing permanent decryption failure. Apps must exclude encrypted databases and DataStore files in `backup_rules.xml` or disable `android:allowBackup="false"`.
-
-3. **Key Rotation**: Production key rotation uses versioned aliases (e.g., `key_alias_v2`). The app reads data encrypted with `v1`, decrypts it, generates `v2` in Keystore, re-encrypts the payload, updates an encrypted metadata pointer, and securely destroys `v1`.
 
 ## Interview answer — deep senior
 
-From an enterprise security posture, handling key invalidation and restore states is a critical architectural requirement:
+From an enterprise security posture, handling key invalidation and restore states is a critical architectural requirement.
 
-1. **Device Reinstall Lifecycle**: When an app is uninstalled and reinstalled on the same physical device, Keystore keys are permanently wiped by the Android OS package manager. Any residual orphaned data (e.g., stored on external scoped storage or synced back from cloud backups) cannot be decrypted. The app must detect a fresh install lifecycle, re-initialize its cryptographic Keystore keysets, and request a fresh session token from the backend.
+First, with Device Reinstall Lifecycle, when an app is uninstalled and reinstalled on the same physical device, Keystore keys are permanently wiped by the Android OS package manager. Any residual orphaned data (e.g., stored on external scoped storage or synced back from cloud backups) cannot be decrypted. The app must detect a fresh install lifecycle, re-initialize its cryptographic Keystore keysets, and request a fresh session token from the backend. Next, with Zero-Downtime Key Rotation Strategy, for server-synced local data, client key rotation should be triggered via backend-driven feature flags or rotation metadata headers. When the server signals a key rollover, a background WorkManager job performs atomic read-decrypt-reencrypt operations on local stores in chunks, preventing blocking operations during critical user flows.
+Finally, with Defensive Exception Handling, never treat `KeyStoreException` as a generic runtime failure. Differentiate between `UserNotAuthenticatedException` (biometric prompt required), `KeyPermanentlyInvalidatedException` (credential enrollment changed), and hardware communication errors (`KeyStoreConnectException`), taking deterministic recovery actions for each.
 
-2. **Zero-Downtime Key Rotation Strategy**: For server-synced local data, client key rotation should be triggered via backend-driven feature flags or rotation metadata headers. When the server signals a key rollover, a background WorkManager job performs atomic read-decrypt-reencrypt operations on local stores in chunks, preventing blocking operations during critical user flows.
-
-3. **Defensive Exception Handling**: Never treat `KeyStoreException` as a generic runtime failure. Differentiate between `UserNotAuthenticatedException` (biometric prompt required), `KeyPermanentlyInvalidatedException` (credential enrollment changed), and hardware communication errors (`KeyStoreConnectException`), taking deterministic recovery actions for each.
 
 ## How to answer in the interview
 

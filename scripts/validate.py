@@ -37,6 +37,10 @@ GENERATED_SITE_PREFIXES = (
     "site/src/content/docs/lessons/", "site/src/content/docs/questions/", "site/src/content/docs/answers/",
     "site/src/content/docs/scenarios/", "site/src/content/docs/labs/", "site/src/content/docs/revision/",
     "site/src/content/docs/speaking/", "site/src/content/docs/mocks/", "site/src/content/docs/reference/", "site/src/data/academy.json",
+    "site/src/content/docs/ar/lessons/", "site/src/content/docs/ar/questions/", "site/src/content/docs/ar/answers/",
+    "site/src/content/docs/ar/scenarios/", "site/src/content/docs/ar/labs/", "site/src/content/docs/ar/revision/",
+    "site/src/content/docs/ar/speaking/", "site/src/content/docs/ar/mocks/", "site/src/content/docs/ar/reference/",
+    "site/src/content/docs/ar/lab/",
     "site/public/data/", "site/public/source/",
     "Interview-Lab/", "site/src/content/docs/lab/", "site/src/content/docs/404.md",
 )

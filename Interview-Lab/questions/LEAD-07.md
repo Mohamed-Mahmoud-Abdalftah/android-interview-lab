@@ -101,29 +101,22 @@ Align cross-functional teams using Contract-First API Design: co-author the spec
 
 ## Interview answer — structured
 
-Cross-functional API contract alignment requires adopting a Contract-First / API-First methodology:
+Cross-functional API contract alignment requires adopting a Contract-First / API-First methodology.
 
-1. **Collaborative Contract Co-Design**:
-   - Convene a short alignment workshop with Mobile, Backend, QA, and Security leads. Design endpoints around mobile UI consumption patterns (minimizing roundtrips) rather than raw database relational schemas.
+First, **Collaborative Contract Co-Design**. Next, convene a short alignment workshop with Mobile, Backend, QA, and Security leads. Design endpoints around mobile UI consumption patterns (minimizing roundtrips) rather than raw database relational schemas.
+**Rigorous OpenAPI / Protobuf Specification**. Formulate the contract using OpenAPI (Swagger) or Protocol Buffers. Explicitly codify.
+With Nullability and Optionality, prevent Kotlin `NullPointerException` crashes by strictly documenting whether fields can be null. With Numeric Precision, transmit monetary values as Strings or integer cents to avoid floating-point inaccuracies.
+With Standardized Error Schemas, define a unified error envelope containing `error_code`, localized user message, and a boolean `is_retryable` flag. **Parallel Execution via Contract Mocking**.
+Finally, export the verified spec into mock servers (MockWebServer, WireMock, or Prism). Mobile engineers develop and test against realistic mock payloads, and QA authors test matrices in parallel while backend engineers build database pipelines.
 
-2. **Rigorous OpenAPI / Protobuf Specification**:
-   - Formulate the contract using OpenAPI (Swagger) or Protocol Buffers. Explicitly codify:
-     - **Nullability and Optionality**: Prevent Kotlin `NullPointerException` crashes by strictly documenting whether fields can be null.
-     - **Numeric Precision**: Transmit monetary values as Strings or integer cents to avoid floating-point inaccuracies.
-     - **Standardized Error Schemas**: Define a unified error envelope containing `error_code`, localized user message, and a boolean `is_retryable` flag.
-
-3. **Parallel Execution via Contract Mocking**:
-   - Export the verified spec into mock servers (MockWebServer, WireMock, or Prism). Mobile engineers develop and test against realistic mock payloads, and QA authors test matrices in parallel while backend engineers build database pipelines.
 
 ## Interview answer — deep senior
 
-From an API governance and backward compatibility angle, contracts must enforce long-term survivability:
+From an API governance and backward compatibility angle, contracts must enforce long-term survivability.
 
-1. **The Asymmetry of Mobile Version Lifecycles**: A backend API can be updated in a single deployment, but legacy mobile app versions linger in production for years because users disable auto-updates. The contract must mandate **strict backward compatibility**: fields can be added, but existing fields must never be renamed, deleted, or have their types altered without incrementing the API path version (`/v2/`).
+First, the Asymmetry of Mobile Version Lifecycles is a backend API can be updated in a single deployment, but legacy mobile app versions linger in production for years because users disable auto-updates. The contract must mandate **strict backward compatibility**: fields can be added, but existing fields must never be renamed, deleted, or have their types altered without incrementing the API path version (`/v2/`). Next, with Security & Data Minimization Auditing, security and compliance teams must audit the API contract against GDPR/CCPA regulations. Mobile payloads must never leak excessive PII or backend server details (e.g. Leaking raw SQL stack traces in 500 error responses).
+Finally, with Automated Contract Testing (Pact / Consumer-Driven Contracts), modern engineering teams integrate Consumer-Driven Contract testing (such as Pact). Mobile test suites define contract expectations; if a backend engineer modifies a response field on a PR, the backend CI build breaks automatically before the breaking change reaches staging.
 
-2. **Security & Data Minimization Auditing**: Security and compliance teams must audit the API contract against GDPR/CCPA regulations. Mobile payloads must never leak excessive PII or backend server details (e.g. leaking raw SQL stack traces in 500 error responses).
-
-3. **Automated Contract Testing (Pact / Consumer-Driven Contracts)**: Modern engineering teams integrate Consumer-Driven Contract testing (such as Pact). Mobile test suites define contract expectations; if a backend engineer modifies a response field on a PR, the backend CI build breaks automatically before the breaking change reaches staging.
 
 ## How to answer in the interview
 

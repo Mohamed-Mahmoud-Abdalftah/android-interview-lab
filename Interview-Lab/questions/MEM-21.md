@@ -99,11 +99,9 @@ To isolate a multi-day memory creep, I correlate production telemetry (PSS, OOM 
 
 Isolating a slow, multi-day memory leak in production requires a systematic, data-driven approach combining telemetry, reproducible load testing, and heap diffing.
 
-1. **Triage via Production Telemetry**: First, I analyze production analytics to correlate memory growth. We track PSS (`Debug.getPss()`) and free heap metrics attached to heartbeat pings. I check whether the creep correlates with specific screens, app versions, or long-running background tasks (like location tracking or foreground services).
+First, with Triage via Production Telemetry, first, I analyze production analytics to correlate memory growth. We track PSS (`Debug.getPss()`) and free heap metrics attached to heartbeat pings. I check whether the creep correlates with specific screens, app versions, or long-running background tasks (like location tracking or foreground services). Next, with Lab Reproduction & Stress Testing, because we cannot attach debuggers to production devices for days, I reproduce the usage profile locally using automated test runners (`UI Automator` or `adb shell monkey`) running an accelerated loop of core app journeys continuously over several hours.
+Finally, with Differential Heap Analysis, i capture a baseline heap dump at hour 1, and a comparison heap dump at hour 6. Using Eclipse MAT or Android Studio Memory Profiler, I run a **Heap Diff**. The culprit is rarely a destroyed Activity; it is almost always an unbounded collection—such as an in-memory analytics queue, an event bus observer map, or cached network tokens that append without eviction.
 
-2. **Lab Reproduction & Stress Testing**: Because we cannot attach debuggers to production devices for days, I reproduce the usage profile locally using automated test runners (`UI Automator` or `adb shell monkey`) running an accelerated loop of core app journeys continuously over several hours.
-
-3. **Differential Heap Analysis**: I capture a baseline heap dump at hour 1, and a comparison heap dump at hour 6. Using Eclipse MAT or Android Studio Memory Profiler, I run a **Heap Diff**. The culprit is rarely a destroyed Activity; it is almost always an unbounded collection—such as an in-memory analytics queue, an event bus observer map, or cached network tokens that append without eviction.
 
 ## Interview answer — deep senior
 
@@ -112,6 +110,7 @@ Under the hood, memory creep often hides inside native memory or static data str
 If the Java Heap is clean but total process RSS climbs, the issue is native memory fragmentation or a C++ library leak, diagnosable using Android's native memory profiler (`heapprofd`).
 
 Once identified, the permanent fix involves introducing structural boundaries: converting unbounded lists to bounded circular FIFO buffers, utilizing `WeakReference` for dynamic registries, and enforcing automated LeakCanary and Macrobenchmark assertions in our staging pipeline.
+
 
 ## How to answer in the interview
 

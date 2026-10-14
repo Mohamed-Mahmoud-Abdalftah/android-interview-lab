@@ -162,30 +162,22 @@ Test reactive flows using Turbine's flow.test { } DSL to assert sequential emiss
 
 ## Interview answer — structured
 
-Turbine provides a lightweight, deterministic testing harness for Kotlin asynchronous streams without manual collection coroutines:
+Turbine provides a lightweight, deterministic testing harness for Kotlin asynchronous streams without manual collection coroutines.
 
-1. **Testing Cold Flows**:
-   - Cold flows execute on demand upon collection. Wrapping them in `flow.test { }` triggers collection, allowing assertions item-by-item (`awaitItem()`), followed by terminal assertions (`awaitComplete()` or `awaitError()`).
+First, **Testing Cold Flows**. Next, cold flows execute on demand upon collection. Wrapping them in `flow.test { }` triggers collection, allowing assertions item-by-item (`awaitItem()`), followed by terminal assertions (`awaitComplete()` or `awaitError()`).
+**Testing `StateFlow`**. StateFlow is a confluent hot stream with conflation and replay size 1. The first invocation of `awaitItem()` **always** yields the initial state.
+StateFlow enforces `distinctUntilChanged` equivalence; emitting identical sequential states emits only once, which Turbine verifies. **Testing `SharedFlow`**.
+SharedFlow does not retain past emissions unless configured with `replay > 0`. Because emissions before active collection are dropped, the test must enter the `sharedFlow.test { }` block **before** invoking the ViewModel method that emits the event. **Asserting Absence of Events**.
+Finally, `expectNoEvents()` ensures no unhandled or duplicate events are currently queued, guaranteeing stream purity.
 
-2. **Testing `StateFlow`**:
-   - StateFlow is a confluent hot stream with conflation and replay size 1. The first invocation of `awaitItem()` **always** yields the initial state.
-   - StateFlow enforces `distinctUntilChanged` equivalence; emitting identical sequential states emits only once, which Turbine verifies.
-
-3. **Testing `SharedFlow`**:
-   - SharedFlow does not retain past emissions unless configured with `replay > 0`. Because emissions before active collection are dropped, the test must enter the `sharedFlow.test { }` block **before** invoking the ViewModel method that emits the event.
-
-4. **Asserting Absence of Events**:
-   - `expectNoEvents()` ensures no unhandled or duplicate events are currently queued, guaranteeing stream purity.
 
 ## Interview answer — deep senior
 
-From an advanced concurrency testing perspective, Turbine solves timing races with SharedFlow and WhileSubscribed streams:
+From an advanced concurrency testing perspective, Turbine solves timing races with SharedFlow and WhileSubscribed streams.
 
-1. **SharingStarted.WhileSubscribed(5000)**: In production ViewModels, flows are converted to state via `.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Initial)`. Direct value reads (`uiState.value`) outside a collector return the initial state forever because upstream is cold. Turbine's `test { }` starts a real subscriber, advancing upstream collection deterministically.
+First, with SharingStarted.WhileSubscribed(5000), in production ViewModels, flows are converted to state via `.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Initial)`. Direct value reads (`uiState.value`) outside a collector return the initial state forever because upstream is cold. Turbine's `test { }` starts a real subscriber, advancing upstream collection deterministically. Next, with Turbine Timeouts & Cancellation, turbine enforces an internal timeout (default 1 second). If a flow fails to emit, Turbine fails fast with a descriptive `TimeoutCancellationException` rather than hanging the entire CI test suite.
+Finally, with Cancel and Ignore Remaining Events, when testing infinite flows (e.g. Database change observers), use `cancelAndIgnoreRemainingEvents()` at the end of the test block to cleanly unsubscribe and cancel the underlying coroutine collector.
 
-2. **Turbine Timeouts & Cancellation**: Turbine enforces an internal timeout (default 1 second). If a flow fails to emit, Turbine fails fast with a descriptive `TimeoutCancellationException` rather than hanging the entire CI test suite.
-
-3. **Cancel and Ignore Remaining Events**: When testing infinite flows (e.g. database change observers), use `cancelAndIgnoreRemainingEvents()` at the end of the test block to cleanly unsubscribe and cancel the underlying coroutine collector.
 
 ## How to answer in the interview
 

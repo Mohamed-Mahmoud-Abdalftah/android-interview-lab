@@ -121,13 +121,10 @@ Keep a ViewModel main-safe by never running blocking operations and injecting `C
 
 Ensuring a ViewModel remains main-safe and thoroughly testable requires disciplined concurrency and dependency decoupling.
 
-1. **Enforcing Main-Safety**:
-   - `viewModelScope.launch` launches on `Dispatchers.Main.immediate` by default. Heavy I/O or CPU operations must be switched using `withContext`.
-   - **Never hardcode dispatchers**: Always inject `CoroutineDispatcher` instances using Dagger/Hilt qualifiers (`@IoDispatcher`, `@DefaultDispatcher`). Hardcoding `Dispatchers.IO` breaks test determinism because background thread timing cannot be paused or advanced virtually in unit tests.
+First, **Enforcing Main-Safety**. Next, `viewModelScope.launch` launches on `Dispatchers.Main.immediate` by default. Heavy I/O or CPU operations must be switched using `withContext`.
+Additionally, with Never hardcode dispatchers, always inject `CoroutineDispatcher` instances using Dagger/Hilt qualifiers (`@IoDispatcher`, `@DefaultDispatcher`). Hardcoding `Dispatchers.IO` breaks test determinism because background thread timing cannot be paused or advanced virtually in unit tests. **Maximizing Testability**.
+Zero Android Framework Dependencies is the ViewModel must contain no imports of Android `Context`, `View`, or platform managers. Localized strings use the `UiText` resource ID pattern. Finally, with Testing with Turbine and TestDispatchers, we set up tests using `StandardTestDispatcher()` and `Dispatchers.setMain()`. Using Cash App's **Turbine** library, we assert emissions from `StateFlow` sequentially and deterministically without arbitrary sleeps.
 
-2. **Maximizing Testability**:
-   - **Zero Android Framework Dependencies**: The ViewModel must contain no imports of Android `Context`, `View`, or platform managers. Localized strings use the `UiText` resource ID pattern.
-   - **Testing with Turbine and TestDispatchers**: We set up tests using `StandardTestDispatcher()` and `Dispatchers.setMain()`. Using Cash App's **Turbine** library, we assert emissions from `StateFlow` sequentially and deterministically without arbitrary sleeps.
 
 ## Interview answer — deep senior
 
@@ -136,6 +133,7 @@ Under the hood, `StandardTestDispatcher` shares a `TestCoroutineScheduler`. When
 If a ViewModel hardcodes `Dispatchers.IO`, `runTest` loses control over thread execution. The coroutine jumps onto the real JVM background thread pool, creating flaky race conditions where tests assert state before the background worker has finished writing.
 
 In enterprise CI pipelines, tests using injected dispatchers and Turbine run in headless JVM suites, executing thousands of ViewModel test cases in seconds with 0% flakiness.
+
 
 ## How to answer in the interview
 

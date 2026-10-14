@@ -107,23 +107,21 @@ Boxing is the conversion of an unboxed primitive (like `int`, `long`, `boolean`)
 **Memory Cost**:
 A bare `int` occupies strictly 4 bytes on the stack. An `Integer` wrapper on 64-bit Android requires an 8-12 byte object header, 4 bytes for the int value, and 4 bytes of memory alignment padding, consuming **16 to 24 bytes on the heap**, plus an object reference pointer. That represents a 4x to 6x memory overhead.
 
-**When Boxing Occurs in Kotlin**:
+**When Boxing Occurs in Kotlin**.
 
-1. **Nullable Primitives (`Int?`)**: The JVM primitives cannot represent `null`. Declaring `var age: Int? = null` forces ART to box the value as `java.lang.Integer` whenever non-null.
-2. **Generic Collections (`List<Int>`, `Map<K, V>`)**: Because Java/Kotlin generics erase to `Object`, collections cannot store primitives directly, boxing every single element.
-3. **Value Classes**: Using `@JvmInline value class` in generic or nullable positions.
+First, nullable Primitives (`Int?`) is the JVM primitives cannot represent `null`. Declaring `var age: Int? = null` forces ART to box the value as `java.lang.Integer` whenever non-null. Next, with Generic Collections (`List<Int>`, `Map<K, V>`), because Java/Kotlin generics erase to `Object`, collections cannot store primitives directly, boxing every single element.
+Finally, with Value Classes, using `@JvmInline value class` in generic or nullable positions.
 
 **When It Matters**: For everyday business logic, boxing overhead is negligible. However, in hot execution loops (audio signal processing, game loops, image filtering, or processing collections with 100,000+ items), boxing allocates millions of short-lived objects, triggering severe GC churn and frame drops.
 
+
 ## Interview answer — deep senior
 
-To eliminate boxing in performance-critical Android systems, we employ specialized primitive architectures:
+To eliminate boxing in performance-critical Android systems, we employ specialized primitive architectures.
 
-1. **Primitive Arrays**: Use `IntArray`, `LongArray`, and `FloatArray` instead of `Array<Int>` or `List<Int>`. In bytecode, `IntArray` compiles to `int[]`, a single contiguous native memory block with zero object overhead per element.
+First, with Primitive Arrays, use `IntArray`, `LongArray`, and `FloatArray` instead of `Array<Int>` or `List<Int>`. In bytecode, `IntArray` compiles to `int[]`, a single contiguous native memory block with zero object overhead per element. Next, with Android Sparse Arrays, in collections mapping integer keys, replace `HashMap<Int, T>` with Android's **`SparseArray<T>`**, **`SparseIntArray`**, or **`SparseLongArray`**. These are binary-search backed array collections that avoid boxing both the integer keys and values, reducing memory consumption by over 50%.
+Finally, with Fast Primitive Collections, for high-throughput graphics or math, libraries like HPPC (High Performance Primitive Collections) provide primitive-specialized sets and maps.
 
-2. **Android Sparse Arrays**: In collections mapping integer keys, replace `HashMap<Int, T>` with Android's **`SparseArray<T>`**, **`SparseIntArray`**, or **`SparseLongArray`**. These are binary-search backed array collections that avoid boxing both the integer keys and values, reducing memory consumption by over 50%.
-
-3. **Fast Primitive Collections**: For high-throughput graphics or math, libraries like HPPC (High Performance Primitive Collections) provide primitive-specialized sets and maps.
 
 ## How to answer in the interview
 

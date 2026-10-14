@@ -95,29 +95,21 @@ Automate publishing by generating a signed AAB, configuring a Google Cloud Servi
 
 ## Interview answer — structured
 
-Publishing Android builds to internal testing and Google Play tracks is automated through a systematic workflow:
+Publishing Android builds to internal testing and Google Play tracks is automated through a systematic workflow.
 
-1. **Identity & Access Management (IAM)**:
-   - Create a dedicated Google Cloud Service Account linked to Google Play Console with least-privilege permissions (e.g. 'Manage testing tracks and releases'). Store its JSON private key in CI secrets.
+First, **Identity & Access Management (IAM)**. Next, create a dedicated Google Cloud Service Account linked to Google Play Console with least-privilege permissions (e.g. 'Manage testing tracks and releases'). Store its JSON private key in CI secrets.
+**Release Compilation & Metadata Packaging**. The CI pipeline executes `./gradlew bundleRelease` producing the `.aab`, while R8 produces the corresponding `mapping.txt` and native debug symbols (`native-debug-symbols.zip`).
+**Automated Upload via Play Developer API**. Using tooling like Fastlane (`upload_to_play_store`), Gradle Play Publisher (GPP), or GitHub Actions (`r0adkll/upload-google-play`), the pipeline initiates an edit session on the Google Play Developer API, uploads the AAB and de-obfuscation files, attaches localized changelogs (`whatsnew/whatsnew-en-US`), and commits the edit to the `internal` testing track.
+**Instant Verification Ring**. Finally, builds deployed to the Internal Testing track bypass lengthy Google Play manual reviews, becoming accessible to internal QA and developers via Play Store links within minutes.
 
-2. **Release Compilation & Metadata Packaging**:
-   - The CI pipeline executes `./gradlew bundleRelease` producing the `.aab`, while R8 produces the corresponding `mapping.txt` and native debug symbols (`native-debug-symbols.zip`).
-
-3. **Automated Upload via Play Developer API**:
-   - Using tooling like Fastlane (`upload_to_play_store`), Gradle Play Publisher (GPP), or GitHub Actions (`r0adkll/upload-google-play`), the pipeline initiates an edit session on the Google Play Developer API, uploads the AAB and de-obfuscation files, attaches localized changelogs (`whatsnew/whatsnew-en-US`), and commits the edit to the `internal` testing track.
-
-4. **Instant Verification Ring**:
-   - Builds deployed to the Internal Testing track bypass lengthy Google Play manual reviews, becoming accessible to internal QA and developers via Play Store links within minutes.
 
 ## Interview answer — deep senior
 
-In enterprise release management, managing API limits and track progression requires strategic design:
+In enterprise release management, managing API limits and track progression requires strategic design.
 
-1. **Track Promotion Without Rebuilding**: An essential practice is promoting existing builds rather than rebuilding. Once an internal track AAB is validated, use the Play Developer API to promote that exact release artifact from `internal` to `closed` (alpha/beta) and eventually to `production`, maintaining 100% binary parity.
+First, a Track Promotion Without Rebuilding is an essential practice is promoting existing builds rather than rebuilding. Once an internal track AAB is validated, use the Play Developer API to promote that exact release artifact from `internal` to `closed` (alpha/beta) and eventually to `production`, maintaining 100% binary parity. Next, with Google Play API Quotas & Race Conditions, google Play API allows only one active edit session per package at any given time. Concurrent CI pipelines trying to upload distinct flavors simultaneously will fail with HTTP 409 Conflict. CI runners must serialize Play Store publishing jobs or use mutex locks.
+Finally, with Automated Notification Integration, after successful upload, the pipeline queries the Play API for the newly minted release status and posts an actionable Slack/Teams alert containing the direct Play Store testing link, the git commit SHA, and author details.
 
-2. **Google Play API Quotas & Race Conditions**: Google Play API allows only one active edit session per package at any given time. Concurrent CI pipelines trying to upload distinct flavors simultaneously will fail with HTTP 409 Conflict. CI runners must serialize Play Store publishing jobs or use mutex locks.
-
-3. **Automated Notification Integration**: After successful upload, the pipeline queries the Play API for the newly minted release status and posts an actionable Slack/Teams alert containing the direct Play Store testing link, the git commit SHA, and author details.
 
 ## How to answer in the interview
 

@@ -102,25 +102,19 @@ Design secure session storage on hostile devices by keeping short-lived access t
 
 ## Interview answer — structured
 
-Designing fintech session storage on potentially compromised devices assumes a zero-trust posture toward the client OS:
+Designing fintech session storage on potentially compromised devices assumes a zero-trust posture toward the client OS.
 
-1. **In-Memory Short-Lived Access Tokens**: Retain access tokens exclusively in volatile RAM with brief 5-minute lifetimes. Never persist access tokens to disk. If the process is killed or backgrounded past timeout, the token vanishes naturally.
+First, with In-Memory Short-Lived Access Tokens, retain access tokens exclusively in volatile RAM with brief 5-minute lifetimes. Never persist access tokens to disk. If the process is killed or backgrounded past timeout, the token vanishes naturally. Next, with Hardware-Bound Refresh Token Storage, persist the long-lived refresh token encrypted with a 256-bit AES-GCM key backed by Android Keystore and StrongBox Keymaster. Store the ciphertext inside `context.noBackupFilesDir` to prevent extraction via adb or cloud backups.
+Additionally, with Demonstrating Proof-of-Possession (DPoP), bind the session to an asymmetric EC keypair generated inside Keystore. For critical API calls, the client signs a payload containing the current timestamp, request URI, and server nonce with the hardware-locked private key. Intercepting the bearer token alone is useless to an attacker because they cannot forge the hardware signature. Finally, with Lifecycle-Aware Background Eviction, monitor app foreground/background lifecycle. After 120 seconds in the background, aggressively purge all memory pointers and cached session states, forcing biometric or passcode re-authentication on resume.
 
-2. **Hardware-Bound Refresh Token Storage**: Persist the long-lived refresh token encrypted with a 256-bit AES-GCM key backed by Android Keystore and StrongBox Keymaster. Store the ciphertext inside `context.noBackupFilesDir` to prevent extraction via adb or cloud backups.
-
-3. **Demonstrating Proof-of-Possession (DPoP)**: Bind the session to an asymmetric EC keypair generated inside Keystore. For critical API calls, the client signs a payload containing the current timestamp, request URI, and server nonce with the hardware-locked private key. Intercepting the bearer token alone is useless to an attacker because they cannot forge the hardware signature.
-
-4. **Lifecycle-Aware Background Eviction**: Monitor app foreground/background lifecycle. After 120 seconds in the background, aggressively purge all memory pointers and cached session states, forcing biometric or passcode re-authentication on resume.
 
 ## Interview answer — deep senior
 
-From an end-to-end security architecture viewpoint, fintech resilience depends on continuous risk telemetry and backend orchestration:
+From an end-to-end security architecture viewpoint, fintech resilience depends on continuous risk telemetry and backend orchestration.
 
-1. **Server-Side Session Invalidation**: The server maintains a distributed state table tracking device fingerprint hashes, IP geographic velocity, and integrity verdicts. If a refresh request originates from an anomalous ASN or fails Play Integrity attestation, the server immediately revokes the token family and pushes a silent FCM wake-up to terminate the local session.
+First, a Server-Side Session Invalidation is the server maintains a distributed state table tracking device fingerprint hashes, IP geographic velocity, and integrity verdicts. If a refresh request originates from an anomalous ASN or fails Play Integrity attestation, the server immediately revokes the token family and pushes a silent FCM wake-up to terminate the local session. Next, with Step-Up Authentication Gates, high-value transactions (e.g. Transfers over $1,000) are never authorized solely by existing session tokens. They require just-in-time biometric unlocking using a `CryptoObject`-bound Keystore key paired with a server-issued one-time transaction nonce.
+Finally, an Anti-Screen-Scraping is the host Activity enforces `FLAG_SECURE` to prevent accessibility-based overlays, screen recording, and task preview dumping from capturing session states while the app is transitioning.
 
-2. **Step-Up Authentication Gates**: High-value transactions (e.g. transfers over $1,000) are never authorized solely by existing session tokens. They require just-in-time biometric unlocking using a `CryptoObject`-bound Keystore key paired with a server-issued one-time transaction nonce.
-
-3. **Anti-Screen-Scraping**: The host Activity enforces `FLAG_SECURE` to prevent accessibility-based overlays, screen recording, and task preview dumping from capturing session states while the app is transitioning.
 
 ## How to answer in the interview
 

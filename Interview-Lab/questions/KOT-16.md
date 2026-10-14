@@ -91,6 +91,7 @@ List is a read-only interface with no mutation methods; MutableList adds mutatio
 
 The core distinction is between interfaces, implementations, and evaluation strategies. List is Kotlin's read-only interface—it exposes accessors but no mutation methods. Importantly, it is read-only, not strictly immutable, meaning the underlying instance could still be mutated by another reference. MutableList extends List and adds modification APIs. ArrayList is the concrete JVM class implementing MutableList, backed by a dynamic array offering O(1) indexed reads. Sequence, on the other hand, is not a collection at all; it is a lazy pipeline. Instead of executing transformations eagerly and allocating intermediate lists on the heap, a Sequence processes elements vertically one-by-one only when a terminal operation like toList() or first() is called. I use standard eager collections for small, in-memory lists because the iterator overhead of Sequences is unnecessary. But for multi-step pipelines on large datasets, or where short-circuiting like take(n) applies, Sequences prevent GC pressure.
 
+
 ## Interview answer — deep senior
 
 From an architectural and memory standpoint, returning List<T> from a public API signals that callers cannot mutate the collection. However, in concurrent environments, simply upcasting a private MutableList to List does not provide thread safety. If a background coroutine calls add() while a UI thread iterates the read-only view, you risk a ConcurrentModificationException. In production, I expose a defensive copy using toList() or an immutable snapshot via kotlinx.collections.immutable.
@@ -98,6 +99,7 @@ From an architectural and memory standpoint, returning List<T> from a public API
 When comparing ArrayList to Sequence, we analyze heap allocations and CPU cache locality. Standard eager collection operations like filter and map generate intermediate java.util.ArrayList allocations at every step. If you chain three transformations on a list of 5,000 items, you allocate three separate lists on the heap, triggering Gen0/Gen1 GC sweeps.
 
 Sequences avoid intermediate allocations by composing Iterator wrappers. However, each transformation step wraps an Iterator object and invokes a function reference, adding slight indirection and call overhead. If the list is small—under a few hundred items—eager processing is actually faster because of CPU cache locality and zero iterator indirection. Sequences shine when the dataset is large, the transformation chain has multiple stages, or an early terminal operation like find or take can short-circuit before processing the entire source.
+
 
 ## How to answer in the interview
 

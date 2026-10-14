@@ -115,6 +115,7 @@ For large lists, fetching thousands of database records into an in-memory `List<
 
 Additionally, apps must implement `ComponentCallbacks2` and listen to `onTrimMemory(level)`. Purging secondary caches when `TRIM_MEMORY_RUNNING_LOW` arrives prevents the kernel Low Memory Killer (LMK) from terminating the app.
 
+
 ## Interview answer — deep senior
 
 Under the hood, `LruCache` uses a `LinkedHashMap` configured with access-order ordering (`accessOrder = true`). Whenever `get()` or `put()` is invoked, the accessed node moves to the tail; when the byte sum exceeds `maxSize`, elements are trimmed from the head.
@@ -122,6 +123,7 @@ Under the hood, `LruCache` uses a `LinkedHashMap` configured with access-order o
 In `RecyclerView`, memory regressions frequently occur when developers misuse `DiffUtil` or `setHasFixedSize`. If `DiffUtil.calculateDiff()` runs on the main thread for lists exceeding a few hundred items, it blocks the main looper for 50-200ms, creating severe UI jank. Using `AsyncListDiffer` or `ListAdapter` automatically dispatches diff computation to a background executor.
 
 In Compose, `LazyColumn` handles view recycling virtually, but keeping heavy state closures inside items can retain significant memory. Using `key` parameters on `items()` ensures that Compose preserves item identity correctly without re-allocating state instances during reordering.
+
 
 ## How to answer in the interview
 

@@ -103,13 +103,15 @@ By default, newly installed Android apps rely on Just-In-Time (JIT) compilation,
 
 **Macrobenchmark** is the Jetpack library that runs automated, real-device integration tests simulating realistic user flows (Startup, Scroll, Navigation), generating Baseline Profiles programmatically and asserting latency thresholds in CI.
 
+
 ## Interview answer — deep senior
 
 Under the hood, Baseline Profiles generate a compact binary format inside `assets/dexopt/baseline.prof`. When `pm install` completes, Android's `installd` daemon invokes `dex2oat` using the compilation filter `speed-profile`, translating designated methods directly into native machine code while leaving colder secondary paths for JIT.
 
 In Macrobenchmark tests, we can test different compilation modes explicitly: `CompilationMode.None()` (simulating unoptimized fresh install), `CompilationMode.Partial(baselineProfileMode = BaselineProfileMode.Require)` (testing baseline profile impact), and `CompilationMode.Full()`.
 
-By running Macrobenchmark in CI against both `None` and `Partial`, teams obtain concrete, verifiable metrics proving that a pull request maintains its cold start SLA (e.g. keeping startup under 800ms on a reference device).
+By running Macrobenchmark in CI against both `None` and `Partial`, teams obtain concrete, verifiable metrics proving that a pull request maintains its cold start SLA (e.g. Keeping startup under 800ms on a reference device).
+
 
 ## How to answer in the interview
 

@@ -124,27 +124,21 @@ Isolate proprietary hardware and EMV SDKs behind an abstract domain interface (C
 
 ## Interview answer — structured
 
-Proprietary POS hardware and EMV chip-reader SDKs exhibit severe architectural anti-patterns that require strict isolation:
+Proprietary POS hardware and EMV chip-reader SDKs exhibit severe architectural anti-patterns that require strict isolation.
 
-1. **Defects of Commercial Payment SDKs**:
-   - Vendor SDKs (Pax, Verifone, Sunmi, Ingenico) frequently mandate static singletons, untyped byte arrays (EMV TLV tags), blocking native JNI calls, and undocumented lifecycle memory leaks. Leaking vendor classes into UI or domain modules irreparably couples the application to specific hardware revisions.
+First, **Defects of Commercial Payment SDKs**. Next, vendor SDKs (Pax, Verifone, Sunmi, Ingenico) frequently mandate static singletons, untyped byte arrays (EMV TLV tags), blocking native JNI calls, and undocumented lifecycle memory leaks. Leaking vendor classes into UI or domain modules irreparably couples the application to specific hardware revisions.
+**The Hardware Adapter Pattern**. With Pure Domain Abstraction, define a clean `CardReaderManager` interface exposing idiomatic Kotlin sealed interfaces (`CardReaderEvent.WaitingForCard`, `CardReaderEvent.PinRequired`, `CardReaderEvent.Success`).
+Reactive Bridge via `callbackFlow is the adapter encapsulates vendor callbacks into a cold Kotlin `Flow`. Using `awaitClose { vendorSdk.abort() }` guarantees hardware teardown and unregisters memory-leaking listeners when the subscriber cancels. **Decoupled Testability via In-Memory Fakes**.
+Finally, because proprietary native `.so` binaries fail to link on host JVMs or standard Android x86 emulators, an in-memory `FakeCardReaderManager` is essential. It enables full UI automated testing and CI verification without requiring physical $500 hardware terminals.
 
-2. **The Hardware Adapter Pattern**:
-   - **Pure Domain Abstraction**: Define a clean `CardReaderManager` interface exposing idiomatic Kotlin sealed interfaces (`CardReaderEvent.WaitingForCard`, `CardReaderEvent.PinRequired`, `CardReaderEvent.Success`).
-   - **Reactive Bridge via `callbackFlow`**: The adapter encapsulates vendor callbacks into a cold Kotlin `Flow`. Using `awaitClose { vendorSdk.abort() }` guarantees hardware teardown and unregisters memory-leaking listeners when the subscriber cancels.
-
-3. **Decoupled Testability via In-Memory Fakes**:
-   - Because proprietary native `.so` binaries fail to link on host JVMs or standard Android x86 emulators, an in-memory `FakeCardReaderManager` is essential. It enables full UI automated testing and CI verification without requiring physical $500 hardware terminals.
 
 ## Interview answer — deep senior
 
-From an EMV Level 2 kernel compliance and POS threading perspective, adapter implementation requires systems discipline:
+From an EMV Level 2 kernel compliance and POS threading perspective, adapter implementation requires systems discipline.
 
-1. **Threading and JNI Isolation**: Vendor EMV kernels often invoke callbacks directly from arbitrary OS native POS threads. The adapter must sanitize thread contexts, dispatching events onto controlled background coroutine dispatchers (`Dispatchers.IO`) before touching Android framework state.
+First, with Threading and JNI Isolation, vendor EMV kernels often invoke callbacks directly from arbitrary OS native POS threads. The adapter must sanitize thread contexts, dispatching events onto controlled background coroutine dispatchers (`Dispatchers.IO`) before touching Android framework state. Next, with Hardware Re-Entrancy & Mutexes, most physical EMV readers crash or lock up permanently if `startTransaction` is invoked while a previous card read session is in progress. The adapter must wrap hardware invocations in an internal `Mutex` with timeout protection to prevent concurrent native state collisions.
+Finally, with Multi-Vendor Dependency Injection, in white-label POS applications supporting multiple hardware vendors (e.g. Running on both Pax A920 and Sunmi V2s), use Dagger/Hilt qualifier annotations or build flavor bindings to inject the matching adapter dynamically based on device build manufacturer (`Build.MANUFACTURER`).
 
-2. **Hardware Re-Entrancy & Mutexes**: Most physical EMV readers crash or lock up permanently if `startTransaction` is invoked while a previous card read session is in progress. The adapter must wrap hardware invocations in an internal `Mutex` with timeout protection to prevent concurrent native state collisions.
-
-3. **Multi-Vendor Dependency Injection**: In white-label POS applications supporting multiple hardware vendors (e.g. running on both Pax A920 and Sunmi V2s), use Dagger/Hilt qualifier annotations or build flavor bindings to inject the matching adapter dynamically based on device build manufacturer (`Build.MANUFACTURER`).
 
 ## How to answer in the interview
 

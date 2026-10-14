@@ -98,30 +98,22 @@ Generate realistic fixtures by creating pre-migration v1 SQLite databases popula
 
 ## Interview answer — structured
 
-Database migrations frequently pass clean unit tests but crash on real devices due to historical dirty data accumulated across years of app usage:
+Database migrations frequently pass clean unit tests but crash on real devices due to historical dirty data accumulated across years of app usage.
 
-1. **Production Dirty Data Realities**:
-   - Adding a `NOT NULL` column to an existing table without an explicit `DEFAULT` value fails when legacy rows exist.
-   - Historical rows with `NULL` or empty strings in fields previously unconstrained.
-   - Broken foreign keys (orphaned rows) resulting from unconstrained deletes in legacy app versions.
-   - Non-standard UTF-8 strings (emojis, RTL Arabic scripts, zero-width spaces).
+First, **Production Dirty Data Realities**. Next, adding a `NOT NULL` column to an existing table without an explicit `DEFAULT` value fails when legacy rows exist.
+Historical rows with `NULL` or empty strings in fields previously unconstrained. Broken foreign keys (orphaned rows) resulting from unconstrained deletes in legacy app versions.
+Non-standard UTF-8 strings (emojis, RTL Arabic scripts, zero-width spaces). **Constructing Realistic Test Fixtures**.
+Use `helper.createDatabase(DB_NAME, oldVersion)` to boot the historical schema. Populate the table with adversarial edge-case fixtures: `NULL` entries, 50,000 dummy rows to test SQLite transaction memory limits, malformed timestamps, and corrupted foreign key IDs.
+**Hardening Migration Logic**. Finally, update manual SQL migrations to scrub or sanitize dirty data inline: execute `UPDATE customers SET email = 'unknown' WHERE email IS NULL` before executing the `ALTER TABLE` statement or table-copy routine.
 
-2. **Constructing Realistic Test Fixtures**:
-   - Use `helper.createDatabase(DB_NAME, oldVersion)` to boot the historical schema.
-   - Populate the table with adversarial edge-case fixtures: `NULL` entries, 50,000 dummy rows to test SQLite transaction memory limits, malformed timestamps, and corrupted foreign key IDs.
-
-3. **Hardening Migration Logic**:
-   - Update manual SQL migrations to scrub or sanitize dirty data inline: execute `UPDATE customers SET email = 'unknown' WHERE email IS NULL` before executing the `ALTER TABLE` statement or table-copy routine.
 
 ## Interview answer — deep senior
 
-From an operational data integrity perspective, preventing migration crashes requires defensive SQL design:
+From an operational data integrity perspective, preventing migration crashes requires defensive SQL design.
 
-1. **Table Recreation Pattern for Complex Migrations**: SQLite versions prior to 3.35.0 do not support dropping columns. Complex migrations require: (1) creating `new_table`, (2) copying sanitized rows with `INSERT OR IGNORE INTO new_table SELECT ... FROM old_table`, (3) dropping `old_table`, and (4) renaming `new_table` to `old_table`. Test this exact 4-step sequence against dirty fixtures.
+First, with Table Recreation Pattern for Complex Migrations, SQLite versions prior to 3.35.0 do not support dropping columns. Complex migrations require: (1) creating `new_table`, (2) copying sanitized rows with `INSERT OR IGNORE INTO new_table SELECT ... FROM old_table`, (3) dropping `old_table`, and (4) renaming `new_table` to `old_table`. Test this exact 4-step sequence against dirty fixtures. Next, with Sanitized Production Snapshot Testing, for high-risk financial migrations, export an anonymized SQLite dump from an internal test account that has existed through 5 years of production upgrades. Load this real SQLite binary directly into an instrumented migration test fixture in CI.
+Finally, with Transaction Rollback Safety, verify that if a migration statement fails mid-script, the entire migration aborts atomically without leaving the database in an unrecoverable mixed-version schema state.
 
-2. **Sanitized Production Snapshot Testing**: For high-risk financial migrations, export an anonymized SQLite dump from an internal test account that has existed through 5 years of production upgrades. Load this real SQLite binary directly into an instrumented migration test fixture in CI.
-
-3. **Transaction Rollback Safety**: Verify that if a migration statement fails mid-script, the entire migration aborts atomically without leaving the database in an unrecoverable mixed-version schema state.
 
 ## How to answer in the interview
 

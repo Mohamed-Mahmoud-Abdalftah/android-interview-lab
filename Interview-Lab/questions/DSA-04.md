@@ -84,30 +84,22 @@ No, Big O does not inherently mean worst case. Big O is a mathematical upper bou
 
 ## Interview answer — structured
 
-Disentangling asymptotic bounds from execution cases is a core computer science distinction:
+Disentangling asymptotic bounds from execution cases is a core computer science distinction.
 
-1. **Asymptotic Bounds vs. Algorithmic Cases**:
-   - **Cases (Inputs)**: Best, Average, and Worst describe the nature of input distribution (e.g., already sorted vs. completely inverted inputs).
-   - **Bounds (Mathematical Limits)**: Big O ($O$) is an asymptotic upper bound, Big Omega ($\Omega$) is a lower bound, and Big Theta ($\Theta$) is a tight bound.
+First, **Asymptotic Bounds vs. Algorithmic Cases**. Next, with Cases (Inputs), best, Average, and Worst describe the nature of input distribution (e.g., already sorted vs. Completely inverted inputs).
+Additionally, with Bounds (Mathematical Limits), big O ($O$) is an asymptotic upper bound, Big Omega ($\Omega$) is a lower bound, and Big Theta ($\Theta$) is a tight bound. **Applying Big O to Different Cases**.
+One can analyze the Big O upper bound of any input case. Linear Search: Best Case is $O(1)$ (target at index 0); Worst Case is $O(n)$ (target absent).
+QuickSort: Average Case is $O(n \log n)$; Worst Case (pathological pivot choice) is $O(n^2)$. Insertion Sort: Best Case (pre-sorted input) is $O(n)$; Worst Case is $O(n^2)$.
+**Industry Colloquialism**. Finally, in everyday engineering interviews, 'Big O' is frequently used as shorthand for 'the tightest upper bound of the worst-case scenario', but senior engineers recognize that Big O mathematically characterizes bounds across all execution cases.
 
-2. **Applying Big O to Different Cases**:
-   - One can analyze the Big O upper bound of any input case:
-     - Linear Search: Best Case is $O(1)$ (target at index 0); Worst Case is $O(n)$ (target absent).
-     - QuickSort: Average Case is $O(n \log n)$; Worst Case (pathological pivot choice) is $O(n^2)$.
-     - Insertion Sort: Best Case (pre-sorted input) is $O(n)$; Worst Case is $O(n^2)$.
-
-3. **Industry Colloquialism**:
-   - In everyday engineering interviews, 'Big O' is frequently used as shorthand for 'the tightest upper bound of the worst-case scenario', but senior engineers recognize that Big O mathematically characterizes bounds across all execution cases.
 
 ## Interview answer — deep senior
 
-From an engineering reliability and SLA standpoint, relying solely on average-case analysis can be fatal in production:
+From an engineering reliability and SLA standpoint, relying solely on average-case analysis can be fatal in production.
 
-1. **The Hash Collision DoS Attack (Worst-Case Exploitation)**: A standard `HashMap` lookup has an average case of $O(1)$. However, its worst case is $O(n)$ if all keys hash to the same bucket. Malicious actors can exploit this by crafting thousands of distinct keys with identical hash codes (hash collision attacks), forcing an Android backend parser or client cache to degrade into an $O(n^2)$ linked list traversal, causing Denial of Service.
+First, a The Hash Collision DoS Attack (Worst-Case Exploitation) is a standard `HashMap` lookup has an average case of $O(1)$. However, its worst case is $O(n)$ if all keys hash to the same bucket. Malicious actors can exploit this by crafting thousands of distinct keys with identical hash codes (hash collision attacks), forcing an Android backend parser or client cache to degrade into an $O(n^2)$ linked list traversal, causing Denial of Service. Next, with Java 8+ Treeification Defense, to defend against worst-case $O(n)$ hash collisions, the JVM HashMap implementation automatically transforms collision buckets exceeding 8 nodes into balanced Red-Black Trees (`TreeNode`), capping the worst-case lookup at $O(\log n)$ rather than $O(n)$.
+Finally, with Designing for Real-Time Mobile Systems, in UI rendering and audio synthesis threads, guarantees must be made against the **worst case**. If an algorithm runs in $O(1)$ average time but occasionally hits an $O(n)$ stop-the-world worst case, the user will experience audible pops or visual animation freezes.
 
-2. **Java 8+ Treeification Defense**: To defend against worst-case $O(n)$ hash collisions, the JVM HashMap implementation automatically transforms collision buckets exceeding 8 nodes into balanced Red-Black Trees (`TreeNode`), capping the worst-case lookup at $O(\log n)$ rather than $O(n)$.
-
-3. **Designing for Real-Time Mobile Systems**: In UI rendering and audio synthesis threads, guarantees must be made against the **worst case**. If an algorithm runs in $O(1)$ average time but occasionally hits an $O(n)$ stop-the-world worst case, the user will experience audible pops or visual animation freezes.
 
 ## How to answer in the interview
 

@@ -92,32 +92,23 @@ Git reset --soft moves HEAD back to a specified commit leaving both the Index an
 
 ## Interview answer — structured
 
-The difference between Git reset modes lies in how they interact with Git's three trees (HEAD, the Index, and the Working Tree):
+The difference between Git reset modes lies in how they interact with Git's three trees (HEAD, the Index, and the Working Tree).
 
-1. **`git reset --soft <commit>`**:
-   - Updates the HEAD ref pointer to the target commit.
-   - Does NOT touch the Index (Staging area) or the Working Tree.
-   - All changes from the undone commits remain staged, ready to be immediately re-committed. Ideal for re-organizing commits or squashing local work.
+First, **`git reset --soft <commit>`**. Next, updates the HEAD ref pointer to the target commit.
+Does NOT touch the Index (Staging area) or the Working Tree. All changes from the undone commits remain staged, ready to be immediately re-committed. Ideal for re-organizing commits or squashing local work.
+**`git reset --mixed <commit>` (Default)**. Updates HEAD and resets the Index to match the target commit.
+Leaves the Working Tree unmodified on disk. All changes remain intact in your files but appear as unstaged modifications. Useful for selectively re-staging files into atomic commits.
+**`git reset --hard <commit>`**. Updates HEAD, resets the Index, and forces the Working Tree to match the target commit.
+Completely obliterates all tracked modifications in the working directory. Finally, it is a destructive operation; uncommitted local work cannot be recovered.
 
-2. **`git reset --mixed <commit>` (Default)**:
-   - Updates HEAD and resets the Index to match the target commit.
-   - Leaves the Working Tree unmodified on disk.
-   - All changes remain intact in your files but appear as unstaged modifications. Useful for selectively re-staging files into atomic commits.
-
-3. **`git reset --hard <commit>`**:
-   - Updates HEAD, resets the Index, and forces the Working Tree to match the target commit.
-   - Completely obliterates all tracked modifications in the working directory.
-   - It is a destructive operation; uncommitted local work cannot be recovered.
 
 ## Interview answer — deep senior
 
-From an operational safety and disaster recovery perspective, understanding reset boundaries is critical:
+From an operational safety and disaster recovery perspective, understanding reset boundaries is critical.
 
-1. **Disaster Recovery via `git reflog`**: If a developer executes an accidental `git reset --hard HEAD~5` and loses committed work, the commits are not instantly wiped from Git's object database. As long as those commits were previously committed, their SHA identifiers exist in the local reference log. Running `git reflog`, identifying the previous commit hash, and running `git reset --hard <previous-sha>` fully restores the lost state.
+First, with Disaster Recovery via `git reflog, if a developer executes an accidental `git reset --hard HEAD~5` and loses committed work, the commits are not instantly wiped from Git's object database. As long as those commits were previously committed, their SHA identifiers exist in the local reference log. Running `git reflog`, identifying the previous commit hash, and running `git reset --hard <previous-sha>` fully restores the lost state. Next, with The Danger with Untracked Files, `git reset --hard` only affects files tracked by Git. Untracked files (new files never staged via `git add`) are left untouched on disk. To wipe both tracked and untracked artifacts, teams run `git clean -fd` alongside `git reset --hard`.
+Finally, with CI Cleaning Best Practices, on self-hosted CI runners that reuse workspaces across pipeline runs, running `git reset --hard HEAD && git clean -ffdx` ensures a 100% clean, pristine workspace without residual build artifacts from previous builds.
 
-2. **The Danger with Untracked Files**: `git reset --hard` only affects files tracked by Git. Untracked files (new files never staged via `git add`) are left untouched on disk. To wipe both tracked and untracked artifacts, teams run `git clean -fd` alongside `git reset --hard`.
-
-3. **CI Cleaning Best Practices**: On self-hosted CI runners that reuse workspaces across pipeline runs, running `git reset --hard HEAD && git clean -ffdx` ensures a 100% clean, pristine workspace without residual build artifacts from previous builds.
 
 ## How to answer in the interview
 

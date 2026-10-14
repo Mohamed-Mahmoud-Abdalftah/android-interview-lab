@@ -94,21 +94,20 @@ Feature modules communicate without direct coupling through three patterns: shar
 
 ## Interview answer — structured
 
-Enforcing zero direct compile-time coupling between peer feature modules requires three complementary architectural patterns:
+Enforcing zero direct compile-time coupling between peer feature modules requires three complementary architectural patterns.
 
-1. **Shared Reactive Data Layer**: When features need to exchange information (e.g. adding an item in `:feature:catalog` that updates a badge in `:feature:cart`), they never communicate ViewModel-to-ViewModel. Instead, both depend downward on `:data:cart`. The catalog ViewModel mutates the repository, and the cart badge reacts to the resulting `StateFlow` emitted by the single source of truth.
+First, with Shared Reactive Data Layer, when features need to exchange information (e.g. Adding an item in `:feature:catalog` that updates a badge in `:feature:cart`), they never communicate ViewModel-to-ViewModel. Instead, both depend downward on `:data:cart`. The catalog ViewModel mutates the repository, and the cart badge reacts to the resulting `StateFlow` emitted by the single source of truth. Next, with API/Implementation Module Splitting, when feature `A` must explicitly invoke a capability in feature `B`, split feature `B` into `:feature:b:api` (containing interfaces and models) and `:feature:b:impl`. Feature `A` depends only on `:api`. The concrete implementation is bound via Hilt in `:app`.
+Finally, with Decoupled Navigation, navigation between features is delegated to type-safe route contracts, deep link URIs, or navigation interfaces implemented in `:app`. Feature `A` requests navigation to an abstract route without importing Feature `B`'s Composable or Activity.
 
-2. **API/Implementation Module Splitting**: When feature `A` must explicitly invoke a capability in feature `B`, split feature `B` into `:feature:b:api` (containing interfaces and models) and `:feature:b:impl`. Feature `A` depends only on `:api`. The concrete implementation is bound via Hilt in `:app`.
-
-3. **Decoupled Navigation**: Navigation between features is delegated to type-safe route contracts, deep link URIs, or navigation interfaces implemented in `:app`. Feature `A` requests navigation to an abstract route without importing Feature `B`'s Composable or Activity.
 
 ## Interview answer — deep senior
 
-A frequent anti-pattern when communicating between features is **Global In-Memory Event Buses** (e.g. broadcasting untyped JSON strings or arbitrary event classes across an application-wide SharedFlow).
+A frequent anti-pattern when communicating between features is **Global In-Memory Event Buses** (e.g. Broadcasting untyped JSON strings or arbitrary event classes across an application-wide SharedFlow).
 
 Event buses create invisible, untraceable data dependencies: if an event payload changes, nothing fails at compile time, leading to silent runtime bugs. Furthermore, event buses fail across Android process recreation—if the app process dies while an event was fired, the listener in another screen will never receive it.
 
 By channeling inter-feature communication through **durable domain repositories backed by Room or DataStore**, data persistence and reactive UI synchronization are guaranteed across process death, background updates, and screen lifecycles.
+
 
 ## How to answer in the interview
 

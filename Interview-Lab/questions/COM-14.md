@@ -122,9 +122,8 @@ In `LazyColumn`, specifying a unique `key` anchors each item to its data ID rath
 
 In `LazyColumn` and `LazyRow`, configuring `key` and `contentType` is vital for fluid 120fps scrolling and correct state preservation.
 
-1. **Stable Keys (`key`)**: By default, Compose uses item index as the implicit key. If an item is prepended at index 0, every existing item shifts down, causing Compose to believe all items mutated and forcing a recomposition of the entire visible viewport. Furthermore, item-level state (like text field inputs or expanded accordions) shifts onto the wrong items! Providing a persistent, unique identifier (`key = { it.id }`) preserves item identity, retains local state correctly across reorderings, and powers smooth animations via `Modifier.animateItem()`.
+First, with Stable Keys (`key`), by default, Compose uses item index as the implicit key. If an item is prepended at index 0, every existing item shifts down, causing Compose to believe all items mutated and forcing a recomposition of the entire visible viewport. Furthermore, item-level state (like text field inputs or expanded accordions) shifts onto the wrong items! Providing a persistent, unique identifier (`key = { it.id }`) preserves item identity, retains local state correctly across reorderings, and powers smooth animations via `Modifier.animateItem()`. Finally, with Content Types (`contentType`), in heterogeneous lists featuring multiple visual layouts (e.g. Header, Card, VideoPlayer, AdBanner), Compose uses `contentType` to group structurally similar items. This enables Compose to recycle Slot Table structures exclusively among items of the same type, drastically cutting down allocation overhead and layout measurement passes during rapid fling scrolls.
 
-2. **Content Types (`contentType`)**: In heterogeneous lists featuring multiple visual layouts (e.g. Header, Card, VideoPlayer, AdBanner), Compose uses `contentType` to group structurally similar items. This enables Compose to recycle Slot Table structures exclusively among items of the same type, drastically cutting down allocation overhead and layout measurement passes during rapid fling scrolls.
 
 ## Interview answer — deep senior
 
@@ -133,6 +132,7 @@ Under the hood, keys in `LazyLayout` must be parcelable or persistable in Androi
 Without `contentType`, when a user scrolls and an AdBanner leaves the screen while a simple PostCard enters, Compose attempts to reuse the slot composition of the AdBanner for the PostCard. Because the composable structures mismatch completely, Compose must discard the slot group and execute a full new composition from scratch. With `contentType`, Compose preserves separate recycling pools for each layout signature, matching the recycling efficiency of `RecyclerView.getItemViewType()`.
 
 In Macrobenchmark scroll tests, adding both `key` and `contentType` to complex feeds typically slashes frame drop rates during rapid scrolls by 40-60%.
+
 
 ## How to answer in the interview
 

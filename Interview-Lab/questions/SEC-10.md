@@ -102,25 +102,21 @@ Reverse engineering involves inspecting static bytecode via tools like JADX and 
 
 ## Interview answer — structured
 
-Reverse engineering in Android spans static analysis, dynamic analysis, and runtime manipulation:
+Reverse engineering in Android spans static analysis, dynamic analysis, and runtime manipulation.
 
-1. **Static Analysis & Tooling**: Attackers disassemble APKs using `apktool` into Smali intermediate representation, or use `JADX` to decompile classes into Java. They can patch code (e.g. flipping boolean checks in Smali), reassemble the APK with `apktool b`, and re-sign it with a debug key.
-
-2. **Impact of Root Access**: Root (UID 0) removes Linux discretionary access controls. The attacker gains unrestricted read/write access to app-private storage (`/data/data/<package>/`), can dump heap memory, attach gdb/lldb debuggers, and push user-installed CA certificates into the system trust store.
-
-3. **Hooking and Dynamic Instrumentation (Frida/Xposed)**: Frameworks like Frida inject a JavaScript engine into the target process by attaching via `ptrace` or native library loading. They rewrite function entry points in memory (VMT hooking / inline hooks). An attacker can intercept parameters, read decrypted data passing through crypto APIs, and force methods like `verifyCertificate()` or `isRooted()` to return success without modifying the on-disk APK.
+First, with Static Analysis & Tooling, attackers disassemble APKs using `apktool` into Smali intermediate representation, or use `JADX` to decompile classes into Java. They can patch code (e.g. Flipping boolean checks in Smali), reassemble the APK with `apktool b`, and re-sign it with a debug key. Next, with Impact of Root Access, root (UID 0) removes Linux discretionary access controls. The attacker gains unrestricted read/write access to app-private storage (`/data/data/<package>/`), can dump heap memory, attach gdb/lldb debuggers, and push user-installed CA certificates into the system trust store.
+Finally, with Hooking and Dynamic Instrumentation (Frida/Xposed), frameworks like Frida inject a JavaScript engine into the target process by attaching via `ptrace` or native library loading. They rewrite function entry points in memory (VMT hooking / inline hooks). An attacker can intercept parameters, read decrypted data passing through crypto APIs, and force methods like `verifyCertificate()` or `isRooted()` to return success without modifying the on-disk APK.
 
 Consequently, client-side tampering detections are merely speed bumps; backend verification is mandatory.
 
+
 ## Interview answer — deep senior
 
-When analyzing threat vectors involving root and instrumentation, senior engineers model the attack lifecycle under the assumption that client execution cannot be fully trusted:
+When analyzing threat vectors involving root and instrumentation, senior engineers model the attack lifecycle under the assumption that client execution cannot be fully trusted.
 
-1. **Anti-Tampering & RASP Limitations**: Runtime Application Self-Protection (RASP) mechanisms detect `su` binaries, test-keys, Frida listener ports (e.g. 27042), or `/proc/self/maps` memory modifications. While useful against automated script kiddies, an experienced reverse engineer running custom Frida builds with renamed native symbols and kernel-level Magisk hide modules (e.g., Zygisk/Shamiko) bypasses all client-only heuristics.
+First, with Anti-Tampering & RASP Limitations, runtime Application Self-Protection (RASP) mechanisms detect `su` binaries, test-keys, Frida listener ports (e.g. 27042), or `/proc/self/maps` memory modifications. While useful against automated script kiddies, an experienced reverse engineer running custom Frida builds with renamed native symbols and kernel-level Magisk hide modules (e.g., Zygisk/Shamiko) bypasses all client-only heuristics. Next, with Hardware & Cryptographic Attestation, to combat runtime hooking, we leverage hardware-backed attestation via the Play Integrity API and hardware-backed Keystore keys (`KeyGenParameterSpec` with user authentication or attestation challenge). An attacker hooking client methods cannot forge Google's cryptographic server signature on an integrity verdict.
+Finally, a Zero-Trust Backend Architecture is the backend treats all incoming payloads as untrusted input. It enforces short token lifetimes, strict replay protection via nonces, behavioral anomaly detection, and cryptographic signing of critical business transactions.
 
-2. **Hardware & Cryptographic Attestation**: To combat runtime hooking, we leverage hardware-backed attestation via the Play Integrity API and hardware-backed Keystore keys (`KeyGenParameterSpec` with user authentication or attestation challenge). An attacker hooking client methods cannot forge Google's cryptographic server signature on an integrity verdict.
-
-3. **Zero-Trust Backend Architecture**: The backend treats all incoming payloads as untrusted input. It enforces short token lifetimes, strict replay protection via nonces, behavioral anomaly detection, and cryptographic signing of critical business transactions.
 
 ## How to answer in the interview
 

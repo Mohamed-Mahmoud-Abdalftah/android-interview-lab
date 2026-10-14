@@ -101,29 +101,21 @@ JUnit manages test lifecycles and execution assertions. MockK provides Kotlin-id
 
 ## Interview answer — structured
 
-The modern Android testing stack divides responsibilities across runner, mocking, and UI automation layers:
+The modern Android testing stack divides responsibilities across runner, mocking, and UI automation layers.
 
-1. **JUnit (Test Execution Framework)**:
-   - Provides test suite runners, lifecycle hooks (`@BeforeEach`, `@AfterEach`), assertions, and dynamic test execution. JUnit 4 remains default in many AGP setups, while JUnit 5 provides parameterized tests and nested hierarchy structures.
+First, **JUnit (Test Execution Framework)**. Next, provides test suite runners, lifecycle hooks (`@BeforeEach`, `@AfterEach`), assertions, and dynamic test execution. JUnit 4 remains default in many AGP setups, while JUnit 5 provides parameterized tests and nested hierarchy structures.
+**MockK vs. Mockito (Mocking Engines)**. While Mockito originated in Java, **MockK** was engineered specifically for Kotlin. It natively handles Kotlin language constructs without configuration hacks: coroutine suspend functions (`coEvery`, `coVerify`), extension functions, private methods, and Kotlin object singletons.
+**Espresso (View Hierarchy Automation)**. Interacts with traditional Android View trees via Matcher/Action/Assertion chains (`onView().perform().check()`). Requires custom `IdlingResource` implementations to coordinate background async operations.
+**Compose UI Testing**. Finally, driven via `createComposeRule()`. Rather than querying layout IDs, it inspects the **Semantics Tree** (`onNodeWithText`, `onNodeWithContentDescription`). Features native automatic clock synchronization that waits for recomposition passes and animations to settle before evaluating assertions.
 
-2. **MockK vs. Mockito (Mocking Engines)**:
-   - While Mockito originated in Java, **MockK** was engineered specifically for Kotlin. It natively handles Kotlin language constructs without configuration hacks: coroutine suspend functions (`coEvery`, `coVerify`), extension functions, private methods, and Kotlin object singletons.
-
-3. **Espresso (View Hierarchy Automation)**:
-   - Interacts with traditional Android View trees via Matcher/Action/Assertion chains (`onView().perform().check()`). Requires custom `IdlingResource` implementations to coordinate background async operations.
-
-4. **Compose UI Testing**:
-   - Driven via `createComposeRule()`. Rather than querying layout IDs, it inspects the **Semantics Tree** (`onNodeWithText`, `onNodeWithContentDescription`). Features native automatic clock synchronization that waits for recomposition passes and animations to settle before evaluating assertions.
 
 ## Interview answer — deep senior
 
-From an architectural quality perspective, Compose UI tests solve the long-standing synchronization problem in Android testing:
+From an architectural quality perspective, Compose UI tests solve the long-standing synchronization problem in Android testing.
 
-1. **Idling & Clock Synchronization**: In Espresso, tests frequently flaked because animations or background threads caused race conditions unless engineers manually registered `IdlingResource` instances. In Compose, the test framework hooks directly into the Compose frame clock (`mainClock`). It pauses virtual time, advances frame-by-frame, and automatically synchronizes with coroutines launched within the composition.
+First, with Idling & Clock Synchronization, in Espresso, tests frequently flaked because animations or background threads caused race conditions unless engineers manually registered `IdlingResource` instances. In Compose, the test framework hooks directly into the Compose frame clock (`mainClock`). It pauses virtual time, advances frame-by-frame, and automatically synchronizes with coroutines launched within the composition. Next, with Isolated Screen / Component Unit Tests, Compose UI tests do not require launching a heavy full-screen Activity. Using `createComposeRule()`, you can mount a single composable button or card in isolation (`composeTestRule.setContent { MyCustomCard() }`), testing UI rendering and click callbacks in under 1 second without full screen navigation.
+Finally, with Semantics for Accessibility & Testing, Compose testing forces accessibility best practices. Because nodes are selected via semantics (`contentDescription`, `onClick`, `text`), designing a testable Compose UI inherently produces accessible software for Screen Readers (TalkBack).
 
-2. **Isolated Screen / Component Unit Tests**: Compose UI tests do not require launching a heavy full-screen Activity. Using `createComposeRule()`, you can mount a single composable button or card in isolation (`composeTestRule.setContent { MyCustomCard() }`), testing UI rendering and click callbacks in under 1 second without full screen navigation.
-
-3. **Semantics for Accessibility & Testing**: Compose testing forces accessibility best practices. Because nodes are selected via semantics (`contentDescription`, `onClick`, `text`), designing a testable Compose UI inherently produces accessible software for Screen Readers (TalkBack).
 
 ## How to answer in the interview
 

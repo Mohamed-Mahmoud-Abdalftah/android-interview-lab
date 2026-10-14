@@ -106,6 +106,7 @@ Furthermore, standard Java collections like `ArrayList` or `HashMap` have no int
 
 To prevent race conditions, we must synchronize access using techniques suited for coroutines: thread confinement, atomic primitives, Kotlin's non-blocking `Mutex`, or immutable state flows.
 
+
 ## Interview answer — deep senior
 
 At the hardware and memory architecture level, modern multicore processors use private L1 and L2 caches. Without memory synchronization barriers, writes performed by a coroutine on Core A may remain in Core A's store buffer and not be visible to Core B executing another coroutine. This violates the Java Memory Model's (JMM) 'happens-before' guarantee.
@@ -113,6 +114,7 @@ At the hardware and memory architecture level, modern multicore processors use p
 When dealing with suspension points, race conditions can become even more insidious: a coroutine might read a shared balance, suspend across a network call, and then write back the balance. During the suspension window, another coroutine could have modified the balance multiple times, causing a classic Time-of-Check to Time-of-Use (TOCTOU) race condition.
 
 In modern Android MVI/Unidirectional Data Flow architectures, the ultimate cure for race conditions is eliminating shared mutable state entirely: we confine state mutation to a single coroutine dispatcher or use atomic compare-and-swap loops inside `MutableStateFlow.update { current -> current.copy(...) }`.
+
 
 ## How to answer in the interview
 

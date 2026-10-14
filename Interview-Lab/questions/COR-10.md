@@ -107,6 +107,7 @@ The coroutine code must cooperate to actually stop. Standard library suspending 
 
 The failure case occurs during tight, non-suspending CPU loops or blocking Java I/O. If a coroutine executes a mathematical loop for 10 seconds without calling any suspending functions, it will completely ignore `cancel()` until the loop finishes. To make CPU-bound code cancellable, we explicitly insert `ensureActive()` or `yield()` inside the loop body.
 
+
 ## Interview answer — deep senior
 
 At the runtime level, cancellation uses `CancellationException` as its unwinding vehicle. Crucially, `CancellationException` is treated specially by the coroutine machinery: it is considered normal completion of a cancelled task rather than an error. It does not cancel parent scopes or trigger uncaught exception handlers.
@@ -129,6 +130,7 @@ This catches `CancellationException` and ignores it, completely breaking cancell
     handleError(e)
 }
 ```
+
 
 ## How to answer in the interview
 

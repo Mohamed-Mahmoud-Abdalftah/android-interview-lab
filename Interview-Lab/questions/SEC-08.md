@@ -89,13 +89,11 @@ TLS provides encrypted transport authenticated by public Certificate Authorities
 
 ## Interview answer — structured
 
-Standard TLS relies on a hierarchical Chain of Trust anchored in over 130 root Certificate Authorities (CAs) embedded in the Android OS. While secure against passive eavesdropping, standard TLS has an inherent architectural vulnerability:
+Standard TLS relies on a hierarchical Chain of Trust anchored in over 130 root Certificate Authorities (CAs) embedded in the Android OS. While secure against passive eavesdropping, standard TLS has an inherent architectural vulnerability.
 
-1. **The MITM Threat**: If any single global CA is compromised or compelled to issue fraudulent certificates, or if an attacker installs a user CA certificate on a corporate or rooted device, they can proxy and inspect all application network traffic (MITM).
+First, with The MITM Threat, if any single global CA is compromised or compelled to issue fraudulent certificates, or if an attacker installs a user CA certificate on a corporate or rooted device, they can proxy and inspect all application network traffic (MITM). Next, with What Certificate Pinning Adds, it enforces an additional zero-trust constraint. The client hardcodes the cryptographic hash of the server's Subject Public Key Info (SPKI). Even if a proxy returns a certificate signed by a valid root CA, OkHttp verifies that `sha256/hash` matches its internal allowlist, aborting the connection with an `SSLPeerUnverifiedException` if mismatched.
+Finally, with Operational Risks & Bricking, pinning is an operational double-edged sword. If an operations team rotates the server's TLS certificate in an emergency and the new key was not pre-pinned as a backup inside released client binaries, **the application is permanently bricked** for all existing users until they download an APK update from Google Play.
 
-2. **What Certificate Pinning Adds**: It enforces an additional zero-trust constraint. The client hardcodes the cryptographic hash of the server's Subject Public Key Info (SPKI). Even if a proxy returns a certificate signed by a valid root CA, OkHttp verifies that `sha256/hash` matches its internal allowlist, aborting the connection with an `SSLPeerUnverifiedException` if mismatched.
-
-3. **Operational Risks & Bricking**: Pinning is an operational double-edged sword. If an operations team rotates the server's TLS certificate in an emergency and the new key was not pre-pinned as a backup inside released client binaries, **the application is permanently bricked** for all existing users until they download an APK update from Google Play.
 
 ## Interview answer — deep senior
 
@@ -106,6 +104,7 @@ A server's X.509 certificate expires annually and contains serial numbers and va
 Instead, pin the **Subject Public Key Info (SPKI)** hash (`sha256/...`). When renewing the TLS certificate, the server operations team can generate a new certificate using the **same private key and CSR (Certificate Signing Request)**. The public key remains mathematically identical, so existing mobile clients continue functioning seamlessly without requiring an APK update.
 
 Furthermore, always ship at least **two backup pins** generated from offline cold-storage private keys for emergency failover.
+
 
 ## How to answer in the interview
 

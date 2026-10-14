@@ -95,30 +95,22 @@ Debug signing uses a standard insecure local keystore with public credentials (a
 
 ## Interview answer — structured
 
-Cryptographic code signing establishes developer identity and artifact immutability on Android:
+Cryptographic code signing establishes developer identity and artifact immutability on Android.
 
-1. **Debug Signing**:
-   - Uses a default auto-generated keystore (`~/.android/debug.keystore`) with well-known public credentials (`android` password and `androiddebugkey` alias). Intended strictly for local development and USB debugging.
-   - Debug signatures are non-unique and must never be permitted in production, as third parties could mimic the identity or claim debug-level permissions.
+First, **Debug Signing**. Next, uses a default auto-generated keystore (`~/.android/debug.keystore`) with well-known public credentials (`android` password and `androiddebugkey` alias). Intended strictly for local development and USB debugging.
+Debug signatures are non-unique and must never be permitted in production, as third parties could mimic the identity or claim debug-level permissions. **Release Signing**.
+Uses an enterprise cryptographic keystore. Guarantees that app updates come authentically from the original developer. Upgrading an app fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` if the signing certificate does not match the installed version. **Secrets Hygiene in CI/CD**.
+Never commit `.keystore` / `.jks` files or passwords into Git repositories. Inject keystores as Base64-encoded strings and passwords via encrypted environment variables inside secure CI/CD runners (GitHub Actions Secrets). **APK Signature Schemes (v1 through v4)**.
+Finally, enable modern signing schemes: v1 (JAR signing), v2 (whole-file hash verification), v3 (cryptographic key rotation support), and v4 (supporting streaming installations over ADB on Android 11+).
 
-2. **Release Signing**:
-   - Uses an enterprise cryptographic keystore. Guarantees that app updates come authentically from the original developer. Upgrading an app fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` if the signing certificate does not match the installed version.
-
-3. **Secrets Hygiene in CI/CD**:
-   - Never commit `.keystore` / `.jks` files or passwords into Git repositories. Inject keystores as Base64-encoded strings and passwords via encrypted environment variables inside secure CI/CD runners (GitHub Actions Secrets).
-
-4. **APK Signature Schemes (v1 through v4)**:
-   - Enable modern signing schemes: v1 (JAR signing), v2 (whole-file hash verification), v3 (cryptographic key rotation support), and v4 (supporting streaming installations over ADB on Android 11+).
 
 ## Interview answer — deep senior
 
-From an operational security perspective, Google Play App Signing decouples development risk from master distribution keys:
+From an operational security perspective, Google Play App Signing decouples development risk from master distribution keys.
 
-1. **The Play App Signing Architecture**: Traditionally, losing an app's private release key meant the developer could never update the application again—abandoning millions of active users. With Play App Signing, developers sign artifacts using a distinct **Upload Key**. Google strips the upload signature, validates it, and re-signs the APKs using the master **App Signing Key** locked in Google Cloud KMS. If an upload key is compromised or lost, Google resets it via developer console support without disrupting existing users.
+First, with The Play App Signing Architecture, traditionally, losing an app's private release key meant the developer could never update the application again—abandoning millions of active users. With Play App Signing, developers sign artifacts using a distinct **Upload Key**. Google strips the upload signature, validates it, and re-signs the APKs using the master **App Signing Key** locked in Google Cloud KMS. If an upload key is compromised or lost, Google resets it via developer console support without disrupting existing users. Next, with Third-Party API Binding (SHA-1 / SHA-256 Fingerprints), APIs like Google Sign-In, Firebase Auth, and Google Maps validate requests using the signing certificate's SHA-1 fingerprint. When using Play App Signing, developers must register the **Play App Signing Key's SHA-1** in Google Cloud Console, not just their local upload key SHA-1, or third-party authentication will fail in production releases.
+Finally, with Key Rotation via Scheme v3, aPK Signature Scheme v3 enables key rotation by embedding a cryptographic proof-of-rotation lineage attribute in the signing block, allowing applications to migrate to stronger keys over time.
 
-2. **Third-Party API Binding (SHA-1 / SHA-256 Fingerprints)**: APIs like Google Sign-In, Firebase Auth, and Google Maps validate requests using the signing certificate's SHA-1 fingerprint. When using Play App Signing, developers must register the **Play App Signing Key's SHA-1** in Google Cloud Console, not just their local upload key SHA-1, or third-party authentication will fail in production releases.
-
-3. **Key Rotation via Scheme v3**: APK Signature Scheme v3 enables key rotation by embedding a cryptographic proof-of-rotation lineage attribute in the signing block, allowing applications to migrate to stronger keys over time.
 
 ## How to answer in the interview
 

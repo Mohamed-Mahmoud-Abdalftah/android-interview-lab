@@ -123,6 +123,7 @@ The common misconception is that simply wrapping code inside a coroutine makes i
 
 The architectural solution is adhering to the **Main-Safety convention**: every suspending function must be safe to invoke from the main thread. Data and domain layer functions should encapsulate their thread switching internally using `withContext(Dispatchers.IO)` for I/O and `withContext(Dispatchers.Default)` for CPU-intensive computations.
 
+
 ## Interview answer — deep senior
 
 Under the hood, a coroutine suspends without blocking a thread only when calling cooperative suspending functions (like `delay()` or `suspendCancellableCoroutine`). If standard synchronous JVM blocking code is invoked, the thread's execution loop is monopolized at the OS thread level; the coroutine runtime has no power to preempt synchronous bytecode execution.
@@ -130,6 +131,7 @@ Under the hood, a coroutine suspends without blocking a thread only when calling
 Another subtle trap is **Dispatcher saturation** or using `runBlocking` on the main thread to wait for a coroutine launched on `Dispatchers.Main`. This causes an immediate, unrecoverable deadlock: the main thread blocks waiting for the coroutine to complete, while the coroutine is queued on the main looper waiting for the main thread to unblock.
 
 In unit testing and architecture enforcement, we inject `CoroutineDispatcher` instances via constructor injection (e.g. `@IoDispatcher ioDispatcher: CoroutineDispatcher`), enabling replacement with `StandardTestDispatcher` in tests and avoiding hardcoded dispatcher bugs.
+
 
 ## How to answer in the interview
 

@@ -98,17 +98,16 @@ A Facade encapsulates an unreliable third-party SDK behind a simplified, resilie
 
 Wrapping an unreliable third-party SDK inside a **Facade** acts as an **Anti-Corruption Layer (ACL)**, protecting the core application from external instability and poor vendor API design.
 
-1. **API Simplification**: Third-party SDKs frequently demand multi-step initialization rituals (setting listeners, configuring flags, handling token exchanges). A Facade condenses 10 steps into a single cohesive, high-level suspending method: `suspend fun scanDocument(): DocumentResult`.
+First, with API Simplification, third-party SDKs frequently demand multi-step initialization rituals (setting listeners, configuring flags, handling token exchanges). A Facade condenses 10 steps into a single cohesive, high-level suspending method: `suspend fun scanDocument(): DocumentResult`. Next, with Resilience & Error Containment, volatile vendor libraries often throw undocumented runtime exceptions or return obscure integer error codes. The Facade catches vendor exceptions, intercepts error codes, and maps them into safe, typed domain results (`Result<T>`), preventing vendor crashes from taking down the app.
+Finally, with Vendor Insulation (Zero Lock-in), by consuming only the Facade, feature ViewModels and Use Cases never import vendor package classes (`com.vendor.sdk.*`). If the vendor doubles their pricing or deprecates their library, swapping to a competitor requires rewriting only the internal implementation of the Facade; the rest of the application remains completely untouched.
 
-2. **Resilience & Error Containment**: Volatile vendor libraries often throw undocumented runtime exceptions or return obscure integer error codes. The Facade catches vendor exceptions, intercepts error codes, and maps them into safe, typed domain results (`Result<T>`), preventing vendor crashes from taking down the app.
-
-3. **Vendor Insulation (Zero Lock-in)**: By consuming only the Facade, feature ViewModels and Use Cases never import vendor package classes (`com.vendor.sdk.*`). If the vendor doubles their pricing or deprecates their library, swapping to a competitor requires rewriting only the internal implementation of the Facade; the rest of the application remains completely untouched.
 
 ## Interview answer — deep senior
 
 In modern Android, Facades excel at **converting legacy Callback APIs into Coroutines and Flows**. Vendors often supply outdated Java listener interfaces (`onSuccess`, `onError`). Inside the Facade, we wrap these callbacks using `suspendCancellableCoroutine` or `callbackFlow`, installing proper cancellation cleanup in `awaitClose { ... }`.
 
 Furthermore, a Facade allows injecting **Feature Flags and Fallback Mechanisms**. If the third-party analytics or crash SDK crashes or hangs, the Facade can evaluate an in-memory killswitch, silently bypassing the vendor call and returning a cached fallback without the UI ever knowing a failure occurred.
+
 
 ## How to answer in the interview
 

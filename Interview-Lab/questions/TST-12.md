@@ -112,30 +112,22 @@ Test network failures using Square's MockWebServer by enqueuing MockResponse ins
 
 ## Interview answer — structured
 
-MockWebServer enables hermetic, end-to-end testing of the complete networking stack (OkHttp, Retrofit, interceptors, and serializers) on the local JVM:
+MockWebServer enables hermetic, end-to-end testing of the complete networking stack (OkHttp, Retrofit, interceptors, and serializers) on the local JVM.
 
-1. **Simulating HTTP Error Statuses**:
-   - Enqueue explicit response codes: `MockResponse().setResponseCode(500).setBody("Internal Server Error")`.
-   - Enqueue `401 Unauthorized` to test whether token refresh interceptors intercept the failure, refresh credentials, and replay the original request.
+First, **Simulating HTTP Error Statuses**. Next, enqueue explicit response codes: `MockResponse().setResponseCode(500).setBody("Internal Server Error")`.
+Enqueue `401 Unauthorized` to test whether token refresh interceptors intercept the failure, refresh credentials, and replay the original request. **Simulating Network Timeouts & Abrupt Drops**.
+Configure low-level socket policies: `MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE)` simulates gateway timeouts, while `SocketPolicy.DISCONNECT_AFTER_REQUEST` tests sudden socket terminations mid-handshake. **Malformed & Incomplete Payloads**.
+Enqueue truncated or malformed JSON (`MockResponse().setBody("{\"id\": 123, ")`) to verify that JSON deserialization errors (`JsonEncodingException`) are caught and mapped into domain network errors rather than unhandled app crashes. **Asserting Outgoing Requests (`takeRequest()`)**.
+Finally, inspect `server.takeRequest()` to assert that outgoing authorization tokens, API keys, User-Agent strings, and JSON request bodies strictly match backend contract expectations.
 
-2. **Simulating Network Timeouts & Abrupt Drops**:
-   - Configure low-level socket policies: `MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE)` simulates gateway timeouts, while `SocketPolicy.DISCONNECT_AFTER_REQUEST` tests sudden socket terminations mid-handshake.
-
-3. **Malformed & Incomplete Payloads**:
-   - Enqueue truncated or malformed JSON (`MockResponse().setBody("{\"id\": 123, ")`) to verify that JSON deserialization errors (`JsonEncodingException`) are caught and mapped into domain network errors rather than unhandled app crashes.
-
-4. **Asserting Outgoing Requests (`takeRequest()`)**:
-   - Inspect `server.takeRequest()` to assert that outgoing authorization tokens, API keys, User-Agent strings, and JSON request bodies strictly match backend contract expectations.
 
 ## Interview answer — deep senior
 
-From an enterprise testing architecture perspective, MockWebServer provides deterministic replay capabilities:
+From an enterprise testing architecture perspective, MockWebServer provides deterministic replay capabilities.
 
-1. **Dispatcher for Multi-Endpoint Scenarios**: Instead of using sequential `enqueue()`, configure a custom `Dispatcher`. The dispatcher inspects `request.path` and routes responses dynamically (e.g. returning 200 for `/auth/refresh` while returning 401 for `/v1/orders`), enabling complex multi-request concurrency testing.
+First, with Dispatcher for Multi-Endpoint Scenarios, instead of using sequential `enqueue()`, configure a custom `Dispatcher`. The dispatcher inspects `request.path` and routes responses dynamically (e.g. Returning 200 for `/auth/refresh` while returning 401 for `/v1/orders`), enabling complex multi-request concurrency testing. Next, with Simulating Throttling and Slow Radios, test loading spinners and UI cancellation by simulating slow cellular networks using `MockResponse().throttleBody(1024, 1, TimeUnit.SECONDS)`. This streams 1KB per second, giving tests time to verify progress bars and cancel requests mid-stream.
+Finally, with Port Collisions in Parallel CI, never hardcode port numbers (e.g. `localhost:8080`). Invoke `server.start()` without parameters; MockWebServer automatically binds to an ephemeral open operating system port, preventing port collisions when multiple Gradle test workers run concurrently.
 
-2. **Simulating Throttling and Slow Radios**: Test loading spinners and UI cancellation by simulating slow cellular networks using `MockResponse().throttleBody(1024, 1, TimeUnit.SECONDS)`. This streams 1KB per second, giving tests time to verify progress bars and cancel requests mid-stream.
-
-3. **Port Collisions in Parallel CI**: Never hardcode port numbers (e.g. `localhost:8080`). Invoke `server.start()` without parameters; MockWebServer automatically binds to an ephemeral open operating system port, preventing port collisions when multiple Gradle test workers run concurrently.
 
 ## How to answer in the interview
 

@@ -88,29 +88,21 @@ R8 is AGP's unified code processing engine that performs tree shaking to delete 
 
 ## Interview answer — structured
 
-R8 is Google's all-in-one replacement for ProGuard and D8, unifying four distinct bytecode transformation phases:
+R8 is Google's all-in-one replacement for ProGuard and D8, unifying four distinct bytecode transformation phases.
 
-1. **Tree Shaking / Shrinking**:
-   - Starting from declared entry points (Activities, Services, annotated roots), R8 traces the reachability call graph. Unreferenced classes, methods, and fields are permanently stripped from the binary.
+First, **Tree Shaking / Shrinking**. Next, starting from declared entry points (Activities, Services, annotated roots), R8 traces the reachability call graph. Unreferenced classes, methods, and fields are permanently stripped from the binary.
+**Bytecode Optimization**. Rewrites control flow and instructions for performance: aggressive method inlining, class inlining, horizontal class merging (combining classes with identical shapes), dead branch pruning, and scalar replacement of aggregates.
+**Identifier Obfuscation**. Renames surviving classes, methods, and fields to short non-descriptive names (`a.b.c()`). This shrinks DEX string table footprints and increases the cognitive barrier against reverse engineering.
+**Direct Dexing**. Finally, converts the optimized JVM bytecode directly into Android's Dalvik Executable (`classes.dex`) format in a single integrated pipeline phase, emitting the cryptographic `mapping.txt` file.
 
-2. **Bytecode Optimization**:
-   - Rewrites control flow and instructions for performance: aggressive method inlining, class inlining, horizontal class merging (combining classes with identical shapes), dead branch pruning, and scalar replacement of aggregates.
-
-3. **Identifier Obfuscation**:
-   - Renames surviving classes, methods, and fields to short non-descriptive names (`a.b.c()`). This shrinks DEX string table footprints and increases the cognitive barrier against reverse engineering.
-
-4. **Direct Dexing**:
-   - Converts the optimized JVM bytecode directly into Android's Dalvik Executable (`classes.dex`) format in a single integrated pipeline phase, emitting the cryptographic `mapping.txt` file.
 
 ## Interview answer — deep senior
 
-From an advanced compiler optimization perspective, understanding R8 optimizations prevents catastrophic runtime bugs:
+From an advanced compiler optimization perspective, understanding R8 optimizations prevents catastrophic runtime bugs.
 
-1. **proguard-android.txt vs. proguard-android-optimize.txt**: The standard default file disables optimization passes to avoid edge-case bytecode bugs. Senior architects use `proguard-android-optimize.txt`, enabling multi-pass optimizations and class inlining, delivering an extra 10–20% APK size reduction.
+First, `proguard-android.txt vs. Proguard-android-optimize.txt` is the standard default file disables optimization passes to avoid edge-case bytecode bugs. Senior architects use `proguard-android-optimize.txt`, enabling multi-pass optimizations and class inlining, delivering an extra 10–20% APK size reduction. Next, with Reflection Hazards with Inlining, r8 optimization inlines single-use classes or methods. If code invokes a method dynamically via reflection, but R8 inlined or pruned it thinking it was uncalled, runtime crashes (`NoSuchMethodException`) occur in release builds. Annotate reflected targets with `@Keep`.
+Finally, with Resource Shrinking Integration, setting `isShrinkResources = true` requires `isMinifyEnabled = true`. The resource shrinker inspects R8's surviving code reachability graph, identifies unused drawables or layouts, and replaces them with tiny dummy 1-byte files in the packaged APK.
 
-2. **Reflection Hazards with Inlining**: R8 optimization inlines single-use classes or methods. If code invokes a method dynamically via reflection, but R8 inlined or pruned it thinking it was uncalled, runtime crashes (`NoSuchMethodException`) occur in release builds. Annotate reflected targets with `@Keep`.
-
-3. **Resource Shrinking Integration**: Setting `isShrinkResources = true` requires `isMinifyEnabled = true`. The resource shrinker inspects R8's surviving code reachability graph, identifies unused drawables or layouts, and replaces them with tiny dummy 1-byte files in the packaged APK.
 
 ## How to answer in the interview
 

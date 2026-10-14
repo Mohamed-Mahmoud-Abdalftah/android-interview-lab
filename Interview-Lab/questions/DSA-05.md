@@ -89,29 +89,21 @@ Arrays offer O(1) indexed access with optimal cache locality but O(n) middle ins
 
 ## Interview answer — structured
 
-Selecting the correct data structure balances computational time complexity against memory and cache efficiency:
+Selecting the correct data structure balances computational time complexity against memory and cache efficiency.
 
-1. **Arrays and ArrayLists**:
-   - Constant $O(1)$ random access by index. Insertion at end is amortized $O(1)$, while arbitrary insertions require $O(n)$ element shifting. Stored contiguously in memory, yielding optimal CPU cache locality and zero node overhead.
+First, **Arrays and ArrayLists**. Next, constant $O(1)$ random access by index. Insertion at end is amortized $O(1)$, while arbitrary insertions require $O(n)$ element shifting. Stored contiguously in memory, yielding optimal CPU cache locality and zero node overhead.
+**LinkedLists**. Constant $O(1)$ insertion and deletion given a node reference, but $O(n)$ indexed access. In Android, `LinkedList` is generally discouraged because each entry allocates a separate `Node` object, causing memory bloat, GC churn, and cache misses.
+**Stacks and Queues**. Stack enforces LIFO; Queue enforces FIFO. Both operate with $O(1)$ enqueue/dequeue operations. In modern Kotlin/Android, `ArrayDeque` is the preferred implementation for both, outperforming legacy `java.util.Stack` and `LinkedList`.
+**HashMaps and Sets**. Finally, provide average-case $O(1)$ search, insertion, and deletion via hash tables. They trade increased memory overhead (bucket arrays, load factors, collision nodes) for fast key-based retrieval.
 
-2. **LinkedLists**:
-   - Constant $O(1)$ insertion and deletion given a node reference, but $O(n)$ indexed access. In Android, `LinkedList` is generally discouraged because each entry allocates a separate `Node` object, causing memory bloat, GC churn, and cache misses.
-
-3. **Stacks and Queues**:
-   - Stack enforces LIFO; Queue enforces FIFO. Both operate with $O(1)$ enqueue/dequeue operations. In modern Kotlin/Android, `ArrayDeque` is the preferred implementation for both, outperforming legacy `java.util.Stack` and `LinkedList`.
-
-4. **HashMaps and Sets**:
-   - Provide average-case $O(1)$ search, insertion, and deletion via hash tables. They trade increased memory overhead (bucket arrays, load factors, collision nodes) for fast key-based retrieval.
 
 ## Interview answer — deep senior
 
-From an Android internals and memory allocation perspective, standard Java collections present hidden traps:
+From an Android internals and memory allocation perspective, standard Java collections present hidden traps.
 
-1. **The Vector / Stack Synchronization Penalty**: The legacy `java.util.Stack` inherits from `Vector`, meaning every single push and pop synchronizes on a monitor lock. In single-threaded Android UI backstack operations, this introduces pointless synchronization overhead. Always prefer `ArrayDeque`.
+First, a The Vector / Stack Synchronization Penalty is the legacy `java. Util.Stack` inherits from `Vector`, meaning every single push and pop synchronizes on a monitor lock. In single-threaded Android UI backstack operations, this introduces pointless synchronization overhead. Always prefer `ArrayDeque`. Next, with Android Primitive Sparse Collections, storing a mapping of `Int` to `User` in `HashMap<Int, User>` requires boxing every primitive key into a `java.lang.Integer` object, allocating 16 to 24 bytes per key on the heap. Android's native `SparseArray<User>` uses two parallel arrays (`int[]` and `Object[]`) with binary search lookup ($O(\log n)$), eliminating all autoboxing and significantly slashing GC pressure.
+Finally, with Circular ArrayDeque Performance, `ArrayDeque` uses a circular array buffer that automatically resizes without shifting elements on remove. It serves as both stack and queue with virtually zero garbage creation compared to linked implementations.
 
-2. **Android Primitive Sparse Collections**: Storing a mapping of `Int` to `User` in `HashMap<Int, User>` requires boxing every primitive key into a `java.lang.Integer` object, allocating 16 to 24 bytes per key on the heap. Android's native `SparseArray<User>` uses two parallel arrays (`int[]` and `Object[]`) with binary search lookup ($O(\log n)$), eliminating all autoboxing and significantly slashing GC pressure.
-
-3. **Circular ArrayDeque Performance**: `ArrayDeque` uses a circular array buffer that automatically resizes without shifting elements on remove. It serves as both stack and queue with virtually zero garbage creation compared to linked implementations.
 
 ## How to answer in the interview
 

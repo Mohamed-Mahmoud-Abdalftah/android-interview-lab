@@ -90,27 +90,23 @@ Protect exported components by defaulting to android:exported='false'. For compo
 
 ## Interview answer — structured
 
-Securing exported Android components is a fundamental pillar of mobile application security:
+Securing exported Android components is a fundamental pillar of mobile application security.
 
-1. **Enforce Least Privilege (`android:exported="false"`)**: By default, every component intended strictly for internal app usage must explicitly declare `android:exported="false"`. This completely blocks foreign apps from launching internal activities, triggering services, or snooping on internal broadcasts.
+First, with Enforce Least Privilege (`android:exported="false"`), by default, every component intended strictly for internal app usage must explicitly declare `android:exported="false"`. This completely blocks foreign apps from launching internal activities, triggering services, or snooping on internal broadcasts. Next, with Signature-level Permissions for Inter-App Communication, if a component must be shared between multiple apps in your company's suite, declare a custom permission with `android:protectionLevel="signature"`. The Android OS verifies the cryptographic signing certificate of the calling application: only apps signed with your exact release signing key can invoke the component.
+Additionally, with Validate Intent Ingress & Calling Identity, for public components (like Deep Link entry activities), never trust incoming extras. Sanitize all URIs to prevent path traversal attacks, and inspect `callingUid` via `Binder.getCallingUid()` when validating IPC callers. Finally, with Secure ContentProviders, set `android:grantUriPermissions="true"` with temporary URI flags (`FLAG_GRANT_READ_URI_PERMISSION`) rather than granting permanent world-readable access.
 
-2. **Signature-level Permissions for Inter-App Communication**: If a component must be shared between multiple apps in your company's suite, declare a custom permission with `android:protectionLevel="signature"`. The Android OS verifies the cryptographic signing certificate of the calling application: only apps signed with your exact release signing key can invoke the component.
-
-3. **Validate Intent Ingress & Calling Identity**: For public components (like Deep Link entry activities), never trust incoming extras. Sanitize all URIs to prevent path traversal attacks, and inspect `callingUid` via `Binder.getCallingUid()` when validating IPC callers.
-
-4. **Secure ContentProviders**: Set `android:grantUriPermissions="true"` with temporary URI flags (`FLAG_GRANT_READ_URI_PERMISSION`) rather than granting permanent world-readable access.
 
 ## Interview answer — deep senior
 
 From a penetration testing and vulnerability analysis perspective, exported components are the #1 attack vector in Android. A malicious app installed on the same device can use `PackageManager` and `adb shell am start` to probe unprotected exported components.
 
-Common critical vulnerabilities include:
+Common critical vulnerabilities include.
 
-- **Intent Spoofing / Injection**: An attacker fires an implicit broadcast or crafts an intent targeting an exported BroadcastReceiver with spoofed parameters (e.g., simulating a successful payment event).
-- **SQL Injection in ContentProviders**: Exported ContentProviders that pass raw query parameters directly into SQLite without parameterized `?` arguments allow arbitrary database exfiltration.
-- **PendingIntent Hijacking**: If an exported component returns a mutable PendingIntent (`FLAG_MUTABLE`), an attacking app can use `Intent.fillIn()` to alter the destination and hijack the victim app's identity.
+First, an Intent Spoofing / Injection is an attacker fires an implicit broadcast or crafts an intent targeting an exported BroadcastReceiver with spoofed parameters (e.g., simulating a successful payment event). Next, with SQL Injection in ContentProviders, exported ContentProviders that pass raw query parameters directly into SQLite without parameterized `?` arguments allow arbitrary database exfiltration.
+Finally, with PendingIntent Hijacking, if an exported component returns a mutable PendingIntent (`FLAG_MUTABLE`), an attacking app can use `Intent.fillIn()` to alter the destination and hijack the victim app's identity.
 
 Enforcing static analysis scanning in CI via tools like MobSF or Android Lint (`ExportedService`, `ExportedReceiver`) ensures zero unauthorized exported components reach production.
+
 
 ## How to answer in the interview
 

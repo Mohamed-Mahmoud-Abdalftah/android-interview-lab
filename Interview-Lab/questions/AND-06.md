@@ -107,21 +107,19 @@ Configuration changes (screen rotation, dark mode, locale, multi-window) cause A
 
 A configuration change occurs when device hardware or system settings change at runtime, altering the active resource configuration.
 
-Common configuration changes include:
+Common configuration changes include.
 
-1. Screen orientation changes (portrait vs landscape).
-2. System dark mode toggles (day vs night theme).
-3. Locale/language changes.
-4. Multi-window resizing and folding/unfolding of foldable devices.
-5. Font scaling and display density modifications.
+First, screen orientation changes (portrait vs landscape). Next, system dark mode toggles (day vs night theme).
+Locale/language changes. Multi-window resizing and folding/unfolding of foldable devices.
+Finally, font scaling and display density modifications.
 
 By default, Android destroys and recreates the entire Activity (`onPause -> onStop -> onDestroy` followed by `onCreate -> onStart -> onResume`) so the app can load new resources (e.g., `layout-land` or `values-night`).
 
 **What survives:**
 
-- **ViewModel**: Retained in memory by the `ViewModelStore`, preserving ongoing business logic and `viewModelScope` coroutines.
-- **Saved Instance State (`onSaveInstanceState` / `SavedStateHandle`)**: Serializes small UI states across recreation.
-- **Process Memory**: Singletons, Hilt graph, and memory caches remain intact because the Linux process never died.
+First, a ViewModel is retained in memory by the `ViewModelStore`, preserving ongoing business logic and `viewModelScope` coroutines. Next, saved Instance State (`onSaveInstanceState` / `SavedStateHandle`) serializes small UI states across recreation.
+Finally, with Process Memory, singletons, Hilt graph, and memory caches remain intact because the Linux process never died.
+
 
 ## Interview answer — deep senior
 
@@ -130,6 +128,7 @@ Under the hood, why does Android destroy the Activity rather than just swapping 
 Because swapping themes and layouts dynamically on an existing Activity would require manually traversing every drawable, style attribute, dimension, and string resource across the entire view tree. Recreating the Activity provides a clean slate where all resources are cleanly rebound from APK asset tables.
 
 While developers can declare `android:configChanges="orientation|screenSize"` in the Manifest to prevent recreation, Google strongly discourages this. It forces you to manually override `onConfigurationChanged()` and update every layout, font, and padding by hand, almost always leading to visual bugs and broken accessibility.
+
 
 ## How to answer in the interview
 

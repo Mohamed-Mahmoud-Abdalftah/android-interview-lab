@@ -98,23 +98,25 @@ A developer can build a 100% functional Hilt dependency graph that aggressively 
 ```kotlin
 @HiltViewModel
 class CheckoutViewModel @Inject constructor(
-    val retrofit: RetrofitOrderService, // Concrete detail
-    val roomDao: OrderDao               // Concrete detail
+ val retrofit: RetrofitOrderService, // Concrete detail
+ val roomDao: OrderDao // Concrete detail
 ) : ViewModel()
 ```
 Hilt compiles cleanly, injects instances, and resolves scopes. Yet, the high-level presentation layer is directly coupled to low-level network and database infrastructure details, destroying JVM unit testability and violating DIP.
 
-To guarantee DIP within Hilt:
-1. High-level consumers must declare dependencies as **abstract interfaces** (`OrderRepository`).
-2. Hilt Modules must use **`@Binds`** to map the abstract interface to its concrete data layer implementation (`OrderRepositoryImpl`).
+To guarantee DIP within Hilt.
+
+First, high-level consumers must declare dependencies as **abstract interfaces** (`OrderRepository`). Finally, Hilt Modules must use **`@Binds`** to map the abstract interface to its concrete data layer implementation (`OrderRepositoryImpl`).
+
 
 ## Interview answer — deep senior
 
 Under the hood, Hilt generates factory classes (`CheckoutViewModel_Factory.java`) based strictly on what is declared in constructor signatures. Hilt has no built-in lint rules preventing ViewModels from injecting Retrofit services or SQLite databases.
 
-To prevent Hilt from facilitating DIP violations in large enterprise teams, we enforce architectural constraints using **Gradle Module boundaries** and **Konsist tests**:
-- Feature modules (`:feature:checkout`) do not have a Gradle dependency on network or database modules, making it impossible for Hilt constructors to reference `RetrofitOrderService`.
-- Konsist tests assert that all constructor parameters in `@HiltViewModel` classes are either interfaces or Use Cases residing in domain modules.
+To prevent Hilt from facilitating DIP violations in large enterprise teams, we enforce architectural constraints using **Gradle Module boundaries** and **Konsist tests**.
+
+First, feature modules (`:feature:checkout`) do not have a Gradle dependency on network or database modules, making it impossible for Hilt constructors to reference `RetrofitOrderService`. Finally, konsist tests assert that all constructor parameters in `@HiltViewModel` classes are either interfaces or Use Cases residing in domain modules.
+
 
 ## How to answer in the interview
 

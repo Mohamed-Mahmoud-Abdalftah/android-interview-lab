@@ -95,31 +95,23 @@ OWASP MASVS defines the security standard across storage, crypto, network, platf
 
 ## Interview answer — structured
 
-OWASP MASVS and MASTG serve as the authoritative security verification framework for modern mobile engineering:
+OWASP MASVS and MASTG serve as the authoritative security verification framework for modern mobile engineering.
 
-1. **MASVS (Specification)**: Defines actionable requirements organized across core security domains:
-   - **MASVS-STORAGE**: Sensitive data at rest, cache clearing, backup exclusion, keyboard cache suppression.
-   - **MASVS-CRYPTO**: Hardware-backed keys, AES-GCM, cryptographically secure PRNGs, eliminating broken primitives.
-   - **MASVS-NETWORK**: Modern TLS configuration, certificate pinning, WebView network boundary hardening.
-   - **MASVS-PLATFORM**: Restricting exported components, validating deep links, and securing IPC.
-   - **MASVS-RESILIENCE**: Anti-tampering, integrity verification, and root/instrumentation mitigations.
+First, a MASVS (Specification) defines actionable requirements organized across core security domains. Next, with MASVS-STORAGE, sensitive data at rest, cache clearing, backup exclusion, keyboard cache suppression.
+Additionally, with MASVS-CRYPTO, hardware-backed keys, AES-GCM, cryptographically secure PRNGs, eliminating broken primitives. With MASVS-NETWORK, modern TLS configuration, certificate pinning, WebView network boundary hardening.
+With MASVS-PLATFORM, restricting exported components, validating deep links, and securing IPC. With MASVS-RESILIENCE, anti-tampering, integrity verification, and root/instrumentation mitigations.
+**Security Levels**. With MASVS-L1, baseline hygiene required for any commercial application.
+With MASVS-L2, deep defense-in-depth mandatory for fintech, banking, and healthcare applications. With MASVS-R, optional resilience layer providing client hardening against dynamic reverse engineering.
+Finally, a MASTG (Testing Guide) provides concrete white-box source code audits, dynamic runtime analysis scripts (Frida), and static tooling (MobSF, JADX) to verify compliance against every MASVS control.
 
-2. **Security Levels**:
-   - **MASVS-L1**: Baseline hygiene required for any commercial application.
-   - **MASVS-L2**: Deep defense-in-depth mandatory for fintech, banking, and healthcare applications.
-   - **MASVS-R**: Optional resilience layer providing client hardening against dynamic reverse engineering.
-
-3. **MASTG (Testing Guide)**: Provides concrete white-box source code audits, dynamic runtime analysis scripts (Frida), and static tooling (MobSF, JADX) to verify compliance against every MASVS control.
 
 ## Interview answer — deep senior
 
-From an architectural governance perspective, senior engineers operationalize MASVS/MASTG throughout the software development lifecycle:
+From an architectural governance perspective, senior engineers operationalize MASVS/MASTG throughout the software development lifecycle.
 
-1. **Threat Modeling & Architecture Phase**: Map every new feature against MASVS controls during design. If a feature introduces biometric authentication, align directly with `MASVS-AUTH` and `MASVS-CRYPTO` by mandating hardware-bound `CryptoObject` patterns.
+First, with Threat Modeling & Architecture Phase, map every new feature against MASVS controls during design. If a feature introduces biometric authentication, align directly with `MASVS-AUTH` and `MASVS-CRYPTO` by mandating hardware-bound `CryptoObject` patterns. Next, with Automated CI/CD Verification, embed automated compliance gates into CI pipelines using tools like MobSF CLI, Android Lint with custom security rules, and Semgrep scanning for cryptographic misconfigurations (e.g. Hardcoded IVs, `allowBackup=true`, or `FLAG_MUTABLE` PendingIntents).
+Finally, with Vendor & Penetration Testing Alignment, use MASTG test identifiers (e.g. `MASTG-TEST-0001`) as the contract benchmark for third-party penetration testing audits, ensuring repeatable, evidence-based security verification rather than subjective vendor opinions.
 
-2. **Automated CI/CD Verification**: Embed automated compliance gates into CI pipelines using tools like MobSF CLI, Android Lint with custom security rules, and Semgrep scanning for cryptographic misconfigurations (e.g. hardcoded IVs, `allowBackup=true`, or `FLAG_MUTABLE` PendingIntents).
-
-3. **Vendor & Penetration Testing Alignment**: Use MASTG test identifiers (e.g. `MASTG-TEST-0001`) as the contract benchmark for third-party penetration testing audits, ensuring repeatable, evidence-based security verification rather than subjective vendor opinions.
 
 ## How to answer in the interview
 

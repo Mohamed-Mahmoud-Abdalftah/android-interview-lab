@@ -116,28 +116,21 @@ Idempotency guarantees that executing an operation multiple times produces the i
 
 ## Interview answer — structured
 
-Idempotency is the cornerstone of distributed transaction safety in mobile financial applications:
+Idempotency is the cornerstone of distributed transaction safety in mobile financial applications.
 
-1. **The Core Financial Hazard**:
-   - Because mobile payment authorizations rely on HTTP `POST` over unreliable cellular connections, packets are routinely dropped on the return leg after the issuer bank has captured the charge. Without idempotency, automatic retries or repeated user button taps result in duplicate credit card charges.
+First, **The Core Financial Hazard**. Next, because mobile payment authorizations rely on HTTP `POST` over unreliable cellular connections, packets are routinely dropped on the return leg after the issuer bank has captured the charge. Without idempotency, automatic retries or repeated user button taps result in duplicate credit card charges.
+**Mechanics of the Idempotency Key Architecture**. A Client Generation is the mobile client generates a cryptographically unique identifier (UUID v4) and durably commits it to local storage (Room) alongside the payment entity *before* making the network call.
+A Header Transmission is the key is attached to the HTTP header (`Idempotency-Key: <UUID>`). A Server Atomic Deduplication is the payment gateway (e.g. Stripe, Adyen) caches the key in an atomic distributed lock (Redis). If an identical key arrives while processing, the server queues or rejects the duplicate; if it arrives after completion, the server returns the cached response without debiting the customer again.
+**Idempotency Lifetime Contract**. Finally, keys are typically valid for a 24-hour window, ensuring that retry queues, offline reconciliations, and user retries safely resolve to the identical single ledger entry.
 
-2. **Mechanics of the Idempotency Key Architecture**:
-   - **Client Generation**: The mobile client generates a cryptographically unique identifier (UUID v4) and durably commits it to local storage (Room) alongside the payment entity *before* making the network call.
-   - **Header Transmission**: The key is attached to the HTTP header (`Idempotency-Key: <UUID>`).
-   - **Server Atomic Deduplication**: The payment gateway (e.g. Stripe, Adyen) caches the key in an atomic distributed lock (Redis). If an identical key arrives while processing, the server queues or rejects the duplicate; if it arrives after completion, the server returns the cached response without debiting the customer again.
-
-3. **Idempotency Lifetime Contract**:
-   - Keys are typically valid for a 24-hour window, ensuring that retry queues, offline reconciliations, and user retries safely resolve to the identical single ledger entry.
 
 ## Interview answer — deep senior
 
-From an API design and distributed consensus perspective, client-side idempotency implementation contains subtle traps:
+From an API design and distributed consensus perspective, client-side idempotency implementation contains subtle traps.
 
-1. **The 'Key Regeneration on Retry' Bug**: The most dangerous junior bug is generating a fresh `UUID.randomUUID().toString()` inside the network retry loop or ViewModel method. If a timeout occurs and the retry function generates a *new* idempotency key, the backend treats it as a brand-new distinct charge, completely defeating the safeguard! The key must be tied to the immutable domain `Transaction` entity.
+First, a The 'Key Regeneration on Retry' Bug is the most dangerous junior bug is generating a fresh `UUID. RandomUUID().toString()` inside the network retry loop or ViewModel method. If a timeout occurs and the retry function generates a *new* idempotency key, the backend treats it as a brand-new distinct charge, completely defeating the safeguard! The key must be tied to the immutable domain `Transaction` entity. Next, with Idempotency Payload Fingerprinting, high-security payment backends hash the request payload along with the idempotency key. If a client sends the same key with an altered amount ($100 vs $200), the server flags a tampering conflict (HTTP 422 / 409 Conflict) and halts execution.
+Finally, with Offline Sync & Mesh POS Terminals, in offline POS environments (e.g. Airplane in-flight purchases), terminals store offline payment cryptograms tagged with hardware-derived sequence counters and idempotency keys, guaranteeing deterministic processing once backhaul connectivity restores.
 
-2. **Idempotency Payload Fingerprinting**: High-security payment backends hash the request payload along with the idempotency key. If a client sends the same key with an altered amount ($100 vs $200), the server flags a tampering conflict (HTTP 422 / 409 Conflict) and halts execution.
-
-3. **Offline Sync & Mesh POS Terminals**: In offline POS environments (e.g. airplane in-flight purchases), terminals store offline payment cryptograms tagged with hardware-derived sequence counters and idempotency keys, guaranteeing deterministic processing once backhaul connectivity restores.
 
 ## How to answer in the interview
 

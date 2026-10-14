@@ -98,23 +98,21 @@ Dependency Injection as a pattern decouples object consumption from object creat
 
 Dependency Injection (DI) is a specialized form of the Inversion of Control (IoC) pattern where an object receives its dependencies from an external assembler rather than instantiating them internally.
 
-1. **Core Problem Solved**:
-   - Without DI, a class hardcodes its dependencies (`val api = RetrofitInstance.create()`). The class becomes tightly coupled to concrete implementations, lifecycle configuration, and infrastructure environments.
-   - Unit testing becomes impossible because collaborators cannot be substituted with test doubles.
+First, **Core Problem Solved**. Next, without DI, a class hardcodes its dependencies (`val api = RetrofitInstance.create()`). The class becomes tightly coupled to concrete implementations, lifecycle configuration, and infrastructure environments.
+Unit testing becomes impossible because collaborators cannot be substituted with test doubles. **What DI Accomplishes**.
+With Separation of Creation from Use, classes declare *what* collaborators they need in their constructor; an external container (Hilt, Koin, or manual DI) decides *how and when* to instantiate them. With Frictionless Unit Testing, in JVM tests, developers instantiate classes directly, passing fast in-memory Fakes without bootstrapping DI containers or Android frameworks.
+Finally, with Centralized Scope & Lifecycle Management, tools like Hilt manage object scopes (`@Singleton`, `@ViewModelScoped`, `@ActivityScoped`), eliminating manual memory retention and teardown boilerplate.
 
-2. **What DI Accomplishes**:
-   - **Separation of Creation from Use**: Classes declare *what* collaborators they need in their constructor; an external container (Hilt, Koin, or manual DI) decides *how and when* to instantiate them.
-   - **Frictionless Unit Testing**: In JVM tests, developers instantiate classes directly, passing fast in-memory Fakes without bootstrapping DI containers or Android frameworks.
-   - **Centralized Scope & Lifecycle Management**: Tools like Hilt manage object scopes (`@Singleton`, `@ViewModelScoped`, `@ActivityScoped`), eliminating manual memory retention and teardown boilerplate.
 
 ## Interview answer — deep senior
 
 A vital architectural realization is that **Dependency Injection is a pattern, not a library**. You can practice clean DI using **Pure / Manual Constructor Injection** without Dagger, Hilt, or Koin. Frameworks simply automate the tedious compile-time graph resolution and factory generation.
 
-There are three types of Dependency Injection:
-1. **Constructor Injection**: The gold standard in modern Android. Guarantees that dependencies are non-null, immutable (`val`), and explicit upon creation.
-2. **Method / Parameter Injection**: Passing a collaborator into a specific function (e.g. `useCase.execute(dispatcher)`).
-3. **Field Injection**: Necessary in Android only when the system instantiates classes via reflection (e.g. Activities and Services in `@AndroidEntryPoint`).
+There are three types of Dependency Injection.
+
+First, a Constructor Injection is the gold standard in modern Android. Guarantees that dependencies are non-null, immutable (`val`), and explicit upon creation. Next, with Method / Parameter Injection, passing a collaborator into a specific function (e.g. `useCase.execute(dispatcher)`).
+Finally, with Field Injection, necessary in Android only when the system instantiates classes via reflection (e.g. Activities and Services in `@AndroidEntryPoint`).
+
 
 ## How to answer in the interview
 

@@ -110,16 +110,13 @@ Manage cache expiration using domain-specific TTLs paired with HTTP conditional 
 
 ## Interview answer — structured
 
-A comprehensive caching strategy separates time-based expiration from event-driven invalidation:
+A comprehensive caching strategy separates time-based expiration from event-driven invalidation.
 
-1. **Time-To-Live (TTL) Expiration**:
-   - Different domains demand different freshness thresholds: user avatars (7 days), catalog feed (15 minutes), account balances (0 seconds / always revalidate).
-   - Leverage **HTTP Conditional Requests**: Store server `ETag` or `Last-Modified` headers. When the TTL expires, issue a lightweight `If-None-Match` request. If unchanged, the server returns **`304 Not Modified`** with an empty body, saving mobile bandwidth while refreshing the TTL.
+First, **Time-To-Live (TTL) Expiration**. Next, different domains demand different freshness thresholds: user avatars (7 days), catalog feed (15 minutes), account balances (0 seconds / always revalidate).
+Leverage **HTTP Conditional Requests**: Store server `ETag` or `Last-Modified` headers. When the TTL expires, issue a lightweight `If-None-Match` request. If unchanged, the server returns **`304 Not Modified`** with an empty body, saving mobile bandwidth while refreshing the TTL. **Event-Driven Invalidation**.
+With Local Write Invalidation, when a user updates their profile, the repository immediately mutates Room, ensuring UI screens observe fresh state without waiting for a TTL cycle. With Remote Server Invalidation, use high-priority FCM Silent Push notifications to instruct clients to invalidate specific cache keys when backend data updates.
+Finally, with Session Purges, on `Logout` or account switching, execute an atomic SQLite wipe (`database.clearAllTables()`) to prevent data leaking between users.
 
-2. **Event-Driven Invalidation**:
-   - **Local Write Invalidation**: When a user updates their profile, the repository immediately mutates Room, ensuring UI screens observe fresh state without waiting for a TTL cycle.
-   - **Remote Server Invalidation**: Use high-priority FCM Silent Push notifications to instruct clients to invalidate specific cache keys when backend data updates.
-   - **Session Purges**: On `Logout` or account switching, execute an atomic SQLite wipe (`database.clearAllTables()`) to prevent data leaking between users.
 
 ## Interview answer — deep senior
 
@@ -127,9 +124,10 @@ A subtle pitfall in Android caching is **Clock Skew with Device Time**.
 
 If a developer calculates expiration using `System.currentTimeMillis()` (`now - lastFetched > TTL`), and the user manually alters device time or travels across time zones, the cache may appear permanently expired or permanently fresh.
 
-To prevent clock skew bugs:
-- Use **`SystemClock.elapsedRealtime()`** for in-session relative cache calculations (which counts milliseconds since device boot, immune to user time adjustments).
-- For persistent multi-day caches, rely on the server's HTTP `Date` header to calculate relative age rather than trusting the Android hardware clock.
+To prevent clock skew bugs.
+
+First, use **`SystemClock.elapsedRealtime()`** for in-session relative cache calculations (which counts milliseconds since device boot, immune to user time adjustments). Finally, for persistent multi-day caches, rely on the server's HTTP `Date` header to calculate relative age rather than trusting the Android hardware clock.
+
 
 ## How to answer in the interview
 

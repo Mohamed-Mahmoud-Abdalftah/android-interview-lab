@@ -128,14 +128,10 @@ Model UI state using immutable data classes or sealed interfaces to make illegal
 
 In modern Jetpack Compose architectures, modeling UI state with `StateFlow` requires adhering to immutability, representational correctness, and lifecycle-aware emission.
 
-1. **State Modeling**: We define state either as a **Sealed Interface** (ideal for mutually exclusive states like `Loading`, `Success`, and `Error`) or an **Immutable Data Class** (ideal for complex forms or dashboard screens with independent sub-widgets). This makes invalid states structurally unrepresentable at compile time.
+First, with State Modeling, we define state either as a **Sealed Interface** (ideal for mutually exclusive states like `Loading`, `Success`, and `Error`) or an **Immutable Data Class** (ideal for complex forms or dashboard screens with independent sub-widgets). This makes invalid states structurally unrepresentable at compile time. Next, with StateFlow Conversion, in the ViewModel, raw repository flows are mapped, caught, and converted to hot state streams using **`stateIn`**.
+`scope = viewModelScope` ensures cleanup when the ViewModel clears. `started = SharingStarted.WhileSubscribed(5_000)`: This 5-second timeout is critical. It keeps upstream collection active across rapid configuration changes (screen rotations) while canceling expensive upstream database or network emissions when the user backgrounds the app.
+`initialValue`: Supplies an immediate non-null initial state. Finally, with UI Consumption, in Compose, the state is collected using `collectAsStateWithLifecycle()`, guaranteeing that recomposition stops when the Activity or Fragment is in the background.
 
-2. **StateFlow Conversion**: In the ViewModel, raw repository flows are mapped, caught, and converted to hot state streams using **`stateIn`**:
-   - `scope = viewModelScope` ensures cleanup when the ViewModel clears.
-   - `started = SharingStarted.WhileSubscribed(5_000)`: This 5-second timeout is critical. It keeps upstream collection active across rapid configuration changes (screen rotations) while canceling expensive upstream database or network emissions when the user backgrounds the app.
-   - `initialValue`: Supplies an immediate non-null initial state.
-
-3. **UI Consumption**: In Compose, the state is collected using `collectAsStateWithLifecycle()`, guaranteeing that recomposition stops when the Activity or Fragment is in the background.
 
 ## Interview answer — deep senior
 
@@ -144,6 +140,7 @@ Under the hood, `StateFlow` is a conflated broadcast channel that retains only t
 A frequent architectural dilemma is **Single Stream vs Multiple Streams**. While a single `StateFlow<ScreenUiState>` simplifies synchronization, updating a minor nested field in a massive state object could trigger broad recompositions if composables read the entire container instead of granular properties. To solve this, we ensure child composables receive only primitive or stable sub-fields via parameters rather than the whole screen state object.
 
 When testing in unit tests, `StateFlow` provides immediate synchronous access via `.value`, eliminating flaky async test harnesses when verifying state transitions.
+
 
 ## How to answer in the interview
 

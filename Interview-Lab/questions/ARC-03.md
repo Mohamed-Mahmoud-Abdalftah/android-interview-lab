@@ -97,12 +97,13 @@ The Dependency Rule is the foundational postulate of Clean Architecture: **sourc
 
 Under this rule, inner layers (Domain) must know absolutely nothing about outer layers (Data, UI, Frameworks). Nothing declared in an outer circle—such as a database class, a Retrofit API definition, an Android `Activity`, or a JSON parser—may be mentioned or imported by code in an inner circle.
 
-The direction of dependencies is structured as follows:
-- `Presentation / UI` -> depends on -> `Domain`
-- `Data` -> depends on -> `Domain`
-- `Domain` -> depends on -> **Nothing (Pure Kotlin)**
+The direction of dependencies is structured as follows.
+
+First, `Presentation / UI` -> depends on -> `Domain` Next, `Data` -> depends on -> `Domain`
+Finally, `Domain` -> depends on -> **Nothing (Pure Kotlin)**
 
 This protects core business value from framework churn. If the team migrates from Retrofit to Ktor, or swaps Room for SQLDelight, not a single line of business rule logic in the Domain layer is touched, invalidated, or recompiled.
+
 
 ## Interview answer — deep senior
 
@@ -111,6 +112,7 @@ A frequent question arises: how can the Domain layer drive data operations if it
 At application startup, the Dependency Injection container (Hilt/Koin) wires the concrete Data implementation to the Domain interface contract. Thus, at compile time, the source code dependency points inward, while at runtime, control flows outward through the interface abstraction.
 
 In Gradle multi-module codebases, we enforce this rule via module dependencies: `:core:domain` has zero module dependencies, while `:core:data` has `implementation(project(":core:domain"))`.
+
 
 ## How to answer in the interview
 

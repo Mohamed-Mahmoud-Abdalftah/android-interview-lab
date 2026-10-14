@@ -113,21 +113,18 @@ Validate untrusted deep links by verifying the scheme and host, strictly whiteli
 
 ## Interview answer — structured
 
-Deep links are inherently untrusted external input that must undergo rigorous security validation before driving navigation:
+Deep links are inherently untrusted external input that must undergo rigorous security validation before driving navigation.
 
-1. **Scheme & Host Whitelisting**: Verify that incoming URIs strictly match authorized domains. Prefer verified Android App Links (`https://`) backed by `assetlinks.json` over custom schemes (`myapp://`), which any malicious app can register and hijack.
+First, with Scheme & Host Whitelisting, verify that incoming URIs strictly match authorized domains. Prefer verified Android App Links (`https://`) backed by `assetlinks.json` over custom schemes (`myapp://`), which any malicious app can register and hijack. Next, with Strict Path Routing, route exclusively against a hardcoded whitelist of allowed destination paths. Never use dynamic reflection or generic string concatenation to instantiate activities from deep link path segments.
+Additionally, with Query Parameter Sanitization, validate types and bounds on all parameters (e.g., verifying `id` matches expected alphanumeric UUID formats) to prevent SQL injection or path traversal attacks. Finally, with Authentication and Authorization Gate, never assume an authenticated session when processing deep links. If a deep link targets an authenticated screen (like Account Settings or Checkout), the navigation handler must verify active credentials. If unauthenticated, redirect to the Login flow, caching the target route to resume upon successful authentication.
 
-2. **Strict Path Routing**: Route exclusively against a hardcoded whitelist of allowed destination paths. Never use dynamic reflection or generic string concatenation to instantiate activities from deep link path segments.
-
-3. **Query Parameter Sanitization**: Validate types and bounds on all parameters (e.g., verifying `id` matches expected alphanumeric UUID formats) to prevent SQL injection or path traversal attacks.
-
-4. **Authentication and Authorization Gate**: Never assume an authenticated session when processing deep links. If a deep link targets an authenticated screen (like Account Settings or Checkout), the navigation handler must verify active credentials. If unauthenticated, redirect to the Login flow, caching the target route to resume upon successful authentication.
 
 ## Interview answer — deep senior
 
 From an application security standpoint, special care must be taken with **Embedded WebViews** opened via deep links. If a deep link accepts a parameter like `myapp://webview?url=https://...`, an attacker can craft a link pointing to a phishing website (`https://evil-phishing.com`). If the internal WebView has JavaScript interfaces enabled (`addJavascriptInterface`), the external website can execute code within the app's context.
 
 To secure WebView deep links: 1. Strictly enforce domain whitelisting on all target URLs. 2. Never pass arbitrary query parameters directly into database queries or IPC intents without strict parsing. 3. Ensure the receiving Activity validates incoming extras before forwarding them to internal exported components.
+
 
 ## How to answer in the interview
 

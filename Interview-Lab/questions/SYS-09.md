@@ -120,32 +120,23 @@ Design observability across crashes, analytics, metrics, and logs using disk-bac
 
 ## Interview answer — structured
 
-A unified observability architecture balances real-time diagnostic visibility against device battery and network overhead:
+A unified observability architecture balances real-time diagnostic visibility against device battery and network overhead.
 
-1. **Crash Reporting & Diagnostic Breadcrumbs**:
-   - Integrate crash SDKs (Crashlytics/Sentry) configured with automated deobfuscation (`mapping.txt`).
-   - Maintain a circular buffer of the last 30 user actions (screen views, network status transitions, critical user clicks) recorded as diagnostic breadcrumbs attached automatically to unhandled exceptions.
+First, **Crash Reporting & Diagnostic Breadcrumbs**. Next, integrate crash SDKs (Crashlytics/Sentry) configured with automated deobfuscation (`mapping.txt`).
+Maintain a circular buffer of the last 30 user actions (screen views, network status transitions, critical user clicks) recorded as diagnostic breadcrumbs attached automatically to unhandled exceptions. **Disk-Backed Event Ingestion Pipeline**.
+Dispatching network requests for individual analytics events drains battery radios rapidly. Ingest events into an in-memory queue that flushes to a local SQLite buffer. Batch-upload events periodically (e.g., every 30 events or 60 seconds) with GZIP compression, deferring large backlog flushes to Wi-Fi/charging via WorkManager.
+**APM & User Experience Telemetry**. Measure application launch latency (Time to Initial Display & Time to Full Display via `reportFullyDrawn()`).
+Instrument UI rendering using AndroidX `JankStats` to track jank percentages across critical scrollable surfaces. **PII Scrubbing Boundary**.
+Finally, enforce an architectural sanitizer that intercepts all logs and analytics payloads, redacting PAN numbers, email addresses, and auth headers before persistence.
 
-2. **Disk-Backed Event Ingestion Pipeline**:
-   - Dispatching network requests for individual analytics events drains battery radios rapidly. Ingest events into an in-memory queue that flushes to a local SQLite buffer.
-   - Batch-upload events periodically (e.g., every 30 events or 60 seconds) with GZIP compression, deferring large backlog flushes to Wi-Fi/charging via WorkManager.
-
-3. **APM & User Experience Telemetry**:
-   - Measure application launch latency (Time to Initial Display & Time to Full Display via `reportFullyDrawn()`).
-   - Instrument UI rendering using AndroidX `JankStats` to track jank percentages across critical scrollable surfaces.
-
-4. **PII Scrubbing Boundary**:
-   - Enforce an architectural sanitizer that intercepts all logs and analytics payloads, redacting PAN numbers, email addresses, and auth headers before persistence.
 
 ## Interview answer — deep senior
 
-From a staff-level infrastructure perspective, mobile observability requires managing high-volume data streams and ANR detection:
+From a staff-level infrastructure perspective, mobile observability requires managing high-volume data streams and ANR detection.
 
-1. **Application Not Responding (ANR) Forensics**: Standard crash handlers do not capture ANRs because the main thread is blocked. Modern architectures use `ApplicationExitInfo` (introduced in Android 11) to inspect system tombstone traces and exit reasons (`REASON_ANR`, `REASON_CRASH_NATIVE`, `REASON_LOW_MEMORY`) upon the subsequent app cold start.
+First, with Application Not Responding (ANR) Forensics, standard crash handlers do not capture ANRs because the main thread is blocked. Modern architectures use `ApplicationExitInfo` (introduced in Android 11) to inspect system tombstone traces and exit reasons (`REASON_ANR`, `REASON_CRASH_NATIVE`, `REASON_LOW_MEMORY`) upon the subsequent app cold start. Next, with Adaptive Dynamic Sampling, high-volume telemetry (e.g., measuring individual HTTP call latencies) can overwhelm backend ingestion servers at scale. Implement server-configurable sampling rates via feature flags (e.g. Logging network performance traces for 1% of users, while capturing 100% of crashes and financial failure events).
+Finally, with Zero-Overhead Debug vs. Release Logging, use Timber with separate tree implementations: a `DebugTree` logging verbose output in development, and a stripped release pipeline where R8 removes `Log.v` and `Log.d` bytecodes entirely, routing only critical error reports to the telemetry queue.
 
-2. **Adaptive Dynamic Sampling**: High-volume telemetry (e.g., measuring individual HTTP call latencies) can overwhelm backend ingestion servers at scale. Implement server-configurable sampling rates via feature flags (e.g. logging network performance traces for 1% of users, while capturing 100% of crashes and financial failure events).
-
-3. **Zero-Overhead Debug vs. Release Logging**: Use Timber with separate tree implementations: a `DebugTree` logging verbose output in development, and a stripped release pipeline where R8 removes `Log.v` and `Log.d` bytecodes entirely, routing only critical error reports to the telemetry queue.
 
 ## How to answer in the interview
 

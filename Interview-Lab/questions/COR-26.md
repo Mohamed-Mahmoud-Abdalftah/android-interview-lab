@@ -159,6 +159,7 @@ Inside `supervisorScope`, each `async` coroutine is supervised. If one child thr
 
 To satisfy the critical requirement of **not swallowing cancellation**, wrap each individual call in a try-catch block that inspects the exception: if `e is CancellationException`, rethrow it immediately. If the user navigates away and the parent ViewModel cancels the scope, the `CancellationException` propagates cleanly down and aborts all network connections.
 
+
 ## Interview answer — deep senior
 
 Under the hood, `supervisorScope` installs a `SupervisorJob` as the parent context. When a child coroutine fails with a non-cancellation exception, `childCancelled` on the supervisor returns `false`. This prevents the scope from entering the `CANCELLING` state.
@@ -173,6 +174,7 @@ supervisorScope {
 ```
 
 Standard `runCatching` catches `Throwable`, which intercepts `CancellationException` and converts it to a null result! When the user exits the screen, the coroutines keep running on background threads, ignoring cancellation. In production, we define a dedicated `runSuspendCatching` extension that rethrows `CancellationException`, guaranteeing both partial fault tolerance and responsive lifecycle cancellation.
+
 
 ## How to answer in the interview
 

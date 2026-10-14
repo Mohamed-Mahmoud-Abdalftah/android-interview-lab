@@ -134,13 +134,10 @@ Defend against rapid double-taps using defense-in-depth: disable the button in U
 
 Protecting against double-tap race conditions requires a defense-in-depth strategy across UI, ViewModel, and Domain/Backend boundaries.
 
-1. **UI Layer Defense**: The UI reflects saving state immediately. We set `Button(enabled = !uiState.isSaving)` and show an inline progress spinner. When disabled, Android skips touch event dispatching to that node. Additionally, click handlers can be wrapped in a single-click debounce modifier that rejects clicks within 400ms.
+First, an UI Layer Defense is the UI reflects saving state immediately. We set `Button(enabled = !uiState.isSaving)` and show an inline progress spinner. When disabled, Android skips touch event dispatching to that node. Additionally, click handlers can be wrapped in a single-click debounce modifier that rejects clicks within 400ms. Next, with ViewModel Concurrency Guard, because UI recomposition occurs on the next frame (leaving a fraction of a millisecond where a second tap could fire), the ViewModel must guard execution synchronously.
+Maintain a reference to the active coroutine job: `if (saveJob?.isActive == true) return`. Atomically update state: `if (!_isProcessing.compareAndSet(false, true)) return`.
+Finally, with Domain & Backend Idempotency, network operations must be structurally idempotent. The client generates a unique `Idempotency-Key` (UUID) attached to the network payload. Even if network latency causes duplicate packets, the backend processes the transaction once and returns the cached confirmation for subsequent calls.
 
-2. **ViewModel Concurrency Guard**: Because UI recomposition occurs on the next frame (leaving a fraction of a millisecond where a second tap could fire), the ViewModel must guard execution synchronously:
-   - Maintain a reference to the active coroutine job: `if (saveJob?.isActive == true) return`.
-   - Atomically update state: `if (!_isProcessing.compareAndSet(false, true)) return`.
-
-3. **Domain & Backend Idempotency**: Network operations must be structurally idempotent. The client generates a unique `Idempotency-Key` (UUID) attached to the network payload. Even if network latency causes duplicate packets, the backend processes the transaction once and returns the cached confirmation for subsequent calls.
 
 ## Interview answer — deep senior
 
@@ -149,6 +146,7 @@ Under the hood, relying solely on `enabled = false` in Compose has a micro-windo
 This makes the ViewModel synchronous guard mandatory. By checking `saveJob?.isActive == true` at the very top of the function body on the main thread, the second invocation is discarded synchronously before any coroutine is scheduled or network request initiated.
 
 In payment flows (Fintech), we also enforce transactional database flags: setting a local database status to `PENDING_SUBMISSION` within a local Room transaction before dispatching network calls, guaranteeing crash recovery and duplicate transaction avoidance.
+
 
 ## How to answer in the interview
 

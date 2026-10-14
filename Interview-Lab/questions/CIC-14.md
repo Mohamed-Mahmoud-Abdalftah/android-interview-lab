@@ -91,32 +91,23 @@ Manage releases via staged rollouts (1% to 100%) to contain blast radius, gating
 
 ## Interview answer — structured
 
-A disciplined mobile release rollout framework consists of three operational pillars:
+A disciplined mobile release rollout framework consists of three operational pillars.
 
-1. **Staged Rollout Cadence**:
-   - Releases progress through controlled cohorts: 1% -> 5% -> 20% -> 50% -> 100% over a 4 to 5-day cycle. This limits the blast radius of latent device-specific or OS-version bugs to a fraction of the user base.
+First, **Staged Rollout Cadence**. Next, releases progress through controlled cohorts: 1% -> 5% -> 20% -> 50% -> 100% over a 4 to 5-day cycle. This limits the blast radius of latent device-specific or OS-version bugs to a fraction of the user base.
+**Automated Quality Gates & Android Vitals**. Progression between stages requires meeting strict thresholds.
+Crash-free user rate $\ge 99.9%$. User-perceived crash rate in Android Vitals below Google's 1.09% bad-behavior threshold.
+ANR rate below 0.47%. If any metric breaches thresholds, the staged rollout is immediately halted in Google Play Console.
+**Multi-Tiered Rollback Strategy**. Android OS strictly rejects installing an APK with a lower `versionCode` than the active installed build, making client-side rollbacks impossible.
+With Tier 1 (Instant), kill-switch the faulty code path via server-side Feature Flags (Firebase Remote Config). Finally, with Tier 2 (Hotfix), if startup crashes prevent remote config fetches, branch a hotfix from the release tag, revert the culprit commit, increment `versionCode`, and expedite a 100% hotfix release.
 
-2. **Automated Quality Gates & Android Vitals**:
-   - Progression between stages requires meeting strict thresholds:
-     - Crash-free user rate $\ge 99.9%$.
-     - User-perceived crash rate in Android Vitals below Google's 1.09% bad-behavior threshold.
-     - ANR rate below 0.47%.
-   - If any metric breaches thresholds, the staged rollout is immediately halted in Google Play Console.
-
-3. **Multi-Tiered Rollback Strategy**:
-   - Android OS strictly rejects installing an APK with a lower `versionCode` than the active installed build, making client-side rollbacks impossible.
-   - **Tier 1 (Instant)**: Kill-switch the faulty code path via server-side Feature Flags (Firebase Remote Config).
-   - **Tier 2 (Hotfix)**: If startup crashes prevent remote config fetches, branch a hotfix from the release tag, revert the culprit commit, increment `versionCode`, and expedite a 100% hotfix release.
 
 ## Interview answer — deep senior
 
-From an organizational resilience and SRE perspective, release gating requires clear runbooks and automated alerting:
+From an organizational resilience and SRE perspective, release gating requires clear runbooks and automated alerting.
 
-1. **The 'Halting vs. Halved' Rollout Myth**: When you halt a staged rollout in Google Play Console, users who already received the update remain on that buggy version; halting only stops new users from downloading it. Teams must actively support the cohort stuck on the buggy version until the hotfix is published.
+First, with The 'Halting vs. Halved' Rollout Myth, when you halt a staged rollout in Google Play Console, users who already received the update remain on that buggy version; halting only stops new users from downloading it. Teams must actively support the cohort stuck on the buggy version until the hotfix is published. Next, with In-App Force Updates (Flexible vs. Immediate), when a severe zero-day vulnerability or corrupt local database migration occurs, a standard store update is insufficient because users may not update for weeks. Integrating the Google Play In-App Updates API with an `AppUpdateType.IMMEDIATE` flow forces a blocking full-screen update dialog on app launch for broken client versions.
+Finally, with Server-Side API Compatibility, when rolling out a new app version over 5 days, backend APIs must support both old and new payload schemas simultaneously. Never deploy breaking API changes until the client staged rollout reaches 100% and adoption curves stabilize.
 
-2. **In-App Force Updates (Flexible vs. Immediate)**: When a severe zero-day vulnerability or corrupt local database migration occurs, a standard store update is insufficient because users may not update for weeks. Integrating the Google Play In-App Updates API with an `AppUpdateType.IMMEDIATE` flow forces a blocking full-screen update dialog on app launch for broken client versions.
-
-3. **Server-Side API Compatibility**: When rolling out a new app version over 5 days, backend APIs must support both old and new payload schemas simultaneously. Never deploy breaking API changes until the client staged rollout reaches 100% and adoption curves stabilize.
 
 ## How to answer in the interview
 

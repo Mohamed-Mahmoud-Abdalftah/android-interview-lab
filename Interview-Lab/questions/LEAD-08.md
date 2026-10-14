@@ -46,7 +46,9 @@ What metrics tell you whether a refactor was successful?
 
 لوحة تقرير إثبات نجاح الـ Refactoring (Executive Refactor Scorecard):
 ```markdown
+
 ## تقرير نتائج إعادة هيكلة موديول الدفع (Payments Modularization Refactor)
+
 الفترة: مقارنة الربع الأول (قبل) بالربع الثاني (بعد)
 
 | المؤشر الهندسي / التجاري | قبل الـ Refactor | بعد الـ Refactor | نسبة التحسن |
@@ -86,32 +88,23 @@ Prove refactoring success using quantitative metrics across four domains: Stabil
 
 ## Interview answer — structured
 
-A successful refactoring initiative is judged strictly by empirical metrics collected before and after the transition:
+A successful refactoring initiative is judged strictly by empirical metrics collected before and after the transition.
 
-1. **Operational Stability & Quality Metrics**:
-   - **Crash-Free Rates**: Increase in Crash-Free User/Session percentages in Crashlytics and Android Vitals.
-   - **Defect Escape Rate**: Significant reduction in post-release bugs filed by QA and end-users against the affected domain.
+First, **Operational Stability & Quality Metrics**. Next, with Crash-Free Rates, increase in Crash-Free User/Session percentages in Crashlytics and Android Vitals.
+Additionally, with Defect Escape Rate, significant reduction in post-release bugs filed by QA and end-users against the affected domain. **Engineering Velocity & Agility**.
+With Lead Time for Changes, measures the duration from PR creation to production deployment for subsequent features built on top of the refactored system. With PR Review & Merge Cycle Time, smaller, decoupled classes reduce cognitive overhead and eliminate painful Git merge conflicts across squad boundaries.
+**Runtime & Build Performance**. With Build Duration, reduction in local and CI Gradle build times achieved through effective module boundary caching.
+With Client Runtime Metrics, cold startup duration, frame drop rates (JankStats), and memory allocation headroom. **Testability & Coupling**.
+Finally, progression from brittle, end-to-end UI tests to fast, deterministic local JVM unit tests covering 80%+ of core business state machines.
 
-2. **Engineering Velocity & Agility**:
-   - **Lead Time for Changes**: Measures the duration from PR creation to production deployment for subsequent features built on top of the refactored system.
-   - **PR Review & Merge Cycle Time**: Smaller, decoupled classes reduce cognitive overhead and eliminate painful Git merge conflicts across squad boundaries.
-
-3. **Runtime & Build Performance**:
-   - **Build Duration**: Reduction in local and CI Gradle build times achieved through effective module boundary caching.
-   - **Client Runtime Metrics**: Cold startup duration, frame drop rates (JankStats), and memory allocation headroom.
-
-4. **Testability & Coupling**:
-   - Progression from brittle, end-to-end UI tests to fast, deterministic local JVM unit tests covering 80%+ of core business state machines.
 
 ## Interview answer — deep senior
 
-From an engineering leadership and platform maturity standpoint, measuring refactoring requires counteracting vanity metrics:
+From an engineering leadership and platform maturity standpoint, measuring refactoring requires counteracting vanity metrics.
 
-1. **The Code Coverage Vanity Trap**: Beware of measuring refactor success purely by raw line coverage percentage. An engineer can achieve 90% coverage by writing tautological tests that assert getters without verifying edge cases or state race conditions. Focus on mutation testing scores or behavioral scenario coverage on core UseCases.
+First, with The Code Coverage Vanity Trap, beware of measuring refactor success purely by raw line coverage percentage. An engineer can achieve 90% coverage by writing tautological tests that assert getters without verifying edge cases or state race conditions. Focus on mutation testing scores or behavioral scenario coverage on core UseCases. Next, with Developer Sentiment and Friction Index, complement quantitative numbers with qualitative developer surveys. Survey squad members on cognitive friction before and after refactoring ('How confident are you modifying the Checkout flow without breaking unrelated code?'). A leap from 2/10 to 9/10 in team confidence confirms sustainable velocity.
+Finally, with Zero-Regression Canary Releases, for major structural refactorings, release the new architecture behind a server-side Feature Flag to a 5% canary cohort. Compare business conversion metrics and crash telemetry directly against the legacy 95% cohort to prove algorithmic parity before complete cutover.
 
-2. **Developer Sentiment and Friction Index**: Complement quantitative numbers with qualitative developer surveys. Survey squad members on cognitive friction before and after refactoring ('How confident are you modifying the Checkout flow without breaking unrelated code?'). A leap from 2/10 to 9/10 in team confidence confirms sustainable velocity.
-
-3. **Zero-Regression Canary Releases**: For major structural refactorings, release the new architecture behind a server-side Feature Flag to a 5% canary cohort. Compare business conversion metrics and crash telemetry directly against the legacy 95% cohort to prove algorithmic parity before complete cutover.
 
 ## How to answer in the interview
 

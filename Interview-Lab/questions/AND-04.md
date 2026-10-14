@@ -83,6 +83,7 @@ A `Context` provides access to application-specific resources, system services, 
 
 **`Application Context`** is a singleton tied to the lifecycle of the Linux app process (`getApplicationContext()`). It is safe to retain inside Singletons, Repositories, and background workers without causing memory leaks. However, because it is not attached to a Window and lacks Activity Theme metadata, it cannot be used to show dialogs, and inflating views with it produces un-themed UI components.
 
+
 ## Interview answer — deep senior
 
 At the platform implementation level, both `Activity` and `Application` inherit from `ContextWrapper` which delegates to a platform `ContextImpl`. However, an `Activity` has a configured `WindowManagerImpl` tied to a hardware display and an active **Window Token** registered with the system's `WindowManagerService`.
@@ -96,6 +97,7 @@ AlertDialog.Builder(applicationContext).show()
 The Android runtime crashes immediately with `WindowManager.BadTokenException: Unable to add window — token null is not valid`. This happens because `applicationContext` has no window token recognized by the OS window manager.
 
 In dependency injection (Dagger/Hilt), we explicitly annotate qualifiers to differentiate them: `@ApplicationContext val context: Context` for data repositories, and `@ActivityContext val context: Context` for screen adapters.
+
 
 ## How to answer in the interview
 

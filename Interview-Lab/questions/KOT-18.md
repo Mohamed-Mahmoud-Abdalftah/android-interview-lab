@@ -94,6 +94,7 @@ It is best used to clean up verbose, deeply nested signatures—especially compl
 
 Where it hurts is when developers mistake it for domain modeling or type safety. If you write `typealias UserId = String` and `typealias OrderId = String`, they are 100% interchangeable to the compiler; passing an OrderId into a UserId parameter compiles without warning. When you need real type safety to prevent primitive obsession, a @JvmInline value class is the right architectural choice, not a typealias.
 
+
 ## Interview answer — deep senior
 
 Architecturally, typealias operates at the same abstraction level as C++ typedef or type aliases. It exists solely in the compiler's symbol table and Kotlin metadata. In decompiled Java bytecode, you will see the raw underlying type directly.
@@ -101,6 +102,7 @@ Architecturally, typealias operates at the same abstraction level as C++ typedef
 In team codebases, excessive typealiasing can actually reduce cognitive velocity. When developers define aliases for standard framework types or shallow generics—such as `typealias StringList = List<String>`—it forces code reviewers to constantly jump to definitions to decipher simple types. It also muddies IDE autocompletion by introducing redundant symbols.
 
 Our engineering guideline is simple: use typealias only for: 1) complex functional callback signatures where parameter naming in the typealias documents the contract; 2) resolving unavoidable package name collisions; and 3) deprecation migration paths where a class has moved packages. For domain boundaries, ID wrappers, or units of measurement, we strictly mandate `@JvmInline value class` to get real compiler-enforced type boundaries.
+
 
 ## How to answer in the interview
 

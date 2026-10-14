@@ -97,28 +97,21 @@ A transaction correlation ID is an immutable globally unique identifier generate
 
 ## Interview answer — structured
 
-A Transaction Correlation ID is the universal thread stitching together distributed financial architectures:
+A Transaction Correlation ID is the universal thread stitching together distributed financial architectures.
 
-1. **The Distributed Traversal Problem**:
-   - A single mobile payment spans multiple boundaries: Android client -> API Gateway -> Payment Orchestrator -> Fraud Engine -> Payment Processor -> Card Scheme (Visa/Mastercard) -> Issuer Bank. Without a persistent identifier generated at the client origin, correlating logs across disconnected microservice silos is impossible.
+First, **The Distributed Traversal Problem**. Next, a single mobile payment spans multiple boundaries: Android client -> API Gateway -> Payment Orchestrator -> Fraud Engine -> Payment Processor -> Card Scheme (Visa/Mastercard) -> Issuer Bank. Without a persistent identifier generated at the client origin, correlating logs across disconnected microservice silos is impossible.
+**Critical Functional Roles**. A Distributed Observability enables support and SRE teams to trace an entire transaction's lifecycle across Datadog, OpenTelemetry, and Splunk logs in seconds.
+With Reversal and Reconciliation Binding, when an automated reversal (0400), capture, or refund is triggered, attaching the original correlation ID guarantees the bank switch matches the rollback to the exact ledger entry. With Idempotency Anchoring, serves as the immutable root for idempotency keys, preventing race conditions across concurrent client retries.
+**Implementation Standard**. Finally, generated as a UUID v4 prefixed with a domain tag (`tx_cor_...`) and transmitted via standard HTTP headers (`X-Correlation-ID`) and ISO 8583 message fields.
 
-2. **Critical Functional Roles**:
-   - **Distributed Observability**: Enables support and SRE teams to trace an entire transaction's lifecycle across Datadog, OpenTelemetry, and Splunk logs in seconds.
-   - **Reversal and Reconciliation Binding**: When an automated reversal (0400), capture, or refund is triggered, attaching the original correlation ID guarantees the bank switch matches the rollback to the exact ledger entry.
-   - **Idempotency Anchoring**: Serves as the immutable root for idempotency keys, preventing race conditions across concurrent client retries.
-
-3. **Implementation Standard**:
-   - Generated as a UUID v4 prefixed with a domain tag (`tx_cor_...`) and transmitted via standard HTTP headers (`X-Correlation-ID`) and ISO 8583 message fields.
 
 ## Interview answer — deep senior
 
-From an OpenTelemetry standards and PCI compliance perspective, correlation IDs govern telemetry hygiene:
+From an OpenTelemetry standards and PCI compliance perspective, correlation IDs govern telemetry hygiene.
 
-1. **Correlation ID vs. Request ID Distinction**: Senior architects distinguish between `Correlation-ID` and `Request-ID`. The `Correlation-ID` remains identical across the entire multi-step business journey (card tap, 3DS challenge, authorization retry, receipt print). A `Request-ID` is unique to each individual HTTP attempt. Both headers must be transmitted simultaneously.
+First, with Correlation ID vs. Request ID Distinction, senior architects distinguish between `Correlation-ID` and `Request-ID`. The `Correlation-ID` remains identical across the entire multi-step business journey (card tap, 3DS challenge, authorization retry, receipt print). A `Request-ID` is unique to each individual HTTP attempt. Both headers must be transmitted simultaneously. Next, with PCI-DSS Log Sanitization, correlation IDs provide a safe diagnostic handle that eliminates any excuse for logging sensitive Cardholder Data (CHD). Engineers must never log PANs (card numbers) or CVVs for debugging; all telemetry must be indexed exclusively by the safe correlation ID.
+Finally, with B2B Clearing and Settlement Traceability, in POS payment hardware, correlation IDs are mapped to ISO 8583 Retrieval Reference Numbers (RRN - Field 37) and Systems Trace Audit Numbers (STAN - Field 11) to maintain end-to-end trace parity with legacy banking mainframes.
 
-2. **PCI-DSS Log Sanitization**: Correlation IDs provide a safe diagnostic handle that eliminates any excuse for logging sensitive Cardholder Data (CHD). Engineers must never log PANs (card numbers) or CVVs for debugging; all telemetry must be indexed exclusively by the safe correlation ID.
-
-3. **B2B Clearing and Settlement Traceability**: In POS payment hardware, correlation IDs are mapped to ISO 8583 Retrieval Reference Numbers (RRN - Field 37) and Systems Trace Audit Numbers (STAN - Field 11) to maintain end-to-end trace parity with legacy banking mainframes.
 
 ## How to answer in the interview
 

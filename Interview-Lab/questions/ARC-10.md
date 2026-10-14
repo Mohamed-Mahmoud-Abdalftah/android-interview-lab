@@ -92,12 +92,13 @@ Single Source of Truth (SSOT) means every piece of data has a single owner that 
 
 Single Source of Truth (SSOT) is an architectural discipline ensuring that every piece of state has exactly one authoritative owner responsible for its storage, mutation, and distribution.
 
-In modern Android architectures, we implement SSOT via the **Offline-First Reactive Repository pattern**:
-1. **Authoritative Storage**: The local database (Room) serves as the definitive SSOT for app data.
-2. **Unidirectional Observation**: The UI layer and ViewModels observe data strictly through reactive streams (`Flow<T>`) emitted by the local database DAO. The UI never queries the network directly.
-3. **Write-Through Ingestion**: When network requests complete, the repository does not return network models to the UI. Instead, it writes the payload directly into Room inside a database transaction. Room's internal invalidation tracker automatically triggers a new emission on the active Flow, notifying all listening ViewModels.
+In modern Android architectures, we implement SSOT via the **Offline-First Reactive Repository pattern**.
+
+First, an Authoritative Storage is the local database (Room) serves as the definitive SSOT for app data. Next, an Unidirectional Observation is the UI layer and ViewModels observe data strictly through reactive streams (`Flow<T>`) emitted by the local database DAO. The UI never queries the network directly.
+Finally, with Write-Through Ingestion, when network requests complete, the repository does not return network models to the UI. Instead, it writes the payload directly into Room inside a database transaction. Room's internal invalidation tracker automatically triggers a new emission on the active Flow, notifying all listening ViewModels.
 
 This eliminates state desynchronization: if five different screens or background workers observe the same user profile, modifying that profile in one place instantly updates all five screens automatically.
+
 
 ## Interview answer — deep senior
 
@@ -106,6 +107,7 @@ Contrast this with the flawed **Dual-Source Anti-Pattern**: a screen fetches dat
 SSOT applies to the Presentation layer as well. Inside the ViewModel, a single `MutableStateFlow<ScreenUiState>` acts as the SSOT for the entire screen. Mutating UI state requires calling `_uiState.update { ... }`, preventing multiple independent LiveData streams from racing each other.
 
 In testing, SSOT drastically simplifies verification: repository tests simply verify that executing a network sync populates the local Fake DAO, and UI tests verify reactions to simulated DAO emissions.
+
 
 ## How to answer in the interview
 

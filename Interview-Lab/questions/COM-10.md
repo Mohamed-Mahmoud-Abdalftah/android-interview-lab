@@ -124,13 +124,9 @@ Review every effect for its start trigger, keys, cancellation/cleanup, and owner
 
 Side-effect handlers bridge Compose's declarative, restartable runtime with imperative external systems.
 
-1. **`LaunchedEffect(key1, ...)`**: Launches a coroutine in the composition scope upon entering the composition. If any key changes, the running coroutine is cancelled cooperatively and restarted. When leaving the composition, it is cancelled automatically. Used for async operations like fetching data or triggering animations.
+First, with LaunchedEffect(key1, ...), launches a coroutine in the composition scope upon entering the composition. If any key changes, the running coroutine is cancelled cooperatively and restarted. When leaving the composition, it is cancelled automatically. Used for async operations like fetching data or triggering animations. Next, disposableEffect(key1, ...) is designed for non-suspending side-effects that require **mandatory cleanup**. It executes when entering composition and mandates an `onDispose { ... }` block that runs when leaving composition or before re-running due to key changes. Used for registering broadcast receivers, sensor listeners, or lifecycle observers.
+Additionally, sideEffect executes its lambda after **every successful recomposition**. It is non-suspending and cannot be cancelled. Used to publish Compose state mutations to non-Compose external objects (such as updating an external tracking SDK or system properties). Finally, with rememberCoroutineScope(), creates a `CoroutineScope` bound to the calling composable's lifecycle. It is used to launch coroutines outside the composition phase—specifically inside **user callbacks and event listeners** like `Button(onClick = { scope.launch { ... } })`.
 
-2. **`DisposableEffect(key1, ...)`**: Designed for non-suspending side-effects that require **mandatory cleanup**. It executes when entering composition and mandates an `onDispose { ... }` block that runs when leaving composition or before re-running due to key changes. Used for registering broadcast receivers, sensor listeners, or lifecycle observers.
-
-3. **`SideEffect`**: Executes its lambda after **every successful recomposition**. It is non-suspending and cannot be cancelled. Used to publish Compose state mutations to non-Compose external objects (such as updating an external tracking SDK or system properties).
-
-4. **`rememberCoroutineScope()`**: Creates a `CoroutineScope` bound to the calling composable's lifecycle. It is used to launch coroutines outside the composition phase—specifically inside **user callbacks and event listeners** like `Button(onClick = { scope.launch { ... } })`.
 
 ## Interview answer — deep senior
 
@@ -139,6 +135,7 @@ A critical pitfall in Compose architecture is calling `rememberCoroutineScope().
 Under the hood, `LaunchedEffect` is implemented as a `DisposableEffect` that creates a `StandaloneCoroutine` under the hood. When the effect is disposed, its `Job.cancel()` is called immediately.
 
 `rememberCoroutineScope()` retrieves the `compositionContinuation`'s CoroutineContext, attaching a `SupervisorJob`. When the composable leaves the Slot Table, the `SupervisorJob` cancels, ensuring no child coroutine leaks into the application background.
+
 
 ## How to answer in the interview
 

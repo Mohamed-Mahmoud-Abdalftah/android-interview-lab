@@ -125,20 +125,19 @@ If scroll resets on refresh, inspect three culprits: missing or unstable `key` p
 
 A scroll position resetting to index 0 after a data refresh stems from state lifecycle disconnections or unstable identity mapping.
 
-1. **Transient Empty List Emission**: The most frequent architectural flaw is emitting `emptyList()` or an empty state when a refresh begins. If `LazyColumn` receives an empty list, its viewport collapses to 0 items, instantly resetting `LazyListState.firstVisibleItemIndex` to 0. When the refreshed data arrives a moment later, the list remains at the top.
+First, a Transient Empty List Emission is the most frequent architectural flaw is emitting `emptyList()` or an empty state when a refresh begins. If `LazyColumn` receives an empty list, its viewport collapses to 0 items, instantly resetting `LazyListState.firstVisibleItemIndex` to 0. When the refreshed data arrives a moment later, the list remains at the top. Next, with Unmounting the LazyColumn (Screen-level Loading), if the UI replaces the `LazyColumn` with a full-screen `CircularProgressIndicator()` while `isRefreshing` is true, the `LazyColumn` is completely unmounted from the composition tree. Its underlying `LazyListState` loses its layout connection, resetting upon re-entry.
+Finally, with Unstable or Ephemeral Keys, if items lack keys or use transient generators (like generating new IDs during DTO mapping), Compose treats incoming items as completely novel instances, discarding prior scroll offsets.
 
-2. **Unmounting the LazyColumn (Screen-level Loading)**: If the UI replaces the `LazyColumn` with a full-screen `CircularProgressIndicator()` while `isRefreshing` is true, the `LazyColumn` is completely unmounted from the composition tree. Its underlying `LazyListState` loses its layout connection, resetting upon re-entry.
-
-3. **Unstable or Ephemeral Keys**: If items lack keys or use transient generators (like generating new IDs during DTO mapping), Compose treats incoming items as completely novel instances, discarding prior scroll offsets.
 
 ## Interview answer — deep senior
 
 Under the hood, `LazyListState` tracks two core integers: `firstVisibleItemIndex` and `firstVisibleItemScrollOffset`. When a new list is bound, Compose's `LazyLayoutItemAnimator` attempts to match existing viewport items to the new list using their `key`. If the key of the top-visible item is found anywhere in the new list, Compose adjusts the scroll offset to keep that exact item pinned to the screen.
 
-To properly implement pull-to-refresh without scroll resets:
-- Never clear the existing data list in the ViewModel during a refresh; set an auxiliary boolean `isRefreshing = true`.
-- Keep the `LazyColumn` persistently composed and wrap it with `PullToRefreshBox` (Material 3) or place an overlay loading indicator at the top.
-- Always declare `key = { it.id }` using immutable persistent database IDs.
+To properly implement pull-to-refresh without scroll resets.
+
+First, never clear the existing data list in the ViewModel during a refresh; set an auxiliary boolean `isRefreshing = true`. Next, keep the `LazyColumn` persistently composed and wrap it with `PullToRefreshBox` (Material 3) or place an overlay loading indicator at the top.
+Finally, always declare `key = { it.id }` using immutable persistent database IDs.
+
 
 ## How to answer in the interview
 

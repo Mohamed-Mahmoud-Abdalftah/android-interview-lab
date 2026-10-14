@@ -105,13 +105,9 @@ MVC coupled Views and Controllers inside Activities. MVP separated Presenters vi
 
 The evolution of Android presentation patterns reflects the industry's shift toward lifecycle safety, testability, and reactive declarative UI.
 
-1. **MVC**: In early Android, `Activity` served as both View and Controller. This produced tight coupling, bloated 'God Activities', and near-zero unit testability because UI and lifecycle were inseparable.
+First, with MVC, in early Android, `Activity` served as both View and Controller. This produced tight coupling, bloated 'God Activities', and near-zero unit testability because UI and lifecycle were inseparable. Next, with MVP, introduced a `Presenter` communicating with the Activity via a `View` interface. While testable, it was tightly coupled bi-directionally: the Presenter held a direct reference to the View, requiring meticulous manual lifecycle nullification (`detachView()`) to prevent memory leaks during configuration changes.
+Additionally, with MVVM, broke bi-directional coupling. The `ViewModel` has zero references to the UI. Instead, it exposes observable streams (`LiveData` or `StateFlow`). The View observes the ViewModel; when data changes, the View updates. ViewModels natively survive configuration changes via `ViewModelStore`. Finally, a MVI / UDF is the modern standard tailored for declarative UI (Compose). It enforces a closed reactive loop: User interactions emit typed **Intents**, processed by a state machine that outputs a single **Immutable UiState** snapshot. This guarantees deterministic state transitions and eradicates state desynchronization bugs.
 
-2. **MVP**: Introduced a `Presenter` communicating with the Activity via a `View` interface. While testable, it was tightly coupled bi-directionally: the Presenter held a direct reference to the View, requiring meticulous manual lifecycle nullification (`detachView()`) to prevent memory leaks during configuration changes.
-
-3. **MVVM**: Broke bi-directional coupling. The `ViewModel` has zero references to the UI. Instead, it exposes observable streams (`LiveData` or `StateFlow`). The View observes the ViewModel; when data changes, the View updates. ViewModels natively survive configuration changes via `ViewModelStore`.
-
-4. **MVI / UDF**: The modern standard tailored for declarative UI (Compose). It enforces a closed reactive loop: User interactions emit typed **Intents**, processed by a state machine that outputs a single **Immutable UiState** snapshot. This guarantees deterministic state transitions and eradicates state desynchronization bugs.
 
 ## Interview answer — deep senior
 
@@ -120,6 +116,7 @@ The philosophical difference between MVVM and MVI in modern Android is state mod
 MVI resolves this through **Single Source of Truth state modeling**: the entire screen is governed by a single `sealed interface ScreenState` or consolidated `data class ScreenUiState`. Invalid combinations are made structurally unrepresentable at compile time.
 
 In production testing, MVI makes ViewModels trivially verifiable via turbine or `runTest`: tests dispatch an Intent and assert the exact deterministic sequence of resulting state emissions.
+
 
 ## How to answer in the interview
 

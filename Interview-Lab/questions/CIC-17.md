@@ -88,30 +88,22 @@ Branch immediately from the production release tag (e.g., git checkout -b hotfix
 
 ## Interview answer — structured
 
-Executing a production hotfix when the mainline has diverged requires a strict, audited protocol:
+Executing a production hotfix when the mainline has diverged requires a strict, audited protocol.
 
-1. **Isolate the Baseline via Release Tag**:
-   - Check out a dedicated hotfix branch directly from the production release Git tag (`git checkout -b hotfix/2.4.1 tags/v2.4.0`). Never attempt to hotfix directly from `main` or develop, as unverified features will leak into production.
+First, **Isolate the Baseline via Release Tag**. Next, check out a dedicated hotfix branch directly from the production release Git tag (`git checkout -b hotfix/2.4.1 tags/v2.4.0`). Never attempt to hotfix directly from `main` or develop, as unverified features will leak into production.
+**Surgical Implementation & Regression Testing**. Write the minimal atomic fix necessary to resolve the crash. Accompany it with a failing unit test that reproduces the incident to confirm the fix.
+**Version Bump & Production Deployment**. Increment `versionCode` and update `versionName` to `"2.4.1"`. Trigger the CI pipeline to compile, sign, and upload the hotfix AAB to Google Play production via staged rollout.
+**Audit Tagging & Backporting to Mainline**. Tag the release commit (`git tag -a v2.4.1`).
+Finally, backport the hotfix commit into `main` using `git cherry-pick -x` or by merging the hotfix branch into `main`. The `-x` flag records the original commit hash, guaranteeing that the fix survives into subsequent major releases.
 
-2. **Surgical Implementation & Regression Testing**:
-   - Write the minimal atomic fix necessary to resolve the crash. Accompany it with a failing unit test that reproduces the incident to confirm the fix.
-
-3. **Version Bump & Production Deployment**:
-   - Increment `versionCode` and update `versionName` to `"2.4.1"`. Trigger the CI pipeline to compile, sign, and upload the hotfix AAB to Google Play production via staged rollout.
-
-4. **Audit Tagging & Backporting to Mainline**:
-   - Tag the release commit (`git tag -a v2.4.1`).
-   - Backport the hotfix commit into `main` using `git cherry-pick -x` or by merging the hotfix branch into `main`. The `-x` flag records the original commit hash, guaranteeing that the fix survives into subsequent major releases.
 
 ## Interview answer — deep senior
 
-From an operational and incident management perspective, hotfixes carry hidden risks:
+From an operational and incident management perspective, hotfixes carry hidden risks.
 
-1. **The 'Forgot to Backport' Trap**: The most frequent failure in hotfix workflows is deploying the hotfix, celebrating the fix, and forgetting to merge it back into `main`. Three weeks later, `v2.5.0` ships and re-introduces the identical crash, causing severe reputational damage. Enforce automated CI bots or branch policies that require a PR merging the hotfix branch back into `main` before closing the incident.
+First, a The 'Forgot to Backport' Trap is the most frequent failure in hotfix workflows is deploying the hotfix, celebrating the fix, and forgetting to merge it back into `main`. Three weeks later, `v2.5.0` ships and re-introduces the identical crash, causing severe reputational damage. Enforce automated CI bots or branch policies that require a PR merging the hotfix branch back into `main` before closing the incident. Next, with Database Migration Clashes, if the hotfix touches Room or SQLite database schemas, handle versioning cautiously. If `v2.4.0` was on db version 4, the hotfix `v2.4.1` might introduce db version 5. If `main` already introduced a different migration for db version 5, a merge collision occurs that can corrupt user databases upon future updates. Backport migrations must reconcile schema version numbers carefully.
+Finally, with Expedited Store Review, alert Google Play Developer Support or use expedited review requests in Play Console if the hotfix addresses a catastrophic revenue or data-loss incident.
 
-2. **Database Migration Clashes**: If the hotfix touches Room or SQLite database schemas, handle versioning cautiously. If `v2.4.0` was on db version 4, the hotfix `v2.4.1` might introduce db version 5. If `main` already introduced a different migration for db version 5, a merge collision occurs that can corrupt user databases upon future updates. Backport migrations must reconcile schema version numbers carefully.
-
-3. **Expedited Store Review**: Alert Google Play Developer Support or use expedited review requests in Play Console if the hotfix addresses a catastrophic revenue or data-loss incident.
 
 ## How to answer in the interview
 

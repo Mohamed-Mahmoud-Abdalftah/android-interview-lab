@@ -107,11 +107,13 @@ For allocation cost, I audit hot paths and collections. I look for chained colle
 
 For readability, I ensure public APIs expose read-only types (`List` rather than `MutableList`), prefer `val` over `var`, and flag tangled scope function chains like `let` inside `also` inside `apply`. Code must be readable from left-to-right without requiring cognitive gymnastics.
 
+
 ## Interview answer — deep senior
 
 In enterprise Android codebases, code review is an engineering gate supported by static analysis tooling. We configure Detekt and Android Lint in CI to mechanically enforce baseline rules (flagging `!!`, catching unused return values, and restricting `lateinit`), freeing human reviewers to focus on architectural nuance.
 
 At the deeper review level: 1. Jetpack Compose Stability: I inspect data classes passed to Composables, ensuring properties are `val` and collections are wrapped in immutable types (like Kotlinx ImmutableList) so the Compose compiler marks parameters as stable, enabling recomposition skipping. 2. Coroutine Hygiene: I check that suspend functions do not block threads, that `withContext(Dispatchers.IO)` is confined to the lowest data layer, and that `CancellationException` is never swallowed by broad `catch (e: Exception)` blocks. 3. Binary Compatibility: For shared library modules, I ensure public API changes do not break binary backward compatibility, using the Jetpack Binary Compatibility Validator plugin to track public symbol diffs.
+
 
 ## How to answer in the interview
 

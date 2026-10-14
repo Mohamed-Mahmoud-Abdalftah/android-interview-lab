@@ -126,11 +126,9 @@ Handle Previews using custom Multipreview annotations and `PreviewParameterProvi
 
 Managing Previews, Permissions, and Navigation cleanly requires adopting modern Jetpack Compose tooling standards.
 
-1. **Compose Previews**: Rather than writing individual `@Preview` annotations per file, we define custom **Multipreview Annotations** (e.g. `@ThemePreviews`, `@DevicePreviews`) that automatically render composables in Light mode, Dark mode, large accessibility font scales (1.5x), and tablet layouts. For state permutations, we use `@PreviewParameter(UserProvider::class)` to render empty, loaded, and error variants simultaneously.
+First, with Compose Previews, rather than writing individual `@Preview` annotations per file, we define custom **Multipreview Annotations** (e.g. `@ThemePreviews`, `@DevicePreviews`) that automatically render composables in Light mode, Dark mode, large accessibility font scales (1.5x), and tablet layouts. For state permutations, we use `@PreviewParameter(UserProvider::class)` to render empty, loaded, and error variants simultaneously. Next, we manage runtime permissions using `rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission())` paired with rationale logic. If denied, we check `ActivityCompat.shouldShowRationale()` to explain the user value before requesting again; if permanently denied, we provide a clean intent redirecting to Android System Settings.
+Finally, with Type-Safe Navigation (Navigation 2.8+), we discard legacy string URLs (`"profile/{userId}"`) in favor of official **Type-Safe Navigation**. Destined routes and arguments are modeled as `@Serializable` data classes and objects. The compiler verifies parameter types at compile time, eliminating URL encoding bugs and null-pointer parsing errors.
 
-2. **Runtime Permissions**: We manage runtime permissions using `rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission())` paired with rationale logic. If denied, we check `ActivityCompat.shouldShowRationale()` to explain the user value before requesting again; if permanently denied, we provide a clean intent redirecting to Android System Settings.
-
-3. **Type-Safe Navigation (Navigation 2.8+)**: We discard legacy string URLs (`"profile/{userId}"`) in favor of official **Type-Safe Navigation**. Destined routes and arguments are modeled as `@Serializable` data classes and objects. The compiler verifies parameter types at compile time, eliminating URL encoding bugs and null-pointer parsing errors.
 
 ## Interview answer — deep senior
 
@@ -139,6 +137,7 @@ Type-Safe Navigation in Navigation 2.8+ transforms route handling under the hood
 For permissions, handling configuration changes during an in-flight permission dialog is critical. Because `rememberLauncherForActivityResult` hooks into `ActivityResultRegistry`, recreation during rotation preserves the pending request callback, resolving correctly when the permission dialog dismisses.
 
 In testing, Type-Safe destinations make asserting navigation trivial: in Compose UI tests, we can query `navController.currentBackStackEntry?.toRoute<ProfileDestination>()` to verify that a button click routed to the expected typed destination.
+
 
 ## How to answer in the interview
 

@@ -90,17 +90,12 @@ Cryptographic keys perform local crypto inside Keystore. Access tokens authentic
 
 ## Interview answer — structured
 
-A senior engineer establishes strict threat models and retention boundaries across these five distinct credential types:
+A senior engineer establishes strict threat models and retention boundaries across these five distinct credential types.
 
-1. **Cryptographic Keys (AES/RSA/ECC)**: Mathematical keys used to encrypt data or sign tokens. Protected exclusively inside hardware-backed `AndroidKeyStore`. They never leave secure hardware and cannot be inspected over the network.
+First, with Cryptographic Keys (AES/RSA/ECC), mathematical keys used to encrypt data or sign tokens. Protected exclusively inside hardware-backed `AndroidKeyStore`. They never leave secure hardware and cannot be inspected over the network. Next, with Access Tokens (JWT / Bearer Tokens), ephemeral proofs of authorization granted to an authenticated client. They have short lifespans (15 to 60 minutes) to minimize damage if intercepted in memory. Kept in memory or encrypted persistent storage.
+Additionally, with Refresh Tokens, long-lived credentials (days to months) used solely to issue fresh access tokens. Held in encrypted storage and rotated on every use (Refresh Token Rotation). Revocable server-side. With API Keys (Embedded in APK), client identifiers (Google Maps, Mixpanel, Firebase). **These are never secrets**. Anyone who downloads the APK can decompile it and read the string. They must be protected on the cloud provider side via IP, Package Name, and SHA-1 signing certificate restrictions.
+Finally, with Passwords / PINs, user-provided secrets used to establish identity. Never store raw passwords on the device. Transmit over TLS to exchange for session tokens, wiping password buffers from RAM immediately.
 
-2. **Access Tokens (JWT / Bearer Tokens)**: Ephemeral proofs of authorization granted to an authenticated client. They have short lifespans (15 to 60 minutes) to minimize damage if intercepted in memory. Kept in memory or encrypted persistent storage.
-
-3. **Refresh Tokens**: Long-lived credentials (days to months) used solely to issue fresh access tokens. Held in encrypted storage and rotated on every use (Refresh Token Rotation). Revocable server-side.
-
-4. **API Keys (Embedded in APK)**: Client identifiers (Google Maps, Mixpanel, Firebase). **These are never secrets**. Anyone who downloads the APK can decompile it and read the string. They must be protected on the cloud provider side via IP, Package Name, and SHA-1 signing certificate restrictions.
-
-5. **Passwords / PINs**: User-provided secrets used to establish identity. Never store raw passwords on the device. Transmit over TLS to exchange for session tokens, wiping password buffers from RAM immediately.
 
 ## Interview answer — deep senior
 
@@ -110,6 +105,7 @@ Teams frequently ask: 'Where should I store our Stripe Secret Key or OpenAI Priv
 
 **The Senior Answer: Nowhere in the APK!**
 A distributed Android APK is entirely in the hands of the client (attacker). No amount of ProGuard, NDK C++ compilation, or XOR encoding will prevent an attacker with Frida, Ghidra, or Wireshark from extracting the private key. Private API keys must reside **exclusively on your backend server**. The Android client authenticates to your backend with a user session token, and your backend proxies requests to Stripe or OpenAI using the private key.
+
 
 ## How to answer in the interview
 

@@ -89,11 +89,9 @@ UI calling Retrofit or Room directly tightly couples the presentation layer to n
 
 Bypassing the data/domain layer to call Retrofit or Room DAOs directly from the UI layer is a critical architectural violation.
 
-1. **Tight Coupling to Infrastructure Details**: The UI layer's sole concern is rendering state and capturing user intent. Calling Retrofit couples the UI to HTTP verbs, status codes, query parameters, and JSON parsing. Calling Room couples it to SQL tables, migrations, and database cursors. Any backend schema or database change directly breaks presentation code.
+First, tight Coupling to Infrastructure Details is the UI layer's sole concern is rendering state and capturing user intent. Calling Retrofit couples the UI to HTTP verbs, status codes, query parameters, and JSON parsing. Calling Room couples it to SQL tables, migrations, and database cursors. Any backend schema or database change directly breaks presentation code. Next, with Destruction of Unit Testability, if a ViewModel interacts directly with Retrofit or Room, testing its presentation logic requires complex mock servers (MockWebServer) or SQLite fixtures. With a Repository abstraction, the ViewModel is tested via a lightweight Fake Repository in sub-second JVM tests.
+Finally, a Loss of Caching and Offline Resilience is a direct API call in the UI provides zero offline capability. The Repository pattern is where caching policies, SQLite write-through caching, and network retries live, presenting a cohesive Single Source of Truth to the UI.
 
-2. **Destruction of Unit Testability**: If a ViewModel interacts directly with Retrofit or Room, testing its presentation logic requires complex mock servers (MockWebServer) or SQLite fixtures. With a Repository abstraction, the ViewModel is tested via a lightweight Fake Repository in sub-second JVM tests.
-
-3. **Loss of Caching and Offline Resilience**: A direct API call in the UI provides zero offline capability. The Repository pattern is where caching policies, SQLite write-through caching, and network retries live, presenting a cohesive Single Source of Truth to the UI.
 
 ## Interview answer — deep senior
 
@@ -102,6 +100,7 @@ Under the hood, direct data source calls also lead to **threading and main-safet
 Furthermore, direct calls create **duplicate business logic**. If Screen A and Screen B both query `UserApi.getProfile()`, both ViewModels must independently handle token refresh logic, HTTP 401 handling, DTO mapping, and error messages. Centralizing this within `UserRepository` guarantees that network resilience logic is written and tested once.
 
 In enterprise codebases, we enforce this boundary via Gradle modularization and static analysis: the `:ui` module does not have a dependency on Retrofit, OkHttp, or Room libraries, making direct invocation impossible at compile time.
+
 
 ## How to answer in the interview
 

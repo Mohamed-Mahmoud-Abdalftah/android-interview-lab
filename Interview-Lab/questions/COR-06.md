@@ -104,6 +104,7 @@ Choosing the right coroutine scope in Android comes down to matching the task's 
 
 **Custom application-level scopes** are singletons tied to the `Application` process lifecycle, typically injected via Hilt using `SupervisorJob()`. We use this for critical, fire-and-forget operations that must not be interrupted when a user navigates away, such as syncing an offline order to Room or logging a critical payment transaction.
 
+
 ## Interview answer — deep senior
 
 From an architectural governance standpoint, misusing scopes causes severe production bugs. If developers launch network requests in `lifecycleScope`, rotating the phone terminates the coroutine midway, wasting bandwidth and requiring a fresh network call on recreation. Conversely, if developers launch view-modifying operations inside a custom application scope, it creates hard memory leaks by capturing View or Activity references in closures, preventing garbage collection.
@@ -115,6 +116,7 @@ When designing an application-level scope for Hilt/Dagger: ```kotlin
 fun provideAppScope(): CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 ```
 Notice the explicit use of `SupervisorJob()`: if a routine fails with an uncaught exception, `SupervisorJob` ensures that other unrelated background jobs running in the application scope are not cancelled. Finally, for long-running background tasks that must survive process death or device reboots—like uploading heavy media—neither of these scopes is sufficient; those require WorkManager.
+
 
 ## How to answer in the interview
 

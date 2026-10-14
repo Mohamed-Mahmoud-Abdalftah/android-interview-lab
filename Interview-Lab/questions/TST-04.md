@@ -90,29 +90,21 @@ A class is testable when it receives all dependencies explicitly via its constru
 
 ## Interview answer — structured
 
-Testability is a direct reflection of architectural decoupling and inversion of control:
+Testability is a direct reflection of architectural decoupling and inversion of control.
 
-1. **Constructor Dependency Injection**:
-   - Classes must never instantiate their own dependencies (`MyRepository()`) or reach out to global singleton state. Passing dependencies via constructors allows unit tests to inject fakes, mocks, or stubs effortlessly.
+First, **Constructor Dependency Injection**. Next, classes must never instantiate their own dependencies (`MyRepository()`) or reach out to global singleton state. Passing dependencies via constructors allows unit tests to inject fakes, mocks, or stubs effortlessly.
+**Decoupling from the Android Framework**. Domain and business logic classes should contain zero imports from `android.*`. Passing `Context` into domain calculators or repositories tethers code to the Android runtime, forcing slow emulator execution or complex mocking.
+**Injected Coroutine Dispatchers**. Never hardcode `Dispatchers.IO` or `Dispatchers.Default`. Inject dispatchers as constructor parameters (e.g. `@IoDispatcher ioDispatcher: CoroutineDispatcher`). Tests can inject a `StandardTestDispatcher` or `UnconfinedTestDispatcher` to control virtual time deterministically.
+**Deterministic Time and Randomness**. Finally, never invoke `System.currentTimeMillis()` or `UUID.randomUUID()` directly in business rules. Inject a `Clock` or `IdGenerator` abstraction so tests can assert exact timestamp calculations and deterministic IDs.
 
-2. **Decoupling from the Android Framework**:
-   - Domain and business logic classes should contain zero imports from `android.*`. Passing `Context` into domain calculators or repositories tethers code to the Android runtime, forcing slow emulator execution or complex mocking.
-
-3. **Injected Coroutine Dispatchers**:
-   - Never hardcode `Dispatchers.IO` or `Dispatchers.Default`. Inject dispatchers as constructor parameters (e.g. `@IoDispatcher ioDispatcher: CoroutineDispatcher`). Tests can inject a `StandardTestDispatcher` or `UnconfinedTestDispatcher` to control virtual time deterministically.
-
-4. **Deterministic Time and Randomness**:
-   - Never invoke `System.currentTimeMillis()` or `UUID.randomUUID()` directly in business rules. Inject a `Clock` or `IdGenerator` abstraction so tests can assert exact timestamp calculations and deterministic IDs.
 
 ## Interview answer — deep senior
 
-From a software design principles viewpoint, testability directly enforces SOLID principles:
+From a software design principles viewpoint, testability directly enforces SOLID principles.
 
-1. **Single Responsibility Principle (SRP)**: Classes with poor testability usually perform too many duties: fetching data, parsing JSON, formatting strings, and executing navigation. Splitting concerns creates small, cohesive classes whose single responsibility is verified in 3 concise unit tests.
+First, with Single Responsibility Principle (SRP), classes with poor testability usually perform too many duties: fetching data, parsing JSON, formatting strings, and executing navigation. Splitting concerns creates small, cohesive classes whose single responsibility is verified in 3 concise unit tests. Next, with State Immutability & Observable Streams, classes exposing public mutable variables (`var user: User?`) invite race conditions and test state leaks. Testable ViewModels expose immutable `StateFlow<UiState>` streams driven by private unidirectional reducers, making state verification a matter of asserting stream emissions.
+Finally, with Eliminating Global Static Singletons, static state (`object DatabaseHolder`) leaks state across independent unit tests, causing test order dependencies where test B passes if run alone but fails if run after test A. Inversion of control ensures every test creates fresh, isolated instances.
 
-2. **State Immutability & Observable Streams**: Classes exposing public mutable variables (`var user: User?`) invite race conditions and test state leaks. Testable ViewModels expose immutable `StateFlow<UiState>` streams driven by private unidirectional reducers, making state verification a matter of asserting stream emissions.
-
-3. **Eliminating Global Static Singletons**: Static state (`object DatabaseHolder`) leaks state across independent unit tests, causing test order dependencies where test B passes if run alone but fails if run after test A. Inversion of control ensures every test creates fresh, isolated instances.
 
 ## How to answer in the interview
 

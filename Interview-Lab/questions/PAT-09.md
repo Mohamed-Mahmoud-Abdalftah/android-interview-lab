@@ -98,24 +98,21 @@ Strategy encapsulates interchangeable algorithms usually chosen once by the clie
 
 While State and Strategy share an identical structural UML diagram (a Context class delegating to an Interface with polymorphic implementations), they diverge sharply in architectural intent and lifecycle behavior.
 
-1. **Strategy Pattern (Interchangeable Algorithms)**:
-   - **Intent**: Provide alternative ways of accomplishing the exact same task.
-   - **Selection**: Configured from the outside by the client or dependency injection container (e.g. selecting `PaypalStrategy` vs `StripeStrategy`, or sorting via `PriceComparator`).
-   - **Independence**: Strategies are completely decoupled from each other and have no awareness of succeeding strategies.
+First, **Strategy Pattern (Interchangeable Algorithms)**. Next, with Intent, provide alternative ways of accomplishing the exact same task.
+Additionally, a Selection is configured from the outside by the client or dependency injection container (e.g. Selecting `PaypalStrategy` vs `StripeStrategy`, or sorting via `PriceComparator`). With Independence, strategies are completely decoupled from each other and have no awareness of succeeding strategies.
+**State Pattern (Dynamic Behavioral Transformation)**. With Intent, enable an object to behave like an entirely different class when its internal state changes (Finite State Machine).
+With Transitions, driven internally by events occurring over time. State implementations actively invoke callbacks on the Context to transition it to succeeding states (e.g. `ConnectingState` transitions the context to `ConnectedState` upon receiving a BLE GATT callback). Finally, with Coupling, states often hold references to valid neighboring target states in the state machine.
 
-2. **State Pattern (Dynamic Behavioral Transformation)**:
-   - **Intent**: Enable an object to behave like an entirely different class when its internal state changes (Finite State Machine).
-   - **Transitions**: Driven internally by events occurring over time. State implementations actively invoke callbacks on the Context to transition it to succeeding states (e.g. `ConnectingState` transitions the context to `ConnectedState` upon receiving a BLE GATT callback).
-   - **Coupling**: States often hold references to valid neighboring target states in the state machine.
 
 ## Interview answer — deep senior
 
-In modern Android architecture, the classic GoF State pattern has evolved into **Declarative State Machines (MVI)**. Instead of mutable context objects passing polymorphic pointers (`context.transitionTo(...)`), modern Kotlin architecture uses:
-- A `sealed interface DeviceState` representing immutable state models.
-- A `sealed interface DeviceEvent` representing incoming triggers.
-- A pure Reducer function: `reduce(currentState: DeviceState, event: DeviceEvent): DeviceState`.
+In modern Android architecture, the classic GoF State pattern has evolved into **Declarative State Machines (MVI)**. Instead of mutable context objects passing polymorphic pointers (`context.transitionTo(...)`), modern Kotlin architecture uses.
+
+First, a `sealed interface DeviceState` representing immutable state models. Next, a `sealed interface DeviceEvent` representing incoming triggers.
+Finally, a pure Reducer function: `reduce(currentState: DeviceState, event: DeviceEvent): DeviceState`.
 
 This functional evolution preserves the exact intent of the State pattern while guaranteeing complete thread-safety, zero memory leaks, and seamless integration with Jetpack Compose.
+
 
 ## How to answer in the interview
 

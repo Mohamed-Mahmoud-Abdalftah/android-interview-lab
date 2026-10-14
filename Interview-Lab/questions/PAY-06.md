@@ -130,26 +130,20 @@ Ensure atomic persistence of transaction status and reversal intent by executing
 
 ## Interview answer — structured
 
-Atomic persistence prevents state divergence between payment status records and outbound reversal queues:
+Atomic persistence prevents state divergence between payment status records and outbound reversal queues.
 
-1. **The Dual-Write Vulnerability**:
-   - When handling an ambiguous payment outcome (such as a gateway read timeout), two state mutations must occur: (1) transitioning the transaction status to `IN_DOUBT`, and (2) enqueuing a reversal payload in the pending dispatch queue. If performed as separate uncoordinated queries, a crash in between drops the reversal intent while recording a failed status, permanently leaking held customer funds.
+First, **The Dual-Write Vulnerability**. Next, when handling an ambiguous payment outcome (such as a gateway read timeout), two state mutations must occur: (1) transitioning the transaction status to `IN_DOUBT`, and (2) enqueuing a reversal payload in the pending dispatch queue. If performed as separate uncoordinated queries, a crash in between drops the reversal intent while recording a failed status, permanently leaking held customer funds.
+**SQLite ACID Transaction Guarantees**. Wrap both operations in an atomic database transaction using Room's `@Transaction` annotation or `db.runInTransaction { ... }`. SQLite's Write-Ahead Log (WAL) ensures that either both mutations are durably committed to the database file or neither takes effect, preventing partial state writes.
+**Deterministic WorkManager Triggering**. Finally, following the successful database transaction commit, schedule a persistent `OneTimeWorkRequest` with exponential backoff to dispatch the reversal. If the device powers off immediately after the commit, WorkManager inspects the pending table upon boot and resumes dispatch automatically.
 
-2. **SQLite ACID Transaction Guarantees**:
-   - Wrap both operations in an atomic database transaction using Room's `@Transaction` annotation or `db.runInTransaction { ... }`. SQLite's Write-Ahead Log (WAL) ensures that either both mutations are durably committed to the database file or neither takes effect, preventing partial state writes.
-
-3. **Deterministic WorkManager Triggering**:
-   - Following the successful database transaction commit, schedule a persistent `OneTimeWorkRequest` with exponential backoff to dispatch the reversal. If the device powers off immediately after the commit, WorkManager inspects the pending table upon boot and resumes dispatch automatically.
 
 ## Interview answer — deep senior
 
-From an ACID transaction isolation and POS hardware crash perspective, atomicity requires hardware-aware sequencing:
+From an ACID transaction isolation and POS hardware crash perspective, atomicity requires hardware-aware sequencing.
 
-1. **Isolation Levels in Android SQLite**: SQLite operates with `SERIALIZABLE` transaction isolation by default in WAL mode. This guarantees that background sync workers reading the `reversal_queue` cannot observe a half-written transaction state while the UI thread is committing an in-doubt payment.
+First, with Isolation Levels in Android SQLite, SQLite operates with `SERIALIZABLE` transaction isolation by default in WAL mode. This guarantees that background sync workers reading the `reversal_queue` cannot observe a half-written transaction state while the UI thread is committing an in-doubt payment. Next, with Immutable Reversal Enqueueing, store the exact raw cryptographic payload required for the reversal (e.g. Original STAN, terminal ID, card cryptogram, transaction amount) inside the `reversal_queue` table. Do not rely on recomputing the payload later, as volatile context variables will be lost if the process restarts.
+Finally, with Battery-Removal Defense, on Android POS smart terminals, users frequently pull the battery pack to force-reset frozen screens. By executing `markInDoubtAndEnqueueReversal` before attempting any UI teardown or navigation, the reversal intent is guaranteed to survive the hard reset.
 
-2. **Immutable Reversal Enqueueing**: Store the exact raw cryptographic payload required for the reversal (e.g. original STAN, terminal ID, card cryptogram, transaction amount) inside the `reversal_queue` table. Do not rely on recomputing the payload later, as volatile context variables will be lost if the process restarts.
-
-3. **Battery-Removal Defense**: On Android POS smart terminals, users frequently pull the battery pack to force-reset frozen screens. By executing `markInDoubtAndEnqueueReversal` before attempting any UI teardown or navigation, the reversal intent is guaranteed to survive the hard reset.
 
 ## How to answer in the interview
 

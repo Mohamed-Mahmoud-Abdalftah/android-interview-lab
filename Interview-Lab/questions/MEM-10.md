@@ -99,14 +99,15 @@ An ANR (Application Not Responding) occurs when the main thread is blocked and c
 
 An ANR happens when the application's main looper is frozen and the system Activity Manager detects that the app is unresponsive.
 
-The primary triggers and system timeout thresholds are:
-1. **Input Events**: Failing to process a touch, key, or motion event within **5 seconds**.
-2. **BroadcastReceivers**: Failing to complete `onReceive()` within **10 seconds** for foreground broadcasts or 60 seconds for background.
-3. **Services**: Failing to execute lifecycle callbacks within **20 seconds** (foreground) or 200 seconds (background).
+The primary triggers and system timeout thresholds are.
+
+First, with Input Events, failing to process a touch, key, or motion event within **5 seconds**. Next, with BroadcastReceivers, failing to complete `onReceive()` within **10 seconds** for foreground broadcasts or 60 seconds for background.
+Finally, with Services, failing to execute lifecycle callbacks within **20 seconds** (foreground) or 200 seconds (background).
 
 The root cause is almost always offloading inappropriate work to the main thread: performing synchronous disk reads/writes (like Room database calls or raw file parsing), parsing large JSON payloads, running cryptographic hashing, or suffering from **lock contention** where the UI thread blocks on a `synchronized` monitor or mutex held by a busy background worker.
 
 In production, we maintain strict ANR budgets by enforcing `StrictMode` in debug builds to catch disk/network violations on the main thread, routing I/O to `Dispatchers.IO`, and diagnosing production ANRs via Android Vitals and system traces (`/data/anr/traces.txt`).
+
 
 ## Interview answer — deep senior
 
@@ -115,6 +116,7 @@ Diagnosing an ANR requires dissecting the system trace report. When an ANR occur
 A frequent hidden cause of ANRs in enterprise apps is **Binder transaction saturation**. Calling synchronous system services or IPC methods (like `PackageManager`, `TelephonyManager`, or `AccountManager`) on the main thread can stall if the remote system server is under heavy load, blocking the main thread indefinitely.
 
 To capture ANRs before users experience them in production, we integrate ANR-WatchDog or Bugsnag/Sentry ANR detectors, which post a heartbeat runnable to the main handler every 2 seconds; if the runnable doesn't execute within 5 seconds, they capture thread stacks and upload a detailed snapshot.
+
 
 ## How to answer in the interview
 

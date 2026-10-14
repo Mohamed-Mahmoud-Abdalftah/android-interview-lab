@@ -137,19 +137,21 @@ Scattered booleans create $2^N$ combinatorial states, allowing impossible illega
 
 Scattered boolean flags are one of the biggest sources of UI glitches in Android apps. When a ViewModel tracks `isLoading`, `isError`, and `isPaid` independently, you create $2^N$ possible combinations. It becomes trivially easy for asynchronous race conditions to leave the app in an impossible state where the screen is loading, displaying an error, and showing a success modal simultaneously.
 
-An explicit State Machine solves this by making illegal states unrepresentable:
-1. **Sealed State Hierarchy**: We model states as a closed hierarchy (`Idle`, `Submitting`, `Confirmed`, `Failed`). The UI renders exactly one state at any point in time.
-2. **Explicit Events & Transitions**: State changes can only happen in response to registered domain events through a state reducer or transition table. If a user double-taps 'Pay', the reducer receives a second click event while already in the `Submitting` state and cleanly ignores it.
-3. **Exhaustive Verification**: Kotlin's compiler forces the UI layer (`when (state)`) to handle every legal state, ensuring zero overlooked edge cases.
+An explicit State Machine solves this by making illegal states unrepresentable.
+
+First, with Sealed State Hierarchy, we model states as a closed hierarchy (`Idle`, `Submitting`, `Confirmed`, `Failed`). The UI renders exactly one state at any point in time. Next, with Explicit Events & Transitions, state changes can only happen in response to registered domain events through a state reducer or transition table. If a user double-taps 'Pay', the reducer receives a second click event while already in the `Submitting` state and cleanly ignores it.
+Finally, with Exhaustive Verification, Kotlin's compiler forces the UI layer (`when (state)`) to handle every legal state, ensuring zero overlooked edge cases.
+
 
 ## Interview answer — deep senior
 
 From a formal systems perspective, migrating to a Finite State Machine (FSM) elevates your architecture from ad-hoc procedural code to a deterministic mathematical model.
 
-In production Android, we enforce three architectural guardrails when designing state machines:
-1. **Single Source of Truth & Pure Reducers**: The transition logic `(State, Event) -> State` should be a pure function free of side effects. Side effects (network calls, database writes, analytics tracking) are emitted as separate side-effect commands or effects, ensuring the state machine itself is testable in pure JVM unit tests without mocking coroutines.
-2. **State Machines across Process Death**: A common trap is keeping the state machine purely in memory. For critical transactions like payments, the state must be backed by durable persistence (Room or DataStore) using an idempotency key. If Android OS kills the process during `Submitting`, upon recreation the state machine resumes from `PendingReconciliation`, checking the server status rather than resetting to `Idle` or charging the user twice.
-3. **Hierarchical State Machines (Statecharts)**: For deeply nested flows (like a multi-step checkout with address selection, payment method, and 3DS verification), nested sealed interfaces represent composite states cleanly without inflating the top-level machine.
+In production Android, we enforce three architectural guardrails when designing state machines.
+
+First, single Source of Truth & Pure Reducers is the transition logic `(State, Event) -> State` should be a pure function free of side effects. Side effects (network calls, database writes, analytics tracking) are emitted as separate side-effect commands or effects, ensuring the state machine itself is testable in pure JVM unit tests without mocking coroutines. Next, a State Machines across Process Death is a common trap is keeping the state machine purely in memory. For critical transactions like payments, the state must be backed by durable persistence (Room or DataStore) using an idempotency key. If Android OS kills the process during `Submitting`, upon recreation the state machine resumes from `PendingReconciliation`, checking the server status rather than resetting to `Idle` or charging the user twice.
+Finally, with Hierarchical State Machines (Statecharts), for deeply nested flows (like a multi-step checkout with address selection, payment method, and 3DS verification), nested sealed interfaces represent composite states cleanly without inflating the top-level machine.
+
 
 ## How to answer in the interview
 

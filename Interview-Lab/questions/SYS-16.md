@@ -102,29 +102,22 @@ Simple MVVM is ideal for standard apps with minimal business logic, delivering h
 
 ## Interview answer — structured
 
-Comparing simple MVVM against Clean Architecture involves balancing rapid execution speed against decoupling and maintainability:
+Comparing simple MVVM against Clean Architecture involves balancing rapid execution speed against decoupling and maintainability.
 
-1. **Simple MVVM (View -> ViewModel -> Repository)**:
-   - **Structure**: ViewModels interact directly with Repositories. Ideal for CRUD-heavy applications, data display, and feature teams prioritizing development velocity.
-   - **Trade-off**: As applications grow, ViewModels risk accumulating complex multi-repository business orchestration, resulting in bloated classes that are difficult to test in isolation.
+First, **Simple MVVM (View -> ViewModel -> Repository)**. Next, with Structure, viewModels interact directly with Repositories. Ideal for CRUD-heavy applications, data display, and feature teams prioritizing development velocity.
+Additionally, with Trade-off, as applications grow, ViewModels risk accumulating complex multi-repository business orchestration, resulting in bloated classes that are difficult to test in isolation. **Clean Architecture (Presentation -> Domain -> Data)**.
+With Structure, introduces a pure Kotlin Domain layer containing UseCases (Interactors) that orchestrate business rules independently of Android framework dependencies. With Trade-off, high file overhead. Writing pass-through UseCases that simply delegate one line to a repository introduces unnecessary indirection without educational or architectural value.
+**Pragmatic Synthesis (Domain on Demand)**. Standard operations (e.g. Fetching a profile, paginating articles) flow directly from ViewModel to Repository.
+Finally, domain UseCases are introduced strictly when business logic requires orchestrating multiple repositories (e.g. Checkout validating cart, charging payment, clearing cache, logging purchase) or is shared across multiple ViewModels.
 
-2. **Clean Architecture (Presentation -> Domain -> Data)**:
-   - **Structure**: Introduces a pure Kotlin Domain layer containing UseCases (Interactors) that orchestrate business rules independently of Android framework dependencies.
-   - **Trade-off**: High file overhead. Writing pass-through UseCases that simply delegate one line to a repository introduces unnecessary indirection without educational or architectural value.
-
-3. **Pragmatic Synthesis (Domain on Demand)**:
-   - Standard operations (e.g. fetching a profile, paginating articles) flow directly from ViewModel to Repository.
-   - Domain UseCases are introduced strictly when business logic requires orchestrating multiple repositories (e.g. checkout validating cart, charging payment, clearing cache, logging purchase) or is shared across multiple ViewModels.
 
 ## Interview answer — deep senior
 
-From an architectural purity standpoint, the value of the Domain layer is its complete isolation from framework churn:
+From an architectural purity standpoint, the value of the Domain layer is its complete isolation from framework churn.
 
-1. **Zero Android Framework Dependencies**: The Domain layer should be a pure Kotlin library module containing zero imports from `android.*`. It does not know about Jetpack Compose, ViewModels, or SQLite. This guarantees that business logic can be tested instantly in pure JVM unit tests without Robolectric and can theoretically be shared via Kotlin Multiplatform (KMP).
+First, zero Android Framework Dependencies is the Domain layer should be a pure Kotlin library module containing zero imports from `android. *`. It does not know about Jetpack Compose, ViewModels, or SQLite. This guarantees that business logic can be tested instantly in pure JVM unit tests without Robolectric and can theoretically be shared via Kotlin Multiplatform (KMP). Next, with Repository Boundary Enforcement, in strict Clean Architecture, the domain layer defines the Repository interfaces, and the data layer implements them (Dependency Inversion Principle). In pragmatic Android MVVM, repository interfaces often live alongside the data layer. Inversion is valuable primarily when data layers swap out implementations (e.g. Mocking in integration tests or swapping network drivers).
+Finally, with Architectural Cost-Benefit, for an MVP or a small team, full Clean Architecture can reduce velocity by 30% due to continuous DTO-to-Domain-to-Ui mapping boilerplate. A senior architect chooses Clean Architecture when complex enterprise business rules demand long-term testability and cross-team boundary protection.
 
-2. **Repository Boundary Enforcement**: In strict Clean Architecture, the domain layer defines the Repository interfaces, and the data layer implements them (Dependency Inversion Principle). In pragmatic Android MVVM, repository interfaces often live alongside the data layer. Inversion is valuable primarily when data layers swap out implementations (e.g. mocking in integration tests or swapping network drivers).
-
-3. **Architectural Cost-Benefit**: For an MVP or a small team, full Clean Architecture can reduce velocity by 30% due to continuous DTO-to-Domain-to-Ui mapping boilerplate. A senior architect chooses Clean Architecture when complex enterprise business rules demand long-term testability and cross-team boundary protection.
 
 ## How to answer in the interview
 

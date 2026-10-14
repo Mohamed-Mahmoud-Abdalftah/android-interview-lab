@@ -121,30 +121,22 @@ Design a PCI-DSS compliant logging policy by masking PANs to display only the fi
 
 ## Interview answer — structured
 
-A PCI-DSS compliant observability policy on Android requires strict controls across the data ingestion and transmission pipeline:
+A PCI-DSS compliant observability policy on Android requires strict controls across the data ingestion and transmission pipeline.
 
-1. **PCI-DSS Masking Requirements**:
-   - **PAN (Primary Account Number)**: Display at most the first 6 (BIN) and last 4 digits (e.g. `411111******1111`). All intermediate digits must be obscured.
-   - **SAD (Sensitive Authentication Data)**: CVV/CVC, full magnetic stripe data, and PIN blocks must **never** be logged, cached on disk, or retained post-authorization under any circumstances.
+First, **PCI-DSS Masking Requirements**. Next, with PAN (Primary Account Number), display at most the first 6 (BIN) and last 4 digits (e.g. `411111******1111`). All intermediate digits must be obscured.
+Additionally, with SAD (Sensitive Authentication Data), cVV/CVC, full magnetic stripe data, and PIN blocks must **never** be logged, cached on disk, or retained post-authorization under any circumstances. **Network Interceptor Sanitation**.
+Configure custom OkHttp interceptors that parse JSON payloads before logging. Apply regex filters replacing `cvv`, `cardNumber`, and `pin` fields with `[REDACTED]`. Set `HttpLoggingInterceptor.Level.NONE` in release variants. **Crash Reporting and Analytics Sanitization**.
+Implement a Crashlytics/Sentry `BeforeSendCallback`. Programmatically scrub event messages, stack traces, and breadcrumb trails for 13-19 digit sequences matching the Luhn algorithm. **Build-Time Enforcement**.
+Finally, enforce ProGuard/R8 `-assumenosideeffects` rules to strip standard `android.util.Log` invocations from release binaries entirely.
 
-2. **Network Interceptor Sanitation**:
-   - Configure custom OkHttp interceptors that parse JSON payloads before logging. Apply regex filters replacing `cvv`, `cardNumber`, and `pin` fields with `[REDACTED]`. Set `HttpLoggingInterceptor.Level.NONE` in release variants.
-
-3. **Crash Reporting and Analytics Sanitization**:
-   - Implement a Crashlytics/Sentry `BeforeSendCallback`. Programmatically scrub event messages, stack traces, and breadcrumb trails for 13-19 digit sequences matching the Luhn algorithm.
-
-4. **Build-Time Enforcement**:
-   - Enforce ProGuard/R8 `-assumenosideeffects` rules to strip standard `android.util.Log` invocations from release binaries entirely.
 
 ## Interview answer — deep senior
 
-Senior engineers treat compliance not as a documentation exercise, but as an automated architectural boundary:
+Senior engineers treat compliance not as a documentation exercise, but as an automated architectural boundary.
 
-1. **Custom Android Lint Rules in CI**: Implement a custom AST-based Android Lint check that flags any invocation of `Log.*`, `Timber.*`, or `println()` accepting parameters containing substrings like `pan`, `card`, `cvv`, `expiry`, or `token`. Fail CI pipelines on lint warnings.
+First, with Custom Android Lint Rules in CI, implement a custom AST-based Android Lint check that flags any invocation of `Log.*`, `Timber.*`, or `println()` accepting parameters containing substrings like `pan`, `card`, `cvv`, `expiry`, or `token`. Fail CI pipelines on lint warnings. Next, a Card Tokenization (Hosted Fields / SDKs) is the most effective security pattern is ensuring the mobile application never touches raw PAN or CVV at all. Integrate direct payment processor SDKs (e.g., Stripe, Adyen, Braintree) where credit card inputs are rendered inside isolated tokenization iframes or encrypted SDK views that return an ephemeral single-use token directly from the processor's PCI-certified servers.
+Finally, with Memory Scrubber Verifications, ensure custom credit card input fields in Compose or Views wipe the underlying character buffers immediately after tokenization is completed, preventing memory dump leakage during audit inspections.
 
-2. **Card Tokenization (Hosted Fields / SDKs)**: The most effective security pattern is ensuring the mobile application never touches raw PAN or CVV at all. Integrate direct payment processor SDKs (e.g., Stripe, Adyen, Braintree) where credit card inputs are rendered inside isolated tokenization iframes or encrypted SDK views that return an ephemeral single-use token directly from the processor's PCI-certified servers.
-
-3. **Memory Scrubber Verifications**: Ensure custom credit card input fields in Compose or Views wipe the underlying character buffers immediately after tokenization is completed, preventing memory dump leakage during audit inspections.
 
 ## How to answer in the interview
 

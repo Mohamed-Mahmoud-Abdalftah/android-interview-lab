@@ -92,26 +92,22 @@ Coach the team that SOLID principles are heuristics to manage complexity, not do
 
 Coaching an engineering team suffering from premature abstraction requires reframing architecture as an economic balance between maintainability and delivery velocity.
 
-1. **Principles are Heuristics, Not Dogma**:
-   - SOLID principles exist to solve concrete software pain points (high coupling, fragile changes, untestable code). Applying heavy solutions when those pain points do not exist is architectural waste.
-   - Every abstraction introduces real overhead: doubled file counts, IDE navigation friction, Dagger binding ceremony, and longer Gradle build times.
+First, **Principles are Heuristics, Not Dogma**. Next, sOLID principles exist to solve concrete software pain points (high coupling, fragile changes, untestable code). Applying heavy solutions when those pain points do not exist is architectural waste.
+Every abstraction introduces real overhead: doubled file counts, IDE navigation friction, Dagger binding ceremony, and longer Gradle build times. **Anchor on Pragmatic Engineering Principles (YAGNI & KISS)**.
+With YAGNI (You Aren't Gonna Need It), speculative extensibility (e.g. Building a strategy engine because 'marketing might want 4 alternative providers next year') wastes sprint capacity on hypothetical futures that rarely materialize. A KISS (Keep It Simple, Stupid) is the simplest code that fulfills current requirements, handles errors, and passes unit tests is the superior engineering choice.
+**Evolutionary Architecture Assurance**. Assure the team that simple code is not low-quality code. Plain, decoupled Kotlin code without gratuitous interfaces can be refactored into Use Cases and Strategies in under two hours when requirements genuinely expand.
+Finally, conversely, untangling a premature, multi-layered generic abstraction is notoriously painful.
 
-2. **Anchor on Pragmatic Engineering Principles (YAGNI & KISS)**:
-   - **YAGNI (You Aren't Gonna Need It)**: Speculative extensibility (e.g. building a strategy engine because 'marketing might want 4 alternative providers next year') wastes sprint capacity on hypothetical futures that rarely materialize.
-   - **KISS (Keep It Simple, Stupid)**: The simplest code that fulfills current requirements, handles errors, and passes unit tests is the superior engineering choice.
-
-3. **Evolutionary Architecture Assurance**:
-   - Assure the team that simple code is not low-quality code. Plain, decoupled Kotlin code without gratuitous interfaces can be refactored into Use Cases and Strategies in under two hours when requirements genuinely expand.
-   - Conversely, untangling a premature, multi-layered generic abstraction is notoriously painful.
 
 ## Interview answer — deep senior
 
-In engineering leadership, a senior architect guides the team to establish **Complexity Thresholds**:
-- *Tier 1 (Display / Simple CRUD)*: Direct ViewModel-to-Repository communication. Zero interfaces, zero Use Cases. Priority: Time to market.
-- *Tier 2 (Interactive Features with Logic)*: ViewModel consumes Use Cases for reusable business operations. Repositories manage offline caching.
-- *Tier 3 (Core Domain / Multi-Entry / Fintech)*: Full Clean Architecture with strict DIP interfaces, Strategy routers, and FSM state machines.
+In engineering leadership, a senior architect guides the team to establish **Complexity Thresholds**.
+
+First, *Tier 1 (Display / Simple CRUD)*: Direct ViewModel-to-Repository communication. Zero interfaces, zero Use Cases. Priority: Time to market. Next, *Tier 2 (Interactive Features with Logic)*: ViewModel consumes Use Cases for reusable business operations. Repositories manage offline caching.
+Finally, *Tier 3 (Core Domain / Multi-Entry / Fintech)*: Full Clean Architecture with strict DIP interfaces, Strategy routers, and FSM state machines.
 
 This empowers teams to modulate architectural ceremony proportionally to feature risk, eliminating overengineering while maintaining excellence in mission-critical domains.
+
 
 ## How to answer in the interview
 

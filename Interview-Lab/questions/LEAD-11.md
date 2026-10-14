@@ -85,29 +85,21 @@ Lead the team to a constraint-based decision by depersonalizing the debate, buil
 
 ## Interview answer — structured
 
-Resolving architectural deadlocks requires transforming subjective ideological debates into evidence-based systems engineering:
+Resolving architectural deadlocks requires transforming subjective ideological debates into evidence-based systems engineering.
 
-1. **Depersonalize and Establish Objective Evaluation Criteria**:
-   - Remove dogma by defining evaluation dimensions weighted by project context: Jetpack Compose state compatibility, state predictability under concurrent flows, junior onboarding ramp-up time, and boilerplate verbosity.
+First, **Depersonalize and Establish Objective Evaluation Criteria**. Next, remove dogma by defining evaluation dimensions weighted by project context: Jetpack Compose state compatibility, state predictability under concurrent flows, junior onboarding ramp-up time, and boilerplate verbosity.
+**Comparative Empirical Prototyping**. Commission a 2-day timeboxed spike where two engineers build the identical complex screen (e.g. Checkout form with validation and payment polling) in lightweight MVVM and strict MVI. Compare pull requests side-by-side evaluating testability, readability, and state race condition susceptibility.
+**Synthesize Pragmatic Hybrid Solutions**. Often, the optimal engineering solution is a pragmatic synthesis. Adopt a 'Lightweight MVI' approach: a single immutable `StateFlow<UiState>` coupled with direct ViewModel action methods (`onSearchQueryChanged(q)`), capturing MVI's single source of truth without the cognitive friction of exhaustive Sealed Intent reducers.
+**Institutionalize via ADR & Disagree and Commit**. Finally, author an ADR formalizing the standard. Establish team alignment around the principle of 'Disagree and Commit' to prevent rogue architectural fragmentation across feature modules.
 
-2. **Comparative Empirical Prototyping**:
-   - Commission a 2-day timeboxed spike where two engineers build the identical complex screen (e.g. checkout form with validation and payment polling) in lightweight MVVM and strict MVI. Compare pull requests side-by-side evaluating testability, readability, and state race condition susceptibility.
-
-3. **Synthesize Pragmatic Hybrid Solutions**:
-   - Often, the optimal engineering solution is a pragmatic synthesis. Adopt a 'Lightweight MVI' approach: a single immutable `StateFlow<UiState>` coupled with direct ViewModel action methods (`onSearchQueryChanged(q)`), capturing MVI's single source of truth without the cognitive friction of exhaustive Sealed Intent reducers.
-
-4. **Institutionalize via ADR & Disagree and Commit**:
-   - Author an ADR formalizing the standard. Establish team alignment around the principle of 'Disagree and Commit' to prevent rogue architectural fragmentation across feature modules.
 
 ## Interview answer — deep senior
 
-From an engineering leadership and team dynamics perspective, architectural consistency supersedes local perfection:
+From an engineering leadership and team dynamics perspective, architectural consistency supersedes local perfection.
 
-1. **Codebase Cohesion Value**: A medium-tier architecture applied with 100% consistency across 50 modules delivers significantly higher velocity than having 3 squads using pure MVI, 2 squads using MVVM, and 1 squad using Clean MVP. Consistent patterns allow engineers to switch squads seamlessly with zero cognitive friction.
+First, a Codebase Cohesion Value is a medium-tier architecture applied with 100% consistency across 50 modules delivers significantly higher velocity than having 3 squads using pure MVI, 2 squads using MVVM, and 1 squad using Clean MVP. Consistent patterns allow engineers to switch squads seamlessly with zero cognitive friction. Next, with Compose State Hoisting Reality, in modern Jetpack Compose development, the line between MVVM and MVI has largely blurred. Google's official architecture guidelines prescribe a single unidirectional `StateFlow<UiState>` hoisted from ViewModel to Composable, standardizing the ecosystem on state-driven UDF patterns.
+Finally, with Navigating Technical Deadlocks, when a squad remains in a 50/50 split, the technical lead must break the tie decisively based on the documented rubric. Explain the rationale transparently, listen to remaining concerns, and reinforce that team velocity requires moving forward as one cohesive unit.
 
-2. **Compose State Hoisting Reality**: In modern Jetpack Compose development, the line between MVVM and MVI has largely blurred. Google's official architecture guidelines prescribe a single unidirectional `StateFlow<UiState>` hoisted from ViewModel to Composable, standardizing the ecosystem on state-driven UDF patterns.
-
-3. **Navigating Technical Deadlocks**: When a squad remains in a 50/50 split, the technical lead must break the tie decisively based on the documented rubric. Explain the rationale transparently, listen to remaining concerns, and reinforce that team velocity requires moving forward as one cohesive unit.
 
 ## How to answer in the interview
 

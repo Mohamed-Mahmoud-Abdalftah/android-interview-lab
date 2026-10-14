@@ -92,29 +92,21 @@ Prevent secret leakage by relying on CI security boundaries where PRs from forks
 
 ## Interview answer — structured
 
-Defending Android CI pipelines against malicious pull requests targeting signing secrets requires multi-layered controls:
+Defending Android CI pipelines against malicious pull requests targeting signing secrets requires multi-layered controls.
 
-1. **Default Fork Secret Isolation**:
-   - Modern CI platforms (such as GitHub Actions) strictly withhold repository secrets from workflow runs triggered by `pull_request` events originating from forked repositories. The runner operates in a zero-secret sandbox.
+First, **Default Fork Secret Isolation**. Next, modern CI platforms (such as GitHub Actions) strictly withhold repository secrets from workflow runs triggered by `pull_request` events originating from forked repositories. The runner operates in a zero-secret sandbox.
+**Eliminate the `pull_request_target` Pwn Vulnerability**. Never use `pull_request_target` combined with checking out the pull request's untrusted HEAD commit. This dangerous pattern grants untrusted code access to write permissions and repository secrets, allowing attackers to exfiltrate keys via build scripts.
+**First-Time Contributor Execution Gates**. Configure repository security policies to require maintainer review and manual approval before any workflow runs for first-time contributors, preventing malicious crypto-miners or credential-stealing scripts from executing automatically.
+**Environment Isolation & Branch Protection**. Finally, bind production signing secrets to a protected 'Production' Environment in GitHub/GitLab. Restrict this environment exclusively to the protected `main` branch with mandatory code reviews, ensuring PRs cannot reference release secrets.
 
-2. **Eliminate the `pull_request_target` Pwn Vulnerability**:
-   - Never use `pull_request_target` combined with checking out the pull request's untrusted HEAD commit. This dangerous pattern grants untrusted code access to write permissions and repository secrets, allowing attackers to exfiltrate keys via build scripts.
-
-3. **First-Time Contributor Execution Gates**:
-   - Configure repository security policies to require maintainer review and manual approval before any workflow runs for first-time contributors, preventing malicious crypto-miners or credential-stealing scripts from executing automatically.
-
-4. **Environment Isolation & Branch Protection**:
-   - Bind production signing secrets to a protected 'Production' Environment in GitHub/GitLab. Restrict this environment exclusively to the protected `main` branch with mandatory code reviews, ensuring PRs cannot reference release secrets.
 
 ## Interview answer — deep senior
 
-From a supply-chain security and build provenance perspective, defense-in-depth extends into Gradle and dependencies:
+From a supply-chain security and build provenance perspective, defense-in-depth extends into Gradle and dependencies.
 
-1. **Gradle Build Cache & Dependency Poisoning**: A malicious PR could modify dependency resolution repositories in `settings.gradle.kts` to point to an attacker-controlled Maven server serving poisoned binaries, or poison the shared remote build cache. Ensure PR builds have read-only build cache permissions and restrict dependency repositories to verified HTTPS hosts.
+First, a Gradle Build Cache & Dependency Poisoning is a malicious PR could modify dependency resolution repositories in `settings. Gradle.kts` to point to an attacker-controlled Maven server serving poisoned binaries, or poison the shared remote build cache. Ensure PR builds have read-only build cache permissions and restrict dependency repositories to verified HTTPS hosts. Next, with Dynamic Log Redaction & Audit, even within trusted teams, mistakes happen. CI systems employ automated output scanners that mask detected high-entropy strings and recognized private key formats (`-----BEGIN PRIVATE KEY-----`). Any attempt to print masked variables results in `***` in the public build logs.
+Finally, with Audit CI Network Egress, in enterprise self-hosted runner infrastructure, configure firewall egress rules to restrict CI outbound network traffic exclusively to authorized endpoints (Maven Central, Google Maven, Google Play API, GitHub), blocking unauthorized outbound sockets to arbitrary external IP addresses.
 
-2. **Dynamic Log Redaction & Audit**: Even within trusted teams, mistakes happen. CI systems employ automated output scanners that mask detected high-entropy strings and recognized private key formats (`-----BEGIN PRIVATE KEY-----`). Any attempt to print masked variables results in `***` in the public build logs.
-
-3. **Audit CI Network Egress**: In enterprise self-hosted runner infrastructure, configure firewall egress rules to restrict CI outbound network traffic exclusively to authorized endpoints (Maven Central, Google Maven, Google Play API, GitHub), blocking unauthorized outbound sockets to arbitrary external IP addresses.
 
 ## How to answer in the interview
 

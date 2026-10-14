@@ -120,21 +120,22 @@ The golden rule of `derivedStateOf` is: **Only use it when the inputs change mor
 
 Under the hood, `derivedStateOf` creates a state observation wrapper in the Snapshot system. It records dependencies dynamically, re-evaluates the lambda on any dependency mutation, and performs equality comparisons to suppress downstream recomposition notifications.
 
-You should strictly avoid `derivedStateOf` in two scenarios:
-1. **1-to-1 Mutation Frequency**: Consider combining two states: `val fullName by remember { derivedStateOf { "$first $last" } }`. Whenever `first` or `last` changes, `fullName` *must* also change. There are zero recompositions dampened or saved. The developer has introduced unnecessary allocation overhead and snapshot observer registration. Standard `remember(first, last) { "$first $last" }` is significantly cheaper and faster.
+You should strictly avoid `derivedStateOf` in two scenarios.
 
-2. **Trivial Primitive Computations**: Wrapping simple arithmetic (e.g. `count + 1`) in `derivedStateOf` incurs more CPU and allocation cost than simply computing the value directly on every recomposition pass.
+First, with 1-to-1 Mutation Frequency, consider combining two states: `val fullName by remember { derivedStateOf { "$first $last" } }`. Whenever `first` or `last` changes, `fullName` *must* also change. There are zero recompositions dampened or saved. The developer has introduced unnecessary allocation overhead and snapshot observer registration. Standard `remember(first, last) { "$first $last" }` is significantly cheaper and faster. Finally, with Trivial Primitive Computations, wrapping simple arithmetic (e.g. `count + 1`) in `derivedStateOf` incurs more CPU and allocation cost than simply computing the value directly on every recomposition pass.
+
 
 ## Interview answer — deep senior
 
 A technical edge case to be aware of: `derivedStateOf` requires at least one read of a Compose `State` object inside its lambda block to register dependencies. If developers pass standard Kotlin properties (`val first: String`) into a `derivedStateOf` block wrapped in `remember { derivedStateOf { ... } }` without keys, the `derivedStateOf` block **never recalculates**, producing a permanent stale state bug!
 
-Where `derivedStateOf` shines brilliantly is **high-frequency UI dampening**:
-- Determining whether a scroll offset has crossed a threshold: input changes 60 times/second, output changes twice (`true`/`false`).
-- Filtering a list based on an item count threshold.
-- Computing a progress percentage that maps continuous pixel scrolls into stepped discrete states.
+Where `derivedStateOf` shines brilliantly is **high-frequency UI dampening**.
+
+First, determining whether a scroll offset has crossed a threshold: input changes 60 times/second, output changes twice (`true`/`false`). Next, filtering a list based on an item count threshold.
+Finally, computing a progress percentage that maps continuous pixel scrolls into stepped discrete states.
 
 In code reviews, if the output changes every time the input changes, we immediately reject `derivedStateOf` in favor of keyed `remember(keys)`.
+
 
 ## How to answer in the interview
 

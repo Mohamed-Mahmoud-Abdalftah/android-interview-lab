@@ -99,13 +99,12 @@ When a payment screen is killed by the OS mid-operation, the golden architectura
 
 **What must NOT be repeated:**
 
-- Never re-execute the financial charge API call automatically upon screen recreation.
-- Never generate a new transaction ID or fresh idempotency key. Repeating a POST charge request will bill the customer twice if the backend already processed the initial request before the app was killed.
+First, never re-execute the financial charge API call automatically upon screen recreation. Finally, never generate a new transaction ID or fresh idempotency key. Repeating a POST charge request will bill the customer twice if the backend already processed the initial request before the app was killed.
 
 **What MUST be reconstructed:**
 
-- Restore the transaction metadata (`orderId`, `amount`, and the existing `idempotencyKey`) from `SavedStateHandle`.
-- Immediately execute an **Idempotent Status Reconciliation Query** (`GET /payments/status?key=<uuid>`). If the backend settled the charge during the process kill, restore the UI straight into `PaymentSuccess(receipt)`. If the backend confirms no transaction occurred, restore the UI to `ReadyToSubmit`, enabling the customer to retry safely.
+First, restore the transaction metadata (`orderId`, `amount`, and the existing `idempotencyKey`) from `SavedStateHandle`. Finally, immediately execute an **Idempotent Status Reconciliation Query** (`GET /payments/status?key=<uuid>`). If the backend settled the charge during the process kill, restore the UI straight into `PaymentSuccess(receipt)`. If the backend confirms no transaction occurred, restore the UI to `ReadyToSubmit`, enabling the customer to retry safely.
+
 
 ## Interview answer — deep senior
 
@@ -118,6 +117,7 @@ Order #1234 -> Status: SUBMITTING | Idempotency: 8a7f-43b2
 ```
 
 When the recreated Activity and ViewModel spin up, they observe the Room entity. If the background worker finishes in Room with `Status: SUCCESS`, the UI updates automatically to the Success screen without any duplicate API calls, guaranteeing zero financial inconsistencies.
+
 
 ## How to answer in the interview
 

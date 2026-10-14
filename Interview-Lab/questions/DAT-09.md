@@ -141,16 +141,12 @@ Use an OkHttp Interceptor to attach access tokens to outgoing requests, and an A
 
 ## Interview answer — structured
 
-Implementing resilient JWT authentication in OkHttp requires separating proactive header injection from reactive 401 recovery:
+Implementing resilient JWT authentication in OkHttp requires separating proactive header injection from reactive 401 recovery.
 
-1. **Proactive Injection (`Interceptor`)**: An Application Interceptor reads the cached access token from secure storage and injects `Authorization: Bearer <token>` into outgoing requests. Public endpoints (login, register) are excluded.
+First, proactive Injection (`Interceptor`) is an Application Interceptor reads the cached access token from secure storage and injects `Authorization: Bearer <token>` into outgoing requests. Public endpoints (login, register) are excluded. Next, with Reactive 401 Recovery (`Authenticator`), when the server returns `401 Unauthorized`, OkHttp triggers `Authenticator.authenticate()`. This method executes a synchronous token refresh, updates persistent storage, and builds a new request with the updated token, which OkHttp automatically retries.
+**Guardrails against Common Failures**. With Loop Prevention, inspect `response.priorResponse` chain. If attempts exceed 2, return `null` to abort and prompt user re-login.
+A Deadlock Isolation is the refresh network call must execute on an isolated OkHttp client that has **no Authenticator attached**; using the primary client causes recursive lock deadlocks. Finally, with Double-Check Lock, check whether another concurrent thread already refreshed the token while this thread was waiting on the lock.
 
-2. **Reactive 401 Recovery (`Authenticator`)**: When the server returns `401 Unauthorized`, OkHttp triggers `Authenticator.authenticate()`. This method executes a synchronous token refresh, updates persistent storage, and builds a new request with the updated token, which OkHttp automatically retries.
-
-3. **Guardrails against Common Failures**:
-   - **Loop Prevention**: Inspect `response.priorResponse` chain. If attempts exceed 2, return `null` to abort and prompt user re-login.
-   - **Deadlock Isolation**: The refresh network call must execute on an isolated OkHttp client that has **no Authenticator attached**; using the primary client causes recursive lock deadlocks.
-   - **Double-Check Lock**: Check whether another concurrent thread already refreshed the token while this thread was waiting on the lock.
 
 ## Interview answer — deep senior
 
@@ -159,6 +155,7 @@ A critical edge case is **Refresh Token Rotation (RTR)**.
 Modern OAuth 2.0 backends rotate the refresh token on *every* refresh request (issuing both a new access token and a new single-use refresh token, immediately invalidating the previous refresh token). If client synchronization fails and two concurrent requests make separate refresh calls using the old refresh token, the server detects token reuse, treats it as a security breach, and invalidates all user sessions globally!
 
 To solve this, the refresh operation must be strictly serialized behind a **Single-Flight Lock (or Mutex)** with token double-checking: the thread entering the lock first executes the refresh, while subsequent threads detect that `currentToken != requestToken` and immediately replay with the new token without hitting the refresh API.
+
 
 ## How to answer in the interview
 

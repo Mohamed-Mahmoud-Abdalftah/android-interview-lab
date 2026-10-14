@@ -113,27 +113,21 @@ Prevent duplicate payments by implementing multi-layered safeguards: immediately
 
 ## Interview answer — structured
 
-Preventing duplicate payment requests requires an end-to-end defense-in-depth architecture across UI, presentation, and data layers:
+Preventing duplicate payment requests requires an end-to-end defense-in-depth architecture across UI, presentation, and data layers.
 
-1. **Presentation & UI Layer Defenses**:
-   - **Instant Click Debouncing & Button Disabling**: The moment a user taps 'Pay', the button transitions to `enabled = false` and displays an explicit indeterminate progress spinner. Event handlers use `throttleFirst` to drop rapid taps.
-   - **ViewModel State Guards via Mutex**: Protect execution blocks using Kotlin `Mutex.tryLock()`. If a payment operation is currently active, subsequent invocations return immediately without launching duplicate coroutines.
+First, **Presentation & UI Layer Defenses**. Next, an Instant Click Debouncing & Button Disabling is the moment a user taps 'Pay', the button transitions to `enabled = false` and displays an explicit indeterminate progress spinner. Event handlers use `throttleFirst` to drop rapid taps.
+Additionally, with ViewModel State Guards via Mutex, protect execution blocks using Kotlin `Mutex.tryLock()`. If a payment operation is currently active, subsequent invocations return immediately without launching duplicate coroutines. **Timeout SLA Alignment**.
+A frequent architectural flaw is setting a 15-second client UI timeout when the payment gateway has a 30-second acquiring SLA. The UI prematurely times out and shows a retry button while the backend transaction is still processing. Client timeouts must exceed gateway read timeouts, and timeouts must transition to an 'In-Doubt Checking' screen rather than a generic failure screen. **Persistent Idempotency Layer**.
+Finally, if the user manages to force-retry (e.g. By killing and restarting the app), the order entity retains the original `idempotency_key`. The subsequent network call presents the identical key to the payment gateway, which returns the original result rather than debiting the customer again.
 
-2. **Timeout SLA Alignment**:
-   - A frequent architectural flaw is setting a 15-second client UI timeout when the payment gateway has a 30-second acquiring SLA. The UI prematurely times out and shows a retry button while the backend transaction is still processing. Client timeouts must exceed gateway read timeouts, and timeouts must transition to an 'In-Doubt Checking' screen rather than a generic failure screen.
-
-3. **Persistent Idempotency Layer**:
-   - If the user manages to force-retry (e.g. by killing and restarting the app), the order entity retains the original `idempotency_key`. The subsequent network call presents the identical key to the payment gateway, which returns the original result rather than debiting the customer again.
 
 ## Interview answer — deep senior
 
-From an Android lifecycle and process death perspective, state handling requires lifecycle-proof architecture:
+From an Android lifecycle and process death perspective, state handling requires lifecycle-proof architecture.
 
-1. **Configuration Changes & Process Recreation**: If a user rotates the screen during payment processing, a naive Activity might re-invoke `onCreate` and trigger duplicate payment logic. Managing payment operations inside an injected Application-scoped or WorkManager-backed service unbinds transaction execution from transient UI component lifecycles.
+First, with Configuration Changes & Process Recreation, if a user rotates the screen during payment processing, a naive Activity might re-invoke `onCreate` and trigger duplicate payment logic. Managing payment operations inside an injected Application-scoped or WorkManager-backed service unbinds transaction execution from transient UI component lifecycles. Next, with The 'In-Doubt' Loading Screen, when an inevitable client-side timeout occurs after 35 seconds, never display a simple 'Transaction Failed — Try Again' dialog. Display: 'Verifying payment with your bank... Please do not re-submit.' Query the transaction status endpoint before allowing the user to initiate a new checkout session.
+Finally, with Backend Race Condition Mitigation, what if two duplicate requests arrive at the backend within 5 milliseconds due to multi-threaded glitches? Distributed Redis locks on `idempotency_key` ensure only one worker thread enters the payment processing block, returning an HTTP 409 Conflict to the concurrent duplicate.
 
-2. **The 'In-Doubt' Loading Screen**: When an inevitable client-side timeout occurs after 35 seconds, never display a simple 'Transaction Failed — Try Again' dialog. Display: 'Verifying payment with your bank... Please do not re-submit.' Query the transaction status endpoint before allowing the user to initiate a new checkout session.
-
-3. **Backend Race Condition Mitigation**: What if two duplicate requests arrive at the backend within 5 milliseconds due to multi-threaded glitches? Distributed Redis locks on `idempotency_key` ensure only one worker thread enters the payment processing block, returning an HTTP 409 Conflict to the concurrent duplicate.
 
 ## How to answer in the interview
 

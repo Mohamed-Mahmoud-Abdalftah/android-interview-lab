@@ -123,20 +123,14 @@ Design retries by distinguishing transient network/server errors (503, timeouts)
 
 ## Interview answer — structured
 
-A production-grade retry architecture balances user resilience against backend capacity:
+A production-grade retry architecture balances user resilience against backend capacity.
 
-1. **Error Classification**:
-   - **Retryable (Transient)**: `SocketTimeoutException`, `UnknownHostException`, and HTTP `502`, `503`, `504`.
-   - **Non-Retryable (Permanent)**: Client errors (`400 Bad Request`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, `422 Unprocessable Entity`). Retrying permanent errors burns battery and cellular quota without any chance of success.
+First, **Error Classification**. Next, with Retryable (Transient), `SocketTimeoutException`, `UnknownHostException`, and HTTP `502`, `503`, `504`.
+Additionally, with Non-Retryable (Permanent), client errors (`400 Bad Request`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, `422 Unprocessable Entity`). Retrying permanent errors burns battery and cellular quota without any chance of success. **Exponential Backoff with Full Jitter**.
+Simple fixed delays (e.g. Retrying every 2 seconds) cause the **Thundering Herd Problem**: if an outage resolves, millions of devices retry at synchronized intervals, knocking the server offline again. Exponential backoff ($1s, 2s, 4s, 8s$) paired with randomized Jitter (`delay = Random(0, currentBackoff)`) spreads retry distribution smoothly across the timeline.
+**Rate Limit Governance (`429 Too Many Requests`)**. Always parse the `Retry-After` header. If present, pause coroutines or queue execution for the server-requested duration rather than applying client backoff.
+Finally, with Write Idempotency, never retry a mutating `POST` request unless backed by a persistent client-generated `Idempotency-Key`.
 
-2. **Exponential Backoff with Full Jitter**:
-   - Simple fixed delays (e.g. retrying every 2 seconds) cause the **Thundering Herd Problem**: if an outage resolves, millions of devices retry at synchronized intervals, knocking the server offline again.
-   - Exponential backoff ($1s, 2s, 4s, 8s$) paired with randomized Jitter (`delay = Random(0, currentBackoff)`) spreads retry distribution smoothly across the timeline.
-
-3. **Rate Limit Governance (`429 Too Many Requests`)**:
-   - Always parse the `Retry-After` header. If present, pause coroutines or queue execution for the server-requested duration rather than applying client backoff.
-
-4. **Write Idempotency**: Never retry a mutating `POST` request unless backed by a persistent client-generated `Idempotency-Key`.
 
 ## Interview answer — deep senior
 
@@ -144,10 +138,11 @@ When designing background synchronization retries in Android, senior architects 
 
 If an in-memory coroutine retry loop is executing with a 30-second delay, and the user swipes the app away from recents, Android kills the process and cancels the coroutine, dropping the pending retry permanently.
 
-By encapsulating offline retries inside WorkManager:
-- WorkManager persists the retry intent in its own SQLite database.
-- It supports native backoff policies: `setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)`.
-- It respects OS constraints (`NetworkType.CONNECTED`, battery not low), ensuring retries execute deterministically even after phone reboots.
+By encapsulating offline retries inside WorkManager.
+
+First, workManager persists the retry intent in its own SQLite database. Next, it supports native backoff policies: `setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)`.
+Finally, it respects OS constraints (`NetworkType.CONNECTED`, battery not low), ensuring retries execute deterministically even after phone reboots.
+
 
 ## How to answer in the interview
 

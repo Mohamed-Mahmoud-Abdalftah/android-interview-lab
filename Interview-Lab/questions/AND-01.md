@@ -82,13 +82,12 @@ Android's 4 core components are Activity (entry point for UI interactions), Serv
 
 ## Interview answer — structured
 
-Android's architectural model is built on four core platform components declared in the AndroidManifest, plus Fragments for modular UI:
+Android's architectural model is built on four core platform components declared in the AndroidManifest, plus Fragments for modular UI.
 
-1. **Activity**: The single-screen user interface entry point. It manages window rendering, user touch dispatch, and system lifecycle interactions.
-2. **Fragment**: A modular, reusable sub-tree of UI hosted within an Activity, possessing its own lifecycle that is coupled to the host Activity.
-3. **Service**: An execution component without a UI used for long-running operations. In modern Android, services are primarily Foreground Services (holding a mandatory user-visible notification for audio or location) or WorkManager workers for deferred tasks.
-4. **BroadcastReceiver**: A messaging gateway that allows an application to listen to and respond to system-wide broadcast intents (like battery low or network change) or custom app signals.
-5. **ContentProvider**: The standard abstraction for securely querying, mutating, and sharing structured data across process boundaries (e.g., Android's MediaStore or Contacts).
+First, an Activity is the single-screen user interface entry point. It manages window rendering, user touch dispatch, and system lifecycle interactions. Next, a Fragment is a modular, reusable sub-tree of UI hosted within an Activity, possessing its own lifecycle that is coupled to the host Activity.
+Additionally, a Service is an execution component without a UI used for long-running operations. In modern Android, services are primarily Foreground Services (holding a mandatory user-visible notification for audio or location) or WorkManager workers for deferred tasks. A BroadcastReceiver is a messaging gateway that allows an application to listen to and respond to system-wide broadcast intents (like battery low or network change) or custom app signals.
+Finally, a ContentProvider is the standard abstraction for securely querying, mutating, and sharing structured data across process boundaries (e.g., Android's MediaStore or Contacts).
+
 
 ## Interview answer — deep senior
 
@@ -97,6 +96,7 @@ At the operating system level, these components represent distinct **entry point
 Each component carries distinct IPC and thread affinity rules:
 
 Activities and BroadcastReceivers run on the Main UI thread by default; a `BroadcastReceiver.onReceive()` must complete within 10 seconds or trigger an ANR. Services also execute on the Main UI thread unless explicitly offloaded to a background thread. ContentProviders are initialized during app startup before `Application.onCreate()`, and their methods (`query`, `insert`) execute on Binder thread pool worker threads, requiring internal synchronization for thread safety.
+
 
 ## How to answer in the interview
 

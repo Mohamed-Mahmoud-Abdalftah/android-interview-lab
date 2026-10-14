@@ -96,26 +96,20 @@ Putting keys in local.properties keeps them out of git, but defining them in Bui
 
 ## Interview answer — structured
 
-Using `local.properties` with `BuildConfig` addresses version control hygiene, but offers zero cryptographic confidentiality against reverse engineering:
+Using `local.properties` with `BuildConfig` addresses version control hygiene, but offers zero cryptographic confidentiality against reverse engineering.
 
-1. **Compilation into Plaintext DEX**: Gradle generates a Java constant in `BuildConfig.java` (`public static final String API_KEY = "...";`). During compilation, this string constant is placed directly into the `classes.dex` string pool. Anyone who downloads the APK can run `strings classes.dex` or inspect `BuildConfig` in JADX to extract the secret immediately.
+First, with Compilation into Plaintext DEX, gradle generates a Java constant in `BuildConfig.java` (`public static final String API_KEY = "...";`). During compilation, this string constant is placed directly into the `classes.dex` string pool. Anyone who downloads the APK can run `strings classes.dex` or inspect `BuildConfig` in JADX to extract the secret immediately. Next, **Public vs. Private API Keys**.
+Additionally, with Public Client Keys, identifiers like Google Maps keys or Firebase App IDs are designed to be public. They rely on server-side restrictions (e.g. Google Cloud package name + SHA-1 fingerprint whitelisting) rather than secrecy. With Private Secrets, keys providing privileged administrative access, billing capabilities, or third-party paid API quotas (OpenAI, Stripe Secret, AWS IAM credentials) must **never** be packaged into a mobile application.
+**Architectural Remedy (Backend-for-Frontend)**. Finally, deploy a backend proxy / BFF. The mobile client authenticates against your backend using short-lived user session tokens. Your backend holds the private API secret securely in environment variables or an enterprise secret manager and proxies requests to third-party providers.
 
-2. **Public vs. Private API Keys**:
-   - **Public Client Keys**: Identifiers like Google Maps keys or Firebase App IDs are designed to be public. They rely on server-side restrictions (e.g. Google Cloud package name + SHA-1 fingerprint whitelisting) rather than secrecy.
-   - **Private Secrets**: Keys providing privileged administrative access, billing capabilities, or third-party paid API quotas (OpenAI, Stripe Secret, AWS IAM credentials) must **never** be packaged into a mobile application.
-
-3. **Architectural Remedy (Backend-for-Frontend)**:
-   - Deploy a backend proxy / BFF. The mobile client authenticates against your backend using short-lived user session tokens. Your backend holds the private API secret securely in environment variables or an enterprise secret manager and proxies requests to third-party providers.
 
 ## Interview answer — deep senior
 
-From a threat modeling perspective, understanding client-side secret exposure reveals common misconceptions:
+From a threat modeling perspective, understanding client-side secret exposure reveals common misconceptions.
 
-1. **The Native C/C++ Illusion**: Some teams attempt to bypass this by moving the string into a C++ JNI library (`libkeys.so`) or breaking the string into byte arrays combined with XOR masks. These are merely obfuscation speed bumps. An analyst running Frida or Ghidra can locate the assembly instructions and extract the recombined string from memory during execution in minutes.
+First, with The Native C/C++ Illusion, some teams attempt to bypass this by moving the string into a C++ JNI library (`libkeys.so`) or breaking the string into byte arrays combined with XOR masks. These are merely obfuscation speed bumps. An analyst running Frida or Ghidra can locate the assembly instructions and extract the recombined string from memory during execution in minutes. Next, with Credential Stuffing & Quota Exhaustion, when third-party private secrets are leaked from an APK, attackers scrape them to make automated API requests on the developer's billing account or exfiltrate private database records, causing massive financial and reputational liability.
+Finally, with Rule of Thumb for Mobile Architects, treat any code and asset shipped inside an APK as publicly published on the internet. If exposing a key compromises customer data, financial balances, or cloud infrastructure, that key must never be compiled into the mobile build.
 
-2. **Credential Stuffing & Quota Exhaustion**: When third-party private secrets are leaked from an APK, attackers scrape them to make automated API requests on the developer's billing account or exfiltrate private database records, causing massive financial and reputational liability.
-
-3. **Rule of Thumb for Mobile Architects**: Treat any code and asset shipped inside an APK as publicly published on the internet. If exposing a key compromises customer data, financial balances, or cloud infrastructure, that key must never be compiled into the mobile build.
 
 ## How to answer in the interview
 

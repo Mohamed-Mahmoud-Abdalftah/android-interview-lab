@@ -98,16 +98,12 @@ Manage one-time effects either by modeling them as consumable state in `UiState`
 
 Managing one-time transient events (Snackbars, toasts, navigation triggers) in Unidirectional Data Flow requires balancing state immutability with single-consumption guarantees.
 
-1. **The Consumable State Pattern (Official Google Recommendation)**:
-   - Model the one-off event directly inside the `UiState`: `userMessage: UserMessage?`.
-   - In Compose, a `LaunchedEffect(state.userMessage)` triggers when non-null, displays the Snackbar via `snackbarHostState.showSnackbar(message)`, and immediately invokes a callback `viewModel.onMessageShown(id)` to clear the state back to `null`.
-   - *Advantage*: Guarantees state restoration across process death via `SavedStateHandle` without event dropping or phantom repeats.
+First, **The Consumable State Pattern (Official Google Recommendation)**. Next, model the one-off event directly inside the `UiState`: `userMessage: UserMessage?`.
+In Compose, a `LaunchedEffect(state.userMessage)` triggers when non-null, displays the Snackbar via `snackbarHostState.showSnackbar(message)`, and immediately invokes a callback `viewModel.onMessageShown(id)` to clear the state back to `null`. *Advantage*: Guarantees state restoration across process death via `SavedStateHandle` without event dropping or phantom repeats.
+**The Buffered Channel Pattern (Side-Effect Stream)**. In the ViewModel, declare `private val _effectChannel = Channel<UiEffect>(Channel.BUFFERED)` exposed as `val effects = _effectChannel.receiveAsFlow()`.
+In Compose, collect effects inside `LaunchedEffect(Unit)`. *Advantage*: Zero boilerplate callback required to clear state; strictly delivers events sequentially.
+Finally, *Caution*: Must be collected with lifecycle awareness (`flowWithLifecycle` or `repeatOnLifecycle`) so events emitted while in the background are buffered rather than dropped.
 
-2. **The Buffered Channel Pattern (Side-Effect Stream)**:
-   - In the ViewModel, declare `private val _effectChannel = Channel<UiEffect>(Channel.BUFFERED)` exposed as `val effects = _effectChannel.receiveAsFlow()`.
-   - In Compose, collect effects inside `LaunchedEffect(Unit)`.
-   - *Advantage*: Zero boilerplate callback required to clear state; strictly delivers events sequentially.
-   - *Caution*: Must be collected with lifecycle awareness (`flowWithLifecycle` or `repeatOnLifecycle`) so events emitted while in the background are buffered rather than dropped.
 
 ## Interview answer — deep senior
 
@@ -116,6 +112,7 @@ Why did the classic `SharedFlow(replay = 0)` fail for single-shot events? `Share
 A `Channel(Channel.BUFFERED)` solves this by maintaining an internal queue. If the UI is temporarily unsubscribed during screen rotation, the channel buffers the event until the new Activity/Composable subscribes, delivering it reliably without loss.
 
 For user-driven navigation, remember that not all navigation is a ViewModel effect: clicking an item to open details should directly invoke `navController.navigate()` from the UI callback, avoiding roundtrips through the ViewModel.
+
 
 ## How to answer in the interview
 

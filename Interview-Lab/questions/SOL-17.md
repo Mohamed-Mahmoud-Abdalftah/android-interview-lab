@@ -98,21 +98,23 @@ Throwing `UnsupportedOperationException` from an overridden subclass method is t
 
 When a superclass declares a public method, it establishes an explicit behavioral contract with calling code: *'Any instance of this type or its subtypes can execute this operation and will return a valid result without throwing unexpected state errors.'*
 
-When a subclass overrides that method with `throw UnsupportedOperationException()`, it violates this contract:
-1. It is no longer substitutable for its parent type.
-2. Any generic polymorphic collection processing instances of the superclass (`birds.forEach { it.fly() }`) crashes at runtime upon reaching this subtype.
-3. It forces calling code to write defensive `if (item !is Penguin)` type checks, which recursively violates the Open/Closed Principle (OCP).
+When a subclass overrides that method with `throw UnsupportedOperationException()`, it violates this contract.
 
-**The Architectural Resolution**:
-- Prune the method from the superclass hierarchy.
-- Segregate optional capabilities into dedicated interfaces (`Flyable`, `Editable`, `Shareable`).
-- Use **Composition over Inheritance**: rather than inheriting a base class with unwanted baggage, inject only the specific behaviors required.
+First, it is no longer substitutable for its parent type. Next, any generic polymorphic collection processing instances of the superclass (`birds.forEach { it.fly() }`) crashes at runtime upon reaching this subtype.
+Finally, it forces calling code to write defensive `if (item !is Penguin)` type checks, which recursively violates the Open/Closed Principle (OCP).
+
+**The Architectural Resolution**.
+
+First, prune the method from the superclass hierarchy. Next, segregate optional capabilities into dedicated interfaces (`Flyable`, `Editable`, `Shareable`).
+Finally, use **Composition over Inheritance**: rather than inheriting a base class with unwanted baggage, inject only the specific behaviors required.
+
 
 ## Interview answer — deep senior
 
 In Android architecture, this appears in repositories and storage implementations. Suppose a base `interface CacheStorage<T>` declares `read()`, `write()`, and `clear()`. A read-only `AssetStorage` implementation backed by the APK's read-only assets directory throws `UnsupportedOperationException("Cannot write to APK assets")` inside `write()`.
 
 The resolution requires applying ISP and LSP together: split the contract into `ReadableStorage<T>` and `WritableStorage<T>`. `AssetStorage` implements only `ReadableStorage`, ensuring that clients requiring write operations can never accidentally be passed an un-writable storage instance at compile time.
+
 
 ## How to answer in the interview
 

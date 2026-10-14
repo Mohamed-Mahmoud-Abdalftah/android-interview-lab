@@ -91,30 +91,24 @@ Encryption at rest protects stored data on disk (via File-Based Encryption, SQLC
 
 ## Interview answer — structured
 
-A comprehensive defense-in-depth architecture secures data across both rest and transit states:
+A comprehensive defense-in-depth architecture secures data across both rest and transit states.
 
-1. **Encryption in Transit (Over the Wire)**:
-   - Guarantees confidentiality and integrity across public cellular and Wi-Fi networks.
-   - Enforced via **TLS 1.2 / TLS 1.3** exclusively. Configured in Android via `res/xml/network_security_config.xml` with `cleartextTrafficPermitted="false"` to prevent accidental HTTP fallback.
-   - Hardened with **Certificate Pinning** in OkHttp to defeat Man-in-the-Middle (MITM) interception from rogue CAs.
+First, **Encryption in Transit (Over the Wire)**. Next, guarantees confidentiality and integrity across public cellular and Wi-Fi networks.
+Enforced via **TLS 1.2 / TLS 1.3** exclusively. Configured in Android via `res/xml/network_security_config.xml` with `cleartextTrafficPermitted="false"` to prevent accidental HTTP fallback. Hardened with **Certificate Pinning** in OkHttp to defeat Man-in-the-Middle (MITM) interception from rogue CAs.
+**Encryption at Rest (On Flash Storage)**. With OS Level, modern Android uses **File-Based Encryption (FBE)**. User data is partitioned into Credential Encrypted (CE) storage, unlocked only after the user enters their lockscreen PIN/pattern.
+With App Level, sensitive local databases are encrypted with **SQLCipher (AES-256)**, while tokens and keys are encrypted with **AES-GCM** using keys managed by `AndroidKeyStore`. If an attacker copies the SQLite file via ADB backup or file extraction, the file is unreadable binary ciphertext. Finally, with Plaintext in Use, plaintext exists in application heap memory while being actively processed by the CPU, demanding careful buffer management and redaction in logging.
 
-2. **Encryption at Rest (On Flash Storage)**:
-   - **OS Level**: Modern Android uses **File-Based Encryption (FBE)**. User data is partitioned into Credential Encrypted (CE) storage, unlocked only after the user enters their lockscreen PIN/pattern.
-   - **App Level**: Sensitive local databases are encrypted with **SQLCipher (AES-256)**, while tokens and keys are encrypted with **AES-GCM** using keys managed by `AndroidKeyStore`. If an attacker copies the SQLite file via ADB backup or file extraction, the file is unreadable binary ciphertext.
-
-3. **Plaintext in Use**: Plaintext exists in application heap memory while being actively processed by the CPU, demanding careful buffer management and redaction in logging.
 
 ## Interview answer — deep senior
 
 Differentiating Device-Encrypted (DE) vs. Credential-Encrypted (CE) Storage in FBE:
 
-Starting in Android 7.0 (API 24), Android replaced Full-Disk Encryption (FDE) with File-Based Encryption (FBE):
+Starting in Android 7.0 (API 24), Android replaced Full-Disk Encryption (FDE) with File-Based Encryption (FBE).
 
-- **CE Storage (`context.createCredentialProtectedStorageContext()`)**: The default storage for applications. Encrypted with a key derived from the user's lockscreen PIN and hardware Keystore. Unavailable after device reboot until the user enters their PIN for the first time (Direct Boot mode).
-
-- **DE Storage (`context.createDeviceProtectedStorageContext()`)**: Encrypted with a key tied to the device hardware, available **before** the user unlocks the screen. Reserved strictly for components that must operate immediately after reboot before user unlock (alarm clocks, incoming call receivers, accessibility services).
+First, cE Storage (`context.createCredentialProtectedStorageContext()`) is the default storage for applications. Encrypted with a key derived from the user's lockscreen PIN and hardware Keystore. Unavailable after device reboot until the user enters their PIN for the first time (Direct Boot mode). Finally, with DE Storage (`context.createDeviceProtectedStorageContext()`), encrypted with a key tied to the device hardware, available **before** the user unlocks the screen. Reserved strictly for components that must operate immediately after reboot before user unlock (alarm clocks, incoming call receivers, accessibility services).
 
 Fintech and banking apps must never store financial records or auth tokens in DE storage; always retain credentials strictly in CE storage.
+
 
 ## How to answer in the interview
 

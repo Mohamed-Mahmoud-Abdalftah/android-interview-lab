@@ -87,6 +87,7 @@ Property delegation delegates a property's getter and setter to a delegate objec
 
 It promotes separation of concerns by encapsulating repetitive state or storage logic in reusable delegate classes.
 
+
 ## Interview answer — deep senior
 
 Under the hood, property delegation relies on operator conventions. For a read-only val, the delegate class must implement an operator function: operator fun getValue(thisRef: Any?, property: KProperty<*>): T. For a var, it must also provide operator fun setValue(thisRef: Any?, property: KProperty<*>, value: T).
@@ -94,6 +95,7 @@ Under the hood, property delegation relies on operator conventions. For a read-o
 The compiler generates a private backing field for the delegate named property$delegate and replaces all property reads with delegate.getValue(this, KProperty). Starting in modern Kotlin versions, if the delegate does not utilize the KProperty metadata, the compiler optimizes away the KProperty allocation to eliminate reflection overhead.
 
 Interface delegation compiles by generating forwarding methods for every interface member in the implementing class. However, an important caveat is that delegated methods do not have polymorphic access to the outer decorator class: inside the delegate, this refers to the delegate instance, not the wrapper. In production Android codebases, we use custom property delegates for DataStore persistence and Fragment lifecycle binding cleanup.
+
 
 ## How to answer in the interview
 

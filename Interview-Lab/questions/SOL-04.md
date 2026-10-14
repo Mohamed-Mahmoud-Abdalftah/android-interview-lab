@@ -95,23 +95,25 @@ Liskov Substitution Principle states that subclasses must be substitutable for t
 
 The Liskov Substitution Principle (LSP), formulated by Barbara Liskov, requires that **subtypes must be completely substitutable for their base types without altering program correctness**.
 
-A subclass must adhere strictly to the behavioral contract established by its superclass. Specifically:
-1. **Preconditions cannot be strengthened**: A subclass cannot demand stricter validation inputs than its parent.
-2. **Postconditions cannot be weakened**: A subclass cannot return less or fail to fulfill state guarantees made by the parent.
-3. **Invariants must be preserved**: Any rules that hold true for the superclass must hold true for all subclasses.
+A subclass must adhere strictly to the behavioral contract established by its superclass. Specifically.
+
+First, a Preconditions cannot be strengthened is a subclass cannot demand stricter validation inputs than its parent. Next, a Postconditions cannot be weakened is a subclass cannot return less or fail to fulfill state guarantees made by the parent.
+Finally, with Invariants must be preserved, any rules that hold true for the superclass must hold true for all subclasses.
 
 In Android, the most pervasive LSP violation is the bloated **`BaseFragment` / `BaseActivity` anti-pattern**. A `BaseFragment` declares abstract methods like `setupToolbar()`, `enableSwipeToRefresh()`, and `getBottomNavIndex()`.
 When a developer creates a fullscreen modal or onboarding slide that lacks a toolbar, they either override the method with an empty no-op or throw `UnsupportedOperationException("Not supported")`. Calling code expecting a valid toolbar crashes or behaves unpredictably.
+
 
 ## Interview answer — deep senior
 
 The architectural remedy for LSP violations in Android is **Composition over Inheritance**.
 
-Instead of forcing every screen to inherit from an arbitrary 800-line `BaseFragment`, we extract modular capabilities into dedicated lifecycle-aware delegates:
-- A `ToolbarDelegate` that attaches to screens that explicitly implement `ToolbarConfigurable`.
-- A `NetworkStateDelegate` that observes connectivity.
+Instead of forcing every screen to inherit from an arbitrary 800-line `BaseFragment`, we extract modular capabilities into dedicated lifecycle-aware delegates.
+
+First, a `ToolbarDelegate` that attaches to screens that explicitly implement `ToolbarConfigurable`. Finally, a `NetworkStateDelegate` that observes connectivity.
 
 In Jetpack Compose, LSP violations are naturally minimized because Compose entirely abandons inheritance hierarchies. A composable screen does not inherit from `BaseScreen`; instead, screens compose reusable composable decorators (`Scaffold`, `TopAppBar`, `PullToRefreshBox`) purely through function composition.
+
 
 ## How to answer in the interview
 

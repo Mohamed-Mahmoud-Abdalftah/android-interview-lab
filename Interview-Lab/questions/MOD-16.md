@@ -105,15 +105,11 @@ To build and publish a reusable Android SDK, enforce strict semantic versioning 
 
 ## Interview answer — structured
 
-Building an enterprise-grade reusable Android SDK requires treating the library as a self-contained product with strict stability contracts:
+Building an enterprise-grade reusable Android SDK requires treating the library as a self-contained product with strict stability contracts.
 
-1. **Consumer ProGuard Rules (`consumer-rules.pro`)**: Libraries must ship ProGuard rules that are automatically applied to consuming applications. This ensures that the SDK's public interfaces, JNI native bindings, and serialization models are not stripped or mangled when client apps run R8.
+First, with Consumer ProGuard Rules (`consumer-rules.pro`), libraries must ship ProGuard rules that are automatically applied to consuming applications. This ensures that the SDK's public interfaces, JNI native bindings, and serialization models are not stripped or mangled when client apps run R8. Next, with Binary Compatibility Governance, use JetBrains' **Binary Compatibility Validator (BCV)** plugin in CI. It maintains an API dump file (`.api`) in Git. If a pull request modifies a public method signature or removes an overload, BCV fails the build unless the change is explicitly approved and versioned under SemVer rules.
+Additionally, with Testing Pyramid, comprehensive JVM unit tests, instrumented tests on Firebase Test Lab, and an included **Sample App** module that consumes the library exactly like a third-party developer. Finally, with Publishing Pipeline, configure the `maven-publish` plugin to emit release AARs, Javadoc JARs, Sources JARs, and Gradle Module Metadata (`.module`) to a secure Maven repository (Nexus/Artifactory/MavenCentral).
 
-2. **Binary Compatibility Governance**: Use JetBrains' **Binary Compatibility Validator (BCV)** plugin in CI. It maintains an API dump file (`.api`) in Git. If a pull request modifies a public method signature or removes an overload, BCV fails the build unless the change is explicitly approved and versioned under SemVer rules.
-
-3. **Testing Pyramid**: Comprehensive JVM unit tests, instrumented tests on Firebase Test Lab, and an included **Sample App** module that consumes the library exactly like a third-party developer.
-
-4. **Publishing Pipeline**: Configure the `maven-publish` plugin to emit release AARs, Javadoc JARs, Sources JARs, and Gradle Module Metadata (`.module`) to a secure Maven repository (Nexus/Artifactory/MavenCentral).
 
 ## Interview answer — deep senior
 
@@ -121,9 +117,10 @@ When engineering production SDKs, the greatest technical pitfall is **Transitive
 
 If your SDK depends on `OkHttp 4.9.0` and a host application depends on `OkHttp 5.0.0-alpha`, Gradle's conflict resolution selects the higher version, which may contain breaking binary changes that crash your SDK. Conversely, if your SDK bundles an internal library via `implementation`, the host app might experience duplicate class conflicts.
 
-To safeguard a commercial SDK:
-- Minimize external dependencies; prefer pure Kotlin standard library and platform Android APIs wherever possible.
-- If heavy third-party libraries (like Protocol Buffers or JSON parsers) are mandatory, use **Bytecode Shading / Relocation (via Shadow plugin or Jarjar)** to rename packages (e.g. `com.google.protobuf` -> `com.company.sdk.internal.protobuf`), insulating your SDK from host app version conflicts.
+To safeguard a commercial SDK.
+
+First, minimize external dependencies; prefer pure Kotlin standard library and platform Android APIs wherever possible. Finally, if heavy third-party libraries (like Protocol Buffers or JSON parsers) are mandatory, use **Bytecode Shading / Relocation (via Shadow plugin or Jarjar)** to rename packages (e.g. `com.google.protobuf` -> `com.company.sdk.internal.protobuf`), insulating your SDK from host app version conflicts.
+
 
 ## How to answer in the interview
 

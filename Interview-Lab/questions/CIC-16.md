@@ -101,29 +101,21 @@ Manage environments using Gradle flavorDimensions and productFlavors combined wi
 
 ## Interview answer — structured
 
-Managing multiple environments in modern Android applications relies on structured Gradle architecture:
+Managing multiple environments in modern Android applications relies on structured Gradle architecture.
 
-1. **Flavor Dimensions and Build Variants**:
-   - Define dimensions (e.g. `environment`: `dev`, `staging`, `prod`). Gradle multiplies flavors by build types (`debug`, `release`) to produce concrete build variants like `devDebug` and `prodRelease`.
+First, **Flavor Dimensions and Build Variants**. Next, define dimensions (e.g. `environment`: `dev`, `staging`, `prod`). Gradle multiplies flavors by build types (`debug`, `release`) to produce concrete build variants like `devDebug` and `prodRelease`.
+**Side-by-Side Coexistence (`applicationIdSuffix`)**. Assign `applicationIdSuffix = ".dev"` and `applicationIdSuffix = ".staging"`. This allows developers and QA to install production, staging, and development builds concurrently on a single physical device without overwriting app sandboxes.
+**Configuration Injection via BuildConfig and ResValue**. Expose backend endpoints, feature toggles, and app display names dynamically via `buildConfigField` and `resValue("string", "app_name", ...)`, keeping source code agnostic of underlying environment URLs.
+**Source Sets & Third-Party Isolation**. Finally, use directory-based source sets (`src/dev/`, `src/prod/`) to supply distinct configuration assets (e.g. Separate Firebase `google-services.json` files for dev and prod GCP projects), and isolate profiling tools using `debugImplementation` vs `releaseImplementation` no-op stubs.
 
-2. **Side-by-Side Coexistence (`applicationIdSuffix`)**:
-   - Assign `applicationIdSuffix = ".dev"` and `applicationIdSuffix = ".staging"`. This allows developers and QA to install production, staging, and development builds concurrently on a single physical device without overwriting app sandboxes.
-
-3. **Configuration Injection via BuildConfig and ResValue**:
-   - Expose backend endpoints, feature toggles, and app display names dynamically via `buildConfigField` and `resValue("string", "app_name", ...)`, keeping source code agnostic of underlying environment URLs.
-
-4. **Source Sets & Third-Party Isolation**:
-   - Use directory-based source sets (`src/dev/`, `src/prod/`) to supply distinct configuration assets (e.g. separate Firebase `google-services.json` files for dev and prod GCP projects), and isolate profiling tools using `debugImplementation` vs `releaseImplementation` no-op stubs.
 
 ## Interview answer — deep senior
 
-From an architectural modularity and build performance perspective, multi-flavor setups require governance:
+From an architectural modularity and build performance perspective, multi-flavor setups require governance.
 
-1. **Combinatorial Explosion Hazard**: Having 3 flavor dimensions with 3 flavors each creates $3 \times 3 \times 2 = 18$ build variants. This drastically degrades Gradle configuration times, IDE indexing, and CI matrix execution. Keep flavor dimensions minimal (ideally a single dimension for environment), and handle sub-variations via runtime feature flags or build properties.
+First, with Combinatorial Explosion Hazard, having 3 flavor dimensions with 3 flavors each creates $3 \times 3 \times 2 = 18$ build variants. This drastically degrades Gradle configuration times, IDE indexing, and CI matrix execution. Keep flavor dimensions minimal (ideally a single dimension for environment), and handle sub-variations via runtime feature flags or build properties. Next, with Multi-Module Flavor Propagation, in an 80-module app, declaring flavors in every library module creates tight coupling and configuration failures (`missingDimensionStrategy`). Follow modern Android architecture guidelines: keep library modules flavor-agnostic, and declare flavors exclusively in the top-level `:app` application module.
+Finally, a Secrets Isolation in CI is the release pipeline for `prodRelease` must never execute with `dev` keys, nor should `dev` builds touch production databases or Stripe credentials. CI pipelines must validate and restrict secret injection based on the specific variant being compiled.
 
-2. **Multi-Module Flavor Propagation**: In an 80-module app, declaring flavors in every library module creates tight coupling and configuration failures (`missingDimensionStrategy`). Follow modern Android architecture guidelines: keep library modules flavor-agnostic, and declare flavors exclusively in the top-level `:app` application module.
-
-3. **Secrets Isolation in CI**: The release pipeline for `prodRelease` must never execute with `dev` keys, nor should `dev` builds touch production databases or Stripe credentials. CI pipelines must validate and restrict secret injection based on the specific variant being compiled.
 
 ## How to answer in the interview
 

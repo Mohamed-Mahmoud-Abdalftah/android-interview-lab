@@ -102,12 +102,11 @@ Publish module responsibilities and codeowners, track public API churn and affec
 
 ## Interview answer — structured
 
-Clear architectural separation between infrastructure core modules and domain feature modules prevents the core from degrading into an unmaintainable monolith:
+Clear architectural separation between infrastructure core modules and domain feature modules prevents the core from degrading into an unmaintainable monolith.
 
-1. **`:core:network`**: Houses HTTP client engines (`OkHttpClient`), token refresh interceptors, SSL pinning configurations, and connectivity observers. It must **not** host feature-specific API endpoints (like `OrderApiService`); feature APIs belong in their respective `:data:*` modules.
-2. **`:core:database`**: Manages the underlying database engine (`RoomDatabase`), encryption keys, and schema migration coordinators. Feature-specific DAOs and entities should be provided by data modules and aggregated by the database.
-3. **`:core:ui` (Design System)**: Contains design tokens (theme colors, typography, elevations) and generic, stateless UI primitives (`AppButton`, `EmptyStateView`, `AppDialog`). It must remain strictly agnostic of business models, accepting only primitive parameters.
-4. **`:feature:*`**: Contains end-to-end presentation logic for a user journey: composable screens, ViewModels, UI state machines, and local navigation routes.
+First, with :core:network, houses HTTP client engines (`OkHttpClient`), token refresh interceptors, SSL pinning configurations, and connectivity observers. It must **not** host feature-specific API endpoints (like `OrderApiService`); feature APIs belong in their respective `:data:*` modules. Next, :core:database manages the underlying database engine (`RoomDatabase`), encryption keys, and schema migration coordinators. Feature-specific DAOs and entities should be provided by data modules and aggregated by the database.
+Additionally, with :core:ui` (Design System), contains design tokens (theme colors, typography, elevations) and generic, stateless UI primitives (`AppButton`, `EmptyStateView`, `AppDialog`). It must remain strictly agnostic of business models, accepting only primitive parameters. Finally, **`:feature:*`**: Contains end-to-end presentation logic for a user journey: composable screens, ViewModels, UI state machines, and local navigation routes.
+
 
 ## Interview answer — deep senior
 
@@ -115,9 +114,10 @@ A critical design challenge in multi-module database architecture is **Room Data
 
 Room requires its `@Database(entities = [...], version = ...)` annotation to enumerate all entity classes at compile time. If entities live inside feature modules, having `:core:database` declare the database directly creates an illegal circular dependency (core depending on features).
 
-Senior engineers resolve this in one of two ways:
-1. **Entity Delegation in `:core:database`**: Entities live in `:core:model` or dedicated `:data:*:model` modules that `:core:database` imports, keeping DAOs internal to their data modules.
-2. **Single Database in `:app`**: The concrete `@Database` class is declared inside the `:app` module (where all feature data modules are already aggregated), while `:core:database` provides only the database builder infrastructure and migrations.
+Senior engineers resolve this in one of two ways.
+
+First, with Entity Delegation in `:core:database, entities live in `:core:model` or dedicated `:data:*:model` modules that `:core:database` imports, keeping DAOs internal to their data modules. Finally, single Database in `:app is the concrete `@Database` class is declared inside the `:app` module (where all feature data modules are already aggregated), while `:core:database` provides only the database builder infrastructure and migrations.
+
 
 ## How to answer in the interview
 

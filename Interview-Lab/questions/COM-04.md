@@ -115,20 +115,22 @@ In Jetpack Compose, state is the single source of truth that dictates visual ren
 
 To make state observable to the Compose runtime, we wrap it in a **Snapshot State**—typically created via `mutableStateOf(initialValue)`. Compose's snapshot system tracks reads during the execution of composables. Whenever a write occurs on that state, the runtime schedules recomposition exclusively for the scopes that read that specific value, achieving highly granular updates.
 
-**State Hoisting** is the foundational architectural pattern for building modular, robust Compose UI. Instead of letting a component manage its own internal state (making it *stateful* and tightly coupled), we hoist the state up to its caller by replacing it with two parameters:
-1. The current state representation: `value: T`
-2. An event lambda: `onValueChange: (T) -> Unit`
+**State Hoisting** is the foundational architectural pattern for building modular, robust Compose UI. Instead of letting a component manage its own internal state (making it *stateful* and tightly coupled), we hoist the state up to its caller by replacing it with two parameters.
+
+First, the current state representation: `value: T` Finally, an event lambda: `onValueChange: (T) -> Unit`
 
 This transforms the composable into a **stateless component**, making it trivial to preview in Android Studio, share across different navigation screens, and verify in isolated unit and screenshot tests.
+
 
 ## Interview answer — deep senior
 
 Under the hood, `mutableStateOf` relies on Android's global `Snapshot` system (`androidx.compose.runtime.snapshots`). The snapshot system functions like software transactional memory (STM) or Git: each thread or composition operates in an isolated snapshot of state. When a state mutation is performed, the modified records are committed to the global snapshot, which broadcasts invalidation notifications to all active `SnapshotStateObserver` instances.
 
-When architecting production applications, state hoisting operates across three distinct levels:
-1. **Component-level hoisting**: Hoisting basic input values (text fields, checkboxes) into immediate parents.
-2. **Screen-level UI State Holder**: Hoisting complex widget coordination (like custom scroll interactions and animation sync) into an unmanaged plain Kotlin class (e.g. `rememberSearchState()`).
-3. **Business-level hoisting**: Hoisting domain and repository operations into an architecture-level `ViewModel` exposing `StateFlow<UiState>`.
+When architecting production applications, state hoisting operates across three distinct levels.
+
+First, with Component-level hoisting, hoisting basic input values (text fields, checkboxes) into immediate parents. Next, with Screen-level UI State Holder, hoisting complex widget coordination (like custom scroll interactions and animation sync) into an unmanaged plain Kotlin class (e.g. `rememberSearchState()`).
+Finally, with Business-level hoisting, hoisting domain and repository operations into an architecture-level `ViewModel` exposing `StateFlow<UiState>`.
+
 
 ## How to answer in the interview
 

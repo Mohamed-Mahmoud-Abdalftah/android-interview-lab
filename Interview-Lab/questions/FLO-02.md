@@ -105,6 +105,7 @@ When multiple collectors listen to a cold flow, **each collector starts an indep
 
 To prevent redundant expensive work when multiple UI components observe the same data, we convert cold flows into hot multicasting streams using `shareIn()` or `stateIn()`. This shares a single upstream execution and broadcasts values to all active collectors simultaneously.
 
+
 ## Interview answer — deep senior
 
 At the architectural implementation level, a cold flow represents a blueprint for execution rather than an active pipeline. Each call to `flow.collect(collector)` creates a new instance of the flow builder's state machine in the collector's coroutine frame. If five collectors collect a cold flow concurrently, there are five separate coroutines running the upstream code independently.
@@ -112,6 +113,7 @@ At the architectural implementation level, a cold flow represents a blueprint fo
 This independence is sometimes desirable: for instance, a flow reading a file from disk should start at byte 0 for each independent reader. However, in modern Android UI architecture where multiple fragments, composables, or widgets observe the same repository state, cold execution is an antipattern.
 
 By applying `shareIn(scope, SharingStarted.WhileSubscribed(5000), replay = 1)`, we introduce an intermediary `SharedFlow` that acts as a multicasting bridge: it opens a single upstream connection to the cold data source and broadcasts each emission to downstream subscribers, maintaining cache locality and network efficiency.
+
 
 ## How to answer in the interview
 

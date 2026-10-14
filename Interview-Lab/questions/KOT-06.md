@@ -88,6 +88,7 @@ Between sealed class and sealed interface, I strongly prefer sealed interfaces i
 
 Abstract classes remain useful for sharing base implementation logic across open, extensible libraries where the full set of subclasses cannot be known at compile time.
 
+
 ## Interview answer — deep senior
 
 Under the hood, sealed hierarchies provide compile-time exhaustive pattern matching. In Kotlin bytecode, a sealed class compiles with a private or protected constructor, restricting subclassing to the same package and compilation module. The compiler generates metadata attributes listing all permitted subclasses. When evaluated in a when expression, the compiler inspects this table. If all branches are covered, it omits the default case; if a branch is missing, it fails compilation.
@@ -95,6 +96,7 @@ Under the hood, sealed hierarchies provide compile-time exhaustive pattern match
 The addition of sealed interfaces solved a major JVM limitation: single class inheritance. Prior to Kotlin 1.5, if a data class extended a sealed class, it could not extend any other class. With sealed interfaces, a state object like UserSession can implement both a sealed NavigationDestination interface and a sealed AnalyticsTrackable interface. Furthermore, sealed interfaces allow enum classes or value classes to implement them, enabling rich compositional architectures.
 
 In production Android architecture, we use sealed interfaces for MVI/UDF UI states and domain errors. Enums are reserved for database-persisted lookup constants or query filters. Abstract classes are restricted to internal base classes (like a BaseRepository) where shared implementation code must be inherited rather than composed.
+
 
 ## How to answer in the interview
 

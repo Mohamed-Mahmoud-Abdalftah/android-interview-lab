@@ -118,28 +118,21 @@ Store short-lived access tokens in memory or encrypted storage, and long-lived r
 
 ## Interview answer — structured
 
-Token architecture follows a tiered security approach balancing user experience against attack windows:
+Token architecture follows a tiered security approach balancing user experience against attack windows.
 
-1. **Storage Topology**:
-   - **Access Token**: Short validity (5–15 minutes). Can reside in an in-memory repository during active process lifecycle, supplemented with Keystore-backed encrypted persistence to survive process death without forced re-logins.
-   - **Refresh Token**: Longer validity (7–30 days). Must never be stored in plain SharedPreferences. It must be encrypted using Android Keystore AES-GCM and stored in Jetpack DataStore.
+First, **Storage Topology**. Next, with Access Token, short validity (5–15 minutes). Can reside in an in-memory repository during active process lifecycle, supplemented with Keystore-backed encrypted persistence to survive process death without forced re-logins.
+Additionally, with Refresh Token, longer validity (7–30 days). Must never be stored in plain SharedPreferences. It must be encrypted using Android Keystore AES-GCM and stored in Jetpack DataStore. **Server-Side Revocation**.
+Mobile logout must invoke a backend `/logout` or `/revoke` endpoint. The server marks the session/refresh token family revoked in a distributed cache (e.g. Redis). Client-side token deletion alone is insufficient because a compromised token remains valid on the server until expiry.
+**Refresh Token Rotation (RTR)**. Finally, every refresh request invalidates the previous refresh token and issues a new pair. If an invalidated refresh token is ever reused, the server detects token compromise and immediately revokes all tokens issued to that user session.
 
-2. **Server-Side Revocation**:
-   - Mobile logout must invoke a backend `/logout` or `/revoke` endpoint. The server marks the session/refresh token family revoked in a distributed cache (e.g. Redis).
-   - Client-side token deletion alone is insufficient because a compromised token remains valid on the server until expiry.
-
-3. **Refresh Token Rotation (RTR)**:
-   - Every refresh request invalidates the previous refresh token and issues a new pair. If an invalidated refresh token is ever reused, the server detects token compromise and immediately revokes all tokens issued to that user session.
 
 ## Interview answer — deep senior
 
-In high-traffic distributed mobile apps, token refreshing introduces significant concurrency and failure handling challenges:
+In high-traffic distributed mobile apps, token refreshing introduces significant concurrency and failure handling challenges.
 
-1. **Handling Thundering Herds on 401**: When multiple parallel API calls fail simultaneously with `401 Unauthorized`, an uncoordinated authenticator triggers parallel refresh calls. The first call succeeds and rotates the refresh token; the subsequent calls submit an already-invalidated refresh token, causing the backend to falsely assume token theft and revoke the session! We prevent this by serializing refresh execution using a Coroutines `Mutex` inside `okhttp3.Authenticator`.
+First, with Handling Thundering Herds on 401, when multiple parallel API calls fail simultaneously with `401 Unauthorized`, an uncoordinated authenticator triggers parallel refresh calls. The first call succeeds and rotates the refresh token; the subsequent calls submit an already-invalidated refresh token, causing the backend to falsely assume token theft and revoke the session! We prevent this by serializing refresh execution using a Coroutines `Mutex` inside `okhttp3.Authenticator`. Next, with Re-entrant 401 Loop Protection, `Authenticator.authenticate()` must track `response.priorResponse` count. If the refresh request itself fails or if three consecutive retries return 401, return `null` to terminate the loop, wipe stored tokens, and dispatch an unauthenticated session event to navigate to the Login screen.
+Finally, with Token Binding & Attestation, in high-assurance fintech apps, refresh tokens are cryptographically bound to a client-generated Keystore EC keypair (DPoP - Demonstrating Proof-of-Possession). Even if an attacker intercepts the refresh token via TLS proxy, they cannot replay it without signing the request using the device's non-exportable private key.
 
-2. **Re-entrant 401 Loop Protection**: `Authenticator.authenticate()` must track `response.priorResponse` count. If the refresh request itself fails or if three consecutive retries return 401, return `null` to terminate the loop, wipe stored tokens, and dispatch an unauthenticated session event to navigate to the Login screen.
-
-3. **Token Binding & Attestation**: In high-assurance fintech apps, refresh tokens are cryptographically bound to a client-generated Keystore EC keypair (DPoP - Demonstrating Proof-of-Possession). Even if an attacker intercepts the refresh token via TLS proxy, they cannot replay it without signing the request using the device's non-exportable private key.
 
 ## How to answer in the interview
 

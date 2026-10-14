@@ -101,23 +101,19 @@ Pin the Subject Public Key Info (SPKI) SHA-256 hash rather than the leaf certifi
 
 ## Interview answer — structured
 
-Certificate pinning secures network channels against fraudulent Certificate Authorities, but poor rotation strategies risk catastrophic app bricking:
+Certificate pinning secures network channels against fraudulent Certificate Authorities, but poor rotation strategies risk catastrophic app bricking.
 
-1. **Pin the Public Key (SPKI), Not the Certificate**: Pin the SHA-256 hash of the Subject Public Key Info. This decouples pinning from certificate expiration dates, allowing site certificates to be re-issued using the existing private key without breaking client pins.
+First, with Pin the Public Key (SPKI), Not the Certificate, pin the SHA-256 hash of the Subject Public Key Info. This decouples pinning from certificate expiration dates, allowing site certificates to be re-issued using the existing private key without breaking client pins. Next, with Mandatory Backup Pins, never release an app with only a single pin. Always configure at least one active pin and one or two cold-storage backup pins (generated and stored securely in an enterprise HSM). If the primary certificate is compromised, ops can deploy the backup key on servers without releasing an app update.
+Finally, with Expiration Safeguard, in Android's `network_security_config.xml`, specify `<pin-set expiration="YYYY-MM-DD">`. Once the timestamp elapses, the Android framework automatically ceases pin enforcement and falls back to standard system CA validation, ensuring older app versions remain functional even if scheduled rotations miss target release windows.
 
-2. **Mandatory Backup Pins**: Never release an app with only a single pin. Always configure at least one active pin and one or two cold-storage backup pins (generated and stored securely in an enterprise HSM). If the primary certificate is compromised, ops can deploy the backup key on servers without releasing an app update.
-
-3. **Expiration Safeguard**: In Android's `network_security_config.xml`, specify `<pin-set expiration="YYYY-MM-DD">`. Once the timestamp elapses, the Android framework automatically ceases pin enforcement and falls back to standard system CA validation, ensuring older app versions remain functional even if scheduled rotations miss target release windows.
 
 ## Interview answer — deep senior
 
-From an operational reliability perspective, senior architects design dynamic recovery mechanisms for pinned endpoints:
+From an operational reliability perspective, senior architects design dynamic recovery mechanisms for pinned endpoints.
 
-1. **Intermediate vs. Leaf Pinning**: Pinning the leaf certificate's public key provides maximum security but highest rotation risk. Pinning the Intermediate CA certificate of a dedicated enterprise PKI provides easier server-side rotation at the cost of trusting all certificates issued under that intermediate.
+First, with Intermediate vs. Leaf Pinning, pinning the leaf certificate's public key provides maximum security but highest rotation risk. Pinning the Intermediate CA certificate of a dedicated enterprise PKI provides easier server-side rotation at the cost of trusting all certificates issued under that intermediate. Next, with Dynamic Remote Pin Fallbacks, high-assurance financial apps often maintain a dedicated unpinned or multi-CDN fallback domain (`fallback-config.example.com`). If all pinned API calls fail with `SSLPeerUnverifiedException`, the app queries this hardened secondary endpoint to retrieve an authenticated, cryptographically signed pin configuration update.
+Finally, with Telemetry & Audit Logging, implement OkHttp's `EventListener` to log pinning failures with exact peer certificate chain hashes. This provides real-time alerting on potential MITM attacks or configuration drift before certificates expire.
 
-2. **Dynamic Remote Pin Fallbacks**: High-assurance financial apps often maintain a dedicated unpinned or multi-CDN fallback domain (`fallback-config.example.com`). If all pinned API calls fail with `SSLPeerUnverifiedException`, the app queries this hardened secondary endpoint to retrieve an authenticated, cryptographically signed pin configuration update.
-
-3. **Telemetry & Audit Logging**: Implement OkHttp's `EventListener` to log pinning failures with exact peer certificate chain hashes. This provides real-time alerting on potential MITM attacks or configuration drift before certificates expire.
 
 ## How to answer in the interview
 

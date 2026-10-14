@@ -101,30 +101,22 @@ Test Compose UI via createComposeRule by querying the Semantics Tree with onNode
 
 ## Interview answer — structured
 
-Testing Jetpack Compose interfaces exercises the semantic contract presented to users and assistive technologies:
+Testing Jetpack Compose interfaces exercises the semantic contract presented to users and assistive technologies.
 
-1. **Semantics Tree Node Queries**:
-   - Query UI nodes using real user semantics: `composeTestRule.onNodeWithText("Checkout")` or `onNodeWithContentDescription("Shopping Cart")`. Prefer semantic matchers over arbitrary `Modifier.testTag()`, as semantic matchers validate that the UI is accessible to screen readers.
+First, **Semantics Tree Node Queries**. Next, query UI nodes using real user semantics: `composeTestRule.onNodeWithText("Checkout")` or `onNodeWithContentDescription("Shopping Cart")`. Prefer semantic matchers over arbitrary `Modifier.testTag()`, as semantic matchers validate that the UI is accessible to screen readers.
+**State & Action Assertions**. Assert node properties: `assertIsDisplayed()`, `assertIsEnabled()`, `assertIsToggleable()`, `assertValueEquals("100")`. Trigger actions via `performClick()`, `performScrollTo()`, or `performTextInput("text")`.
+**Navigation Contract Testing**. Mount the `NavHost` using `TestNavHostController(LocalContext.current)`.
+Execute UI interactions, then assert destination state via `assertEquals("details_route", navController.currentBackStackEntry?.destination?.route)` without launching real activities. **Accessibility (a11y) Auditing**.
+Finally, enable AndroidX `AccessibilityChecks.enable()` during Compose tests. The framework automatically flags insufficient color contrast, missing content descriptions, and touch targets smaller than 48x48dp.
 
-2. **State & Action Assertions**:
-   - Assert node properties: `assertIsDisplayed()`, `assertIsEnabled()`, `assertIsToggleable()`, `assertValueEquals("100")`. Trigger actions via `performClick()`, `performScrollTo()`, or `performTextInput("text")`.
-
-3. **Navigation Contract Testing**:
-   - Mount the `NavHost` using `TestNavHostController(LocalContext.current)`.
-   - Execute UI interactions, then assert destination state via `assertEquals("details_route", navController.currentBackStackEntry?.destination?.route)` without launching real activities.
-
-4. **Accessibility (a11y) Auditing**:
-   - Enable AndroidX `AccessibilityChecks.enable()` during Compose tests. The framework automatically flags insufficient color contrast, missing content descriptions, and touch targets smaller than 48x48dp.
 
 ## Interview answer — deep senior
 
-From an advanced design system testing perspective, semantic merging and unmerged tree inspection provide deep control:
+From an advanced design system testing perspective, semantic merging and unmerged tree inspection provide deep control.
 
-1. **Merged vs. Unmerged Semantics Trees**: By default, Compose merges child semantics into parent nodes for accessibility (e.g. merging a `Button` with its inner `Text` label into a single clickable node). If you need to test a specific inner element, query the unmerged tree explicitly: `onNodeWithText("Subtext", useUnmergedTree = true)`.
+First, with Merged vs. Unmerged Semantics Trees, by default, Compose merges child semantics into parent nodes for accessibility (e.g. Merging a `Button` with its inner `Text` label into a single clickable node). If you need to test a specific inner element, query the unmerged tree explicitly: `onNodeWithText("Subtext", useUnmergedTree = true)`. Next, with Testing Custom Semantics Properties, when building custom UI components (e.g. Custom sliders, star ratings), expose custom semantic properties via `Modifier.semantics { set(CustomKey, value) }`. In tests, query and assert against these typed semantic keys directly.
+Finally, with Robolectric Compose UI Testing, with modern Robolectric, Compose UI tests using `createComposeRule()` execute directly on the host JVM in seconds, providing rapid UI verification without booting Android emulators.
 
-2. **Testing Custom Semantics Properties**: When building custom UI components (e.g. custom sliders, star ratings), expose custom semantic properties via `Modifier.semantics { set(CustomKey, value) }`. In tests, query and assert against these typed semantic keys directly.
-
-3. **Robolectric Compose UI Testing**: With modern Robolectric, Compose UI tests using `createComposeRule()` execute directly on the host JVM in seconds, providing rapid UI verification without booting Android emulators.
 
 ## How to answer in the interview
 

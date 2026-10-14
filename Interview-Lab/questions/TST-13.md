@@ -98,29 +98,22 @@ In local unit tests, substitute dependencies via direct constructor injection wi
 
 ## Interview answer — structured
 
-Managing dependency injection substitutions in test suites requires separating fast JVM unit tests from full container integration tests:
+Managing dependency injection substitutions in test suites requires separating fast JVM unit tests from full container integration tests.
 
-1. **Local JVM Testing (Pure Constructor Injection)**:
-   - Bypassing Dagger/Hilt entirely in `src/test/` is an industry best practice. When classes follow constructor injection, tests simply pass instantiated Fakes (`MyViewModel(FakeUserRepository())`). This avoids annotation processing overhead and runs in milliseconds.
+First, **Local JVM Testing (Pure Constructor Injection)**. Next, bypassing Dagger/Hilt entirely in `src/test/` is an industry best practice. When classes follow constructor injection, tests simply pass instantiated Fakes (`MyViewModel(FakeUserRepository())`). This avoids annotation processing overhead and runs in milliseconds.
+**Hilt Integration Testing (`@HiltAndroidTest`)**. When testing full Activity or Fragment flows requiring real dependency graphs.
+Decorate test classes with `@HiltAndroidTest` and attach `HiltAndroidRule(this)`. Use `@UninstallModules(ProductionDataModule::class)` to decouple real network/storage bindings.
+Use `@BindValue` on a field to automatically bind a Fake instance into the dependency container for that specific test run. **Verifying Scoped Lifecycles**.
+Finally, verify that `@ActivityScoped` bindings produce distinct instances when transitioning between activities, while `@Singleton` bindings persist within the test process.
 
-2. **Hilt Integration Testing (`@HiltAndroidTest`)**:
-   - When testing full Activity or Fragment flows requiring real dependency graphs:
-     - Decorate test classes with `@HiltAndroidTest` and attach `HiltAndroidRule(this)`.
-     - Use `@UninstallModules(ProductionDataModule::class)` to decouple real network/storage bindings.
-     - Use `@BindValue` on a field to automatically bind a Fake instance into the dependency container for that specific test run.
-
-3. **Verifying Scoped Lifecycles**:
-   - Verify that `@ActivityScoped` bindings produce distinct instances when transitioning between activities, while `@Singleton` bindings persist within the test process.
 
 ## Interview answer — deep senior
 
-From an architectural systems perspective, managing test DI containers requires preventing cross-test state pollution:
+From an architectural systems perspective, managing test DI containers requires preventing cross-test state pollution.
 
-1. **Singleton State Leaks Across Tests**: If a Fake bound as a `@Singleton` maintains in-memory state (e.g. `FakeDatabase` holding user records), that state persists across consecutive `@Test` methods unless explicitly wiped in `@After` teardown hooks. Build explicit `clear()` methods on all stateful test fakes.
+First, with Singleton State Leaks Across Tests, if a Fake bound as a `@Singleton` maintains in-memory state (e.g. `FakeDatabase` holding user records), that state persists across consecutive `@Test` methods unless explicitly wiped in `@After` teardown hooks. Build explicit `clear()` methods on all stateful test fakes. Next, with Custom Test Application in Instrumentation, Hilt generates `HiltTestApplication` for instrumented tests. Ensure your `app/build.gradle.kts` sets `testInstrumentationRunner = "com.example.HiltTestRunner"`, which subclasses `AndroidJUnitRunner` and boots `HiltTestApplication` as the root application context.
+Finally, with Dynamic Test Components, for feature-modular codebases, avoid a single monolithic test module. Create isolated test modules per feature (`:feature:checkout:testing`) exporting modular fakes, allowing feature tests to compose test graphs independently.
 
-2. **Custom Test Application in Instrumentation**: Hilt generates `HiltTestApplication` for instrumented tests. Ensure your `app/build.gradle.kts` sets `testInstrumentationRunner = "com.example.HiltTestRunner"`, which subclasses `AndroidJUnitRunner` and boots `HiltTestApplication` as the root application context.
-
-3. **Dynamic Test Components**: For feature-modular codebases, avoid a single monolithic test module. Create isolated test modules per feature (`:feature:checkout:testing`) exporting modular fakes, allowing feature tests to compose test graphs independently.
 
 ## How to answer in the interview
 

@@ -89,26 +89,20 @@ Git revert is safer on shared branches because it creates a new forward-moving c
 
 ## Interview answer — structured
 
-On shared branches like `main` or release stabilization branches, `git revert` is the only safe undo mechanism for three core reasons:
+On shared branches like `main` or release stabilization branches, `git revert` is the only safe undo mechanism for three core reasons.
 
-1. **Forward-Only History (No Force-Push Required)**:
-   - `git revert <sha>` records a new commit containing the exact inverse diff of the flawed commit. Because the branch tip advances forward linearly, it can be pushed with a standard `git push` without requiring destructive force pushes (`git push --force`).
+First, **Forward-Only History (No Force-Push Required)**. Next, `git revert <sha>` records a new commit containing the exact inverse diff of the flawed commit. Because the branch tip advances forward linearly, it can be pushed with a standard `git push` without requiring destructive force pushes (`git push --force`).
+**Teammate Synchronization & Ghost Merges**. If you use `git reset` and force-push to a shared branch, any collaborator whose local clone still has the erased commit will unknowingly re-introduce it the next time they pull or merge, causing ghost bug resuscitations and severe merge conflicts.
+**Compliance and Auditability**. Finally, enterprise compliance frameworks (such as SOC2 or ISO 27001) mandate an immutable audit trail. `git revert` transparently documents that a feature was committed, caused an issue, and was subsequently rolled back, preserving full attribution.
 
-2. **Teammate Synchronization & Ghost Merges**:
-   - If you use `git reset` and force-push to a shared branch, any collaborator whose local clone still has the erased commit will unknowingly re-introduce it the next time they pull or merge, causing ghost bug resuscitations and severe merge conflicts.
-
-3. **Compliance and Auditability**:
-   - Enterprise compliance frameworks (such as SOC2 or ISO 27001) mandate an immutable audit trail. `git revert` transparently documents that a feature was committed, caused an issue, and was subsequently rolled back, preserving full attribution.
 
 ## Interview answer — deep senior
 
-Handling reverts on complex merge commits presents an architectural challenge that senior engineers must navigate:
+Handling reverts on complex merge commits presents an architectural challenge that senior engineers must navigate.
 
-1. **Reverting Merge Commits (`git revert -m 1`)**: When reverting a merge commit, Git does not know which of the two parents represents the mainline. Passing `-m 1` specifies that the first parent (the target branch, like `main`) is the baseline. This reverts the changes introduced by the feature branch.
+First, with Reverting Merge Commits (`git revert -m 1`), when reverting a merge commit, Git does not know which of the two parents represents the mainline. Passing `-m 1` specifies that the first parent (the target branch, like `main`) is the baseline. This reverts the changes introduced by the feature branch. Next, a The Re-Merge Dilemma is a critical nuance occurs when re-introducing the feature later. If you simply re-merge the original feature branch after reverting it, Git sees that the commits are already in history and **will not re-apply the reverted code**! To re-introduce the feature, you must execute `git revert <revert-commit-sha>` (reverting the revert) before merging new fixes.
+Finally, with Branch Protection Enforcements, mature teams configure branch protection rules in GitHub or GitLab that strictly disallow `git push --force` or `--force-with-lease` on `main`, enforcing `git revert` by operational policy.
 
-2. **The Re-Merge Dilemma**: A critical nuance occurs when re-introducing the feature later. If you simply re-merge the original feature branch after reverting it, Git sees that the commits are already in history and **will not re-apply the reverted code**! To re-introduce the feature, you must execute `git revert <revert-commit-sha>` (reverting the revert) before merging new fixes.
-
-3. **Branch Protection Enforcements**: Mature teams configure branch protection rules in GitHub or GitLab that strictly disallow `git push --force` or `--force-with-lease` on `main`, enforcing `git revert` by operational policy.
 
 ## How to answer in the interview
 

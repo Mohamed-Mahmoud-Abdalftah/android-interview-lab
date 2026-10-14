@@ -110,17 +110,16 @@ Classify each field as ephemeral UI, restorable UI, or business state; document 
 
 Choosing between `remember`, `rememberSaveable`, and `ViewModel` depends strictly on lifecycle scope and state ownership.
 
-1. **`remember`**: Retains an object in the Slot Table across **recomposition passes** as long as the composable remains in the composition tree. However, it is wiped on configuration changes (screen rotations) and process death. It is designed for ephemeral UI calculations, such as expensive formatting objects, scroll state listeners, or animation progress.
+First, with remember, retains an object in the Slot Table across **recomposition passes** as long as the composable remains in the composition tree. However, it is wiped on configuration changes (screen rotations) and process death. It is designed for ephemeral UI calculations, such as expensive formatting objects, scroll state listeners, or animation progress. Next, with rememberSaveable, preserves state across recomposition *and* **configuration changes and system-initiated process death**. It automatically serializes data into the Android `Bundle` using a `Saver` implementation. It is ideal for transient, UI-only user input like uncommitted text fields, active tab indexes, or accordion expansion states.
+Finally, with ViewModel State, scoped to the `ViewModelStoreOwner` (surviving configuration changes and backstack journeys). It holds business state, coordinates with repositories and network layers, and survives process death when paired with `SavedStateHandle`. Business logic and server-driven state should always reside here.
 
-2. **`rememberSaveable`**: Preserves state across recomposition *and* **configuration changes and system-initiated process death**. It automatically serializes data into the Android `Bundle` using a `Saver` implementation. It is ideal for transient, UI-only user input like uncommitted text fields, active tab indexes, or accordion expansion states.
-
-3. **ViewModel State**: Scoped to the `ViewModelStoreOwner` (surviving configuration changes and backstack journeys). It holds business state, coordinates with repositories and network layers, and survives process death when paired with `SavedStateHandle`. Business logic and server-driven state should always reside here.
 
 ## Interview answer — deep senior
 
 Under the hood, `rememberSaveable` delegates to Compose's `SaveableStateRegistry`. When the OS destroys an Activity to reclaim memory, `SaveableStateRegistry` collects registered values into the saved instance state Bundle. If you store custom data classes inside `rememberSaveable`, you must provide a custom `Saver` (e.g. `listSaver` or `mapSaver`) or mark the class `@Parcelize Parcelable`; storing non-parcelable types crashes at runtime with an `IllegalArgumentException`.
 
 Conversely, storing everything in the `ViewModel` is an anti-pattern known as *State Bloat*. Fine-grained UI behaviors (like whether a tooltip is currently visible or an animation state) clutter the domain model and break composable encapsulation. Senior architects establish a clean boundary: pure UI transient state stays in `remember`/`rememberSaveable`, while actionable domain data belongs in the ViewModel.
+
 
 ## How to answer in the interview
 

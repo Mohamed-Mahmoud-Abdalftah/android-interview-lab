@@ -119,11 +119,13 @@ Distinguishing between persistent state and transient events is crucial for prev
 
 We model transient events either through a separate one-shot stream like `Channel.receiveAsFlow()` or by embedding an event in UI state paired with an explicit confirmation action (`onEventHandled()`).
 
+
 ## Interview answer — deep senior
 
 Historically, developers addressed this issue using `SingleLiveEvent` or `Event<T>` wrappers containing an `isHandled` boolean flag. While functional, those patterns are considered workarounds that break reactive purity.
 
 In modern Android architecture, Google's Architecture Guide recommends two clean approaches: 1. **Channel as Event Stream:** A ViewModel exposes `val sideEffects = effectChannel.receiveAsFlow()`. Channels guarantee single-receiver delivery (FIFO queue); once an event is received and handled by `LaunchedEffect` in Compose, it is dequeued and cannot be replayed on rotation. 2. **State-Driven Events:** Model the event directly inside the UI state with a unique ID: `data class UiState(val userMessage: UserMessage? = null)`. When the UI displays the message, it immediately dispatches an intent `viewModel.onMessageShown(message.id)`, and the ViewModel clears `userMessage = null`. This keeps everything in a single unidirectional state pipeline.
+
 
 ## How to answer in the interview
 

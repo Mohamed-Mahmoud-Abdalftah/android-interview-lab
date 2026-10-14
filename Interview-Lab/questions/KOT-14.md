@@ -94,6 +94,7 @@ Conversely, when a class only consumes data, we mark it contravariant using in, 
 
 Star projection (*) is used when the type argument is unknown, safely allowing reads as Any? while preventing writes.
 
+
 ## Interview answer — deep senior
 
 Kotlin's variance system improves on Java's wildcard generics (? extends T and ? super T) by supporting declaration-site variance. In Java, variance must be repeated at every call site (e.g., List<? extends Animal>). In Kotlin, we declare variance on the interface definition itself (e.g., interface Source<out T>), and all call sites automatically inherit covariant subtyping without wildcard annotations.
@@ -101,6 +102,7 @@ Kotlin's variance system improves on Java's wildcard generics (? extends T and ?
 Kotlin still supports use-site variance (type projections) for invariant classes like Array or MutableList. Writing copy(from: Array<out Any>, to: Array<in Any>) applies Java-style PECS (Producer Extends, Consumer Super) at specific call sites.
 
 Under the hood, declaration-site variance is enforced strictly by the compiler's position checker. If a type parameter is marked out, it can only appear in output positions (return types, read-only property types). If marked in, it can only appear in input positions (method parameters). If an out type parameter genuinely needs to be accepted in an internal private method or constructor, it must be annotated with @UnsafeVariance to bypass compiler checks, a technique used carefully inside Kotlin's standard library collections.
+
 
 ## How to answer in the interview
 

@@ -108,6 +108,7 @@ The standard `collectAsState()` API is tied purely to the Compose composition li
 
 **`collectAsStateWithLifecycle()`** (from `lifecycle-runtime-compose`) binds flow collection to the Android `LifecycleOwner`. By default, it uses `Lifecycle.State.STARTED`: it launches a coroutine to collect the flow when the UI becomes visible, and automatically **cancels the collection** when the app goes into the background (`onStop()`). When paired with `SharingStarted.WhileSubscribed(5_000)` in the ViewModel, upstream network and database subscriptions cleanly shut down.
 
+
 ## Interview answer — deep senior
 
 Under the hood, `collectAsStateWithLifecycle()` uses `repeatOnLifecycle(minActiveState)`. When the host lifecycle transitions below `STARTED` (such as `STOPPED`), `repeatOnLifecycle` cancels the internal collection coroutine. When the lifecycle re-enters `STARTED` or `RESUMED`, it automatically launches a brand-new coroutine to re-subscribe to the Flow and populate the state.
@@ -115,6 +116,7 @@ Under the hood, `collectAsStateWithLifecycle()` uses `repeatOnLifecycle(minActiv
 This behavior is especially critical when dealing with cold flows, camera frames, and database queries. Without lifecycle-aware collection, cold flows keep background workers running indefinitely, and camera frames dispatched to stopped surfaces trigger native driver crashes.
 
 In enterprise codebases, we enforce static analysis via Android Lint (`androidx.lifecycle.lint`) to flag any usage of `collectAsState()` in UI files and recommend replacement with `collectAsStateWithLifecycle()`.
+
 
 ## How to answer in the interview
 

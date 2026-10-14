@@ -82,28 +82,21 @@ If uploaded to Google Play, the console automatically rejects bundles signed wit
 
 ## Interview answer — structured
 
-Containing and rectifying an artifact signed with the incorrect cryptographic key depends on the distribution channel:
+Containing and rectifying an artifact signed with the incorrect cryptographic key depends on the distribution channel.
 
-1. **Google Play Containment (Safe by Default)**:
-   - If enrolled in Play App Signing, Google Play Console enforces certificate verification on upload. Uploading an AAB signed with an unrecognized key fails with an immediate rejection error (`The upload key does not match`). Zero production users are impacted.
+First, **Google Play Containment (Safe by Default)**. Next, if enrolled in Play App Signing, Google Play Console enforces certificate verification on upload. Uploading an AAB signed with an unrecognized key fails with an immediate rejection error (`The upload key does not match`). Zero production users are impacted.
+**Alternative Distribution / Direct APK Blast Radius**. For enterprise MDM or direct APK distribution, devices reject the update with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Users cannot be compromised, but the update channel is blocked.
+Immediately halt the rollout track and purge the invalid artifact from distribution CDNs. **Pipeline Remediation & Hardening**.
+Audit CI secret variables. Ensure the release workflow extracts signing credentials exclusively from a **Protected GitHub Environment** restricted to protected release branches and tags. Finally, add an automated pre-publish CI assertion task: execute `keytool -printcert -jarfile <artifact>` and assert that the certificate's SHA-256 fingerprint matches the pinned production upload certificate, aborting the job on any divergence.
 
-2. **Alternative Distribution / Direct APK Blast Radius**:
-   - For enterprise MDM or direct APK distribution, devices reject the update with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Users cannot be compromised, but the update channel is blocked.
-   - Immediately halt the rollout track and purge the invalid artifact from distribution CDNs.
-
-3. **Pipeline Remediation & Hardening**:
-   - Audit CI secret variables. Ensure the release workflow extracts signing credentials exclusively from a **Protected GitHub Environment** restricted to protected release branches and tags.
-   - Add an automated pre-publish CI assertion task: execute `keytool -printcert -jarfile <artifact>` and assert that the certificate's SHA-256 fingerprint matches the pinned production upload certificate, aborting the job on any divergence.
 
 ## Interview answer — deep senior
 
-From a cryptographic identity governance perspective, key recovery requires clear protocols:
+From a cryptographic identity governance perspective, key recovery requires clear protocols.
 
-1. **Upload Key Reset Protocol**: If the original upload key was irrevocably lost or corrupted, the Google Play Console account owner navigates to Setup -> App Signing and requests an Upload Key Reset. Provide the public PEM certificate of the newly generated upload key. Google updates the registration within 48 hours without affecting the master App Signing Key or installed user base.
+First, with Upload Key Reset Protocol, if the original upload key was irrevocably lost or corrupted, the Google Play Console account owner navigates to Setup -> App Signing and requests an Upload Key Reset. Provide the public PEM certificate of the newly generated upload key. Google updates the registration within 48 hours without affecting the master App Signing Key or installed user base. Next, with Self-Signed Enterprise Keystore Rotation, if the app is distributed outside Google Play without Play App Signing and the original private key is lost, updating the installed user base is technically impossible. The developer must register a new Application ID, forcing users to uninstall and reinstall—demonstrating why Play App Signing is vital.
+Finally, with HSM & Cloud KMS Integration, mitigate credential handling entirely by using Gradle plugins that sign via Google Cloud KMS or AWS KMS remote signing APIs, eliminating `.jks` file handling on CI runners.
 
-2. **Self-Signed Enterprise Keystore Rotation**: If the app is distributed outside Google Play without Play App Signing and the original private key is lost, updating the installed user base is technically impossible. The developer must register a new Application ID, forcing users to uninstall and reinstall—demonstrating why Play App Signing is vital.
-
-3. **HSM & Cloud KMS Integration**: Mitigate credential handling entirely by using Gradle plugins that sign via Google Cloud KMS or AWS KMS remote signing APIs, eliminating `.jks` file handling on CI runners.
 
 ## How to answer in the interview
 

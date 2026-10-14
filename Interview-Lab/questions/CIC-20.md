@@ -99,32 +99,23 @@ Profile the 40-minute pipeline using Gradle Build Scans (--scan) to pinpoint exa
 
 ## Interview answer — structured
 
-Systematically reducing a 40-minute Android CI pipeline to under 10 minutes requires empirical profiling and tiered intervention:
+Systematically reducing a 40-minute Android CI pipeline to under 10 minutes requires empirical profiling and tiered intervention.
 
-1. **Empirical Bottleneck Profiling**:
-   - Generate a Gradle Build Scan (`./gradlew assembleDebug --scan`). Inspect the timeline to isolate where time is wasted: configuration overhead, network dependency downloading, Kotlin compilation, annotation processing, or testing.
+First, **Empirical Bottleneck Profiling**. Next, generate a Gradle Build Scan (`./gradlew assembleDebug --scan`). Inspect the timeline to isolate where time is wasted: configuration overhead, network dependency downloading, Kotlin compilation, annotation processing, or testing.
+**Tier 1: Immediate Execution Wins (Low Effort, High Impact)**. Cache `~/.gradle/caches` and wrapper using `gradle/actions/setup-gradle`.
+Enable `org.gradle.parallel=true`, `org.gradle.caching=true`, and `org.gradle.configuration-cache=true`. Allocate proper runner memory: `-Xmx6g -XX:+UseParallelGC` to eliminate GC thrashing.
+**Tier 2: Pipeline Parallelization (Medium Effort)**. Break monolithic single-job pipelines into parallel matrix jobs: (a) static analysis and formatting, (b) local JVM unit tests, and (c) debug assembly. Running these concurrently on multiple runners cuts wall-clock time dramatically.
+**Tier 3: Remote Caching & Affected Module Detection (High Impact)**. Deploy a shared Remote Build Cache (Develocity or HTTP cache). Tasks that produce identical bytecode are resolved instantly with `FROM-CACHE`.
+Finally, enforce Affected Module Detection to execute tests only for modules impacted by the PR's git diff.
 
-2. **Tier 1: Immediate Execution Wins (Low Effort, High Impact)**:
-   - Cache `~/.gradle/caches` and wrapper using `gradle/actions/setup-gradle`.
-   - Enable `org.gradle.parallel=true`, `org.gradle.caching=true`, and `org.gradle.configuration-cache=true`.
-   - Allocate proper runner memory: `-Xmx6g -XX:+UseParallelGC` to eliminate GC thrashing.
-
-3. **Tier 2: Pipeline Parallelization (Medium Effort)**:
-   - Break monolithic single-job pipelines into parallel matrix jobs: (a) static analysis and formatting, (b) local JVM unit tests, and (c) debug assembly. Running these concurrently on multiple runners cuts wall-clock time dramatically.
-
-4. **Tier 3: Remote Caching & Affected Module Detection (High Impact)**:
-   - Deploy a shared Remote Build Cache (Develocity or HTTP cache). Tasks that produce identical bytecode are resolved instantly with `FROM-CACHE`.
-   - Enforce Affected Module Detection to execute tests only for modules impacted by the PR's git diff.
 
 ## Interview answer — deep senior
 
-From an engineering leadership and platform infrastructure perspective, deep optimizations require architectural shifts:
+From an engineering leadership and platform infrastructure perspective, deep optimizations require architectural shifts.
 
-1. **Decouple Emulators from PR Gates**: Running full Android emulator suites on slow GitHub Actions virtual machines often consumes 25+ minutes of the 40-minute pipeline. Senior teams run only fast local JVM unit tests and Robolectric on PR gates, and offload instrumented UI tests to sharded cloud device farms (Firebase Test Lab / Flank / Marathon) scheduled on merge trains or nightly builds.
+First, with Decouple Emulators from PR Gates, running full Android emulator suites on slow GitHub Actions virtual machines often consumes 25+ minutes of the 40-minute pipeline. Senior teams run only fast local JVM unit tests and Robolectric on PR gates, and offload instrumented UI tests to sharded cloud device farms (Firebase Test Lab / Flank / Marathon) scheduled on merge trains or nightly builds. Next, with Eliminate Non-Cacheable Task Bottlenecks, audit tasks that constantly miss cache due to bad inputs. Common culprits include custom tasks embedding timestamps, git commit hashes, or absolute paths into compiled files, which invalidate the Gradle cache key for all downstream tasks.
+Finally, with KAPT to KSP Migration, if the build scan reveals excessive annotation processing duration, migrating Room, Moshi, and Dagger/Hilt to Kotlin Symbol Processing (KSP) cuts code-generation and stub-generation overhead by up to 50% across large modular codebases.
 
-2. **Eliminate Non-Cacheable Task Bottlenecks**: Audit tasks that constantly miss cache due to bad inputs. Common culprits include custom tasks embedding timestamps, git commit hashes, or absolute paths into compiled files, which invalidate the Gradle cache key for all downstream tasks.
-
-3. **KAPT to KSP Migration**: If the build scan reveals excessive annotation processing duration, migrating Room, Moshi, and Dagger/Hilt to Kotlin Symbol Processing (KSP) cuts code-generation and stub-generation overhead by up to 50% across large modular codebases.
 
 ## How to answer in the interview
 

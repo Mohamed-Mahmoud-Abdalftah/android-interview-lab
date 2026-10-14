@@ -1,13 +1,20 @@
 ---
 import academy from '../data/academy.json';
+const isArabic = Astro.currentLocale === 'ar' || Astro.url.pathname.includes('/ar/');
 const { stats } = academy;
-const cards = [
+const cards = isArabic ? [
   { value: `${stats.coreReviewed}/${stats.coreTotal}`, label: 'درس Core متراجع' },
   { value: stats.questions, label: 'سؤال بإجابة كاملة' },
   { value: stats.scenarios, label: 'سيناريو Production' },
   { value: stats.labs, label: 'تحدي Kotlin باختبارات' },
+] : [
+  { value: `${stats.coreReviewed}/${stats.coreTotal}`, label: 'Core Lessons Reviewed' },
+  { value: stats.questions, label: 'Questions with Full Answers' },
+  { value: stats.scenarios, label: 'Production Scenarios' },
+  { value: stats.labs, label: 'Kotlin Labs with Tests' },
 ];
 ---
-<div class="stat-grid" aria-label="إحصائيات المحتوى الفعلي">
+<div class="stat-grid" aria-label={isArabic ? "إحصائيات المحتوى الفعلي" : "Real Content Statistics"}>
   {cards.map((card) => <div class="stat-card"><strong><bdi>{card.value}</bdi></strong><span>{card.label}</span></div>)}
 </div>
+

@@ -118,13 +118,11 @@ Use Room's @Transaction on DAO methods or database.withTransaction { } in reposi
 
 ## Interview answer — structured
 
-Room transactions provide ACID atomicity, guaranteeing that multi-step database writes either completely succeed or completely roll back:
+Room transactions provide ACID atomicity, guaranteeing that multi-step database writes either completely succeed or completely roll back.
 
-1. **DAO-Level Transactions (`@Transaction`)**: Used when combining multiple queries within a single DAO (e.g. deleting old cached posts and inserting fresh posts). If the app crashes or throws an exception during insertion, the delete operation rolls back automatically, preventing an empty UI state.
+First, dAO-Level Transactions (`@Transaction`) is used when combining multiple queries within a single DAO (e.g. Deleting old cached posts and inserting fresh posts). If the app crashes or throws an exception during insertion, the delete operation rolls back automatically, preventing an empty UI state. Next, repository-Level Transactions (`roomDatabase.withTransaction { }`) is the preferred coroutine construct for multi-DAO atomic operations. For example, saving an order in `OrderDao`, recording line items in `OrderItemDao`, and clearing the shopping cart in `CartDao` must occur atomically. `withTransaction` wraps the block in SQLite `BEGIN TRANSACTION ... COMMIT`.
+Finally, with Consistency for Observers, observers watching Room `Flow` queries only receive an updated dataset *after* the entire transaction commits. They never observe intermediate, half-written states.
 
-2. **Repository-Level Transactions (`roomDatabase.withTransaction { }`)**: The preferred coroutine construct for multi-DAO atomic operations. For example, saving an order in `OrderDao`, recording line items in `OrderItemDao`, and clearing the shopping cart in `CartDao` must occur atomically. `withTransaction` wraps the block in SQLite `BEGIN TRANSACTION ... COMMIT`.
-
-3. **Consistency for Observers**: Observers watching Room `Flow` queries only receive an updated dataset *after* the entire transaction commits. They never observe intermediate, half-written states.
 
 ## Interview answer — deep senior
 
@@ -141,6 +139,7 @@ database.withTransaction {
 SQLite has a limited connection pool (often 1 write connection in WAL mode). Holding an open database transaction while awaiting a remote HTTP call locks the database for seconds, starving all other read and write threads and causing widespread `SQLiteDatabaseLockedException` and UI ANRs.
 
 **Rule**: Network operations must happen outside database transactions. First write the pending state in a fast 2ms transaction, make the network call, and update status in a second fast transaction.
+
 
 ## How to answer in the interview
 

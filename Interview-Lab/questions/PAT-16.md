@@ -103,20 +103,19 @@ To swap vendor SDKs with mismatched callbacks without breaking the app, establis
 
 When swapping third-party SDKs, the fatal mistake is allowing vendor-specific types, exceptions, and callback signatures to bleed into ViewModels and UI logic. If Vendor A uses listeners and Vendor B returns intents, changing vendors causes a ripple effect across the entire codebase.
 
-We solve this using three architectural boundaries:
-1. **Domain Contract**: We define a clean interface in our domain layer (`DocumentScanner` or `PaymentGateway`) expressing the business need using pure Kotlin types, completely agnostic of any vendor.
-2. **Adapter & Anti-Corruption Layer (ACL)**: Each vendor SDK gets an Adapter that implements this domain contract. The adapter bridges the callback mechanism into modern coroutines using `suspendCancellableCoroutine`, handles vendor lifecycle requirements, and maps vendor error codes into typed domain errors.
-3. **Physical Module Boundary**: We isolate each vendor SDK in its own Gradle module. The main application module depends on the domain interface, not the vendor SDK, guaranteeing at compile time that no vendor classes can leak into the rest of the application.
+We solve this using three architectural boundaries.
+
+First, with Domain Contract, we define a clean interface in our domain layer (`DocumentScanner` or `PaymentGateway`) expressing the business need using pure Kotlin types, completely agnostic of any vendor. Next, with Adapter & Anti-Corruption Layer (ACL), each vendor SDK gets an Adapter that implements this domain contract. The adapter bridges the callback mechanism into modern coroutines using `suspendCancellableCoroutine`, handles vendor lifecycle requirements, and maps vendor error codes into typed domain errors.
+Finally, with Physical Module Boundary, we isolate each vendor SDK in its own Gradle module. The main application module depends on the domain interface, not the vendor SDK, guaranteeing at compile time that no vendor classes can leak into the rest of the application.
+
 
 ## Interview answer — deep senior
 
-When engineering an Anti-Corruption Layer for vendor SDKs in enterprise Android apps, multiple edge cases must be handled beyond simple signature mapping:
+When engineering an Anti-Corruption Layer for vendor SDKs in enterprise Android apps, multiple edge cases must be handled beyond simple signature mapping.
 
-1. **Thread Hopping & Synchronization**: Vendor callbacks frequently fire on arbitrary background threads or private SDK loopers. The Adapter is responsible for ensuring continuation resumption occurs on appropriate dispatchers (`Dispatchers.Default` for parsing, or handling Android UI thread constraints).
+First, with Thread Hopping & Synchronization, vendor callbacks frequently fire on arbitrary background threads or private SDK loopers. The Adapter is responsible for ensuring continuation resumption occurs on appropriate dispatchers (`Dispatchers.Default` for parsing, or handling Android UI thread constraints). Next, with Cancellation & Resource Cleanup, if the calling coroutine cancels (e.g. User navigates back while the scanner is running), `suspendCancellableCoroutine.invokeOnCancellation` must instruct the vendor SDK to stop camera hardware, free native memory, or deregister listeners. Otherwise, you leak camera sensors and background threads.
+Finally, with Unified Error Semantics, vendor A might return HTTP 400 for expired documents, while Vendor B throws an unhandled `SdkInvalidStateException`. The Adapter catches all vendor exceptions, translating them into a unified sealed class hierarchy (`ScanFailure.DocumentExpired`, `ScanFailure.Timeout`, `ScanFailure.SecurityViolation`). The UI only ever responds to domain errors, remaining 100% resilient when swapping vendors.
 
-2. **Cancellation & Resource Cleanup**: If the calling coroutine cancels (e.g. user navigates back while the scanner is running), `suspendCancellableCoroutine.invokeOnCancellation` must instruct the vendor SDK to stop camera hardware, free native memory, or deregister listeners. Otherwise, you leak camera sensors and background threads.
-
-3. **Unified Error Semantics**: Vendor A might return HTTP 400 for expired documents, while Vendor B throws an unhandled `SdkInvalidStateException`. The Adapter catches all vendor exceptions, translating them into a unified sealed class hierarchy (`ScanFailure.DocumentExpired`, `ScanFailure.Timeout`, `ScanFailure.SecurityViolation`). The UI only ever responds to domain errors, remaining 100% resilient when swapping vendors.
 
 ## How to answer in the interview
 

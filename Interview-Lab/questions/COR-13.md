@@ -94,6 +94,7 @@ In a standard Job hierarchy—such as inside a standard `coroutineScope`—the b
 
 In contrast, under a `SupervisorJob` or `supervisorScope`, child failure is strictly isolated. The supervisor parent does not cancel itself when a child fails, and active sibling coroutines continue running to completion. The failed child terminates independently, and its exception must be handled locally or by a CoroutineExceptionHandler attached to that child.
 
+
 ## Interview answer — deep senior
 
 At the internal implementation level, when a child throws an unhandled exception, it calls `parent.childCancelled(e)`. A standard `JobSupport` parent returns `true` to acknowledge the cancellation, transitions its state to Cancelling, and iterates through its `NodeList` of child handles, calling `child.cancel(CancellationException(cause))` on every active child.
@@ -101,6 +102,7 @@ At the internal implementation level, when a child throws an unhandled exception
 If another sibling also throws an exception while being cancelled, the parent attaches that second exception as a suppressed exception (`Throwable.addSuppressed()`) to the root cause, ensuring that no diagnostic failure information is lost in stack traces.
 
 In Android architecture, recognizing this distinction determines whether you use `coroutineScope` or `supervisorScope`. If parallel sub-tasks are interdependent (e.g., merging two API responses into a single combined UI entity), use `coroutineScope`. If the sub-tasks are independent UI components (e.g., separate dashboard cards), use `supervisorScope` so one failed widget doesn't blank out the entire screen.
+
 
 ## How to answer in the interview
 

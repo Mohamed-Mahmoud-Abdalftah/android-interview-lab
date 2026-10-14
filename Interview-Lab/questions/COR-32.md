@@ -145,6 +145,7 @@ To test timeouts: I configure the mock operation with a simulated delay (e.g., `
 
 To test cancellation and supervision: I inject `testDispatcher` into my components, launch child coroutines, simulate an exception in one child, call `runCurrent()`, and assert that supervised siblings remain active while unsupervised hierarchies cancel appropriately.
 
+
 ## Interview answer — deep senior
 
 Under the hood, `StandardTestDispatcher` does not execute scheduled coroutines immediately upon builder invocation. Instead, it queues tasks into the `TestCoroutineScheduler`. This gives developers three surgical levers of control: 1. `runCurrent()`: Executes all scheduled tasks that are ready to run at the current virtual timestamp. 2. `advanceTimeBy(millis)`: Advances the virtual clock, triggering any delayed tasks or timeouts scheduled within that window. 3. `advanceUntilIdle()`: Continuously drains all pending tasks until the scheduler queue is completely empty.
@@ -152,6 +153,7 @@ Under the hood, `StandardTestDispatcher` does not execute scheduled coroutines i
 When testing Android ViewModels that reference `Dispatchers.Main`, you must register a `MainDispatcherRule` (a JUnit TestRule) that invokes `Dispatchers.setMain(testDispatcher)` in `@Before` and `Dispatchers.resetMain()` in `@After`.
 
 Finally, `runTest` includes an automatic uncaught exception detector: if any coroutine in the test scope fails with an unhandled exception, `runTest` fails the test automatically at the end of the block, preventing swallowed background crashes.
+
 
 ## How to answer in the interview
 

@@ -102,6 +102,7 @@ When a coroutine launched with `launch` encounters an unhandled exception, it tr
 
 When a root coroutine launched with `async` throws an exception, the exception is stored inside the resulting `Deferred<T>` instance. It remains dormant and unthrown until the caller invokes `deferred.await()`, at which point `await()` rethrows the original exception. This allows the caller to handle failures locally using a standard `try-catch` block around `await()`.
 
+
 ## Interview answer — deep senior
 
 There is a crucial architectural nuance that trips up many engineers: **the context of `async` determines whether it behaves quietly or eagerly**.
@@ -117,6 +118,7 @@ coroutineScope {
 Even if you never call `task.await()`, the moment the child `async` fails, it signals failure to its parent `coroutineScope`. The parent immediately cancels all other siblings and rethrows the `NetworkException`. Wrapping `task.await()` in a `try-catch` will catch the exception locally, but the parent `coroutineScope` has already been destroyed!
 
 To catch an `async` exception locally with `try-catch` around `await()` without cancelling sibling operations, you must run the operations inside a `supervisorScope { }`.
+
 
 ## How to answer in the interview
 

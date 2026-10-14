@@ -1,16 +1,26 @@
 ---
 import academy from '../data/academy.json';
+const isArabic = Astro.currentLocale === 'ar' || Astro.url.pathname.includes('/ar/');
 const lessons = [...academy.lessons].sort((a, b) => a.day - b.day);
 ---
-<ol class="timeline" aria-label="مسار الدراسة على 48 يوم">
-  {lessons.map((lesson) => (
-    <li class="timeline-item" data-ready={lesson.status === 'reviewed'}>
-      <div class="timeline-day">يوم <bdi>{lesson.day}</bdi></div>
-      <div>
-        {lesson.route ? <a href={lesson.route}><strong><bdi>{lesson.id}</bdi> — {lesson.title}</strong></a> : <strong><bdi>{lesson.id}</bdi> — {lesson.title}</strong>}
-        <div>الأسبوع {Math.ceil(lesson.day / 6)} · ساعتين · المتطلبات: {lesson.prerequisites.length ? lesson.prerequisites.join('، ') : 'لا يوجد'}</div>
-      </div>
-      <span class:list={['status-chip', lesson.status === 'reviewed' ? '' : 'planned']}>{lesson.status === 'reviewed' ? 'جاهز للمذاكرة' : 'لسه بيتكتب'}</span>
-    </li>
-  ))}
+<ol class="timeline" aria-label={isArabic ? "مسار الدراسة على 48 يوم" : "48-Day Study Timeline"}>
+  {lessons.map((lesson) => {
+    const route = lesson.route ? (isArabic ? `/ar${lesson.route}` : lesson.route) : null;
+    return (
+      <li class="timeline-item" data-ready={lesson.status === 'reviewed'}>
+        <div class="timeline-day">{isArabic ? 'يوم' : 'Day'} <bdi>{lesson.day}</bdi></div>
+        <div>
+          {route ? <a href={route}><strong><bdi>{lesson.id}</bdi> — {lesson.title}</strong></a> : <strong><bdi>{lesson.id}</bdi> — {lesson.title}</strong>}
+          <div>
+            {isArabic
+              ? `الأسبوع ${Math.ceil(lesson.day / 6)} · ساعتين · المتطلبات: ${lesson.prerequisites.length ? lesson.prerequisites.join('، ') : 'لا يوجد'}`
+              : `Week ${Math.ceil(lesson.day / 6)} · 2 hrs · Prerequisites: ${lesson.prerequisites.length ? lesson.prerequisites.join(', ') : 'None'}`}
+          </div>
+        </div>
+        <span class:list={['status-chip', lesson.status === 'reviewed' ? '' : 'planned']}>
+          {lesson.status === 'reviewed' ? (isArabic ? 'جاهز للمذاكرة' : 'Ready') : (isArabic ? 'قيد الإعداد' : 'Planned')}
+        </span>
+      </li>
+    );
+  })}
 </ol>

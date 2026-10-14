@@ -120,14 +120,11 @@ Optimize long lists in Compose by providing unique stable `key`s and `contentTyp
 
 High-performance scrolling in Jetpack Compose requires eliminating work from the frame budget during list layout.
 
-1. **LazyList Optimization Pillars**:
-   - **Stable Keys**: Always declare `key = { it.id }` in `items()`. This lets Compose map items to stable slot table entries, skipping item recomposition when lists shift or reorder.
-   - **Content Types**: Specify `contentType` for heterogeneous lists to enable slot recycling across visually identical views.
-   - **Subcomposition Overhead**: Minimize nested `LazyRow` components or deep layout hierarchies inside items; keep item composables flat and lightweight.
+First, **LazyList Optimization Pillars**. Next, with Stable Keys, always declare `key = { it.id }` in `items()`. This lets Compose map items to stable slot table entries, skipping item recomposition when lists shift or reorder.
+Additionally, with Content Types, specify `contentType` for heterogeneous lists to enable slot recycling across visually identical views. With Subcomposition Overhead, minimize nested `LazyRow` components or deep layout hierarchies inside items; keep item composables flat and lightweight.
+**Handling Expensive Calculations**. With Memoization, if computations depend on UI inputs, wrap them in `remember(key1, key2) { expensiveComputation() }` so they re-run only when dependencies change.
+Finally, with Background Offloading, truly CPU-heavy tasks—such as sorting 10,000 items, searching, or regex filtering—do not belong in the UI layer. They must be executed inside the ViewModel or Domain layer via `flowOn(Dispatchers.Default)` and exposed as pre-calculated, ready-to-render immutable lists.
 
-2. **Handling Expensive Calculations**:
-   - **Memoization**: If computations depend on UI inputs, wrap them in `remember(key1, key2) { expensiveComputation() }` so they re-run only when dependencies change.
-   - **Background Offloading**: Truly CPU-heavy tasks—such as sorting 10,000 items, searching, or regex filtering—do not belong in the UI layer. They must be executed inside the ViewModel or Domain layer via `flowOn(Dispatchers.Default)` and exposed as pre-calculated, ready-to-render immutable lists.
 
 ## Interview answer — deep senior
 
@@ -136,6 +133,7 @@ Under the hood, `LazyColumn` uses a specialized subcomposition pipeline called `
 Another critical lever is image loading. When using Coil, always configure explicit sizing (`size(ViewSizeResolver)` or modifier constraints) and bitmap pooling. If images are loaded without fixed bounds in a LazyColumn, Coil decodes full images before layout measurement can constrain them, blowing through memory.
 
 In Macrobenchmark tests, we measure scroll performance using `FrameTimingMetric()` across continuous fling scrolls to ensure 99th percentile frame times stay strictly under the display hardware refresh limit.
+
 
 ## How to answer in the interview
 

@@ -116,29 +116,21 @@ An LRU cache maintains a fixed capacity, evicting the least recently accessed it
 
 ## Interview answer — structured
 
-Designing an LRU cache requires coupling two data structures to guarantee constant-time access and eviction:
+Designing an LRU cache requires coupling two data structures to guarantee constant-time access and eviction.
 
-1. **The Combined Data Structure Architecture**:
-   - **Doubly Linked List**: Tracks recency of access. The most recently accessed node is placed at the head; the least recently accessed node sits at the tail. Given a direct node reference, unlinking and prepending operates in $O(1)$ without element shifting.
-   - **HashMap (`HashMap<Key, Node>`)**: Maps keys directly to their corresponding doubly linked list node pointers, enabling $O(1)$ lookups.
+First, **The Combined Data Structure Architecture**. Next, a Doubly Linked List tracks recency of access. The most recently accessed node is placed at the head; the least recently accessed node sits at the tail. Given a direct node reference, unlinking and prepending operates in $O(1)$ without element shifting.
+Additionally, with HashMap (`HashMap<Key, Node>`), maps keys directly to their corresponding doubly linked list node pointers, enabling $O(1)$ lookups. **Operational Workflow ($O(1)$ Time)**.
+With get(key), lookup node in map. If present, unlink the node and move it to the head of the list; return value ($O(1)$). With put(key, value), if key exists, update value and move node to head. If absent, create new node, insert at head, and store in map. If size exceeds capacity, evict the tail node from both list and map in $O(1)$.
+**Android Platform `LruCache`**. Finally, Android's `androidx.collection.LruCache` is internally backed by a Java `LinkedHashMap(capacity, 0.75f, true)` configured with `accessOrder = true`. It supports custom metric weighting via `sizeOf()`.
 
-2. **Operational Workflow ($O(1)$ Time)**:
-   - **`get(key)`**: Lookup node in map. If present, unlink the node and move it to the head of the list; return value ($O(1)$).
-   - **`put(key, value)`**: If key exists, update value and move node to head. If absent, create new node, insert at head, and store in map. If size exceeds capacity, evict the tail node from both list and map in $O(1)$.
-
-3. **Android Platform `LruCache`**:
-   - Android's `androidx.collection.LruCache` is internally backed by a Java `LinkedHashMap(capacity, 0.75f, true)` configured with `accessOrder = true`. It supports custom metric weighting via `sizeOf()`.
 
 ## Interview answer — deep senior
 
-In Android production systems, LRU cache tuning determines stability against OutOfMemory crashes:
+In Android production systems, LRU cache tuning determines stability against OutOfMemory crashes.
 
-1. **Byte-Weighted Cache Sizing**: When caching memory-heavy assets like Android `Bitmap`s, sizing by element count (`capacity = 50`) is fatal because a single uncompressed 4K Bitmap can consume 33MB of RAM while an icon consumes 10KB. Always override `sizeOf(key, value)` to return byte count, sizing the cache dynamically against available runtime memory:
-   `val cacheSize = (Runtime.getRuntime().maxMemory() / 1024 / 8).toInt()`.
+First, with Byte-Weighted Cache Sizing, when caching memory-heavy assets like Android `Bitmap`s, sizing by element count (`capacity = 50`) is fatal because a single uncompressed 4K Bitmap can consume 33MB of RAM while an icon consumes 10KB. Always override `sizeOf(key, value)` to return byte count, sizing the cache dynamically against available runtime memory: `val cacheSize = (Runtime.getRuntime().maxMemory() / 1024 / 8).toInt()`. Next, with Thread Safety, Android's `LruCache` methods are synchronized internally using intrinsic locks (`synchronized (this)`). If accessed across hundreds of parallel coroutine workers, lock contention can stall threads. High-concurrency systems use sharded LRU partitions or lock-free concurrent caches.
+Finally, with Eviction Hooks (`entryRemoved`), in Android, when Bitmaps or native buffers are evicted from an LRU cache, overriding `entryRemoved(evicted, key, oldValue, newValue)` enables recycling pooled buffers (e.g. `BitmapPool`) to prevent memory allocation churn on subsequent renders.
 
-2. **Thread Safety**: Android's `LruCache` methods are synchronized internally using intrinsic locks (`synchronized (this)`). If accessed across hundreds of parallel coroutine workers, lock contention can stall threads. High-concurrency systems use sharded LRU partitions or lock-free concurrent caches.
-
-3. **Eviction Hooks (`entryRemoved`)**: In Android, when Bitmaps or native buffers are evicted from an LRU cache, overriding `entryRemoved(evicted, key, oldValue, newValue)` enables recycling pooled buffers (e.g. `BitmapPool`) to prevent memory allocation churn on subsequent renders.
 
 ## How to answer in the interview
 

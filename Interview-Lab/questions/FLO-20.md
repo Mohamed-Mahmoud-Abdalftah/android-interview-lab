@@ -100,11 +100,13 @@ A **Channel** is a point-to-point communication primitive (1-to-1). It models a 
 
 A **SharedFlow** is a broadcast multicaster (1-to-N). Every emitted item is delivered to all active subscribers simultaneously. However, its major caveat is event loss: if an emission occurs when zero collectors are subscribed and `replay = 0`, the event is dropped permanently. It is suited for telemetry and broadcast notifications where dropped transient events are acceptable.
 
+
 ## Interview answer — deep senior
 
 Under the hood, `Channel` manages an explicit queue of elements and suspended continuations. When `send()` is invoked, if a receiver is waiting in `receive()`, the value is handed off directly between continuations without buffering. When converting a Channel to a Flow using `receiveAsFlow()`, you get a hot flow backed by that Channel. However, if multiple collectors collect from `receiveAsFlow()`, they will interleave item consumption rather than multicasting.
 
 In contrast, `SharedFlow` maintains a ring buffer and an array of subscriber slot pointers. Each subscriber tracks its own index in the buffer. In Android architecture, this distinction dictates our pattern for ViewModel-to-UI communication: Use **StateFlow** for state (`UiState`); Use **Channel.receiveAsFlow()** for single-consumption events (`Navigation`, `Toast`); and Use **SharedFlow** only when multiple independent screens/subscribers must receive the exact same event.
+
 
 ## How to answer in the interview
 

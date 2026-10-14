@@ -98,32 +98,22 @@ Unit tests run on the local JVM in milliseconds testing isolated logic. Integrat
 
 ## Interview answer — structured
 
-The Android testing spectrum balances execution speed, maintenance costs, and production confidence:
+The Android testing spectrum balances execution speed, maintenance costs, and production confidence.
 
-1. **Local Unit Tests (`src/test/`)**:
-   - Execute on the host machine's JVM without an emulator. Run in milliseconds. Ideal for ViewModels, pure domain UseCases, business algorithms, and data mappers.
+First, **Local Unit Tests (`src/test/`)**. Next, execute on the host machine's JVM without an emulator. Run in milliseconds. Ideal for ViewModels, pure domain UseCases, business algorithms, and data mappers.
+**Integration Tests**. Verify that multiple collaborating units interact correctly across module boundaries (e.g. Testing Room DAOs against SQLite, or network parsers against OkHttp MockWebServer).
+**Instrumentation Tests (`src/androidTest/`)**. Execute inside an Android OS process on physical hardware or emulators. Used whenever real Android OS runtime primitives (ART, Binder IPC, Keystore, real SQLite drivers) must be validated.
+**UI Tests (Compose Test / Espresso)**. Programmatically interact with UI nodes: asserting text presence, triggering clicks, verifying recomposition stability and accessibility semantics.
+**End-to-End (E2E) Tests**. Finally, exercise complete end-to-end user journeys (e.g., login, onboarding, checkout) against staging server infrastructure. Provide highest confidence, but carry highest execution duration and flake risks.
 
-2. **Integration Tests**:
-   - Verify that multiple collaborating units interact correctly across module boundaries (e.g. testing Room DAOs against SQLite, or network parsers against OkHttp MockWebServer).
-
-3. **Instrumentation Tests (`src/androidTest/`)**:
-   - Execute inside an Android OS process on physical hardware or emulators. Used whenever real Android OS runtime primitives (ART, Binder IPC, Keystore, real SQLite drivers) must be validated.
-
-4. **UI Tests (Compose Test / Espresso)**:
-   - Programmatically interact with UI nodes: asserting text presence, triggering clicks, verifying recomposition stability and accessibility semantics.
-
-5. **End-to-End (E2E) Tests**:
-   - Exercise complete end-to-end user journeys (e.g., login, onboarding, checkout) against staging server infrastructure. Provide highest confidence, but carry highest execution duration and flake risks.
 
 ## Interview answer — deep senior
 
-From an engineering management and CI governance perspective, test tiering dictates pipeline velocity:
+From an engineering management and CI governance perspective, test tiering dictates pipeline velocity.
 
-1. **The Cost-Velocity Ratio**: 1,000 local unit tests run in 5 seconds on developer machines and cost zero cloud infrastructure. 20 UI instrumentation tests require booting an emulator, waiting for system initialization, and running for 5 minutes. High-performing engineering teams push 70–80% of test coverage into fast local JVM unit tests.
+First, with The Cost-Velocity Ratio, 1,000 local unit tests run in 5 seconds on developer machines and cost zero cloud infrastructure. 20 UI instrumentation tests require booting an emulator, waiting for system initialization, and running for 5 minutes. High-performing engineering teams push 70–80% of test coverage into fast local JVM unit tests. Next, with Robolectric vs. Instrumentation, robolectric allows running Android framework tests (like inspecting Android Intent extras, Context resources, or Fragment lifecycles) directly on the local JVM by shadowing Android bytecode. It bridges the gap between speed and framework verification, though it does not replace real device verification for hardware-accelerated rendering or SQLite edge cases.
+Finally, with Hermetic Test Environments, reliable CI pipelines mandate hermetic test boundaries. E2E tests that communicate with live external third-party services (e.g. Live payment gateways) flake due to network latency; mock external boundaries using WireMock or controlled test stubs.
 
-2. **Robolectric vs. Instrumentation**: Robolectric allows running Android framework tests (like inspecting Android Intent extras, Context resources, or Fragment lifecycles) directly on the local JVM by shadowing Android bytecode. It bridges the gap between speed and framework verification, though it does not replace real device verification for hardware-accelerated rendering or SQLite edge cases.
-
-3. **Hermetic Test Environments**: Reliable CI pipelines mandate hermetic test boundaries. E2E tests that communicate with live external third-party services (e.g. live payment gateways) flake due to network latency; mock external boundaries using WireMock or controlled test stubs.
 
 ## How to answer in the interview
 

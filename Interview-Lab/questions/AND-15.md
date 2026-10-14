@@ -89,21 +89,18 @@ Multi-Activity navigation is heavy and deprecated; Fragment navigation (Single-A
 
 ## Interview answer — structured
 
-Modern Android architecture has evolved through four navigation paradigms:
+Modern Android architecture has evolved through four navigation paradigms.
 
-1. **Multi-Activity (Legacy)**: Each screen is an Activity. It incurs high memory overhead per window, creates clunky window transitions, and makes complex state sharing difficult. It is now reserved only for truly distinct app entry points (e.g., Auth vs Main App).
+First, with Multi-Activity (Legacy), each screen is an Activity. It incurs high memory overhead per window, creates clunky window transitions, and makes complex state sharing difficult. It is now reserved only for truly distinct app entry points (e.g., Auth vs Main App). Next, a Fragment Navigation (Single-Activity Architecture) is a single Activity hosts a `NavHostFragment`. It improved transition fluidity and memory efficiency, enabling shared ViewModels. However, managing the dual lifecycle of Fragments and nulling ViewBindings added cognitive overhead.
+Additionally, with Jetpack Compose Navigation (Modern Standard), pure declarative navigation between Composables via `NavHost` and `NavController`. It eliminates Fragment view boilerplate entirely. Starting with Navigation Compose 2.8+, it supports **Type-Safe Navigation** using Kotlinx Serialization classes instead of error-prone String route paths. Finally, with Deep Links, URL-based ingress allowing notifications, emails, or web links to route directly to internal destinations. They require proper synthetic backstack construction via `TaskStackBuilder` so pressing Back navigates up the logical app hierarchy rather than exiting to the launcher.
 
-2. **Fragment Navigation (Single-Activity Architecture)**: A single Activity hosts a `NavHostFragment`. It improved transition fluidity and memory efficiency, enabling shared ViewModels. However, managing the dual lifecycle of Fragments and nulling ViewBindings added cognitive overhead.
-
-3. **Jetpack Compose Navigation (Modern Standard)**: Pure declarative navigation between Composables via `NavHost` and `NavController`. It eliminates Fragment view boilerplate entirely. Starting with Navigation Compose 2.8+, it supports **Type-Safe Navigation** using Kotlinx Serialization classes instead of error-prone String route paths.
-
-4. **Deep Links**: URL-based ingress allowing notifications, emails, or web links to route directly to internal destinations. They require proper synthetic backstack construction via `TaskStackBuilder` so pressing Back navigates up the logical app hierarchy rather than exiting to the launcher.
 
 ## Interview answer — deep senior
 
 At the architectural boundary, Deep Links pose significant security and state-restoration challenges: When an external link opens `myapp://order/123`, the app must not assume that the user is authenticated. The navigation graph must implement a conditional gateway: if the user's session token is missing or expired, intercept the deep link, redirect to the Login route, and upon successful authentication, resume navigation to the intended target route.
 
 Furthermore, for App Links (`https://example.com/order/123`), verifying Android App Links via Digital Asset Links (`.well-known/assetlinks.json`) is mandatory. Verified App Links open your app directly without displaying the ambiguous system disambiguation dialog, protecting users against phishing by imposter apps claiming custom schemes.
+
 
 ## How to answer in the interview
 

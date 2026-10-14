@@ -124,27 +124,21 @@ Binary search is an O(log n) search algorithm that repeatedly halves the search 
 
 ## Interview answer — structured
 
-Binary search is the quintessential logarithmic search algorithm:
+Binary search is the quintessential logarithmic search algorithm.
 
-1. **Core Mechanism**:
-   - At each iteration, the algorithm inspects the middle element of the active range. If the target matches, the search concludes. If the target is smaller, the upper boundary moves to `mid - 1`; if larger, the lower boundary moves to `mid + 1`. This reduces the remaining problem space by $50\%$ at every step, yielding an $O(\log n)$ time complexity.
+First, **Core Mechanism**. Next, at each iteration, the algorithm inspects the middle element of the active range. If the target matches, the search concludes. If the target is smaller, the upper boundary moves to `mid - 1`; if larger, the lower boundary moves to `mid + 1`. This reduces the remaining problem space by $50\%$ at every step, yielding an $O(\log n)$ time complexity.
+**Strict Preconditions**. An Ordered Data is the elements must be sorted according to a defined Comparator.
+A Constant-Time Random Access is the data structure must support $O(1)$ random indexing (`Array`, `ArrayList`, `IntArray`). Executing binary search on a `LinkedList` degrades performance to $O(n)$ because locating the midpoint requires linear traversal. **Implementation Rigor**.
+Finally, in production implementations, avoid `(low + high) / 2` due to integer overflow risks when `low + high > Int.MAX_VALUE`. Use `low + (high - low) / 2` or unsigned bit-shift `(low + high) ushr 1`.
 
-2. **Strict Preconditions**:
-   - **Ordered Data**: The elements must be sorted according to a defined Comparator.
-   - **Constant-Time Random Access**: The data structure must support $O(1)$ random indexing (`Array`, `ArrayList`, `IntArray`). Executing binary search on a `LinkedList` degrades performance to $O(n)$ because locating the midpoint requires linear traversal.
-
-3. **Implementation Rigor**:
-   - In production implementations, avoid `(low + high) / 2` due to integer overflow risks when `low + high > Int.MAX_VALUE`. Use `low + (high - low) / 2` or unsigned bit-shift `(low + high) ushr 1`.
 
 ## Interview answer — deep senior
 
-From an Android architectural perspective, binary search underpins core framework optimizations:
+From an Android architectural perspective, binary search underpins core framework optimizations.
 
-1. **Android Framework SparseArray**: Android's `SparseArray<E>` and `LongSparseArray<E>` store primitive keys in a tightly packed `int[]` or `long[]`. Every `get(key)` invocation performs a binary search via `ContainerHelpers.binarySearch(mKeys, mSize, key)`. It sacrifices $O(1)$ hash table lookups for $O(\log n)$ searches to achieve zero heap object allocations.
+First, with Android Framework SparseArray, Android's `SparseArray<E>` and `LongSparseArray<E>` store primitive keys in a tightly packed `int[]` or `long[]`. Every `get(key)` invocation performs a binary search via `ContainerHelpers.binarySearch(mKeys, mSize, key)`. It sacrifices $O(1)$ hash table lookups for $O(\log n)$ searches to achieve zero heap object allocations. Next, with Kotlin Built-in `binarySearch` Contract, Kotlin's `collections.binarySearch()` returns the index if found. If not found, it returns `-(insertionPoint + 1)`. This negative return value allows callers to locate the exact position where the missing element should be inserted while maintaining sorted order, enabling efficient sorted insertions.
+Finally, with Binary Search on Answer Space, beyond searching static arrays, senior engineers apply binary search to find optimal configuration thresholds: e.g. Finding the maximum readable font size in a custom Canvas view that fits bounded dimensions without line wrapping.
 
-2. **Kotlin Built-in `binarySearch` Contract**: Kotlin's `collections.binarySearch()` returns the index if found. If not found, it returns `-(insertionPoint + 1)`. This negative return value allows callers to locate the exact position where the missing element should be inserted while maintaining sorted order, enabling efficient sorted insertions.
-
-3. **Binary Search on Answer Space**: Beyond searching static arrays, senior engineers apply binary search to find optimal configuration thresholds: e.g. finding the maximum readable font size in a custom Canvas view that fits bounded dimensions without line wrapping.
 
 ## How to answer in the interview
 

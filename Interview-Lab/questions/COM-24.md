@@ -117,10 +117,11 @@ If a callback or listener continues operating after a composable leaves the comp
 
 `LaunchedEffect` is tailored exclusively for cooperative Kotlin coroutines. When a composable leaves the Slot Table, Compose cancels the coroutine job. However, if a non-suspending, platform-level listener (such as `LocationListener`, `SensorEventListener`, or `BroadcastReceiver`) was registered inside the coroutine body, canceling the coroutine does not invoke `unregisterListener()`. The system service retains a strong reference, causing a persistent memory leak and background battery drain.
 
-The mandatory solution is **`DisposableEffect`**:
-1. It executes registration upon entering the composition.
-2. It mandates a trailing **`onDispose { ... }`** clause.
-3. The instant the composable leaves the composition tree (or if any key argument changes), Compose synchronously executes `onDispose`, unregistering the listener cleanly.
+The mandatory solution is **`DisposableEffect`**.
+
+First, it executes registration upon entering the composition. Next, it mandates a trailing **`onDispose { ... }`** clause.
+Finally, the instant the composable leaves the composition tree (or if any key argument changes), Compose synchronously executes `onDispose`, unregistering the listener cleanly.
+
 
 ## Interview answer — deep senior
 
@@ -128,7 +129,8 @@ Under the hood, `DisposableEffectImpl` implements `RememberObserver`. When the C
 
 Another frequent leak pattern is capturing changing parameters inside `onDispose`. If the keys passed to `DisposableEffect(key1)` mutate, Compose first executes `onDispose` for the old keys before executing the effect block for the new keys. If keys are omitted or set to `Unit` while external dependencies mutate, the unregistration might hold stale objects or unregister the wrong instance.
 
-In modern Android architectures, we often hoist these listeners entirely out of the UI into cold Flows in repository/data layers using `callbackFlow { ... awaitClose { unregisterListener() } }`, consuming them in Compose via `collectAsStateWithLifecycle()`.
+In modern Android architectures, we often hoist these listeners entirely out of the UI into cold Flows in repository/data layers using `callbackFlow { ... AwaitClose { unregisterListener() } }`, consuming them in Compose via `collectAsStateWithLifecycle()`.
+
 
 ## How to answer in the interview
 

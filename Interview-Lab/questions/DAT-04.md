@@ -91,21 +91,18 @@ REST uses standard resource endpoints and excels at HTTP caching for typical CRU
 
 ## Interview answer — structured
 
-Choosing between REST, GraphQL, and WebSockets is driven by data velocity, client flexibility, and caching requirements:
+Choosing between REST, GraphQL, and WebSockets is driven by data velocity, client flexibility, and caching requirements.
 
-1. **REST (Standard Resource APIs)**: Best for standard CRUD domains, file uploads, and high-cacheability resources. It leverages native HTTP semantics (status codes, ETags, CDN edge caching). Its weakness on mobile is over-fetching (wasting cellular data on unneeded fields) and under-fetching (making chained requests for relational data).
+First, with REST (Standard Resource APIs), best for standard CRUD domains, file uploads, and high-cacheability resources. It leverages native HTTP semantics (status codes, ETags, CDN edge caching). Its weakness on mobile is over-fetching (wasting cellular data on unneeded fields) and under-fetching (making chained requests for relational data). Next, with GraphQL (Client-Driven Relational Queries), best for rich, multi-entity consumer dashboards (e.g. An e-commerce feed joining user, cart, promotions, and reviews in a single query). The client asks for exact fields, saving mobile bandwidth. However, because all queries use HTTP `POST`, standard HTTP/CDN caching is lost, requiring specialized normalized caching engines (Apollo Kotlin).
+Finally, with WebSockets (Full-Duplex Real-Time Streams), best for low-latency bidirectional push streams (instant messaging, live bidding, multiplayer games, continuous telemetry). Rather than polling REST endpoints, the server pushes events instantly over an open TCP socket. Mobile implementations must manage heartbeat pings, reconnect state machines, and battery life.
 
-2. **GraphQL (Client-Driven Relational Queries)**: Best for rich, multi-entity consumer dashboards (e.g. an e-commerce feed joining user, cart, promotions, and reviews in a single query). The client asks for exact fields, saving mobile bandwidth. However, because all queries use HTTP `POST`, standard HTTP/CDN caching is lost, requiring specialized normalized caching engines (Apollo Kotlin).
-
-3. **WebSockets (Full-Duplex Real-Time Streams)**: Best for low-latency bidirectional push streams (instant messaging, live bidding, multiplayer games, continuous telemetry). Rather than polling REST endpoints, the server pushes events instantly over an open TCP socket. Mobile implementations must manage heartbeat pings, reconnect state machines, and battery life.
 
 ## Interview answer — deep senior
 
-When architecting **WebSockets on Android**, mobile operating system constraints dictate strict lifecycle governance:
+When architecting **WebSockets on Android**, mobile operating system constraints dictate strict lifecycle governance.
 
-1. **Doze Mode & Radio State**: Keeping a raw WebSocket open prevents the cellular radio from dropping from full power (DCH) to low-power idle state, rapidly draining battery. In background states, the OS can terminate TCP sockets without firing `onClosing()`. Robust apps close WebSockets when the app enters `ON_STOP`, falling back to Firebase Cloud Messaging (FCM) high-priority push notifications for background delivery.
+First, with Doze Mode & Radio State, keeping a raw WebSocket open prevents the cellular radio from dropping from full power (DCH) to low-power idle state, rapidly draining battery. In background states, the OS can terminate TCP sockets without firing `onClosing()`. Robust apps close WebSockets when the app enters `ON_STOP`, falling back to Firebase Cloud Messaging (FCM) high-priority push notifications for background delivery. Finally, with The Reconnection State Machine, cellular handoffs (switching from Wi-Fi to 5G) drop sockets silently. The Android client must implement an active Ping/Pong heartbeat (e.g. `OkHttpClient.Builder().pingInterval(30, TimeUnit.SECONDS)`) and an exponential backoff reconnect policy that reconciles missed events by querying a REST/Room sync cursor upon reconnect.
 
-2. **The Reconnection State Machine**: Cellular handoffs (switching from Wi-Fi to 5G) drop sockets silently. The Android client must implement an active Ping/Pong heartbeat (e.g. `OkHttpClient.Builder().pingInterval(30, TimeUnit.SECONDS)`) and an exponential backoff reconnect policy that reconciles missed events by querying a REST/Room sync cursor upon reconnect.
 
 ## How to answer in the interview
 

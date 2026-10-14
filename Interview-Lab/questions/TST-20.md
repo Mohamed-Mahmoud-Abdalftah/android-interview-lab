@@ -153,29 +153,22 @@ Test payment safety by asserting that all retry attempts transmit the identical 
 
 ## Interview answer — structured
 
-Testing payment paths requires mathematical guarantees that duplicate charges are impossible under any failure permutation:
+Testing payment paths requires mathematical guarantees that duplicate charges are impossible under any failure permutation.
 
-1. **Asserting Idempotency Key Stability**:
-   - Write a test verifying that when an order is created, an `idempotencyKey = UUID` is persisted locally. Assert that across multiple retry loops, crashes, and app restarts for that order ID, the captured HTTP `Idempotency-Key` header remains identical.
+First, **Asserting Idempotency Key Stability**. Next, write a test verifying that when an order is created, an `idempotencyKey = UUID` is persisted locally. Assert that across multiple retry loops, crashes, and app restarts for that order ID, the captured HTTP `Idempotency-Key` header remains identical.
+**Verifying Reconciliation Over Retry**. Simulate a network socket timeout on the initial charge request. Configure the test stub to throw `SocketTimeoutException` while recording that the backend processed the charge.
+Assert that the client payment coordinator catches the timeout and invokes `reconcileStatus(idempotencyKey)` rather than invoking `executeCharge()` a second time. Assert that `executeCharge()` call count strictly equals 1, proving zero duplicate charges were attempted.
+**Rapid Double-Tap Concurrency Protection**. Launch two concurrent payment requests for the same order simultaneously on two parallel coroutine jobs.
+Finally, assert that an internal Mutex drops or rejects the second call, and that only one charge request hits the network.
 
-2. **Verifying Reconciliation Over Retry**:
-   - Simulate a network socket timeout on the initial charge request. Configure the test stub to throw `SocketTimeoutException` while recording that the backend processed the charge.
-   - Assert that the client payment coordinator catches the timeout and invokes `reconcileStatus(idempotencyKey)` rather than invoking `executeCharge()` a second time.
-   - Assert that `executeCharge()` call count strictly equals 1, proving zero duplicate charges were attempted.
-
-3. **Rapid Double-Tap Concurrency Protection**:
-   - Launch two concurrent payment requests for the same order simultaneously on two parallel coroutine jobs.
-   - Assert that an internal Mutex drops or rejects the second call, and that only one charge request hits the network.
 
 ## Interview answer — deep senior
 
-From a financial compliance and test harness perspective, payment testing requires exhaustive state space exploration:
+From a financial compliance and test harness perspective, payment testing requires exhaustive state space exploration.
 
-1. **Testing Database Transaction Rollbacks**: Test what happens if the local database crashes immediately before dispatching the network call. Assert that if inserting the local `PENDING` record fails, zero network calls execute, preventing untracked charges.
+First, with Testing Database Transaction Rollbacks, test what happens if the local database crashes immediately before dispatching the network call. Assert that if inserting the local `PENDING` record fails, zero network calls execute, preventing untracked charges. Next, with Simulating Gateway 'Unknown' Statuses, if the reconciliation query itself times out, assert that the coordinator transitions state to `PENDING_MANUAL_VERIFICATION`. Assert that the UI renders a customer-support ticket reference and blocks the user from retrying the payment button until backend resolution confirms the order status.
+Finally, with Idempotency Header Telemetry Assertions, assert via MockWebServer's `takeRequest()` that outgoing charge requests pass standard payment headers: `Idempotency-Key`, `X-Client-Timestamp`, and masked audit metadata.
 
-2. **Simulating Gateway 'Unknown' Statuses**: If the reconciliation query itself times out, assert that the coordinator transitions state to `PENDING_MANUAL_VERIFICATION`. Assert that the UI renders a customer-support ticket reference and blocks the user from retrying the payment button until backend resolution confirms the order status.
-
-3. **Idempotency Header Telemetry Assertions**: Assert via MockWebServer's `takeRequest()` that outgoing charge requests pass standard payment headers: `Idempotency-Key`, `X-Client-Timestamp`, and masked audit metadata.
 
 ## How to answer in the interview
 

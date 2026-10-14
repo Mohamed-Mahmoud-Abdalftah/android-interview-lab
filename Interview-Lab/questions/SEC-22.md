@@ -117,26 +117,20 @@ Gate Keystore operations with biometrics by setting setUserAuthenticationRequire
 
 ## Interview answer — structured
 
-Biometric-gated security must be backed cryptographically rather than relying on boolean UI callback results:
+Biometric-gated security must be backed cryptographically rather than relying on boolean UI callback results.
 
-1. **The Vulnerability of Boolean Prompts**: Invoking `BiometricPrompt.authenticate(promptInfo)` without a `CryptoObject` treats the result as a simple boolean status. An attacker running Frida hooks `onAuthenticationSucceeded()` to invoke the success callback directly without touching the sensor.
+First, with The Vulnerability of Boolean Prompts, invoking `BiometricPrompt.authenticate(promptInfo)` without a `CryptoObject` treats the result as a simple boolean status. An attacker running Frida hooks `onAuthenticationSucceeded()` to invoke the success callback directly without touching the sensor. Next, **Hardware Cryptographic Binding (CryptoObject)**.
+When generating the AES key in `AndroidKeyStore`, configure `.setUserAuthenticationRequired(true)` with `.setUserAuthenticationParameters(0, AUTH_BIOMETRIC_STRONG)` and `.setInvalidatedByBiometricEnrollment(true)`. Initialize a `Cipher` with the key and wrap it inside `BiometricPrompt.CryptoObject(cipher)`.
+Pass the `CryptoObject` into `biometricPrompt.authenticate()`. Finally, a Hardware Enforcement is the Android Keymaster / TEE hardware keeps the key material locked. Only upon receiving authenticated biometric proof from the hardware fingerprint sensor does the secure enclave release the cryptographic key for that specific `Cipher` instance. Attempting to call `cipher.doFinal()` without biometric hardware unlocking throws `UserNotAuthenticatedException`.
 
-2. **Hardware Cryptographic Binding (CryptoObject)**:
-   - When generating the AES key in `AndroidKeyStore`, configure `.setUserAuthenticationRequired(true)` with `.setUserAuthenticationParameters(0, AUTH_BIOMETRIC_STRONG)` and `.setInvalidatedByBiometricEnrollment(true)`.
-   - Initialize a `Cipher` with the key and wrap it inside `BiometricPrompt.CryptoObject(cipher)`.
-   - Pass the `CryptoObject` into `biometricPrompt.authenticate()`.
-
-3. **Hardware Enforcement**: The Android Keymaster / TEE hardware keeps the key material locked. Only upon receiving authenticated biometric proof from the hardware fingerprint sensor does the secure enclave release the cryptographic key for that specific `Cipher` instance. Attempting to call `cipher.doFinal()` without biometric hardware unlocking throws `UserNotAuthenticatedException`.
 
 ## Interview answer — deep senior
 
-From an architectural standpoint, designing biometric crypto requires handling edge cases in the user security lifecycle:
+From an architectural standpoint, designing biometric crypto requires handling edge cases in the user security lifecycle.
 
-1. **Biometric Enrollment Changes**: When a user registers a new finger on the device, `setInvalidatedByBiometricEnrollment(true)` immediately renders the key permanently unusable. Any subsequent `cipher.init()` throws `KeyPermanentlyInvalidatedException`. The application must handle this by safely deleting the invalid key, purging local biometric-gated caches, and prompting the user for full password authentication.
+First, with Biometric Enrollment Changes, when a user registers a new finger on the device, `setInvalidatedByBiometricEnrollment(true)` immediately renders the key permanently unusable. Any subsequent `cipher.init()` throws `KeyPermanentlyInvalidatedException`. The application must handle this by safely deleting the invalid key, purging local biometric-gated caches, and prompting the user for full password authentication. Next, with Per-Use vs. Time-Window Authentication, specifying a duration of `0` in `setUserAuthenticationParameters` requires biometric verification for every individual cryptographic transaction. Setting a duration greater than zero allows the hardware key to remain unlocked for that duration (e.g., 30 seconds), which is useful for bulk operations but presents a larger attack window.
+Finally, with Strong vs. Weak Biometrics, financial applications must strictly configure `BiometricManager.Authenticators.BIOMETRIC_STRONG` (Class 3 hardware with < 0.002% False Acceptance Rate and liveness detection). Weak biometrics (Class 2 / 2D camera face unlock) are prohibited from unlocking Keystore keys marked with `AUTH_BIOMETRIC_STRONG`.
 
-2. **Per-Use vs. Time-Window Authentication**: Specifying a duration of `0` in `setUserAuthenticationParameters` requires biometric verification for every individual cryptographic transaction. Setting a duration greater than zero allows the hardware key to remain unlocked for that duration (e.g., 30 seconds), which is useful for bulk operations but presents a larger attack window.
-
-3. **Strong vs. Weak Biometrics**: Financial applications must strictly configure `BiometricManager.Authenticators.BIOMETRIC_STRONG` (Class 3 hardware with < 0.002% False Acceptance Rate and liveness detection). Weak biometrics (Class 2 / 2D camera face unlock) are prohibited from unlocking Keystore keys marked with `AUTH_BIOMETRIC_STRONG`.
 
 ## How to answer in the interview
 

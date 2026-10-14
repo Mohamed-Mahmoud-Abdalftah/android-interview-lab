@@ -121,16 +121,12 @@ Resolve conflicts between local and server state using Optimistic Concurrency Co
 
 ## Interview answer — structured
 
-When offline edits diverge from remote updates, naive Last-Write-Wins (LWW) based on device timestamps causes silent data loss due to client clock drift. Robust architectures implement **Optimistic Concurrency Control (OCC)**:
+When offline edits diverge from remote updates, naive Last-Write-Wins (LWW) based on device timestamps causes silent data loss due to client clock drift. Robust architectures implement **Optimistic Concurrency Control (OCC)**.
 
-1. **Version Tracking / ETags**: Every entity carries a `version: Long` or an HTTP `ETag` hash. When mutating data, the client submits `{ entityId, payload, baseVersion }`.
+First, with Version Tracking / ETags, every entity carries a `version: Long` or an HTTP `ETag` hash. When mutating data, the client submits `{ entityId, payload, baseVersion }`. Next, with Server-Side Compare-and-Set, if the server's current version matches `baseVersion`, the update commits and increments the version. If another client updated the record in the interim, the server rejects the write with **`409 Conflict`** and returns the latest server state.
+**Resolution Strategies by Business Domain**. With Authoritative Data (Inventory, Financial Balance), **Server-Wins**. The client discards local changes and updates Room with server ground truth.
+With Granular Attribute Merging, if the server changed `status` and the client changed `notes`, apply 3-way merging to combine non-overlapping fields. Finally, with Collaborative Text (Notes, Documents), present a visual conflict dialog allowing the user to select the preferred version or fork into two separate documents.
 
-2. **Server-Side Compare-and-Set**: If the server's current version matches `baseVersion`, the update commits and increments the version. If another client updated the record in the interim, the server rejects the write with **`409 Conflict`** and returns the latest server state.
-
-3. **Resolution Strategies by Business Domain**:
-   - **Authoritative Data (Inventory, Financial Balance)**: **Server-Wins**. The client discards local changes and updates Room with server ground truth.
-   - **Granular Attribute Merging**: If the server changed `status` and the client changed `notes`, apply 3-way merging to combine non-overlapping fields.
-   - **Collaborative Text (Notes, Documents)**: Present a visual conflict dialog allowing the user to select the preferred version or fork into two separate documents.
 
 ## Interview answer — deep senior
 
@@ -139,6 +135,7 @@ In advanced distributed mobile architectures (such as collaborative canvases or 
 CRDTs (such as State-based or Operation-based PN-Counters, LWW-Element-Sets, or Yjs/Automerge trees) are mathematically proven to converge to the identical state on all nodes without central locking or conflict dialogs, regardless of network arrival order or message duplication.
 
 However, for standard enterprise Android applications, Optimistic Concurrency Control with a conflict resolution table in Room provides 99% of the reliability with a fraction of the algorithmic complexity.
+
 
 ## How to answer in the interview
 

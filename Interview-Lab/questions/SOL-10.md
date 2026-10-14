@@ -105,20 +105,22 @@ It violates LSP when the caller expects a functional toolbar contract, but a sub
 
 A `BaseFragment` enforcing an abstract `setupToolbar()` violates the Liskov Substitution Principle (LSP) whenever a subclass cannot fulfill that contract meaningfully.
 
-Under LSP, any client holding a reference to `BaseFragment` should be able to invoke `setupToolbar()` with the guarantee that a toolbar exists, has been configured, and conforms to lifecycle invariants. When a fullscreen video player, bottom sheet, or modal dialog subclasses `BaseFragment`, it has no toolbar. If the developer:
-1. **Throws `UnsupportedOperationException`**: It breaks program execution at runtime.
-2. **Returns null or executes an empty no-op**: It breaks postconditions, leading to silent bugs or subsequent `NullPointerException`s if the host Activity queries the fragment's toolbar.
+Under LSP, any client holding a reference to `BaseFragment` should be able to invoke `setupToolbar()` with the guarantee that a toolbar exists, has been configured, and conforms to lifecycle invariants. When a fullscreen video player, bottom sheet, or modal dialog subclasses `BaseFragment`, it has no toolbar. If the developer.
 
-**The Architectural Remedy**:
-- Remove `setupToolbar()` entirely from `BaseFragment`. A base class must define *only* invariants that apply to 100% of all derived classes.
-- Extract toolbar capability into an optional interface: `interface ToolbarHost { fun getToolbar(): Toolbar }`.
-- The hosting Activity inspects `if (fragment is ToolbarHost)` before configuring navigation bars, preserving substitution safety.
+First, with Throws `UnsupportedOperationException, it breaks program execution at runtime. Finally, with Returns null or executes an empty no-op, it breaks postconditions, leading to silent bugs or subsequent `NullPointerException`s if the host Activity queries the fragment's toolbar.
+
+**The Architectural Remedy**.
+
+First, remove `setupToolbar()` entirely from `BaseFragment`. A base class must define *only* invariants that apply to 100% of all derived classes. Next, extract toolbar capability into an optional interface: `interface ToolbarHost { fun getToolbar(): Toolbar }`.
+Finally, the hosting Activity inspects `if (fragment is ToolbarHost)` before configuring navigation bars, preserving substitution safety.
+
 
 ## Interview answer — deep senior
 
 This scenario exposes the fundamental flaw of **inheritance-driven architecture**. Base classes tend to accumulate 'feature creep' over years: one developer adds toolbar logic, another adds swipe-to-refresh, a third adds FAB handling, until `BaseFragment` is 1,200 lines long and every new screen must fight against inherited assumptions.
 
 In modern Android development, the industry consensus is to **eliminate BaseFragment and BaseActivity entirely**. Shared behaviors are extracted into standalone, self-contained delegates implementing `DefaultLifecycleObserver` or composed via Jetpack Compose's `Scaffold(topBar = { ... })` where the toolbar parameter is naturally optional.
+
 
 ## How to answer in the interview
 

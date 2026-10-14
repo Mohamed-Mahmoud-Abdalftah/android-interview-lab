@@ -96,21 +96,18 @@ The Repository pattern sits at the boundary between Domain and Data layers. In C
 
 The Repository pattern operates simultaneously as an architectural boundary and a specialized data-access design pattern.
 
-1. **Architectural Placement (The Clean Boundary)**:
-   - Sits squarely at the demarcation line between **Domain and Data layers**.
-   - In adherence with the Dependency Inversion Principle, the **Repository Interface** resides in the Domain layer as an abstract business requirement.
-   - The **Repository Implementation** (`RepositoryImpl`) resides in the Data layer, depending on the Domain interface and concrete DataSources (Room, Retrofit, Datastore).
+First, **Architectural Placement (The Clean Boundary)**. Next, sits squarely at the demarcation line between **Domain and Data layers**.
+In adherence with the Dependency Inversion Principle, the **Repository Interface** resides in the Domain layer as an abstract business requirement. The **Repository Implementation** (`RepositoryImpl`) resides in the Data layer, depending on the Domain interface and concrete DataSources (Room, Retrofit, Datastore).
+**Data-Access Responsibilities (The Mediating Facade)**. Mediates between the domain and multiple raw data sources, masquerading as an in-memory collection (`Flow<T>`, `save()`, `delete()`).
+Implements the **Single Source of Truth (SSOT)**: managing offline-first persistence, cache invalidation, and background synchronization policies. Finally, maps raw technical DTOs and SQLite entities into clean Domain Entities before emitting them upward.
 
-2. **Data-Access Responsibilities (The Mediating Facade)**:
-   - Mediates between the domain and multiple raw data sources, masquerading as an in-memory collection (`Flow<T>`, `save()`, `delete()`).
-   - Implements the **Single Source of Truth (SSOT)**: managing offline-first persistence, cache invalidation, and background synchronization policies.
-   - Maps raw technical DTOs and SQLite entities into clean Domain Entities before emitting them upward.
 
 ## Interview answer — deep senior
 
 A frequent question is whether each database table or API endpoint requires its own Repository. The answer is no. Under Domain-Driven Design (DDD) principles, a Repository should be modeled around an **Aggregate Root**.
 
 For example, in an e-commerce app, an `Order` aggregate root might involve `orders`, `order_items`, and `delivery_addresses` tables across SQLite, alongside two distinct REST APIs. A single `OrderRepository` orchestrates all these underlying tables and network endpoints, providing a unified `Order` entity to the domain. Creating a separate repository for each individual database table leaks database schema boundaries into business code.
+
 
 ## How to answer in the interview
 

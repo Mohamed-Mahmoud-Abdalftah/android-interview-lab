@@ -115,27 +115,23 @@ Android's application sandbox enforces process and storage isolation at the Linu
 
 ## Interview answer — structured
 
-The Android security sandbox is built on multi-user Linux kernel primitives rather than JVM boundaries:
+The Android security sandbox is built on multi-user Linux kernel primitives rather than JVM boundaries.
 
-1. **Linux UID Isolation**: During installation, Android assigns each application a unique, non-privileged Linux User ID (e.g. `u0_a145`). The process runs under this UID, and its internal storage directory (`/data/user/0/<package>/`) is restricted with DAC file permissions `0700` and SELinux MAC policy. Apps cannot read each other's memory or files directly.
-
-2. **Kernel-Brokered Binder IPC**: Inter-process communication across components is mediated by the Linux Binder driver (`/dev/binder`). The kernel attaches the caller's verified `callingUid` and `callingPid` to every transaction. Services enforce access control using `checkCallingPermission()` or `enforceCallingPermission()`. Using `checkCallingOrSelfPermission()` in an exported service is a known security vulnerability because it falls back to granting access if the service itself holds the permission.
-
-3. **Permission Hierarchy & Signature Enforcement**: Capabilities are gated by permissions: Normal (install-time), Runtime (prompted at moment of need), and Special access. For inter-app collaboration under the same developer, signature-level permissions (`protectionLevel="signature"`) allow secure API sharing without merging UIDs; the legacy `android:sharedUserId` mechanism was deprecated in API 29 due to major security risks.
+First, with Linux UID Isolation, during installation, Android assigns each application a unique, non-privileged Linux User ID (e.g. `u0_a145`). The process runs under this UID, and its internal storage directory (`/data/user/0/<package>/`) is restricted with DAC file permissions `0700` and SELinux MAC policy. Apps cannot read each other's memory or files directly. Next, with Kernel-Brokered Binder IPC, inter-process communication across components is mediated by the Linux Binder driver (`/dev/binder`). The kernel attaches the caller's verified `callingUid` and `callingPid` to every transaction. Services enforce access control using `checkCallingPermission()` or `enforceCallingPermission()`. Using `checkCallingOrSelfPermission()` in an exported service is a known security vulnerability because it falls back to granting access if the service itself holds the permission.
+Finally, with Permission Hierarchy & Signature Enforcement, capabilities are gated by permissions: Normal (install-time), Runtime (prompted at moment of need), and Special access. For inter-app collaboration under the same developer, signature-level permissions (`protectionLevel="signature"`) allow secure API sharing without merging UIDs; the legacy `android:sharedUserId` mechanism was deprecated in API 29 due to major security risks.
 
 The critical boundary: **The sandbox assumes the underlying kernel and hardware are uncompromised**. On rooted devices with UID 0 (root), kernel boundaries dissolve: an attacker can dump app RAM, attach debuggers, and read private files directly.
 
+
 ## Interview answer — deep senior
 
-From an OS security architecture perspective, Android adds multiple defence layers beyond basic UID isolation:
+From an OS security architecture perspective, Android adds multiple defence layers beyond basic UID isolation.
 
-1. **SELinux (Security-Enhanced Linux)**: Enforces Mandatory Access Control (MAC) in enforcing mode. Even if an attacker finds an exploit giving them UID 0 inside a sandboxed daemon, SELinux domain policies restrict what files, device nodes, and system calls that domain can access, preventing privilege escalation into the core kernel.
-
-2. **Seccomp-BPF Filters**: Restricts available system calls for app processes. Zygote installs a restrictive BPF filter blocking dangerous syscalls (like raw socket creation or kernel module loading) before forking an application process.
-
-3. **Storage Encryption (FBE)**: Android uses File-Based Encryption with separate cryptographic keys for Credential Encrypted (CE) storage (available only after the user enters their lockscreen credential) and Device Encrypted (DE) storage (available during Direct Boot).
+First, a SELinux (Security-Enhanced Linux) enforces Mandatory Access Control (MAC) in enforcing mode. Even if an attacker finds an exploit giving them UID 0 inside a sandboxed daemon, SELinux domain policies restrict what files, device nodes, and system calls that domain can access, preventing privilege escalation into the core kernel. Next, with Seccomp-BPF Filters, restricts available system calls for app processes. Zygote installs a restrictive BPF filter blocking dangerous syscalls (like raw socket creation or kernel module loading) before forking an application process.
+Finally, with Storage Encryption (FBE), Android uses File-Based Encryption with separate cryptographic keys for Credential Encrypted (CE) storage (available only after the user enters their lockscreen credential) and Device Encrypted (DE) storage (available during Direct Boot).
 
 Senior Android architects adopt a **Zero Trust Client Model**: never treat client-side validation as authoritative. A modified APK on a rooted device can hook Binder, patch ART bytecode, or alter memory variables. All business authorization, monetary limits, and security invariants must be verified on the server.
+
 
 ## How to answer in the interview
 

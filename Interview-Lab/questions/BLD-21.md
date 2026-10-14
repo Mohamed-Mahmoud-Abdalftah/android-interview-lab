@@ -84,29 +84,22 @@ Roll out safely using Google Play Staged Rollouts (1% -> 5% -> 20% -> 100%) whil
 
 ## Interview answer — structured
 
-Safely rolling out and rolling back Android releases requires understanding app store release mechanics and OS installation invariants:
+Safely rolling out and rolling back Android releases requires understanding app store release mechanics and OS installation invariants.
 
-1. **Staged Rollout Cadence**:
-   - Never release directly to 100% of production. Follow a phased rollout schedule: 1% -> 5% -> 20% -> 50% -> 100% across 5–7 days.
-   - Continuously monitor Google Play Android Vitals and Crashlytics dashboards. If the crash-free user rate drops below 99.5% or ANR rate exceeds 0.47%, halt the rollout immediately.
+First, **Staged Rollout Cadence**. Next, never release directly to 100% of production. Follow a phased rollout schedule: 1% -> 5% -> 20% -> 50% -> 100% across 5–7 days.
+Continuously monitor Google Play Android Vitals and Crashlytics dashboards. If the crash-free user rate drops below 99.5% or ANR rate exceeds 0.47%, halt the rollout immediately. **The Android Downgrade Invariant**.
+The Android OS package manager rejects installing an APK with a lower `versionCode` than the currently installed version (`INSTALL_FAILED_VERSION_DOWNGRADE`). You cannot 'unpublish' a bad release to force users back to an older version. **Incident Containment Protocol**.
+With Halt Rollout, stop the rollout in Google Play Console, preventing the remaining percentage from downloading the defective build. With Remote Kill Switch, toggle the offending feature flag off remotely via LaunchDarkly/Firebase to remediate users who already updated.
+Finally, with Emergency Expedited Hotfix, revert the bad commit in Git, increment the `versionCode` (e.g. From 201 to 202), build a fresh AAB, and release it directly to 100%.
 
-2. **The Android Downgrade Invariant**:
-   - The Android OS package manager rejects installing an APK with a lower `versionCode` than the currently installed version (`INSTALL_FAILED_VERSION_DOWNGRADE`). You cannot 'unpublish' a bad release to force users back to an older version.
-
-3. **Incident Containment Protocol**:
-   - **Halt Rollout**: Stop the rollout in Google Play Console, preventing the remaining percentage from downloading the defective build.
-   - **Remote Kill Switch**: Toggle the offending feature flag off remotely via LaunchDarkly/Firebase to remediate users who already updated.
-   - **Emergency Expedited Hotfix**: Revert the bad commit in Git, increment the `versionCode` (e.g. from 201 to 202), build a fresh AAB, and release it directly to 100%.
 
 ## Interview answer — deep senior
 
-From an operational release management perspective, incident containment requires post-deployment safeguards:
+From an operational release management perspective, incident containment requires post-deployment safeguards.
 
-1. **Google Play Expedited Review Request**: When publishing an emergency hotfix resolving a catastrophic production crash or security regression, submit an expedited review request via the Play Console help portal, reducing review turnaround to under 2 hours.
+First, with Google Play Expedited Review Request, when publishing an emergency hotfix resolving a catastrophic production crash or security regression, submit an expedited review request via the Play Console help portal, reducing review turnaround to under 2 hours. Next, with In-App Immediate Update Enforcement, when the hotfix is approved, flag the previous broken version in your backend config. When users on the broken version launch the app, trigger Google Play's **Immediate In-App Update** flow (`AppUpdateType.IMMEDIATE`). This full-screen modal forces users to download the hotfix before accessing the app.
+Finally, with Blameless Post-Mortem & CI Hardening, after incident resolution, conduct a post-mortem to determine why testing missed the defect. Implement automated regression tests and pre-release canary tracks to prevent identical failures.
 
-2. **In-App Immediate Update Enforcement**: When the hotfix is approved, flag the previous broken version in your backend config. When users on the broken version launch the app, trigger Google Play's **Immediate In-App Update** flow (`AppUpdateType.IMMEDIATE`). This full-screen modal forces users to download the hotfix before accessing the app.
-
-3. **Blameless Post-Mortem & CI Hardening**: After incident resolution, conduct a post-mortem to determine why testing missed the defect. Implement automated regression tests and pre-release canary tracks to prevent identical failures.
 
 ## How to answer in the interview
 

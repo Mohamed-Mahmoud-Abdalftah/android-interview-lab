@@ -20,6 +20,7 @@ const manifest = JSON.parse(await readFile(path.join(academyRoot, 'CONTENT-MANIF
 
 const generatedFolders = ['lessons', 'questions', 'answers', 'scenarios', 'labs', 'mocks', 'revision', 'speaking', 'reference'];
 await Promise.all(generatedFolders.map((folder) => rm(path.join(docsRoot, folder), { recursive: true, force: true })));
+await Promise.all(generatedFolders.map((folder) => rm(path.join(docsRoot, 'ar', folder), { recursive: true, force: true })));
 await mkdir(dataRoot, { recursive: true });
 await mkdir(path.join(publicRoot, 'data'), { recursive: true });
 
@@ -79,6 +80,7 @@ for (const canonicalPath of [...canonicalFiles].sort()) {
   const route = routeForCanonicalPath(canonicalPath);
   const routeParts = route.split('/').filter(Boolean);
   const output = path.join(docsRoot, ...routeParts) + '.md';
+  const outputAr = path.join(docsRoot, 'ar', ...routeParts) + '.md';
   const id = yamlScalar(frontmatter, 'id') || path.basename(canonicalPath, '.md');
   const titleFromFrontmatter = yamlScalar(frontmatter, 'title');
   const titleFromBody = originalBody.match(/^#\s+(.+)$/m)?.[1] ?? id;
@@ -91,9 +93,21 @@ for (const canonicalPath of [...canonicalFiles].sort()) {
   const lessonControl = item?.type === 'lesson' || item?.type === 'extended_topic'
     ? `\n<academy-progress lesson-id="${id}" lesson-title="${title}"></academy-progress>\n`
     : '';
-  const generated = `---\ntitle: "${title}"\ndescription: "محتوى أكاديمية Android Interview Mastery — ${id}"\nsidebar:\n  label: "${id} — ${title}"\n  order: ${day || 999}\n---\n\n<div class="canonical-source"><bdi>${id}</bdi> · المصدر الأساسي: <code dir="ltr">${origin}</code></div>\n${lessonControl}\n${body.trim()}\n`;
+
+  // English generated page (strip isolated Arabic explanatory paragraphs in model answers)
+  let enBody = body;
+  if (canonicalPath.startsWith('Interview-Question-Bank/Model-Answers/')) {
+    enBody = enBody.replace(/<p dir="rtl" lang="ar">[\s\S]*?<\/p>/g, '').trim();
+  }
+  const generatedEn = `---\ntitle: "${title}"\ndescription: "Android Interview Mastery Academy — ${id}"\nsidebar:\n  label: "${id} — ${title}"\n  order: ${day || 999}\n---\n\n<div class="canonical-source"><bdi>${id}</bdi> · Canonical source: <code dir="ltr">${origin}</code></div>\n${lessonControl}\n${enBody.trim()}\n`;
+
+  // Arabic generated page (preserves full authentic Egyptian Arabic)
+  const generatedAr = `---\ntitle: "${title}"\ndescription: "محتوى أكاديمية Android Interview Mastery — ${id}"\nsidebar:\n  label: "${id} — ${title}"\n  order: ${day || 999}\n---\n\n<div class="canonical-source"><bdi>${id}</bdi> · المصدر الأساسي: <code dir="ltr">${origin}</code></div>\n${lessonControl}\n${body.trim()}\n`;
+
   await mkdir(path.dirname(output), { recursive: true });
-  await writeFile(output, generated, 'utf8');
+  await mkdir(path.dirname(outputAr), { recursive: true });
+  await writeFile(output, generatedEn, 'utf8');
+  await writeFile(outputAr, generatedAr, 'utf8');
   routeMap[canonicalPath] = route;
 }
 

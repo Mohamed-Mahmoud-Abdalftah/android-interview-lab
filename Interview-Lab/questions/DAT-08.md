@@ -113,13 +113,11 @@ Cache-First serves local data immediately and hits network only on misses/expiry
 
 ## Interview answer — structured
 
-Choosing between caching strategies depends on the latency versus freshness tolerance of the data:
+Choosing between caching strategies depends on the latency versus freshness tolerance of the data.
 
-1. **Cache-First**: Queries local storage first. If valid, returns immediately without network access; fetches from remote only on cache miss or expiration. Optimal for static, low-churn assets (country code lists, user avatar images, feature configurations).
+First, with Cache-First, queries local storage first. If valid, returns immediately without network access; fetches from remote only on cache miss or expiration. Optimal for static, low-churn assets (country code lists, user avatar images, feature configurations). Next, with Network-First, prioritizes server freshness by querying the API first; falls back to local cache only when offline or during socket timeouts. Mandatory for mission-critical, volatile state where serving stale information causes real-world harm (bank account balances, stock prices, payment settlement confirmations).
+Finally, a Stale-While-Revalidate (SWR) is the gold standard for modern mobile user experience. Emits cached data from Room in single-digit milliseconds so the user sees content immediately, while concurrently firing a background network request. Once the remote response returns, Room is updated, seamlessly animating fresh items into view. Perfect for news feeds, social timelines, and product catalogs.
 
-2. **Network-First**: Prioritizes server freshness by querying the API first; falls back to local cache only when offline or during socket timeouts. Mandatory for mission-critical, volatile state where serving stale information causes real-world harm (bank account balances, stock prices, payment settlement confirmations).
-
-3. **Stale-While-Revalidate (SWR)**: The gold standard for modern mobile user experience. Emits cached data from Room in single-digit milliseconds so the user sees content immediately, while concurrently firing a background network request. Once the remote response returns, Room is updated, seamlessly animating fresh items into view. Perfect for news feeds, social timelines, and product catalogs.
 
 ## Interview answer — deep senior
 
@@ -127,9 +125,10 @@ When implementing Stale-While-Revalidate in production, senior engineers address
 
 If a user is actively reading item #3 in a cached list, and the background revalidation completes 2 seconds later, prepending 5 new items to the top of the list will cause the screen to jump violently, disorienting the user.
 
-To solve this in Jetpack Compose and RecyclerView:
-- Implement **DiffUtil / stable item keys** (`key(article.id)` in Compose).
-- For dynamic feeds, buffer new background arrivals behind a subtle UI pill: '5 new posts available - Tap to refresh', giving the user control over when the UI layout recalculates.
+To solve this in Jetpack Compose and RecyclerView.
+
+First, implement **DiffUtil / stable item keys** (`key(article.id)` in Compose). Finally, for dynamic feeds, buffer new background arrivals behind a subtle UI pill: '5 new posts available - Tap to refresh', giving the user control over when the UI layout recalculates.
+
 
 ## How to answer in the interview
 

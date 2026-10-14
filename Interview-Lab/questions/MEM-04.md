@@ -97,13 +97,13 @@ A **Large Memory Allocation** is a valid allocation that consumes a significant 
 
 While a large allocation can trigger an immediate OOM if memory is already tight, a memory leak is a persistent defect that guarantees eventual failure.
 
+
 ## Interview answer — deep senior
 
-In production performance profiling, distinguishing between the two dictates the diagnosis methodology:
+In production performance profiling, distinguishing between the two dictates the diagnosis methodology.
 
-1. **Diagnosing Large Allocations**: Open the Android Studio CPU/Memory Profiler and inspect the **Memory Allocation Graph**. A large allocation appears as an immediate, sharp vertical cliff in memory usage. Once the operation finishes, a GC sweep causes the graph to drop back down to baseline. The remedy is technical optimization: image downsampling (`inSampleSize`), streaming JSON parsing via Jackson/Moshi streaming readers, or lazy pagination.
+First, with Diagnosing Large Allocations, open the Android Studio CPU/Memory Profiler and inspect the **Memory Allocation Graph**. A large allocation appears as an immediate, sharp vertical cliff in memory usage. Once the operation finishes, a GC sweep causes the graph to drop back down to baseline. The remedy is technical optimization: image downsampling (`inSampleSize`), streaming JSON parsing via Jackson/Moshi streaming readers, or lazy pagination. Finally, diagnosing Memory Leaks is a memory leak produces a **sawtooth graph that never returns to baseline**: with each screen rotation or navigation transition, the minimum heap baseline ratchets upward. Taking a heap dump (`.hprof`) via LeakCanary reveals the exact shortest reference path connecting the dead Activity to an active GC Root.
 
-2. **Diagnosing Memory Leaks**: A memory leak produces a **sawtooth graph that never returns to baseline**: with each screen rotation or navigation transition, the minimum heap baseline ratchets upward. Taking a heap dump (`.hprof`) via LeakCanary reveals the exact shortest reference path connecting the dead Activity to an active GC Root.
 
 ## How to answer in the interview
 

@@ -88,14 +88,13 @@ GC Roots are objects always deemed alive (active threads, local stack variables,
 
 Garbage collection in Android determines an object's liveness through **Reachability Analysis** originating from **GC Roots**:
 
-A **GC Root** is an anchor object that is fundamentally alive and cannot be collected:
+A **GC Root** is an anchor object that is fundamentally alive and cannot be collected.
 
-1. **Active Threads**: The Main UI thread and any running worker thread or coroutine thread pool.
-2. **Thread Stack Frames**: Local variables and parameters currently residing on active function call stacks.
-3. **Static Fields**: Variables owned by loaded classes or Kotlin companion objects/singletons.
-4. **JNI References**: Global C/C++ native pointers created via `NewGlobalRef`.
+First, active Threads is the Main UI thread and any running worker thread or coroutine thread pool. Next, with Thread Stack Frames, local variables and parameters currently residing on active function call stacks.
+Additionally, with Static Fields, variables owned by loaded classes or Kotlin companion objects/singletons. Finally, with JNI References, global C/C++ native pointers created via `NewGlobalRef`.
 
 During a collection cycle, the GC traces outward from all GC Roots across object reference pointers in a directed graph. If an object has a valid path of strong references connecting it to at least one GC Root, it is **Reachable** and preserved. If no path exists, it is **Unreachable** and its memory is reclaimed.
+
 
 ## Interview answer — deep senior
 
@@ -103,11 +102,11 @@ A vital senior distinction is understanding how tracing garbage collection handl
 
 If Object A references Object B, and Object B references Object A, but neither A nor B is reachable from any GC Root, ART's reachability graph correctly identifies both as unreachable garbage and collects both simultaneously. Cycles of unreachable objects do not cause memory leaks in Android.
 
-The type of reference pointer also modifies reachability:
+The type of reference pointer also modifies reachability.
 
-- **Strong Reference**: Default reference. Prevents collection completely as long as reachable from a GC Root.
-- **Soft Reference (`SoftReference`)**: Retained until memory pressure becomes critical before throwing an OOM. (Discouraged for caches in modern Android in favor of explicit `LruCache`).
-- **Weak Reference (`WeakReference`)**: Does not protect the target from collection. Reclaimed immediately in the next GC cycle if no strong references exist.
+First, with Strong Reference, default reference. Prevents collection completely as long as reachable from a GC Root. Next, soft Reference (`SoftReference`) is retained until memory pressure becomes critical before throwing an OOM. (Discouraged for caches in modern Android in favor of explicit `LruCache`).
+Finally, with Weak Reference (`WeakReference`), does not protect the target from collection. Reclaimed immediately in the next GC cycle if no strong references exist.
+
 
 ## How to answer in the interview
 

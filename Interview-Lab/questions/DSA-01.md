@@ -95,26 +95,20 @@ Time complexity measures the growth rate of computational operations as input si
 
 ## Interview answer — structured
 
-Time and space complexity quantify algorithmic scalability and resource utilization:
+Time and space complexity quantify algorithmic scalability and resource utilization.
 
-1. **Time Complexity**:
-   - Quantifies the scaling rate of operational steps as input size $n$ approaches infinity. In Android client development, unoptimized time complexity ($O(n^2)$ transformations) on the main thread exceeds the 16.6ms per-frame rendering budget (or 8.3ms at 120Hz), resulting in UI jank, stutter, and potential Application Not Responding (ANR) dialogs.
+First, **Time Complexity**. Next, quantifies the scaling rate of operational steps as input size $n$ approaches infinity. In Android client development, unoptimized time complexity ($O(n^2)$ transformations) on the main thread exceeds the 16.6ms per-frame rendering budget (or 8.3ms at 120Hz), resulting in UI jank, stutter, and potential Application Not Responding (ANR) dialogs.
+**Space Complexity**. Quantifies auxiliary memory allocated on the Dalvik/ART heap and recursion stack frames. In Android, aggressive memory allocation triggers frequent Garbage Collector (GC) passes that suspend thread execution (stop-the-world pauses). On low-RAM devices with tight heap budgets (e.g., 192MB), high space complexity causes immediate `OutOfMemoryError` crashes.
+**The Engineering Trade-off**. Finally, algorithmic design frequently balances space and time: pre-indexing lists into HashMaps trades heap allocation for $O(1)$ lookups, whereas two-pointer techniques on sorted arrays achieve $O(1)$ space at the expense of upfront sorting time.
 
-2. **Space Complexity**:
-   - Quantifies auxiliary memory allocated on the Dalvik/ART heap and recursion stack frames. In Android, aggressive memory allocation triggers frequent Garbage Collector (GC) passes that suspend thread execution (stop-the-world pauses). On low-RAM devices with tight heap budgets (e.g., 192MB), high space complexity causes immediate `OutOfMemoryError` crashes.
-
-3. **The Engineering Trade-off**:
-   - Algorithmic design frequently balances space and time: pre-indexing lists into HashMaps trades heap allocation for $O(1)$ lookups, whereas two-pointer techniques on sorted arrays achieve $O(1)$ space at the expense of upfront sorting time.
 
 ## Interview answer — deep senior
 
-From an Android systems runtime and hardware perspective, space and time complexity interact non-linearly:
+From an Android systems runtime and hardware perspective, space and time complexity interact non-linearly.
 
-1. **Memory Allocation is Time Complexity**: In theoretical computer science, memory allocation is treated as $O(1)$ space. On the Android ART runtime, allocating 100,000 small wrapper objects in a loop allocates memory fast, but immediately triggers ART Concurrent Copying (CC) Garbage Collection. The GC work steals CPU cycles from the UI thread, meaning that high auxiliary space directly manifests as severe time latency and frame drops.
+First, with Memory Allocation is Time Complexity, in theoretical computer science, memory allocation is treated as $O(1)$ space. On the Android ART runtime, allocating 100,000 small wrapper objects in a loop allocates memory fast, but immediately triggers ART Concurrent Copying (CC) Garbage Collection. The GC work steals CPU cycles from the UI thread, meaning that high auxiliary space directly manifests as severe time latency and frame drops. Next, with CPU Cache Locality vs. Big O, two algorithms with identical theoretical $O(n)$ time complexity perform radically differently on mobile ARM processors. Iterating through a contiguous `IntArray` has outstanding CPU L1/L2 cache locality, whereas traversing a `LinkedList<Int>` or `HashMap<Int, Int>` causes constant pointer dereferencing and CPU cache misses, running 5–10x slower in practice despite identical asymptotic notation.
+Finally, with Android-Specific Collections, to optimize the space-time trade-off on Android, the framework introduced `SparseArray` and `ArrayMap`. They sacrifice $O(1)$ average hash lookups for $O(\log n)$ binary searches in primitive arrays, completely eliminating object boxing (`Integer`) and Node allocations to conserve critical mobile memory.
 
-2. **CPU Cache Locality vs. Big O**: Two algorithms with identical theoretical $O(n)$ time complexity perform radically differently on mobile ARM processors. Iterating through a contiguous `IntArray` has outstanding CPU L1/L2 cache locality, whereas traversing a `LinkedList<Int>` or `HashMap<Int, Int>` causes constant pointer dereferencing and CPU cache misses, running 5–10x slower in practice despite identical asymptotic notation.
-
-3. **Android-Specific Collections**: To optimize the space-time trade-off on Android, the framework introduced `SparseArray` and `ArrayMap`. They sacrifice $O(1)$ average hash lookups for $O(\log n)$ binary searches in primitive arrays, completely eliminating object boxing (`Integer`) and Node allocations to conserve critical mobile memory.
 
 ## How to answer in the interview
 

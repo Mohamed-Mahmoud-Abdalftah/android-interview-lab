@@ -119,6 +119,7 @@ Third, a **Job** represents a cancellable background task with a defined state l
 
 Fourth, **Deferred<T>** is an interface that extends Job. It represents a promise of a future result, produced by the `async` builder, whose computed value is retrieved by calling the suspending method `await()`.
 
+
 ## Interview answer — deep senior
 
 At the implementation level, `CoroutineContext` is implemented as an associative map using a polymorphic key system (`Element : CoroutineContext`). You can combine contexts using the `+` operator, where keys on the right overwrite identical keys on the left (e.g., `Dispatchers.Default + Dispatchers.IO` yields `Dispatchers.IO`).
@@ -126,6 +127,7 @@ At the implementation level, `CoroutineContext` is implemented as an associative
 When a new coroutine is launched, the runtime calculates its effective context through **Context Inheritance**: the child coroutine inherits the parent's context, overwrites it with any arguments passed to the builder, creates a new `Job` instance representing this child, and establishes a bidirectional link between the parent Job and the child Job.
 
 This parent-child Job link is the engine of structured concurrency: 1) if the parent Job is cancelled, it immediately cancels all child Jobs; 2) if an uncaught exception occurs in a standard child Job, it cancels its parent and all sibling Jobs; and 3) a parent Job does not transition to the Completed state until all of its child Jobs have completed.
+
 
 ## How to answer in the interview
 

@@ -123,6 +123,7 @@ Adding **jitter** injects a randomized offset (e.g., plus a random 0 to 500ms) i
 
 In coroutines, we implement this as an inline suspending helper. Crucially, the retry loop must rethrow `CancellationException` immediately so coroutines cancel properly, and must only retry transient failures—never retrying permanent 4xx client errors like 401 Unauthorized or 404 Not Found.
 
+
 ## Interview answer — deep senior
 
 From a distributed systems engineering perspective, full jitter (picking a uniform random value between 0 and the exponential backoff ceiling) provides superior desynchronization compared to equal jitter or no jitter.
@@ -138,6 +139,7 @@ flow.retryWhen { cause, attempt ->
 ```
 
 In unit testing with `runTest`, testing backoff algorithms is straightforward because `delay()` integrates with the test scheduler's virtual clock, advancing time instantaneously with `advanceTimeBy()` without forcing tests to sleep in real time.
+
 
 ## How to answer in the interview
 

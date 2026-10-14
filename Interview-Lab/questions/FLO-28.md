@@ -106,19 +106,18 @@ The local database (Room) is the Single Source of Truth (SSOT). The UI exclusive
 
 In an offline-first Android architecture, the local database (Room) is strictly the **Single Source of Truth (SSOT)**.
 
-The architecture follows a unidirectional reactive pipeline:
+The architecture follows a unidirectional reactive pipeline.
 
-1. **UI Observes Room:** The UI layer never observes raw network responses directly; it exclusively collects a Flow emitted by Room DAO (`articleDao.observeArticles()`). This guarantees that cached data is rendered instantly upon launch with zero network latency.
+First, **UI Observes Room:** The UI layer never observes raw network responses directly; it exclusively collects a Flow emitted by Room DAO (`articleDao.observeArticles()`). This guarantees that cached data is rendered instantly upon launch with zero network latency. Next, **Network Updates Room:** When a refresh is triggered, the repository makes a network call to the remote API. Upon receiving the payload, the repository persists it directly into the local Room database (`articleDao.upsert(data)`).
+Finally, **Automatic Reactive UI Emission:** Because Room's SQLite database observer tracks table modifications, inserting new data automatically triggers Room to re-query and emit the fresh list through its cold Flow. The UI receives the update automatically without any manual coordination.
 
-2. **Network Updates Room:** When a refresh is triggered, the repository makes a network call to the remote API. Upon receiving the payload, the repository persists it directly into the local Room database (`articleDao.upsert(data)`).
-
-3. **Automatic Reactive UI Emission:** Because Room's SQLite database observer tracks table modifications, inserting new data automatically triggers Room to re-query and emit the fresh list through its cold Flow. The UI receives the update automatically without any manual coordination.
 
 ## Interview answer — deep senior
 
 Under the hood, Room achieves this via SQLite transaction hooks and `InvalidationTracker`. When you return `Flow<List<T>>` from a DAO method, Room registers a table observer. Whenever any DAO write transaction commits against that table, `InvalidationTracker` dispatches an invalidation event on Room's query executor, prompting the Flow to re-query SQLite and emit the fresh snapshot.
 
 In enterprise codebases, we guard against stale deletions and conflicts using **Database Synchronization Strategies**: Instead of naive `insertAll()`, we either use `@Upsert` (introduced in Room 2.5) or execute a clean transaction: `withTransaction { dao.deleteStale(); dao.insertAll(fresh) }`. This ensures that items deleted on the backend are removed from local storage without breaking the continuous Flow observation.
+
 
 ## How to answer in the interview
 

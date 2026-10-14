@@ -86,13 +86,11 @@ The Activity Result API replaces error-prone startActivityForResult and onActivi
 
 The Activity Result API completely modernizes inter-activity result handling by replacing legacy `startActivityForResult` and monolithic `onActivityResult` overrides.
 
-It solves three major architectural defects of the old API:
+It solves three major architectural defects of the old API.
 
-1. **Process Death Resilience**: When launching memory-heavy external applications (like the camera or gallery), Android frequently kills the calling Activity process in the background. Because `registerForActivityResult()` registers the callback handle before `onStart()`, when the Activity recreates upon returning, the result is re-delivered to the restored callback cleanly without data loss.
+First, with Process Death Resilience, when launching memory-heavy external applications (like the camera or gallery), Android frequently kills the calling Activity process in the background. Because `registerForActivityResult()` registers the callback handle before `onStart()`, when the Activity recreates upon returning, the result is re-delivered to the restored callback cleanly without data loss. Next, with Type-Safe Modular Contracts, it uses `ActivityResultContract<I, O>` abstractions that explicitly define typed inputs and outputs—such as `TakePicture`, `GetContent`, or `RequestPermission`—eliminating raw `Intent` parsing and fragile `requestCode` integer switch statements.
+Finally, with Decoupled Architecture, result launchers can be registered inside standalone helper classes and lifecycle observers, removing bloated navigation code from the Activity class body.
 
-2. **Type-Safe Modular Contracts**: It uses `ActivityResultContract<I, O>` abstractions that explicitly define typed inputs and outputs—such as `TakePicture`, `GetContent`, or `RequestPermission`—eliminating raw `Intent` parsing and fragile `requestCode` integer switch statements.
-
-3. **Decoupled Architecture**: Result launchers can be registered inside standalone helper classes and lifecycle observers, removing bloated navigation code from the Activity class body.
 
 ## Interview answer — deep senior
 
@@ -111,6 +109,7 @@ class SelectUserContract : ActivityResultContract<String, UserProfile?>() {
 ```
 
 This encapsulates all intent parsing, extras keys, and result code checks into a single reusable component across multi-module codebases.
+
 
 ## How to answer in the interview
 

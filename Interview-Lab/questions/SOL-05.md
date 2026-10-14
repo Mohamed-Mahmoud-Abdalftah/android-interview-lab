@@ -108,17 +108,19 @@ The Interface Segregation Principle (ISP) states that **no client should be forc
 
 When an interface becomes a 'fat interface' (accumulating dozens of methods across multiple feature areas), any change to an unrelated method forces recompilation and re-testing across all consumers. Furthermore, mock implementations in unit tests become bloated with empty stub methods.
 
-Classic Android examples of ISP violations include:
-- **`TextWatcher`**: Forces implementers to override `beforeTextChanged()`, `onTextChanged()`, and `afterTextChanged()` even if they only care about text changes. (Modern Android resolved this with `core-ktx` extension `doAfterTextChanged { ... }`).
-- **`Animator.AnimatorListener`**: Forces four method implementations (`onAnimationStart`, `End`, `Cancel`, `Repeat`) for a simple end callback.
+Classic Android examples of ISP violations include.
+
+First, with TextWatcher, forces implementers to override `beforeTextChanged()`, `onTextChanged()`, and `afterTextChanged()` even if they only care about text changes. (Modern Android resolved this with `core-ktx` extension `doAfterTextChanged { ... }`). Finally, with Animator.AnimatorListener, forces four method implementations (`onAnimationStart`, `End`, `Cancel`, `Repeat`) for a simple end callback.
 
 In modern architecture, we segregate data contracts based on consumer roles: splitting a monolithic `UserRepository` into `UserReader` and `UserWriter`. A read-only home widget injects only `UserReader`, ensuring it has zero visibility or coupling to sensitive account deletion or password change operations.
+
 
 ## Interview answer — deep senior
 
 Kotlin provides exceptional language support for ISP via **Functional (SAM) Interfaces** (`fun interface`). A functional interface contains exactly one abstract method and can be implemented via a concise lambda: `val reader = UserProfileReader { flowOf(currentUser) }`. This makes mocking in unit tests practically instantaneous without heavy mocking libraries.
 
 ISP also protects security and modularization. In enterprise fintech applications, the payment SDK might implement `PaymentAuditor`, `PaymentExecutor`, and `PaymentConfigurator`. The standard checkout UI module is injected only with `PaymentExecutor`, while administrative modules receive `PaymentConfigurator`. This compiler-level segregation prevents feature developers from accidentally exposing administrative configurations.
+
 
 ## How to answer in the interview
 

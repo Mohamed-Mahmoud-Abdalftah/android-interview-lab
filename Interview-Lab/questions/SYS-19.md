@@ -91,31 +91,22 @@ Redesign build performance by decoupling features into isolated :api and :impl m
 
 ## Interview answer — structured
 
-Addressing a 25-minute build across 20 feature teams requires both architectural modularization and build toolchain optimization:
+Addressing a 25-minute build across 20 feature teams requires both architectural modularization and build toolchain optimization.
 
-1. **Architecture & Dependency Decoupling**:
-   - Decouple feature interdependencies using the **API/Implementation pattern** (`:feature:x:api` and `:feature:x:impl`). Modifying implementation code in one feature will not invalidate the build cache of dependent features.
-   - Eliminate the monolithic `:app` bottleneck. Provide each team with a dedicated, lightweight `:feature:x:sample` runner module. Feature engineers build and iterate within their sample app in under 10 seconds without compiling the remaining 19 domains.
+First, **Architecture & Dependency Decoupling**. Next, decouple feature interdependencies using the **API/Implementation pattern** (`:feature:x:api` and `:feature:x:impl`). Modifying implementation code in one feature will not invalidate the build cache of dependent features.
+Eliminate the monolithic `:app` bottleneck. Provide each team with a dedicated, lightweight `:feature:x:sample` runner module. Feature engineers build and iterate within their sample app in under 10 seconds without compiling the remaining 19 domains. **Toolchain Modernization**.
+Replace legacy KAPT annotation processors with **KSP (Kotlin Symbol Processing)** for Room, Moshi, and Dagger/Hilt, reducing annotation processing overhead by 50%. Enable Gradle's **Configuration Cache** (`org.gradle.configuration-cache=true`) to bypass project configuration evaluation on incremental builds.
+**Distributed Remote Build Caching**. Deploy a remote Gradle Build Cache server on the corporate network and CI. Outputs compiled on CI or colleagues' machines are pulled as precompiled binaries rather than re-executed locally.
+**Organizational Governance**. Finally, enforce directory-level ownership using GitHub `CODEOWNERS`, and integrate Konsist or ArchUnit tests into CI to block PRs that introduce forbidden cross-feature dependencies.
 
-2. **Toolchain Modernization**:
-   - Replace legacy KAPT annotation processors with **KSP (Kotlin Symbol Processing)** for Room, Moshi, and Dagger/Hilt, reducing annotation processing overhead by 50%.
-   - Enable Gradle's **Configuration Cache** (`org.gradle.configuration-cache=true`) to bypass project configuration evaluation on incremental builds.
-
-3. **Distributed Remote Build Caching**:
-   - Deploy a remote Gradle Build Cache server on the corporate network and CI. Outputs compiled on CI or colleagues' machines are pulled as precompiled binaries rather than re-executed locally.
-
-4. **Organizational Governance**:
-   - Enforce directory-level ownership using GitHub `CODEOWNERS`, and integrate Konsist or ArchUnit tests into CI to block PRs that introduce forbidden cross-feature dependencies.
 
 ## Interview answer — deep senior
 
-From a staff platform engineering perspective, managing developer velocity at this scale requires continuous telemetry:
+From a staff platform engineering perspective, managing developer velocity at this scale requires continuous telemetry.
 
-1. **Build Velocity Telemetry**: Instrument local developer and CI builds with Gradle Enterprise / Develocity. Monitor metrics across p50, p90, and p99 build times, task cache miss rates, and garbage collection pauses to identify pathological dependencies before they cascade.
+First, with Build Velocity Telemetry, instrument local developer and CI builds with Gradle Enterprise / Develocity. Monitor metrics across p50, p90, and p99 build times, task cache miss rates, and garbage collection pauses to identify pathological dependencies before they cascade. Next, with Binary Dependency Substitution (Focus Mode), for engineers working on specific verticals, implement an internal Gradle plugin that substitutes source module dependencies (`project(":core:network")`) with pre-compiled AAR binaries published to an internal Artifactory cache on every main-branch merge. Engineers compile only their 2 active modules from source.
+Finally, with Non-Transitive R Classes, enable `android.nonTransitiveRClass=true` in `gradle.properties`. This ensures that each module's `R` class contains only its own resources rather than aggregating resource IDs from all upstream dependencies, preventing cascading recompilations when a string resource changes.
 
-2. **Binary Dependency Substitution (Focus Mode)**: For engineers working on specific verticals, implement an internal Gradle plugin that substitutes source module dependencies (`project(":core:network")`) with pre-compiled AAR binaries published to an internal Artifactory cache on every main-branch merge. Engineers compile only their 2 active modules from source.
-
-3. **Non-Transitive R Classes**: Enable `android.nonTransitiveRClass=true` in `gradle.properties`. This ensures that each module's `R` class contains only its own resources rather than aggregating resource IDs from all upstream dependencies, preventing cascading recompilations when a string resource changes.
 
 ## How to answer in the interview
 

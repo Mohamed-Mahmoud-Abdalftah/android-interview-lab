@@ -85,6 +85,7 @@ The cost is bytecode bloat. If an inlined function is large or called in hundred
 
 In production, I only inline small, frequently called utility functions that accept lambda parameters. Inlining a function with no functional parameters is an anti-pattern that the compiler explicitly warns against.
 
+
 ## Interview answer — deep senior
 
 At the bytecode level, executing a non-inlined lambda involves creating an instance of a synthetic class implementing kotlin.jvm.functions.FunctionN, followed by an invokeinterface bytecode instruction. In hot execution paths like collection transformations or frame render passes, this creates garbage collection pressure.
@@ -92,6 +93,7 @@ At the bytecode level, executing a non-inlined lambda involves creating an insta
 When marked inline, kotlinc eliminates both the invocation and the Function object. It splices the instruction stream directly into the caller's stack frame. This enables non-local returns: a return statement inside the inlined lambda returns from the outer enclosing function, mimicking the behavior of built-in control structures like for loops or if statements.
 
 However, inlining comes with severe architectural trade-offs: code size explosion, inability to access private members of the enclosing class from public inline functions (unless marked @PublishedApi), and compiler recompilation cascades in multi-module builds. If a library updates an inline function, all downstream consumers must be recompiled. In production Android apps, we monitor APK method count and avoid inlining complex business methods.
+
 
 ## How to answer in the interview
 

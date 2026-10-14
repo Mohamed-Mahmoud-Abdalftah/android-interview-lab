@@ -79,6 +79,7 @@ In Android ViewModels, if I expose a val MutableList to the UI, other components
 
 My rule in production is to use val by default for all references, keep mutable state private, and expose only immutable data classes or defensive list copies using toList. That separates reference immutability from actual object and state stability.
 
+
 ## Interview answer — deep senior
 
 When discussing val versus var, I evaluate three distinct concerns: reference rebinding, object state mutability, and thread safety. The Kotlin compiler translates a local val into a regular Java local variable without reassignment, and a val property into a private final field with a getter.
@@ -86,6 +87,7 @@ When discussing val versus var, I evaluate three distinct concerns: reference re
 However, object mutability is completely orthogonal. A val property pointing to an object with var fields or a mutable collection allows internal state changes. Furthermore, Kotlin's standard List interface is merely a read-only view, not an immutable collection. It omits mutating methods, but if the underlying JVM instance is an ArrayList, another reference with a MutableList interface can modify it concurrently.
 
 In an enterprise Android application, this distinction directly impacts architecture. In a repository or ViewModel, mutating a shared val collection across coroutine dispatchers causes race conditions because val provides no memory visibility or synchronization guarantees. To handle state safely, I encapsulate mutable collections privately and emit immutable snapshots to StateFlow. If defensive copying becomes a performance bottleneck under high-frequency updates, I use Kotlinx persistent collections rather than relaxing encapsulation.
+
 
 ## How to answer in the interview
 

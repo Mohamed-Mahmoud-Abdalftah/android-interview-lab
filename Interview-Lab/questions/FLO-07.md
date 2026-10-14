@@ -104,6 +104,7 @@ This architectural separation guarantees that state mutations remain strictly co
 
 Crucially, `asStateFlow()` does not perform a simple interface upcast; it wraps the mutable flow in a dedicated `ReadOnlyStateFlow` class. This provides defensive type-safety: if a consumer attempts to dangerously downcast `(uiState as MutableStateFlow).value = ...`, the JVM throws a `ClassCastException`, preventing state corruption.
 
+
 ## Interview answer — deep senior
 
 Under the hood, why not simply write `val uiState: StateFlow<T> = _uiState` (a simple compiler upcast)?
@@ -111,6 +112,7 @@ Under the hood, why not simply write `val uiState: StateFlow<T> = _uiState` (a s
 A plain upcast only provides compile-time visibility restrictions. At runtime, the underlying JVM object remains an instance of `StateFlowImpl` (which implements `MutableStateFlow`). Any caller in Java, or any Kotlin developer using unsafe casting (`as MutableStateFlow`), could bypass your architectural boundary and mutate the internal state from the UI or test classes.
 
 `asStateFlow()` wraps the instance in `ReadOnlyStateFlow`, an internal wrapper that only implements `StateFlow` and delegates read methods to the underlying instance without exposing mutation handles. In enterprise code reviews, we enforce this via lint rules: every public state exposed by a ViewModel must be a read-only `StateFlow` or `SharedFlow` derived via `asStateFlow()` or `stateIn()`.
+
 
 ## How to answer in the interview
 

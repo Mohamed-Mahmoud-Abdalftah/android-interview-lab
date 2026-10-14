@@ -106,31 +106,22 @@ Design a reusable SDK by strictly hiding implementation details behind internal 
 
 ## Interview answer — structured
 
-Architecting a distributed Android SDK requires strict discipline regarding backward compatibility, dependency isolation, and lifecycle consumption:
+Architecting a distributed Android SDK requires strict discipline regarding backward compatibility, dependency isolation, and lifecycle consumption.
 
-1. **API Surface Minimization**:
-   - Expose the smallest viable public API surface. Mark all internal ViewModels, utilities, and models with Kotlin's `internal` visibility modifier.
-   - Hide concrete implementations behind stable interfaces instantiated via companion factory methods.
+First, **API Surface Minimization**. Next, expose the smallest viable public API surface. Mark all internal ViewModels, utilities, and models with Kotlin's `internal` visibility modifier.
+Hide concrete implementations behind stable interfaces instantiated via companion factory methods. **Preventing Dependency Hell**.
+Never leak internal dependencies into client builds. Use Gradle `implementation` instead of `api` for internal networking (Retrofit/OkHttp) or storage libraries. If third-party dependencies are required, consider shading/relocating package namespaces using the Shadow Jar plugin to prevent version collision with host apps.
+**Binary Compatibility (ABI) Enforcement**. Follow Semantic Versioning (SemVer). Integrate Jetpack's **Binary Compatibility Validator (BCV)** plugin into CI. Any breaking signature change (changing return types, adding non-default interface methods) alters the public `.dump` file and breaks CI, preventing accidental runtime crashes in consuming apps.
+**Non-Intrusive Lifecycle & Initialization**. Finally, avoid heavy blocking work in `Application.onCreate`. Use AndroidX `Initializer` for zero-setup workflows, or provide an explicit `Sdk.initialize(config)` allowing the host app to defer initialization off the critical launch path.
 
-2. **Preventing Dependency Hell**:
-   - Never leak internal dependencies into client builds. Use Gradle `implementation` instead of `api` for internal networking (Retrofit/OkHttp) or storage libraries.
-   - If third-party dependencies are required, consider shading/relocating package namespaces using the Shadow Jar plugin to prevent version collision with host apps.
-
-3. **Binary Compatibility (ABI) Enforcement**:
-   - Follow Semantic Versioning (SemVer). Integrate Jetpack's **Binary Compatibility Validator (BCV)** plugin into CI. Any breaking signature change (changing return types, adding non-default interface methods) alters the public `.dump` file and breaks CI, preventing accidental runtime crashes in consuming apps.
-
-4. **Non-Intrusive Lifecycle & Initialization**:
-   - Avoid heavy blocking work in `Application.onCreate`. Use AndroidX `Initializer` for zero-setup workflows, or provide an explicit `Sdk.initialize(config)` allowing the host app to defer initialization off the critical launch path.
 
 ## Interview answer — deep senior
 
-From an enterprise SDK engineering perspective, public libraries must treat the host application as an unpredictable environment:
+From an enterprise SDK engineering perspective, public libraries must treat the host application as an unpredictable environment.
 
-1. **R8/ProGuard Consumer Rules**: Bundle optimized `consumer-rules.pro` files within the AAR. This automatically instructs the consuming app's R8 shrinker which public entry points and serialized DTOs must be retained, preventing host builds from stripping necessary SDK reflection classes.
+First, with R8/ProGuard Consumer Rules, bundle optimized `consumer-rules.pro` files within the AAR. This automatically instructs the consuming app's R8 shrinker which public entry points and serialized DTOs must be retained, preventing host builds from stripping necessary SDK reflection classes. Next, with Strict Manifest Merging Hygiene, audit the SDK's `AndroidManifest.xml`. Never declare aggressive permissions (e.g. `ACCESS_FINE_LOCATION`) inside an SDK manifest unless strictly optional, and avoid defining top-level single-instance activities that alter the host app's back stack.
+Finally, with Defensive Error Isolation, exceptions inside SDK background routines must be caught and returned through typed error callbacks rather than bubbling unhandled to crash the host app process.
 
-2. **Strict Manifest Merging Hygiene**: Audit the SDK's `AndroidManifest.xml`. Never declare aggressive permissions (e.g. `ACCESS_FINE_LOCATION`) inside an SDK manifest unless strictly optional, and avoid defining top-level single-instance activities that alter the host app's back stack.
-
-3. **Defensive Error Isolation**: Exceptions inside SDK background routines must be caught and returned through typed error callbacks rather than bubbling unhandled to crash the host app process.
 
 ## How to answer in the interview
 

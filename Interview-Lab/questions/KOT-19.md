@@ -110,11 +110,13 @@ However, using Result for domain errors has a fundamental flaw: its failure bran
 
 Instead, I model domain outcomes using a custom sealed interface—like `sealed interface DataResult<out T, out E>`—or dedicated state hierarchies. This gives compile-time exhaustive type checking via when expressions, attaches strongly typed metadata to failures, and avoids the performance penalty of exception allocation.
 
+
 ## Interview answer — deep senior
 
 When designing domain layers in production Android apps, the choice between Kotlin Result, Arrow's Either, and custom sealed hierarchies directly impacts code clarity and diagnostic capabilities. Until Kotlin 1.5, kotlin.Result could not even be returned from functions without compiler flags because of inline class ABI considerations. Even today, it suffers from ergonomic limitations: you cannot customize the failure type, and functions like `mapCatching` swallow all Throwables, including `CancellationException`, which breaks Coroutine cancellation hierarchies if not carefully handled.
 
 With a custom sealed hierarchy like `sealed interface AppResult<out T, out E>`: 1. Domain errors can carry rich context (e.g., `data class NetworkError(val httpCode: Int, val retryAfterSeconds: Int)`). 2. When consuming the result in a ViewModel or MVI reducer, the Kotlin compiler enforces exhaustiveness on the `E` domain error sealed branch without needing an `else` branch, eliminating runtime unhandled edge cases. 3. Stack traces are never collected for expected business validation failures, reducing GC churn in high-frequency operations.
+
 
 ## How to answer in the interview
 

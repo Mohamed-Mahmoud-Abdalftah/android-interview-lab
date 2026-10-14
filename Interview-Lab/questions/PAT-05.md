@@ -101,27 +101,22 @@ Observer handles reactive 1-to-N updates (`Flow`, Compose State). Strategy swaps
 
 ## Interview answer — structured
 
-Behavioral patterns govern communication protocols, algorithms, and state transitions between decoupled objects:
+Behavioral patterns govern communication protocols, algorithms, and state transitions between decoupled objects.
 
-1. **Observer**: Defines a one-to-many dependency where state mutations in a subject broadcast notifications to subscribers. The foundation of modern reactive Android (`StateFlow`, `LiveData`, and Compose's `SnapshotMutationPolicy`).
+First, an Observer defines a one-to-many dependency where state mutations in a subject broadcast notifications to subscribers. The foundation of modern reactive Android (`StateFlow`, `LiveData`, and Compose's `SnapshotMutationPolicy`). Next, a Strategy encapsulates a family of algorithms into interchangeable classes conforming to a common contract. Consumers delegate execution to the strategy instance injected at runtime (e.g. Routing between different payment gateways).
+Additionally, with State, allows an object to alter its behavior when its internal state changes, behaving as if its underlying class transformed. Highly effective for complex state machines (e.g. `ExoPlayer` audio state transitions or Bluetooth connection sequences: `Disconnected`, `Scanning`, `Connecting`, `Connected`). A Command encapsulates a request as an object with its own execution context, enabling parameterization, queuing, scheduling, and undo/redo operations. Embodied by Jetpack `WorkManager` (`OneTimeWorkRequest`) and MVI `Intent` actions.
+Finally, with Chain of Responsibility, decouples request senders from receivers by giving multiple handlers a chance to process the request sequentially along a pipeline. Embodied by **OkHttp Interceptor chains** and Android's **`dispatchTouchEvent()` hierarchy**.
 
-2. **Strategy**: Encapsulates a family of algorithms into interchangeable classes conforming to a common contract. Consumers delegate execution to the strategy instance injected at runtime (e.g. routing between different payment gateways).
-
-3. **State**: Allows an object to alter its behavior when its internal state changes, behaving as if its underlying class transformed. Highly effective for complex state machines (e.g. `ExoPlayer` audio state transitions or Bluetooth connection sequences: `Disconnected`, `Scanning`, `Connecting`, `Connected`).
-
-4. **Command**: Encapsulates a request as an object with its own execution context, enabling parameterization, queuing, scheduling, and undo/redo operations. Embodied by Jetpack `WorkManager` (`OneTimeWorkRequest`) and MVI `Intent` actions.
-
-5. **Chain of Responsibility**: Decouples request senders from receivers by giving multiple handlers a chance to process the request sequentially along a pipeline. Embodied by **OkHttp Interceptor chains** and Android's **`dispatchTouchEvent()` hierarchy**.
 
 ## Interview answer — deep senior
 
-Comparing **State vs Strategy** is a classic interview inquiry:
-- Both share an identical UML class diagram (Context delegating to an Interface with multiple implementations).
-- *The difference is intent and state transitions*:
-  * In **Strategy**, the client generally configures the strategy once (e.g. user chooses 'Pay with PayPal'), and strategies rarely know about other strategies.
-  * In **State**, the context changes states dynamically as events occur, and concrete state objects frequently trigger transitions to succeeding state objects (`PausedState` directly transitions context to `PlayingState`).
+Comparing **State vs Strategy** is a classic interview inquiry.
+
+First, both share an identical UML class diagram (Context delegating to an Interface with multiple implementations). Next, *The difference is intent and state transitions*.
+In **Strategy**, the client generally configures the strategy once (e.g. User chooses 'Pay with PayPal'), and strategies rarely know about other strategies. Finally, in **State**, the context changes states dynamically as events occur, and concrete state objects frequently trigger transitions to succeeding state objects (`PausedState` directly transitions context to `PlayingState`).
 
 In modern Kotlin, the State pattern is often formalized using **Sealed Interfaces with Reducer Functions** (`MVI`), achieving mathematical state determinism.
+
 
 ## How to answer in the interview
 

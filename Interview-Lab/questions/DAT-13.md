@@ -123,18 +123,13 @@ Paging 3 with RemoteMediator uses Room as the single source of truth for the UI 
 
 ## Interview answer — structured
 
-Implementing Paging 3 with `RemoteMediator` provides production-grade offline-first pagination:
+Implementing Paging 3 with `RemoteMediator` provides production-grade offline-first pagination.
 
-1. **Architecture Separation**:
-   - The presentation layer collects `Flow<PagingData<T>>` served exclusively by Room's generated `PagingSource`.
-   - `RemoteMediator` acts as the network pump. It does not return items to the UI; it fetches remote payloads and writes them into Room. Room's invalidation tracker then emits updated paging slices to the UI.
+First, **Architecture Separation**. Next, the presentation layer collects `Flow<PagingData<T>>` served exclusively by Room's generated `PagingSource`.
+`RemoteMediator` acts as the network pump. It does not return items to the UI; it fetches remote payloads and writes them into Room. Room's invalidation tracker then emits updated paging slices to the UI. **LoadTypes & Lifecycle**.
+REFRESH is triggered on initial load or swipe-to-refresh. If online, clears existing database tables and inserts page 1. APPEND is triggered when the user scrolls near the end of the loaded viewport. Fetches the next page and appends entities to Room.
+PREPEND is triggered if scrolling upwards; typically returns `endOfPaginationReached = true` if items are only added forward. Finally, a RemoteKeys Table maintains cursor/page pointers in SQLite for each entity, ensuring accurate page math across app restarts and process recreation.
 
-2. **LoadTypes & Lifecycle**:
-   - **`REFRESH`**: Triggered on initial load or swipe-to-refresh. If online, clears existing database tables and inserts page 1.
-   - **`APPEND`**: Triggered when the user scrolls near the end of the loaded viewport. Fetches the next page and appends entities to Room.
-   - **`PREPEND`**: Triggered if scrolling upwards; typically returns `endOfPaginationReached = true` if items are only added forward.
-
-3. **RemoteKeys Table**: Maintains cursor/page pointers in SQLite for each entity, ensuring accurate page math across app restarts and process recreation.
 
 ## Interview answer — deep senior
 
@@ -142,10 +137,11 @@ A frequent failure mode in Paging 3 is **Infinite Refresh Loops caused by Table 
 
 If your `RemoteMediator` writes to a secondary table that triggers invalidation of the primary observed query *before* the transaction finishes, or if `RemoteMediator` returns `MediatorResult.Success(endOfPaginationReached = false)` when the network actually returned an empty list, Paging 3 continuously triggers new `APPEND` loads in an infinite loop, draining battery and flooding the server.
 
-**Defensive Rules**:
-- Always write entities and `RemoteKeys` together inside `database.withTransaction { }`.
-- If `response.items.isEmpty()`, immediately set `endOfPaginationReached = true`.
-- Use `initialize(): InitializeAction` in `RemoteMediator`. If cached database data is fresh (e.g. less than 10 minutes old), return `InitializeAction.SKIP_INITIAL_REFRESH` to open the screen instantly without hitting the network.
+**Defensive Rules**.
+
+First, always write entities and `RemoteKeys` together inside `database.withTransaction { }`. Next, if `response.items.isEmpty()`, immediately set `endOfPaginationReached = true`.
+Finally, use `initialize(): InitializeAction` in `RemoteMediator`. If cached database data is fresh (e.g. Less than 10 minutes old), return `InitializeAction.SKIP_INITIAL_REFRESH` to open the screen instantly without hitting the network.
+
 
 ## How to answer in the interview
 

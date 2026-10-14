@@ -1,6 +1,7 @@
 ---
 import academy from '../data/academy.json';
-const modules = [
+const isArabic = Astro.currentLocale === 'ar' || Astro.url.pathname.includes('/ar/');
+const modules = isArabic ? [
   ['KOT', 'Kotlin & JVM / ART', 'اللغة، الـruntime، الـcompiler والـJava boundaries'],
   ['COR', 'Coroutines & Flow', 'structured concurrency، cancellation والـstreams'],
   ['AND', 'Android Internals', 'lifecycle، process death، Binder والخلفية'],
@@ -11,9 +12,24 @@ const modules = [
   ['SYS', 'Mobile System Design', 'requirements، data flow، failures والبدائل'],
   ['INT', 'Leadership, HR & English', 'ownership، STAR والتفسير التقني'],
   ['POS', 'POS / NFC / Hardware', 'payment states، NFC، recovery وحدود الاعتماد'],
+] : [
+  ['KOT', 'Kotlin & JVM / ART', 'Language semantics, runtime, compiler, and Java boundaries'],
+  ['COR', 'Coroutines & Flow', 'Structured concurrency, cancellation, and asynchronous streams'],
+  ['AND', 'Android Internals', 'Lifecycle, process death, IPC / Binder, and background lifetimes'],
+  ['ARC', 'Architecture & DI', 'State ownership, repositories, offline-first, and separation of concerns'],
+  ['UI', 'XML Views & Compose', 'Rendering pipeline, state ownership, accessibility, and RTL'],
+  ['PRO', 'Production Engineering', 'Durable storage, networking resilience, app security, and R8/build'],
+  ['DSA', 'DSA & Live Coding', 'Invariants, algorithmic complexity, and thinking aloud in interviews'],
+  ['SYS', 'Mobile System Design', 'Requirements, architecture diagrams, data contracts, and failure handling'],
+  ['INT', 'Leadership, HR & English', 'Technical ownership, STAR methodology, and concise reasoning'],
+  ['POS', 'POS / NFC / Hardware', 'Payment state machines, hardware peripherals, and transaction isolation'],
 ];
-const firstRoute = (prefix: string) => academy.lessons.find((lesson) => lesson.id.startsWith(prefix) && lesson.route)?.route
-  ?? (prefix === 'DSA' ? '/lessons/ext-dsa-01/' : prefix === 'POS' ? '/lessons/ext-pos-01/' : null);
+const firstRoute = (prefix: string) => {
+  const baseRoute = academy.lessons.find((lesson) => lesson.id.startsWith(prefix) && lesson.route)?.route
+    ?? (prefix === 'DSA' ? '/lessons/ext-dsa-01/' : prefix === 'POS' ? '/lessons/ext-pos-01/' : null);
+  if (!baseRoute) return null;
+  return isArabic ? `/ar${baseRoute}` : baseRoute;
+};
 const reviewedCount = (prefix: string) => academy.lessons.filter((lesson) => lesson.id.startsWith(prefix) && lesson.route).length
   + (prefix === 'DSA' || prefix === 'POS' ? 1 : 0);
 ---
@@ -24,7 +40,7 @@ const reviewedCount = (prefix: string) => academy.lessons.filter((lesson) => les
       <bdi>{String(index + 1).padStart(2, '0')} / {prefix}</bdi>
       <h3>{route ? <a href={route}>{title}</a> : title}</h3>
       <p>{description}</p>
-      <span class:list={['status-chip', route ? '' : 'planned']}>{reviewedCount(prefix)} جاهز</span>
+      <span class:list={['status-chip', route ? '' : 'planned']}>{reviewedCount(prefix)} {isArabic ? 'جاهز' : 'ready'}</span>
     </article>;
   })}
 </div>

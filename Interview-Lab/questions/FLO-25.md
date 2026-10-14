@@ -130,12 +130,11 @@ Design the search pipeline using query.map { it.trim() }.debounce(300).distinctU
 
 ## Interview answer — structured
 
-To build a responsive search pipeline that debounces input and cancels stale API calls, I chain four essential Flow operators in the ViewModel:
+To build a responsive search pipeline that debounces input and cancels stale API calls, I chain four essential Flow operators in the ViewModel.
 
-1. **`map { it.trim() }`**: Sanitizes whitespace to avoid trivial variations.
-2. **`debounce(300L)`**: Waits for a 300ms quiet period after the user stops typing, preventing rapid keystroke storms.
-3. **`distinctUntilChanged()`**: Prevents redundant search dispatches if the query string after trimming equals the previous search.
-4. **`flatMapLatest { query -> ... }`**: This is the critical cancellation operator. If a query 'A' is sent and takes 800ms, and the user types 'AB' at 500ms, `flatMapLatest` immediately cancels the ongoing HTTP call for 'A' via cooperative cancellation, executing the fresh search for 'AB' instead. This completely eliminates out-of-order response race conditions.
+First, with map { it.trim() }, sanitizes whitespace to avoid trivial variations. Next, with debounce(300L), waits for a 300ms quiet period after the user stops typing, preventing rapid keystroke storms.
+Additionally, with distinctUntilChanged(), prevents redundant search dispatches if the query string after trimming equals the previous search. Finally, with flatMapLatest { query -> ... }, this is the critical cancellation operator. If a query 'A' is sent and takes 800ms, and the user types 'AB' at 500ms, `flatMapLatest` immediately cancels the ongoing HTTP call for 'A' via cooperative cancellation, executing the fresh search for 'AB' instead. This completely eliminates out-of-order response race conditions.
+
 
 ## Interview answer — deep senior
 
@@ -144,6 +143,7 @@ From an API optimization and networking standpoint, `flatMapLatest` cancels the 
 Inside `flatMapLatest`, we wrap the repository call with: `.onStart { emit(SearchUiState.Loading) }` and `.catch { emit(SearchUiState.Error(...)) }`. This encapsulates the entire asynchronous lifecycle of each individual query cleanly within the inner flow.
 
 Finally, pairing this with `stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SearchUiState.Idle)` ensures that if the user rotates the device, the current search results are retained instantly from the `StateFlow`'s cache without re-triggering the network query.
+
 
 ## How to answer in the interview
 

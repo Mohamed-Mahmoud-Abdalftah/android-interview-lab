@@ -104,11 +104,13 @@ In Android search architecture, `debounce` and `distinctUntilChanged` work in ta
 
 **`distinctUntilChanged()`** acts as an equality filter. It compares the incoming value against the previously emitted value using `equals()`. If the user types 'A', quickly deletes it, and types 'A' again, the debounced text is still 'A'. `distinctUntilChanged` recognizes that the query hasn't changed and suppresses the duplicate emission, preventing a redundant network query.
 
+
 ## Interview answer — deep senior
 
 Under the hood, `debounce` launches a timer coroutine on the coroutine scheduler. When a new upstream emission arrives, the previous delayed task is cancelled, and a new delayed emission is scheduled. When testing `debounce` with `runTest`, virtual time makes verification instantaneous: you can advance time by 299ms to assert no search occurred, and then call `advanceTimeBy(2)` to verify the search query triggered.
 
 With `distinctUntilChanged()`, the operator maintains a reference to the previous emission in memory. You can also provide a custom key selector: `distinctUntilChangedBy { it.id }` or a custom comparison lambda. Pairing this pipeline with `flatMapLatest` guarantees that even if a debounced search query is sent, if the user starts typing again while the backend is responding, the stale network call is immediately cancelled in favor of the newer query.
+
 
 ## How to answer in the interview
 

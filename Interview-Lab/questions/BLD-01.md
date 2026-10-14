@@ -97,26 +97,20 @@ Gradle is the generic build automation engine managing task graphs and dependenc
 
 ## Interview answer — structured
 
-The Android build pipeline is an orchestrated pipeline dividing responsibilities across three distinct tools:
+The Android build pipeline is an orchestrated pipeline dividing responsibilities across three distinct tools.
 
-1. **Gradle (Build Orchestrator)**:
-   - A general-purpose build automation engine. It knows nothing about Android APIs. It evaluates settings and build scripts, resolves remote Maven dependencies, constructs the Directed Acyclic Graph (DAG) of tasks, and enforces execution caching and parallelization.
+First, **Gradle (Build Orchestrator)**. Next, a general-purpose build automation engine. It knows nothing about Android APIs. It evaluates settings and build scripts, resolves remote Maven dependencies, constructs the Directed Acyclic Graph (DAG) of tasks, and enforces execution caching and parallelization.
+**Android Gradle Plugin / AGP (Android Domain Engine)**. Developed by Google to extend Gradle for Android. It registers custom tasks: running AAPT2 to compile XML layouts and resources into `resources.ap_`, executing Manifest Merger, running D8/R8 to transform JVM `.class` bytecode into Dalvik Executable (`.dex`) files, and packaging native `.so` libraries into signed APK/AAB artifacts.
+**Kotlin Compiler / kotlinc (Language Frontend)**. Finally, compiles Kotlin `.kt` source files into standard JVM `.class` bytecode. In modern AGP builds with K2 and KSP, it runs concurrently with Java compilation, emitting intermediate bytecodes ready for AGP's desugaring and R8 shrinking pipeline.
 
-2. **Android Gradle Plugin / AGP (Android Domain Engine)**:
-   - Developed by Google to extend Gradle for Android. It registers custom tasks: running AAPT2 to compile XML layouts and resources into `resources.ap_`, executing Manifest Merger, running D8/R8 to transform JVM `.class` bytecode into Dalvik Executable (`.dex`) files, and packaging native `.so` libraries into signed APK/AAB artifacts.
-
-3. **Kotlin Compiler / kotlinc (Language Frontend)**:
-   - Compiles Kotlin `.kt` source files into standard JVM `.class` bytecode. In modern AGP builds with K2 and KSP, it runs concurrently with Java compilation, emitting intermediate bytecodes ready for AGP's desugaring and R8 shrinking pipeline.
 
 ## Interview answer — deep senior
 
-From a low-level build systems perspective, tracing the precise task boundary pipeline illuminates optimization opportunities:
+From a low-level build systems perspective, tracing the precise task boundary pipeline illuminates optimization opportunities.
 
-1. **Task Execution Pipeline Sequence**: Source generation -> `compileDebugKotlin` (kotlinc emits `.class`) -> `compileDebugJavaWithJavac` -> Class merging -> `mergeDebugResources` (AAPT2) -> `processDebugManifest` -> `minifyDebugWithR8` (shrinks, optimizes, and dexes into `classes.dex`) -> `packageDebug` (assembles unsigned ZIP) -> `signDebugBundle`.
+First, with Task Execution Pipeline Sequence, source generation -> `compileDebugKotlin` (kotlinc emits `.class`) -> `compileDebugJavaWithJavac` -> Class merging -> `mergeDebugResources` (AAPT2) -> `processDebugManifest` -> `minifyDebugWithR8` (shrinks, optimizes, and dexes into `classes.dex`) -> `packageDebug` (assembles unsigned ZIP) -> `signDebugBundle`. Next, with Desugaring in D8/R8, modern Java 8/11/17 language APIs (e.g. `java.time`, streams) used in Kotlin or Java source are rewritten by AGP's D8 desugaring engine into backward-compatible synthetic bytecode that runs safely on older Android devices down to API 21.
+Finally, with K2 Compiler Upgrades, Kotlin 2.0 (K2) completely replaces the compiler frontend with a unified semantic analyzer. It optimizes build compilation time by up to 2x and standardizes type inference across multiplatform targets.
 
-2. **Desugaring in D8/R8**: Modern Java 8/11/17 language APIs (e.g. `java.time`, streams) used in Kotlin or Java source are rewritten by AGP's D8 desugaring engine into backward-compatible synthetic bytecode that runs safely on older Android devices down to API 21.
-
-3. **K2 Compiler Upgrades**: Kotlin 2.0 (K2) completely replaces the compiler frontend with a unified semantic analyzer. It optimizes build compilation time by up to 2x and standardizes type inference across multiplatform targets.
 
 ## How to answer in the interview
 

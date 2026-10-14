@@ -131,23 +131,19 @@ Set android:exported="false" unless public access is required, and protect inter
 
 ## Interview answer — structured
 
-Securing IPC boundaries requires rigorous controls across components, deep links, and intents:
+Securing IPC boundaries requires rigorous controls across components, deep links, and intents.
 
-1. **Exported Components**: Unintentionally exported components create unauthorized entry points into private business logic. Mark all Activities, Services, and Receivers `android:exported="false"` unless explicitly required. For multi-app suites sharing components, enforce custom permissions with `android:protectionLevel="signature"`.
+First, unintentionally exported components create unauthorized entry points into private business logic. Mark all Activities, Services, and Receivers `android:exported="false"` unless explicitly required. For multi-app suites sharing components, enforce custom permissions with `android:protectionLevel="signature"`. Next, a PendingIntent Immutability is a `PendingIntent` executes with the permissions and identity of the creating application. If flagged `FLAG_MUTABLE`, receiving applications can mutate the wrapped intent's action, data, or flags—enabling Intent Redirection attacks. Always apply `PendingIntent.FLAG_IMMUTABLE` unless interaction requires runtime system completion (such as Inline Reply in notifications).
+Finally, with Deep Link Validation & App Links, custom URI schemes (`scheme://`) lack ownership verification and can be claimed by malicious apps. Use **Android App Links** with SHA-256 assetlinks verification on the server. Never pass deep link URLs directly to internal WebViews or invoke component launch intents dynamically based on untrusted intent extras.
 
-2. **PendingIntent Immutability**: A `PendingIntent` executes with the permissions and identity of the creating application. If flagged `FLAG_MUTABLE`, receiving applications can mutate the wrapped intent's action, data, or flags—enabling Intent Redirection attacks. Always apply `PendingIntent.FLAG_IMMUTABLE` unless interaction requires runtime system completion (such as Inline Reply in notifications).
-
-3. **Deep Link Validation & App Links**: Custom URI schemes (`scheme://`) lack ownership verification and can be claimed by malicious apps. Use **Android App Links** with SHA-256 assetlinks verification on the server. Never pass deep link URLs directly to internal WebViews or invoke component launch intents dynamically based on untrusted intent extras.
 
 ## Interview answer — deep senior
 
-From a threat modeling perspective, Intent-based attacks represent a significant vulnerability surface in Android applications:
+From a threat modeling perspective, Intent-based attacks represent a significant vulnerability surface in Android applications.
 
-1. **Intent Redirection / Proxying Vulnerability**: A common flaw occurs when an exported Activity extracts an untrusted `Intent` from its extras (e.g., `intent.getParcelableExtra("target_intent")`) and invokes `startActivity(targetIntent)`. An attacker can construct an intent pointing to an unexported internal activity, effectively bypassing `exported="false"` using the victim app as an unintentional proxy.
+First, an Intent Redirection / Proxying Vulnerability is a common flaw occurs when an exported Activity extracts an untrusted `Intent` from its extras (e.g., `intent.getParcelableExtra("target_intent")`) and invokes `startActivity(targetIntent)`. An attacker can construct an intent pointing to an unexported internal activity, effectively bypassing `exported="false"` using the victim app as an unintentional proxy. Next, with PendingIntent Hijacking in Foreground Services, when creating `PendingIntent` instances for notifications or alarms, ensure the wrapped Intent explicitly targets a concrete component class name (`setClass()` or `setComponent()`). Implicit intents wrapped in PendingIntents can be intercepted by rival apps registered for the matching intent filter.
+Finally, with Automated Manifest Auditing, run automated CI static analysis (e.g., Android Lint `ExportedService`, `UnspecifiedImmutableFlag`) to block builds containing unreviewed exported declarations or mutable pending intents.
 
-2. **PendingIntent Hijacking in Foreground Services**: When creating `PendingIntent` instances for notifications or alarms, ensure the wrapped Intent explicitly targets a concrete component class name (`setClass()` or `setComponent()`). Implicit intents wrapped in PendingIntents can be intercepted by rival apps registered for the matching intent filter.
-
-3. **Automated Manifest Auditing**: Run automated CI static analysis (e.g., Android Lint `ExportedService`, `UnspecifiedImmutableFlag`) to block builds containing unreviewed exported declarations or mutable pending intents.
 
 ## How to answer in the interview
 

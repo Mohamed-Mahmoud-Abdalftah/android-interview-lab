@@ -119,30 +119,22 @@ Design a robust payment lifecycle by attaching a client-generated UUID idempoten
 
 ## Interview answer — structured
 
-Payment flows require zero-tolerance for duplicate charges and resilient handling of network failures:
+Payment flows require zero-tolerance for duplicate charges and resilient handling of network failures.
 
-1. **Client-Generated Idempotency Keys**:
-   - Before dispatching a charge request, generate a cryptographically unique `idempotencyKey = UUID()` and persist it locally in Room associated with the order ID.
-   - Transmit this key in the HTTP header (`Idempotency-Key: <uuid>`). If network drops occur and the request is retried, payment gateways (e.g. Stripe, Adyen) recognize the key and return the original transaction receipt without re-executing charges.
+First, **Client-Generated Idempotency Keys**. Next, before dispatching a charge request, generate a cryptographically unique `idempotencyKey = UUID()` and persist it locally in Room associated with the order ID.
+Transmit this key in the HTTP header (`Idempotency-Key: <uuid>`). If network drops occur and the request is retried, payment gateways (e.g. Stripe, Adyen) recognize the key and return the original transaction receipt without re-executing charges. **State Machine Modeling**.
+Model the lifecycle with explicit states: `Created -> PaymentMethodAttached -> ActionRequired (3DS) -> Processing -> Succeeded / Failed`. **In-Flight Network Disconnection Recovery (Reconciliation)**.
+When an HTTP timeout occurs, the client does not know whether the charge succeeded on the gateway. **Never retry the charge mutation directly**. Instead, trigger a reconciliation query (`GET /payments/reconcile?key=<idempotencyKey>`) to retrieve the authoritative state. **Server-to-Server Webhook Authority**.
+Finally, the backend must not consider orders finalized solely because the mobile client returned success. Final order fulfillment is unlocked exclusively via authenticated server-side webhooks from the payment provider.
 
-2. **State Machine Modeling**:
-   - Model the lifecycle with explicit states: `Created -> PaymentMethodAttached -> ActionRequired (3DS) -> Processing -> Succeeded / Failed`.
-
-3. **In-Flight Network Disconnection Recovery (Reconciliation)**:
-   - When an HTTP timeout occurs, the client does not know whether the charge succeeded on the gateway. **Never retry the charge mutation directly**. Instead, trigger a reconciliation query (`GET /payments/reconcile?key=<idempotencyKey>`) to retrieve the authoritative state.
-
-4. **Server-to-Server Webhook Authority**:
-   - The backend must not consider orders finalized solely because the mobile client returned success. Final order fulfillment is unlocked exclusively via authenticated server-side webhooks from the payment provider.
 
 ## Interview answer — deep senior
 
-From a staff architecture perspective, payment systems require handling edge cases in client-side lifecycle and user interaction:
+From a staff architecture perspective, payment systems require handling edge cases in client-side lifecycle and user interaction.
 
-1. **UI Double-Tap & Concurrency Guards**: Prevent duplicate button clicks by disabling the UI immediately and using reactive StateFlow debounce mechanisms. The `executePayment()` method must be bounded by an in-memory Mutex to block concurrent triggers for the same order.
+First, with UI Double-Tap & Concurrency Guards, prevent duplicate button clicks by disabling the UI immediately and using reactive StateFlow debounce mechanisms. The `executePayment()` method must be bounded by an in-memory Mutex to block concurrent triggers for the same order. Next, with 3D Secure / Biometric Process Death, when navigating to a 3DS webview or external banking app, the host Android OS may kill the main application under memory pressure. The app must persist order state and idempotency keys in persistent Room storage so that upon returning via Deep Link (`myapp://payment-return`), the activity reconstructs state and polls the backend for final status.
+Finally, with Telemetry & PCI Auditing, mask PAN numbers (showing only first 6/last 4) in all UI logs, and completely eliminate CVV/CVC persistence from memory and storage post-tokenization.
 
-2. **3D Secure / Biometric Process Death**: When navigating to a 3DS webview or external banking app, the host Android OS may kill the main application under memory pressure. The app must persist order state and idempotency keys in persistent Room storage so that upon returning via Deep Link (`myapp://payment-return`), the activity reconstructs state and polls the backend for final status.
-
-3. **Telemetry & PCI Auditing**: Mask PAN numbers (showing only first 6/last 4) in all UI logs, and completely eliminate CVV/CVC persistence from memory and storage post-tokenization.
 
 ## How to answer in the interview
 

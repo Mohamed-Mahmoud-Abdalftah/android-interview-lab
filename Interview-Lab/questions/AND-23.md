@@ -97,24 +97,24 @@ The lifecycle principle is: **Never retain a shorter-lived context inside a long
 
 A Singleton lives for the entire duration of the Linux app process. An Activity Context is transient, destroyed whenever the user presses Back or rotates the screen. If a Singleton retains a reference to an Activity Context, that Activity and its entire attached View hierarchy, drawables, and window managers can never be reclaimed by the garbage collector, causing severe memory leaks and eventual `OutOfMemoryError` crashes.
 
-To enforce safety:
+To enforce safety.
 
-1. In plain Kotlin constructors, always call `context.applicationContext` defensively.
-2. In Dagger/Hilt, inject `@ApplicationContext context: Context`.
+First, in plain Kotlin constructors, always call `context.applicationContext` defensively. Finally, in Dagger/Hilt, inject `@ApplicationContext context: Context`.
 
 The Application Context is safe to retain because it already shares the same lifespan as the application process.
+
 
 ## Interview answer — deep senior
 
 At the memory profiling level, LeakCanary flags this defect under the pattern: `Leaking instance of MainActivity held by Singleton.instance.context`.
 
-However, you must be aware of what `ApplicationContext` **cannot** do inside a Singleton:
+However, you must be aware of what `ApplicationContext` **cannot** do inside a Singleton.
 
-- It cannot display Dialogs (throws `BadTokenException`).
-- It cannot resolve Activity theme styles and attributes.
-- It cannot launch activities without `FLAG_ACTIVITY_NEW_TASK`.
+First, it cannot display Dialogs (throws `BadTokenException`). Next, it cannot resolve Activity theme styles and attributes.
+Finally, it cannot launch activities without `FLAG_ACTIVITY_NEW_TASK`.
 
 If your Singleton needs to trigger UI operations (like showing a dialog), it must not do so directly. Instead, the Singleton should expose a `StateFlow` or `Channel` of UI events, and let the active, foreground Activity collect those events and display the UI using its own legitimate Activity Context.
+
 
 ## How to answer in the interview
 

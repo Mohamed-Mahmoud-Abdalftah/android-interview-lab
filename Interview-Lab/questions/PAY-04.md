@@ -124,30 +124,21 @@ Failing to durably commit local payment records risks stranded transactions wher
 
 ## Interview answer — structured
 
-In financial systems architecture, volatile in-memory transaction tracking violates foundational ACID guarantees:
+In financial systems architecture, volatile in-memory transaction tracking violates foundational ACID guarantees.
 
-1. **The Stranded Transaction Catastrophe**:
-   - If transaction state exists merely in ViewModel memory or unflushed cache buffers, an abrupt Android OS process kill or physical battery detachment during payment processing destroys the record. If the payment gateway approved the transaction, the cardholder is debited, but the merchant app boots back up with zero knowledge of the purchase, producing furious customers and severe chargeback penalties.
+First, **The Stranded Transaction Catastrophe**. Next, if transaction state exists merely in ViewModel memory or unflushed cache buffers, an abrupt Android OS process kill or physical battery detachment during payment processing destroys the record. If the payment gateway approved the transaction, the cardholder is debited, but the merchant app boots back up with zero knowledge of the purchase, producing furious customers and severe chargeback penalties.
+**Inability to Reconcile or Reverse**. To issue an ISO 8583 reversal or query status, the terminal requires the original transaction identifiers (STAN, RRN, correlation ID, amount). Without durable disk persistence, the terminal has no metadata to issue a reversal, stranding customer funds in an indefinite authorization hold.
+**Audit and Legal Non-Compliance**. Payment standards (PCI-DSS, EMVCo) mandate non-repudiation and immutable transaction audit trails. Failing to durably persist transactions violates payment terminal certification rules.
+**The Write-Ahead Persistence Pattern**. Finally, strict financial architectures enforce Write-Ahead logging: records are durably committed to SQLite/Room using synchronous write transactions *before* emitting network bytes.
 
-2. **Inability to Reconcile or Reverse**:
-   - To issue an ISO 8583 reversal or query status, the terminal requires the original transaction identifiers (STAN, RRN, correlation ID, amount). Without durable disk persistence, the terminal has no metadata to issue a reversal, stranding customer funds in an indefinite authorization hold.
-
-3. **Audit and Legal Non-Compliance**:
-   - Payment standards (PCI-DSS, EMVCo) mandate non-repudiation and immutable transaction audit trails. Failing to durably persist transactions violates payment terminal certification rules.
-
-4. **The Write-Ahead Persistence Pattern**:
-   - Strict financial architectures enforce Write-Ahead logging: records are durably committed to SQLite/Room using synchronous write transactions *before* emitting network bytes.
 
 ## Interview answer — deep senior
 
-From an SQLite file-system and hardware storage architecture perspective, durability requires understanding flash storage semantics:
+From an SQLite file-system and hardware storage architecture perspective, durability requires understanding flash storage semantics.
 
-1. **The SQLite `fsync` and PRAGMA synchronous Guarantee**: Simply calling `db.insert()` does not guarantee the bits have hit physical NAND flash. Android's SQLite uses Write-Ahead Logging (WAL). If `PRAGMA synchronous = OFF` is set, data sits in Linux kernel page cache; a battery removal loses unwritten pages. High-reliability fintech apps mandate `PRAGMA synchronous = FULL` or `NORMAL` to ensure disk barriers flush.
+First, with The SQLite `fsync` and PRAGMA synchronous Guarantee, simply calling `db.insert()` does not guarantee the bits have hit physical NAND flash. Android's SQLite uses Write-Ahead Logging (WAL). If `PRAGMA synchronous = OFF` is set, data sits in Linux kernel page cache; a battery removal loses unwritten pages. High-reliability fintech apps mandate `PRAGMA synchronous = FULL` or `NORMAL` to ensure disk barriers flush. Next, with Atomic State Transition Ledgers, payment records should never be updated in-place via loose `UPDATE` statements. Use an append-only transaction ledger (`payment_events` table). Every state change (INITIATED -> PROCESSING -> APPROVED) is inserted as an immutable event row. This provides complete tamper-evident auditability for bank forensic audits.
+**Storage Encryption (Encrypted Room)**. Finally, persistent payment ledgers containing transaction metadata must be encrypted on disk using SQLCipher backed by the Android Keystore to prevent physical flash extraction attacks on rooted POS hardware.
 
-2. **Atomic State Transition Ledgers**: Payment records should never be updated in-place via loose `UPDATE` statements. Use an append-only transaction ledger (`payment_events` table). Every state change (INITIATED -> PROCESSING -> APPROVED) is inserted as an immutable event row. This provides complete tamper-evident auditability for bank forensic audits.
-
-3. **Storage Encryption (Encrypted Room)**:
-   - Persistent payment ledgers containing transaction metadata must be encrypted on disk using SQLCipher backed by the Android Keystore to prevent physical flash extraction attacks on rooted POS hardware.
 
 ## How to answer in the interview
 

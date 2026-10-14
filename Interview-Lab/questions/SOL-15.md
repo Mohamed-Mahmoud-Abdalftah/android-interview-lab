@@ -109,16 +109,11 @@ Split a large interface by analyzing client call sites, grouping methods by cohe
 
 Splitting a bloated 'Fat Interface' requires role-based refactoring governed by the Interface Segregation Principle (ISP).
 
-1. **Audit Call Sites and Consumer Personas**: Analyze every client implementing the interface. Identify distinct clusters of methods that are invoked together by specific consumers. For example, in a massive `MediaController` interface, the UI widget only cares about play/pause, the metadata notification only cares about track titles, and the analytics telemetry service only cares about buffer underruns and bitrates.
+First, with Audit Call Sites and Consumer Personas, analyze every client implementing the interface. Identify distinct clusters of methods that are invoked together by specific consumers. For example, in a massive `MediaController` interface, the UI widget only cares about play/pause, the metadata notification only cares about track titles, and the analytics telemetry service only cares about buffer underruns and bitrates. Next, with Extract Role Interfaces, deconstruct the interface into cohesive, fine-grained contracts.
+`PlaybackStateListener`: `onPlay()`, `onPause()` `TrackMetadataListener`: `onTrackChanged()`
+`StreamingQualityListener`: `onBitrateDrop()`, `onBufferStall()` **Leverage Kotlin SAM & Default Implementations**.
+Convert single-method contracts into `fun interface` (Single Abstract Method), allowing callers to pass simple trailing lambdas. Finally, provide default no-op method bodies (`fun onBuffering() {}`) in interfaces for truly optional callbacks, preventing implementers from writing redundant stub methods.
 
-2. **Extract Role Interfaces**: Deconstruct the interface into cohesive, fine-grained contracts:
-   - `PlaybackStateListener`: `onPlay()`, `onPause()`
-   - `TrackMetadataListener`: `onTrackChanged()`
-   - `StreamingQualityListener`: `onBitrateDrop()`, `onBufferStall()`
-
-3. **Leverage Kotlin SAM & Default Implementations**:
-   - Convert single-method contracts into `fun interface` (Single Abstract Method), allowing callers to pass simple trailing lambdas.
-   - Provide default no-op method bodies (`fun onBuffering() {}`) in interfaces for truly optional callbacks, preventing implementers from writing redundant stub methods.
 
 ## Interview answer — deep senior
 
@@ -127,6 +122,7 @@ To migrate safely without breaking existing production consumers, apply the **Ad
 Existing legacy code continues compiling without modification, while all new feature developments adopt the fine-grained role interfaces.
 
 In unit testing, this reduces mocking boilerplate exponentially: testing a play button requires passing a 1-line lambda rather than a 15-method mock instance.
+
 
 ## How to answer in the interview
 

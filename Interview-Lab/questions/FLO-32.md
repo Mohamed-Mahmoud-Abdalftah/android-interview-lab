@@ -102,12 +102,12 @@ Using `kotlin.runCatching` around cancellable coroutine or flow work is a well-d
 
 `runCatching` is implemented with an indiscriminate `catch (e: Throwable)`. In Kotlin Coroutines, cooperative cancellation is driven by throwing `CancellationException`. Because `CancellationException` inherits from `Throwable`, `runCatching` intercepts the cancellation signal and encapsulates it as a `Result.failure(cancellationException)`.
 
-This causes catastrophic side effects:
+This causes catastrophic side effects.
 
-1. The coroutine refuses to terminate, continuing to execute subsequent statements when it was supposed to stop.
-2. Operators that rely on cancellation—such as `withTimeout`, `collectLatest`, and `debounce`—fail to work properly.
+First, the coroutine refuses to terminate, continuing to execute subsequent statements when it was supposed to stop. Finally, operators that rely on cancellation—such as `withTimeout`, `collectLatest`, and `debounce`—fail to work properly.
 
 In production, we strictly forbid `runCatching` on suspend functions, replacing it with a custom `runSuspendCatching` helper or standard `try-catch` blocks that explicitly rethrow `CancellationException`.
+
 
 ## Interview answer — deep senior
 
@@ -126,6 +126,7 @@ flow.map {
 If the collector cancels, `api.call(it)` throws `CancellationException`. `runCatching` catches it, treats it as an error, and downstream receives `Result.failure`. The downstream collector then attempts to process this 'failure', triggering secondary bugs like showing an error snackbar for a screen that the user voluntarily closed!
 
 In enterprise codebases, we enforce a Detekt static analysis rule: flagging any invocation of `kotlin.runCatching` containing a suspending call.
+
 
 ## How to answer in the interview
 

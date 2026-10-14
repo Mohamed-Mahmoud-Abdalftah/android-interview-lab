@@ -92,14 +92,10 @@ To diagnose database lock contention ANRs, I inspect `/data/anr/traces.txt` to f
 
 A rare ANR stemming from database lock contention occurs when the main thread attempts to execute a database query while a background worker holds an exclusive lock on the SQLite file during a large write transaction.
 
-1. **Isolation in ANR Traces**: I examine `/data/anr/traces.txt`. In lock contention scenarios, the `"main"` thread is not in `RUNNABLE` (which would imply heavy computation), but in **`BLOCKED`** or `WAITING` waiting to acquire a monitor lock (e.g. `android.database.sqlite.SQLiteConnectionPool`). The trace explicitly notes `waiting to lock <0x...> held by thread [pool-X-thread-Y]`. Following that thread ID reveals a background worker deep inside `sqlite3_step` executing a long-running batch insert or migration.
+First, with Isolation in ANR Traces, i examine `/data/anr/traces.txt`. In lock contention scenarios, the `"main"` thread is not in `RUNNABLE` (which would imply heavy computation), but in **`BLOCKED`** or `WAITING` waiting to acquire a monitor lock (e.g. `android.database.sqlite.SQLiteConnectionPool`). The trace explicitly notes `waiting to lock <0x...> held by thread [pool-X-thread-Y]`. Following that thread ID reveals a background worker deep inside `sqlite3_step` executing a long-running batch insert or migration. Next, with System Tracing via Perfetto, opening a Perfetto trace shows the main thread stalled in `SQLiteConnectionPool.waitForConnection` while disk I/O slices saturate the I/O queue.
+**Resolution**. Enable **Write-Ahead Logging (WAL)** via `RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING`. Under WAL mode, readers do not block writers, and writers do not block readers.
+Strictly audit code to eliminate `.allowMainThreadQueries()`, forcing all queries to return `Flow` or suspend. Finally, chunk massive multi-record imports into smaller transactions.
 
-2. **System Tracing via Perfetto**: Opening a Perfetto trace shows the main thread stalled in `SQLiteConnectionPool.waitForConnection` while disk I/O slices saturate the I/O queue.
-
-3. **Resolution**:
-   - Enable **Write-Ahead Logging (WAL)** via `RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING`. Under WAL mode, readers do not block writers, and writers do not block readers.
-   - Strictly audit code to eliminate `.allowMainThreadQueries()`, forcing all queries to return `Flow` or suspend.
-   - Chunk massive multi-record imports into smaller transactions.
 
 ## Interview answer — deep senior
 
@@ -108,6 +104,7 @@ Under traditional SQLite Rollback Journal mode, any write transaction locks the 
 However, even with WAL mode, lock contention can still occur if multiple writers compete for the single write connection, or if SQLite triggers an automatic **WAL Checkpoint** on a thread executing a read. To prevent checkpoint stalls, high-volume apps configure custom connection pools or schedule explicit background checkpoints during device idle windows.
 
 In Room, we also configure a dedicated query executor (`setQueryExecutor`) distinct from general background dispatchers to guarantee that disk-heavy queries never starve high-priority background UI tasks.
+
 
 ## How to answer in the interview
 

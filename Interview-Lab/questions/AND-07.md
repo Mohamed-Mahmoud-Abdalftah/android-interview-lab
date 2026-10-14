@@ -85,6 +85,7 @@ The distinction between configuration change and process death lies at the opera
 
 When the user returns to the app, the OS creates a brand-new process. The only bridge connecting the dead process to the new one is the **Saved Instance State Bundle**, which the OS system server serialized before killing the process. We access this restored state in modern architecture via `SavedStateHandle`.
 
+
 ## Interview answer — deep senior
 
 At the kernel level, Android assigns an Out-Of-Memory Adjacency score (`oom_adj`) to every process. Foreground apps have low scores (never killed), while background apps have high scores. When native RAM runs low, LMKD sends `SIGKILL` directly to background processes. This means no Java cleanup methods, `onCleared()`, or `onDestroy()` hooks run during process death.
@@ -92,6 +93,7 @@ At the kernel level, Android assigns an Out-Of-Memory Adjacency score (`oom_adj`
 Before killing the process, the OS invokes `Activity.onSaveInstanceState(Bundle)`. The serialized Bundle is transferred across Binder IPC to `system_server`. Because Binder transactions have a strict 1MB transaction buffer limit across the entire system, saving large bitmaps or heavy lists in `SavedStateHandle` causes a `TransactionTooLargeException`.
 
 Therefore, the golden rule of state preservation is: store large data in Room or local disk storage; store only lightweight IDs (e.g., `userId: String`) and draft inputs in `SavedStateHandle`.
+
 
 ## How to answer in the interview
 

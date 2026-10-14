@@ -88,29 +88,21 @@ Prevent wrong flavor deployments by eliminating wildcard artifact paths, invokin
 
 ## Interview answer — structured
 
-Preventing accidental flavor misdeployment requires eliminating ambiguity across build scripts, artifacts, and CI gates:
+Preventing accidental flavor misdeployment requires eliminating ambiguity across build scripts, artifacts, and CI gates.
 
-1. **Explicit Fully-Qualified Gradle Invocations**:
-   - Ban generic tasks like `./gradlew bundle` or `./gradlew assembleRelease` in release workflows. Always invoke explicit variant tasks such as `./gradlew bundleProdRelease`.
+First, **Explicit Fully-Qualified Gradle Invocations**. Next, ban generic tasks like `./gradlew bundle` or `./gradlew assembleRelease` in release workflows. Always invoke explicit variant tasks such as `./gradlew bundleProdRelease`.
+**Eliminate Wildcard Artifact Patterns**. Remove patterns like `build/outputs/bundle/*/*.aab` in deployment steps. Hardcode the exact deterministic artifact path: `app/build/outputs/bundle/prodRelease/app-prod-release.aab`, failing the build immediately if the expected path is missing.
+**Pre-Flight Manifest & Bytecode Inspection**. Implement an automated pre-deployment verification step. Use Google's `bundletool` CLI to inspect the generated AAB manifest, asserting that the package name matches `com.company.app` and does not contain `.dev` or `.staging` suffixes, and verifying that the signing certificate matches the production upload fingerprint.
+**Branch & Environment Decoupling**. Finally, decouple CI pipelines: staging deployment workflows only trigger on the `develop` branch with staging credentials, while production deployment workflows trigger solely on protected release tags with production credentials.
 
-2. **Eliminate Wildcard Artifact Patterns**:
-   - Remove patterns like `build/outputs/bundle/*/*.aab` in deployment steps. Hardcode the exact deterministic artifact path: `app/build/outputs/bundle/prodRelease/app-prod-release.aab`, failing the build immediately if the expected path is missing.
-
-3. **Pre-Flight Manifest & Bytecode Inspection**:
-   - Implement an automated pre-deployment verification step. Use Google's `bundletool` CLI to inspect the generated AAB manifest, asserting that the package name matches `com.company.app` and does not contain `.dev` or `.staging` suffixes, and verifying that the signing certificate matches the production upload fingerprint.
-
-4. **Branch & Environment Decoupling**:
-   - Decouple CI pipelines: staging deployment workflows only trigger on the `develop` branch with staging credentials, while production deployment workflows trigger solely on protected release tags with production credentials.
 
 ## Interview answer — deep senior
 
-From an operational reliability and post-mortem perspective, defense against misconfiguration involves structural guarantees:
+From an operational reliability and post-mortem perspective, defense against misconfiguration involves structural guarantees.
 
-1. **Automated Smoke Testing via Internal Track**: Even with manifest verification, mandate that the deployed AAB lands on the Google Play Internal Testing track first. An automated smoke test on Firebase Test Lab or an internal canary group tests that the app connects to production endpoints and returns 200 OK before the release is promoted to general production.
+First, with Automated Smoke Testing via Internal Track, even with manifest verification, mandate that the deployed AAB lands on the Google Play Internal Testing track first. An automated smoke test on Firebase Test Lab or an internal canary group tests that the app connects to production endpoints and returns 200 OK before the release is promoted to general production. Next, with Compile-Time Safety via Gradle Variant Filters, if a specific flavor/buildType combination should never exist (e.g. `devRelease` or `prodDebug`), eliminate it entirely using `androidComponents.beforeVariants`: disable invalid variants so running an incorrect task fails instantly with 'Task not found'.
+Finally, with Audit Trail and Telemetry, log the build SHA, release variant name, and signer fingerprint into the CI summary dashboard, guaranteeing transparency and immediate detection if unexpected parameters were supplied.
 
-2. **Compile-Time Safety via Gradle Variant Filters**: If a specific flavor/buildType combination should never exist (e.g. `devRelease` or `prodDebug`), eliminate it entirely using `androidComponents.beforeVariants`: disable invalid variants so running an incorrect task fails instantly with 'Task not found'.
-
-3. **Audit Trail and Telemetry**: Log the build SHA, release variant name, and signer fingerprint into the CI summary dashboard, guaranteeing transparency and immediate detection if unexpected parameters were supplied.
 
 ## How to answer in the interview
 

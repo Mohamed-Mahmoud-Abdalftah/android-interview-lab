@@ -103,25 +103,26 @@ Replace a giant `BaseActivity` by decomposing its responsibilities into small, l
 
 Dismantling a monolithic `BaseActivity` requires migrating from inheritance-based coupling to modular lifecycle composition.
 
-A typical bloated `BaseActivity` agglomerates multiple orthogonal concerns:
-1. Screen analytics and tracking.
-2. Network connectivity monitoring.
-3. Global loading spinners and error dialogs.
-4. Runtime permissions management.
-5. Theme/Toolbar setup.
+A typical bloated `BaseActivity` agglomerates multiple orthogonal concerns.
 
-**The Modular Replacement Architecture**:
-- **Lifecycle Concerns**: Extracted into self-contained classes implementing `DefaultLifecycleObserver` (e.g. `AnalyticsObserver`, `SessionTimeoutObserver`). Activities attach them via `lifecycle.addObserver(observer)`, allowing components to manage their own setup and teardown without overriding Activity lifecycle methods.
-- **System & Permissions Concerns**: Handled via Jetpack `registerForActivityResult(ActivityResultContracts.RequestPermission())` hoisted into standalone delegates or Compose state holders.
-- **Visual / UI Concerns**: Replaced by declarative Compose layout wrappers (e.g. `AppScaffold(showBackButton = true) { ... }`), keeping UI decorations purely functional.
+First, screen analytics and tracking. Next, network connectivity monitoring.
+Global loading spinners and error dialogs. Runtime permissions management.
+Finally, theme/Toolbar setup.
+
+**The Modular Replacement Architecture**.
+
+First, with Lifecycle Concerns, extracted into self-contained classes implementing `DefaultLifecycleObserver` (e.g. `AnalyticsObserver`, `SessionTimeoutObserver`). Activities attach them via `lifecycle.addObserver(observer)`, allowing components to manage their own setup and teardown without overriding Activity lifecycle methods. Next, system & Permissions Concerns is handled via Jetpack `registerForActivityResult(ActivityResultContracts.RequestPermission())` hoisted into standalone delegates or Compose state holders.
+Finally, with Visual / UI Concerns, replaced by declarative Compose layout wrappers (e.g. `AppScaffold(showBackButton = true) { ... }`), keeping UI decorations purely functional.
 
 Activities inherit strictly from standard Android `ComponentActivity` or `AppCompatActivity`, eliminating the custom base class entirely.
+
 
 ## Interview answer — deep senior
 
 Under the hood, Android Jetpack was deliberately designed to render `BaseActivity` obsolete. Before Jetpack `LifecycleOwner`, activities were the only place that received `onStart()` or `onResume()`, forcing developers to dump cross-cutting logic into `BaseActivity.onResume()`. With `DefaultLifecycleObserver`, any plain Kotlin class can observe an Activity's lifecycle safely.
 
 Furthermore, eliminating `BaseActivity` unlocks **Gradle modularization**. When every feature activity inherits from `BaseActivity` located in a common module, every feature module is circularly coupled to that base module's compilation classpath. By using composition, feature modules depend only on standard AndroidX APIs, drastically speeding up parallel compilation.
+
 
 ## How to answer in the interview
 

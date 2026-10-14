@@ -98,17 +98,13 @@ Business/domain state represents persistent, presentation-independent business f
 
 Distinguishing between UI state and Business/Domain state is a cornerstone of clean separation of concerns.
 
-1. **Business / Domain State**:
-   - Represents core domain truth and invariants independently of how or whether data is displayed.
-   - Examples: A user's remaining credit balance, an authentication token, or an order's fulfillment status.
-   - Maintained in data/domain layers, often backed by local databases (Room) or remote servers. It survives Activity destructions and app process restarts.
-
-2. **UI State (Presentation State)**:
-   - Represents the visual rendering of the screen at a specific instant.
-   - Examples: Whether a loading indicator is spinning, active text field inputs, whether an accordion item is expanded, or localized error strings.
-   - Scoped to the UI lifecycle (ViewModel or Composable) and ephemeral in nature.
+First, **Business / Domain State**. Next, represents core domain truth and invariants independently of how or whether data is displayed.
+Examples: A user's remaining credit balance, an authentication token, or an order's fulfillment status. Maintained in data/domain layers, often backed by local databases (Room) or remote servers. It survives Activity destructions and app process restarts.
+**UI State (Presentation State)**. Represents the visual rendering of the screen at a specific instant.
+Examples: Whether a loading indicator is spinning, active text field inputs, whether an accordion item is expanded, or localized error strings. Finally, scoped to the UI lifecycle (ViewModel or Composable) and ephemeral in nature.
 
 The ViewModel acts as the transformer: it observes long-lived domain state, applies presentation logic, and projects it into formatted, immutable `UiState` snapshots.
+
 
 ## Interview answer — deep senior
 
@@ -117,6 +113,7 @@ A frequent architectural defect is leaking UI state down into domain repositorie
 Conversely, storing domain business rules inside UI state creates duplicate logic across screens. For instance, checking if an account is eligible for a loan must be evaluated in a domain Use Case, not computed ad-hoc within a composable's `UiState` mapping lambda.
 
 In testing, domain state is tested via assertions on repository updates, whereas UI state is tested by asserting that domain events produce expected visual states in `StateFlow`.
+
 
 ## How to answer in the interview
 

@@ -105,6 +105,7 @@ These three terminal operators handle stream consumption with distinct execution
 
 **`first()`** is a suspending function that takes the very first emitted value (or the first value matching a predicate) and immediately cancels the flow. It effectively converts a continuous stream into a one-shot query, ideal for reading an initial token from DataStore.
 
+
 ## Interview answer — deep senior
 
 Under the hood, `collectLatest` is implemented using `channelFlow` and `mapLatest` mechanics. Every time upstream emits, `collectLatest` cancels the inner child coroutine using `CancellationException`. However, this introduces an important production caveat: **if the work inside `collectLatest` does not suspend, it cannot be cancelled!** Cancellation is cooperative: if your block executes a non-suspending synchronous calculation without checking `ensureActive()`, `collectLatest` cannot cancel it midway.
@@ -112,6 +113,7 @@ Under the hood, `collectLatest` is implemented using `channelFlow` and `mapLates
 With `first()`, the implementation works by throwing a private, internal `AbortFlowException` once the first matching element is collected, which unwinds the collector and safely terminates upstream collection without bubbling an error to the caller.
 
 In unit testing with Turbine, `awaitItem()` behaves like `first()` by synchronously verifying and consuming one item from the testing event queue.
+
 
 ## How to answer in the interview
 

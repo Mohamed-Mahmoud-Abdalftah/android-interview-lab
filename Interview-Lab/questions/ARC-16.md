@@ -100,16 +100,11 @@ Package-by-layer groups files by technical role (all ViewModels together, all Re
 
 Packaging strategy determines cognitive load, code navigation speed, and modularization readiness in growing codebases.
 
-1. **Package-by-Layer (Horizontal Partitioning)**:
-   - Groups files strictly by their technical classification (`presentation`, `domain`, `data`).
-   - *Drawbacks*: As the app grows beyond a few screens, packages balloon to hundreds of files. Feature cohesion is completely lost: developing a single feature requires jumping across multiple directories. Everything must be marked `public`, destroying encapsulation.
+First, **Package-by-Layer (Horizontal Partitioning)**. Next, groups files strictly by their technical classification (`presentation`, `domain`, `data`).
+*Drawbacks*: As the app grows beyond a few screens, packages balloon to hundreds of files. Feature cohesion is completely lost: developing a single feature requires jumping across multiple directories. Everything must be marked `public`, destroying encapsulation. **Package-by-Feature (Vertical Partitioning)**.
+Groups all artifacts required for a specific business capability into a single cohesive package (`auth`, `checkout`, `profile`). *Benefits*: High cohesion. Deleting or modifying a feature touches files in a single self-contained directory. Allows leveraging Kotlin's `internal` visibility to hide feature-internal implementation details.
+**Modern Hybrid Standard**. Finally, in enterprise Android architecture, we package **by feature at the macro level** (often as separate Gradle modules), and **by layer at the micro level** within that feature (`:feature:checkout/ui`, `.../domain`, `.../data`).
 
-2. **Package-by-Feature (Vertical Partitioning)**:
-   - Groups all artifacts required for a specific business capability into a single cohesive package (`auth`, `checkout`, `profile`).
-   - *Benefits*: High cohesion. Deleting or modifying a feature touches files in a single self-contained directory. Allows leveraging Kotlin's `internal` visibility to hide feature-internal implementation details.
-
-3. **Modern Hybrid Standard**:
-   - In enterprise Android architecture, we package **by feature at the macro level** (often as separate Gradle modules), and **by layer at the micro level** within that feature (`:feature:checkout/ui`, `.../domain`, `.../data`).
 
 ## Interview answer — deep senior
 
@@ -118,6 +113,7 @@ The major architectural triumph of package-by-feature is enabling painless **Mul
 Encapsulation is another vital advantage. Under package-by-layer, a repository implementation class in `data` must be declared `public` so a use case in `domain` or a ViewModel in `ui` can access it. Under package-by-feature in separate modules, concrete implementation classes can be marked `internal`, exposing only a clean public interface or entry point.
 
 Shared infrastructure (Network clients, Database drivers, Common UI Design Tokens) lives in dedicated core packages (`core:network`, `core:database`, `core:designsystem`).
+
 
 ## How to answer in the interview
 

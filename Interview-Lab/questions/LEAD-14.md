@@ -84,32 +84,23 @@ Structure your first 90 days into three distinct 30-day horizons: Days 1–30 fo
 
 ## Interview answer — structured
 
-Rescuing an inherited legacy codebase requires a disciplined, structured 30-60-90 day framework that builds team trust before touching core architecture:
+Rescuing an inherited legacy codebase requires a disciplined, structured 30-60-90 day framework that builds team trust before touching core architecture.
 
-1. **Days 1–30: Listen, Observe, and Establish Baselines**:
-   - **Avoid the Rewrite Trap**: Reject calls for an immediate ground-up rewrite. Understand business domain history and developer friction through 1-on-1 discovery interviews.
-   - **Telemetry & Baseline Observability**: Audit Google Play Vitals and Crashlytics. Measure key operational baselines: crash-free user rate, cold startup latency, and CI execution times.
-   - **Pipeline Hygiene**: Fix broken CI scripts and stabilize flaky tests so developers regain confidence in automated gates.
+First, **Days 1–30: Listen, Observe, and Establish Baselines**. Next, with Avoid the Rewrite Trap, reject calls for an immediate ground-up rewrite. Understand business domain history and developer friction through 1-on-1 discovery interviews.
+Additionally, with Telemetry & Baseline Observability, audit Google Play Vitals and Crashlytics. Measure key operational baselines: crash-free user rate, cold startup latency, and CI execution times. With Pipeline Hygiene, fix broken CI scripts and stabilize flaky tests so developers regain confidence in automated gates.
+**Days 31–60: Standardize Quality Gates & Prevent New Debt**. With Test-Driven Defect Resolution, enforce an uncompromising team policy: no production bug is fixed without an accompanying automated test that reproduces the failure before applying the fix.
+With Automated Linters with Baselines, introduce Spotless and Detekt with baseline files to freeze legacy technical debt and reject any new violations. With Architectural Standards (ADR), author an ADR codifying the architectural standard (e.g. MVI + Compose) mandated for all net-new screens.
+**Days 61–90: Modernize, Accelerate, and Demonstrate ROI**. With Strangler Fig Refactoring, extract the most volatile legacy god-class into an isolated, tested module behind a clean interface.
+With Build Performance, implement Gradle build caching and parallel execution to halve CI feedback loops. Finally, with Quantifiable Executive Reporting, present leadership with measurable wins: crash-free rate improved to 99.5%, defect turnaround times reduced, and developer velocity restored.
 
-2. **Days 31–60: Standardize Quality Gates & Prevent New Debt**:
-   - **Test-Driven Defect Resolution**: Enforce an uncompromising team policy: no production bug is fixed without an accompanying automated test that reproduces the failure before applying the fix.
-   - **Automated Linters with Baselines**: Introduce Spotless and Detekt with baseline files to freeze legacy technical debt and reject any new violations.
-   - **Architectural Standards (ADR)**: Author an ADR codifying the architectural standard (e.g. MVI + Compose) mandated for all net-new screens.
-
-3. **Days 61–90: Modernize, Accelerate, and Demonstrate ROI**:
-   - **Strangler Fig Refactoring**: Extract the most volatile legacy god-class into an isolated, tested module behind a clean interface.
-   - **Build Performance**: Implement Gradle build caching and parallel execution to halve CI feedback loops.
-   - **Quantifiable Executive Reporting**: Present leadership with measurable wins: crash-free rate improved to 99.5%, defect turnaround times reduced, and developer velocity restored.
 
 ## Interview answer — deep senior
 
-From an organizational change management and cultural perspective, leadership determines adoption:
+From an organizational change management and cultural perspective, leadership determines adoption.
 
-1. **Winning Hearts and Minds Before Refactoring Code**: When a new lead arrives and immediately criticizes existing code, legacy team members become defensive. Acknowledge that the legacy code generated the company's revenue and kept the business alive. Position refactoring as empowering the team with modern tooling rather than correcting past mistakes.
+First, with Winning Hearts and Minds Before Refactoring Code, when a new lead arrives and immediately criticizes existing code, legacy team members become defensive. Acknowledge that the legacy code generated the company's revenue and kept the business alive. Position refactoring as empowering the team with modern tooling rather than correcting past mistakes. Next, with Tackling the Worst Pain Point First, identify the single recurring issue that causes developers the most daily frustration (e.g., an unpredictable 45-minute CI build or a flaky database migration). Fixing that single issue in your first 3 weeks earns immediate technical credibility and unlocks team buy-in for future architectural standards.
+Finally, with Incremental strangler fig vs Big Bang, emphasize continuous value delivery. By isolating legacy screens behind feature flags and swapping them incrementally, the product continues shipping user features every sprint while health metrics climb steadily.
 
-2. **Tackling the Worst Pain Point First**: Identify the single recurring issue that causes developers the most daily frustration (e.g., an unpredictable 45-minute CI build or a flaky database migration). Fixing that single issue in your first 3 weeks earns immediate technical credibility and unlocks team buy-in for future architectural standards.
-
-3. **Incremental strangler fig vs Big Bang**: Emphasize continuous value delivery. By isolating legacy screens behind feature flags and swapping them incrementally, the product continues shipping user features every sprint while health metrics climb steadily.
 
 ## How to answer in the interview
 

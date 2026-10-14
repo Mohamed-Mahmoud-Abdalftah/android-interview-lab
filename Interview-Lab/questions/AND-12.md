@@ -91,19 +91,18 @@ Restore screens after process death by binding user inputs and critical identifi
 
 ## Interview answer — structured
 
-To restore a screen after process death without losing user input, modern Android architecture relies on **`SavedStateHandle`** in the ViewModel layer:
+To restore a screen after process death without losing user input, modern Android architecture relies on **`SavedStateHandle`** in the ViewModel layer.
 
-1. **Bind Inputs to SavedStateHandle**: Instead of storing draft form inputs in plain in-memory `MutableStateFlow`s, we bind them directly to `SavedStateHandle` using `savedStateHandle.getStateFlow(key, initialValue)`. When the user types, updating `savedStateHandle[key] = input` records the state.
+First, with Bind Inputs to SavedStateHandle, instead of storing draft form inputs in plain in-memory `MutableStateFlow`s, we bind them directly to `SavedStateHandle` using `savedStateHandle.getStateFlow(key, initialValue)`. When the user types, updating `savedStateHandle[key] = input` records the state. Next, with OS Serialization, when the app is backgrounded and the OS Low Memory Killer kills the process, Android serializes the `SavedStateHandle` contents into the system server's instance state Bundle.
+Finally, with Automatic Restoration, when the user reopens the app from Recents, Android spawns a new process, recreates the Activity, and passes the restored Bundle to the ViewModel factory. The newly created ViewModel reads the saved values immediately, repopulating the UI on its very first frame without loss.
 
-2. **OS Serialization**: When the app is backgrounded and the OS Low Memory Killer kills the process, Android serializes the `SavedStateHandle` contents into the system server's instance state Bundle.
-
-3. **Automatic Restoration**: When the user reopens the app from Recents, Android spawns a new process, recreates the Activity, and passes the restored Bundle to the ViewModel factory. The newly created ViewModel reads the saved values immediately, repopulating the UI on its very first frame without loss.
 
 ## Interview answer — deep senior
 
 Under the hood, `SavedStateHandle` hooks into the Activity/Fragment `SavedStateRegistry`. When `onSaveInstanceState(Bundle)` runs, `SavedStateHandle` converts its key-value map into a nested Bundle. Because this state is transferred via Binder IPC to `system_server`, strict size discipline is necessary: Save only user-typed strings, checkboxes, and database primary keys (e.g. `orderId: Long`). Never save large cached lists, images, or domain response models in `SavedStateHandle`.
 
 For complex draft objects, if a user fills out a 5-step insurance claim form with photo attachments, `SavedStateHandle` is insufficient due to Binder size limits. In that scenario, the architectural pattern is **Draft Persistence in Room**: save each form step to a local SQLite draft database as the user types, and save only `draftId: String` in `SavedStateHandle`.
+
 
 ## How to answer in the interview
 

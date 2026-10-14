@@ -107,22 +107,20 @@ Strategy-based payment routing implements OCP by abstracting providers behind a 
 
 Strategy-based payment routing is the premier textbook demonstration of the Open/Closed Principle (OCP) in production architecture.
 
-1. **The Anti-Pattern (Closed to Extension, Open to Modification)**:
-   - A centralized `PaymentManager` uses a massive `when(type)` statement branching into credit card, PayPal, and crypto logic.
-   - Every time a product manager requests Apple Pay or a regional provider, engineers must edit `PaymentManager.kt`. This introduces regression risks to existing revenue streams, causes Git merge conflicts, and invalidates existing payment test suites.
-
-2. **The OCP Architecture (Open to Extension, Closed to Modification)**:
-   - **Abstractions**: Define a `PaymentStrategy` interface with `authorize(amount, details)`.
-   - **Concrete Strategies**: Each provider is encapsulated in an isolated class: `StripeStrategy`, `PayPalStrategy`, `GooglePayStrategy`.
-   - **The Open Router**: The `PaymentRouter` depends strictly on a collection of injected strategies (`Set<PaymentStrategy>`), selecting the appropriate handler by querying `strategy.method == requestedMethod`.
+First, **The Anti-Pattern (Closed to Extension, Open to Modification)**. Next, a centralized `PaymentManager` uses a massive `when(type)` statement branching into credit card, PayPal, and crypto logic.
+Every time a product manager requests Apple Pay or a regional provider, engineers must edit `PaymentManager.kt`. This introduces regression risks to existing revenue streams, causes Git merge conflicts, and invalidates existing payment test suites. **The OCP Architecture (Open to Extension, Closed to Modification)**.
+With Abstractions, define a `PaymentStrategy` interface with `authorize(amount, details)`. With Concrete Strategies, each provider is encapsulated in an isolated class: `StripeStrategy`, `PayPalStrategy`, `GooglePayStrategy`.
+Finally, a The Open Router is the `PaymentRouter` depends strictly on a collection of injected strategies (`Set<PaymentStrategy>`), selecting the appropriate handler by querying `strategy. Method == requestedMethod`.
 
 Adding a new provider requires creating a new class and registering it with Dagger/Hilt; the core `PaymentRouter` and existing providers remain 100% untouched and closed to modification.
+
 
 ## Interview answer — deep senior
 
 Under the hood, Dagger/Hilt's **Multibindings (`@IntoSet`)** perfectly operationalizes this pattern. A feature module can define `class KlarnaStrategy : PaymentStrategy` and bind it into the multibinding set inside its own internal Hilt module. The core `:feature:payment` module doesn't even have a compile-time dependency on Klarna's SDK! Dagger collects all strategies at application assembly time, realizing true runtime extensibility without coupling.
 
 In testing, verifying `PaymentRouter` requires a simple unit test with mock/fake strategies to ensure it returns the correct error when a method is unsupported, while each strategy's network integration is tested in complete isolation.
+
 
 ## How to answer in the interview
 

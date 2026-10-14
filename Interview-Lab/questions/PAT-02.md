@@ -95,38 +95,28 @@ Creational patterns govern object instantiation (Singleton, Factory, Builder). S
 
 ## Interview answer — structured
 
-The Gang of Four (GoF) classifies design patterns into three distinct categories based on their intent:
+The Gang of Four (GoF) classifies design patterns into three distinct categories based on their intent.
 
-1. **Creational Patterns (Object Instantiation Mechanisms)**:
-   - Abstract the instantiation process, making systems independent of how objects are created, composed, and represented.
-   - *Android Examples*:
-     * **Singleton**: Single shared instance (`object`, Room database instance).
-     * **Builder**: Multi-step configuration of immutable objects (`NotificationCompat.Builder`, `AlertDialog.Builder`).
-     * **Factory Method**: Delegating instantiation to subclasses or providers (`ViewModelProvider.Factory`).
+First, **Creational Patterns (Object Instantiation Mechanisms)**. Next, abstract the instantiation process, making systems independent of how objects are created, composed, and represented.
+*Android Examples*. With Singleton, single shared instance (`object`, Room database instance).
+With Builder, multi-step configuration of immutable objects (`NotificationCompat.Builder`, `AlertDialog.Builder`). With Factory Method, delegating instantiation to subclasses or providers (`ViewModelProvider.Factory`).
+**Structural Patterns (Composition & Relationships)**. Deal with how classes and objects are assembled into larger, decoupled structures.
+*Android Examples*. With Adapter, converts one interface into another that clients expect (`RecyclerView.Adapter`).
+With Facade, exposes a simplified, cohesive API over a complex underlying subsystem (wrapping multi-step third-party SDKs). With Decorator, dynamically augments behavior without subclassing (`OkHttp Interceptors`).
+**Behavioral Patterns (Communication & Algorithms)**. Deal with algorithms, assignments of responsibility, and communication protocols between objects.
+*Android Examples*. With Observer, publish-subscribe reactive notifications (`StateFlow`, `SharedFlow`, `LiveData`).
+With Strategy, encapsulating interchangeable algorithms selected at runtime (Payment providers, sorting algorithms). Finally, with Chain of Responsibility, passing a request along a chain of handlers (`OkHttp Interceptor Chain`).
 
-2. **Structural Patterns (Composition & Relationships)**:
-   - Deal with how classes and objects are assembled into larger, decoupled structures.
-   - *Android Examples*:
-     * **Adapter**: Converts one interface into another that clients expect (`RecyclerView.Adapter`).
-     * **Facade**: Exposes a simplified, cohesive API over a complex underlying subsystem (wrapping multi-step third-party SDKs).
-     * **Decorator**: Dynamically augments behavior without subclassing (`OkHttp Interceptors`).
-
-3. **Behavioral Patterns (Communication & Algorithms)**:
-   - Deal with algorithms, assignments of responsibility, and communication protocols between objects.
-   - *Android Examples*:
-     * **Observer**: Publish-subscribe reactive notifications (`StateFlow`, `SharedFlow`, `LiveData`).
-     * **Strategy**: Encapsulating interchangeable algorithms selected at runtime (Payment providers, sorting algorithms).
-     * **Chain of Responsibility**: Passing a request along a chain of handlers (`OkHttp Interceptor Chain`).
 
 ## Interview answer — deep senior
 
-Modern Kotlin has absorbed several GoF patterns directly into language syntax:
-- **Singleton**: Native `object` keyword.
-- **Decorator / Adapter**: First-class **Class Delegation** (`class Foo(bar: Bar) : Bar by bar`) and **Extension Functions**.
-- **Strategy**: Passing higher-order functions or lambdas (`(T) -> Boolean`) directly instead of creating single-method interface hierarchies.
-- **Builder**: Named parameters and default arguments (`data class Config(val timeout: Long = 5000, val retries: Int = 3)`).
+Modern Kotlin has absorbed several GoF patterns directly into language syntax.
+
+First, with Singleton, native `object` keyword. Next, with Decorator / Adapter, first-class **Class Delegation** (`class Foo(bar: Bar) : Bar by bar`) and **Extension Functions**.
+Additionally, with Strategy, passing higher-order functions or lambdas (`(T) -> Boolean`) directly instead of creating single-method interface hierarchies. Finally, with Builder, named parameters and default arguments (`data class Config(val timeout: Long = 5000, val retries: Int = 3)`).
 
 Understanding which patterns are native language idioms versus structural components helps engineers write cleaner code without unnecessary boilerplate classes.
+
 
 ## How to answer in the interview
 

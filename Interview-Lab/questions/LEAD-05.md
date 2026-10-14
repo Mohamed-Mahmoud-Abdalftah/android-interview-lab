@@ -84,29 +84,21 @@ Mentor junior engineers by acting as a force multiplier: use the Socratic method
 
 ## Interview answer — structured
 
-Technical mentorship is the primary metric distinguishing senior engineers from individual contributors:
+Technical mentorship is the primary metric distinguishing senior engineers from individual contributors.
 
-1. **Socratic Guidance Over Handing Out Solutions**:
-   - When a junior encounters a blocker, resist writing the code for them. Use Socratic questioning to walk them through debugging: inspecting Logcat, setting conditional breakpoints, analyzing coroutine stack traces, and forming hypotheses. This builds independent problem-solving capability.
+First, **Socratic Guidance Over Handing Out Solutions**. Next, when a junior encounters a blocker, resist writing the code for them. Use Socratic questioning to walk them through debugging: inspecting Logcat, setting conditional breakpoints, analyzing coroutine stack traces, and forming hypotheses. This builds independent problem-solving capability.
+**Pair Programming Dynamics**. Practice Driver-Navigator pairing where the junior developer holds the keyboard ('Driver') while the senior navigates high-level design and tests ('Navigator'). This forces active cognitive participation.
+**Structured Growth and Psychological Safety**. Establish regular 1-on-1 engineering check-ins. Assign stretch tasks calibrated slightly above their current capability, paired with an explicit safety net of prompt, empathetic PR reviews.
+**Systemic Team-Level Elevation**. Finally, codify tribal knowledge into written Architecture Decision Records (ADRs) and onboarding wikis to lower the Bus Factor. Host monthly internal lightning talks covering emerging Android practices (Baseline Profiles, Compose stability, KMP).
 
-2. **Pair Programming Dynamics**:
-   - Practice Driver-Navigator pairing where the junior developer holds the keyboard ('Driver') while the senior navigates high-level design and tests ('Navigator'). This forces active cognitive participation.
-
-3. **Structured Growth and Psychological Safety**:
-   - Establish regular 1-on-1 engineering check-ins. Assign stretch tasks calibrated slightly above their current capability, paired with an explicit safety net of prompt, empathetic PR reviews.
-
-4. **Systemic Team-Level Elevation**:
-   - Codify tribal knowledge into written Architecture Decision Records (ADRs) and onboarding wikis to lower the Bus Factor. Host monthly internal lightning talks covering emerging Android practices (Baseline Profiles, Compose stability, KMP).
 
 ## Interview answer — deep senior
 
-From an organizational health and team culture perspective, leadership creates high-trust environments:
+From an organizational health and team culture perspective, leadership creates high-trust environments.
 
-1. **Normalizing Vulnerability and Mistakes**: Senior leaders build psychological safety by openly discussing their own past production mistakes and refactoring missteps. When a junior sees a staff engineer say 'I was wrong about that architecture approach, let's pivot', it eliminates imposter syndrome and encourages transparency.
+First, with Normalizing Vulnerability and Mistakes, senior leaders build psychological safety by openly discussing their own past production mistakes and refactoring missteps. When a junior sees a staff engineer say 'I was wrong about that architecture approach, let's pivot', it eliminates imposter syndrome and encourages transparency. Next, a Delegating Architectural Ownership is the ultimate test of mentorship is delegation. Identify promising mid-level engineers and assign them ownership of an entire technical epic (e.g. Migrating SharedPreferences to Jetpack DataStore), coaching them from behind the scenes on writing the RFC and coordinating with stakeholders.
+Finally, with Establishing Objective Career Ladders, partner with engineering management to map clear competencies (Junior -> Mid -> Senior). Ensure mentees understand what behaviors (code quality, communication, system design, initiative) are required for their next career milestone.
 
-2. **Delegating Architectural Ownership**: The ultimate test of mentorship is delegation. Identify promising mid-level engineers and assign them ownership of an entire technical epic (e.g. migrating SharedPreferences to Jetpack DataStore), coaching them from behind the scenes on writing the RFC and coordinating with stakeholders.
-
-3. **Establishing Objective Career Ladders**: Partner with engineering management to map clear competencies (Junior -> Mid -> Senior). Ensure mentees understand what behaviors (code quality, communication, system design, initiative) are required for their next career milestone.
 
 ## How to answer in the interview
 

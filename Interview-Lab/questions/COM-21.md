@@ -118,20 +118,19 @@ Test rotation, background system process death, deep links, and missing/stale ID
 
 The `NavHost` manages the presentation of destinations defined in a navigation graph, mapping navigation backstack entries to active composables.
 
-1. **BackStack Architecture**: Under the hood, the `NavHost` orchestrates a stack of `NavBackStackEntry` objects. Each entry is an isolated architectural scope with three distinct responsibilities:
-   - Its own **Lifecycle**: Transitions to `RESUMED` when on top, and `CREATED` when pushed into the backstack.
-   - Its own **ViewModelStore**: Scoping destination-specific ViewModels that survive configuration changes and clear only when popped off the backstack.
-   - Its own **SavedStateRegistry**: Providing slot isolation for `rememberSaveable` calls.
-
-2. **Process Death Restoration**: When the OS terminates an application in the background, Android invokes Activity `onSaveInstanceState()`. The `NavController` serializes the destination backstack and typed route arguments into this Bundle.
+First, with BackStack Architecture, under the hood, the `NavHost` orchestrates a stack of `NavBackStackEntry` objects. Each entry is an isolated architectural scope with three distinct responsibilities. Next, its own **Lifecycle**: Transitions to `RESUMED` when on top, and `CREATED` when pushed into the backstack.
+Its own **ViewModelStore**: Scoping destination-specific ViewModels that survive configuration changes and clear only when popped off the backstack. Its own **SavedStateRegistry**: Providing slot isolation for `rememberSaveable` calls.
+Finally, with Process Death Restoration, when the OS terminates an application in the background, Android invokes Activity `onSaveInstanceState()`. The `NavController` serializes the destination backstack and typed route arguments into this Bundle.
 
 Upon relaunch, `NavHost` rebuilds the backstack structure. Screen composables restore local UI state through `rememberSaveable`, while ViewModels restore saved inputs and queries via **`SavedStateHandle`**, making process recovery seamless to the user.
+
 
 ## Interview answer — deep senior
 
 Testing process death restoration is mandatory for enterprise applications. We verify this via ADB: putting the app in the background (`pressHome()`) and executing `adb shell am kill <package_name>`, then relaunching the app from the recent apps switcher. If a screen crashes or resets to a blank state, it exposes un-hoisted memory state that wasn't backed by `SavedStateHandle` or `rememberSaveable`.
 
 Inside `NavHost`, transitions between destinations are animated using Compose animations (`enterTransition`, `exitTransition`). When navigating forward, `SaveableStateHolder` saves the composition state of the leaving composable and unbinds its Slot Table nodes from memory to preserve RAM. When popping the backstack, `SaveableStateHolder` restores the saved composition state, instantly recovering scroll positions and local text fields without re-instantiating the screen.
+
 
 ## How to answer in the interview
 

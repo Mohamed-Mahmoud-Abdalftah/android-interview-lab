@@ -99,30 +99,21 @@ Begin a mobile system design interview by clarifying functional and non-function
 
 ## Interview answer — structured
 
-A disciplined mobile system design interview follows a structured, collaborative engineering framework:
+A disciplined mobile system design interview follows a structured, collaborative engineering framework.
 
-1. **Scope Clarification & Functional Requirements (Minutes 0–5)**: Clarify the core user journeys and deliberately define out-of-scope items. For example, in an Instagram-like feed, clarify whether we are designing feed ingestion, media uploading, real-time comments, or strictly offline consumption.
+First, with Scope Clarification & Functional Requirements, clarify the core user journeys and deliberately define out-of-scope items. For example, in an Instagram-like feed, clarify whether we are designing feed ingestion, media uploading, real-time comments, or strictly offline consumption. Next, with Mobile Constraints & Non-Functional Requirements, establish concrete operational targets.
+Additionally, with Network Profile, offline-first vs. Connected-only, cellular data thrift, latency ceilings (e.g. Sub-200ms feed render from local cache). With Hardware Envelope, memory footprints for budget devices (2GB RAM), battery constraints (deferring syncs to Wi-Fi/charging via WorkManager).
+With Data Volume, cache size ceilings (e.g., maximum 200MB LRU disk cache). With High-Level Architecture, establish the layered system boundary: presentation state machines, domain business logic, repository local-source-of-truth abstractions, and network/local persistence layers.
+With Deep Dive & Bottlenecks, drill down into complex bottlenecks (e.g., two-way sync conflict resolution, binary chunk upload resumption, image pipeline memory management). Finally, with Trade-offs & Failure Modes, explicitly address edge cases (process death, partial backend outages, version skew).
 
-2. **Mobile Constraints & Non-Functional Requirements (Minutes 5–10)**: Establish concrete operational targets:
-   - **Network Profile**: Offline-first vs. connected-only, cellular data thrift, latency ceilings (e.g. sub-200ms feed render from local cache).
-   - **Hardware Envelope**: Memory footprints for budget devices (2GB RAM), battery constraints (deferring syncs to Wi-Fi/charging via WorkManager).
-   - **Data Volume**: Cache size ceilings (e.g., maximum 200MB LRU disk cache).
-
-3. **High-Level Architecture (Minutes 10–25)**: Establish the layered system boundary: presentation state machines, domain business logic, repository local-source-of-truth abstractions, and network/local persistence layers.
-
-4. **Deep Dive & Bottlenecks (Minutes 25–40)**: Drill down into complex bottlenecks (e.g., two-way sync conflict resolution, binary chunk upload resumption, image pipeline memory management).
-
-5. **Trade-offs & Failure Modes (Minutes 40–45)**: Explicitly address edge cases (process death, partial backend outages, version skew).
 
 ## Interview answer — deep senior
 
-From a staff-level perspective, the primary failure mode in mobile system design interviews is treating mobile like a stripped-down backend:
+From a staff-level perspective, the primary failure mode in mobile system design interviews is treating mobile like a stripped-down backend.
 
-1. **The Client As An Untrusted, Volatile Runtime**: Backends operate in predictable server clusters; mobile clients operate on hostile, battery-constrained, physically moving devices where the OS can terminate the process at any second. Highlighting Android-specific lifecycle realities (Activity destruction, configuration changes, background execution limits) immediately differentiates senior candidates.
+First, with The Client As An Untrusted, Volatile Runtime, backends operate in predictable server clusters; mobile clients operate on hostile, battery-constrained, physically moving devices where the OS can terminate the process at any second. Highlighting Android-specific lifecycle realities (Activity destruction, configuration changes, background execution limits) immediately differentiates senior candidates. Next, with Driving the Conversation Proactively, do not wait for the interviewer to prompt for constraints. Drive the whiteboard by outlining the API schema contract (REST vs. GraphQL vs. GRPC), storage strategy (Room SQLite vs. Proto DataStore), and telemetry footprint upfront.
+Finally, with Explicit Trade-off Articulation, every architectural choice has a cost. If you choose an offline-first Room database with delta synchronization, immediately articulate the complexity trade-off: distributed conflict resolution (Client-Wins vs. Server-Wins), schema migrations, and sync queuing overhead.
 
-2. **Driving the Conversation Proactively**: Do not wait for the interviewer to prompt for constraints. Drive the whiteboard by outlining the API schema contract (REST vs. GraphQL vs. gRPC), storage strategy (Room SQLite vs. Proto DataStore), and telemetry footprint upfront.
-
-3. **Explicit Trade-off Articulation**: Every architectural choice has a cost. If you choose an offline-first Room database with delta synchronization, immediately articulate the complexity trade-off: distributed conflict resolution (Client-Wins vs. Server-Wins), schema migrations, and sync queuing overhead.
 
 ## How to answer in the interview
 

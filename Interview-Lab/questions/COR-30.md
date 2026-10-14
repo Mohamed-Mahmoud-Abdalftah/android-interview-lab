@@ -97,11 +97,10 @@ The ViewModel must NOT own critical persistence because viewModelScope cancels o
 
 Critical persistence must never be owned by the ViewModel. When a user navigates away or presses the back button, the ViewModel is destroyed and its `viewModelScope` cancels immediately, aborting any active database transactions or network dispatches.
 
-The ownership belongs in the Data/Repository layer using one of two mechanisms based on durability requirements:
+The ownership belongs in the Data/Repository layer using one of two mechanisms based on durability requirements.
 
-1. **In-Process Operations (Local Room DB writes or analytics):** An **Application-Level CoroutineScope** injected into the Repository. By configuring this scope with `SupervisorJob() + Dispatchers.IO` as an application-level singleton in Dagger/Hilt, the coroutine continues executing to completion even after the calling ViewModel is garbage collected.
+First, **In-Process Operations (Local Room DB writes or analytics):** An **Application-Level CoroutineScope** injected into the Repository. By configuring this scope with `SupervisorJob() + Dispatchers.IO` as an application-level singleton in Dagger/Hilt, the coroutine continues executing to completion even after the calling ViewModel is garbage collected. Finally, **Guaranteed Operations (Surviving process death & reboots):** If the work involves syncing an order or uploading photos that must complete even if the user swipes the app away from recents or the OS kills the process under low memory, it must be delegated to **WorkManager**. WorkManager persists the job in SQLite and guarantees execution with constraints.
 
-2. **Guaranteed Operations (Surviving process death & reboots):** If the work involves syncing an order or uploading photos that must complete even if the user swipes the app away from recents or the OS kills the process under low memory, it must be delegated to **WorkManager**. WorkManager persists the job in SQLite and guarantees execution with constraints.
 
 ## Interview answer — deep senior
 
@@ -126,6 +125,7 @@ suspend fun saveOrder(order: Order) {
 ```
 
 This pattern has a major architectural advantage: if the ViewModel remains alive, `join()` suspends so the UI can show a loading spinner and transition upon completion. But if the ViewModel is destroyed, only the caller continuation is cancelled; the launched job on `externalScope` continues running independently until completion.
+
 
 ## How to answer in the interview
 

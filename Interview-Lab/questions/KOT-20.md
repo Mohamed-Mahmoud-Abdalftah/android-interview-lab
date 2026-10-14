@@ -97,6 +97,7 @@ First, for the context reference: receiver-based functions—apply, run, and wit
 
 Second, for return values: apply and also return the original context object itself, enabling fluent method chaining. Let, run, and with return whatever the last expression of the lambda evaluates to, making them suitable for mapping and transformation pipelines.
 
+
 ## Interview answer — deep senior
 
 Under the hood, all five scope functions are inline functions in the Kotlin standard library (`inline fun <T, R> ...`). This means they compile directly to flat bytecode with zero lambda object allocations or virtual dispatch overhead, provided you do not capture local variables in non-inlined contexts.
@@ -104,6 +105,7 @@ Under the hood, all five scope functions are inline functions in the Kotlin stan
 However, using receiver semantics (`this`) introduces cognitive and shadowing risks in complex classes. For instance, in an Android Activity or Composable, calling `binding.run { title = ... }` might inadvertently shadow the Activity's own `title` property. If a property name clashes, you must write `this@MainActivity.title`, which degrades readability. In contrast, argument semantics (`it`) force explicit naming, preventing subtle shadowing bugs.
 
 In professional code review, we enforce distinct roles: `apply` exclusively for configuring newly constructed objects; `also` exclusively for side-effects like logging or caching during builder chains without mutating the subject; `let` for null-safe operations (`?.let`) or transforming a scoped value; and `run` only when evaluating a multi-step block that returns a derived computation.
+
 
 ## How to answer in the interview
 

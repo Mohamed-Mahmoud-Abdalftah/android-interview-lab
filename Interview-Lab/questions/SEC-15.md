@@ -104,30 +104,22 @@ Prevent leaks by masking Authorization headers via OkHttp's redactHeader, stripp
 
 ## Interview answer — structured
 
-Data leakage occurs across four primary observation surfaces, each requiring deliberate architectural defenses:
+Data leakage occurs across four primary observation surfaces, each requiring deliberate architectural defenses.
 
-1. **Logcat & Network Logs**: 
-   - Configure OkHttp's `HttpLoggingInterceptor` using `redactHeader("Authorization")` and `redactHeader("Cookie")` to prevent printing tokens.
-   - In release builds, use R8 rules (`-assumenosideeffects`) to strip `Log.d` and `Log.v` bytecodes entirely.
+First, with Logcat & Network Logs, Next, configure OkHttp's `HttpLoggingInterceptor` using `redactHeader("Authorization")` and `redactHeader("Cookie")` to prevent printing tokens.
+In release builds, use R8 rules (`-assumenosideeffects`) to strip `Log.d` and `Log.v` bytecodes entirely. **Screen Capture & App Switcher (Task Snapshots)**.
+When users background an app, Android saves a screenshot to disk for the multitasking overview. Applying `window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)` prevents screenshots, screen recording, and blacks out the task thumbnail in the recent apps switcher. **Crash Reporting (Crashlytics/Sentry)**.
+Scrub custom keys, breadcrumbs, and exception messages using filtering hooks (`beforeSend`). Network exception messages frequently contain full URLs with sensitive query parameters or authorization failure dumps. **Analytics Pipelines**.
+Finally, enforce strict event data schemas. Never forward free-form user inputs, search queries with sensitive data, or complete server URLs to analytics tools.
 
-2. **Screen Capture & App Switcher (Task Snapshots)**:
-   - When users background an app, Android saves a screenshot to disk for the multitasking overview. Applying `window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)` prevents screenshots, screen recording, and blacks out the task thumbnail in the recent apps switcher.
-
-3. **Crash Reporting (Crashlytics/Sentry)**:
-   - Scrub custom keys, breadcrumbs, and exception messages using filtering hooks (`beforeSend`). Network exception messages frequently contain full URLs with sensitive query parameters or authorization failure dumps.
-
-4. **Analytics Pipelines**:
-   - Enforce strict event data schemas. Never forward free-form user inputs, search queries with sensitive data, or complete server URLs to analytics tools.
 
 ## Interview answer — deep senior
 
-From an operational compliance perspective (e.g. PCI-DSS, GDPR, HIPAA), unintentional token leakage is treated as a major security incident:
+From an operational compliance perspective (e.g. PCI-DSS, GDPR, HIPAA), unintentional token leakage is treated as a major security incident.
 
-1. **Dynamic FLAG_SECURE Management**: In modern Jetpack Compose applications, `FLAG_SECURE` can be dynamically toggled using a `DisposableEffect` based on whether the currently visible composable displays sensitive data (e.g., credit card entry or seed phrases), rather than blindly applying it across the entire application which impairs legitimate UX like support screenshots.
+First, with Dynamic FLAG_SECURE Management, in modern Jetpack Compose applications, `FLAG_SECURE` can be dynamically toggled using a `DisposableEffect` based on whether the currently visible composable displays sensitive data (e.g., credit card entry or seed phrases), rather than blindly applying it across the entire application which impairs legitimate UX like support screenshots. Next, with Memory Dumps & System Bug Reports, when users trigger an Android bug report (`adb bugreport` or system developer settings), the OS dumps system log buffers and memory summaries. If tokens were printed to Logcat or stored in static string variables, they are bundled into plaintext bug report archives that users often share unencrypted over email or bug trackers.
+Finally, with Automated CI Linting, integrate static analysis linters (e.g., custom Android Lint rules or Semgrep) in CI to fail PR builds if developers log sensitive parameter names (`token`, `password`, `pan`, `cvv`) or attach raw network responses to analytics events.
 
-2. **Memory Dumps & System Bug Reports**: When users trigger an Android bug report (`adb bugreport` or system developer settings), the OS dumps system log buffers and memory summaries. If tokens were printed to Logcat or stored in static string variables, they are bundled into plaintext bug report archives that users often share unencrypted over email or bug trackers.
-
-3. **Automated CI Linting**: Integrate static analysis linters (e.g., custom Android Lint rules or Semgrep) in CI to fail PR builds if developers log sensitive parameter names (`token`, `password`, `pan`, `cvv`) or attach raw network responses to analytics events.
 
 ## How to answer in the interview
 

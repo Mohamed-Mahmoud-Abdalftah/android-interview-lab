@@ -117,13 +117,11 @@ Use keyed effects with accurate owners, measure the derived-state benefit in a r
 
 ## Interview answer — structured
 
-These three APIs represent advanced Compose state coordination tools:
+These three APIs represent advanced Compose state coordination tools.
 
-1. **`rememberUpdatedState(value)`**: Solves the *stale closure* problem in long-running effects. When a `LaunchedEffect(Unit)` or `DisposableEffect` must access a changing parameter or lambda without restarting the effect, `rememberUpdatedState` updates an internal state reference synchronously. The effect reads the newest value upon execution without dropping or re-triggering its lifecycle.
+First, with rememberUpdatedState(value), solves the *stale closure* problem in long-running effects. When a `LaunchedEffect(Unit)` or `DisposableEffect` must access a changing parameter or lambda without restarting the effect, `rememberUpdatedState` updates an internal state reference synchronously. The effect reads the newest value upon execution without dropping or re-triggering its lifecycle. Next, with derivedStateOf { ... }, functions as a **state dampener**. When an input state mutates rapidly (such as `listState.firstVisibleItemScrollOffset` changing every single frame), reading that raw state directly in UI triggers hundreds of recompositions. Wrapping the calculation in `derivedStateOf { offset > 100 }` ensures observers only recompose when the *calculated result* transitions (e.g. From `false` to `true`).
+Finally, with snapshotFlow { ... }, bridges Compose's snapshot state into a cold Kotlin `Flow`. It runs the lambda whenever a read snapshot state mutates, emitting the result downstream. This unlocks reactive coroutine operators like `debounce()`, `sample()`, or `filter()` directly on UI state.
 
-2. **`derivedStateOf { ... }`**: Functions as a **state dampener**. When an input state mutates rapidly (such as `listState.firstVisibleItemScrollOffset` changing every single frame), reading that raw state directly in UI triggers hundreds of recompositions. Wrapping the calculation in `derivedStateOf { offset > 100 }` ensures observers only recompose when the *calculated result* transitions (e.g. from `false` to `true`).
-
-3. **`snapshotFlow { ... }`**: Bridges Compose's snapshot state into a cold Kotlin `Flow`. It runs the lambda whenever a read snapshot state mutates, emitting the result downstream. This unlocks reactive coroutine operators like `debounce()`, `sample()`, or `filter()` directly on UI state.
 
 ## Interview answer — deep senior
 
@@ -132,6 +130,7 @@ Under the hood, `derivedStateOf` registers a dynamic dependency set in the Snaps
 A critical misuse to avoid is wrapping simple static computations inside `derivedStateOf`. For instance, `val fullName = remember(first, last) { derivedStateOf { "$first $last" } }` is an anti-pattern. `derivedStateOf` has allocation and tracking overhead; it is only beneficial when the **input state changes much more frequently than the output state**.
 
 `snapshotFlow` relies on `Snapshot.registerApplyObserver`. When global snapshots commit, it compares emissions using structural equality, guaranteeing that downstream flow collectors only receive changes that actually alter data.
+
 
 ## How to answer in the interview
 

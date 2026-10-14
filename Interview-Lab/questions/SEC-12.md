@@ -125,27 +125,22 @@ EncryptedSharedPreferences was deprecated due to high production crash rates cau
 
 ## Interview answer — structured
 
-`EncryptedSharedPreferences` (part of Jetpack `androidx.security:security-crypto`) provided out-of-the-box key and value encryption wrapping Google Tink and Android Keystore. However, it proved unreliable in production:
+`EncryptedSharedPreferences` (part of Jetpack `androidx.security:security-crypto`) provided out-of-the-box key and value encryption wrapping Google Tink and Android Keystore. However, it proved unreliable in production.
 
-1. **Root Causes of Deprecation**:
-   - **Keyset Corruption & Crashes**: Tink stored an encrypted keyset in private XML files. Across OEM Android updates, backup restores, or Keystore daemon crashes, the hardware master key would become unrecoverable, throwing unrecoverable `SecurityException`, `DeadObjectException`, or `CleartextKeysetException` during app startup.
-   - **Main-Thread Blocking**: Initializing `EncryptedSharedPreferences` performed blocking Keystore IPC and keyset decryption, triggering frame drops and ANRs.
-   - **Unmaintained Status**: Google ceased active development, leaving reported bugs unresolved.
+First, **Root Causes of Deprecation**. Next, with Keyset Corruption & Crashes, tink stored an encrypted keyset in private XML files. Across OEM Android updates, backup restores, or Keystore daemon crashes, the hardware master key would become unrecoverable, throwing unrecoverable `SecurityException`, `DeadObjectException`, or `CleartextKeysetException` during app startup.
+Additionally, with Main-Thread Blocking, initializing `EncryptedSharedPreferences` performed blocking Keystore IPC and keyset decryption, triggering frame drops and ANRs. With Unmaintained Status, google ceased active development, leaving reported bugs unresolved.
+**Modern Production Alternatives**. With Jetpack DataStore + Custom Keystore Encryption, persist encrypted byte buffers or Base64 payloads into Jetpack DataStore asynchronously using Coroutines, backed by a clean, self-contained raw Keystore AES-GCM implementation.
+Finally, with SQLCipher / Room, for structured relational data requiring at-rest encryption.
 
-2. **Modern Production Alternatives**:
-   - **Jetpack DataStore + Custom Keystore Encryption**: Persist encrypted byte buffers or Base64 payloads into Jetpack DataStore asynchronously using Coroutines, backed by a clean, self-contained raw Keystore AES-GCM implementation.
-   - **SQLCipher / Room**: For structured relational data requiring at-rest encryption.
 
 ## Interview answer — deep senior
 
-Senior engineers evaluating Android storage security avoid black-box abstraction libraries that hide Keystore lifecycle hazards:
+Senior engineers evaluating Android storage security avoid black-box abstraction libraries that hide Keystore lifecycle hazards.
 
-1. **State Inconsistency Post-Reboot/Restore**: When a user restores from Google Auto Backup or when OEM Keystore daemons desynchronize after a major OS update, the keyset file remains on disk while the hardware Keystore alias has vanished. `EncryptedSharedPreferences` crashes permanently because it cannot decrypt the keyset and lacks an automatic reset fallback.
+First, with State Inconsistency Post-Reboot/Restore, when a user restores from Google Auto Backup or when OEM Keystore daemons desynchronize after a major OS update, the keyset file remains on disk while the hardware Keystore alias has vanished. `EncryptedSharedPreferences` crashes permanently because it cannot decrypt the keyset and lacks an automatic reset fallback. Next, with Resilient Replacement Architecture, in our production stack, we decouple persistence from encryption.
+We maintain a dedicated `CryptoEngine` executing on `Dispatchers.Default` using raw `AndroidKeyStore`. When decryption fails due to key invalidation or hardware faults, we catch the cryptographic error, proactively wipe the corrupted storage entry, and fire a re-authentication event to navigate the user to login.
+Finally, this graceful degradation guarantees that security failures never cascade into unrecoverable app startup crashes.
 
-2. **Resilient Replacement Architecture**: In our production stack, we decouple persistence from encryption:
-   - We maintain a dedicated `CryptoEngine` executing on `Dispatchers.Default` using raw `AndroidKeyStore`.
-   - When decryption fails due to key invalidation or hardware faults, we catch the cryptographic error, proactively wipe the corrupted storage entry, and fire a re-authentication event to navigate the user to login.
-   - This graceful degradation guarantees that security failures never cascade into unrecoverable app startup crashes.
 
 ## How to answer in the interview
 

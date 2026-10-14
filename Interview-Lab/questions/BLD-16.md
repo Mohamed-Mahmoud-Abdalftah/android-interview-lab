@@ -86,26 +86,21 @@ Set up reproducible builds and supply-chain security by enabling Gradle's depend
 
 ## Interview answer — structured
 
-Software supply chain integrity and reproducible builds guarantee artifact immutability and provenance:
+Software supply chain integrity and reproducible builds guarantee artifact immutability and provenance.
 
-1. **Gradle Dependency Verification**:
-   - Protects against compromised Maven repositories, man-in-the-middle attacks, and malicious dependency substitutions. Gradle validates the cryptographic SHA-256 checksum or PGP signature of every downloaded JAR, AAR, and Gradle plugin.
-   - Generate the initial lockfile via `./gradlew --write-verification-metadata sha256 help`. Commit `gradle/verification-metadata.xml` to Git. If an upstream artifact is altered or replaced on Maven Central, Gradle aborts the build with a verification failure.
+First, **Gradle Dependency Verification**. Next, protects against compromised Maven repositories, man-in-the-middle attacks, and malicious dependency substitutions. Gradle validates the cryptographic SHA-256 checksum or PGP signature of every downloaded JAR, AAR, and Gradle plugin.
+Generate the initial lockfile via `./gradlew --write-verification-metadata sha256 help`. Commit `gradle/verification-metadata.xml` to Git. If an upstream artifact is altered or replaced on Maven Central, Gradle aborts the build with a verification failure. **Reproducible Builds (Byte-for-Byte Parity)**.
+Guarantees that compiling identical source code on different machines produces bitwise-identical binary artifacts. Eliminate non-deterministic inputs: enforce identical compiler toolchains using Gradle's `jvmToolchain(17)`.
+Finally, configure ZIP archive tasks with `isReproducibleFileOrder = true` and `isPreserveFileTimestamps = false` to eliminate file-system order variances and timestamps from APK ZIP headers.
 
-2. **Reproducible Builds (Byte-for-Byte Parity)**:
-   - Guarantees that compiling identical source code on different machines produces bitwise-identical binary artifacts.
-   - Eliminate non-deterministic inputs: enforce identical compiler toolchains using Gradle's `jvmToolchain(17)`.
-   - Configure ZIP archive tasks with `isReproducibleFileOrder = true` and `isPreserveFileTimestamps = false` to eliminate file-system order variances and timestamps from APK ZIP headers.
 
 ## Interview answer — deep senior
 
-From an enterprise security and compliance perspective, reproducible builds enable external independent auditing:
+From an enterprise security and compliance perspective, reproducible builds enable external independent auditing.
 
-1. **Third-Party Verifiable Provenance**: Open-source and high-assurance financial applications (e.g., Signal, Tor, Bitcoin wallets) use reproducible builds so independent security researchers can compile the public Git commit and verify that the resulting SHA-256 matches the binary distributed on Google Play, proving the release contains zero backdoors.
+First, with Third-Party Verifiable Provenance, open-source and high-assurance financial applications (e.g., Signal, Tor, Bitcoin wallets) use reproducible builds so independent security researchers can compile the public Git commit and verify that the resulting SHA-256 matches the binary distributed on Google Play, proving the release contains zero backdoors. Next, with Dynamic Dependency Ban, enforce strict repository boundaries. Ban dynamic version ranges (e.g. `implementation("com.lib:sdk:1.+")`) and SNAPSHOT dependencies in release configurations, as they pull untracked binary changes without code modifications.
+Finally, with Repository Priority Hardening, explicitly order repositories in `settings.gradle.kts`: Google Maven first, followed by Maven Central. Use `content { includeGroup(...) }` filtering to restrict specific libraries to designated repositories, thwarting **Dependency Confusion** attacks.
 
-2. **Dynamic Dependency Ban**: Enforce strict repository boundaries. Ban dynamic version ranges (e.g. `implementation("com.lib:sdk:1.+")`) and SNAPSHOT dependencies in release configurations, as they pull untracked binary changes without code modifications.
-
-3. **Repository Priority Hardening**: Explicitly order repositories in `settings.gradle.kts`: Google Maven first, followed by Maven Central. Use `content { includeGroup(...) }` filtering to restrict specific libraries to designated repositories, thwarting **Dependency Confusion** attacks.
 
 ## How to answer in the interview
 

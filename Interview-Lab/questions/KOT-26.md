@@ -102,6 +102,7 @@ In real-world UI and payment flows, states are inherently heterogeneous. An Idle
 
 With a sealed interface, illegal states become unrepresentable in the type system. In the UI or ViewModel, Kotlin's when expression guarantees exhaustive branch coverage and smart-casts each branch to its concrete type, giving safe, direct access to that state's payload without null assertions.
 
+
 ## Interview answer — deep senior
 
 From an architectural domain-modeling perspective, sealed hierarchies embody Algebraic Data Types (specifically Sum Types with Product Type variants). Using `sealed interface` combined with `data object` (introduced in Kotlin 1.9) gives the best of both worlds: parameterless states like `Idle` compile to singletons with clean toString() logging, while parameterized states like `Success(val receipt: Receipt)` allocate new instances holding distinct payloads.
@@ -109,6 +110,7 @@ From an architectural domain-modeling perspective, sealed hierarchies embody Alg
 In contrast, forcing an enum to represent dynamic states leads to architectural rot: developers often resort to mutable companion objects, global singletons, or nullable fields in a single giant class. If a new business requirement emerges—such as adding a `TwoFactorRequired(val challengeToken: String)` state to a payment flow—with a sealed interface, the Kotlin compiler will fail compilation at every single `when` expression across the entire project that doesn't handle the new variant, acting as an automated refactoring guide.
 
 In Jetpack Compose, sealed states are especially critical for recomposition stability. Distinct state classes allow Compose to skip recomposition when only unrelated properties in sibling states change, boosting rendering performance.
+
 
 ## How to answer in the interview
 

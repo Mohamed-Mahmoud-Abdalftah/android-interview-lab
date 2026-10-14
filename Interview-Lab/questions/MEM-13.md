@@ -105,10 +105,11 @@ The memory required for a decoded bitmap is calculated as `Width × Height × By
 
 While Android 8.0 (API 26) migrated bitmap pixel storage from Java Heap to Native Memory using `NativeAllocationRegistry`, native memory is still constrained by total device physical RAM and OS process limits. Excessive native allocations trigger the Android Low Memory Killer (LMK).
 
-Modern image-loading libraries like Coil and Glide solve this through three core mechanics:
-1. **Automatic Downsampling**: Inspecting target view bounds and using `inSampleSize` to decode only the required pixel density.
-2. **Multi-tier Caching**: Using memory-bounded `LruCache` (configured as a fraction of available RAM) alongside disk caching.
-3. **Bitmap Re-use / Pooling**: Re-using existing bitmap buffers via `BitmapFactory.Options.inBitmap` to eliminate memory churn.
+Modern image-loading libraries like Coil and Glide solve this through three core mechanics.
+
+First, with Automatic Downsampling, inspecting target view bounds and using `inSampleSize` to decode only the required pixel density. Next, with Multi-tier Caching, using memory-bounded `LruCache` (configured as a fraction of available RAM) alongside disk caching.
+Finally, with Bitmap Re-use / Pooling, re-using existing bitmap buffers via `BitmapFactory.Options.inBitmap` to eliminate memory churn.
+
 
 ## Interview answer — deep senior
 
@@ -117,6 +118,7 @@ From an architectural standpoint, Coil represents the modern Kotlin-first approa
 On Android 8.0+, we can also configure images to use `Bitmap.Config.HARDWARE`. Hardware bitmaps store pixel memory directly in GPU graphic memory (GraphicBuffer), making them immutable and impossible to read from software canvases, but providing zero CPU-side memory allocation and blazingly fast draw calls.
 
 When profiling image-heavy screens in Android Studio Memory Profiler, we look at the **Native** memory bar and heap allocation stack traces originating from `BitmapFactory.nativeDecodeStream()`. If bitmap allocations surge during scrolling, it indicates missing view sizing or disabled image caches.
+
 
 ## How to answer in the interview
 

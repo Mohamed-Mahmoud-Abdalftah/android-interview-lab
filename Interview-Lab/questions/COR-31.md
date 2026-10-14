@@ -108,6 +108,7 @@ Because the main thread is blocked, Android's `Choreographer` cannot process VSY
 
 The definitive fix is enforcing **Main-Safety**: wrap the blocking library invocation inside `withContext(Dispatchers.Default)` for CPU-bound computations or `withContext(Dispatchers.IO)` for blocking I/O. The coroutine suspends, yields the main thread to the Android message queue so the UI remains fluid, executes the blocking code on a background worker thread, and seamlessly resumes on Main with the result.
 
+
 ## Interview answer — deep senior
 
 From a performance monitoring and diagnostic perspective, identifying these bottlenecks in production requires strict tooling. In debug builds, we enable **StrictMode**:
@@ -127,6 +128,7 @@ StrictMode.setThreadPolicy(
 StrictMode immediately logs a red flash or crashes the app in debug builds if disk or network I/O touches the main thread.
 
 In production APM monitoring, we track **ANR Watchdog traces** and Google Play Console vitals. When inspecting an ANR trace file (`traces.txt`), a blocked coroutine on Main will show the main thread in the `BLOCKED` or `RUNNABLE` state stuck in the third-party library method frame rather than in `MessageQueue.nativePollOnce()`. Offloading that exact stack frame via `withContext` completely resolves the ANR.
+
 
 ## How to answer in the interview
 

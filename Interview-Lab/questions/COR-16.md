@@ -115,6 +115,7 @@ Because `CancellationException` inherits from `java.lang.Exception`, this catch 
 
 To propagate it correctly: either catch only specific domain exceptions like `IOException` or `HttpException`, or if you must catch broad `Exception`, check for `if (e is CancellationException) throw e` before handling other errors.
 
+
 ## Interview answer — deep senior
 
 Under the hood, when `Job.cancel()` is called, active suspension points throw a `CancellationException`. The coroutine runtime distinguishes `CancellationException` from other throwables: it does not mark the Job as failed, does not report to `CoroutineExceptionHandler`, and does not cancel the parent Job. It simply transitions the coroutine to the CANCELLED state.
@@ -122,6 +123,7 @@ Under the hood, when `Job.cancel()` is called, active suspension points throw a 
 This has serious implications for utility methods like `runCatching` in the standard library. `kotlin.runCatching` catches all `Throwable` instances, including `CancellationException`. If you use `runCatching` around suspending calls, it converts `CancellationException` into a `Result.failure`, breaking structured concurrency unless you explicitly inspect and rethrow it.
 
 In our Android architecture, we forbid raw `runCatching` on suspend functions in code review, replacing it with a custom `runSuspendCatching` helper that automatically rethrows `CancellationException`.
+
 
 ## How to answer in the interview
 

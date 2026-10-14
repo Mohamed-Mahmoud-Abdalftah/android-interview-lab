@@ -112,34 +112,21 @@ StandardTestDispatcher queues coroutines without executing them immediately, giv
 
 ## Interview answer — structured
 
-Choosing between coroutine test dispatchers dictates how coroutine execution is scheduled relative to test assertions:
+Choosing between coroutine test dispatchers dictates how coroutine execution is scheduled relative to test assertions.
 
-1. **StandardTestDispatcher (Queued & Deterministic)**:
-   - **Behavior**: Does not execute newly launched coroutines eagerly. Instead, coroutines are queued on the `TestScheduler`.
-   - **Usage**: Requires explicit calls to `runCurrent()`, `advanceTimeBy()`, or `advanceUntilIdle()` to trigger execution.
-   - **Ideal For**: Testing sequential UI progression and intermediate states (e.g., verifying that `UiState.Loading` is emitted before network responses resolve to `UiState.Success`).
+First, **StandardTestDispatcher (Queued & Deterministic)**. Next, with Behavior, does not execute newly launched coroutines eagerly. Instead, coroutines are queued on the `TestScheduler`.
+Additionally, with Usage, requires explicit calls to `runCurrent()`, `advanceTimeBy()`, or `advanceUntilIdle()` to trigger execution. With Ideal For, testing sequential UI progression and intermediate states (e.g., verifying that `UiState.Loading` is emitted before network responses resolve to `UiState.Success`).
+**UnconfinedTestDispatcher (Eager & Immediate)**. With Behavior, newly launched coroutines begin execution immediately and eagerly on the calling thread until they hit their first suspension point (`delay()` or async I/O).
+With Usage, eliminates boilerplate calls to `runCurrent()` across simple unit tests. Finally, with Ideal For, testing simple StateFlow collections or direct state mappings where only the final outcome matters.
 
-2. **UnconfinedTestDispatcher (Eager & Immediate)**:
-   - **Behavior**: Newly launched coroutines begin execution immediately and eagerly on the calling thread until they hit their first suspension point (`delay()` or async I/O).
-   - **Usage**: Eliminates boilerplate calls to `runCurrent()` across simple unit tests.
-   - **Ideal For**: Testing simple StateFlow collections or direct state mappings where only the final outcome matters.
 
 ## Interview answer — deep senior
 
-From an architectural best-practices standpoint, standardizing test dispatchers across enterprise codebases avoids flakiness:
+From an architectural best-practices standpoint, standardizing test dispatchers across enterprise codebases avoids flakiness.
 
-1. **Turbine Flow Testing with StandardTestDispatcher**: When collecting Kotlin Flows using Turbine, `StandardTestDispatcher` provides rock-solid predictability. You can assert that an initial value is emitted, trigger a user action, advance time, and assert that the next emission arrives in order without timing races.
+First, with Turbine Flow Testing with StandardTestDispatcher, when collecting Kotlin Flows using Turbine, `StandardTestDispatcher` provides rock-solid predictability. You can assert that an initial value is emitted, trigger a user action, advance time, and assert that the next emission arrives in order without timing races. Next, with The MainDispatcherRule Pattern, rather than instantiating dispatchers manually in every test class, build a reusable JUnit TestRule: ```kotlin class MainDispatcherRule(val testDispatcher: TestDispatcher = StandardTestDispatcher()) : TestWatcher() { override fun starting(d: Description) = Dispatchers.setMain(testDispatcher) override fun finished(d: Description) = Dispatchers.resetMain() } ``` This ensures clean setup and teardown of `Dispatchers.Main` across all JVM unit tests.
+Finally, with Pragmatic Recommendation, default to `StandardTestDispatcher` across the entire codebase. It mimics real-world concurrency queues most faithfully and prevents false-positive test passes where eager execution masks async race conditions.
 
-2. **The MainDispatcherRule Pattern**: Rather than instantiating dispatchers manually in every test class, build a reusable JUnit TestRule:
-   ```kotlin
-   class MainDispatcherRule(val testDispatcher: TestDispatcher = StandardTestDispatcher()) : TestWatcher() {
-       override fun starting(d: Description) = Dispatchers.setMain(testDispatcher)
-       override fun finished(d: Description) = Dispatchers.resetMain()
-   }
-   ```
-   This ensures clean setup and teardown of `Dispatchers.Main` across all JVM unit tests.
-
-3. **Pragmatic Recommendation**: Default to `StandardTestDispatcher` across the entire codebase. It mimics real-world concurrency queues most faithfully and prevents false-positive test passes where eager execution masks async race conditions.
 
 ## How to answer in the interview
 

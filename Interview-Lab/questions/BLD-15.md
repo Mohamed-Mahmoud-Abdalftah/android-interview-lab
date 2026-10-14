@@ -87,26 +87,21 @@ Investigate dependency conflicts using Gradle's dependencyInsight task to trace 
 
 ## Interview answer — structured
 
-Diagnosing dependency friction and build performance regressions requires targeted Gradle diagnostic tooling:
+Diagnosing dependency friction and build performance regressions requires targeted Gradle diagnostic tooling.
 
-1. **Dependency Conflict Investigation**:
-   - By default, Gradle's conflict resolution selects the highest requested version (`latest version wins`). This can introduce silent binary incompatibilities if a transitive upgrade introduces breaking API changes.
-   - Run `./gradlew :app:dependencyInsight --dependency <name> --configuration <classpath>`. Gradle prints the exact dependency graph path and selection rationale explaining why a specific version was resolved.
-   - Enforce consistency across the codebase using Gradle Version Catalogs (`libs.versions.toml`) and `resolutionStrategy.force()`, or enable `failOnVersionConflict()` in CI to catch divergent transitive dependencies early.
+First, **Dependency Conflict Investigation**. Next, by default, Gradle's conflict resolution selects the highest requested version (`latest version wins`). This can introduce silent binary incompatibilities if a transitive upgrade introduces breaking API changes.
+Run `./gradlew :app:dependencyInsight --dependency <name> --configuration <classpath>`. Gradle prints the exact dependency graph path and selection rationale explaining why a specific version was resolved. Enforce consistency across the codebase using Gradle Version Catalogs (`libs.versions.toml`) and `resolutionStrategy.force()`, or enable `failOnVersionConflict()` in CI to catch divergent transitive dependencies early.
+**Build-Speed Regression Profiling**. Generate a **Gradle Build Scan** using `./gradlew assembleDebug --scan`.
+Finally, inspect the Timeline view to identify non-parallel task bottlenecks, measure KAPT/KSP annotation processing durations, identify tasks failing incremental execution, and pinpoint cache misses across remote and local build caches.
 
-2. **Build-Speed Regression Profiling**:
-   - Generate a **Gradle Build Scan** using `./gradlew assembleDebug --scan`.
-   - Inspect the Timeline view to identify non-parallel task bottlenecks, measure KAPT/KSP annotation processing durations, identify tasks failing incremental execution, and pinpoint cache misses across remote and local build caches.
 
 ## Interview answer — deep senior
 
-From a staff platform architecture viewpoint, maintaining dependency and build velocity requires continuous guardrails:
+From a staff platform architecture viewpoint, maintaining dependency and build velocity requires continuous guardrails.
 
-1. **Rich Version Constraints (Strict vs. Require)**: Modern Gradle supports rich versioning. Specifying `strictly("1.5.0")` prevents any transitive dependency from bumping the version, causing a build failure if incompatible constraints are encountered.
+First, with Rich Version Constraints (Strict vs. Require), modern Gradle supports rich versioning. Specifying `strictly("1.5.0")` prevents any transitive dependency from bumping the version, causing a build failure if incompatible constraints are encountered. Next, with Task Cache Miss Forensics, when a task fails to pull from the build cache, inspect Gradle's cache key inputs with `--info` or Build Scans. The most frequent culprit is non-hermetic tasks with volatile inputs, such as un-annotated directory inputs or hardcoded machine-specific absolute file paths in compiler arguments.
+Finally, with Dependency Analysis Plugins, integrate AutonomousApps' `dependency-analysis-android-plugin` in CI. It automatically identifies unused direct dependencies, transitively used dependencies that should be declared directly, and dependencies leaking across `api` rather than `implementation` boundaries.
 
-2. **Task Cache Miss Forensics**: When a task fails to pull from the build cache, inspect Gradle's cache key inputs with `--info` or Build Scans. The most frequent culprit is non-hermetic tasks with volatile inputs, such as un-annotated directory inputs or hardcoded machine-specific absolute file paths in compiler arguments.
-
-3. **Dependency Analysis Plugins**: Integrate AutonomousApps' `dependency-analysis-android-plugin` in CI. It automatically identifies unused direct dependencies, transitively used dependencies that should be declared directly, and dependencies leaking across `api` rather than `implementation` boundaries.
 
 ## How to answer in the interview
 

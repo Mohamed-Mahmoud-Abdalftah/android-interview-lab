@@ -89,29 +89,21 @@ The backend must enforce a Zero-Trust architecture: never trust client-calculate
 
 ## Interview answer — structured
 
-When an attacker tampers with an APK to bypass client validations, backend security controls form the true line of defense:
+When an attacker tampers with an APK to bypass client validations, backend security controls form the true line of defense.
 
-1. **Server Authoritative Business Logic**: 
-   - Clients submit intentions (e.g. `productId`, `quantity`), never outcomes (e.g. `price`, `discountedTotal`). The server looks up product costs in authoritative databases, computes taxes and discounts, and initiates charges based solely on its own calculations.
+First, with Server Authoritative Business Logic, Next, clients submit intentions (e.g. `productId`, `quantity`), never outcomes (e.g. `price`, `discountedTotal`). The server looks up product costs in authoritative databases, computes taxes and discounts, and initiates charges based solely on its own calculations.
+**Cryptographic Attestation Verification**. The backend validates the Google Play Integrity token provided with critical requests. The server verifies Google's cryptographic signature, checking that `appRecognitionVerdict` equals `PLAY_RECOGNIZED` and the signing certificate SHA-256 matches the official release keystore. Modified/repackaged APKs will return `UNRECOGNIZED_VERSION`.
+**Idempotency & Replay Protection**. Critical requests require a server-issued one-time cryptographically random nonce or UUID idempotency key stored in Redis with short TTL. Replayed requests are rejected.
+**Strict Server-Side Authorization (RBAC/ABAC)**. Finally, every request verifies that the authenticated user identity extracted from the verified session token has explicit permission to access the target entity ID (preventing IDOR vulnerabilities).
 
-2. **Cryptographic Attestation Verification**:
-   - The backend validates the Google Play Integrity token provided with critical requests. The server verifies Google's cryptographic signature, checking that `appRecognitionVerdict` equals `PLAY_RECOGNIZED` and the signing certificate SHA-256 matches the official release keystore. Modified/repackaged APKs will return `UNRECOGNIZED_VERSION`.
-
-3. **Idempotency & Replay Protection**:
-   - Critical requests require a server-issued one-time cryptographically random nonce or UUID idempotency key stored in Redis with short TTL. Replayed requests are rejected.
-
-4. **Strict Server-Side Authorization (RBAC/ABAC)**:
-   - Every request verifies that the authenticated user identity extracted from the verified session token has explicit permission to access the target entity ID (preventing IDOR vulnerabilities).
 
 ## Interview answer — deep senior
 
-From an enterprise fraud and threat modeling perspective, backend defenses incorporate multi-signal behavioral analytics:
+From an enterprise fraud and threat modeling perspective, backend defenses incorporate multi-signal behavioral analytics.
 
-1. **Behavioral Fraud Scoring**: Even if an attacker successfully patches an APK and mimics API payloads, machine learning fraud engines analyze request velocity, header entropy, TLS client fingerprinting (JA3/JA4 signatures), and impossible geographic travel intervals to score transaction risk.
+First, with Behavioral Fraud Scoring, even if an attacker successfully patches an APK and mimics API payloads, machine learning fraud engines analyze request velocity, header entropy, TLS client fingerprinting (JA3/JA4 signatures), and impossible geographic travel intervals to score transaction risk. Next, with Step-Up Authentication Challenges, when risk signals indicate an anomalous client environment, the backend refuses to execute the requested action directly. Instead, it challenges the client with step-up verification (e.g., FIDO2 / Passkey biometric challenge or out-of-band push notification to a trusted secondary device).
+Finally, with Tarpitting and Honeypots, backend APIs can embed decoy parameters or obscure endpoints. Modified clients invoking hidden deprecated endpoints expose automated tampering tools, triggering silent shadow-banning without alerting the attacker.
 
-2. **Step-Up Authentication Challenges**: When risk signals indicate an anomalous client environment, the backend refuses to execute the requested action directly. Instead, it challenges the client with step-up verification (e.g., FIDO2 / Passkey biometric challenge or out-of-band push notification to a trusted secondary device).
-
-3. **Tarpitting and Honeypots**: Backend APIs can embed decoy parameters or obscure endpoints. Modified clients invoking hidden deprecated endpoints expose automated tampering tools, triggering silent shadow-banning without alerting the attacker.
 
 ## How to answer in the interview
 

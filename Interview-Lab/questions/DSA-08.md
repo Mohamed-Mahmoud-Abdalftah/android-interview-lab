@@ -126,26 +126,20 @@ Detect duplicates in O(n) time and O(n) space by inserting elements into a HashS
 
 ## Interview answer — structured
 
-Deduplicating large collections involves choosing between time-optimized and memory-constrained paradigms:
+Deduplicating large collections involves choosing between time-optimized and memory-constrained paradigms.
 
-1. **Time-Optimized Hash Table Approach ($O(n)$ Time, $O(n)$ Space)**:
-   - Iterate through the list while streaming elements into a `HashSet`. Since `HashSet.add()` returns `false` if the item already exists, duplicates are detected in a single linear pass. In Kotlin, `list.distinct()` or `list.distinctBy { it.id }` encapsulates this pattern.
+First, **Time-Optimized Hash Table Approach ($O(n)$ Time, $O(n)$ Space)**. Next, iterate through the list while streaming elements into a `HashSet`. Since `HashSet.add()` returns `false` if the item already exists, duplicates are detected in a single linear pass. In Kotlin, `list.distinct()` or `list.distinctBy { it.id }` encapsulates this pattern.
+**Memory-Constrained Sorting Approach ($O(n \log n)$ Time, $O(1)$ Space)**. If working with a huge dataset on a memory-constrained Android device where allocating a 100,000-entry HashSet would trigger an `OutOfMemoryError`, sort the primitive array in-place using dual-pivot quicksort, then run a single two-pointer linear pass comparing adjacent neighbors (`arr[i] == arr[i-1]`).
+**Preserving Insertion Order**. Finally, if the original order of first appearance must be preserved, Kotlin's `distinct()` uses a `LinkedHashSet` internally, retaining first-seen ordering while filtering subsequent occurrences.
 
-2. **Memory-Constrained Sorting Approach ($O(n \log n)$ Time, $O(1)$ Space)**:
-   - If working with a huge dataset on a memory-constrained Android device where allocating a 100,000-entry HashSet would trigger an `OutOfMemoryError`, sort the primitive array in-place using dual-pivot quicksort, then run a single two-pointer linear pass comparing adjacent neighbors (`arr[i] == arr[i-1]`).
-
-3. **Preserving Insertion Order**:
-   - If the original order of first appearance must be preserved, Kotlin's `distinct()` uses a `LinkedHashSet` internally, retaining first-seen ordering while filtering subsequent occurrences.
 
 ## Interview answer — deep senior
 
-In large scale mobile architecture, deduplicating incoming server data feeds presents practical challenges:
+In large scale mobile architecture, deduplicating incoming server data feeds presents practical challenges.
 
-1. **Stream Processing via Kotlin Sequences**: For massive datasets read from Room or local files, calling `list.distinct()` creates intermediate collection allocations in memory. Using lazy sequences (`sequence.distinct()`) processes items one-by-one, streaming deduplicated records directly to the UI without holding the entire transformed dataset in heap memory simultaneously.
+First, with Stream Processing via Kotlin Sequences, for massive datasets read from Room or local files, calling `list.distinct()` creates intermediate collection allocations in memory. Using lazy sequences (`sequence.distinct()`) processes items one-by-one, streaming deduplicated records directly to the UI without holding the entire transformed dataset in heap memory simultaneously. Next, with BitSet Optimization for Bounded Numeric IDs, if the dataset consists of integer IDs within a bounded range (e.g. User IDs $< 1,000,000$), avoid `HashSet<Int>` completely. A Java `BitSet` stores one bit per ID: 1,000,000 IDs consume just $125\text{KB}$ of RAM compared to over $32\text{MB}$ for a boxed `HashSet<Integer>`, yielding instant duplicate detection with negligible GC footprint.
+Finally, with Probabilistic Deduplication with Bloom Filters, in extreme offline synchronization scenarios where hundreds of thousands of sync IDs must be checked before querying disk, a Bloom Filter provides $O(1)$ constant-time duplicate checks in minimal RAM with zero false negatives.
 
-2. **BitSet Optimization for Bounded Numeric IDs**: If the dataset consists of integer IDs within a bounded range (e.g. user IDs $< 1,000,000$), avoid `HashSet<Int>` completely. A Java `BitSet` stores one bit per ID: 1,000,000 IDs consume just $125\text{KB}$ of RAM compared to over $32\text{MB}$ for a boxed `HashSet<Integer>`, yielding instant duplicate detection with negligible GC footprint.
-
-3. **Probabilistic Deduplication with Bloom Filters**: In extreme offline synchronization scenarios where hundreds of thousands of sync IDs must be checked before querying disk, a Bloom Filter provides $O(1)$ constant-time duplicate checks in minimal RAM with zero false negatives.
 
 ## How to answer in the interview
 

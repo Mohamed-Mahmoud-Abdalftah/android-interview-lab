@@ -106,26 +106,20 @@ Screenshot tests capture and pixel-diff rendered UI against baseline golden imag
 
 ## Interview answer — structured
 
-Modern Android reliability and performance testing relies on three specialized verification technologies:
+Modern Android reliability and performance testing relies on three specialized verification technologies.
 
-1. **Screenshot / Visual Regression Tests (Roborazzi / Paparazzi)**:
-   - Render Composables off-screen and compare output PNGs pixel-by-pixel against committed golden reference images. They catch unintended regressions in theme inheritance, text truncation across dynamic font scales, and RTL mirror alignments in seconds on the JVM.
+First, **Screenshot / Visual Regression Tests (Roborazzi / Paparazzi)**. Next, render Composables off-screen and compare output PNGs pixel-by-pixel against committed golden reference images. They catch unintended regressions in theme inheritance, text truncation across dynamic font scales, and RTL mirror alignments in seconds on the JVM.
+**Baseline Profiles**. Human-readable specifications of classes and methods compiled during app installation using Android Runtime (ART) Ahead-Of-Time (AOT) compilation. By pre-compiling critical user paths (app startup, feed scrolling), Baseline Profiles eliminate runtime JIT interpretation pauses, improving cold launch speed by 30–40%.
+**Macrobenchmark Testing**. Finally, black-box performance testing running against non-debuggable release builds on physical hardware. Uses Android OS trace instrumentation to measure `StartupTimingMetric` (Time to Initial Display) and `FrameTimingMetric` (measuring 90th/99th percentile frame drops during fast scrolling lists).
 
-2. **Baseline Profiles**:
-   - Human-readable specifications of classes and methods compiled during app installation using Android Runtime (ART) Ahead-Of-Time (AOT) compilation. By pre-compiling critical user paths (app startup, feed scrolling), Baseline Profiles eliminate runtime JIT interpretation pauses, improving cold launch speed by 30–40%.
-
-3. **Macrobenchmark Testing**:
-   - Black-box performance testing running against non-debuggable release builds on physical hardware. Uses Android OS trace instrumentation to measure `StartupTimingMetric` (Time to Initial Display) and `FrameTimingMetric` (measuring 90th/99th percentile frame drops during fast scrolling lists).
 
 ## Interview answer — deep senior
 
-From an engineering platform and release infrastructure perspective, incorporating these tools requires dedicated pipeline stages:
+From an engineering platform and release infrastructure perspective, incorporating these tools requires dedicated pipeline stages.
 
-1. **CI Screenshot Differential Reporting**: When a visual regression occurs, CI should not merely fail the build. Integrate tools (like GitHub Action artifact reports) that generate an HTML visual diff carousel showing the original Golden, the Candidate, and an overlay diff highlighting mismatched pixels in red.
+First, with CI Screenshot Differential Reporting, when a visual regression occurs, CI should not merely fail the build. Integrate tools (like GitHub Action artifact reports) that generate an HTML visual diff carousel showing the original Golden, the Candidate, and an overlay diff highlighting mismatched pixels in red. Next, with Baseline Profile Automation, configure AGP's Baseline Profile Gradle plugin (`androidx.baselineprofile`). Schedule automated monthly Macrobenchmark profiling runs in CI that traverse critical user journeys, generate fresh `baseline-prof.txt` rules, and commit them directly to the repository before major releases.
+Finally, with Device Requirements for Benchmarks, never run Macrobenchmark on standard emulators or debug builds. ART compiles debuggable builds with optimizations disabled, skewing measurements. Always execute benchmarks on real, rooted or userdebug physical devices pinned at stable thermal CPU frequencies.
 
-2. **Baseline Profile Automation**: Configure AGP's Baseline Profile Gradle plugin (`androidx.baselineprofile`). Schedule automated monthly Macrobenchmark profiling runs in CI that traverse critical user journeys, generate fresh `baseline-prof.txt` rules, and commit them directly to the repository before major releases.
-
-3. **Device Requirements for Benchmarks**: Never run Macrobenchmark on standard emulators or debug builds. ART compiles debuggable builds with optimizations disabled, skewing measurements. Always execute benchmarks on real, rooted or userdebug physical devices pinned at stable thermal CPU frequencies.
 
 ## How to answer in the interview
 

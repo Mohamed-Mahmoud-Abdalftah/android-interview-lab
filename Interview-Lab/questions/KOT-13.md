@@ -85,11 +85,12 @@ These keywords fine-tune inlining behavior:
 
 A non-local return allows a return statement inside an inlined lambda to exit the outer enclosing function directly, behaving like a native language loop.
 
-crossinline is used when an inlined lambda is passed into a nested execution context—like an Android View click listener or a background thread. Because that context might execute after the outer function finishes, a non-local return is impossible. crossinline forbids non-local returns while keeping the lambda inlined.
+Crossinline is used when an inlined lambda is passed into a nested execution context—like an Android View click listener or a background thread. Because that context might execute after the outer function finishes, a non-local return is impossible. Crossinline forbids non-local returns while keeping the lambda inlined.
 
-noinline disables inlining for a specific lambda parameter if you need to store it in a field or pass it to non-inlined code.
+Noinline disables inlining for a specific lambda parameter if you need to store it in a field or pass it to non-inlined code.
 
 Finally, reified is a massive productivity feature: because an inline function's bytecode is copied to the call site, the compiler knows the exact generic type argument and preserves it, allowing expressions like T::class.java without passing explicit Class tokens.
+
 
 ## Interview answer — deep senior
 
@@ -98,6 +99,7 @@ On the JVM, generic type arguments are erased at compile time (type erasure). Wr
 The distinction between inline, noinline, and crossinline is about lifecycle and escape analysis. An inlined lambda parameter cannot escape its calling scope unless it is non-inlined. If you attempt to assign an inlined lambda to a property or pass it to a non-inlined function, the compiler blocks you. Marking it noinline compiles it into a standard FunctionN reference, allowing it to escape.
 
 If the lambda is executed inside a local object or asynchronous callback, marking it crossinline permits inlining for performance while prohibiting non-local return statements, preventing illegal stack unwinding.
+
 
 ## How to answer in the interview
 

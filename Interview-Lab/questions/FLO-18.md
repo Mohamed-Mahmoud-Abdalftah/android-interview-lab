@@ -114,6 +114,7 @@ These operators handle resilience, recovery, and cleanup across the lifecycle of
 
 **`onCompletion`** executes when the stream terminates, receiving a nullable `Throwable?` parameter. If `cause == null`, the flow finished normally; if non-null, it completed due to an exception or cancellation. It serves as Flow's reactive `finally` block for closing resources.
 
+
 ## Interview answer — deep senior
 
 A frequent architecture trap in code reviews is placing `catch` above operators that might also fail, or failing to handle errors thrown inside `collect`:
@@ -135,6 +136,7 @@ flow
 ```
 
 Furthermore, inside `catch`, `CancellationException` is respected by default: if a collector coroutine is cancelled, `catch` rethrows `CancellationException` to preserve structured concurrency.
+
 
 ## How to answer in the interview
 

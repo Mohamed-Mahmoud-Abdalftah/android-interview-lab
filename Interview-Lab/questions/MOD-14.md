@@ -86,16 +86,13 @@ Avoid giant common modules by decomposing them into highly focused, single-respo
 
 ## Interview answer — structured
 
-The emergence of a giant `:core:common` module and circular dependency loops are the two primary symptoms of an unmaintained multi-module architecture:
+The emergence of a giant `:core:common` module and circular dependency loops are the two primary symptoms of an unmaintained multi-module architecture.
 
-1. **Eradicating the `:core:common` God Module**:
-   - A monolithic common module has near-infinite fan-out; every feature imports it, meaning any single edit invalidates the build cache for the entire application.
-   - Dismantle it into focused, cohesive modules based on stability and responsibility: `:core:model` (pure data entities), `:core:designsystem` (UI tokens), `:core:network` (networking), and `:core:analytics`.
-   - Tolerate **benign duplication**: It is far better to duplicate a 3-line string formatting extension across two feature modules than to create a shared build dependency between them.
+First, **Eradicating the `:core:common` God Module**. Next, a monolithic common module has near-infinite fan-out; every feature imports it, meaning any single edit invalidates the build cache for the entire application.
+Dismantle it into focused, cohesive modules based on stability and responsibility: `:core:model` (pure data entities), `:core:designsystem` (UI tokens), `:core:network` (networking), and `:core:analytics`. Tolerate **benign duplication**: It is far better to duplicate a 3-line string formatting extension across two feature modules than to create a shared build dependency between them.
+**Eliminating Circular Dependencies**. Cycles (`A -> B -> A`) occur when feature boundaries are blurred. Resolve them by extracting the shared data models or route contracts into an independent `:feature:x:api` module that both modules depend on downward.
+Finally, enforce unidirectional graph rules in CI using Gradle architecture validation plugins.
 
-2. **Eliminating Circular Dependencies**:
-   - Cycles (`A -> B -> A`) occur when feature boundaries are blurred. Resolve them by extracting the shared data models or route contracts into an independent `:feature:x:api` module that both modules depend on downward.
-   - Enforce unidirectional graph rules in CI using Gradle architecture validation plugins.
 
 ## Interview answer — deep senior
 
@@ -122,6 +119,7 @@ tasks.register("assertModularizationRules") {
 }
 ```
 Running this verification on pull request CI guarantees that forbidden edges (Core depending on Feature, or Feature-to-Feature direct implementation coupling) fail the build automatically.
+
 
 ## How to answer in the interview
 

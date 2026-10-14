@@ -114,14 +114,12 @@ Recomposition is triggered when a composable reads a `State` object whose value 
 
 Recomposition triggers strictly through state reads and parameter mutations.
 
-1. **The Trigger**: The Compose snapshot system observes which `State<T>` objects are read within each `RecomposeScope`. When an assignment occurs on a state property, all scopes that registered a read for that property are scheduled for recomposition.
-
-2. **Smart Skipping**: During a recomposition pass of a parent composable, Compose inspects child composables. A child composable is **skipped** if and only if:
-   - The composable is marked **restartable** and **skippable** by the Compose Compiler.
-   - All parameters passed to the function are **Stable**.
-   - None of the parameter values have changed according to their `equals()` implementation.
+First, a The Trigger is the Compose snapshot system observes which `State<T>` objects are read within each `RecomposeScope`. When an assignment occurs on a state property, all scopes that registered a read for that property are scheduled for recomposition. Next, with Smart Skipping, during a recomposition pass of a parent composable, Compose inspects child composables. A child composable is **skipped** if and only if.
+The composable is marked **restartable** and **skippable** by the Compose Compiler. All parameters passed to the function are **Stable**.
+Finally, none of the parameter values have changed according to their `equals()` implementation.
 
 If a single parameter is inferred as **Unstable** (such as standard Kotlin `List<T>`, collections, or classes containing `var` properties), Compose cannot guarantee that the object's contents haven't changed behind its back. Consequently, the compiler forces the child to recompose every single time the parent recomposes, degrading performance.
+
 
 ## Interview answer — deep senior
 
@@ -130,6 +128,7 @@ The Compose Compiler classifies types into three stability categories: **Immutab
 With the introduction of the **Strong Skipping Mode** in recent Compose compiler releases (enabled by default in Kotlin 2.0+), Compose became significantly smarter: composables with unstable parameters can now be skipped if the instance reference has not changed (`===`), and lambdas with captures are automatically memoized using `remember`.
 
 To audit stability in production apps, we enable Compose Compiler Metrics (`reportsDestination`). The generated reports categorize every composable as `skippable` or `restartable only`, and pinpoint exact unstable parameters (e.g. `unstable users: List<User>`), guiding us to wrap them in Kotlinx `ImmutableList` or annotate models with `@Immutable`.
+
 
 ## How to answer in the interview
 

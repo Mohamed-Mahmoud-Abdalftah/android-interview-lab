@@ -106,29 +106,21 @@ Optimize algorithms without sacrificing maintainability by following 'Make it wo
 
 ## Interview answer — structured
 
-Disciplined algorithmic optimization maintains software quality without introducing fragile complexity:
+Disciplined algorithmic optimization maintains software quality without introducing fragile complexity.
 
-1. **Test-First Safety Harness**:
-   - Before modifying an algorithm, author an exhaustive suite of unit and property-based tests covering edge cases (empty collections, duplicates, boundary values). This guarantees that optimizations do not introduce subtle behavioral regressions.
+First, **Test-First Safety Harness**. Next, before modifying an algorithm, author an exhaustive suite of unit and property-based tests covering edge cases (empty collections, duplicates, boundary values). This guarantees that optimizations do not introduce subtle behavioral regressions.
+**Profile-Driven Optimization**. Adhere to the rule: 'Make it work, make it right, make it fast'. Never optimize based on theoretical intuition; measure using Android Studio CPU Profiler or Jetpack Benchmark. If a method consumes $0.1\%$ of frame time, optimizing it adds technical debt for zero user benefit.
+**Encapsulation Behind Clean Abstractions**. Hide complex data structures (e.g. Tries, interval trees, bit manipulation) behind clear public domain interfaces. The rest of the codebase interacts with simple inputs and outputs, decoupling consumers from optimization mechanics.
+**Explicit Documentation & Microbenchmarking**. Finally, document the asymptotic Big O time and space complexity in KDoc, noting why a specific data structure was chosen over standard library primitives.
 
-2. **Profile-Driven Optimization**:
-   - Adhere to the rule: 'Make it work, make it right, make it fast'. Never optimize based on theoretical intuition; measure using Android Studio CPU Profiler or Jetpack Benchmark. If a method consumes $0.1\%$ of frame time, optimizing it adds technical debt for zero user benefit.
-
-3. **Encapsulation Behind Clean Abstractions**:
-   - Hide complex data structures (e.g. Tries, interval trees, bit manipulation) behind clear public domain interfaces. The rest of the codebase interacts with simple inputs and outputs, decoupling consumers from optimization mechanics.
-
-4. **Explicit Documentation & Microbenchmarking**:
-   - Document the asymptotic Big O time and space complexity in KDoc, noting why a specific data structure was chosen over standard library primitives.
 
 ## Interview answer — deep senior
 
-From an engineering leadership and team governance perspective, algorithmic maintenance requires strict guardrails:
+From an engineering leadership and team governance perspective, algorithmic maintenance requires strict guardrails.
 
-1. **The 'Clever Code' Anti-Pattern**: Code that relies on obscure bitwise hacks or undocumented side-effects is difficult to review and dangerous to maintain. If an engineer leaves the company, unreadable optimizations become untouchable legacy code. When bitwise or in-place optimizations are necessary, pair them with readable reference implementations in test suites.
+First, with The 'Clever Code' Anti-Pattern, code that relies on obscure bitwise hacks or undocumented side-effects is difficult to review and dangerous to maintain. If an engineer leaves the company, unreadable optimizations become untouchable legacy code. When bitwise or in-place optimizations are necessary, pair them with readable reference implementations in test suites. Next, with Automated CI Regression Benchmarking, high-performing teams run automated Jetpack Microbenchmark tasks in CI nightly builds. If an algorithmic change degrades throughput or spikes memory allocations by more than $5\%$, the build triggers a performance regression alert.
+Finally, with Standard Library Primacy, modern standard library implementations (Kotlin stdlib, Guava, AndroidX) are extensively tested, vectorized, and optimized for JVM/ART runtimes. Replacing standard library calls with custom algorithmic implementations should only occur when profiling demonstrates an order-of-magnitude performance gain.
 
-2. **Automated CI Regression Benchmarking**: High-performing teams run automated Jetpack Microbenchmark tasks in CI nightly builds. If an algorithmic change degrades throughput or spikes memory allocations by more than $5\%$, the build triggers a performance regression alert.
-
-3. **Standard Library Primacy**: Modern standard library implementations (Kotlin stdlib, Guava, AndroidX) are extensively tested, vectorized, and optimized for JVM/ART runtimes. Replacing standard library calls with custom algorithmic implementations should only occur when profiling demonstrates an order-of-magnitude performance gain.
 
 ## How to answer in the interview
 

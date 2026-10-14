@@ -92,23 +92,23 @@ implementation hides dependencies from the consumer's compile classpath, allowin
 
 ## Interview answer — structured
 
-The difference between `api` and `implementation` directly dictates how Gradle performs incremental compilation and task avoidance:
+The difference between `api` and `implementation` directly dictates how Gradle performs incremental compilation and task avoidance.
 
-1. **Compilation Boundaries (`implementation`)**: A dependency declared with `implementation` is available to the declaring module's compiler, but is strictly stripped from the compile classpath of downstream consumers. If module `A` changes an internal implementation detail, Gradle recompiles `A`, verifies its public ABI hash is intact, and skips compiling downstream modules (`UP-TO-DATE`).
-
-2. **ABI Leakage (`api`)**: Declaring a dependency with `api` publishes it onto the compile classpath of every transitive consumer. Any change to the upstream dependency invalidates the ABI hash of intermediate modules, causing a massive rebuild cascade that recompiles the entire downstream subtree.
+First, compilation Boundaries (`implementation`) is a dependency declared with `implementation` is available to the declaring module's compiler, but is strictly stripped from the compile classpath of downstream consumers. If module `A` changes an internal implementation detail, Gradle recompiles `A`, verifies its public ABI hash is intact, and skips compiling downstream modules (`UP-TO-DATE`). Finally, with ABI Leakage (`api`), declaring a dependency with `api` publishes it onto the compile classpath of every transitive consumer. Any change to the upstream dependency invalidates the ABI hash of intermediate modules, causing a massive rebuild cascade that recompiles the entire downstream subtree.
 
 To maximize build speeds in large modularized codebases, enforce `implementation` universally. Reserve `api` exclusively for types that are formally part of the module's public function signatures or return types.
+
 
 ## Interview answer — deep senior
 
 Under the hood, Gradle's Kotlin compile task (`compileKotlin`) computes an **ABI (Application Binary Interface) digest** based on public classes, method signatures, return types, and annotations.
 
-When module `A` compiles, Gradle compares its new ABI digest against the cached digest from the previous run:
-- If the digest matches (meaning only private method bodies, local variables, or comments changed), Gradle halts recompilation for all modules connected via `implementation`.
-- However, if `B` exposes `A` via `api`, Gradle cannot guarantee that `C` didn't transitively rely on inline functions, constants, or bytecode metadata from `A`. It is forced to re-evaluate and recompile `C`.
+When module `A` compiles, Gradle compares its new ABI digest against the cached digest from the previous run.
+
+First, if the digest matches (meaning only private method bodies, local variables, or comments changed), Gradle halts recompilation for all modules connected via `implementation`. Finally, however, if `B` exposes `A` via `api`, Gradle cannot guarantee that `C` didn't transitively rely on inline functions, constants, or bytecode metadata from `A`. It is forced to re-evaluate and recompile `C`.
 
 In modern Android architectures, using `implementation` alongside the **Gradle Build Cache** and **Configuration Avoidance APIs** transforms what would be a 40-second build into a sub-second cached fetch.
+
 
 ## How to answer in the interview
 

@@ -101,11 +101,13 @@ Second, wrap the execution inside **`runInterruptible(Dispatchers.IO) { ... }`**
 
 Third, if the SDK uses uninterruptible I/O (like legacy blocking sockets or native C++ loops), we close the underlying resource from the outside: register an `invokeOnCancellation { socket.close() }` hook. Closing the socket or file descriptor forcibly breaks the blocking read and releases the thread.
 
+
 ## Interview answer — deep senior
 
 Under the hood, `runInterruptible` tracks the executing JVM `Thread` reference. When cancellation occurs, it calls `thread.interrupt()`. However, developers must understand that some blocking operations are completely uninterruptible at the OS level (e.g., waiting on un-interruptible locks or native JNI system calls that do not check POSIX signals).
 
 If an external C++ or legacy Java library is completely unresponsive to both interruption and resource closing, that worker thread is effectively 'zombie-locked' until the operation completes or times out. In this worst-case scenario: 1. We run the operation on a dedicated, isolated thread pool created via `Executors.newSingleThreadExecutor().asCoroutineDispatcher()`, preventing it from polluting and exhausting the shared `Dispatchers.IO` pool. 2. We use `withTimeoutOrNull` around the caller continuation to allow our application to proceed and ignore the leaked thread until it eventually terminates.
+
 
 ## How to answer in the interview
 

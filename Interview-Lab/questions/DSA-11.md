@@ -130,27 +130,21 @@ BFS traverses nodes level-by-level using a FIFO Queue, making it ideal for findi
 
 ## Interview answer — structured
 
-BFS and DFS are fundamental graph and tree traversal algorithms with distinct structural properties:
+BFS and DFS are fundamental graph and tree traversal algorithms with distinct structural properties.
 
-1. **Breadth-First Search (BFS)**:
-   - **Mechanism**: Explores all neighbors at the current depth level before progressing to deeper tiers, driven by an explicit FIFO queue (`ArrayDeque`).
-   - **Complexity**: $O(V + E)$ time; $O(W)$ auxiliary space where $W$ is the maximum graph width.
-   - **Primary Use Cases**: Shortest-path discovery in unweighted graphs (e.g. shortest navigation hops between app screens), shallow UI tree inspections, and peer-to-peer network discovery.
+First, **Breadth-First Search (BFS)**. Next, with Mechanism, explores all neighbors at the current depth level before progressing to deeper tiers, driven by an explicit FIFO queue (`ArrayDeque`).
+Additionally, with Complexity, $O(V + E)$ time; $O(W)$ auxiliary space where $W$ is the maximum graph width. With Primary Use Cases, shortest-path discovery in unweighted graphs (e.g. Shortest navigation hops between app screens), shallow UI tree inspections, and peer-to-peer network discovery.
+**Depth-First Search (DFS)**. With Mechanism, plunges along each branch to leaf terminations before backtracking, driven by call-stack recursion or an explicit LIFO stack.
+With Complexity, $O(V + E)$ time; $O(H)$ auxiliary space where $H$ is the maximum graph depth. Finally, with Primary Use Cases, cycle detection in dependency injection graphs (Dagger), topological sorting of Gradle module compilation dependencies, and deep syntax tree evaluations.
 
-2. **Depth-First Search (DFS)**:
-   - **Mechanism**: Plunges along each branch to leaf terminations before backtracking, driven by call-stack recursion or an explicit LIFO stack.
-   - **Complexity**: $O(V + E)$ time; $O(H)$ auxiliary space where $H$ is the maximum graph depth.
-   - **Primary Use Cases**: Cycle detection in dependency injection graphs (Dagger), topological sorting of Gradle module compilation dependencies, and deep syntax tree evaluations.
 
 ## Interview answer — deep senior
 
-From an Android systems engineering angle, stack safety and tree bounds dictate choices:
+From an Android systems engineering angle, stack safety and tree bounds dictate choices.
 
-1. **Call Stack Overflow Risks with Recursive DFS**: In deep Android View trees or complex JSON object graphs, recursive DFS can exceed the thread's stack limit, throwing a fatal `StackOverflowError`. Recursive DFS must either be transformed into an iterative DFS utilizing an explicit heap-allocated `ArrayDeque`, or guarded with depth bounds.
+First, with Call Stack Overflow Risks with Recursive DFS, in deep Android View trees or complex JSON object graphs, recursive DFS can exceed the thread's stack limit, throwing a fatal `StackOverflowError`. Recursive DFS must either be transformed into an iterative DFS utilizing an explicit heap-allocated `ArrayDeque`, or guarded with depth bounds. Next, with Compose Semantic Node Trees, jetpack Compose test assertions (`onNodeWithText`, `printToLog`) use BFS traversal under the hood to find matching semantic layout nodes closest to the tree root, prioritizing shallow surface nodes over deeply nested implementation composables.
+Finally, with Graph Cycle Detection in Build Tooling, gradle and Hilt use Tarjan's or Kosaraju's DFS-based algorithms to detect Strongly Connected Components (cycles) during annotation processing. If module A depends on B and B depends on A, DFS back-edge detection halts compilation with a circular dependency error.
 
-2. **Compose Semantic Node Trees**: Jetpack Compose test assertions (`onNodeWithText`, `printToLog`) use BFS traversal under the hood to find matching semantic layout nodes closest to the tree root, prioritizing shallow surface nodes over deeply nested implementation composables.
-
-3. **Graph Cycle Detection in Build Tooling**: Gradle and Hilt use Tarjan's or Kosaraju's DFS-based algorithms to detect Strongly Connected Components (cycles) during annotation processing. If module A depends on B and B depends on A, DFS back-edge detection halts compilation with a circular dependency error.
 
 ## How to answer in the interview
 

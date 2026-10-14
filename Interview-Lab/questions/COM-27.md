@@ -129,13 +129,10 @@ Test multi-state screens by testing the stateless Screen composable directly usi
 
 Testing a multi-state Compose screen requires verifying that each distinct state renders its expected UI hierarchy and responds accurately to interaction callbacks.
 
-1. **Target the Stateless Screen**: We never write UI tests against the ViewModel-bound Route composable. We test the pure Screen composable (`MyScreen(uiState, onAction)`), eliminating the need for MockWebServer, Hilt, or simulated Coroutine dispatchers.
+First, with Target the Stateless Screen, we never write UI tests against the ViewModel-bound Route composable. We test the pure Screen composable (`MyScreen(uiState, onAction)`), eliminating the need for MockWebServer, Hilt, or simulated Coroutine dispatchers. Next, **Structuring the Test Suite** with `createComposeRule()`.
+Additionally, with Loading State, render `UiState.Loading`. Assert that the loading spinner exists and content nodes are absent. With Success State, render `UiState.Success(data)`. Verify item texts with `onNodeWithText()`, scroll through lists with `performScrollToIndex()`, and verify item clicks with `performClick()`, asserting that callback lambdas capture expected parameters.
+With Error State, render `UiState.Error("Network timeout")`. Assert that the error banner appears, click 'Retry', and verify that `onAction(Retry)` is fired. Finally, with Permission State, render `UiState.PermissionDenied`. Assert that the rationale dialog is displayed and actionable.
 
-2. **Structuring the Test Suite** with `createComposeRule()`:
-   - **Loading State**: Render `UiState.Loading`. Assert that the loading spinner exists and content nodes are absent.
-   - **Success State**: Render `UiState.Success(data)`. Verify item texts with `onNodeWithText()`, scroll through lists with `performScrollToIndex()`, and verify item clicks with `performClick()`, asserting that callback lambdas capture expected parameters.
-   - **Error State**: Render `UiState.Error("Network timeout")`. Assert that the error banner appears, click 'Retry', and verify that `onAction(Retry)` is fired.
-   - **Permission State**: Render `UiState.PermissionDenied`. Assert that the rationale dialog is displayed and actionable.
 
 ## Interview answer — deep senior
 
@@ -144,6 +141,7 @@ Under the hood, Compose UI tests interact directly with the **Semantics Tree** r
 When testing asynchronous state flows in Route composables (integration testing), we use `createAndroidComposeRule<MainActivity>()`. Compose's test rule automatically synchronizes with the main looper and idling resources: `composeTestRule.waitForIdle()` waits for all recompositions, measure passes, and active animations to settle before executing assertions, eliminating flaky sleeps.
 
 In modern CI/CD, we pair these unit UI tests with **Screenshot Testing** (using Roborazzi running on JVM), rendering all four states in headless tests in seconds to detect accidental visual regressions.
+
 
 ## How to answer in the interview
 

@@ -112,23 +112,19 @@ Test Domain independently using pure JVM unit tests with Fake Repositories to ve
 
 Architectural layering enables independent, deterministic test suites without brittle end-to-end integration dependencies.
 
-1. **Domain Layer Testing**:
-   - **Environment**: Pure JVM tests running in milliseconds.
-   - **Methodology**: Instantiate Use Cases directly. Inject lightweight in-memory Fake Repositories. Assert business rule calculations, edge-case thresholds, and domain error flows without mock frameworks.
+First, **Domain Layer Testing**. Next, with Environment, pure JVM tests running in milliseconds.
+Additionally, with Methodology, instantiate Use Cases directly. Inject lightweight in-memory Fake Repositories. Assert business rule calculations, edge-case thresholds, and domain error flows without mock frameworks. **Data Layer Testing**.
+With Repositories, tested via Fake Remote DataSources and Fake DAOs. Verify that repository logic correctly coordinates caching, writes network responses into the database, and maps DTOs into domain models. With DAOs, tested via `Room.inMemoryDatabaseBuilder()` in JVM tests (via Robolectric) or instrumented tests to verify SQL queries, table relations, and foreign key cascades.
+**Presentation Layer Testing**. With ViewModels, tested via `runTest`, `StandardTestDispatcher`, and Cash App's **Turbine**. Assert that repository emissions produce the exact sequence of `UiState` snapshots.
+Finally, with Composables, tested via `createComposeRule()` on pure stateless screen composables, asserting semantic trees and user interactions.
 
-2. **Data Layer Testing**:
-   - **Repositories**: Tested via Fake Remote DataSources and Fake DAOs. Verify that repository logic correctly coordinates caching, writes network responses into the database, and maps DTOs into domain models.
-   - **DAOs**: Tested via `Room.inMemoryDatabaseBuilder()` in JVM tests (via Robolectric) or instrumented tests to verify SQL queries, table relations, and foreign key cascades.
-
-3. **Presentation Layer Testing**:
-   - **ViewModels**: Tested via `runTest`, `StandardTestDispatcher`, and Cash App's **Turbine**. Assert that repository emissions produce the exact sequence of `UiState` snapshots.
-   - **Composables**: Tested via `createComposeRule()` on pure stateless screen composables, asserting semantic trees and user interactions.
 
 ## Interview answer — deep senior
 
 The overarching principle is preferring **Fakes over Mocks**. Mocking libraries (Mockito/MockK) record interactions (`verify { repo.call() }`), which tightly couples tests to implementation details and makes refactoring brittle. In contrast, a `FakeUserRepository` implements the `UserRepository` interface backed by a simple in-memory `MutableStateFlow` or `HashMap`. Tests verify visible outcomes (the state changes) rather than whether a specific method was invoked, dramatically increasing test resilience.
 
 Furthermore, because Domain and ViewModel tests have zero Android Gradle plugin dependencies, an entire enterprise test suite of 3,000+ tests runs in under 15 seconds in CI, providing immediate developer feedback.
+
 
 ## How to answer in the interview
 

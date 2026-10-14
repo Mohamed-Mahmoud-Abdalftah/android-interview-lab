@@ -96,6 +96,7 @@ In Kotlin Flow, there is a foundational invariant called **Context Preservation*
 
 To safely offload expensive upstream work without breaking this invariant, we use `flowOn`. It launches the upstream operations in a separate coroutine on the specified dispatcher (e.g., `Dispatchers.IO`), streams the emitted values through an internal buffer channel, and delivers them to downstream operators and the collector on their own designated dispatcher (e.g., `Dispatchers.Main`).
 
+
 ## Interview answer — deep senior
 
 Under the hood, why does Kotlin forbid `withContext` around `emit()`?
@@ -112,6 +113,7 @@ flow {
 Because `emit` calls the collector's suspending lambda directly. If upstream used `withContext`, it would forcibly drag the collector's execution onto a foreign thread without the collector's knowledge or consent, breaking structured concurrency.
 
 `flowOn` avoids this by introducing an asynchronous channel boundary. It acts like a concurrent pipe: the upstream produces elements onto a worker thread, writes them to a Channel, and the downstream collector reads from that Channel on its own caller thread. You can chain multiple `flowOn` calls: each `flowOn` operator dictates the dispatcher for everything above it up to the previous `flowOn` boundary.
+
 
 ## How to answer in the interview
 

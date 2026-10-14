@@ -88,30 +88,22 @@ Analyze APK/AAB size using Android Studio's APK Analyzer or apkanalyzer CLI to i
 
 ## Interview answer — structured
 
-Auditing and optimizing binary footprint requires inspecting artifact composition across distinct asset categories:
+Auditing and optimizing binary footprint requires inspecting artifact composition across distinct asset categories.
 
-1. **Binary Composition Breakdown**:
-   - **`classes.dex`**: Compiled bytecode. Optimized via R8 shrinking, dead code elimination, and method inlining.
-   - **`lib/` (Native `.so` Binaries)**: Compiled C/C++ libraries. Often constitutes 50–70% of total download size if multiple ABIs are bundled.
-   - **`res/` & `resources.arsc`**: Images, XMLs, and indexed resource tables. Optimized via resource shrinking, WebP conversion, and vector drawables.
-   - **`assets/`**: Uncompressed arbitrary files (fonts, databases, ML models).
+First, **Binary Composition Breakdown**. Next, with classes.dex, compiled bytecode. Optimized via R8 shrinking, dead code elimination, and method inlining.
+Additionally, with lib/` (Native `.so` Binaries), compiled C/C++ libraries. Often constitutes 50–70% of total download size if multiple ABIs are bundled. With res/` & `resources.arsc, images, XMLs, and indexed resource tables. Optimized via resource shrinking, WebP conversion, and vector drawables.
+With assets/, uncompressed arbitrary files (fonts, databases, ML models). **Native ABI Optimization**.
+When building fat APKs for direct distribution, restrict bundled ABIs using `ndk.abiFilters += listOf("arm64-v8a", "armeabi-v7a")`, stripping unused `x86` and `x86_64` emulators. When distributing via Google Play, publish via **Android App Bundle (AAB)**. Google Play delivers a single architecture split matching the user's phone, slashing native download weight.
+**Automated CI Size Budgets**. Finally, integrate `apkanalyzer` or GitHub size-diff actions into CI. Set an alert threshold (e.g., fail PR if download size increases by > 500KB) to prevent accidental bundling of massive third-party assets.
 
-2. **Native ABI Optimization**:
-   - When building fat APKs for direct distribution, restrict bundled ABIs using `ndk.abiFilters += listOf("arm64-v8a", "armeabi-v7a")`, stripping unused `x86` and `x86_64` emulators.
-   - When distributing via Google Play, publish via **Android App Bundle (AAB)**. Google Play delivers a single architecture split matching the user's phone, slashing native download weight.
-
-3. **Automated CI Size Budgets**:
-   - Integrate `apkanalyzer` or GitHub size-diff actions into CI. Set an alert threshold (e.g., fail PR if download size increases by > 500KB) to prevent accidental bundling of massive third-party assets.
 
 ## Interview answer — deep senior
 
-From an advanced mobile performance perspective, download size directly dictates user conversion and uninstall rates:
+From an advanced mobile performance perspective, download size directly dictates user conversion and uninstall rates.
 
-1. **The Size-to-Install Dropoff Correlation**: Google Play telemetry demonstrates that every 6MB increase in APK download size correlates with a 1% drop in install conversion rates, particularly across emerging market cellular connections.
+First, with The Size-to-Install Dropoff Correlation, google Play telemetry demonstrates that every 6MB increase in APK download size correlates with a 1% drop in install conversion rates, particularly across emerging market cellular connections. Next, with Uncompressed Native Libraries (android:extractNativeLibs), setting `android:extractNativeLibs="false"` in the manifest (default in modern AGP) stores `.so` files uncompressed and page-aligned inside the APK. The APK file size increases slightly, but the OS maps libraries directly into memory without extracting them to disk upon install, saving 50MB+ of device storage post-installation.
+Finally, with Font & Emoji Bundling Optimization, replace bundled TrueType/OpenType font files (which can add 15MB) with Google Play Services **Downloadable Fonts**, fetching shared system typography at runtime without bundling font files in the APK.
 
-2. **Uncompressed Native Libraries (android:extractNativeLibs)**: Setting `android:extractNativeLibs="false"` in the manifest (default in modern AGP) stores `.so` files uncompressed and page-aligned inside the APK. The APK file size increases slightly, but the OS maps libraries directly into memory without extracting them to disk upon install, saving 50MB+ of device storage post-installation.
-
-3. **Font & Emoji Bundling Optimization**: Replace bundled TrueType/OpenType font files (which can add 15MB) with Google Play Services **Downloadable Fonts**, fetching shared system typography at runtime without bundling font files in the APK.
 
 ## How to answer in the interview
 

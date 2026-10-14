@@ -119,12 +119,11 @@ Generate a unique client-side Idempotency Key (UUID) persisted locally before ma
 
 A payment timeout is the classic distributed systems challenge: the client cannot distinguish whether the request timed out before reaching the server, while being processed, or while the response was returning over the air. Retrying blindly risks catastrophic duplicate charges.
 
-The industry-standard solution is **Idempotency Keys** paired with local persistence:
+The industry-standard solution is **Idempotency Keys** paired with local persistence.
 
-1. Before dispatching the payment request, the Android app generates a cryptographically unique UUID as an idempotency key and persists it locally in Room alongside the order ID.
-2. The app sends this key in the request header (e.g., `X-Idempotency-Key: <uuid>`).
-3. The backend and payment gateway (like Stripe or Adyen) check their distributed transaction store. If a request with that key was already executed, they return the original processed receipt without re-executing the charge.
-4. If a timeout occurs, the app doesn't immediately prompt the user to re-pay. It performs a status reconciliation query (`GET /payments/status?key=<uuid>`) to check if the transaction succeeded before triggering any retries.
+First, before dispatching the payment request, the Android app generates a cryptographically unique UUID as an idempotency key and persists it locally in Room alongside the order ID. Next, the app sends this key in the request header (e.g., `X-Idempotency-Key: <uuid>`).
+The backend and payment gateway (like Stripe or Adyen) check their distributed transaction store. If a request with that key was already executed, they return the original processed receipt without re-executing the charge. Finally, if a timeout occurs, the app doesn't immediately prompt the user to re-pay. It performs a status reconciliation query (`GET /payments/status?key=<uuid>`) to check if the transaction succeeded before triggering any retries.
+
 
 ## Interview answer — deep senior
 
@@ -133,6 +132,7 @@ From an architectural resiliency standpoint, payment flows must never rely solel
 To make payments robust: 1. We model payments as a local state machine in Room: `CREATED -> SUBMITTED -> SETTLED | FAILED`. 2. Upon a timeout, we dispatch an idempotent status check using WorkManager with exponential backoff constraints. Even if the process dies or the device is rebooted, WorkManager queries the backend to determine if the charge succeeded, updating the local database when connectivity is restored.
 
 Finally, UI UX must guard against double-clicks by immediately disabling the 'Pay' button and enforcing a single submission token, preventing the user from triggering two parallel payment coroutines.
+
 
 ## How to answer in the interview
 

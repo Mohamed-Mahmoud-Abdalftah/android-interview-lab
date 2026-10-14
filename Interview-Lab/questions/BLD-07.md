@@ -89,29 +89,21 @@ consumerProguardFiles embeds ProGuard rules directly into compiled AAR library p
 
 ## Interview answer — structured
 
-In modular architectures and third-party SDK development, `consumerProguardFiles` ensures encapsulated R8 configuration:
+In modular architectures and third-party SDK development, `consumerProguardFiles` ensures encapsulated R8 configuration.
 
-1. **The Packaging Mechanism**:
-   - When configured in an Android library module (`com.android.library`), the specified rules file is bundled directly into the root of the resulting AAR as `proguard.txt`.
+First, **The Packaging Mechanism**. Next, when configured in an Android library module (`com.android.library`), the specified rules file is bundled directly into the root of the resulting AAR as `proguard.txt`.
+**Automatic Rule Merging**. When an application module (`:app`) compiles a release build, AGP extracts and merges all `proguard.txt` files from every upstream dependency into its master R8 configuration.
+**Zero Configuration for Consumers**. If your library uses reflection, JNI, or Moshi/Kotlinx Serialization, consuming developers do not need to manually discover and copy keep rules into the app's `proguard-rules.pro`. The library encapsulates its own preservation requirements.
+**Difference from proguardFiles**. Finally, `proguardFiles` applies only when building and shrinking the library itself; `consumerProguardFiles` applies to downstream consumers of the library.
 
-2. **Automatic Rule Merging**:
-   - When an application module (`:app`) compiles a release build, AGP extracts and merges all `proguard.txt` files from every upstream dependency into its master R8 configuration.
-
-3. **Zero Configuration for Consumers**:
-   - If your library uses reflection, JNI, or Moshi/Kotlinx Serialization, consuming developers do not need to manually discover and copy keep rules into the app's `proguard-rules.pro`. The library encapsulates its own preservation requirements.
-
-4. **Difference from proguardFiles**:
-   - `proguardFiles` applies only when building and shrinking the library itself; `consumerProguardFiles` applies to downstream consumers of the library.
 
 ## Interview answer — deep senior
 
-From an architectural governance perspective, careless use of consumerProguardFiles can degrade application performance:
+From an architectural governance perspective, careless use of consumerProguardFiles can degrade application performance.
 
-1. **The Poisonous Keep Rule Hazard**: Rules defined in `consumerProguardFiles` apply globally across the entire consuming application's build. If a library author carelessly writes `-keep class ** { *; }` or broad wildcard keep rules, they accidentally disable R8 shrinking and obfuscation across the whole app, ballooning APK size.
+First, with The Poisonous Keep Rule Hazard, rules defined in `consumerProguardFiles` apply globally across the entire consuming application's build. If a library author carelessly writes `-keep class ** { *; }` or broad wildcard keep rules, they accidentally disable R8 shrinking and obfuscation across the whole app, ballooning APK size. Next, with Namespace Scoping, always strictly scope consumer keep rules to the exact package namespace owned by the library (e.g. `-keep class com.mycompany.library.internal.**`). Never define global compiler flag directives (`-dontobfuscate` or `-dontoptimize`) in consumer rules.
+Finally, with Multi-Module Monorepos, in large enterprise codebases, use `consumerProguardFiles` in internal feature and core modules. This decouples library refactoring: when the payment team updates their DTO reflection patterns, their keep rules update within their own module without touching the root application build file.
 
-2. **Namespace Scoping**: Always strictly scope consumer keep rules to the exact package namespace owned by the library (e.g. `-keep class com.mycompany.library.internal.**`). Never define global compiler flag directives (`-dontobfuscate` or `-dontoptimize`) in consumer rules.
-
-3. **Multi-Module Monorepos**: In large enterprise codebases, use `consumerProguardFiles` in internal feature and core modules. This decouples library refactoring: when the payment team updates their DTO reflection patterns, their keep rules update within their own module without touching the root application build file.
 
 ## How to answer in the interview
 

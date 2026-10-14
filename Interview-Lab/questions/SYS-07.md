@@ -107,26 +107,20 @@ Design notifications using FCM data-payload messages for deterministic client pr
 
 ## Interview answer — structured
 
-Designing a reliable push notification and deep linking system requires coordinating across background delivery, synthetic navigation hierarchies, and session states:
+Designing a reliable push notification and deep linking system requires coordinating across background delivery, synthetic navigation hierarchies, and session states.
 
-1. **FCM Payload Strategy**:
-   - Prefer FCM **Data Messages** over standard Notification messages. Data messages invoke `onMessageReceived()` deterministically regardless of whether the app is in foreground, background, or killed, allowing client decryption, local database caching, and custom notification rendering.
+First, **FCM Payload Strategy**. Next, prefer FCM **Data Messages** over standard Notification messages. Data messages invoke `onMessageReceived()` deterministically regardless of whether the app is in foreground, background, or killed, allowing client decryption, local database caching, and custom notification rendering.
+**Synthetic Back Stack (TaskStackBuilder)**. Direct navigation to a deep link destination creates a broken back stack where pressing the system Back button terminates the application. Use `TaskStackBuilder.create(context).addNextIntentWithParentStack(targetIntent)` to synthesize a natural navigation path (e.g., Home -> Orders -> OrderDetail).
+**Authentication & Session Interception (AuthGuard)**. Finally, when an unauthenticated or logged-out user clicks a sensitive push notification, the deep link router must store the pending destination in memory/DataStore, redirect the user through the Login/MFA flow, and resume navigation to the original deep link target upon successful authentication.
 
-2. **Synthetic Back Stack (TaskStackBuilder)**:
-   - Direct navigation to a deep link destination creates a broken back stack where pressing the system Back button terminates the application. Use `TaskStackBuilder.create(context).addNextIntentWithParentStack(targetIntent)` to synthesize a natural navigation path (e.g., Home -> Orders -> OrderDetail).
-
-3. **Authentication & Session Interception (AuthGuard)**:
-   - When an unauthenticated or logged-out user clicks a sensitive push notification, the deep link router must store the pending destination in memory/DataStore, redirect the user through the Login/MFA flow, and resume navigation to the original deep link target upon successful authentication.
 
 ## Interview answer — deep senior
 
-From a staff-level systems perspective, deep link architectures must support single-activity Compose routing and cold-boot resilience:
+From a staff-level systems perspective, deep link architectures must support single-activity Compose routing and cold-boot resilience.
 
-1. **Single-Activity Jetpack Compose Routing**: In modern Single-Activity apps, route deep links to a single `MainActivity` with `launchMode="singleTask"`. Override `onNewIntent(intent: Intent?)` to capture incoming notifications when the app is already running, updating a reactive `NavigationEvents` channel consumed by the top-level Compose `NavHost`.
+First, with Single-Activity Jetpack Compose Routing, in modern Single-Activity apps, route deep links to a single `MainActivity` with `launchMode="singleTask"`. Override `onNewIntent(intent: Intent?)` to capture incoming notifications when the app is already running, updating a reactive `NavigationEvents` channel consumed by the top-level Compose `NavHost`. Next, with Cold Start Race Conditions, during a cold launch triggered by a notification tap, the app must initialize dependency graphs, load remote feature flags, and restore session credentials before executing the navigation transition. Queue the pending deep link event in an application-scoped state machine until baseline startup initialization signals readiness.
+Finally, with Deep Link Security & Parameter Sanitization, treat all intent parameters as untrusted external input. Validate UUID formats, sanitize URIs, and prevent open redirects where malicious URLs could instruct the app to launch arbitrary internal activities or WebViews.
 
-2. **Cold Start Race Conditions**: During a cold launch triggered by a notification tap, the app must initialize dependency graphs, load remote feature flags, and restore session credentials before executing the navigation transition. Queue the pending deep link event in an application-scoped state machine until baseline startup initialization signals readiness.
-
-3. **Deep Link Security & Parameter Sanitization**: Treat all intent parameters as untrusted external input. Validate UUID formats, sanitize URIs, and prevent open redirects where malicious URLs could instruct the app to launch arbitrary internal activities or WebViews.
 
 ## How to answer in the interview
 

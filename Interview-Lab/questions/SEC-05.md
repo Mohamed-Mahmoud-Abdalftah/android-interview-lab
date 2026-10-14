@@ -90,25 +90,20 @@ No API secret bundled into an APK can ever be fully secret. The client device is
 
 ## Interview answer — structured
 
-In mobile application threat modeling, it is an established axiom that **no secret embedded in a client binary can remain confidential**:
+In mobile application threat modeling, it is an established axiom that **no secret embedded in a client binary can remain confidential**.
 
-1. **The Untrusted Client Reality**: The moment an APK is downloaded, the attacker controls the execution environment. They possess physical possession, kernel root privileges, memory inspection tools, and debuggers. Cryptographic keys bundled into an app must eventually be decrypted into memory to be transmitted across HTTP headers.
+First, a The Untrusted Client Reality is the moment an APK is downloaded, the attacker controls the execution environment. They possess physical possession, kernel root privileges, memory inspection tools, and debuggers. Cryptographic keys bundled into an app must eventually be decrypted into memory to be transmitted across HTTP headers. Next, **Failure of Client Obfuscation Schemes**.
+Additionally, with BuildConfig & Assets, plaintext in `classes.dex` or `/assets/`. With NDK C++ Shared Libraries (`.so`), plaintext in the ELF binary's `.rodata` section, decompilable in Ghidra in seconds.
+With XOR / Custom Splitting, dynamically hooked via Frida with a 3-line JavaScript script at the boundary where the decrypted string is handed to OkHttp. With TLS Interception, extracted directly over the wire using proxy tools (mitmproxy, Burp Suite) on devices with root CA trust.
+Finally, with Architectural Rule, treat the APK strictly as a public artifact. Embed only restricted public tokens (Firebase Project IDs, Maps API keys with SHA-1 restrictions). Private third-party secrets must live behind backend API gateways.
 
-2. **Failure of Client Obfuscation Schemes**:
-   - **BuildConfig & Assets**: Plaintext in `classes.dex` or `/assets/`.
-   - **NDK C++ Shared Libraries (`.so`)**: Plaintext in the ELF binary's `.rodata` section, decompilable in Ghidra in seconds.
-   - **XOR / Custom Splitting**: Dynamically hooked via Frida with a 3-line JavaScript script at the boundary where the decrypted string is handed to OkHttp.
-   - **TLS Interception**: Extracted directly over the wire using proxy tools (mitmproxy, Burp Suite) on devices with root CA trust.
-
-3. **Architectural Rule**: Treat the APK strictly as a public artifact. Embed only restricted public tokens (Firebase Project IDs, Maps API keys with SHA-1 restrictions). Private third-party secrets must live behind backend API gateways.
 
 ## Interview answer — deep senior
 
-Differentiating Public Identifiers from Private Secrets:
+Differentiating Public Identifiers from Private Secrets.
 
-- **Public Client Identifiers (Allowed in APK)**: Client IDs whose compromise cannot result in privileged data access. For instance, a Stripe Publishable Key (`pk_live_...`) is designed to be public; it can only tokenize raw card numbers on the client without the ability to read customer lists or execute refund payouts. Even if extracted, it grants zero unauthorized capability.
+First, with Public Client Identifiers (Allowed in APK), client IDs whose compromise cannot result in privileged data access. For instance, a Stripe Publishable Key (`pk_live_...`) is designed to be public; it can only tokenize raw card numbers on the client without the ability to read customer lists or execute refund payouts. Even if extracted, it grants zero unauthorized capability. Finally, with Private Credentials (Forbidden in APK), stripe Secret Keys (`sk_live_...`), AWS IAM secret keys, or OpenAI API keys. These grant unrestricted administrative or billable access. Shipping these in an APK exposes your company to total infrastructure takeover and unbounded financial liability.
 
-- **Private Credentials (Forbidden in APK)**: Stripe Secret Keys (`sk_live_...`), AWS IAM secret keys, or OpenAI API keys. These grant unrestricted administrative or billable access. Shipping these in an APK exposes your company to total infrastructure takeover and unbounded financial liability.
 
 ## How to answer in the interview
 

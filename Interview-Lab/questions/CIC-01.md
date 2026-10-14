@@ -104,28 +104,22 @@ Continuous Integration automates compiling, linting, and testing on every pull r
 
 ## Interview answer — structured
 
-The distinction between CI and the two forms of CD hinges on automation boundaries and release confidence:
+The distinction between CI and the two forms of CD hinges on automation boundaries and release confidence.
 
-1. **Continuous Integration (CI)**:
-   - Developers integrate code into the shared main branch frequently. Every pull request triggers an automated pipeline running static analysis, ktlint, detekt, Android Lint, and local JVM unit tests, failing fast if regressions occur.
-
-2. **Continuous Delivery (CD)**:
-   - Automates the packaging, obfuscation (R8), signing, and deployment of release artifacts (AAB) to staging environments or Google Play internal test tracks. The application is perpetually release-ready, but triggering the production rollout involves a deliberate human decision.
-
-3. **Continuous Deployment (CD)**:
-   - Fully automated progression where every green commit on main is deployed directly to end users without manual gates.
+First, **Continuous Integration (CI)**. Next, developers integrate code into the shared main branch frequently. Every pull request triggers an automated pipeline running static analysis, ktlint, detekt, Android Lint, and local JVM unit tests, failing fast if regressions occur.
+**Continuous Delivery (CD)**. Automates the packaging, obfuscation (R8), signing, and deployment of release artifacts (AAB) to staging environments or Google Play internal test tracks. The application is perpetually release-ready, but triggering the production rollout involves a deliberate human decision.
+**Continuous Deployment (CD)**. Finally, fully automated progression where every green commit on main is deployed directly to end users without manual gates.
 
 In mobile engineering, teams practice Continuous Delivery rather than pure Continuous Deployment because client-side updates cannot be instantaneously rolled back if critical zero-day crashes occur, and store review latency makes human release gating and staged rollouts essential.
 
+
 ## Interview answer — deep senior
 
-From an engineering governance and mobile release engineering perspective, mobile CI/CD differs fundamentally from backend microservices:
+From an engineering governance and mobile release engineering perspective, mobile CI/CD differs fundamentally from backend microservices.
 
-1. **The Asymmetry of Mobile Rollbacks**: In web backends, Continuous Deployment allows deploying 20 times a day because a faulty container can be rolled back in 30 seconds via Kubernetes blue/green routing. In mobile, once a faulty APK/AAB is installed on 500,000 devices, rolling it back requires compiling a hotfix, passing Google Play review (which can take hours or days), and waiting for users to update over Wi-Fi. Therefore, production releases must be treated with defense-in-depth.
+First, with The Asymmetry of Mobile Rollbacks, in web backends, Continuous Deployment allows deploying 20 times a day because a faulty container can be rolled back in 30 seconds via Kubernetes blue/green routing. In mobile, once a faulty APK/AAB is installed on 500,000 devices, rolling it back requires compiling a hotfix, passing Google Play review (which can take hours or days), and waiting for users to update over Wi-Fi. Therefore, production releases must be treated with defense-in-depth. Next, with Continuous Delivery with Staged Gates, senior teams implement Continuous Delivery up to Play Store Internal/Closed testing rings. From there, production release is managed via staged rollouts (e.g., 1% -> 5% -> 20% -> 100%) paired with automated crash-rate metrics (Vitals / Crashlytics threshold alarms).
+Finally, with Decoupling Deployment from Feature Exposure, true agility in mobile is achieved by combining Continuous Delivery of the binary with server-driven Feature Flags (e.g. Firebase Remote Config or LaunchDarkly). The code is shipped continuously, but dark-launched and selectively toggled per user cohort without waiting for app store cycles.
 
-2. **Continuous Delivery with Staged Gates**: Senior teams implement Continuous Delivery up to Play Store Internal/Closed testing rings. From there, production release is managed via staged rollouts (e.g., 1% -> 5% -> 20% -> 100%) paired with automated crash-rate metrics (Vitals / Crashlytics threshold alarms).
-
-3. **Decoupling Deployment from Feature Exposure**: True agility in mobile is achieved by combining Continuous Delivery of the binary with server-driven Feature Flags (e.g. Firebase Remote Config or LaunchDarkly). The code is shipped continuously, but dark-launched and selectively toggled per user cohort without waiting for app store cycles.
 
 ## How to answer in the interview
 

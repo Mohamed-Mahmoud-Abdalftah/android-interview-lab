@@ -99,13 +99,13 @@ Structured concurrency guarantees that concurrent tasks have clear hierarchical 
 
 Structured concurrency is a design paradigm ensuring that asynchronous operations are bound to a strict hierarchical lifecycle. In older models like raw threads or GlobalScope, background tasks were launched into the wild with no parent; if the calling component was destroyed, those background tasks became zombie threads, causing memory leaks, battery drain, and unhandled crashes.
 
-With structured concurrency in Kotlin, every coroutine must be launched inside a `CoroutineScope`. This establishes a formal parent-child tree governed by three foundational rules:
+With structured concurrency in Kotlin, every coroutine must be launched inside a `CoroutineScope`. This establishes a formal parent-child tree governed by three foundational rules.
 
-1. **Cancellation cascades downward:** Cancelling a parent scope automatically cancels all its children and nested descendants.
-2. **Completion waits for children:** A parent coroutine or scope cannot complete until every one of its spawned children finishes.
-3. **Error propagation cascades upward:** If a child fails with an unhandled exception, that failure is immediately propagated up to the parent, which cancels sibling tasks and prevents dangling, corrupted state.
+First, **Cancellation cascades downward:** Cancelling a parent scope automatically cancels all its children and nested descendants. Next, **Completion waits for children:** A parent coroutine or scope cannot complete until every one of its spawned children finishes.
+Finally, **Error propagation cascades upward:** If a child fails with an unhandled exception, that failure is immediately propagated up to the parent, which cancels sibling tasks and prevents dangling, corrupted state.
 
 In Android, this eliminates lifecycle leaks by binding coroutines directly to architectural lifecycles through `viewModelScope` and `lifecycleScope`.
+
 
 ## Interview answer — deep senior
 
@@ -114,6 +114,7 @@ Under the hood, structured concurrency is maintained through the `Job` hierarchy
 This tree structure directly governs exception handling. When a child coroutine encounters an uncaught exception (other than `CancellationException`), it notifies its parent via `childCancelled()`. By default, standard parent jobs cancel all other active siblings to maintain transactional integrity, preventing the application from continuing in a half-finished, inconsistent state.
 
 When creating custom scopes—such as an application-wide scope for database migrations or telemetry flushing—we deliberately configure a `SupervisorJob` to prevent a single telemetry failure from tearing down the entire application scope. However, we never use `GlobalScope` because it is an unbound, top-level scope that bypasses structured concurrency entirely.
+
 
 ## How to answer in the interview
 

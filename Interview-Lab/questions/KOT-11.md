@@ -89,6 +89,7 @@ For example, inside a complex data-mapping function, I might define a local sani
 
 The trade-off is readability if overused: a local function that spans dozens of lines makes the parent function hard to follow. I keep them short and focused on a single responsibility.
 
+
 ## Interview answer — deep senior
 
 Under the hood, kotlinc compiles a local function by generating a private static method or, if it captures variables from its enclosing scope and is passed as a reference, an anonymous FunctionN class on the heap. When invoked as a direct call, the compiler optimizes it into an ordinary static call with captured variables passed as synthetic parameters, avoiding runtime allocation.
@@ -96,6 +97,7 @@ Under the hood, kotlinc compiles a local function by generating a private static
 Local functions are particularly effective for implementing tail-recursive algorithms (with the tailrec modifier) or complex recursive graph traversals, such as validating circular dependencies in a dependency graph or deeply nested JSON tree parsing.
 
 In production codebases, we enforce a strict rule: if a local function grows beyond 10-15 lines or requires independent unit testing, it must be extracted into a dedicated top-level or private member function. Local functions should purely be formatting and encapsulation aids, not hiding places for un-tested business rules.
+
 
 ## How to answer in the interview
 

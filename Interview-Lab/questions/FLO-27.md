@@ -101,21 +101,18 @@ When a navigation event fires twice after screen rotation, it is almost always c
 
 The root cause is storing navigation commands in a `StateFlow` or a `SharedFlow` configured with `replay >= 1`. When the device rotates, the Activity is destroyed and recreated. When the new Activity subscribes to the stream, the flow dutifully replays the cached navigation command from memory, triggering a duplicate navigation transaction.
 
-To fix this, we change the event modeling to guarantee **single-time consumption**:
+To fix this, we change the event modeling to guarantee **single-time consumption**.
 
-1. **Channel-based Events:** Use a private `Channel<NavTarget>(Channel.BUFFERED)` and expose `channel.receiveAsFlow()`. Channels are FIFO queues: once an event is consumed by the UI, it is dequeued. A recreated Activity on rotation will find the channel empty.
+First, **Channel-based Events:** Use a private `Channel<NavTarget>(Channel.BUFFERED)` and expose `channel.receiveAsFlow()`. Channels are FIFO queues: once an event is consumed by the UI, it is dequeued. A recreated Activity on rotation will find the channel empty. Finally, **State-driven Acknowledgment:** If kept in UI state (`data class UiState(val navRoute: NavRoute? = null)`), the UI must immediately notify the ViewModel upon navigation (`viewModel.onNavigated()`), which resets `navRoute = null` before any rotation can occur.
 
-2. **State-driven Acknowledgment:** If kept in UI state (`data class UiState(val navRoute: NavRoute? = null)`), the UI must immediately notify the ViewModel upon navigation (`viewModel.onNavigated()`), which resets `navRoute = null` before any rotation can occur.
 
 ## Interview answer — deep senior
 
-In code review investigations, I verify the event lifecycle across three audit checkpoints:
+In code review investigations, I verify the event lifecycle across three audit checkpoints.
 
-1. **Stream Type Inspection:** Check if the event flow is declared as `MutableStateFlow` or `MutableSharedFlow(replay = 1)`. If yes, replace it with `Channel(Channel.BUFFERED).receiveAsFlow()`.
+First, **Stream Type Inspection:** Check if the event flow is declared as `MutableStateFlow` or `MutableSharedFlow(replay = 1)`. If yes, replace it with `Channel(Channel.BUFFERED).receiveAsFlow()`. Next, **Collection Lifecycle Inspection:** In View-based code, verify that navigation events are collected inside `viewLifecycleOwner.lifecycleScope.launch { viewLifecycleOwner.repeatOnLifecycle(STARTED) { ... } }`. In Compose, verify it uses `LaunchedEffect(Unit)`.
+Finally, **Queue Deduplication:** If using Channel, ensure the channel is buffered (`Channel.BUFFERED`) so events sent while the screen is in transit between lifecycles are retained until the new screen is ready, but consumed strictly once.
 
-2. **Collection Lifecycle Inspection:** In View-based code, verify that navigation events are collected inside `viewLifecycleOwner.lifecycleScope.launch { viewLifecycleOwner.repeatOnLifecycle(STARTED) { ... } }`. In Compose, verify it uses `LaunchedEffect(Unit)`.
-
-3. **Queue Deduplication:** If using Channel, ensure the channel is buffered (`Channel.BUFFERED`) so events sent while the screen is in transit between lifecycles are retained until the new screen is ready, but consumed strictly once.
 
 ## How to answer in the interview
 

@@ -102,25 +102,19 @@ If SPKI pinning was used, immediately re-issue the server certificate using the 
 
 ## Interview answer — structured
 
-Recovering from an expired or mismatched TLS pin requires a prioritized recovery playbook:
+Recovering from an expired or mismatched TLS pin requires a prioritized recovery playbook.
 
-1. **Re-issue Certificate with Identical SPKI**: If the app pinned the Subject Public Key Info (SPKI SHA-256 hash)—which is industry best practice—the ops team can immediately re-issue a fresh TLS certificate signed by any CA using the original private key CSR. Because the public key remains unchanged, client pins match instantly with zero app updates required.
+First, with Re-issue Certificate with Identical SPKI, if the app pinned the Subject Public Key Info (SPKI SHA-256 hash)—which is industry best practice—the ops team can immediately re-issue a fresh TLS certificate signed by any CA using the original private key CSR. Because the public key remains unchanged, client pins match instantly with zero app updates required. Next, with Activate Backup Keys on Load Balancers, if the private key was lost or compromised, deploy the pre-generated offline backup certificate to production servers. Because resilient pinning architectures embed at least one backup pin, apps connect seamlessly.
+Additionally, with Rely on Network Security Config Expiration, if configured via Android's `<pin-set expiration="...">`, the OS automatically disables pin enforcement once the expiration date passes, falling back to trusted system CAs. Finally, with Emergency App Hotfix & FCM Broadcast, if the app is bricked without backup keys, deploy an expedited hotfix APK removing the dead pin via Google Play Console with Priority Review. Send high-priority Firebase Cloud Messages (FCM)—which route over Google's unaffected servers—to notify active clients to update.
 
-2. **Activate Backup Keys on Load Balancers**: If the private key was lost or compromised, deploy the pre-generated offline backup certificate to production servers. Because resilient pinning architectures embed at least one backup pin, apps connect seamlessly.
-
-3. **Rely on Network Security Config Expiration**: If configured via Android's `<pin-set expiration="...">`, the OS automatically disables pin enforcement once the expiration date passes, falling back to trusted system CAs.
-
-4. **Emergency App Hotfix & FCM Broadcast**: If the app is bricked without backup keys, deploy an expedited hotfix APK removing the dead pin via Google Play Console with Priority Review. Send high-priority Firebase Cloud Messages (FCM)—which route over Google's unaffected servers—to notify active clients to update.
 
 ## Interview answer — deep senior
 
-From an infrastructure resilience perspective, senior architects design proactive safeguards to eliminate certificate bricking risks entirely:
+From an infrastructure resilience perspective, senior architects design proactive safeguards to eliminate certificate bricking risks entirely.
 
-1. **Dual-Pin Policy Enforcement in CI/CD**: Implement CI build linters that fail APK generation if fewer than two distinct pin hashes are defined for any production domain in `network_security_config.xml` or `CertificatePinner`.
+First, with Dual-Pin Policy Enforcement in CI/CD, implement CI build linters that fail APK generation if fewer than two distinct pin hashes are defined for any production domain in `network_security_config.xml` or `CertificatePinner`. Next, with Intermediate CA Pinning Strategy, instead of pinning volatile leaf public keys, pin the public keys of the organization's dedicated Intermediate Certificate Authorities. This allows the backend team to rotate leaf certificates weekly without modifying client pins, while retaining defense against rogue public CAs.
+Finally, with Dedicated Unpinned Configuration Subdomains, maintain an isolated, unpinned fallback subdomain (e.g., `status.example.com`) purely relying on standard system CA trust. If all pinned endpoints fail with `SSLPeerUnverifiedException`, the app queries this endpoint to display a user-friendly 'Maintenance / Update Required' screen rather than crashing with unhandled network exceptions.
 
-2. **Intermediate CA Pinning Strategy**: Instead of pinning volatile leaf public keys, pin the public keys of the organization's dedicated Intermediate Certificate Authorities. This allows the backend team to rotate leaf certificates weekly without modifying client pins, while retaining defense against rogue public CAs.
-
-3. **Dedicated Unpinned Configuration Subdomains**: Maintain an isolated, unpinned fallback subdomain (e.g., `status.example.com`) purely relying on standard system CA trust. If all pinned endpoints fail with `SSLPeerUnverifiedException`, the app queries this endpoint to display a user-friendly 'Maintenance / Update Required' screen rather than crashing with unhandled network exceptions.
 
 ## How to answer in the interview
 

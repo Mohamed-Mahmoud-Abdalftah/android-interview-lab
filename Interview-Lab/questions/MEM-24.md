@@ -99,16 +99,11 @@ To reduce slow startup without breaking correctness, I profile cold start using 
 
 Reducing slow app startup requires surgical optimization of the cold launch path while preserving dependency guarantees.
 
-1. **Baseline Measurement**: I never optimize blindly. I measure baseline cold start times using Jetpack Macrobenchmark and inspect a Perfetto trace to identify wide methods executing between process fork and the first frame.
+First, with Baseline Measurement, i never optimize blindly. I measure baseline cold start times using Jetpack Macrobenchmark and inspect a Perfetto trace to identify wide methods executing between process fork and the first frame. Next, deconstructing `Application.onCreate is the number one startup inhibitor is synchronous SDK initialization. I categorize every library.
+*Critical at Launch* (e.g. Crashlytics, DI initialization, security attestation): Kept synchronous on the main thread. *Deferred Background* (e.g. Analytics, remote config, push registration): Dispatched immediately on background coroutines (`Dispatchers.Default` / `IO`).
+*Lazy On-Demand* (e.g. Maps SDK, Payment gateways): Initialized only when the respective feature is accessed. With Eliminating ContentProvider Overhead, many libraries leverage implicit ContentProviders for zero-code setup, which execute before `Application.onCreate()` on the main thread. I disable automatic providers and consolidate them using Jetpack App Startup.
+Finally, with AOT Compilation via Baseline Profiles, we package an automated Baseline Profile to ensure ART precompiles startup classes Ahead-Of-Time.
 
-2. **Deconstructing `Application.onCreate`**: The number one startup inhibitor is synchronous SDK initialization. I categorize every library:
-   - *Critical at Launch* (e.g. Crashlytics, DI initialization, security attestation): Kept synchronous on the main thread.
-   - *Deferred Background* (e.g. Analytics, remote config, push registration): Dispatched immediately on background coroutines (`Dispatchers.Default` / `IO`).
-   - *Lazy On-Demand* (e.g. Maps SDK, Payment gateways): Initialized only when the respective feature is accessed.
-
-3. **Eliminating ContentProvider Overhead**: Many libraries leverage implicit ContentProviders for zero-code setup, which execute before `Application.onCreate()` on the main thread. I disable automatic providers and consolidate them using Jetpack App Startup.
-
-4. **AOT Compilation via Baseline Profiles**: We package an automated Baseline Profile to ensure ART precompiles startup classes Ahead-Of-Time.
 
 ## Interview answer — deep senior
 
@@ -117,6 +112,7 @@ Under the hood, layout inflation in the launch Activity often consumes 30-40% of
 Another critical technique is **Splash Screen Window Backgrounding**. Using the modern `androidx.core.splashscreen.SplashScreen` API, the system window displays an immediate branded background drawable before app code is even loaded into ART, eliminating perceived latency for the user.
 
 To guarantee correctness during asynchronous initialization, if a deferred SDK (like user identity) is required by a secondary screen, we model initialization as a deferred StateFlow or `CompletableDeferred` so downstream dependencies cleanly await readiness without blocking the UI thread.
+
 
 ## How to answer in the interview
 

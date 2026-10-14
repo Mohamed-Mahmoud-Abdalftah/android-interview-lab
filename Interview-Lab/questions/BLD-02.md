@@ -110,29 +110,21 @@ Build types configure packaging and debugging attributes (debug vs release), pro
 
 ## Interview answer — structured
 
-The Android build variant matrix organizes compilation targets into distinct operational axes:
+The Android build variant matrix organizes compilation targets into distinct operational axes.
 
-1. **Build Types (How it is built)**:
-   - Dictate technical packaging configurations: debuggability (`isDebuggable`), code optimization and obfuscation (`isMinifyEnabled`), resource shrinking, signing configurations, and symbols stripping.
+First, **Build Types (How it is built)**. Next, dictate technical packaging configurations: debuggability (`isDebuggable`), code optimization and obfuscation (`isMinifyEnabled`), resource shrinking, signing configurations, and symbols stripping.
+**Product Flavors (What is built)**. Dictate business and environment differentiation. Grouped by `flavorDimensions` (e.g., `environment` for dev/staging/prod; `distribution` for gms/hms). They configure `applicationIdSuffix`, specific `buildConfigField` parameters, and feature toggles.
+**Build Variants (The Output Permutations)**. The Cartesian product of every dimension flavor multiplied by build types. For example, 2 environments (`dev`, `prod`) × 2 types (`debug`, `release`) yields 4 runnable variants: `devDebug`, `devRelease`, `prodDebug`, `prodRelease`.
+**Source Sets (Resource & Code Overlays)**. Finally, dedicated directory structures (e.g., `src/devDebug/`, `src/dev/`, `src/main/`). The Gradle resource merger merges files hierarchically: variant-specific assets override flavor-specific assets, which in turn override `src/main/` defaults.
 
-2. **Product Flavors (What is built)**:
-   - Dictate business and environment differentiation. Grouped by `flavorDimensions` (e.g., `environment` for dev/staging/prod; `distribution` for gms/hms). They configure `applicationIdSuffix`, specific `buildConfigField` parameters, and feature toggles.
-
-3. **Build Variants (The Output Permutations)**:
-   - The Cartesian product of every dimension flavor multiplied by build types. For example, 2 environments (`dev`, `prod`) × 2 types (`debug`, `release`) yields 4 runnable variants: `devDebug`, `devRelease`, `prodDebug`, `prodRelease`.
-
-4. **Source Sets (Resource & Code Overlays)**:
-   - Dedicated directory structures (e.g., `src/devDebug/`, `src/dev/`, `src/main/`). The Gradle resource merger merges files hierarchically: variant-specific assets override flavor-specific assets, which in turn override `src/main/` defaults.
 
 ## Interview answer — deep senior
 
-From an enterprise release and build-velocity viewpoint, managing the variant matrix requires defensive configuration:
+From an enterprise release and build-velocity viewpoint, managing the variant matrix requires defensive configuration.
 
-1. **Variant Filter Optimization**: Creating 3 flavor dimensions with 3 flavors each generates $3 \times 3 \times 2 = 18$ variants. Gradle evaluates tasks for every variant, blowing up configuration time. Filter out useless permutations using `variantFilter { if (name == "demoStagingRelease") setIgnore(true) }` to drastically reduce sync and build times.
+First, with Variant Filter Optimization, creating 3 flavor dimensions with 3 flavors each generates $3 \times 3 \times 2 = 18$ variants. Gradle evaluates tasks for every variant, blowing up configuration time. Filter out useless permutations using `variantFilter { if (name == "demoStagingRelease") setIgnore(true) }` to drastically reduce sync and build times. Next, with Code Discrepancies Across Source Sets, while resources merge automatically, Kotlin/Java source files in source sets do not merge; they conflict. If a class `Logger.kt` is placed in `src/debug/`, it cannot exist in `src/main/` or a duplicate class compilation error occurs. Keep `src/main/` clean and use interfaces with dependency injection rather than duplicating classes across variant source sets.
+Finally, with Dynamic Manifest Placeholders, inject variant-specific deep link schemes, authorities, and API keys using `manifestPlaceholders = mapOf("authDomain" to "dev.auth.com")` rather than maintaining separate `AndroidManifest.xml` files per flavor.
 
-2. **Code Discrepancies Across Source Sets**: While resources merge automatically, Kotlin/Java source files in source sets do not merge; they conflict. If a class `Logger.kt` is placed in `src/debug/`, it cannot exist in `src/main/` or a duplicate class compilation error occurs. Keep `src/main/` clean and use interfaces with dependency injection rather than duplicating classes across variant source sets.
-
-3. **Dynamic Manifest Placeholders**: Inject variant-specific deep link schemes, authorities, and API keys using `manifestPlaceholders = mapOf("authDomain" to "dev.auth.com")` rather than maintaining separate `AndroidManifest.xml` files per flavor.
 
 ## How to answer in the interview
 

@@ -97,11 +97,9 @@ Mappers isolate architectural boundaries so external API or database changes don
 
 Mappers are the gatekeepers of architectural boundaries, ensuring that each layer operates exclusively on data structures tailored to its purpose.
 
-1. **Decoupling from External Volatility**: APIs and database schemas evolve constantly. Without mappers, renaming a JSON property cascades through the entire codebase, breaking domain logic and UI layouts. Mappers act as shock absorbers, confining external changes strictly to the data layer.
+First, with Decoupling from External Volatility, APIs and database schemas evolve constantly. Without mappers, renaming a JSON property cascades through the entire codebase, breaking domain logic and UI layouts. Mappers act as shock absorbers, confining external changes strictly to the data layer. Next, with Data Sanitization and Invariant Enforcement, network payloads are untrusted. Mappers sanitize raw inputs: mapping nullable DTO properties to non-nullable domain types with safe fallbacks, parsing raw string codes into type-safe enums or sealed classes, and rejecting corrupt records before they reach core business rules.
+Finally, with Presentation Pre-computation, presentation mappers convert raw domain metrics (e.g. Timestamps, currency in cents) into localized, human-readable strings (`$12.50`) once, keeping composable functions pure and avoiding expensive formatting passes during 120fps scrolling.
 
-2. **Data Sanitization and Invariant Enforcement**: Network payloads are untrusted. Mappers sanitize raw inputs: mapping nullable DTO properties to non-nullable domain types with safe fallbacks, parsing raw string codes into type-safe enums or sealed classes, and rejecting corrupt records before they reach core business rules.
-
-3. **Presentation Pre-computation**: Presentation mappers convert raw domain metrics (e.g. timestamps, currency in cents) into localized, human-readable strings (`$12.50`) once, keeping composable functions pure and avoiding expensive formatting passes during 120fps scrolling.
 
 ## Interview answer — deep senior
 
@@ -110,6 +108,7 @@ Under the hood, implementing mappers efficiently requires avoiding excessive obj
 When dealing with large lists (e.g. 10,000 items), mapping must be executed off the main thread. Repositories execute DTO-to-Domain mapping within `withContext(Dispatchers.Default)` or `Dispatchers.IO` so that heavy JSON parsing and transformation passes never stutter the Android main looper.
 
 In unit testing, testing mappers is straightforward: developers write pure JVM unit tests passing edge-case DTOs (null fields, malformed strings, boundary values) to verify that the domain model is always constructed in a valid, robust state.
+
 
 ## How to answer in the interview
 

@@ -92,32 +92,52 @@ const topicLabels: Record<string, string> = {
   SYS: 'System Design', UI: 'Views & Compose',
 };
 const topics = [...new Set(questions.map((q) => q.category))].sort();
+const isArabic = Astro.currentLocale === 'ar' || Astro.url.pathname.includes('/ar/');
 ---
 <div data-question-explorer>
   <div class="question-toolbar" role="search">
-    <input type="search" placeholder="دوّر في السؤال أو الموضوع…" aria-label="ابحث في بنك الأسئلة" data-query />
-    <select aria-label="فلتر الأولوية" data-priority><option value="must" selected>Must Know أولًا</option><option value="common">أسئلة Senior إضافية</option><option value="depth">Foundational / Intermediate</option><option value="">كل الـ300 سؤال</option></select>
-    <select aria-label="فلتر المجال" data-topic><option value="">كل المجالات</option>{topics.map((topic) => <option value={topic}>{topic} — {topicLabels[topic] ?? topic}</option>)}</select>
-    <select aria-label="فلتر الصعوبة" data-difficulty><option value="" selected>كل المستويات</option><option value="senior">Senior</option><option value="intermediate">Intermediate</option><option value="foundational">Foundational</option></select>
+    <input type="search" placeholder={isArabic ? "دوّر في السؤال أو الموضوع…" : "Search question or topic…"} aria-label={isArabic ? "ابحث في بنك الأسئلة" : "Search question bank"} data-query />
+    <select aria-label={isArabic ? "فلتر الأولوية" : "Priority filter"} data-priority>
+      <option value="must" selected>{isArabic ? "Must Know أولًا" : "Must Know First"}</option>
+      <option value="common">{isArabic ? "أسئلة Senior إضافية" : "Additional Senior Questions"}</option>
+      <option value="depth">{isArabic ? "Foundational / Intermediate" : "Foundational / Intermediate"}</option>
+      <option value="">{isArabic ? "كل الـ300 سؤال" : "All 300 Questions"}</option>
+    </select>
+    <select aria-label={isArabic ? "فلتر المجال" : "Topic filter"} data-topic>
+      <option value="">{isArabic ? "كل المجالات" : "All Topics"}</option>
+      {topics.map((topic) => <option value={topic}>{topic} — {topicLabels[topic] ?? topic}</option>)}
+    </select>
+    <select aria-label={isArabic ? "فلتر الصعوبة" : "Difficulty filter"} data-difficulty>
+      <option value="" selected>{isArabic ? "كل المستويات" : "All Difficulties"}</option>
+      <option value="senior">Senior</option>
+      <option value="intermediate">Intermediate</option>
+      <option value="foundational">Foundational</option>
+    </select>
   </div>
   <p class="mode-label" data-question-mode aria-live="polite"></p>
   <div class="interview-start">
-    <strong><bdi>{questions.length}</bdi> سؤال Interview فعلي</strong>
-    <span>اختار المجال والمستوى، جاوب بصوت عالي، وبعدها افتح Model Answer وقارن reasoning والـtrade-offs.</span>
+    <strong><bdi>{questions.length}</bdi> {isArabic ? "سؤال Interview فعلي" : "Real Interview Questions"}</strong>
+    <span>{isArabic ? "اختار المجال والمستوى، جاوب بصوت عالي، وبعدها افتح Model Answer وقارن reasoning والـtrade-offs." : "Select topic and level, answer aloud, then open Model Answer to compare reasoning and trade-offs."}</span>
   </div>
   <p data-result-count aria-live="polite"></p>
   <div class="question-list">
-    {questions.map((item) => <article class="question-card" data-card data-search={`${item.id} ${item.lessonId} ${item.topic} ${item.question} ${interviewFocus[item.id] ?? ''}`.toLowerCase()} data-priority-value={priorityFor(item)} data-topic-value={item.category} data-difficulty-value={item.difficulty}>
-      <header>
-        <strong><a href={item.route}>{mustKnow.has(item.id) && <span class="question-rank">#{mustKnow.get(item.id)}</span>} <bdi>{item.id}</bdi> — {item.topic}</a></strong>
-        <span class="question-meta"><span class:list={['priority-chip', priorityFor(item)]}>{priorityFor(item) === 'must' ? 'Must Know' : priorityFor(item) === 'common' ? 'Senior' : 'Foundation'}</span><span class="status-chip">{interviewRound[item.category]}</span><span><bdi>{item.expectedMinutes}</bdi> min</span></span>
-      </header>
-      <p class="interview-prompt" dir="ltr"><span class="interviewer-label">Interviewer</span>{item.question}</p>
-      {interviewFocus[item.id] && <aside class="question-focus"><strong>المحاور بيمتحنك في إيه؟</strong><span>{interviewFocus[item.id]}</span></aside>}
-      <div class="tool-row"><a class="answer-link" href={item.answerRoute}>افتح الـModel Answer</a><a href={item.route}>السؤال والـFollow-ups</a><button type="button" data-reveal>اظهر الإجابة</button></div>
-    </article>)}
+    {questions.map((item) => {
+      const qRoute = isArabic ? `/ar${item.route}` : item.route;
+      const aRoute = isArabic ? `/ar${item.answerRoute}` : item.answerRoute;
+      return (
+        <article class="question-card" data-card data-search={`${item.id} ${item.lessonId} ${item.topic} ${item.question} ${interviewFocus[item.id] ?? ''}`.toLowerCase()} data-priority-value={priorityFor(item)} data-topic-value={item.category} data-difficulty-value={item.difficulty}>
+          <header>
+            <strong><a href={qRoute}>{mustKnow.has(item.id) && <span class="question-rank">#{mustKnow.get(item.id)}</span>} <bdi>{item.id}</bdi> — {item.topic}</a></strong>
+            <span class="question-meta"><span class:list={['priority-chip', priorityFor(item)]}>{priorityFor(item) === 'must' ? 'Must Know' : priorityFor(item) === 'common' ? 'Senior' : 'Foundation'}</span><span class="status-chip">{interviewRound[item.category]}</span><span><bdi>{item.expectedMinutes}</bdi> min</span></span>
+          </header>
+          <p class="interview-prompt" dir="ltr"><span class="interviewer-label">Interviewer</span>{item.question}</p>
+          {interviewFocus[item.id] && <aside class="question-focus"><strong>{isArabic ? "المحاور بيمتحنك في إيه؟" : "What is the interviewer testing?"}</strong><span>{interviewFocus[item.id]}</span></aside>}
+          <div class="tool-row"><a class="answer-link" href={aRoute}>{isArabic ? "افتح الـModel Answer" : "Open Model Answer"}</a><a href={qRoute}>{isArabic ? "السؤال والـFollow-ups" : "Question & Follow-ups"}</a><button type="button" data-reveal>{isArabic ? "اظهر الإجابة" : "Reveal Answer"}</button></div>
+        </article>
+      );
+    })}
   </div>
-  <p data-empty hidden>مفيش نتيجة مطابقة للفلاتر دي.</p>
+  <p data-empty hidden>{isArabic ? "مفيش نتيجة مطابقة للفلاتر دي." : "No matching questions for these filters."}</p>
 </div>
 
 <script>

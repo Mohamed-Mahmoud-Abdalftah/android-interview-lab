@@ -89,28 +89,22 @@ Reverting an older commit causes content conflicts when subsequent commits modif
 
 ## Interview answer — structured
 
-When executing `git revert` on an older commit, Git applies an inverse patch against current HEAD. This produces three distinct conflict categories:
+When executing `git revert` on an older commit, Git applies an inverse patch against current HEAD. This produces three distinct conflict categories.
 
-1. **Content Conflicts (Direct Textual Invalidation)**:
-   - Occurs when intermediate commits modified, refactored, or formatted the exact lines that the inverse patch attempts to delete or restore. Git halts with standard conflict markers (`<<<<<<< HEAD` vs `>>>>>>> parent of...`).
-
-2. **Tree / Rename Conflicts**:
-   - Arise when files created or modified by the old commit were subsequently renamed, moved to new packages during architectural modularization, or deleted entirely.
-
-3. **Silent Semantic / Compilation Conflicts**:
-   - The most insidious category: the inverse patch applies cleanly with zero textual conflicts, but subsequent commits introduced dependencies on classes, fields, or database schemas defined in the reverted commit. The codebase breaks during Kotlin compilation or triggers runtime exceptions.
+First, **Content Conflicts (Direct Textual Invalidation)**. Next, occurs when intermediate commits modified, refactored, or formatted the exact lines that the inverse patch attempts to delete or restore. Git halts with standard conflict markers (`<<<<<<< HEAD` vs `>>>>>>> parent of...`).
+**Tree / Rename Conflicts**. Arise when files created or modified by the old commit were subsequently renamed, moved to new packages during architectural modularization, or deleted entirely.
+**Silent Semantic / Compilation Conflicts**. Finally, the most insidious category: the inverse patch applies cleanly with zero textual conflicts, but subsequent commits introduced dependencies on classes, fields, or database schemas defined in the reverted commit. The codebase breaks during Kotlin compilation or triggers runtime exceptions.
 
 Resolving an old revert mandates manually clearing conflict markers, followed by running `./gradlew compileDebugKotlin` and unit tests to verify semantic integrity before executing `git revert --continue`.
 
+
 ## Interview answer — deep senior
 
-In large scale engineering teams, managing complex historical reverts requires operational discipline:
+In large scale engineering teams, managing complex historical reverts requires operational discipline.
 
-1. **The Revert Blast Radius Assessment**: Never blindly revert a 2-month-old commit in a production repo. Use `git log -S "SymbolName"` to identify every commit that touched or referenced the affected symbol since the target commit. If 15 subsequent features depend on it, an inverse patch will cause cascading fractures.
+First, with The Revert Blast Radius Assessment, never blindly revert a 2-month-old commit in a production repo. Use `git log -S "SymbolName"` to identify every commit that touched or referenced the affected symbol since the target commit. If 15 subsequent features depend on it, an inverse patch will cause cascading fractures. Next, with Surgical Forward-Fix vs. Revert, if an old commit introduced a bug but has deep architectural entanglement with current production code, executing `git revert` is often more dangerous than writing a targeted forward hotfix that neutralizes the buggy code path while preserving the surrounding public API contracts.
+Finally, with Reverting a Long Chain, if a feature comprised multiple commits, use range revert: `git revert OLDER_COMMIT..NEWER_COMMIT`. Git reverts them in reverse chronological order, minimizing intermediate dependency conflicts.
 
-2. **Surgical Forward-Fix vs. Revert**: If an old commit introduced a bug but has deep architectural entanglement with current production code, executing `git revert` is often more dangerous than writing a targeted forward hotfix that neutralizes the buggy code path while preserving the surrounding public API contracts.
-
-3. **Reverting a Long Chain**: If a feature comprised multiple commits, use range revert: `git revert OLDER_COMMIT..NEWER_COMMIT`. Git reverts them in reverse chronological order, minimizing intermediate dependency conflicts.
 
 ## How to answer in the interview
 

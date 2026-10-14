@@ -105,11 +105,13 @@ I use **`shareIn`** when broadcasting event or data streams to multiple subscrib
 
 Both operators take a `SharingStarted` strategy, which controls precisely when the upstream cold flow begins executing and when it cancels to save device battery.
 
+
 ## Interview answer — deep senior
 
 Under the hood, both operators launch a single sharing coroutine inside the provided `CoroutineScope`. This coroutine acts as a bridge: it collects from the upstream cold flow once, and fans out each emitted item to an internal `StateFlowImpl` or `SharedFlowImpl`.
 
 The magic lies in how they manage the upstream subscription. When using cold streams like Room DAO queries or Bluetooth scanners, executing them continuously when the user minimizes the app drains battery. By pairing `stateIn` with `SharingStarted.WhileSubscribed(5000)`, the operator tracks active downstream subscribers via reference counting (`subscriptionCount`). When the last collector unsubscribes, it waits 5 seconds (to tolerate screen rotation) and then cancels the upstream collection coroutine, releasing hardware and database locks.
+
 
 ## How to answer in the interview
 

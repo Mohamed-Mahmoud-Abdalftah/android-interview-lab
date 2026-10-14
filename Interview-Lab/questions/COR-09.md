@@ -97,6 +97,7 @@ Its primary architectural role is enforcing **Main-Safety**. In clean architectu
 
 A key senior distinction: never use `async { ... }.await()` to switch dispatchers for a single task. `withContext` is purpose-built for sequential context switching. It avoids creating a child coroutine and Deferred heap object, and it optimizes thread transitions under the hood.
 
+
 ## Interview answer — deep senior
 
 Under the hood, `withContext` optimizes context switching using the `DispatchedCoroutine` fast path. If the target dispatcher matches the current coroutine's dispatcher, `withContext` skips dispatching altogether and executes the lambda synchronously in the current call frame, eliminating any scheduling overhead.
@@ -104,6 +105,7 @@ Under the hood, `withContext` optimizes context switching using the `DispatchedC
 If the dispatcher is different, it suspends the caller continuation, dispatches the block onto the new dispatcher, and upon completion, uses a specialized continuation wrapper to dispatch the return value back to the original caller dispatcher.
 
 In enterprise codebases, we mandate injecting dispatchers via dependency injection (e.g., `@IoDispatcher val dispatcher: CoroutineDispatcher`). Hardcoding `withContext(Dispatchers.IO)` in class bodies makes deterministic unit testing impossible because tests cannot control or advance virtual time without replacing the dispatcher with `StandardTestDispatcher`.
+
 
 ## How to answer in the interview
 

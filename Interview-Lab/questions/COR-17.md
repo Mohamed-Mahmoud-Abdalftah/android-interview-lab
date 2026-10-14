@@ -93,11 +93,13 @@ Both `withTimeout` and `withTimeoutOrNull` enforce execution time limits on susp
 
 `withTimeoutOrNull` is much more ergonomic for Android fallback scenarios. When the deadline expires, it cancels the internal block and cleanly returns `null` instead of throwing an exception. This allows elegant fallback expressions using the Elvis operator (`?:`), such as falling back to cached database data if a network request exceeds two seconds.
 
+
 ## Interview answer — deep senior
 
 Under the hood, both functions schedule a delayed task on the coroutine dispatcher's event loop via `Delay.scheduleResumeAfterDelay()`. When the timer fires, it calls `cancelCoroutine(TimeoutCancellationException)`. However, timeout cancellation is strictly cooperative. If the code running inside `withTimeout` is executing a non-suspending, blocking loop (like heavy crypto or file I/O), the timeout cannot preempt the thread. It will only cancel when the block reaches a suspension point or checks `ensureActive()`.
 
 Another critical nuance is resource cleanup. If an unmanaged resource (like a database cursor or network socket) is opened inside `withTimeout`, a timeout cancellation during the open call could leak the resource before the assignment finishes. To guard against resource leaks, always allocate resources outside the timeout block or protect them with `try-finally`.
+
 
 ## How to answer in the interview
 

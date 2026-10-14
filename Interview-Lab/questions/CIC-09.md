@@ -103,29 +103,21 @@ Protect signing material by using Google Play App Signing (so CI only holds an U
 
 ## Interview answer — structured
 
-A hardened mobile secret management architecture relies on four defensive layers:
+A hardened mobile secret management architecture relies on four defensive layers.
 
-1. **Google Play App Signing Architecture**:
-   - Delegate root app signing authority to Google Cloud Key Management. The CI pipeline only holds an **Upload Key**. If an upload key is compromised, administrators can revoke and rotate it via Play Console without stranding existing installed users.
+First, **Google Play App Signing Architecture**. Next, delegate root app signing authority to Google Cloud Key Management. The CI pipeline only holds an **Upload Key**. If an upload key is compromised, administrators can revoke and rotate it via Play Console without stranding existing installed users.
+**Encrypted Secret Storage & Ephemeral Lifecycle**. The upload keystore binary is encoded as base64 and stored in enterprise secret vaults (GitHub Secrets, AWS Secrets Manager, or HashiCorp Vault). The CI runner decodes the file into an ephemeral temporary path (`/tmp/upload.jks`) immediately before compilation and securely wipes it in a `finally` or `if: always()` post-build step.
+**Zero Secrets in Source Control**. Keystore passwords, aliases, and Play Console JSON API keys are strictly injected via environment variables at runtime, never committed to `build.gradle.kts` or `keystore.properties`.
+**PR Execution Security Boundary**. Finally, pull requests originating from public forks or unverified contributors are executed in unprivileged sandbox runners where production release secrets are strictly masked and unavailable.
 
-2. **Encrypted Secret Storage & Ephemeral Lifecycle**:
-   - The upload keystore binary is encoded as base64 and stored in enterprise secret vaults (GitHub Secrets, AWS Secrets Manager, or HashiCorp Vault). The CI runner decodes the file into an ephemeral temporary path (`/tmp/upload.jks`) immediately before compilation and securely wipes it in a `finally` or `if: always()` post-build step.
-
-3. **Zero Secrets in Source Control**:
-   - Keystore passwords, aliases, and Play Console JSON API keys are strictly injected via environment variables at runtime, never committed to `build.gradle.kts` or `keystore.properties`.
-
-4. **PR Execution Security Boundary**:
-   - Pull requests originating from public forks or unverified contributors are executed in unprivileged sandbox runners where production release secrets are strictly masked and unavailable.
 
 ## Interview answer — deep senior
 
-From a DevSecOps and supply-chain defense perspective, advanced secret protection involves preventing indirect exfiltration:
+From a DevSecOps and supply-chain defense perspective, advanced secret protection involves preventing indirect exfiltration.
 
-1. **Malicious Dependency and PR Injection**: Attackers can submit PRs modifying third-party dependencies or Gradle build scripts to print `System.getenv()` into build logs or send secrets via curl. GitHub Actions enforces that `pull_request` triggers do not have access to repository secrets by default. Never use `pull_request_target` with an automatic checkout of PR head code, as this exposes secrets to attacker-controlled scripts.
+First, with Malicious Dependency and PR Injection, attackers can submit PRs modifying third-party dependencies or Gradle build scripts to print `System.getenv()` into build logs or send secrets via curl. GitHub Actions enforces that `pull_request` triggers do not have access to repository secrets by default. Never use `pull_request_target` with an automatic checkout of PR head code, as this exposes secrets to attacker-controlled scripts. Next, with Log Masking and Redaction, ensure CI secret values are registered with secret masking utilities (e.g., `::add-mask::` in GitHub Actions). Gradle log levels must never be set to `--debug` or `--info` on production signing tasks, as Gradle may log command-line arguments and environment parameters.
+Finally, with OIDC (OpenID Connect) for Cloud Access, replace long-lived API service account JSON keys for Google Cloud and Google Play with short-lived OIDC federated tokens. The GitHub Actions runner authenticates directly with GCP Workload Identity Federation using temporary cryptographic credentials, eliminating static stored credentials.
 
-2. **Log Masking and Redaction**: Ensure CI secret values are registered with secret masking utilities (e.g., `::add-mask::` in GitHub Actions). Gradle log levels must never be set to `--debug` or `--info` on production signing tasks, as Gradle may log command-line arguments and environment parameters.
-
-3. **OIDC (OpenID Connect) for Cloud Access**: Replace long-lived API service account JSON keys for Google Cloud and Google Play with short-lived OIDC federated tokens. The GitHub Actions runner authenticates directly with GCP Workload Identity Federation using temporary cryptographic credentials, eliminating static stored credentials.
 
 ## How to answer in the interview
 

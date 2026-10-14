@@ -97,32 +97,24 @@ Migrate a monolith incrementally using the Strangler Fig pattern. Establish Grad
 
 ## Interview answer — structured
 
-Migrating an enterprise Android monolith to a multi-module architecture without halting feature velocity relies on the **Strangler Fig Pattern** executed in four controlled phases:
+Migrating an enterprise Android monolith to a multi-module architecture without halting feature velocity relies on the **Strangler Fig Pattern** executed in four controlled phases.
 
-1. **Phase 1: Build Governance & Tooling**:
-   - Introduce `libs.versions.toml` and custom Gradle convention plugins in `build-logic`.
-   - Establish CI performance baselines for Gradle build times and memory consumption.
+First, **Phase 1: Build Governance & Tooling**. Next, introduce `libs.versions.toml` and custom Gradle convention plugins in `build-logic`.
+Establish CI performance baselines for Gradle build times and memory consumption. **Phase 2: Bottom-Up Foundation Extraction**.
+Extract horizontal infrastructure that has zero feature dependencies: `:core:designsystem`, `:core:network`, and `:core:model`. The legacy monolith consumes these modules immediately, proving they work in production.
+**Phase 3: The Pilot Vertical Slice**. Select an isolated, low-risk feature (e.g. `:feature:settings`).
+Extract its UI, ViewModel, Domain logic, and Data layer into dedicated modules, establishing the navigation and DI patterns for the entire organization. **Phase 4: Opportunistic Feature Migration**.
+Finally, create a 'Modularization Playbook'. Feature teams extract their own modules incrementally whenever embarking on a major feature redesign, until `:app` shrinks to a thin composition shell.
 
-2. **Phase 2: Bottom-Up Foundation Extraction**:
-   - Extract horizontal infrastructure that has zero feature dependencies: `:core:designsystem`, `:core:network`, and `:core:model`.
-   - The legacy monolith consumes these modules immediately, proving they work in production.
-
-3. **Phase 3: The Pilot Vertical Slice**:
-   - Select an isolated, low-risk feature (e.g. `:feature:settings`).
-   - Extract its UI, ViewModel, Domain logic, and Data layer into dedicated modules, establishing the navigation and DI patterns for the entire organization.
-
-4. **Phase 4: Opportunistic Feature Migration**:
-   - Create a 'Modularization Playbook'. Feature teams extract their own modules incrementally whenever embarking on a major feature redesign, until `:app` shrinks to a thin composition shell.
 
 ## Interview answer — deep senior
 
 The greatest danger during a monolith migration is **The Entangled Dependency Knot** (where Class A in the feature imports 25 random utility and helper classes from the monolith).
 
-If you try to extract everything Class A touches, you end up moving half the monolith into the new module. To break this knot in production:
+If you try to extract everything Class A touches, you end up moving half the monolith into the new module. To break this knot in production.
 
-1. **Invert the Seam with an Interface**: If the feature needs a monolith service (`LegacySessionManager`), define an interface inside the new feature module (`interface SessionProvider`). Have the legacy monolith implement this interface and inject it into the feature.
+First, with Invert the Seam with an Interface, if the feature needs a monolith service (`LegacySessionManager`), define an interface inside the new feature module (`interface SessionProvider`). Have the legacy monolith implement this interface and inject it into the feature. Finally, a Temporary Bidirectional Bridge is the feature compiles against its own interface, completely isolated from monolith internals. Once the session logic itself is migrated to a core module later, you simply delete the bridge implementation in the monolith.
 
-2. **Temporary Bidirectional Bridge**: The feature compiles against its own interface, completely isolated from monolith internals. Once the session logic itself is migrated to a core module later, you simply delete the bridge implementation in the monolith.
 
 ## How to answer in the interview
 

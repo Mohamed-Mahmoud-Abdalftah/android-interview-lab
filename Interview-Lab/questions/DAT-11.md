@@ -119,15 +119,11 @@ Design data-preserving Room migrations by enabling exported schemas, writing exp
 
 ## Interview answer — structured
 
-Preserving user data during Room schema evolution requires treating database migrations with the same rigor as backend database upgrades:
+Preserving user data during Room schema evolution requires treating database migrations with the same rigor as backend database upgrades.
 
-1. **Export Schemas via Gradle**: Configure `room.schemaLocation` in `build.gradle.kts` and commit generated schema JSON files to Git. This provides Room with the baseline schema for every released version.
+First, with Export Schemas via Gradle, configure `room.schemaLocation` in `build.gradle.kts` and commit generated schema JSON files to Git. This provides Room with the baseline schema for every released version. Next, with Explicit Migration Scripts, avoid `fallbackToDestructiveMigration()` in production offline-first apps, which completely drops tables and purges pending user drafts. Write explicit `Migration(from, to)` objects containing valid SQLite DDL.
+Additionally, with Handling Complex Schema Changes, because SQLite historically has limited `ALTER TABLE` support (e.g. Dropping columns or altering constraints), use the **Table Recreation Pattern**: create the new table with desired schema, copy data over (`INSERT INTO new SELECT ... FROM old`), drop the old table, and rename the new table. Finally, with Automated Migration Testing, use `MigrationTestHelper` in instrumented or Robolectric tests. The test spins up version $N$, inserts test records, executes the migration to $N+1$, and asserts that rows exist and columns match expected types.
 
-2. **Explicit Migration Scripts**: Avoid `fallbackToDestructiveMigration()` in production offline-first apps, which completely drops tables and purges pending user drafts. Write explicit `Migration(from, to)` objects containing valid SQLite DDL.
-
-3. **Handling Complex Schema Changes**: Because SQLite historically has limited `ALTER TABLE` support (e.g. dropping columns or altering constraints), use the **Table Recreation Pattern**: create the new table with desired schema, copy data over (`INSERT INTO new SELECT ... FROM old`), drop the old table, and rename the new table.
-
-4. **Automated Migration Testing**: Use `MigrationTestHelper` in instrumented or Robolectric tests. The test spins up version $N$, inserts test records, executes the migration to $N+1$, and asserts that rows exist and columns match expected types.
 
 ## Interview answer — deep senior
 
@@ -135,9 +131,10 @@ A critical production hazard is **Sparse Version Upgrades**.
 
 Users rarely update apps sequentially. A user might jump directly from app version 1.0 (Database version 1) to app version 4.0 (Database version 5). Room allows defining discrete incremental migrations (`1->2`, `2->3`, `3->4`, `4->5`) and chains them automatically at startup. However, if any link in the chain is missing, Room crashes with an `IllegalStateException`.
 
-To bulletproof release rollouts:
-- Implement continuous CI tests verifying every supported upgrade path (e.g. test `1->5`, `2->5`, `3->5`).
-- If table recreation involves millions of rows, run migrations within a transaction and monitor disk space, as SQLite requires temporary storage equal to the table size during table copy operations.
+To bulletproof release rollouts.
+
+First, implement continuous CI tests verifying every supported upgrade path (e.g. Test `1->5`, `2->5`, `3->5`). Finally, if table recreation involves millions of rows, run migrations within a transaction and monitor disk space, as SQLite requires temporary storage equal to the table size during table copy operations.
+
 
 ## How to answer in the interview
 

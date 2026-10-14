@@ -137,18 +137,18 @@ Check permission with ContextCompat.checkSelfPermission(). If denied, check shou
 
 ## Interview answer — structured
 
-Handling runtime permissions cleanly requires adhering to Android's modern 4-step permission lifecycle:
+Handling runtime permissions cleanly requires adhering to Android's modern 4-step permission lifecycle.
 
-1. **Check Status**: Query `ContextCompat.checkSelfPermission()`. If granted, execute the protected feature immediately.
-2. **Check Rationale**: If not granted, evaluate `ActivityCompat.shouldShowRequestPermissionRationale()`. If this returns `true`, the user has previously denied the request. Before showing the system dialog again, display an in-app educational rationale dialog explaining *why* the camera or location is required for this specific feature.
-3. **Request via Activity Result API**: Launch the request using `ActivityResultContracts.RequestPermission()`, which replaces deprecated `onRequestPermissionsResult`.
-4. **Handle Permanent Denial**: In modern Android, if the user denies the permission twice, the OS permanently suppresses system dialogs. If permission is denied and `shouldShowRequestPermissionRationale()` returns `false`, the permission is permanently denied. Display a clear UI explanation with an actionable button redirecting the user to `Settings.ACTION_APPLICATION_DETAILS_SETTINGS` to enable it manually.
+First, with Check Status, query `ContextCompat.checkSelfPermission()`. If granted, execute the protected feature immediately. Next, with Check Rationale, if not granted, evaluate `ActivityCompat.shouldShowRequestPermissionRationale()`. If this returns `true`, the user has previously denied the request. Before showing the system dialog again, display an in-app educational rationale dialog explaining *why* the camera or location is required for this specific feature.
+Additionally, with Request via Activity Result API, launch the request using `ActivityResultContracts.RequestPermission()`, which replaces deprecated `onRequestPermissionsResult`. Finally, with Handle Permanent Denial, in modern Android, if the user denies the permission twice, the OS permanently suppresses system dialogs. If permission is denied and `shouldShowRequestPermissionRationale()` returns `false`, the permission is permanently denied. Display a clear UI explanation with an actionable button redirecting the user to `Settings.ACTION_APPLICATION_DETAILS_SETTINGS` to enable it manually.
+
 
 ## Interview answer — deep senior
 
 From an OS policy perspective, Android 11+ introduces **One-time Permissions** and automatic permission resets for unused apps. When a user grants 'Only this time', the permission is granted only while the Activity is in the foreground and is revoked the moment the process dies.
 
 Furthermore, in Android 13 (API 33), runtime permissions were added for `POST_NOTIFICATIONS` and granular media (`READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, `READ_MEDIA_AUDIO`), deprecating the old broad `READ_EXTERNAL_STORAGE`. In Android 14 (API 34), users can grant **Partial Media Access** (`READ_MEDIA_VISUAL_USER_SELECTED`), allowing access to a selected subset of photos. Apps must handle this partial authorization without crashing or assuming full gallery visibility.
+
 
 ## How to answer in the interview
 

@@ -84,29 +84,22 @@ Review code systematically by automating style and formatting via linters, focus
 
 ## Interview answer — structured
 
-A structured code review process balances technical rigor with psychological safety and team velocity:
+A structured code review process balances technical rigor with psychological safety and team velocity.
 
-1. **Automate Mechanical Checks**:
-   - Enforce formatting (Spotless/ktlint), static analysis (Detekt), and framework issues (Android Lint) in automated CI gates. Human reviewers should never spend time debating tab widths or unused imports.
+First, **Automate Mechanical Checks**. Next, enforce formatting (Spotless/ktlint), static analysis (Detekt), and framework issues (Android Lint) in automated CI gates. Human reviewers should never spend time debating tab widths or unused imports.
+**Four-Pillar Review Rubric**. With Correctness, validate business logic fidelity, edge cases (empty states, process death, offline states), coroutine lifecycle safety (`repeatOnLifecycle`), and thread-safety.
+With Security, inspect sensitive data storage (EncryptedSharedPreferences), log sanitization (no PII in Logcat), secure component exports (`android:exported`), and deep-link payload validation. With Architecture & Maintainability, ensure separation of concerns, adherence to team architectural boundaries (Clean Architecture / MVI), and clear domain naming.
+With Testability, verify that new code introduces robust unit tests verifying behavior and edge cases rather than tautological mock assertions. **Empathetic and Actionable Feedback**.
+Finally, use structured conventional prefixes: `[Blocking]`, `[Suggestion]`, `[Question]`, `[Nitpick]`. Provide clear technical rationale and links to official documentation rather than subjective directives.
 
-2. **Four-Pillar Review Rubric**:
-   - **Correctness**: Validate business logic fidelity, edge cases (empty states, process death, offline states), coroutine lifecycle safety (`repeatOnLifecycle`), and thread-safety.
-   - **Security**: Inspect sensitive data storage (EncryptedSharedPreferences), log sanitization (no PII in Logcat), secure component exports (`android:exported`), and deep-link payload validation.
-   - **Architecture & Maintainability**: Ensure separation of concerns, adherence to team architectural boundaries (Clean Architecture / MVI), and clear domain naming.
-   - **Testability**: Verify that new code introduces robust unit tests verifying behavior and edge cases rather than tautological mock assertions.
-
-3. **Empathetic and Actionable Feedback**:
-   - Use structured conventional prefixes: `[Blocking]`, `[Suggestion]`, `[Question]`, `[Nitpick]`. Provide clear technical rationale and links to official documentation rather than subjective directives.
 
 ## Interview answer — deep senior
 
-From an engineering leadership and team velocity standpoint, code reviews require operational governance:
+From an engineering leadership and team velocity standpoint, code reviews require operational governance.
 
-1. **PR Size Caps and Review Latency SLA**: Research proves review thoroughness drops precipitously on PRs exceeding 400 lines of code. Enforce a team cultural limit: PRs should be small and atomic ($< 300$ lines). Establish an internal SLA where PRs are reviewed within 4 business hours to avoid blocking teammates.
+First, with PR Size Caps and Review Latency SLA, research proves review thoroughness drops precipitously on PRs exceeding 400 lines of code. Enforce a team cultural limit: PRs should be small and atomic ($< 300$ lines). Establish an internal SLA where PRs are reviewed within 4 business hours to avoid blocking teammates. Next, with Pairing on Complex Architecture, when reviewing foundational changes (e.g. Migrating authentication engines or introducing a new database schema), asynchronous GitHub comments are inefficient and lead to misunderstandings. Senior leads jump on a 15-minute synchronous pairing session to align on the mental model before final sign-off.
+Finally, with Fostering Codebase Collective Ownership, use reviews to mentor engineers and highlight great work with explicit `[Praise]` comments. Encourage junior engineers to review senior PRs; asking questions on unfamiliar patterns democratizes architectural knowledge across the squad.
 
-2. **Pairing on Complex Architecture**: When reviewing foundational changes (e.g. migrating authentication engines or introducing a new database schema), asynchronous GitHub comments are inefficient and lead to misunderstandings. Senior leads jump on a 15-minute synchronous pairing session to align on the mental model before final sign-off.
-
-3. **Fostering Codebase Collective Ownership**: Use reviews to mentor engineers and highlight great work with explicit `[Praise]` comments. Encourage junior engineers to review senior PRs; asking questions on unfamiliar patterns democratizes architectural knowledge across the squad.
 
 ## How to answer in the interview
 

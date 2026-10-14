@@ -93,19 +93,14 @@ SRP focuses on classes and actors: a class should have only one reason to change
 
 While both SRP and ISP promote modularity, they operate from opposing perspectives in the design hierarchy.
 
-1. **SRP (Single Responsibility Principle - Inside-Out Perspective)**:
-   - Governs **classes, modules, and concrete implementations**.
-   - Focuses on the *producer* of behavior.
-   - Criterion: A class must have only one reason to change, serving a single business actor (e.g. `PaymentValidator` serves business rules; `PaymentRepository` serves storage).
-   - Goal: High cohesion within the class.
-
-2. **ISP (Interface Segregation Principle - Outside-In Perspective)**:
-   - Governs **interfaces and abstractions**.
-   - Focuses on the *consumer (client)* of behavior.
-   - Criterion: No client should be forced to depend on methods it does not invoke.
-   - Goal: Loose coupling between clients and shared abstractions.
+First, **SRP (Single Responsibility Principle - Inside-Out Perspective)**. Next, governs **classes, modules, and concrete implementations**.
+Focuses on the *producer* of behavior. Criterion: A class must have only one reason to change, serving a single business actor (e.g. `PaymentValidator` serves business rules; `PaymentRepository` serves storage).
+Goal: High cohesion within the class. **ISP (Interface Segregation Principle - Outside-In Perspective)**.
+Governs **interfaces and abstractions**. Focuses on the *consumer (client)* of behavior.
+Criterion: No client should be forced to depend on methods it does not invoke. Finally, goal: Loose coupling between clients and shared abstractions.
 
 A concrete class can be 100% compliant with SRP (e.g. `UserRepositoryImpl` has the single cohesive responsibility of managing user data persistence), yet violate ISP if it exposes a monolithic 30-method interface to simple read-only UI clients.
+
 
 ## Interview answer — deep senior
 
@@ -114,6 +109,7 @@ Under the hood, violating ISP harms build performance and incremental compilatio
 Applying ISP prevents this ripple effect: fine-grained interfaces (`UserReader`, `UserPreferences`) isolate compilation boundaries. Updating `UserWriter` triggers recompilation strictly for the edit profile module, leaving read-only feed modules cached.
 
 In Kotlin, using interface segregation combined with delegation allows composing rich capabilities: `class FacadeRepo(reader: UserReader, writer: UserWriter) : UserReader by reader, UserWriter by writer`.
+
 
 ## How to answer in the interview
 

@@ -128,30 +128,22 @@ Design secure authentication using short-lived access tokens and Keystore-encryp
 
 ## Interview answer — structured
 
-A production-grade mobile authentication system must handle transient concurrency, key security, and automatic recovery:
+A production-grade mobile authentication system must handle transient concurrency, key security, and automatic recovery.
 
-1. **Tiered Token Architecture**:
-   - **Access Token (Short-lived, ~5-15 min)**: Passed in standard HTTP `Authorization: Bearer` headers. Kept primarily in volatile memory or encrypted DataStore.
-   - **Refresh Token (Long-lived, ~14-30 days)**: Stored encrypted using Android Keystore AES-GCM in private storage.
+First, **Tiered Token Architecture**. Next, with Access Token (Short-lived, ~5-15 min), passed in standard HTTP `Authorization: Bearer` headers. Kept primarily in volatile memory or encrypted DataStore.
+Additionally, a Refresh Token (Long-lived, ~14-30 days) is stored encrypted using Android Keystore AES-GCM in private storage. **Transparent Refresh via OkHttp Authenticator**.
+Attach an `Authenticator` implementation to the primary `OkHttpClient`. When any endpoint returns `401 Unauthorized`, OkHttp automatically triggers this handler. **Concurrency & Thundering-Herd Synchronization**.
+When multiple parallel requests fail simultaneously with 401, they hit `authenticate()` concurrently. A synchronized `Mutex` serializes execution. The first thread completes the refresh; subsequent threads observe that the current token has already updated and immediately replay with the new token without issuing duplicate refresh calls. **Terminal Failure Handling**.
+Finally, if the refresh token has expired, been revoked, or fails with 401/403, the authenticator returns `null`, wipes local credentials from Keystore and DataStore, and emits an unauthenticated session event to navigate to Login.
 
-2. **Transparent Refresh via OkHttp Authenticator**:
-   - Attach an `Authenticator` implementation to the primary `OkHttpClient`. When any endpoint returns `401 Unauthorized`, OkHttp automatically triggers this handler.
-
-3. **Concurrency & Thundering-Herd Synchronization**:
-   - When multiple parallel requests fail simultaneously with 401, they hit `authenticate()` concurrently. A synchronized `Mutex` serializes execution. The first thread completes the refresh; subsequent threads observe that the current token has already updated and immediately replay with the new token without issuing duplicate refresh calls.
-
-4. **Terminal Failure Handling**:
-   - If the refresh token has expired, been revoked, or fails with 401/403, the authenticator returns `null`, wipes local credentials from Keystore and DataStore, and emits an unauthenticated session event to navigate to Login.
 
 ## Interview answer — deep senior
 
-From an enterprise platform design perspective, session management extends beyond simple HTTP headers:
+From an enterprise platform design perspective, session management extends beyond simple HTTP headers.
 
-1. **Refresh Token Rotation (RTR) & Compromise Detection**: Each refresh cycle issues both a new access token and a new refresh token, immediately invalidating the old refresh token on the server. If an attacker intercepts and attempts to use an already-rotated refresh token, the backend detects replay fraud and terminates all sessions across all devices for that user account.
+First, with Refresh Token Rotation (RTR) & Compromise Detection, each refresh cycle issues both a new access token and a new refresh token, immediately invalidating the old refresh token on the server. If an attacker intercepts and attempts to use an already-rotated refresh token, the backend detects replay fraud and terminates all sessions across all devices for that user account. Next, with Cryptographic Token Binding (DPoP), in high-security banking architectures, access tokens are cryptographically bound to a device-generated asymmetric EC keypair in Android Keystore. The client signs an HTTP header containing the target URL and a server nonce, ensuring intercepted tokens cannot be replayed from other clients.
+Finally, with Multi-Process & Global Session State Broadcast, if an app utilizes multiple processes (e.g. Background sync or media playback services), session invalidation must propagate across IPC boundaries using an encrypted ContentProvider or reactive DataStore flows to prevent orphaned background tasks from flooding servers with stale credentials.
 
-2. **Cryptographic Token Binding (DPoP)**: In high-security banking architectures, access tokens are cryptographically bound to a device-generated asymmetric EC keypair in Android Keystore. The client signs an HTTP header containing the target URL and a server nonce, ensuring intercepted tokens cannot be replayed from other clients.
-
-3. **Multi-Process & Global Session State Broadcast**: If an app utilizes multiple processes (e.g. background sync or media playback services), session invalidation must propagate across IPC boundaries using an encrypted ContentProvider or reactive DataStore flows to prevent orphaned background tasks from flooding servers with stale credentials.
 
 ## How to answer in the interview
 

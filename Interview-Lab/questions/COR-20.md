@@ -102,6 +102,7 @@ Choosing the right synchronization tool depends on whether the critical section 
 
 **Thread Confinement** confines all mutations to a single dispatcher (such as `Dispatchers.Main` or `Dispatchers.Default.limitedParallelism(1)`), eliminating the need for locks altogether through structural design.
 
+
 ## Interview answer — deep senior
 
 At the performance and scheduling layer, each approach presents different trade-offs: `AtomicInteger` has zero suspension and zero lock overhead; it is resolved directly in CPU registers via cache coherency protocols (MESI). However, CAS loops can experience spinning overhead under extreme contention.
@@ -109,6 +110,7 @@ At the performance and scheduling layer, each approach presents different trade-
 `Mutex` involves internal queue management (`LockContender` nodes on the heap). While non-blocking, acquiring and releasing a Mutex is significantly more expensive in CPU instructions than an atomic CAS. Therefore, you should never use a Mutex for a simple primitive increment.
 
 With Thread Confinement using `limitedParallelism(1)`, Kotlin creates an exclusive sequential queue on top of the shared pool. It provides the simplicity of single-threaded programming without locking, but context switching across dispatchers via `withContext(singleThreadDispatcher)` incurs dispatch latency. In Android architecture, combining `AtomicReference` or `StateFlow.update` with immutable data structures offers the cleanest and most performant state synchronization.
+
 
 ## How to answer in the interview
 

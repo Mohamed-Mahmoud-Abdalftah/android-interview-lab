@@ -96,32 +96,23 @@ Gate PRs under 5 minutes by testing only modules impacted by the PR diff via aff
 
 ## Interview answer — structured
 
-Maintaining rigorous quality gates without degrading developer velocity requires a tiered pipeline strategy:
+Maintaining rigorous quality gates without degrading developer velocity requires a tiered pipeline strategy.
 
-1. **Affected Module Testing**:
-   - In a multi-module codebase (e.g. 50+ modules), running every test suite on every PR is wasteful. Use tools like **Affected Module Detector** to analyze Git diffs. If a PR touches only `:feature:checkout`, Gradle compiles and executes tests strictly for `:feature:checkout` and its direct dependents, skipping the other 45 modules.
+First, **Affected Module Testing**. Next, in a multi-module codebase (e.g. 50+ modules), running every test suite on every PR is wasteful. Use tools like **Affected Module Detector** to analyze Git diffs. If a PR touches only `:feature:checkout`, Gradle compiles and executes tests strictly for `:feature:checkout` and its direct dependents, skipping the other 45 modules.
+**Tier 1: Fast PR Feedback (< 5 Minutes)**. Target: Fast block/unblock signal for developers.
+Executes: Incremental static analysis (ktlint, detekt, modified-file Android Lint) and affected JVM unit tests. Powered by **Remote Gradle Build Cache**, downloading pre-compiled binaries for unaffected modules.
+**Tier 2: Merge Queue Gate (10–15 Minutes)**. Runs when a PR is approved and queued for merge.
+Executes full project compilation, integration contract tests, and release APK assembly smoke tests. **Tier 3: Asynchronous Nightly Suite**.
+Finally, executes heavy, slow, or resource-intensive suites: full emulator instrumentation tests, visual screenshot diffs, and Macrobenchmark performance profiles.
 
-2. **Tier 1: Fast PR Feedback (< 5 Minutes)**:
-   - Target: Fast block/unblock signal for developers.
-   - Executes: Incremental static analysis (ktlint, detekt, modified-file Android Lint) and affected JVM unit tests.
-   - Powered by **Remote Gradle Build Cache**, downloading pre-compiled binaries for unaffected modules.
-
-3. **Tier 2: Merge Queue Gate (10–15 Minutes)**:
-   - Runs when a PR is approved and queued for merge.
-   - Executes full project compilation, integration contract tests, and release APK assembly smoke tests.
-
-4. **Tier 3: Asynchronous Nightly Suite**:
-   - Executes heavy, slow, or resource-intensive suites: full emulator instrumentation tests, visual screenshot diffs, and Macrobenchmark performance profiles.
 
 ## Interview answer — deep senior
 
-From an infrastructure optimization and developer productivity perspective, pipeline velocity relies on caching and sharding:
+From an infrastructure optimization and developer productivity perspective, pipeline velocity relies on caching and sharding.
 
-1. **Remote Build Cache Hit Rate Optimization**: A well-tuned remote build cache achieves an 80%+ cache hit rate. Tasks like `compileKotlin` and `lint` pull outputs instantly from the shared cache. Measure and monitor cache hit rates; a drop in cache hits indicates non-deterministic task inputs.
+First, a Remote Build Cache Hit Rate Optimization is a well-tuned remote build cache achieves an 80%+ cache hit rate. Tasks like `compileKotlin` and `lint` pull outputs instantly from the shared cache. Measure and monitor cache hit rates; a drop in cache hits indicates non-deterministic task inputs. Next, with Parallel Test Worker Allocation, configure `gradle.properties` on CI runners with `org.gradle.parallel=true` and allocate optimal test workers (`maxParallelForks = Runtime.runtime.availableProcessors() / 2`). Running independent module tests across parallel workers reduces execution wall-clock time by 60%.
+Finally, with Fail-Fast Configuration, configure test runners with `--fail-fast`. If an assertion fails on test 3 out of 100, Gradle terminates execution immediately, providing instant error feedback to the author rather than wasting 10 minutes completing remaining tests.
 
-2. **Parallel Test Worker Allocation**: Configure `gradle.properties` on CI runners with `org.gradle.parallel=true` and allocate optimal test workers (`maxParallelForks = Runtime.runtime.availableProcessors() / 2`). Running independent module tests across parallel workers reduces execution wall-clock time by 60%.
-
-3. **Fail-Fast Configuration**: Configure test runners with `--fail-fast`. If an assertion fails on test 3 out of 100, Gradle terminates execution immediately, providing instant error feedback to the author rather than wasting 10 minutes completing remaining tests.
 
 ## How to answer in the interview
 

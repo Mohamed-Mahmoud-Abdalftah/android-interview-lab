@@ -96,32 +96,25 @@ Adapter bridges incompatible interfaces (`RecyclerView.Adapter`). Facade provide
 
 ## Interview answer — structured
 
-Structural patterns organize relationships and boundaries between collaborating objects:
+Structural patterns organize relationships and boundaries between collaborating objects.
 
-1. **Adapter (Interface Conversion)**:
-   - Converts the interface of a class into another interface clients expect, allowing incompatible classes to work together.
-   - *Android Example*: `RecyclerView.Adapter` bridges arbitrary application domain datasets into Android layout `ViewHolders`.
+First, **Adapter (Interface Conversion)**. Next, converts the interface of a class into another interface clients expect, allowing incompatible classes to work together.
+*Android Example*: `RecyclerView.Adapter` bridges arbitrary application domain datasets into Android layout `ViewHolders`. **Facade (Unified Simplicity)**.
+Exposes a simplified, cohesive high-level interface that masks the complexity of an intricate subsystem or convoluted third-party library. *Android Example*: A custom `BillingFacade` wrapping Google Play Billing SDK. The facade encapsulates connection lifecycles, purchase tokens, and acknowledging flows behind simple suspending calls: `suspend fun buy(sku: String): PurchaseResult`.
+**Decorator (Dynamic Behavioral Augmentation)**. Attaches additional responsibilities to an object dynamically without subclassing, wrapping the original instance.
+*Android Example*: `OkHttp Interceptors`. Each interceptor wraps HTTP requests and responses, adding caching headers, Gzip compression, or authentication tokens sequentially. **Proxy (Surrogate Access Control)**.
+Provides a placeholder or surrogate for another object to control access to it (e.g. Remote Proxy, Virtual Proxy for lazy loading, Protection Proxy). Finally, *Android Example*: Android's **Binder IPC mechanism**. When an app invokes `LocationManager`, it communicates with an AIDL-generated local client Proxy that serializes calls across process boundaries into system server daemons.
 
-2. **Facade (Unified Simplicity)**:
-   - Exposes a simplified, cohesive high-level interface that masks the complexity of an intricate subsystem or convoluted third-party library.
-   - *Android Example*: A custom `BillingFacade` wrapping Google Play Billing SDK. The facade encapsulates connection lifecycles, purchase tokens, and acknowledging flows behind simple suspending calls: `suspend fun buy(sku: String): PurchaseResult`.
-
-3. **Decorator (Dynamic Behavioral Augmentation)**:
-   - Attaches additional responsibilities to an object dynamically without subclassing, wrapping the original instance.
-   - *Android Example*: `OkHttp Interceptors`. Each interceptor wraps HTTP requests and responses, adding caching headers, Gzip compression, or authentication tokens sequentially.
-
-4. **Proxy (Surrogate Access Control)**:
-   - Provides a placeholder or surrogate for another object to control access to it (e.g. Remote Proxy, Virtual Proxy for lazy loading, Protection Proxy).
-   - *Android Example*: Android's **Binder IPC mechanism**. When an app invokes `LocationManager`, it communicates with an AIDL-generated local client Proxy that serializes calls across process boundaries into system server daemons.
 
 ## Interview answer — deep senior
 
-Comparing **Adapter vs Facade vs Decorator**:
-- *Adapter* changes an interface to match an existing specification without altering behavior.
-- *Facade* defines a *new, simpler* interface to reduce complexity across multiple classes.
-- *Decorator* preserves the *same* interface while dynamically enhancing behavior.
+Comparing **Adapter vs Facade vs Decorator**.
+
+First, *Adapter* changes an interface to match an existing specification without altering behavior. Next, *Facade* defines a *new, simpler* interface to reduce complexity across multiple classes.
+Finally, *Decorator* preserves the *same* interface while dynamically enhancing behavior.
 
 In modern Kotlin, the **Decorator pattern** is elegantly built via Class Delegation: `class LoggingRepository(private val delegate: UserRepository) : UserRepository by delegate`. You only override the methods you wish to decorate with logging, while Kotlin delegates all other method calls automatically, cutting boilerplate to near zero.
+
 
 ## How to answer in the interview
 

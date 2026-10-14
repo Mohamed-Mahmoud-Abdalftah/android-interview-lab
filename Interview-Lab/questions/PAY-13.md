@@ -120,26 +120,21 @@ Redesign ownership and ordering by decoupling payment execution from the UI life
 
 ## Interview answer — structured
 
-Coupling financial reversal persistence to ephemeral Android UI component lifecycles represents a catastrophic anti-pattern:
+Coupling financial reversal persistence to ephemeral Android UI component lifecycles represents a catastrophic anti-pattern.
 
-1. **Root-Cause Flaws**:
-   - **Fragile Ownership**: Launching payment coroutines within `lifecycleScope` or UI ViewModels binds business logic to the screen. When a timeout occurs and the user or handler executes `finish()`, the lifecycle cancels all active coroutine jobs, silently aborting incomplete database inserts.
-   - **Inverted Sequencing**: Notifying the UI before completing disk persistence creates a race condition where the screen tears down the process while the disk write is in-flight.
+First, **Root-Cause Flaws**. Next, with Fragile Ownership, launching payment coroutines within `lifecycleScope` or UI ViewModels binds business logic to the screen. When a timeout occurs and the user or handler executes `finish()`, the lifecycle cancels all active coroutine jobs, silently aborting incomplete database inserts.
+Additionally, with Inverted Sequencing, notifying the UI before completing disk persistence creates a race condition where the screen tears down the process while the disk write is in-flight. **Architectural Redesign Blueprint**.
+With Inversion of Ownership, transfer transaction ownership to a singleton `PaymentEngine` backed by an uncancelled `ApplicationScope` or persistent WorkManager. Transaction execution continues unhindered regardless of UI navigation, orientation changes, or screen dismissals. With Strict Persistence-First Sequencing, upon timeout detection, the engine must atomically commit the in-doubt state and reversal payload to SQLite *first* (`paymentDao.markInDoubtAndEnqueueReversal()`). Only after disk confirmation does it emit state updates to UI observers.
+Finally, a Passive State-Driven UI is the UI becomes a purely passive observer of `StateFlow<PaymentState>`. If the user closes the screen, the reversal worker still dispatches reliably in the background.
 
-2. **Architectural Redesign Blueprint**:
-   - **Inversion of Ownership**: Transfer transaction ownership to a singleton `PaymentEngine` backed by an uncancelled `ApplicationScope` or persistent WorkManager. Transaction execution continues unhindered regardless of UI navigation, orientation changes, or screen dismissals.
-   - **Strict Persistence-First Sequencing**: Upon timeout detection, the engine must atomically commit the in-doubt state and reversal payload to SQLite *first* (`paymentDao.markInDoubtAndEnqueueReversal()`). Only after disk confirmation does it emit state updates to UI observers.
-   - **Passive State-Driven UI**: The UI becomes a purely passive observer of `StateFlow<PaymentState>`. If the user closes the screen, the reversal worker still dispatches reliably in the background.
 
 ## Interview answer — deep senior
 
-From an Android process lifecycle and Coroutines concurrency standpoint, execution boundaries must be hardened:
+From an Android process lifecycle and Coroutines concurrency standpoint, execution boundaries must be hardened.
 
-1. **`NonCancellable` Context Protection**: In Kotlin Coroutines, when a timeout block cancels (`TimeoutCancellationException`), standard coroutine blocks immediately terminate. Enqueuing the reversal must be wrapped in `withContext(NonCancellable)` to prevent the active cancellation exception from aborting the emergency database commit.
+First, with NonCancellable` Context Protection, in Kotlin Coroutines, when a timeout block cancels (`TimeoutCancellationException`), standard coroutine blocks immediately terminate. Enqueuing the reversal must be wrapped in `withContext(NonCancellable)` to prevent the active cancellation exception from aborting the emergency database commit. Next, with Handling Low-Memory Process Termination (LMK), even an `ApplicationScope` will not survive if Android's Low Memory Killer terminates the OS process due to RAM pressure. Pairing `ApplicationScope` with an immediate WorkManager job registration (`ExistingWorkPolicy.REPLACE`) guarantees that if the process is killed mid-write, the Android OS will reschedule and execute the reversal upon system recovery.
+Finally, with UI Event Back-Pressure, if the UI exits during timeout, prevent the user from immediately re-entering the checkout flow until the background engine confirms the reversal intent has been durably secured.
 
-2. **Handling Low-Memory Process Termination (LMK)**: Even an `ApplicationScope` will not survive if Android's Low Memory Killer terminates the OS process due to RAM pressure. Pairing `ApplicationScope` with an immediate WorkManager job registration (`ExistingWorkPolicy.REPLACE`) guarantees that if the process is killed mid-write, the Android OS will reschedule and execute the reversal upon system recovery.
-
-3. **UI Event Back-Pressure**: If the UI exits during timeout, prevent the user from immediately re-entering the checkout flow until the background engine confirms the reversal intent has been durably secured.
 
 ## How to answer in the interview
 

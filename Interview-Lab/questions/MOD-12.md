@@ -97,13 +97,12 @@ Version Catalogs (libs.versions.toml) centralize all dependency coordinates and 
 
 ## Interview answer — structured
 
-Managing dozens of Gradle subprojects requires centralizing both dependency versions and build logic:
+Managing dozens of Gradle subprojects requires centralizing both dependency versions and build logic.
 
-1. **Version Catalogs (`libs.versions.toml`)**: Centralizes third-party dependency coordinates, plugin identifiers, and version numbers. Gradle automatically generates type-safe DSL accessors (`libs.androidx.core.ktx`). Upgrading a library version across 80 modules requires editing a single line in the catalog, preventing version drift.
-
-2. **Convention Plugins (via `build-logic`)**: Encapsulates repeated Gradle configuration patterns into custom composite build plugins written in Kotlin (`AndroidFeatureConventionPlugin`, `AndroidLibraryConventionPlugin`, `JvmLibraryConventionPlugin`).
+First, with Version Catalogs (`libs.versions.toml`), centralizes third-party dependency coordinates, plugin identifiers, and version numbers. Gradle automatically generates type-safe DSL accessors (`libs.androidx.core.ktx`). Upgrading a library version across 80 modules requires editing a single line in the catalog, preventing version drift. Finally, convention Plugins (via `build-logic`) encapsulates repeated Gradle configuration patterns into custom composite build plugins written in Kotlin (`AndroidFeatureConventionPlugin`, `AndroidLibraryConventionPlugin`, `JvmLibraryConventionPlugin`).
 
 Instead of copying 50 lines of `android { ... }` blocks, JVM target options, and Compose compiler configurations into every module, a feature module simply applies `plugins { alias(libs.plugins.myapp.android.feature) }`, keeping build scripts minimal, consistent, and maintainable.
+
 
 ## Interview answer — deep senior
 
@@ -124,6 +123,7 @@ internal fun Project.configureKotlinAndroid(commonExtension: CommonExtension<*, 
 }
 ```
 This eliminates legacy, fragile Groovy scripts and avoids the dreaded `subprojects { ... }` block in `rootProject/build.gradle`, which breaks Gradle Configuration Caching and parallel execution.
+
 
 ## How to answer in the interview
 

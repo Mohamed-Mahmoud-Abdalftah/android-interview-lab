@@ -97,17 +97,13 @@ DIP is an architectural principle stating that high-level modules should depend 
 
 While frequently conflated, Dependency Inversion Principle (DIP) and Dependency Injection (DI) operate at fundamentally different architectural levels.
 
-1. **DIP (The Architectural Principle)**:
-   - Formulated as the 'D' in SOLID.
-   - Dictates **coupling direction**: high-level business policies must depend on abstractions (interfaces), and low-level detail implementations must depend on those same abstractions.
-   - It answers: *'How should my software layers be decoupled structurally?'*
-
-2. **DI (The Creational Technique / Pattern)**:
-   - A concrete implementation pattern (typically powered by frameworks like Hilt, Dagger, or Koin).
-   - Dictates **how dependencies are instantiated**: instead of a class instantiating its collaborators (`val repo = UserRepository()`), they are passed into its constructor from an external assembler.
-   - It answers: *'How does a class obtain references to its collaborators at runtime?'*
+First, **DIP (The Architectural Principle)**. Next, formulated as the 'D' in SOLID.
+Dictates **coupling direction**: high-level business policies must depend on abstractions (interfaces), and low-level detail implementations must depend on those same abstractions. It answers: *'How should my software layers be decoupled structurally?'*
+**DI (The Creational Technique / Pattern)**. A concrete implementation pattern (typically powered by frameworks like Hilt, Dagger, or Koin).
+Dictates **how dependencies are instantiated**: instead of a class instantiating its collaborators (`val repo = UserRepository()`), they are passed into its constructor from an external assembler. Finally, it answers: *'How does a class obtain references to its collaborators at runtime?'*
 
 Crucially, **using DI does not automatically satisfy DIP**. Injecting a concrete `RetrofitApi` into a `ViewModel` uses Dependency Injection, but severely violates the Dependency Inversion Principle because the high-level ViewModel remains tightly coupled to low-level networking details.
+
 
 ## Interview answer — deep senior
 
@@ -116,6 +112,7 @@ Under the hood, DI acts as the practical enabler of DIP. When you apply DIP, a c
 Dagger/Hilt resolves this using **`@Binds`**: it maintains a compile-time dependency graph that maps the Domain abstraction `UserRepository` to the Data implementation `UserRepositoryImpl`, injecting it seamlessly.
 
 In unit testing, DI allows passing an in-memory `FakeUserRepository` without any DI framework, making tests fast and deterministic.
+
 
 ## How to answer in the interview
 

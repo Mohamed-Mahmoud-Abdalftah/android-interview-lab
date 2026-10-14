@@ -102,31 +102,22 @@ Support mobile version skew by enforcing strict backward compatibility on backen
 
 ## Interview answer — structured
 
-Managing version skew is a defining challenge of mobile platform engineering, as hundreds of disparate app versions coexist indefinitely in the wild:
+Managing version skew is a defining challenge of mobile platform engineering, as hundreds of disparate app versions coexist indefinitely in the wild.
 
-1. **Backend Evolution Rules (Additive Only)**:
-   - Never remove existing JSON fields or alter data types in active API versions. Schema evolution must be strictly additive.
-   - When introducing newer data models, deprecate old fields with graceful sunset schedules (e.g. 12-month deprecation policy) while monitoring active version telemetry.
+First, **Backend Evolution Rules (Additive Only)**. Next, never remove existing JSON fields or alter data types in active API versions. Schema evolution must be strictly additive.
+When introducing newer data models, deprecate old fields with graceful sunset schedules (e.g. 12-month deprecation policy) while monitoring active version telemetry. **Tolerant Reader Configuration**.
+Configure client parsers (Kotlinx Serialization or Moshi) with `ignoreUnknownKeys = true`. When backends introduce new fields for newer releases, older clients parse payloads smoothly without deserialization exceptions. **Version Identification Headers**.
+Attach semantic client headers (`X-App-Version: 3.2.1`, `X-Build-Number: 450`) to every HTTP request. Backends use these headers for telemetry, routing, and phased contract migrations. **Graduated Update Strategy (Soft vs. Force Update)**.
+With Soft Update, for non-breaking improvements, display a dismissible in-app update prompt using Google Play's `AppUpdateManager` (Flexible flow). Finally, with Force Update, for breaking security changes or decommissioned APIs, the server responds with `HTTP 426 Upgrade Required`. The client presents an unskippable full-screen blocker routing the user directly to the Play Store.
 
-2. **Tolerant Reader Configuration**:
-   - Configure client parsers (Kotlinx Serialization or Moshi) with `ignoreUnknownKeys = true`. When backends introduce new fields for newer releases, older clients parse payloads smoothly without deserialization exceptions.
-
-3. **Version Identification Headers**:
-   - Attach semantic client headers (`X-App-Version: 3.2.1`, `X-Build-Number: 450`) to every HTTP request. Backends use these headers for telemetry, routing, and phased contract migrations.
-
-4. **Graduated Update Strategy (Soft vs. Force Update)**:
-   - **Soft Update**: For non-breaking improvements, display a dismissible in-app update prompt using Google Play's `AppUpdateManager` (Flexible flow).
-   - **Force Update**: For breaking security changes or decommissioned APIs, the server responds with `HTTP 426 Upgrade Required`. The client presents an unskippable full-screen blocker routing the user directly to the Play Store.
 
 ## Interview answer — deep senior
 
-From an enterprise API lifecycle perspective, managing version skew requires operational discipline across organizational boundaries:
+From an enterprise API lifecycle perspective, managing version skew requires operational discipline across organizational boundaries.
 
-1. **URL vs. Header API Versioning**: Major architectural contract shifts require formal API versioning (e.g., `/v2/checkout` alongside `/v1/checkout`). Backends maintain adapter translation layers mapping deprecated `/v1` requests to new internal microservice schemas, allowing older apps to function until their active user share drops below target deprecation thresholds (e.g. < 0.2%).
+First, with URL vs. Header API Versioning, major architectural contract shifts require formal API versioning (e.g., `/v2/checkout` alongside `/v1/checkout`). Backends maintain adapter translation layers mapping deprecated `/v1` requests to new internal microservice schemas, allowing older apps to function until their active user share drops below target deprecation thresholds (e.g. < 0.2%). Next, with Feature Flags as Contract Gateways, when shipping client changes that depend on newly deployed backend features, protect client code with feature flags. Deploy the mobile code dormant, verify backend stability across multi-region clusters, and activate the mobile flag remotely only once backend coverage is 100% verified.
+Finally, with Automated Backward Compatibility CI Checks, run contract testing in backend CI against historical mobile DTO schemas. If a backend PR removes a field or alters a nullable constraint expected by any app version released within the last year, the backend CI build fails automatically.
 
-2. **Feature Flags as Contract Gateways**: When shipping client changes that depend on newly deployed backend features, protect client code with feature flags. Deploy the mobile code dormant, verify backend stability across multi-region clusters, and activate the mobile flag remotely only once backend coverage is 100% verified.
-
-3. **Automated Backward Compatibility CI Checks**: Run contract testing in backend CI against historical mobile DTO schemas. If a backend PR removes a field or alters a nullable constraint expected by any app version released within the last year, the backend CI build fails automatically.
 
 ## How to answer in the interview
 

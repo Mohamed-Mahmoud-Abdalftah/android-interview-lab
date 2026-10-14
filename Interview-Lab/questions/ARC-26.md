@@ -98,20 +98,19 @@ Enforce architectural boundaries without boilerplate interfaces by leveraging Gr
 
 Enforcing architectural boundaries does not require suffocating codebases under 1-to-1 boilerplate interfaces (`Foo` / `FooImpl`). Modern Android engineering employs structural, compiler-enforced, and automated tooling mechanisms.
 
-1. **Compiler-Enforced Gradle Boundaries**: The strongest boundary is compilation failure. By splitting code into independent Gradle modules (`:feature:home`, `:core:domain`, `:core:database`), the build graph physically prevents forbidden calls. If a developer attempts to call a Room DAO from a ViewModel in a feature module that has no dependency on `:core:database`, the project will not compile.
+First, compiler-Enforced Gradle Boundaries is the strongest boundary is compilation failure. By splitting code into independent Gradle modules (`:feature:home`, `:core:domain`, `:core:database`), the build graph physically prevents forbidden calls. If a developer attempts to call a Room DAO from a ViewModel in a feature module that has no dependency on `:core:database`, the project will not compile. Next, with Kotlin `internal` Visibility Modifiers, within a module, mark concrete classes, network DTOs, and helper mappers as `internal`. Expose only the required public entry point or interface. Consuming modules cannot access internal types even if they depend on the module.
+Finally, with Automated Architecture Tests (Konsist / ArchUnit), rather than relying on manual code reviews, we write executable unit tests using **Konsist** that verify architectural invariants across the entire repository in CI.
 
-2. **Kotlin `internal` Visibility Modifiers**: Within a module, mark concrete classes, network DTOs, and helper mappers as `internal`. Expose only the required public entry point or interface. Consuming modules cannot access internal types even if they depend on the module.
-
-3. **Automated Architecture Tests (Konsist / ArchUnit)**: Rather than relying on manual code reviews, we write executable unit tests using **Konsist** that verify architectural invariants across the entire repository in CI.
 
 ## Interview answer — deep senior
 
-Tools like **Konsist** revolutionize architectural governance. In just 5 lines of Kotlin test code, an engineering team can enforce contracts such as:
-- *'No class in `:presentation` may import anything from `androidx.room` or `retrofit2`.'*
-- *'Every Repository implementation must reside inside the `data` package.'*
-- *'All UseCases must reside in `:domain` and expose only `operator fun invoke()`.'*
+Tools like **Konsist** revolutionize architectural governance. In just 5 lines of Kotlin test code, an engineering team can enforce contracts such as.
+
+First, *'No class in `:presentation` may import anything from `androidx.room` or `retrofit2`.'* Next, *'Every Repository implementation must reside inside the `data` package.'*
+Finally, *'All UseCases must reside in `:domain` and expose only `operator fun invoke()`.'*
 
 If any developer violates these rules, the test fails in local builds and blocks GitHub Actions CI. This eliminates the need for speculative interface wrapping while maintaining ironclad architectural discipline across large distributed teams.
+
 
 ## How to answer in the interview
 

@@ -109,10 +109,11 @@ A `@Composable` annotation transforms a Kotlin function at compile time. Much li
 
 **Recomposition** is the core reactive mechanism of Jetpack Compose. When a snapshot `State` object read within a composable changes its value, the Compose runtime invalidates that specific scope in the **Slot Table** and re-executes the composable function to produce updated UI nodes.
 
-Three critical operational rules govern recomposition:
-1. **Idempotency & Purity**: Composables must be free of side-effects because recomposition can execute on every single frame during animations.
-2. **Parallel & Arbitrary Order**: Composables may run concurrently on background thread pools or in arbitrary order.
-3. **Optimistic Cancellation**: If state updates again while recomposition is underway, Compose discards the pending pass and restarts with the fresh state.
+Three critical operational rules govern recomposition.
+
+First, with Idempotency & Purity, composables must be free of side-effects because recomposition can execute on every single frame during animations. Next, with Parallel & Arbitrary Order, composables may run concurrently on background thread pools or in arbitrary order.
+Finally, with Optimistic Cancellation, if state updates again while recomposition is underway, Compose discards the pending pass and restarts with the fresh state.
+
 
 ## Interview answer — deep senior
 
@@ -121,6 +122,7 @@ Under the hood, the Compose Compiler generates synthetic bytecode called **Resta
 When you read `state.value` inside a composable, the `Snapshot` system records that read against the active `RecomposeScope`. When `state.value = newValue` is assigned, the snapshot system marks that `RecomposeScope` as dirty and dispatches an invalidation to the Choreographer frame loop.
 
 If all parameters passed to a composable are known to be **Stable** and have not changed by `equals()` comparison, Compose skips executing the function body entirely (`Skipping`), which is why understanding Compose compiler stability is fundamental to fluid 120fps performance.
+
 
 ## How to answer in the interview
 

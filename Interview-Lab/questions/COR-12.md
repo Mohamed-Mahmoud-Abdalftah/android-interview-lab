@@ -114,6 +114,7 @@ With a `SupervisorJob`, failure propagates only downwards. If a child coroutine 
 
 In Android architecture, `viewModelScope` internally uses a `SupervisorJob`. This ensures that if one user action—like refreshing an avatar—throws an exception, it doesn't tear down the entire ViewModel and abort unrelated ongoing operations.
 
+
 ## Interview answer — deep senior
 
 A critical interview pitfall is how developers misuse `SupervisorJob` with coroutine builders. Consider this common mistake:
@@ -129,6 +130,7 @@ viewModelScope.launch(SupervisorJob()) {
 Passing `SupervisorJob()` as an argument to `launch` creates a new parent job that severs structured concurrency from `viewModelScope`. Furthermore, inside the `launch` block, `launch` itself creates a regular `Job` as the parent for `deferred1` and `deferred2`. If `fetchA` fails, it still cancels `fetchB`!
 
 To correctly supervise siblings within a suspend function, you must use the `supervisorScope { }` builder. `supervisorScope` installs a `SupervisorJob` as the parent for all coroutines launched directly within its block, isolating child failures without breaking structured concurrency.
+
 
 ## How to answer in the interview
 

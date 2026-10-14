@@ -106,6 +106,7 @@ What `suspend` actually does is mark a function as capable of non-blocking suspe
 
 As an Android architect, I enforce the principle of **Main-Safety**: every public suspend function must be safe to call from Dispatchers.Main. If the function performs disk I/O or heavy computation, it is internally responsible for wrapping that work in `withContext(Dispatchers.IO)` or `withContext(Dispatchers.Default)`.
 
+
 ## Interview answer — deep senior
 
 From a bytecode standpoint, the compiler transforms `suspend fun fetch(): String` into `fun fetch(continuation: Continuation<String>): Any?`. The return type becomes `Any?` because the method can either return the concrete `String` immediately if data is already cached, or return the singleton `COROUTINE_SUSPENDED` if an asynchronous wait is required.
@@ -113,6 +114,7 @@ From a bytecode standpoint, the compiler transforms `suspend fun fetch(): String
 The suspension mechanism relies on callbacks at the lowest level: when you call an asynchronous SDK via `suspendCancellableCoroutine`, you register a listener that will invoke `continuation.resume(value)` upon completion. At that moment, the coroutine is queued back onto the designated CoroutineDispatcher's event loop.
 
 In team code reviews, we treat any suspend function that blocks a thread or lacks internal dispatching for heavy work as a high-severity bug. Suspend functions must maintain zero thread affinity for the caller, guaranteeing that callers never need to guess whether they should wrap repository calls in `withContext(Dispatchers.IO)`.
+
 
 ## How to answer in the interview
 

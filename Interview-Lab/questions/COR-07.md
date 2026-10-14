@@ -115,6 +115,7 @@ Dispatchers govern thread assignment for coroutines, each tailored for a specifi
 
 **Dispatchers.Unconfined** does not confine execution to any specific thread. It begins in the caller's thread and resumes in whichever thread resumed the continuation. Because it leads to non-deterministic thread transitions, we avoid it in production Android code.
 
+
 ## Interview answer — deep senior
 
 Behind the scenes, `Dispatchers.Default` and `Dispatchers.IO` share the same underlying JVM thread pool implementation (`ExperimentalCoroutineDispatcher`). When you switch between `Default` and `IO` using `withContext`, the coroutine scheduler can often shift the task between pool sub-queues without an expensive OS thread context switch if worker threads are available.
@@ -122,6 +123,7 @@ Behind the scenes, `Dispatchers.Default` and `Dispatchers.IO` share the same und
 In Android development, `Dispatchers.Main.immediate` deserves special mention: standard `Dispatchers.Main` schedules execution via `Handler.post()`, introducing an asynchronous dispatch delay even if you are already on the Main thread. `Dispatchers.Main.immediate` executes synchronously if the caller is already on the UI thread, preventing momentary UI flicker.
 
 Furthermore, for fine-grained resource limits, Kotlin 1.6+ introduced `limitedParallelism(n)`. On `Dispatchers.IO`, you can create a dedicated dispatcher with a strict concurrency ceiling (e.g., `Dispatchers.IO.limitedParallelism(4)`) to avoid overwhelming local SQLite database connection pools with dozens of concurrent threads.
+
 
 ## How to answer in the interview
 

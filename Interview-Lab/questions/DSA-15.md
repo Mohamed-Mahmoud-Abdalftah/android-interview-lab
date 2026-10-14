@@ -143,25 +143,20 @@ For a rate limiter, a sliding window log using an ArrayDeque of timestamps fits 
 
 ## Interview answer — structured
 
-Designing rate limiters and deduplication managers requires thread-safe collections tailored to sliding time windows and task coalescing:
+Designing rate limiters and deduplication managers requires thread-safe collections tailored to sliding time windows and task coalescing.
 
-1. **Sliding Window Rate Limiter (`ArrayDeque<Long>`)**:
-   - **Mechanism**: Maintains timestamps of recent requests in an `ArrayDeque`. On each incoming request at time $t$, pop timestamps older than $t - \text{windowDuration}$ from the head in $O(1)$ time. If the remaining deque size is within limits, push $t$ to the tail and allow the request; otherwise, throttle.
-   - **Trade-off**: Provides exact precision without the boundary burst vulnerabilities of fixed-window counters, consuming minimal $O(k)$ memory where $k$ is the rate limit.
+First, **Sliding Window Rate Limiter (`ArrayDeque<Long>`)**. Next, a Mechanism maintains timestamps of recent requests in an `ArrayDeque`. On each incoming request at time $t$, pop timestamps older than $t - \text{windowDuration}$ from the head in $O(1)$ time. If the remaining deque size is within limits, push $t$ to the tail and allow the request; otherwise, throttle.
+Additionally, a Trade-off provides exact precision without the boundary burst vulnerabilities of fixed-window counters, consuming minimal $O(k)$ memory where $k$ is the rate limit. **Concurrent Request Deduplication (Single-Flight Pattern)**.
+With Mechanism, use a `ConcurrentHashMap<String, Deferred<Result>>`. When a request arrives, invoke `computeIfAbsent(key) { async { executeNetworkCall() } }`. Multiple concurrent callers subscribe to the identical `Deferred.await()`, eliminating duplicate network traffic. Finally, with Cleanup, in a `finally` block, remove the key from the map once the network call completes to ensure subsequent requests fetch fresh data.
 
-2. **Concurrent Request Deduplication (Single-Flight Pattern)**:
-   - **Mechanism**: Use a `ConcurrentHashMap<String, Deferred<Result>>`. When a request arrives, invoke `computeIfAbsent(key) { async { executeNetworkCall() } }`. Multiple concurrent callers subscribe to the identical `Deferred.await()`, eliminating duplicate network traffic.
-   - **Cleanup**: In a `finally` block, remove the key from the map once the network call completes to ensure subsequent requests fetch fresh data.
 
 ## Interview answer — deep senior
 
-From an Android networking and resilience perspective, these patterns protect battery and server quotas:
+From an Android networking and resilience perspective, these patterns protect battery and server quotas.
 
-1. **Thundering Herd Mitigation on Screen Launch**: When 4 distinct UI components on a dashboard independently request the current user profile upon startup, naive code fires 4 duplicate HTTP requests. The Single-Flight deduplication pattern coalesces these into 1 HTTP call, saving radio wakeups and network bandwidth.
+First, with Thundering Herd Mitigation on Screen Launch, when 4 distinct UI components on a dashboard independently request the current user profile upon startup, naive code fires 4 duplicate HTTP requests. The Single-Flight deduplication pattern coalesces these into 1 HTTP call, saving radio wakeups and network bandwidth. Next, with Token Bucket Algorithm Alternative, for high-throughput client scenarios, the Token Bucket algorithm (`AtomicInteger` tokens replenished at a constant rate) is preferred over timestamp deques because it consumes $O(1)$ space and handles traffic bursts gracefully without logging individual timestamps.
+Finally, with Handling Network Failures in Deduplication, if the in-flight network call fails with an exception, all awaiting callers must receive the exception cleanly, and the key must be removed from the map immediately so retry logic is not stuck on a failed cached future.
 
-2. **Token Bucket Algorithm Alternative**: For high-throughput client scenarios, the Token Bucket algorithm (`AtomicInteger` tokens replenished at a constant rate) is preferred over timestamp deques because it consumes $O(1)$ space and handles traffic bursts gracefully without logging individual timestamps.
-
-3. **Handling Network Failures in Deduplication**: If the in-flight network call fails with an exception, all awaiting callers must receive the exception cleanly, and the key must be removed from the map immediately so retry logic is not stuck on a failed cached future.
 
 ## How to answer in the interview
 

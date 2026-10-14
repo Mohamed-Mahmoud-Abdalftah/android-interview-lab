@@ -99,6 +99,7 @@ If any phase exceeds its budget, the system misses the VSYNC deadline and repeat
 
 In Jetpack Compose, the most common jank source is **excessive recompositions** during scrolling. Passing unstable parameters triggers unnecessary recompositions of large composable subtrees. Furthermore, reading rapidly changing state (like scroll position) during the *Composition* phase rather than deferring it to the *Layout* or *Draw* phase via lambda modifiers forces full tree recomposition on every pixel movement.
 
+
 ## Interview answer — deep senior
 
 To deeply diagnose jank, we examine the Choreographer logs and Perfetto traces. The `Choreographer` class coordinates timing, scheduling callbacks for Input, Animation, Traversal, and Commit. When logs report `Skipped 30 frames! The application may be doing too much work on its main thread`, Choreographer detected that multiple VSYNC ticks elapsed before the message queue returned to idle.
@@ -106,6 +107,7 @@ To deeply diagnose jank, we examine the Choreographer logs and Perfetto traces. 
 In Compose, we profile recomposition counts using the **Layout Inspector** and Compose Compiler Metrics (`reportsDestination`). Marking data classes with `@Immutable` or wrapping unstable collections with Kotlinx Immutable Collections (`ImmutableList`) enables the compiler to mark composables as `skippable`.
 
 Another critical lever is using `derivedStateOf { ... }`. When a state changes continuously (e.g. `scrollState.firstVisibleItemIndex`), using `derivedStateOf` ensures observers only recompose when a calculated boolean or threshold actually changes.
+
 
 ## How to answer in the interview
 

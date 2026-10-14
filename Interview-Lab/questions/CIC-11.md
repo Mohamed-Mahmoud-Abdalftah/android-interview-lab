@@ -95,27 +95,21 @@ Automate versioning using Conventional Commits and Semantic Versioning. Calculat
 
 ## Interview answer — structured
 
-Automating Android release versioning removes manual human error and ensures store compliance:
+Automating Android release versioning removes manual human error and ensures store compliance.
 
-1. **Android Dual Versioning Paradigm**:
-   - **`versionCode` (Integer)**: A strictly increasing positive integer required by Google Play to identify upgrade paths. Generating it from `git rev-list --count HEAD` or CI pipeline run numbers ensures monotonicity without manual editing.
-   - **`versionName` (String)**: The consumer-facing release string (e.g. `"3.2.0"`) adhering to Semantic Versioning (`MAJOR.MINOR.PATCH`).
+First, **Android Dual Versioning Paradigm**. Next, versionCode` (Integer) is a strictly increasing positive integer required by Google Play to identify upgrade paths. Generating it from `git rev-list --count HEAD` or CI pipeline run numbers ensures monotonicity without manual editing.
+Additionally, versionName` (String) is the consumer-facing release string (e.g. `"3.2.0"`) adhering to Semantic Versioning (`MAJOR.MINOR.PATCH`). **Conventional Commits & Automated Bumping**.
+Enforce commit conventions (`feat:`, `fix:`, `refactor:`, `perf:`, `BREAKING CHANGE`). CI tooling parses commit history since the last git tag to determine the next SemVer version increment automatically. **Changelog & Tag Generation**.
+Finally, utilities like `git-cliff` or GitHub Actions release workflows automatically compile grouped changelogs, create an annotated Git tag (`v3.2.0`), generate release notes for Google Play's `whatsnew-en-US.txt`, and publish a GitHub Release.
 
-2. **Conventional Commits & Automated Bumping**:
-   - Enforce commit conventions (`feat:`, `fix:`, `refactor:`, `perf:`, `BREAKING CHANGE`). CI tooling parses commit history since the last git tag to determine the next SemVer version increment automatically.
-
-3. **Changelog & Tag Generation**:
-   - Utilities like `git-cliff` or GitHub Actions release workflows automatically compile grouped changelogs, create an annotated Git tag (`v3.2.0`), generate release notes for Google Play's `whatsnew-en-US.txt`, and publish a GitHub Release.
 
 ## Interview answer — deep senior
 
-At enterprise scale with multiple CPU architectures or flavors, versioning requires mathematical planning:
+At enterprise scale with multiple CPU architectures or flavors, versioning requires mathematical planning.
 
-1. **ABI/Flavor Version Code Offsets**: If distributing APKs rather than AABs, Google Play requires distinct versionCodes for different ABIs (e.g. arm64-v8a must have a higher versionCode than armeabi-v7a so devices pick the 64-bit package). A classic formula is `versionCode = (baseVersionCode * 10) + abiCode`.
+First, with ABI/Flavor Version Code Offsets, if distributing APKs rather than AABs, Google Play requires distinct versionCodes for different ABIs (e.g. Arm64-v8a must have a higher versionCode than armeabi-v7a so devices pick the 64-bit package). A classic formula is `versionCode = (baseVersionCode * 10) + abiCode`. Next, with CI Tagging Race Conditions, never push a Git tag *before* the release build succeeds. If the build or release fails half-way through, the tag points to a failed state. The pipeline must build and deploy the artifact first; only upon confirmed distribution does it commit the release tag and changelog to the repository.
+Finally, with Single Source of Truth, avoid storing version numbers in multiple places (e.g. `gradle.properties`, `AndroidManifest.xml`, and Git tags). Make the Git repository tag the single source of truth from which build scripts dynamically extract the version string.
 
-2. **CI Tagging Race Conditions**: Never push a Git tag *before* the release build succeeds. If the build or release fails half-way through, the tag points to a failed state. The pipeline must build and deploy the artifact first; only upon confirmed distribution does it commit the release tag and changelog to the repository.
-
-3. **Single Source of Truth**: Avoid storing version numbers in multiple places (e.g. `gradle.properties`, `AndroidManifest.xml`, and Git tags). Make the Git repository tag the single source of truth from which build scripts dynamically extract the version string.
 
 ## How to answer in the interview
 

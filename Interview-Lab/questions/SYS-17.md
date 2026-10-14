@@ -108,29 +108,21 @@ Design operational kill switches by wrapping critical components in cached featu
 
 ## Interview answer — structured
 
-Designing remote kill switches addresses the fundamental reality that mobile apps cannot be patched instantly due to app store review latency:
+Designing remote kill switches addresses the fundamental reality that mobile apps cannot be patched instantly due to app store review latency.
 
-1. **Granular Component-Level Guards**:
-   - Wrap risky features (e.g. new biometric flows, experimental payment gateways, third-party advertising SDKs) inside explicit kill-switch checks. If a component is tripped, the UI gracefully falls back to an older stable flow or displays a friendly maintenance banner.
+First, **Granular Component-Level Guards**. Next, wrap risky features (e.g. New biometric flows, experimental payment gateways, third-party advertising SDKs) inside explicit kill-switch checks. If a component is tripped, the UI gracefully falls back to an older stable flow or displays a friendly maintenance banner.
+**Fast-Propagation Delivery Channels**. Standard remote configs with 12-hour cache TTLs are inadequate for active incidents. Distribute emergency kill signals through high-priority silent FCM messages, coupled with a lightweight CDN-hosted JSON manifest (`status.example.com/kill-switches.json`) fetched on every app launch.
+**Zero-Latency Local Evaluation**. Persist kill-switch values in local storage so that evaluations are instant and synchronous on the main thread, preventing UI blocking during startup.
+**Automated Incident Tripwires**. Finally, integrate crash monitoring webhooks with deployment tooling. If Crashlytics reports that a specific feature version is generating crash spikes (> 2% crash rate), automated pipelines toggle the remote kill switch to prevent widespread customer disruption.
 
-2. **Fast-Propagation Delivery Channels**:
-   - Standard remote configs with 12-hour cache TTLs are inadequate for active incidents. Distribute emergency kill signals through high-priority silent FCM messages, coupled with a lightweight CDN-hosted JSON manifest (`status.example.com/kill-switches.json`) fetched on every app launch.
-
-3. **Zero-Latency Local Evaluation**:
-   - Persist kill-switch values in local storage so that evaluations are instant and synchronous on the main thread, preventing UI blocking during startup.
-
-4. **Automated Incident Tripwires**:
-   - Integrate crash monitoring webhooks with deployment tooling. If Crashlytics reports that a specific feature version is generating crash spikes (> 2% crash rate), automated pipelines toggle the remote kill switch to prevent widespread customer disruption.
 
 ## Interview answer — deep senior
 
-From an operational reliability perspective, kill switches must be designed with defensive fail-safe postures:
+From an operational reliability perspective, kill switches must be designed with defensive fail-safe postures.
 
-1. **Fail-Safe vs. Fail-Secure Posture**: Decide default behaviors per domain. For non-critical features (e.g. animations, recommendations), fail-safe by enabling the feature if config fetching fails. For high-risk financial or security flows (e.g. biometric bypass, one-click payment), adopt a **Fail-Secure** posture: if the remote health check cannot be verified and risk signals are ambiguous, disable the feature until connectivity is restored.
+First, with Fail-Safe vs. Fail-Secure Posture, decide default behaviors per domain. For non-critical features (e.g. Animations, recommendations), fail-safe by enabling the feature if config fetching fails. For high-risk financial or security flows (e.g. Biometric bypass, one-click payment), adopt a **Fail-Secure** posture: if the remote health check cannot be verified and risk signals are ambiguous, disable the feature until connectivity is restored. Next, with SDK Sandboxing & Emergency Disablement, third-party SDKs (analytics, tracking, ads) are a notorious source of startup crashes. Wrap third-party SDK initializations inside remote kill switches evaluated in `Application.onCreate`. If an external SDK causes widespread SIGSEGV native crashes, toggle the kill switch to skip SDK initialization entirely.
+Finally, with Audit Trails & Role-Based Access Control (RBAC), toggling a production kill switch can impact millions of active users. Restrict kill switch toggles behind multi-party authorization (two-person rule) in the deployment control panel, and record immutable audit logs with timestamps and operator IDs.
 
-2. **SDK Sandboxing & Emergency Disablement**: Third-party SDKs (analytics, tracking, ads) are a notorious source of startup crashes. Wrap third-party SDK initializations inside remote kill switches evaluated in `Application.onCreate`. If an external SDK causes widespread SIGSEGV native crashes, toggle the kill switch to skip SDK initialization entirely.
-
-3. **Audit Trails & Role-Based Access Control (RBAC)**: Toggling a production kill switch can impact millions of active users. Restrict kill switch toggles behind multi-party authorization (two-person rule) in the deployment control panel, and record immutable audit logs with timestamps and operator IDs.
 
 ## How to answer in the interview
 

@@ -97,26 +97,23 @@ Manage cache and server updates within the data layer using the Offline-First (N
 
 Managing cache and server synchronization is the primary responsibility of the Data layer, isolating presentation code from networking and storage complexity.
 
-1. **The Offline-First (Network-Bound Resource) Pattern**:
-   - **Immediate Local Emission**: The repository reads from the local database (Room) and emits cached data immediately, providing instantaneous screen loads.
-   - **Background Synchronization**: Concurrently, the repository triggers an asynchronous network fetch.
-   - **Atomic Ingestion**: When the network succeeds, the repository writes the new entities into Room inside a database transaction (`@Transaction`), clearing obsolete records.
-   - **Reactive Propagation**: Room's `InvalidationTracker` detects the write and emits the fresh dataset on the active `Flow`, updating observers automatically.
+First, **The Offline-First (Network-Bound Resource) Pattern**. Next, an Immediate Local Emission is the repository reads from the local database (Room) and emits cached data immediately, providing instantaneous screen loads.
+Additionally, with Background Synchronization, concurrently, the repository triggers an asynchronous network fetch. With Atomic Ingestion, when the network succeeds, the repository writes the new entities into Room inside a database transaction (`@Transaction`), clearing obsolete records.
+With Reactive Propagation, Room's `InvalidationTracker` detects the write and emits the fresh dataset on the active `Flow`, updating observers automatically. **Optimistic Updates**.
+For interactive user mutations (e.g. Liking a post or archiving an email), waiting for server roundtrips introduces unacceptable UI latency. Finally, the repository modifies local database state immediately. If the network request fails, the repository rolls back the mutation and surfaces an actionable error.
 
-2. **Optimistic Updates**:
-   - For interactive user mutations (e.g. liking a post or archiving an email), waiting for server roundtrips introduces unacceptable UI latency.
-   - The repository modifies local database state immediately. If the network request fails, the repository rolls back the mutation and surfaces an actionable error.
 
 ## Interview answer — deep senior
 
 Under the hood, HTTP cache headers play a pivotal role. By configuring OkHttp's `Cache` directory and leveraging `ETag` and `If-None-Match` headers, the server can return HTTP `304 Not Modified` with zero body payload. This conserves battery and mobile bandwidth while confirming that local cache is fresh.
 
-For conflict resolution (when both client and server update data concurrently), enterprise repositories employ **Conflict Resolution Policies**:
-- *Server-Wins*: The default in most consumer apps; server timestamps overwrite local modifications.
-- *Client-Wins / Last-Write-Wins (LWW)*: Based on monotonic client timestamps.
-- *Merge Policies*: Employed in collaborative apps where fields are merged individually.
+For conflict resolution (when both client and server update data concurrently), enterprise repositories employ **Conflict Resolution Policies**.
+
+First, *Server-Wins*: The default in most consumer apps; server timestamps overwrite local modifications. Next, *Client-Wins / Last-Write-Wins (LWW)*: Based on monotonic client timestamps.
+Finally, *Merge Policies*: Employed in collaborative apps where fields are merged individually.
 
 In testing, repository synchronization is verified by asserting that simulated network failures still yield cached data, and network successes overwrite stale database records.
+
 
 ## How to answer in the interview
 

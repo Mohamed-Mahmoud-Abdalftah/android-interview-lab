@@ -133,6 +133,7 @@ A ViewBinding instance holds a strong reference to the root `View` and direct re
 
 The official pattern is using a nullable backing property `_binding` that is set to `null` inside `onDestroyView()`, or using an auto-cleared lifecycle delegate.
 
+
 ## Interview answer — deep senior
 
 Under the hood, views hold a reference back to their hosting `Context` (`mContext`), which is typically the `Activity`. Therefore, retaining a dead ViewBinding in a backstack Fragment not only retains views, but also retains the Activity context if the backstack outlives a recreation, compounding the severity of the leak.
@@ -140,6 +141,7 @@ Under the hood, views hold a reference back to their hosting `Context` (`mContex
 To eliminate boilerplate in large production codebases, many engineering teams use a custom `LifecycleObserver` property delegate (often called `AutoClearedValue` or `viewBinding()` delegate). This delegate listens to `viewLifecycleOwner.lifecycle` and automatically sets the binding reference to `null` upon `ON_DESTROY` of the view lifecycle.
 
 When running LeakCanary or Memory Profiler, this issue surfaces as a leak path through `Fragment.binding` -> `FragmentBindingImpl` -> `mRoot` (`ConstraintLayout`/`RecyclerView`). LeakCanary explicitly flags this with a high confidence rating because it detects that the Fragment is alive while its `getView()` is null.
+
 
 ## How to answer in the interview
 

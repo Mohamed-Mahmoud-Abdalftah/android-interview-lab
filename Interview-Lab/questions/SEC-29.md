@@ -98,26 +98,20 @@ Frida can hook methods, patch returns, and inspect RAM. Helpful mitigations incl
 
 ## Interview answer — structured
 
-Root access and dynamic instrumentation frameworks like Frida alter the threat landscape by breaking process boundaries:
+Root access and dynamic instrumentation frameworks like Frida alter the threat landscape by breaking process boundaries.
 
-1. **Attacker Capabilities with Frida**: An attacker injects code into the runtime via `ptrace` or `frida-gadget`. They can hook any Java/Kotlin method, bypass SSL pinning by intercepting `TrustManager`, replace return values (e.g. forcing `isRooted()` to return `false`), and log plaintext arguments passing through cryptographic methods.
+First, an Attacker Capabilities with Frida is an attacker injects code into the runtime via `ptrace` or `frida-gadget`. They can hook any Java/Kotlin method, bypass SSL pinning by intercepting `TrustManager`, replace return values (e.g. Forcing `isRooted()` to return `false`), and log plaintext arguments passing through cryptographic methods. Next, **Protections That Help (Defense in Depth)**.
+Additionally, with Hardware-Enforced Cryptography, Android Keystore with StrongBox/TEE. Even if Frida hooks the app's `onAuthenticationSucceeded()` UI callback, hardware key release cannot be simulated in software. With Server-Side Play Integrity, verified on the backend with dynamic nonces; an attacker cannot forge Google's cryptographic attestation signature.
+With RASP Heuristics, scanning `/proc/self/maps` for injected libraries (`frida-agent.so`), scanning default TCP ports (27042), and checking `/proc/self/status` for debugging tracers. Finally, with What Cannot Be Guaranteed, you cannot guarantee code integrity on a hostile device. Dedicated attackers can rename Frida binaries, change TCP ports, inject via custom kernel modules, and patch client detection routines out of existence.
 
-2. **Protections That Help (Defense in Depth)**:
-   - **Hardware-Enforced Cryptography**: Android Keystore with StrongBox/TEE. Even if Frida hooks the app's `onAuthenticationSucceeded()` UI callback, hardware key release cannot be simulated in software.
-   - **Server-Side Play Integrity**: Verified on the backend with dynamic nonces; an attacker cannot forge Google's cryptographic attestation signature.
-   - **RASP Heuristics**: Scanning `/proc/self/maps` for injected libraries (`frida-agent.so`), scanning default TCP ports (27042), and checking `/proc/self/status` for debugging tracers.
-
-3. **What Cannot Be Guaranteed**: You cannot guarantee code integrity on a hostile device. Dedicated attackers can rename Frida binaries, change TCP ports, inject via custom kernel modules, and patch client detection routines out of existence.
 
 ## Interview answer — deep senior
 
-From an adversarial modeling perspective, senior engineers view client RASP protections purely as friction mechanisms rather than security guarantees:
+From an adversarial modeling perspective, senior engineers view client RASP protections purely as friction mechanisms rather than security guarantees.
 
-1. **The Cat-and-Mouse Game of RASP**: Client-side root and Frida detections filter out script kiddies and commodity automated botnets. However, advanced adversaries employ Zygisk modules (such as Shamiko) that unmount root traces and intercept syscalls before the app's process even begins executing, rendering standard `/proc` or `su` file checks blind.
+First, with The Cat-and-Mouse Game of RASP, client-side root and Frida detections filter out script kiddies and commodity automated botnets. However, advanced adversaries employ Zygisk modules (such as Shamiko) that unmount root traces and intercept syscalls before the app's process even begins executing, rendering standard `/proc` or `su` file checks blind. Next, an Asymmetric Economic Advantage is the defensive team must protect every potential entry point, whereas the attacker only needs to locate and hook the single critical decision branch. Therefore, relying on client-side kill-switches is dangerous.
+Finally, a Holistic Backend Defense is the proper response to rooted devices is risk-based authorization on the backend. When risk indicators suggest a rooted or instrumented environment, the backend restricts high-risk actions (wire transfers, crypto withdrawals) while permitting low-risk browsing, backed by anomaly detection and transaction velocity rules.
 
-2. **Asymmetric Economic Advantage**: The defensive team must protect every potential entry point, whereas the attacker only needs to locate and hook the single critical decision branch. Therefore, relying on client-side kill-switches is dangerous.
-
-3. **Holistic Backend Defense**: The proper response to rooted devices is risk-based authorization on the backend. When risk indicators suggest a rooted or instrumented environment, the backend restricts high-risk actions (wire transfers, crypto withdrawals) while permitting low-risk browsing, backed by anomaly detection and transaction velocity rules.
 
 ## How to answer in the interview
 

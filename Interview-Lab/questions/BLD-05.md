@@ -84,26 +84,20 @@ Incremental compilation recompiles only modified source files and their dependen
 
 ## Interview answer — structured
 
-Optimizing Gradle performance relies on understanding the distinct layers of build caching:
+Optimizing Gradle performance relies on understanding the distinct layers of build caching.
 
-1. **Incremental Compilation**:
-   - Operates within a single compiler task (e.g. `compileKotlin`). Analyzes source file change sets (diffs). If a private method body is modified without changing public ABI signatures, only that file recompiles, sparing dependent modules from recompilation.
+First, **Incremental Compilation**. Next, operates within a single compiler task (e.g. `compileKotlin`). Analyzes source file change sets (diffs). If a private method body is modified without changing public ABI signatures, only that file recompiles, sparing dependent modules from recompilation.
+**Build Cache (`org.gradle.caching=true`)**. Caches the physical output artifacts of entire Gradle tasks. Generates a composite SHA-256 hash across task inputs (source files, compiler arguments, dependencies). If an identical hash is found in the local cache or remote CI cache, Gradle skips task execution entirely and displays `FROM-CACHE`.
+**Configuration Cache (`org.gradle.configuration-cache=true`)**. Finally, caches the output of Gradle's Configuration phase. Evaluating dozens of `build.gradle.kts` files to construct the task execution graph often takes 15–30 seconds. Configuration caching serializes this execution graph to disk, executing directly on subsequent runs.
 
-2. **Build Cache (`org.gradle.caching=true`)**:
-   - Caches the physical output artifacts of entire Gradle tasks. Generates a composite SHA-256 hash across task inputs (source files, compiler arguments, dependencies). If an identical hash is found in the local cache or remote CI cache, Gradle skips task execution entirely and displays `FROM-CACHE`.
-
-3. **Configuration Cache (`org.gradle.configuration-cache=true`)**:
-   - Caches the output of Gradle's Configuration phase. Evaluating dozens of `build.gradle.kts` files to construct the task execution graph often takes 15–30 seconds. Configuration caching serializes this execution graph to disk, executing directly on subsequent runs.
 
 ## Interview answer — deep senior
 
-From an advanced build infrastructure engineering viewpoint, caching requires strict hygiene to avoid cache invalidation:
+From an advanced build infrastructure engineering viewpoint, caching requires strict hygiene to avoid cache invalidation.
 
-1. **Configuration Cache Invalidation Hazards**: Custom tasks or plugins that access the `Project` instance during the execution phase, read environment variables dynamically without `providers.environmentVariable()`, or inspect system timestamps break Configuration Caching. Audit builds with `./gradlew build --configuration-cache-problems=warn`.
+First, with Configuration Cache Invalidation Hazards, custom tasks or plugins that access the `Project` instance during the execution phase, read environment variables dynamically without `providers.environmentVariable()`, or inspect system timestamps break Configuration Caching. Audit builds with `./gradlew build --configuration-cache-problems=warn`. Next, with Cache Key Determinism & Non-Hermetic Builds, build caching fails if task inputs contain non-deterministic data. A common mistake is injecting current timestamps (`System.currentTimeMillis()`) into `BuildConfig.BUILD_TIME`. This changes input hashes on every execution, completely blowing up remote and local build caching.
+Finally, with Remote Build Cache Strategy in CI, configure CI pipelines to populate a centralized HTTP build cache (e.g., Gradle Enterprise or self-hosted Docker cache) on every merged PR. Developers pulling the latest main branch download precompiled binaries, turning 15-minute builds into 45-second cache fetches.
 
-2. **Cache Key Determinism & Non-Hermetic Builds**: Build caching fails if task inputs contain non-deterministic data. A common mistake is injecting current timestamps (`System.currentTimeMillis()`) into `BuildConfig.BUILD_TIME`. This changes input hashes on every execution, completely blowing up remote and local build caching.
-
-3. **Remote Build Cache Strategy in CI**: Configure CI pipelines to populate a centralized HTTP build cache (e.g., Gradle Enterprise or self-hosted Docker cache) on every merged PR. Developers pulling the latest main branch download precompiled binaries, turning 15-minute builds into 45-second cache fetches.
 
 ## How to answer in the interview
 

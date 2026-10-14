@@ -118,15 +118,11 @@ Support accessibility by populating the Semantics tree with meaningful `contentD
 
 Building accessible and adaptive applications in Jetpack Compose is a core engineering requirement for global-scale products.
 
-1. **Accessibility & Semantics**:
-   - Alongside the Layout Tree, Compose generates a parallel **Semantics Tree** consumed by Android Accessibility Services (TalkBack, Switch Access).
-   - Every interactive element must supply meaningful semantics. Purely decorative icons must explicitly set `contentDescription = null` to prevent screen reader noise.
-   - For compound widgets (like a shopping cart item with title, image, and price), we apply `Modifier.semantics(mergeDescendants = true)`. This groups children into a single accessibility focus node, reading them as a coherent sentence rather than forcing frustrating sequential focus jumps.
-   - We enforce a minimum **48dp × 48dp touch target** using `Modifier.minimumInteractiveComponentSize()`.
+First, **Accessibility & Semantics**. Next, alongside the Layout Tree, Compose generates a parallel **Semantics Tree** consumed by Android Accessibility Services (TalkBack, Switch Access).
+Every interactive element must supply meaningful semantics. Purely decorative icons must explicitly set `contentDescription = null` to prevent screen reader noise. For compound widgets (like a shopping cart item with title, image, and price), we apply `Modifier.semantics(mergeDescendants = true)`. This groups children into a single accessibility focus node, reading them as a coherent sentence rather than forcing frustrating sequential focus jumps.
+We enforce a minimum **48dp × 48dp touch target** using `Modifier.minimumInteractiveComponentSize()`. **Adaptive Layouts**.
+Rather than checking device models or orientation booleans, we categorize display width into canonical **Window Size Classes** (`Compact < 600dp`, `Medium 600-840dp`, `Expanded > 840dp`). Finally, on `Compact` screens, we show standard single-pane flows. On `Medium`/`Expanded` (foldables, tablets, Chromebooks), we render multi-pane layouts using Material 3 Adaptive components like `ListDetailPaneScaffold` and `NavigationSuiteScaffold`.
 
-2. **Adaptive Layouts**:
-   - Rather than checking device models or orientation booleans, we categorize display width into canonical **Window Size Classes** (`Compact < 600dp`, `Medium 600-840dp`, `Expanded > 840dp`).
-   - On `Compact` screens, we show standard single-pane flows. On `Medium`/`Expanded` (foldables, tablets, Chromebooks), we render multi-pane layouts using Material 3 Adaptive components like `ListDetailPaneScaffold` and `NavigationSuiteScaffold`.
 
 ## Interview answer — deep senior
 
@@ -135,6 +131,7 @@ Under the hood, TalkBack navigates nodes using Android's `AccessibilityNodeInfo`
 For adaptive design, foldable devices present dynamic hinge postures. Using Jetpack **WindowManager** and Compose's `FoldingFeature`, we detect tabletop and book postures, adjusting spacing so content isn't split awkwardly across a physical screen crease.
 
 We automate accessibility verification in CI using Compose UI tests with `assertHasClickAction()`, `assertContentDescriptionEquals()`, and Android Studio's Accessibility Scanner, establishing strict zero-regression gates.
+
 
 ## How to answer in the interview
 

@@ -118,17 +118,12 @@ Room translates @Entity to SQLite tables, and DAO interfaces to type-safe SQL op
 
 ## Interview answer — structured
 
-Room structures SQLite database interactions through five core architectural constructs:
+Room structures SQLite database interactions through five core architectural constructs.
 
-1. **`@Entity`**: Models a SQLite table. Defines primary keys, auto-generation rules, foreign key constraints, and column indexes.
+First, with @Entity, models a SQLite table. Defines primary keys, auto-generation rules, foreign key constraints, and column indexes. Next, dAO` (Data Access Object) declares data interactions. The Room compiler verifies SQL query syntax and column mappings at compile time against Entity properties, preventing runtime SQL crashes.
+Additionally, @Transaction wraps multiple DAO operations within a single SQLite transaction (`BEGIN TRANSACTION ... COMMIT`). If any statement throws an exception, the entire sequence rolls back, preventing inconsistent database states. Explicit migration definitions (`Migration(1, 2)`) executing raw SQL `ALTER TABLE` statements when bumping the database version, preserving existing user data.
+Finally, with Flow Query, reactive streams returning `Flow<List<T>>`. Powered by Room's internal `InvalidationTracker`, any insert, update, or delete on the queried table triggers a re-query on a background dispatcher, automatically emitting the new dataset to collectors.
 
-2. **`DAO` (Data Access Object)**: Declares data interactions. The Room compiler verifies SQL query syntax and column mappings at compile time against Entity properties, preventing runtime SQL crashes.
-
-3. **`@Transaction`**: Wraps multiple DAO operations within a single SQLite transaction (`BEGIN TRANSACTION ... COMMIT`). If any statement throws an exception, the entire sequence rolls back, preventing inconsistent database states.
-
-4. **`Migration`**: Explicit migration definitions (`Migration(1, 2)`) executing raw SQL `ALTER TABLE` statements when bumping the database version, preserving existing user data.
-
-5. **`Flow Query`**: Reactive streams returning `Flow<List<T>>`. Powered by Room's internal `InvalidationTracker`, any insert, update, or delete on the queried table triggers a re-query on a background dispatcher, automatically emitting the new dataset to collectors.
 
 ## Interview answer — deep senior
 
@@ -138,6 +133,7 @@ Room does **NOT** observe individual rows; it observes **entire tables**.
 When Room initializes, it sets SQLite triggers on observed tables. When a write occurs, SQLite increments an internal invalidation counter in `room_master_table` or an in-memory bitset. The `InvalidationTracker` polls or receives trigger notifications on `Dispatchers.IO`, and dispatches an invalidation signal. The active Flow query re-runs the entire SQL query from scratch and emits the fresh result.
 
 Crucial Performance Consequence: If you query a 5,000-row table and update just 1 unrelated row in that table, Room re-executes the entire 5,000-row query! To prevent UI jank in high-frequency update tables, use targeted queries (`WHERE id = :id`), index foreign keys, and split rapidly changing columns into separate tables.
+
 
 ## How to answer in the interview
 

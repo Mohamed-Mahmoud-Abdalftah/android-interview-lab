@@ -113,11 +113,12 @@ In Jetpack Compose, Modifiers are immutable objects that decorate or augment a c
 
 **Ordering is critical** because Compose processes modifier chains sequentially from outer to inner (top-to-bottom in code). Each modifier function wraps the remainder of the chain into a layout hierarchy node.
 
-This sequential execution manifests in everyday scenarios:
-1. **Padding vs Background**: Placing `.padding(16.dp)` *before* `.background(Color.Red)` acts like an outer margin, leaving the padded area uncolored. Placing `.background(Color.Red)` *before* `.padding(16.dp)` fills the entire box with red, creating inner content padding.
-2. **Clickable vs Padding**: Placing `.clickable { ... }` *before* `.padding(16.dp)` extends the touch target and ripple effect to the outer bounding box. Reversing them restricts the clickable touch target strictly to the inner unpadded bounds.
+This sequential execution manifests in everyday scenarios.
+
+First, with Padding vs Background, placing `.padding(16.dp)` *before* `.background(Color.Red)` acts like an outer margin, leaving the padded area uncolored. Placing `.background(Color.Red)` *before* `.padding(16.dp)` fills the entire box with red, creating inner content padding. Finally, with Clickable vs Padding, placing `.clickable { ... }` *before* `.padding(16.dp)` extends the touch target and ripple effect to the outer bounding box. Reversing them restricts the clickable touch target strictly to the inner unpadded bounds.
 
 Because of this chaining mechanism, Compose has no need for a distinct `margin` attribute; margins and paddings are merely positional applications of `.padding()`.
+
 
 ## Interview answer — deep senior
 
@@ -126,6 +127,7 @@ Under the hood, Compose modernized its modifier architecture with **Modifier.Nod
 When sizing modifiers are chained, layout constraints flow top-down while measured sizes flow bottom-up. For instance, chaining `.size(100.dp).size(50.dp)` results in a 100.dp widget because the first modifier imposes fixed constraints (min=100, max=100) that override downstream sizing modifiers unless explicitly bypassed using `requiredSize()`.
 
 As an API design best practice, every reusable composable should accept an optional `modifier: Modifier = Modifier` as its first optional parameter and apply it directly to its root layout element.
+
 
 ## How to answer in the interview
 

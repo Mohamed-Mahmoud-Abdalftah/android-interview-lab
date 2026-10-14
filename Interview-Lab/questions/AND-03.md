@@ -127,20 +127,21 @@ A Fragment's instance lifecycle spans from creation to onDestroy(), while its vi
 
 The critical distinction is that a Fragment's object instance outlives its UI view hierarchy when using the backstack.
 
-When Fragment A is replaced by Fragment B and added to the backstack (`addToBackStack()`):
+When Fragment A is replaced by Fragment B and added to the backstack (`addToBackStack()`).
 
-1. Android destroys Fragment A's UI layout, calling `onDestroyView()`. However, the `Fragment` class instance remains alive in memory so that its scroll position and arguments are preserved.
-2. When the user taps Back, the existing Fragment A instance creates a brand-new View hierarchy, calling `onCreateView()` and `onViewCreated()`.
+First, Android destroys Fragment A's UI layout, calling `onDestroyView()`. However, the `Fragment` class instance remains alive in memory so that its scroll position and arguments are preserved. Finally, when the user taps Back, the existing Fragment A instance creates a brand-new View hierarchy, calling `onCreateView()` and `onViewCreated()`.
 
 Because of this asymmetry, observing LiveData or collecting Flows against the Fragment's own lifecycle (`this`) creates memory leaks and duplicate observers every time the user returns from the backstack.
 
 In modern Android development, all View-related operations, ViewBindings, and Flow collections must strictly bind to **`viewLifecycleOwner`**, and ViewBindings must be nulled out in `onDestroyView()`.
+
 
 ## Interview answer — deep senior
 
 Under the hood, `Fragment.getViewLifecycleOwner()` returns a dedicated `LifecycleOwner` that is created in `onCreateView()` and set to the `DESTROYED` state in `onDestroyView()`. If you attempt to call `viewLifecycleOwner` before `onCreateView()` or after `onDestroyView()`, it throws an `IllegalStateException: Can't access the Fragment View's LifecycleOwner when getView() is null`.
 
 In memory profiling, failing to null out `_binding` in `onDestroyView()` is one of the most common causes of Out-Of-Memory (OOM) errors in large applications. A single ViewBinding reference holds pointers to the root View, all child Views, the WindowManager, and bitmap drawables, preventing the entire screen's graphic memory from being reclaimed by ART garbage collection while the fragment rests in the backstack.
+
 
 ## How to answer in the interview
 

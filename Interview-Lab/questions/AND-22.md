@@ -104,15 +104,16 @@ While in the background, Android's Low Memory Killer terminated the process. Whe
 
 **How I investigate and fix it:**
 
-1. **Instant Reproduction**: Background the app on an emulator, run `adb shell am kill <package_name>`, and click the app in Recents. This reproduces the multi-hour crash in 5 seconds.
-2. **Inspect Navigation & Bundles**: Verify that the restored Activity/Fragment extracts its required IDs from `SavedStateHandle` or `Intent.extras` rather than relying on global memory caches.
-3. **Persistent Auth Fallback**: If user authentication is required, retrieve the auth token asynchronously from encrypted DataStore; if expired, gracefully redirect the backstack to the Login screen rather than crashing.
+First, with Instant Reproduction, background the app on an emulator, run `adb shell am kill <package_name>`, and click the app in Recents. This reproduces the multi-hour crash in 5 seconds. Next, with Inspect Navigation & Bundles, verify that the restored Activity/Fragment extracts its required IDs from `SavedStateHandle` or `Intent.extras` rather than relying on global memory caches.
+Finally, with Persistent Auth Fallback, if user authentication is required, retrieve the auth token asynchronously from encrypted DataStore; if expired, gracefully redirect the backstack to the Login screen rather than crashing.
+
 
 ## Interview answer — deep senior
 
 From a root-cause analysis perspective, inspect the stack trace in Crashlytics: A process death crash almost always shows the Activity's `onCreate(savedInstanceState)` receiving a non-null `Bundle`, while an in-memory utility class threw NPE.
 
 In enterprise codebases, we enforce architectural defenses against process death bugs: 1. **Never use static variables or Singletons as cross-screen data transport.** 2. **Enable 'Don't keep activities' during developer QA.** 3. **Session Interceptor Pattern**: In the base Activity or root Navigation Host, evaluate whether a mandatory user session is valid. If the session was purged by process death, immediately navigate to the Splash/Auth screen with a return intent flag, restoring the session before any deep Activity code runs.
+
 
 ## How to answer in the interview
 

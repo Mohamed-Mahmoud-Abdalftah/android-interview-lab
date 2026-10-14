@@ -98,11 +98,13 @@ An OS thread is heavy: each thread allocates its own 1MB call stack in memory, a
 
 A coroutine, by contrast, is completely lightweight—it is essentially an object instance in the heap representing a state machine, weighing only a few hundred bytes. When a coroutine executes a suspending operation like an API call or delay, it does not block the underlying OS thread; it unbinds itself and frees that thread to do other work, such as rendering UI frames. Once the asynchronous work completes, the coroutine resumes on an available thread in its dispatcher pool.
 
+
 ## Interview answer — deep senior
 
 Under the hood, the Kotlin compiler transforms every suspending function into a state machine implementing the `Continuation<T>` interface, passing a continuation parameter under the continuation-passing style (CPS) transformation. When a suspension point is reached, the function stores its local frame state onto the heap and returns a special marker value `COROUTINE_SUSPENDED`. The underlying thread is immediately released back to its thread pool executor.
 
 In contrast to preemptive multithreading where the OS scheduler forcibly interrupts threads at arbitrary time slices, coroutines are cooperative: a coroutine runs until it explicitly yields or reaches a suspension point. In Android architecture, this distinction is vital for UI fluidity. Blocking the main thread with a 500ms network call triggers an ANR dialog. Suspending on the main thread simply returns control to the Android Choreographer loop, keeping UI touch events and 120Hz frame rendering completely smooth.
+
 
 ## How to answer in the interview
 

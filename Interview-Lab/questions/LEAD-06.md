@@ -44,18 +44,22 @@ How do you write an RFC/ADR for a major architecture change?
 # ADR-012: Adoption of Jetpack DataStore over SharedPreferences
 
 ## Status: Accepted
+
 Date: 2026-03-15 | Author: Mohamed Mahmoud | Approvers: Mobile Core Squad
 
 ## Context
+
 `SharedPreferences` causes ANRs on the Main Thread during synchronous `apply()`
 and `commit()` disk flushes, and lacks transactional type-safety and reactive
 Flow support for real-time preference updates.
 
 ## Decision
+
 We will adopt `Proto DataStore` backed by Kotlin Serialization and Coroutines Flow
 as the standard key-value and typed configuration storage for the application.
 
 ## Consequences
+
 ### Positive:
 - Asynchronous, non-blocking disk I/O on `Dispatchers.IO` eliminates main-thread ANRs.
 - Native Kotlin `Flow` integration simplifies reactive state in ViewModels.
@@ -66,6 +70,7 @@ as the standard key-value and typed configuration storage for the application.
 - Adds ~40KB to compiled APK size.
 
 ## Migration Plan
+
 1. Implement `SharedPreferencesMigration` utility to transfer user data automatically on first launch.
 2. Deprecate `LegacyPrefsManager` with a Lint warning.
 3. Migrate feature modules incrementally over the next 2 sprints.
@@ -97,29 +102,22 @@ An RFC gathers collaborative team feedback on major architectural proposals befo
 
 ## Interview answer — structured
 
-RFCs and ADRs establish institutional memory and collaborative alignment for significant engineering changes:
+RFCs and ADRs establish institutional memory and collaborative alignment for significant engineering changes.
 
-1. **RFC vs. ADR Distinction**:
-   - **RFC (Request for Comments)**: A collaborative exploration document published early in the ideation cycle to solicit feedback, unearth blind spots, and align cross-functional stakeholders on complex architectural shifts.
-   - **ADR (Architecture Decision Record)**: An immutable, version-controlled historical record stored directly in the repository (`/docs/adr/ADR-005.md`) capturing what was decided, why, and what trade-offs were accepted.
+First, **RFC vs. ADR Distinction**. Next, a RFC (Request for Comments) is a collaborative exploration document published early in the ideation cycle to solicit feedback, unearth blind spots, and align cross-functional stakeholders on complex architectural shifts.
+Additionally, an ADR (Architecture Decision Record) is an immutable, version-controlled historical record stored directly in the repository (`/docs/adr/ADR-005. Md`) capturing what was decided, why, and what trade-offs were accepted. **Essential Architectural Document Sections**.
+With Status & Metadata, (Proposed, Accepted, Deprecated, Superceded) with author and approver timestamps. With Context & Problem Statement, explicit business and technical motivations driving the change.
+With The Decision, crisp specification of the chosen architectural pattern, library, or protocol. With Considered Alternatives, rigorous comparison table explaining why alternative options were rejected.
+With Consequences (Positive and Negative), honest accounting of benefits alongside accepted trade-offs (e.g. Build time penalties, learning curves). Finally, with Staged Migration Plan, incremental rollout strategy avoiding big-bang migrations.
 
-2. **Essential Architectural Document Sections**:
-   - **Status & Metadata**: (Proposed, Accepted, Deprecated, Superceded) with author and approver timestamps.
-   - **Context & Problem Statement**: Explicit business and technical motivations driving the change.
-   - **The Decision**: Crisp specification of the chosen architectural pattern, library, or protocol.
-   - **Considered Alternatives**: Rigorous comparison table explaining why alternative options were rejected.
-   - **Consequences (Positive and Negative)**: Honest accounting of benefits alongside accepted trade-offs (e.g. build time penalties, learning curves).
-   - **Staged Migration Plan**: Incremental rollout strategy avoiding big-bang migrations.
 
 ## Interview answer — deep senior
 
-From an engineering governance and consensus building angle, leading an RFC requires stakeholder empathy:
+From an engineering governance and consensus building angle, leading an RFC requires stakeholder empathy.
 
-1. **The Pre-RFC Socialization Phase**: Never publish a massive 15-page RFC as a surprise to the team. Socialize the core thesis with key senior influencers, platform leads, and QA directors through casual 1-on-1 discussions first. Addressing core anxieties in advance guarantees a constructive, calm public RFC review.
+First, with The Pre-RFC Socialization Phase, never publish a massive 15-page RFC as a surprise to the team. Socialize the core thesis with key senior influencers, platform leads, and QA directors through casual 1-on-1 discussions first. Addressing core anxieties in advance guarantees a constructive, calm public RFC review. Next, with Timeboxing the RFC Lifecycle, open-ended architectural debates cause analysis paralysis. Set an explicit deadline (e.g. 10 business days for comments). At the deadline, the technical lead synthesizes feedback, resolves remaining dissenting opinions with a documented rationale, and transitions the RFC into an accepted ADR.
+Finally, with Living ADR Hygiene, when architectural paradigms evolve (e.g. Replacing RxJava with Kotlin Coroutines), do not edit the historical ADR to rewrite the past. Author a new ADR (`ADR-024`) that formally references and **supercedes** the old record (`ADR-003: Supercedes ADR-001`), maintaining an authentic genealogical record of codebase evolution.
 
-2. **Timeboxing the RFC Lifecycle**: Open-ended architectural debates cause analysis paralysis. Set an explicit deadline (e.g. 10 business days for comments). At the deadline, the technical lead synthesizes feedback, resolves remaining dissenting opinions with a documented rationale, and transitions the RFC into an accepted ADR.
-
-3. **Living ADR Hygiene**: When architectural paradigms evolve (e.g. replacing RxJava with Kotlin Coroutines), do not edit the historical ADR to rewrite the past. Author a new ADR (`ADR-024`) that formally references and **supercedes** the old record (`ADR-003: Supercedes ADR-001`), maintaining an authentic genealogical record of codebase evolution.
 
 ## How to answer in the interview
 

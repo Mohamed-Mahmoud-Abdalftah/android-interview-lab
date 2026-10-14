@@ -91,6 +91,7 @@ At compile time, the Kotlin compiler enforces complete type safety so you can ne
 
 However, you must be aware of boxing caveats. Whenever a value class is used in a generic collection like List<UserId>, passed as an interface, or declared as nullable (UserId?), the JVM cannot use the bare primitive and must box it into a wrapper object on the heap, negating the allocation savings.
 
+
 ## Interview answer — deep senior
 
 At the JVM bytecode level, the Kotlin compiler uses two mechanisms to make value classes work: unboxing and name mangling. To prevent signature conflicts caused by type erasure—for example, two overloaded functions `process(id: UserId)` and `process(id: OrderId)` which both erase to `process(String)`—the compiler appends a hash suffix to the method name in bytecode (e.g., `process-u18aD(String)`). While transparent to Kotlin callers, this makes calling value class methods from Java cumbersome unless annotated with `@JvmName`.
@@ -98,6 +99,7 @@ At the JVM bytecode level, the Kotlin compiler uses two mechanisms to make value
 Regarding memory: in a high-frequency Android event bus or audio processing pipeline, allocating millions of wrapper objects triggers garbage collection churn. Unboxed value classes eliminate this entirely because they reside on the stack or in CPU registers as bare primitives.
 
 However, developers frequently lose these benefits through accidental boxing: 1) Storing them in standard collections like `List<ItemId>` forces boxing because Java generics are object-based; 2) Casting to an interface implemented by the value class forces a heap instance; 3) Marking it as nullable (`ItemId?`) forces boxing because a primitive cannot represent null. In performance-critical hot paths, profiling heap allocations with Android Studio Memory Profiler is necessary to confirm that inlining is actually occurring.
+
 
 ## How to answer in the interview
 

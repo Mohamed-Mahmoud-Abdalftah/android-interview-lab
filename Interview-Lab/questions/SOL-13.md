@@ -83,19 +83,18 @@ Creating an interface for every class doubles file counts, introduces IDE naviga
 
 The dogmatic practice of creating an interface for every single concrete class (the `IFoo` / `FooImpl` anti-pattern) harms codebases through cognitive friction, maintenance bloat, and compile-time costs.
 
-1. **Navigational Friction & Cognitive Overhead**: It doubles the file count in the project. When developers navigate code in Android Studio ('Go to Implementation'), they are constantly routed through empty interface definitions rather than directly to the executing code.
-
-2. **False Abstraction**: An interface that has exactly one implementation and will only ever have one implementation is not an abstraction—it is redundant ceremony. True abstractions emerge from polymorphism or strict dependency inversion boundaries, not mechanical habits.
-
-3. **Build & Dagger Overhead**: Every 1-to-1 interface requires an explicit `@Binds` declaration in a Dagger module, bloating generated annotation processor code (KSP) and increasing APK DEX method counts.
+First, with Navigational Friction & Cognitive Overhead, it doubles the file count in the project. When developers navigate code in Android Studio ('Go to Implementation'), they are constantly routed through empty interface definitions rather than directly to the executing code. Next, a False Abstraction is an interface that has exactly one implementation and will only ever have one implementation is not an abstraction—it is redundant ceremony. True abstractions emerge from polymorphism or strict dependency inversion boundaries, not mechanical habits.
+Finally, with Build & Dagger Overhead, every 1-to-1 interface requires an explicit `@Binds` declaration in a Dagger module, bloating generated annotation processor code (KSP) and increasing APK DEX method counts.
 
 In modern Kotlin, concrete classes are open to testing (instantiating pure classes directly or using MockK), meaning speculative interfaces offer zero testing benefit for pure business classes like Use Cases.
+
 
 ## Interview answer — deep senior
 
 Historically, Java codebases relied on interfaces because Java proxies (and legacy Mockito) could not mock final or concrete classes without bytecode manipulation tools like PowerMock. In modern Android with Kotlin and contemporary testing tools, this technical constraint no longer exists.
 
 Furthermore, senior architects distinguish between **API Boundaries** and **Internal Implementation Details**. Interfaces belong at architectural boundaries (such as a Domain Repository consumed by a ViewModel across a multi-module boundary). Within the boundaries of a single cohesive module, internal helper classes, validators, and single-purpose use cases should remain concrete until polymorphism is genuinely required.
+
 
 ## How to answer in the interview
 

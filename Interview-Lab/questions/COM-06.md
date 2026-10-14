@@ -116,12 +116,13 @@ Unidirectional Data Flow (UDF) is the design pattern where State flows down from
 
 Unidirectional Data Flow (UDF) is the architectural backbone of Jetpack Compose.
 
-The principle dictates a strict single-direction communication cycle:
-1. **State Flows Down**: The state holder (typically an architecture-level `ViewModel`) maintains the immutable `StateFlow<UiState>`. The UI layer observes this state and passes concrete read-only properties down through the composable hierarchy.
-2. **Events Flow Up**: When a user interacts with the UI (tapping a button, entering text, pulling to refresh), the leaf composables do not mutate state directly. Instead, they emit callbacks and event lambdas up the tree to the state holder.
-3. **State Mutation**: The state holder processes the event (validating inputs, querying repositories), modifies its internal state, and emits a new immutable state snapshot, which flows back down to trigger recomposition.
+The principle dictates a strict single-direction communication cycle.
+
+First, a State Flows Down is the state holder (typically an architecture-level `ViewModel`) maintains the immutable `StateFlow<UiState>`. The UI layer observes this state and passes concrete read-only properties down through the composable hierarchy. Next, with Events Flow Up, when a user interacts with the UI (tapping a button, entering text, pulling to refresh), the leaf composables do not mutate state directly. Instead, they emit callbacks and event lambdas up the tree to the state holder.
+Finally, a State Mutation is the state holder processes the event (validating inputs, querying repositories), modifies its internal state, and emits a new immutable state snapshot, which flows back down to trigger recomposition.
 
 This pattern enforces a single source of truth, prevents state desynchronization, and makes UI components entirely decoupled and trivially testable.
+
 
 ## Interview answer — deep senior
 
@@ -130,6 +131,7 @@ Under the hood, UDF works synergistically with Compose's Snapshot system. Becaus
 Contrast this with legacy bi-directional data binding (`@={...}`), where UI components and underlying models mutated each other simultaneously. Bi-directional patterns frequently generated infinite update loops, layout thrashing, and difficult-to-reproduce race conditions when rapid asynchronous events arrived.
 
 In modern enterprise Android architectures, we formalize UDF using MVI (Model-View-Intent) or Android's official Architecture Guidance: modeling UI State as a sealed interface, UI Events as typed actions, and consuming them via `StateFlow` and `collectAsStateWithLifecycle()`.
+
 
 ## How to answer in the interview
 

@@ -104,6 +104,7 @@ Furthermore, detached scopes swallow or misdirect exceptions, making centralized
 
 In clean architecture, repositories should never launch coroutines. Repositories should expose **suspend functions** for one-shot operations (using `withContext` for main-safety) or **Flow** for streams. The ViewModel remains the sole owner of the lifecycle scope via `viewModelScope`.
 
+
 ## Interview answer — deep senior
 
 From an architectural governance perspective, there is only one legitimate use case for a non-ViewModel scope in the data layer: operations that **must survive UI teardown** (like saving an offline transaction or uploading an analytics batch). However, even in that scenario, creating ad-hoc scopes inside methods is forbidden. Instead, we use an explicitly injected **ApplicationScope**:
@@ -120,6 +121,7 @@ class OrderRepository @Inject constructor(
 ```
 
 By injecting a singleton `ApplicationScope` bound to a `SupervisorJob`, the lifecycle is formally tracked by the DI container, exceptions are captured by a centralized handler, and unit tests can easily inject a `TestScope` to verify background completion.
+
 
 ## How to answer in the interview
 

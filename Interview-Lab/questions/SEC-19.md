@@ -144,29 +144,21 @@ Secure WebViews by disabling allowFileAccess and allowContentAccess, loading loc
 
 ## Interview answer — structured
 
-Hardening Android WebView requires mitigating data exfiltration, local file access, and bridge exploitation:
+Hardening Android WebView requires mitigating data exfiltration, local file access, and bridge exploitation.
 
-1. **Disable File & Content Scheme Access**: 
-   - Explicitly disable `settings.allowFileAccess = false` and `settings.allowContentAccess = false`. This blocks attackers from using malicious scripts or iframe tags to read private app files (`file:///data/data/<package>/...`) or query internal ContentProviders.
+First, with Disable File & Content Scheme Access, Next, explicitly disable `settings.allowFileAccess = false` and `settings.allowContentAccess = false`. This blocks attackers from using malicious scripts or iframe tags to read private app files (`file:///data/data/<package>/...`) or query internal ContentProviders.
+**Use AndroidX WebViewAssetLoader**. Traditional `file:///android_asset/` URLs violate modern web security models and cross-origin boundaries. `WebViewAssetLoader` intercepts requests and serves local assets via a virtual domain (`https://appassets.androidplatform.net/assets/`), enforcing the standard Same-Origin Policy and secure HTTPS context.
+**Lock Down JavaScript Interfaces**. Only expose `@JavascriptInterface` methods to pages loaded from strictly whitelisted, first-party HTTPS origins verified inside `shouldOverrideUrlLoading` or `onPageStarted`.
+**Unconditional SSL Error Rejection**. Finally, in `WebViewClient.onReceivedSslError()`, always call `handler.cancel()`. Never call `handler.proceed()`, as doing so completely bypasses TLS validation and exposes users to Man-in-the-Middle attacks.
 
-2. **Use AndroidX WebViewAssetLoader**:
-   - Traditional `file:///android_asset/` URLs violate modern web security models and cross-origin boundaries. `WebViewAssetLoader` intercepts requests and serves local assets via a virtual domain (`https://appassets.androidplatform.net/assets/`), enforcing the standard Same-Origin Policy and secure HTTPS context.
-
-3. **Lock Down JavaScript Interfaces**:
-   - Only expose `@JavascriptInterface` methods to pages loaded from strictly whitelisted, first-party HTTPS origins verified inside `shouldOverrideUrlLoading` or `onPageStarted`.
-
-4. **Unconditional SSL Error Rejection**:
-   - In `WebViewClient.onReceivedSslError()`, always call `handler.cancel()`. Never call `handler.proceed()`, as doing so completely bypasses TLS validation and exposes users to Man-in-the-Middle attacks.
 
 ## Interview answer — deep senior
 
-From an advanced security engineering perspective, WebViews represent a hybrid execution environment requiring strict boundaries:
+From an advanced security engineering perspective, WebViews represent a hybrid execution environment requiring strict boundaries.
 
-1. **Safe Browsing Integration**: In Android 8.0+ (API 27), verify that Google Safe Browsing is enabled in WebView (`settings.safeBrowsingEnabled = true`). Implement `onSafeBrowsingHit()` to handle malicious phishing URLs identified by Google before page rendering begins.
+First, with Safe Browsing Integration, in Android 8.0+ (API 27), verify that Google Safe Browsing is enabled in WebView (`settings.safeBrowsingEnabled = true`). Implement `onSafeBrowsingHit()` to handle malicious phishing URLs identified by Google before page rendering begins. Next, with Mitigating Universal Cross-Site Scripting (UXSS), for sensitive hybrid applications, enable multi-process WebView mode (default on Android 8+) and restrict JavaScript execution permissions dynamically. Avoid exposing native payment or authentication tokens through JavaScript bridge callback return values; instead, bridge only transient action triggers while executing actual cryptographic token transfers over native secure channels.
+Finally, with Content Security Policy (CSP), ensure server responses loaded into WebViews include strict HTTP Content Security Policy headers (`default-src 'self'`), mitigating inline script injections and preventing unauthorized external script loading.
 
-2. **Mitigating Universal Cross-Site Scripting (UXSS)**: For sensitive hybrid applications, enable multi-process WebView mode (default on Android 8+) and restrict JavaScript execution permissions dynamically. Avoid exposing native payment or authentication tokens through JavaScript bridge callback return values; instead, bridge only transient action triggers while executing actual cryptographic token transfers over native secure channels.
-
-3. **Content Security Policy (CSP)**: Ensure server responses loaded into WebViews include strict HTTP Content Security Policy headers (`default-src 'self'`), mitigating inline script injections and preventing unauthorized external script loading.
 
 ## How to answer in the interview
 

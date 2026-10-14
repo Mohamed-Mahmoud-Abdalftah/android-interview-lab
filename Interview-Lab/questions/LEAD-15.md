@@ -87,32 +87,23 @@ Push back professionally by uncovering the underlying user goal, articulating co
 
 ## Interview answer — structured
 
-Pushing back constructively on unrealistic product requirements separates engineering partners from order takers:
+Pushing back constructively on unrealistic product requirements separates engineering partners from order takers.
 
-1. **Uncover the Underlying Business Motivation ('The Why')**:
-   - Begin by seeking clarity on the desired business outcome. Product requirements often conflate a high-level user goal with a rigid implementation detail. For instance: 'We need 24/7 background location' usually means 'We want to notify users when they enter a retail store.'
+First, **Uncover the Underlying Business Motivation ('The Why')**. Next, begin by seeking clarity on the desired business outcome. Product requirements often conflate a high-level user goal with a rigid implementation detail. For instance: 'We need 24/7 background location' usually means 'We want to notify users when they enter a retail store.'
+**Frame Constraints in Commercial and User Terms**. Avoid citing technical jargon ('Android OS restrictions'). Translate technical realities into business risk.
+With Store Rejection Risk, google Play enforces draconian reviews for sensitive permissions (`ACCESS_BACKGROUND_LOCATION`, broad storage); violations trigger immediate removal. With User Churn & Retention, aggressive background polling drains battery, surfacing your app on Android's high-battery-usage system warnings and driving uninstalls.
+With Permission Opt-In Dropoff, prompting for intrusive runtime permissions causes high drop-off rates during user onboarding. **Propose Idiomatic Platform Solutions**.
+Never say 'No' without presenting 'Here is how we accomplish the exact business goal sustainably'. Replace continuous GPS polling with Google Play services Geofencing API.
+Replace broad storage permissions with the modern Android Photo Picker (zero runtime permissions). Finally, replace persistent background polling with WorkManager periodic sync or Firebase Cloud Messaging (FCM) push notifications.
 
-2. **Frame Constraints in Commercial and User Terms**:
-   - Avoid citing technical jargon ('Android OS restrictions'). Translate technical realities into business risk:
-     - **Store Rejection Risk**: Google Play enforces draconian reviews for sensitive permissions (`ACCESS_BACKGROUND_LOCATION`, broad storage); violations trigger immediate removal.
-     - **User Churn & Retention**: Aggressive background polling drains battery, surfacing your app on Android's high-battery-usage system warnings and driving uninstalls.
-     - **Permission Opt-In Dropoff**: Prompting for intrusive runtime permissions causes high drop-off rates during user onboarding.
-
-3. **Propose Idiomatic Platform Solutions**:
-   - Never say 'No' without presenting 'Here is how we accomplish the exact business goal sustainably':
-     - Replace continuous GPS polling with Google Play services Geofencing API.
-     - Replace broad storage permissions with the modern Android Photo Picker (zero runtime permissions).
-     - Replace persistent background polling with WorkManager periodic sync or Firebase Cloud Messaging (FCM) push notifications.
 
 ## Interview answer — deep senior
 
-From an engineering leadership and strategic alignment perspective, setting platform boundaries builds trust:
+From an engineering leadership and strategic alignment perspective, setting platform boundaries builds trust.
 
-1. **The 'Yes, If' Technique**: Master the collaborative communication pattern: 'Yes, we can achieve that retail proximity alert, if we use the Geofencing API rather than continuous GPS tracking.' This positions engineering as a creative problem-solving partner rather than a bureaucratic blocker.
+First, with The 'Yes, If' Technique, master the collaborative communication pattern: 'Yes, we can achieve that retail proximity alert, if we use the Geofencing API rather than continuous GPS tracking.' This positions engineering as a creative problem-solving partner rather than a bureaucratic blocker. Next, with Leveraging Official Platform Guidelines as Neutral Arbiters, when product stakeholders remain skeptical, do not argue personal opinions. Share Google's official Android Developer Quality Guidelines, Android Vitals thresholds, and Play Console Policy documentation. Pointing to Google's public policy shifts the conversation from personal friction to navigating external industry rules.
+Finally, with Empirical A/B Prototype Demonstrations, if stakeholders remain convinced that a background feature will not hurt battery life, instrument a rapid prototype measuring battery discharge via Batterystats/Historian on a test device over 12 hours. Showing hard empirical data (e.g. 45% battery drain) resolves the debate definitively with data.
 
-2. **Leveraging Official Platform Guidelines as Neutral Arbiters**: When product stakeholders remain skeptical, do not argue personal opinions. Share Google's official Android Developer Quality Guidelines, Android Vitals thresholds, and Play Console Policy documentation. Pointing to Google's public policy shifts the conversation from personal friction to navigating external industry rules.
-
-3. **Empirical A/B Prototype Demonstrations**: If stakeholders remain convinced that a background feature will not hurt battery life, instrument a rapid prototype measuring battery discharge via Batterystats/Historian on a test device over 12 hours. Showing hard empirical data (e.g. 45% battery drain) resolves the debate definitively with data.
 
 ## How to answer in the interview
 

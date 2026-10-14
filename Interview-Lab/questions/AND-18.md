@@ -87,19 +87,18 @@ In multi-window, the app can be visible (onStart) without having input focus (on
 
 ## Interview answer — structured
 
-These three transitions impact Android lifecycle states and resource management differently:
+These three transitions impact Android lifecycle states and resource management differently.
 
-1. **Multi-Window / Foldable Resizing**: The app shares screen real estate with another process. The app is fully visible, but may not have user touch focus. Prior to Android 10, an app without focus was kept in `onPause()`. In Android 10+ with **Multi-Resume**, all visible apps in multi-window remain in `RESUMED`. Therefore, video playback, map rendering, and animations must be bound to **`onStart()` and `onStop()`**; stopping them in `onPause()` causes frozen video playback in split-screen mode.
+First, a Multi-Window / Foldable Resizing is the app shares screen real estate with another process. The app is fully visible, but may not have user touch focus. Prior to Android 10, an app without focus was kept in `onPause()`. In Android 10+ with **Multi-Resume**, all visible apps in multi-window remain in `RESUMED`. Therefore, video playback, map rendering, and animations must be bound to **`onStart()` and `onStop()`**; stopping them in `onPause()` causes frozen video playback in split-screen mode. Next, with Screen Rotation, triggers a full Configuration Change: `onPause -> onStop -> onDestroy` followed by recreation. The UI hierarchy and view bindings are destroyed, while the ViewModel and SavedStateHandle survive in memory.
+Finally, with Background/Foreground Transitions, navigating away invokes `onPause()` followed by `onStop()`. The OS calls `onSaveInstanceState()` to serialize state. Once in `onStop()`, the app's process is marked killable by the Low Memory Killer if RAM is constrained.
 
-2. **Screen Rotation**: Triggers a full Configuration Change: `onPause -> onStop -> onDestroy` followed by recreation. The UI hierarchy and view bindings are destroyed, while the ViewModel and SavedStateHandle survive in memory.
-
-3. **Background/Foreground Transitions**: Navigating away invokes `onPause()` followed by `onStop()`. The OS calls `onSaveInstanceState()` to serialize state. Once in `onStop()`, the app's process is marked killable by the Low Memory Killer if RAM is constrained.
 
 ## Interview answer — deep senior
 
 On modern **Foldable devices** (e.g., Samsung Galaxy Fold, Google Pixel Fold), unfolding the device transitions the app from a compact external display to a large unfolded inner display. This triggers dynamic configuration changes where screen size, aspect ratio, and smallest screen width (`sw600dp`) change on the fly.
 
 To support foldables seamlessly in modern architecture: 1. Use **Jetpack WindowManager** (`WindowInfoTracker.getOrCreate(context).windowLayoutInfo(activity)`) to observe folding postures (Flat, Half-Opened / Tabletop mode, and display hinge folding features). 2. Adopt adaptive UI layouts with Compose (`calculateWindowSizeClass()`), switching dynamically between single-pane, list-detail, and supporting pane layouts without manual Activity recreation hacks.
+
 
 ## How to answer in the interview
 

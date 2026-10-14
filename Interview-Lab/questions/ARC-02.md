@@ -100,16 +100,12 @@ Presentation displays UI and translates user gestures into state streams via Vie
 
 ## Interview answer — structured
 
-Modern Android Clean Architecture partitions responsibilities into three distinct architectural layers:
+Modern Android Clean Architecture partitions responsibilities into three distinct architectural layers.
 
-1. **Domain Layer (The Business Core)**: Represents the innermost layer and contains pure business logic. It has zero dependencies on Android frameworks, network libraries, or databases. It contains:
-   - **Entities**: Business models encapsulating core data structures and invariant validation.
-   - **Use Cases (Interactors)**: Single-purpose orchestrators executing specific business scenarios (e.g. `CalculateCartTotalUseCase`).
-   - **Repository Interfaces**: Abstract contracts specifying what data operations the business requires, completely divorced from storage mechanisms.
+First, a Domain Layer (The Business Core) represents the innermost layer and contains pure business logic. It has zero dependencies on Android frameworks, network libraries, or databases. It contains. Next, with Entities, business models encapsulating core data structures and invariant validation.
+Additionally, with Use Cases (Interactors), single-purpose orchestrators executing specific business scenarios (e.g. `CalculateCartTotalUseCase`). With Repository Interfaces, abstract contracts specifying what data operations the business requires, completely divorced from storage mechanisms.
+A Data Layer (The Source Coordinators) implements domain repository interfaces. It manages raw data sources (Retrofit REST APIs, Room SQLite DAOs, SharedPreferences/DataStore), handles caching strategies, and maps external DTOs into domain entities. Finally, with Presentation Layer (The UI), consists of ViewModels and Composable screens. The ViewModel calls Use Cases, reacts to state updates, and projects data into immutable `StateFlow<UiState>` streams, while capturing user UI events.
 
-2. **Data Layer (The Source Coordinators)**: Implements domain repository interfaces. It manages raw data sources (Retrofit REST APIs, Room SQLite DAOs, SharedPreferences/DataStore), handles caching strategies, and maps external DTOs into domain entities.
-
-3. **Presentation Layer (The UI)**: Consists of ViewModels and Composable screens. The ViewModel calls Use Cases, reacts to state updates, and projects data into immutable `StateFlow<UiState>` streams, while capturing user UI events.
 
 ## Interview answer — deep senior
 
@@ -118,6 +114,7 @@ A critical design aspect of this division is the **Inversion of Control (IoC)** 
 This division maximizes testability. Because the Domain layer is pure Kotlin without Android dependencies, its entire test suite runs as lightning-fast JVM unit tests executing in milliseconds without Robolectric or emulator bootstrapping.
 
 In enterprise Android modularization, these layers are often represented as separate Gradle modules: `:feature:cart:ui`, `:feature:cart:domain`, and `:feature:cart:data`, enforcing boundary discipline at the compiler level.
+
 
 ## How to answer in the interview
 

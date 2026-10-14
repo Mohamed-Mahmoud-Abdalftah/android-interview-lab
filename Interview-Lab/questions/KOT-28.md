@@ -101,11 +101,13 @@ In this design, `Success<T>` holds the strongly typed response payload. The fail
 
 Callers consume the API with exhaustive `when` expressions, giving the compiler the ability to verify that every domain error variant is explicitly handled. We also provide functional transformations like `map`, `mapError`, and `flatMap` so pipelines can chain results cleanly without nested try-catch blocks.
 
+
 ## Interview answer — deep senior
 
 Architecturally, a well-engineered Result type follows Monadic patterns (similar to Arrow's Either<L, R>) while maintaining idiomatic Kotlin ergonomics. To maximize performance and ergonomics in Android: 1. Covariance: use `out T` and `out E` with `Success<out T>` and `Failure<out E> : Result<Nothing, E>`, allowing seamless polymorphism and subtyping. 2. Preserve low-level diagnostics: for network and infrastructure failures, attach the underlying root cause (`val cause: Throwable? = null`) so logging and Crashlytics can report full diagnostic breadcrumbs without exposing Throwables to the domain logic. 3. Inline utility methods: implement combinators like `inline fun <T, E, R> Result<T, E>.map(transform: (T) -> R): Result<R, E>` as inline functions to ensure zero heap allocation overhead during transformation chains.
 
 This pattern completely decouples business error recovery from system crash reporting, providing absolute compile-time safety across multi-module boundaries.
+
 
 ## How to answer in the interview
 

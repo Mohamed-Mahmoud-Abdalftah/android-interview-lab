@@ -112,18 +112,19 @@ To demonstrate the race condition:
 ```kotlin
 var balance = 0
 coroutineScope {
-    launch(Dispatchers.Default) { repeat(10_000) { balance++ } }
-    launch(Dispatchers.Default) { repeat(10_000) { balance++ } }
+ launch(Dispatchers.Default) { repeat(10_000) { balance++ } }
+ launch(Dispatchers.Default) { repeat(10_000) { balance++ } }
 }
 // balance will be far less than 20,000 due to race conditions!
 ```
 
 The operation `balance++` breaks into three assembly instructions: read value, increment, and write back. When executed concurrently across worker threads on `Dispatchers.Default`, Thread B overwrites Thread A's updates.
 
-To fix it, we have three production strategies depending on the use case:
-1. **AtomicInteger** for primitive counters: `val balance = AtomicInteger(0); balance.addAndGet(amount)`. This is lock-free and resolved in CPU hardware.
-2. **Kotlin Mutex** when suspension is involved: protect the mutation with `mutex.withLock { balance += amount }`. Mutex suspends non-blockingly without starving worker threads.
-3. **Thread Confinement**: confine the balance update to a sequential dispatcher: `withContext(Dispatchers.Default.limitedParallelism(1)) { balance += amount }`.
+To fix it, we have three production strategies depending on the use case.
+
+First, **AtomicInteger** for primitive counters: `val balance = AtomicInteger(0); balance.addAndGet(amount)`. This is lock-free and resolved in CPU hardware. Next, **Kotlin Mutex** when suspension is involved: protect the mutation with `mutex.withLock { balance += amount }`. Mutex suspends non-blockingly without starving worker threads.
+Finally, with Thread Confinement, confine the balance update to a sequential dispatcher: `withContext(Dispatchers.Default.limitedParallelism(1)) { balance += amount }`.
+
 
 ## Interview answer — deep senior
 
@@ -139,6 +140,7 @@ fun deposit(amount: Int) {
 ```
 
 `StateFlow.update` uses an internal CAS loop that guarantees atomic updates without locks.
+
 
 ## How to answer in the interview
 

@@ -266,25 +266,19 @@ To encrypt small secrets, generate an AES-256 key inside Android Keystore config
 
 ## Interview answer — structured
 
-Encrypting small secrets securely on Android requires Keystore-managed hardware isolation and authenticated encryption:
+Encrypting small secrets securely on Android requires Keystore-managed hardware isolation and authenticated encryption.
 
-1. **Key Generation in Keystore**: Generate a 256-bit AES key inside `AndroidKeyStore` using `KeyGenParameterSpec` configured with `PURPOSE_ENCRYPT or PURPOSE_DECRYPT`, `BLOCK_MODE_GCM`, `ENCRYPTION_PADDING_NONE`, and `setRandomizedEncryptionRequired(true)`. The key material never leaves hardware.
+First, with Key Generation in Keystore, generate a 256-bit AES key inside `AndroidKeyStore` using `KeyGenParameterSpec` configured with `PURPOSE_ENCRYPT or PURPOSE_DECRYPT`, `BLOCK_MODE_GCM`, `ENCRYPTION_PADDING_NONE`, and `setRandomizedEncryptionRequired(true)`. The key material never leaves hardware. Next, with Authenticated Encryption (AES-GCM), GCM is an AEAD (Authenticated Encryption with Associated Data) mode. In addition to encrypting data, it appends a 128-bit authentication tag. If an attacker modifies even a single byte of ciphertext in storage, `cipher.doFinal()` throws `AEADBadTagException`, preventing bit-flipping attacks.
+Additionally, with IV Management, GCM requires a unique Initialization Vector (IV)—typically 12 bytes—for every encryption under the same key. Reusing an IV with GCM destroys cryptographic security. Always let `cipher.init(Cipher.ENCRYPT_MODE, key)` generate the random IV via the system's secure RNG, and prepend the IV to the stored ciphertext. Finally, with Decryption, extract the first 12 bytes as IV, initialize `Cipher.DECRYPT_MODE` with `GCMParameterSpec(128, iv)`, and decrypt the remaining bytes.
 
-2. **Authenticated Encryption (AES-GCM)**: GCM is an AEAD (Authenticated Encryption with Associated Data) mode. In addition to encrypting data, it appends a 128-bit authentication tag. If an attacker modifies even a single byte of ciphertext in storage, `cipher.doFinal()` throws `AEADBadTagException`, preventing bit-flipping attacks.
-
-3. **IV Management**: GCM requires a unique Initialization Vector (IV)—typically 12 bytes—for every encryption under the same key. Reusing an IV with GCM destroys cryptographic security. Always let `cipher.init(Cipher.ENCRYPT_MODE, key)` generate the random IV via the system's secure RNG, and prepend the IV to the stored ciphertext.
-
-4. **Decryption**: Extract the first 12 bytes as IV, initialize `Cipher.DECRYPT_MODE` with `GCMParameterSpec(128, iv)`, and decrypt the remaining bytes.
 
 ## Interview answer — deep senior
 
-From an architectural standpoint, implementing Keystore-backed encryption requires considering concurrency, performance, and key resilience:
+From an architectural standpoint, implementing Keystore-backed encryption requires considering concurrency, performance, and key resilience.
 
-1. **Keystore IPC Bottlenecks**: Android Keystore operations involve IPC to the `keystored` daemon and hardware TEE/StrongBox calls. These calls are CPU-intensive and blocking. Encryption and decryption routines must never execute on the Main Thread; dispatch them to a dedicated background Coroutine dispatcher (`Dispatchers.IO` or `Dispatchers.Default`).
+First, with Keystore IPC Bottlenecks, Android Keystore operations involve IPC to the `keystored` daemon and hardware TEE/StrongBox calls. These calls are CPU-intensive and blocking. Encryption and decryption routines must never execute on the Main Thread; dispatch them to a dedicated background Coroutine dispatcher (`Dispatchers.IO` or `Dispatchers.Default`). Next, with Handling Corrupted Entries, in production across diverse OEM implementations, Keystore operations occasionally throw `KeyStoreException` or `UnrecoverableKeyException` due to hardware glitches or OS upgrades. Resilient architectures catch these exceptions, clear the corrupted alias, purge stale encrypted tokens from storage, and gracefully prompt the user to re-authenticate.
+Finally, with Size Constraints, keystore AES-GCM is designed for small payloads (tokens, encryption keys, PII strings). For large files or databases, use an **Envelope Encryption** pattern: generate a random data key in memory, encrypt the file using standard AES-CTR/CBC, and use Keystore only to encrypt that data key.
 
-2. **Handling Corrupted Entries**: In production across diverse OEM implementations, Keystore operations occasionally throw `KeyStoreException` or `UnrecoverableKeyException` due to hardware glitches or OS upgrades. Resilient architectures catch these exceptions, clear the corrupted alias, purge stale encrypted tokens from storage, and gracefully prompt the user to re-authenticate.
-
-3. **Size Constraints**: Keystore AES-GCM is designed for small payloads (tokens, encryption keys, PII strings). For large files or databases, use an **Envelope Encryption** pattern: generate a random data key in memory, encrypt the file using standard AES-CTR/CBC, and use Keystore only to encrypt that data key.
 
 ## How to answer in the interview
 

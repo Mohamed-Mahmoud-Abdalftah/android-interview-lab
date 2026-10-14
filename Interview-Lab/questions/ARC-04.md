@@ -142,21 +142,18 @@ A Repository mediates between multiple data sources (Network, Room, Cache), abst
 
 The Repository and Use Case patterns serve complementary but distinct architectural purposes.
 
-1. **The Repository Pattern**: Acts as a mediator between domain/business layers and diverse raw data sources (Remote API, Room DB, in-memory cache). Its responsibilities are:
-   - Presenting a clean, domain-centric collection interface (`Flow<User>`, `suspend fun save()`).
-   - Encapsulating storage details, offline-first policies, and data synchronization logic.
-   - Mapping DTOs/Entities into clean Domain Models.
+First, with The Repository Pattern, acts as a mediator between domain/business layers and diverse raw data sources (Remote API, Room DB, in-memory cache). Its responsibilities are. Next, presenting a clean, domain-centric collection interface (`Flow<User>`, `suspend fun save()`).
+Encapsulating storage details, offline-first policies, and data synchronization logic. Mapping DTOs/Entities into clean Domain Models.
+A The Use Case (Interactor) encapsulates a **single granular business operation**. It represents an action the user or system wants to perform (e.g. `CheckoutCartUseCase`, `AuthenticateWithBiometricsUseCase`). Its responsibilities are. Enforcing core business rules and validation logic.
+Orchestrating interactions across multiple repositories. Finally, exposing a single entry point—conventionally implemented using Kotlin's `operator fun invoke()`.
 
-2. **The Use Case (Interactor)**: Encapsulates a **single granular business operation**. It represents an action the user or system wants to perform (e.g. `CheckoutCartUseCase`, `AuthenticateWithBiometricsUseCase`). Its responsibilities are:
-   - Enforcing core business rules and validation logic.
-   - Orchestrating interactions across multiple repositories.
-   - Exposing a single entry point—conventionally implemented using Kotlin's `operator fun invoke()`.
 
 ## Interview answer — deep senior
 
 A frequent architectural smell is creating 1-to-1 **Passthrough Use Cases** that merely wrap a repository method: `class GetUserUseCase(repo) { invoke(id) = repo.getUser(id) }`. If a business action involves zero validation, zero coordination, and zero transformation, creating a use case solely for dogma introduces meaningless boilerplate. Google's official architecture guidance explicitly recommends treating the Domain layer as optional: ViewModels can directly consume Repositories when business logic is absent.
 
 However, Use Cases become indispensable when business rules must be shared across multiple entry points. For example, if an `AddToCartUseCase` is executed by a standard product screen, a search screen, and a deep-link notification handler, placing the validation and limit checks inside a UseCase prevents duplicating business logic across three ViewModels.
+
 
 ## How to answer in the interview
 

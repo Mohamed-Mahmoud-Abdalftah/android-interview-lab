@@ -83,27 +83,21 @@ Catch dropped manifest components by inspecting the manifest-merger-release-repo
 
 ## Interview answer — structured
 
-Manifest merging conflicts can silently strip essential components via conflicting `tools:node` attributes or namespace collisions:
+Manifest merging conflicts can silently strip essential components via conflicting `tools:node` attributes or namespace collisions.
 
-1. **Root Causes of Manifest Drops**:
-   - Upstream libraries declaring `tools:node="remove"` targeting shared component names.
-   - Conflicting `android:authorities` attributes across product flavors or merged dependencies resolved incorrectly via `tools:replace`.
+First, **Root Causes of Manifest Drops**. Next, upstream libraries declaring `tools:node="remove"` targeting shared component names.
+Conflicting `android:authorities` attributes across product flavors or merged dependencies resolved incorrectly via `tools:replace`. **The Manifest Merger Report**.
+AGP generates a detailed audit log: `app/build/outputs/logs/manifest-merger-release-report.txt`. It documents the line-by-line origin, merge decision, and justification for every element included or rejected. **Automated CI Validation Checks**.
+Finally, implement a post-build CI test or custom Gradle task hooked after `processReleaseManifest`. The task parses `build/intermediates/merged_manifests/release/AndroidManifest.xml` using an XML parser and asserts that all critical `<provider>`, `<service>`, and `<activity>` authorities and exported attributes match expected security baselines, failing the build on discrepancies.
 
-2. **The Manifest Merger Report**:
-   - AGP generates a detailed audit log: `app/build/outputs/logs/manifest-merger-release-report.txt`. It documents the line-by-line origin, merge decision, and justification for every element included or rejected.
-
-3. **Automated CI Validation Checks**:
-   - Implement a post-build CI test or custom Gradle task hooked after `processReleaseManifest`. The task parses `build/intermediates/merged_manifests/release/AndroidManifest.xml` using an XML parser and asserts that all critical `<provider>`, `<service>`, and `<activity>` authorities and exported attributes match expected security baselines, failing the build on discrepancies.
 
 ## Interview answer — deep senior
 
-From an enterprise release governance viewpoint, manifest integrity auditing extends beyond simple text matching:
+From an enterprise release governance viewpoint, manifest integrity auditing extends beyond simple text matching.
 
-1. **Custom Android Lint Rules (`Detector.XmlScanner`)**: Write an in-house Android Lint rule that runs during `./gradlew lintRelease`. The detector scans the merged XML AST for expected component authorities and flags errors if authorities do not match the expected variant namespace pattern.
+First, with Custom Android Lint Rules (`Detector.XmlScanner`), write an in-house Android Lint rule that runs during `./gradlew lintRelease`. The detector scans the merged XML AST for expected component authorities and flags errors if authorities do not match the expected variant namespace pattern. Next, with AAPT2 Dump Manifest Verification, to guarantee that what is packaged inside the binary matches expectations, run `aapt2 dump badging app-release.apk` inside the release CI runner. Inspect the output to verify declared providers in the final compiled `.arsc` table.
+Finally, with Security Implications of Dropped Providers, if an initialization provider (such as AndroidX App Startup `androidx.startup.InitializationProvider`) is dropped, dependent security or tracing SDKs fail to initialize silently, leaving the application running in an uninitialized, insecure state.
 
-2. **AAPT2 Dump Manifest Verification**: To guarantee that what is packaged inside the binary matches expectations, run `aapt2 dump badging app-release.apk` inside the release CI runner. Inspect the output to verify declared providers in the final compiled `.arsc` table.
-
-3. **Security Implications of Dropped Providers**: If an initialization provider (such as AndroidX App Startup `androidx.startup.InitializationProvider`) is dropped, dependent security or tracing SDKs fail to initialize silently, leaving the application running in an uninitialized, insecure state.
 
 ## How to answer in the interview
 

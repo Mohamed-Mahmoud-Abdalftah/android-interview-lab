@@ -119,27 +119,21 @@ Design a battery-pull-resilient reversal queue by persisting pre-computed revers
 
 ## Interview answer — structured
 
-Engineering a reversal engine capable of surviving sudden physical battery removal requires a three-tiered architecture:
+Engineering a reversal engine capable of surviving sudden physical battery removal requires a three-tiered architecture.
 
-1. **Durable Storage with Synchronous Flash Flush**:
-   - Reversals must be committed to a dedicated SQLite `reversal_queue` table before any UI timeout resolution. Enforce `PRAGMA synchronous = NORMAL` or `FULL` to ensure kernel page buffers flush to physical flash memory before control flow returns.
+First, **Durable Storage with Synchronous Flash Flush**. Next, reversals must be committed to a dedicated SQLite `reversal_queue` table before any UI timeout resolution. Enforce `PRAGMA synchronous = NORMAL` or `FULL` to ensure kernel page buffers flush to physical flash memory before control flow returns.
+**Resilient Execution via Jetpack WorkManager**. Enqueue reversal dispatches via `WorkManager.enqueueUniqueWork()` using an `ExistingWorkPolicy.APPEND_OR_REPLACE` policy with `Constraints(NetworkType.CONNECTED)`.
+WorkManager registers system broadcast receivers (`ACTION_BOOT_COMPLETED`, `ACTION_MY_PACKAGE_REPLACED`). When the battery is re-inserted and Android boots up, WorkManager automatically resurrects the worker without user intervention. **The Pre-Flight Terminal Lockout Gate**.
+Finally, financial certification (EMV/PCI) mandates that a terminal must clear historical reversals before accepting new card insertions. On app cold start or before launching a new transaction flow, the system queries the reversal queue. If entries exist, it halts new sales and flushes the queue first.
 
-2. **Resilient Execution via Jetpack WorkManager**:
-   - Enqueue reversal dispatches via `WorkManager.enqueueUniqueWork()` using an `ExistingWorkPolicy.APPEND_OR_REPLACE` policy with `Constraints(NetworkType.CONNECTED)`.
-   - WorkManager registers system broadcast receivers (`ACTION_BOOT_COMPLETED`, `ACTION_MY_PACKAGE_REPLACED`). When the battery is re-inserted and Android boots up, WorkManager automatically resurrects the worker without user intervention.
-
-3. **The Pre-Flight Terminal Lockout Gate**:
-   - Financial certification (EMV/PCI) mandates that a terminal must clear historical reversals before accepting new card insertions. On app cold start or before launching a new transaction flow, the system queries the reversal queue. If entries exist, it halts new sales and flushes the queue first.
 
 ## Interview answer — deep senior
 
-From an EMV L2 payment kernel and regulatory certification perspective, reversal queues follow strict protocol rules:
+From an EMV L2 payment kernel and regulatory certification perspective, reversal queues follow strict protocol rules.
 
-1. **Reversal Retry Limits and Poison Pill Mitigation**: If a reversal request is rejected by the issuer host with a definitive non-retryable response (e.g. `ISO 8583 Response Code 12: Invalid Transaction` or `Code 94: Duplicate Transmission`), retrying forever locks the POS terminal indefinitely. The reversal worker must inspect response codes: definitive rejections transition the record to an `AUDIT_ALERT_FAILED` state, unblocking the terminal while alerting engineering telemetry.
+First, with Reversal Retry Limits and Poison Pill Mitigation, if a reversal request is rejected by the issuer host with a definitive non-retryable response (e.g. `ISO 8583 Response Code 12: Invalid Transaction` or `Code 94: Duplicate Transmission`), retrying forever locks the POS terminal indefinitely. The reversal worker must inspect response codes: definitive rejections transition the record to an `AUDIT_ALERT_FAILED` state, unblocking the terminal while alerting engineering telemetry. Next, with FIFO Queue Ordering, reversals must be dispatched in strict First-In-First-Out order. Discarding ordering risks reversing a subsequent authorization instead of the intended original transaction.
+Finally, with Hardware Keystore Signature Durability, reversal payloads often contain encrypted EMV card cryptograms (ARQC / AAC) generated during the physical chip read. Because the physical chip is gone upon battery restart, this exact cryptogram must be safely encrypted in the persistent reversal queue record using the Android Keystore.
 
-2. **FIFO Queue Ordering**: Reversals must be dispatched in strict First-In-First-Out order. Discarding ordering risks reversing a subsequent authorization instead of the intended original transaction.
-
-3. **Hardware Keystore Signature Durability**: Reversal payloads often contain encrypted EMV card cryptograms (ARQC / AAC) generated during the physical chip read. Because the physical chip is gone upon battery restart, this exact cryptogram must be safely encrypted in the persistent reversal queue record using the Android Keystore.
 
 ## How to answer in the interview
 

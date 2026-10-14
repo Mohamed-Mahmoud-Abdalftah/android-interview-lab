@@ -108,31 +108,23 @@ A payment state machine governs financial transaction lifecycles across explicit
 
 ## Interview answer — structured
 
-A deterministic payment state machine is the foundational architectural safeguard in fintech and POS engineering:
+A deterministic payment state machine is the foundational architectural safeguard in fintech and POS engineering.
 
-1. **Eliminating the Binary Fallacy**:
-   - Financial transactions must never be modeled as a boolean (success/failure). Network timeouts produce ambiguous states where funds were deducted at the issuer bank but never acknowledged on the mobile terminal.
+First, **Eliminating the Binary Fallacy**. Next, financial transactions must never be modeled as a boolean (success/failure). Network timeouts produce ambiguous states where funds were deducted at the issuer bank but never acknowledged on the mobile terminal.
+**The Six Canonical Transaction States**. With Initiated, transaction intent, idempotency key, and payload are durably written to disk (Room/SQLite) before opening any socket connection.
+A Processing is the payload is in transit to the payment gateway or EMV switch. With Approved, cryptographically signed confirmation received with an authorization code.
+With Declined, explicit rejection code (e.g., insufficient funds, expired card); a terminal state requiring no automatic retries. With Unknown / In-Doubt, network timeout, socket hangup, or terminal reboot occurs mid-flight. Funds may or may not have been captured.
+A Reversed is an automated reversal (0400/0420 ISO 8583 message) has released held funds back to the cardholder. **State Transition Guarantees**.
+Finally, transitions must be strictly monotonic and persisted atomically in local databases to survive sudden process termination or hardware battery pulls.
 
-2. **The Six Canonical Transaction States**:
-   - **Initiated**: Transaction intent, idempotency key, and payload are durably written to disk (Room/SQLite) before opening any socket connection.
-   - **Processing**: The payload is in transit to the payment gateway or EMV switch.
-   - **Approved**: Cryptographically signed confirmation received with an authorization code.
-   - **Declined**: Explicit rejection code (e.g., insufficient funds, expired card); a terminal state requiring no automatic retries.
-   - **Unknown / In-Doubt**: Network timeout, socket hangup, or terminal reboot occurs mid-flight. Funds may or may not have been captured.
-   - **Reversed**: An automated reversal (0400/0420 ISO 8583 message) has released held funds back to the cardholder.
-
-3. **State Transition Guarantees**:
-   - Transitions must be strictly monotonic and persisted atomically in local databases to survive sudden process termination or hardware battery pulls.
 
 ## Interview answer — deep senior
 
-From an ISO 8583 and payment terminal compliance perspective, managing the 'Unknown' state dictates ledger consistency:
+From an ISO 8583 and payment terminal compliance perspective, managing the 'Unknown' state dictates ledger consistency.
 
-1. **The 'In-Doubt' Protocol**: When a transaction enters the `Unknown` state due to a 30-second gateway read timeout, client apps must **never immediately retry the authorization request**. Doing so risks charging the customer twice. The terminal must enqueue an automated Reversal (ISO 8583 0400 reversal message) and mark the local record as pending reversal.
+First, with The 'In-Doubt' Protocol, when a transaction enters the `Unknown` state due to a 30-second gateway read timeout, client apps must **never immediately retry the authorization request**. Doing so risks charging the customer twice. The terminal must enqueue an automated Reversal (ISO 8583 0400 reversal message) and mark the local record as pending reversal. Next, with Terminal Status Inquiry vs. Auto-Reversal, high-reliability POS devices execute a Status Inquiry (`/v1/payments/{id}/status`) before issuing a reversal. If the gateway confirms the charge was captured, the client reconciles the transaction as Approved and prints the receipt; if not captured or still pending, it executes the reversal.
+Finally, with Crash-Resistant State Machine Engines, in Android, state machines must be tied to persistent WorkManager tasks and Room database observers rather than ViewModel in-memory state. If Android kills the app process due to low memory while in `Processing`, upon next launch the app inspects Room and resumes the reconciliation workflow.
 
-2. **Terminal Status Inquiry vs. Auto-Reversal**: High-reliability POS devices execute a Status Inquiry (`/v1/payments/{id}/status`) before issuing a reversal. If the gateway confirms the charge was captured, the client reconciles the transaction as Approved and prints the receipt; if not captured or still pending, it executes the reversal.
-
-3. **Crash-Resistant State Machine Engines**: In Android, state machines must be tied to persistent WorkManager tasks and Room database observers rather than ViewModel in-memory state. If Android kills the app process due to low memory while in `Processing`, upon next launch the app inspects Room and resumes the reconciliation workflow.
 
 ## How to answer in the interview
 

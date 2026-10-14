@@ -98,27 +98,21 @@ Test process death by verifying SavedStateHandle state restoration in JVM unit t
 
 ## Interview answer — structured
 
-Testing OS lifecycle edge cases verifies resilience against system memory pressure and hardware configuration shifts:
+Testing OS lifecycle edge cases verifies resilience against system memory pressure and hardware configuration shifts.
 
-1. **Testing Process Death**:
-   - **JVM Unit Testing (SavedStateHandle)**: Save a state snapshot via `savedStateHandle.savedStateProvider().saveState()`, feed the bundle into a fresh `SavedStateHandle.createHandle()`, instantiate a new ViewModel, and assert that form inputs, active step indexes, and navigation tokens survive.
-   - **On-Device Instrumentation Testing**: Use AndroidX `ActivityScenario`. Navigate through a flow, background the app, trigger process death via `adb shell am kill <package>`, bring the app foreground, and assert that the activity restores state without crashing.
+First, **Testing Process Death**. Next, with JVM Unit Testing (SavedStateHandle), save a state snapshot via `savedStateHandle.savedStateProvider().saveState()`, feed the bundle into a fresh `SavedStateHandle.createHandle()`, instantiate a new ViewModel, and assert that form inputs, active step indexes, and navigation tokens survive.
+Additionally, with On-Device Instrumentation Testing, use AndroidX `ActivityScenario`. Navigate through a flow, background the app, trigger process death via `adb shell am kill <package>`, bring the app foreground, and assert that the activity restores state without crashing. **Testing Configuration Changes (Rotation)**.
+In Compose tests or `ActivityScenario`, invoke `scenario.recreate()`. Assert that the screen rebinds to existing ViewModel state flows without re-triggering network fetches or resetting scroll offsets. **Testing Dynamic Offline Transitions**.
+Finally, inject a `FakeNetworkMonitor` exposing a `Flow<Boolean>`. While collecting active UI flows, flip network availability to `false`. Assert that the UI renders an offline banner, falls back to cached Room records, and routes mutations to an internal pending outbox.
 
-2. **Testing Configuration Changes (Rotation)**:
-   - In Compose tests or `ActivityScenario`, invoke `scenario.recreate()`. Assert that the screen rebinds to existing ViewModel state flows without re-triggering network fetches or resetting scroll offsets.
-
-3. **Testing Dynamic Offline Transitions**:
-   - Inject a `FakeNetworkMonitor` exposing a `Flow<Boolean>`. While collecting active UI flows, flip network availability to `false`. Assert that the UI renders an offline banner, falls back to cached Room records, and routes mutations to an internal pending outbox.
 
 ## Interview answer — deep senior
 
-From an architectural systems perspective, handling process death exposes state boundaries:
+From an architectural systems perspective, handling process death exposes state boundaries.
 
-1. **Transient UI State vs. Heavy Domain State**: A frequent architectural anti-pattern is storing large domain objects (such as complete 5MB JSON lists) in `SavedStateHandle`. Android restricts the system `TransactionTooLargeException` buffer to 1MB across the entire process. Tests must assert that only lightweight restoration keys (e.g., `selectedUserId: String`, `scrollIndex: Int`) are saved to state bundles.
+First, a Transient UI State vs. Heavy Domain State is a frequent architectural anti-pattern is storing large domain objects (such as complete 5MB JSON lists) in `SavedStateHandle`. Android restricts the system `TransactionTooLargeException` buffer to 1MB across the entire process. Tests must assert that only lightweight restoration keys (e.g., `selectedUserId: String`, `scrollIndex: Int`) are saved to state bundles. Next, with rememberSaveable Custom Savers, in Jetpack Compose, test custom savers (`Saver<T, Any>`) by writing unit tests that serialize custom UI state objects to bundles and deserialize them, asserting object equivalence.
+Finally, with Network Flakiness Injection via OkHttp, rather than relying on physical airplane mode toggles in CI, inject an OkHttp interceptor into the test network client that programmatically drops connections after the 2nd request, asserting that retry queues and offline outboxes trigger reliably.
 
-2. **rememberSaveable Custom Savers**: In Jetpack Compose, test custom savers (`Saver<T, Any>`) by writing unit tests that serialize custom UI state objects to bundles and deserialize them, asserting object equivalence.
-
-3. **Network Flakiness Injection via OkHttp**: Rather than relying on physical airplane mode toggles in CI, inject an OkHttp interceptor into the test network client that programmatically drops connections after the 2nd request, asserting that retry queues and offline outboxes trigger reliably.
 
 ## How to answer in the interview
 

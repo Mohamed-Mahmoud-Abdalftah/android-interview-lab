@@ -107,22 +107,22 @@ Open/Closed Principle states that code should be open for extension but closed f
 
 The Open/Closed Principle (OCP) requires that software entities (classes, modules, functions) should be **open for extension, but closed for modification**.
 
-- **Open for extension**: The system's behavior can be enhanced as business requirements evolve.
-- **Closed for modification**: Adding new behaviors does not require modifying, recompiling, or risking regressions in existing, production-tested code.
+First, an Open for extension is the system's behavior can be enhanced as business requirements evolve. Finally, with Closed for modification, adding new behaviors does not require modifying, recompiling, or risking regressions in existing, production-tested code.
 
 The primary violator of OCP in Android is type branching via long `when (type)` or `if-else` chains. For instance, an analytics engine or payment router that inspects string types: adding 'Google Pay' requires opening `PaymentManager.kt`, editing the conditional statements, and re-testing every existing payment method.
 
-We adhere to OCP using **Polymorphic Abstraction (The Strategy Pattern)**:
-1. Declare a common interface: `PaymentStrategy`.
-2. Implement distinct classes: `CreditCardStrategy`, `PayPalStrategy`, `GooglePayStrategy`.
-3. Inject a set of strategies via Dagger/Hilt Multibindings (`@IntoSet`).
-To introduce a new payment method, developers simply create a new class and bind it in a Dagger module; zero existing payment code is touched.
+We adhere to OCP using **Polymorphic Abstraction (The Strategy Pattern)**.
+
+First, declare a common interface: `PaymentStrategy`. Next, implement distinct classes: `CreditCardStrategy`, `PayPalStrategy`, `GooglePayStrategy`.
+Finally, inject a set of strategies via Dagger/Hilt Multibindings (`@IntoSet`). To introduce a new payment method, developers simply create a new class and bind it in a Dagger module; zero existing payment code is touched.
+
 
 ## Interview answer — deep senior
 
 In modern Kotlin, **Sealed Hierarchies** offer an intentional balance with OCP. When using `sealed interface UiState`, the compiler enforces exhaustive `when` expressions, which intentionally requires modifying the UI when a new state is added. This is desirable when the set of states is closed and known at compile time.
 
 However, for **domain extensibility** (plugins, analytics trackers, payment gateways, validation rules), open interfaces and DI multibindings are strictly preferred over sealed classes. This allows feature modules to register new plugins dynamically without touching core orchestration modules.
+
 
 ## How to answer in the interview
 

@@ -91,27 +91,21 @@ Debug ABI packaging issues by inspecting the APK's lib/ subfolders with unzip or
 
 ## Interview answer — structured
 
-When features execute correctly on `arm64-v8a` but fail on other architectures, the failure is typically caused by packaging asymmetry or native instruction incompatibility:
+When features execute correctly on `arm64-v8a` but fail on other architectures, the failure is typically caused by packaging asymmetry or native instruction incompatibility.
 
-1. **Packaging Asymmetry Audit**:
-   - Extract the native binary tree: `unzip -l app.apk "lib/*"`.
-   - Verify that the failing architecture (e.g. `armeabi-v7a` or `x86_64`) contains the exact identical set of `.so` shared libraries as `arm64-v8a`. If a transitive SDK only bundles ARM64, loading native components fails on 32-bit devices.
+First, **Packaging Asymmetry Audit**. Next, extract the native binary tree: `unzip -l app.apk "lib/*"`.
+Verify that the failing architecture (e.g. `armeabi-v7a` or `x86_64`) contains the exact identical set of `.so` shared libraries as `arm64-v8a`. If a transitive SDK only bundles ARM64, loading native components fails on 32-bit devices. **Android 15 16KB Page Alignment Requirements**.
+Android 15 introduces support for 16KB memory page sizes. Native libraries compiled with older NDK versions aligned to 4KB fail to load on 16KB devices. Inspect alignment using `readelf -l libxyz.so | grep -A 1 LOAD` to verify `Align` equals `0x4000` (16KB). **CPU Instruction Set & NEON Compatibility**.
+Finally, native C/C++ routines employing hardware-accelerated instructions (e.g., ARM NEON SIMD) crash with `SIGILL (Illegal Instruction)` if executed on CPUs or emulators lacking those specific hardware execution registers. Implement runtime feature probing (`cpufeatures` library) before invoking vector extensions.
 
-2. **Android 15 16KB Page Alignment Requirements**:
-   - Android 15 introduces support for 16KB memory page sizes. Native libraries compiled with older NDK versions aligned to 4KB fail to load on 16KB devices. Inspect alignment using `readelf -l libxyz.so | grep -A 1 LOAD` to verify `Align` equals `0x4000` (16KB).
-
-3. **CPU Instruction Set & NEON Compatibility**:
-   - Native C/C++ routines employing hardware-accelerated instructions (e.g., ARM NEON SIMD) crash with `SIGILL (Illegal Instruction)` if executed on CPUs or emulators lacking those specific hardware execution registers. Implement runtime feature probing (`cpufeatures` library) before invoking vector extensions.
 
 ## Interview answer — deep senior
 
-From a multi-architecture testing and CI perspective, validating native stability requires matrix testing:
+From a multi-architecture testing and CI perspective, validating native stability requires matrix testing.
 
-1. **CI Architecture Emulation Matrix**: Run automated instrumentation tests against multiple emulator architectures in CI: ARM64 system images on Apple Silicon/ARM runners, and x86_64 system images on Intel/AMD runners, catching ABI packaging gaps before deployment.
+First, with CI Architecture Emulation Matrix, run automated instrumentation tests against multiple emulator architectures in CI: ARM64 system images on Apple Silicon/ARM runners, and x86_64 system images on Intel/AMD runners, catching ABI packaging gaps before deployment. Next, with Packaging PickFirsts & Duplicate JNI Libraries, if two dependencies bundle conflicting versions of `libc++_shared.so`, AGP fails the build with a duplicate file collision. Setting `packaging { jniLibs.pickFirsts.add("**/libc++_shared.so") }` resolves compilation, but can crash at runtime if the picked version has an incompatible C++ ABI. Ensure all native dependencies compile against identical NDK toolchain versions.
+Finally, with NDK abiFilters Alignment, explicitly declare `ndk.abiFilters` in `build.gradle.kts` matching the target distribution: `arm64-v8a` and `armeabi-v7a` for consumer devices, plus `x86_64` for developer emulators.
 
-2. **Packaging PickFirsts & Duplicate JNI Libraries**: If two dependencies bundle conflicting versions of `libc++_shared.so`, AGP fails the build with a duplicate file collision. Setting `packaging { jniLibs.pickFirsts.add("**/libc++_shared.so") }` resolves compilation, but can crash at runtime if the picked version has an incompatible C++ ABI. Ensure all native dependencies compile against identical NDK toolchain versions.
-
-3. **NDK abiFilters Alignment**: Explicitly declare `ndk.abiFilters` in `build.gradle.kts` matching the target distribution: `arm64-v8a` and `armeabi-v7a` for consumer devices, plus `x86_64` for developer emulators.
 
 ## How to answer in the interview
 

@@ -115,19 +115,19 @@ Testing Kotlin Flows deterministically requires pairing `kotlinx-coroutines-test
 
 Standard assertions fail on flows because terminal operators like `collect()` or `toList()` suspend indefinitely on infinite streams like `StateFlow`. Turbine solves this by providing the `flow.test { }` extension.
 
-Inside the `test` block, Turbine exposes a sequential event-driven API:
+Inside the `test` block, Turbine exposes a sequential event-driven API.
 
-1. **`awaitItem()`**: Suspends until the next emission arrives and returns it for assertion.
-2. **`awaitComplete()`**: Asserts that the stream completed normally.
-3. **`awaitError()`**: Asserts that the stream terminated with an expected exception.
-4. **`expectNoEvents()`**: Verifies that no unexpected emissions occurred within the virtual time window.
-5. **`cancelAndIgnoreRemainingEvents()`**: Cleans up subscriptions on infinite flows like StateFlow so tests finish without uncompleted coroutine errors.
+First, with awaitItem(), suspends until the next emission arrives and returns it for assertion. Next, with awaitComplete(), asserts that the stream completed normally.
+Additionally, with awaitError(), asserts that the stream terminated with an expected exception. With expectNoEvents(), verifies that no unexpected emissions occurred within the virtual time window.
+Finally, with cancelAndIgnoreRemainingEvents(), cleans up subscriptions on infinite flows like StateFlow so tests finish without uncompleted coroutine errors.
+
 
 ## Interview answer — deep senior
 
 Under the hood, Turbine wraps the flow inside an internal Channel that records emitted items, completion signals, and exceptions as typed `Event<T>` instances. Because it operates inside `runTest`, delays in operators like `debounce` or `WhileSubscribed` do not require real-time sleep: `testScheduler.advanceTimeBy()` triggers delayed emissions instantaneously.
 
 When testing `StateFlow` created via `stateIn(viewModelScope, WhileSubscribed(5000), Initial)`: 1. Calling `stateFlow.test { }` subscribes to the flow, advancing `subscriptionCount` from 0 to 1 and triggering the upstream flow. 2. The first `awaitItem()` immediately yields the `initialValue`. 3. Advancing virtual time or completing fake repository coroutines triggers subsequent `awaitItem()` yields. 4. Finally, calling `cancelAndConsumeRemainingEvents()` drops `subscriptionCount` back to 0, ensuring full lifecycle test coverage.
+
 
 ## How to answer in the interview
 

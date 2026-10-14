@@ -124,6 +124,7 @@ Both APIs solve the critical problem of **Lifecycle-Safe Flow Collection**, ensu
 
 **`collectAsStateWithLifecycle()`** is the specialized Jetpack Compose equivalent from `androidx.lifecycle.compose`. It collects a Flow in a lifecycle-aware manner (defaulting to `Lifecycle.State.STARTED`) and emits a Compose `State<T>`. When the app goes into the background, it suspends collection, preventing recompositions and stopping upstream cold flows until the screen is visible again.
 
+
 ## Interview answer — deep senior
 
 Historically, developers used `flowWithLifecycle()`. However, `repeatOnLifecycle` is vastly superior because it can host multiple parallel flow collections inside a single block, avoiding multiple observer allocations:
@@ -138,6 +139,7 @@ viewLifecycleOwner.lifecycleScope.launch {
 ```
 
 In Jetpack Compose, using plain `collectAsState()` is an antipattern because it keeps the flow collection active as long as the composable is part of the composition tree, even when the Activity is paused or stopped in the background. `collectAsStateWithLifecycle()` internally uses `repeatOnLifecycle` under the hood to unsubscribe from the Flow during backgrounding, which in turn triggers `WhileSubscribed(5000)` in the ViewModel to shut down upstream network and database sensors.
+
 
 ## How to answer in the interview
 

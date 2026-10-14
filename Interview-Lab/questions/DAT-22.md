@@ -115,25 +115,19 @@ Migrate plaintext SQLite databases to SQLCipher encryption without data loss usi
 
 ## Interview answer — structured
 
-Migrating an unencrypted database to SQLCipher encryption carries severe corruption risks if interrupted by crashes or power loss. A resilient enterprise migration follows a **Staged Export & Verify Protocol**:
+Migrating an unencrypted database to SQLCipher encryption carries severe corruption risks if interrupted by crashes or power loss. A resilient enterprise migration follows a **Staged Export & Verify Protocol**.
 
-1. **Keystore Key Generation**: Generate a cryptographically secure 256-bit AES master key inside the hardware-backed **Android Keystore System** to protect the SQLCipher passphrase.
+First, with Keystore Key Generation, generate a cryptographically secure 256-bit AES master key inside the hardware-backed **Android Keystore System** to protect the SQLCipher passphrase. Next, with Staged Out-of-Place Export, never attempt in-place encryption. Open the existing plaintext SQLite database using SQLCipher and attach a fresh, separate destination file: `ATTACH DATABASE 'app_encrypted.db' AS encrypted KEY '<passphrase>'`.
+Additionally, with Atomic SQLCipher Export, execute `SELECT sqlcipher_export('encrypted')` followed by `DETACH DATABASE encrypted`. This native SQLCipher engine routine copies all schemas, tables, triggers, and indices into the encrypted container with hardware-accelerated AES-256. With Integrity Verification, open the new encrypted database, execute `PRAGMA integrity_check`, and assert row count equivalence across critical tables.
+Finally, with Atomic Swap & Cleanup, only after verification passes, delete the plaintext database file (`context.deleteDatabase(plainDb)`). If anything fails prior to verification, abort and retain the unencrypted file.
 
-2. **Staged Out-of-Place Export**: Never attempt in-place encryption. Open the existing plaintext SQLite database using SQLCipher and attach a fresh, separate destination file: `ATTACH DATABASE 'app_encrypted.db' AS encrypted KEY '<passphrase>'`.
-
-3. **Atomic SQLCipher Export**: Execute `SELECT sqlcipher_export('encrypted')` followed by `DETACH DATABASE encrypted`. This native SQLCipher engine routine copies all schemas, tables, triggers, and indices into the encrypted container with hardware-accelerated AES-256.
-
-4. **Integrity Verification**: Open the new encrypted database, execute `PRAGMA integrity_check`, and assert row count equivalence across critical tables.
-
-5. **Atomic Swap & Cleanup**: Only after verification passes, delete the plaintext database file (`context.deleteDatabase(plainDb)`). If anything fails prior to verification, abort and retain the unencrypted file.
 
 ## Interview answer — deep senior
 
-Two catastrophic edge cases must be handled in production:
+Two catastrophic edge cases must be handled in production.
 
-1. **Insufficient Disk Space (`ENOSPC`)**: The `sqlcipher_export` operation duplicates the entire database on disk during export. If a user's database is 200MB and their device has only 100MB of free flash storage, the export fails midway with SQLite disk corruption. Pre-flight check: query `StatFs(context.filesDir.path).availableBytes`. Ensure free disk space is at least **$2.5 \times$** the size of the unencrypted database before attempting the migration.
+First, insufficient Disk Space (`ENOSPC`) is the `sqlcipher_export` operation duplicates the entire database on disk during export. If a user's database is 200MB and their device has only 100MB of free flash storage, the export fails midway with SQLite disk corruption. Pre-flight check: query `StatFs(context.filesDir.path).availableBytes`. Ensure free disk space is at least **$2.5 \times$** the size of the unencrypted database before attempting the migration. Finally, with Process Death / Battery Loss Mid-Export, if Android OS terminates the process halfway through export, `app_encrypted.db` exists in a corrupted, half-written state. On the next launch, the migrator must detect the partial file, delete the corrupted staging file, and re-run the migration safely from the pristine unencrypted original.
 
-2. **Process Death / Battery Loss Mid-Export**: If Android OS terminates the process halfway through export, `app_encrypted.db` exists in a corrupted, half-written state. On the next launch, the migrator must detect the partial file, delete the corrupted staging file, and re-run the migration safely from the pristine unencrypted original.
 
 ## How to answer in the interview
 

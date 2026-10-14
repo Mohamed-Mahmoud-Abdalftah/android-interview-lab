@@ -113,24 +113,19 @@ HTTP methods define operation semantics: GET is safe and idempotent, PUT/DELETE 
 
 ## Interview answer — structured
 
-Understanding HTTP methods and idempotency is essential for designing resilient mobile APIs:
+Understanding HTTP methods and idempotency is essential for designing resilient mobile APIs.
 
-1. **Method Semantics & Idempotency**:
-   - An operation is **idempotent** if making $N$ identical requests has the exact same side-effect on the server as making 1 request ($f(f(x)) = f(x)$).
-   - `GET`, `HEAD`, `OPTIONS` are safe (read-only) and idempotent.
-   - `PUT` (full replacement) and `DELETE` (resource removal) are idempotent. Calling `DELETE /users/42` ten times results in user 42 being deleted, regardless of whether subsequent responses return 204 or 404.
-   - `POST` is **non-idempotent**: calling `POST /orders` five times creates five distinct orders and charges the user five times.
+First, **Method Semantics & Idempotency**. Next, an operation is **idempotent** if making $N$ identical requests has the exact same side-effect on the server as making 1 request ($f(f(x)) = f(x)$).
+`GET`, `HEAD`, `OPTIONS` are safe (read-only) and idempotent. `PUT` (full replacement) and `DELETE` (resource removal) are idempotent. Calling `DELETE /users/42` ten times results in user 42 being deleted, regardless of whether subsequent responses return 204 or 404.
+`POST` is **non-idempotent**: calling `POST /orders` five times creates five distinct orders and charges the user five times. Finally, with The Mobile Reality of Flaky Networks, on cellular networks, connection drops frequently occur *after* the server processes a `POST` write but *before* the client receives the `200 OK` response. If the client retries blindly, duplicate operations occur. Production mobile apps prevent this by attaching a deterministic **`Idempotency-Key` UUID** in request headers, allowing the server to recognize duplicate submissions and return cached receipts without re-executing writes.
 
-2. **The Mobile Reality of Flaky Networks**:
-   On cellular networks, connection drops frequently occur *after* the server processes a `POST` write but *before* the client receives the `200 OK` response. If the client retries blindly, duplicate operations occur. Production mobile apps prevent this by attaching a deterministic **`Idempotency-Key` UUID** in request headers, allowing the server to recognize duplicate submissions and return cached receipts without re-executing writes.
 
 ## Interview answer — deep senior
 
-From a protocol perspective, senior engineers handle status codes with explicit architectural responses:
+From a protocol perspective, senior engineers handle status codes with explicit architectural responses.
 
-- **`401 Unauthorized` vs. `403 Forbidden`**: A `401` indicates authentication failure—the OkHttp `Authenticator` should intercept this, pause pending requests, perform a single-flight token refresh, and retry the request. A `403` indicates authorization failure (the user is authenticated, but lacks admin privileges)—**never retry a 403 with a token refresh**, as this triggers an infinite retry loop; navigate to an error state or notify the user.
+First, 401 Unauthorized` vs. `403 Forbidden is a `401` indicates authentication failure—the OkHttp `Authenticator` should intercept this, pause pending requests, perform a single-flight token refresh, and retry the request. A `403` indicates authorization failure (the user is authenticated, but lacks admin privileges)—**never retry a 403 with a token refresh**, as this triggers an infinite retry loop; navigate to an error state or notify the user. Finally, with 429 Too Many Requests, inspect the `Retry-After` header. If the server says `Retry-After: 30`, suspend coroutine execution for 30 seconds rather than retrying immediately with exponential backoff, respecting server capacity and preventing IP bans.
 
-- **`429 Too Many Requests`**: Inspect the `Retry-After` header. If the server says `Retry-After: 30`, suspend coroutine execution for 30 seconds rather than retrying immediately with exponential backoff, respecting server capacity and preventing IP bans.
 
 ## How to answer in the interview
 

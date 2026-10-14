@@ -102,6 +102,7 @@ Second, in UI frameworks like Jetpack Compose, the UI renders immediately upon c
 
 If your use case genuinely represents a stream that has no initial value until an action occurs, then it is an **event stream**, not a state stream, and should be modeled using `SharedFlow` or `Channel` instead.
 
+
 ## Interview answer — deep senior
 
 From a type-theory perspective, StateFlow models a continuous signal `t -> V`, where for any time `t >= 0`, there exists a value `V`. In contrast, cold Flow and SharedFlow model discrete events `(t_i, V_i)` where emissions occur at discrete points in time.
@@ -116,6 +117,7 @@ val items = repository.observeItems()
 ```
 
 Here, `emptyList()` guarantees that the UI has a valid baseline state while the repository initializes.
+
 
 ## How to answer in the interview
 

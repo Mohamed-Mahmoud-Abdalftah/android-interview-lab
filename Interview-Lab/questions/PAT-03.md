@@ -96,24 +96,21 @@ Singleton ensures a single shared instance (Room DB, OkHttp). Factory creates si
 
 ## Interview answer — structured
 
-These four creational patterns govern object creation boundaries in Android development:
+These four creational patterns govern object creation boundaries in Android development.
 
-1. **Singleton**: Guarantees a class has only one instance per process lifecycle. In Kotlin, implemented natively via `object` or managed via `@Singleton` in Dagger/Hilt. Best for expensive, stateful shared resources (e.g. SQLite connection pools, OkHttp client engines).
+First, a Singleton guarantees a class has only one instance per process lifecycle. In Kotlin, implemented natively via `object` or managed via `@Singleton` in Dagger/Hilt. Best for expensive, stateful shared resources (e.g. SQLite connection pools, OkHttp client engines). Next, a Factory Method defines an interface for creating an object, but lets subclasses or specialized providers decide which class to instantiate. In Android, `ViewModelProvider.Factory` creates ViewModels parameterized with dependencies that standard system reflection cannot resolve.
+Additionally, an Abstract Factory provides an interface for creating **families of related or dependent objects** without specifying their concrete classes. For instance, a `DesignSystemFactory` supplying matching typography, buttons, and dialogs tailored for distinct brand flavors (e.g. `ConsumerThemeFactory` vs `EnterpriseThemeFactory`). Finally, a Builder separates the construction of a complex object from its representation, allowing step-by-step assembly and producing an immutable result via `.build()`. Ubiquitous across Android framework APIs (`NotificationCompat.Builder`, `AlertDialog.Builder`, `WorkRequest.Builder`).
 
-2. **Factory Method**: Defines an interface for creating an object, but lets subclasses or specialized providers decide which class to instantiate. In Android, `ViewModelProvider.Factory` creates ViewModels parameterized with dependencies that standard system reflection cannot resolve.
-
-3. **Abstract Factory**: Provides an interface for creating **families of related or dependent objects** without specifying their concrete classes. For instance, a `DesignSystemFactory` supplying matching typography, buttons, and dialogs tailored for distinct brand flavors (e.g. `ConsumerThemeFactory` vs `EnterpriseThemeFactory`).
-
-4. **Builder**: Separates the construction of a complex object from its representation, allowing step-by-step assembly and producing an immutable result via `.build()`. Ubiquitous across Android framework APIs (`NotificationCompat.Builder`, `AlertDialog.Builder`, `WorkRequest.Builder`).
 
 ## Interview answer — deep senior
 
 The **Builder Pattern vs Kotlin Named Arguments** trade-off is a frequent design debate. For simple domain data classes, a builder is an anti-pattern in Kotlin: `data class UserConfig(val timeout: Long = 10, val retries: Int = 3)` provides built-in validation and optionality in a single line.
 
-However, the Builder pattern remains vital in SDK design when:
-- Construction requires cross-field validation invariants checked at commit time (`build()`).
-- Step order matters or certain combinations are mutably staged before creating an immutable thread-safe core (e.g. `OkHttpClient.Builder`).
-- Java interoperability is required, as Java cannot consume Kotlin default argument bytecode ergonomically without `@JvmOverloads`.
+However, the Builder pattern remains vital in SDK design when.
+
+First, construction requires cross-field validation invariants checked at commit time (`build()`). Next, step order matters or certain combinations are mutably staged before creating an immutable thread-safe core (e.g. `OkHttpClient.Builder`).
+Finally, Java interoperability is required, as Java cannot consume Kotlin default argument bytecode ergonomically without `@JvmOverloads`.
+
 
 ## How to answer in the interview
 

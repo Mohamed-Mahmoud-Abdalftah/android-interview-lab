@@ -100,6 +100,7 @@ The difference between `combine` and `zip` comes down to temporal pairing versus
 
 **`zip`** enforces strict index-based 1-to-1 pairing. Element 0 from Flow A is paired only with Element 0 from Flow B. If Flow A emits 5 items while Flow B emits 1, `zip` suspends after the first pair, waiting until Flow B produces its second item. Furthermore, `zip` terminates as soon as the shorter flow completes.
 
+
 ## Interview answer — deep senior
 
 Under the hood, `combine` is implemented using internal channels and fair selector loops (`select` expression). It maintains internal state slots for each upstream stream. When any upstream sends a new value, the slot is updated, and the transform lambda is evaluated with the latest snapshot of all slots.
@@ -107,6 +108,7 @@ Under the hood, `combine` is implemented using internal channels and fair select
 In contrast, `zip` buffers upstream emissions sequentially in paired queues. If one flow is fast and the other is slow, `zip` buffers the fast flow's items in memory waiting for corresponding pairs, which can create heap memory pressure if the flows emit at vastly different cadences.
 
 In modern Android development, `combine` supports merging up to 5 flows directly with type-safe overloads, or an arbitrary `Array<Flow<T>>` for dynamic widget configurations.
+
 
 ## How to answer in the interview
 

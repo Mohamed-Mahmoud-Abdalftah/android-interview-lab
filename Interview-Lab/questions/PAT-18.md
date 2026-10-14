@@ -108,18 +108,15 @@ A prime Android example is dogmatic Clean Architecture where every single screen
 
 A senior engineer practices pragmatic architecture: consume the `ProfileRepository` directly from the `ViewModel` for straightforward CRUD operations. Extract a Use Case only when you have business logic that orchestrates multiple repositories, applies complex calculation rules, or is reused across multiple ViewModels.
 
+
 ## Interview answer — deep senior
 
 The cost of indirection is measured in **Cognitive Complexity, Build Overhead, and Refactoring Friction**.
 
-1. **The 'Tax' of an Abstraction**: Every layer requires: an interface, an implementation, DTO mapping functions, Dagger `@Provides` / `@Binds` bindings, and mock setup in unit tests. If the abstraction does not encapsulate volatility, you pay this architectural tax on every sprint without ever reaping the benefits.
+First, with The 'Tax' of an Abstraction, every layer requires: an interface, an implementation, DTO mapping functions, Dagger `@Provides` / `@Binds` bindings, and mock setup in unit tests. If the abstraction does not encapsulate volatility, you pay this architectural tax on every sprint without ever reaping the benefits. Next, **Symptoms of Accidental Complexity in Codebases**.
+Additionally, with Shotgun Surgery, adding a single boolean flag to an entity forces edits across 7 distinct files (DTO, Mapper, Domain Model, UseCase, Repository, ViewModel, UI State). With Pass-through Methods, methods whose sole implementation is `return collaborator.execute(args)` without mutation or validation.
+With Factories with Single Products, writing abstract factories for classes that will only ever have one concrete implementation on Android. Finally, with Pragmatic Heuristics (YAGNI & Rule of Three), never introduce an abstraction for an anticipated future requirement. Wait until you have at least two distinct concrete implementations or concrete business rules before introducing a UseCase or Strategy. Simplicity is an active design decision, not a lack of design.
 
-2. **Symptoms of Accidental Complexity in Codebases**:
-   - **Shotgun Surgery**: Adding a single boolean flag to an entity forces edits across 7 distinct files (DTO, Mapper, Domain Model, UseCase, Repository, ViewModel, UI State).
-   - **Pass-through Methods**: Methods whose sole implementation is `return collaborator.execute(args)` without mutation or validation.
-   - **Factories with Single Products**: Writing abstract factories for classes that will only ever have one concrete implementation on Android.
-
-3. **Pragmatic Heuristics (YAGNI & Rule of Three)**: Never introduce an abstraction for an anticipated future requirement. Wait until you have at least two distinct concrete implementations or concrete business rules before introducing a UseCase or Strategy. Simplicity is an active design decision, not a lack of design.
 
 ## How to answer in the interview
 

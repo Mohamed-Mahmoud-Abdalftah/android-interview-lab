@@ -117,6 +117,7 @@ When a Singleton holds a strong reference to an Activity Context, that Activity 
 
 The standard production fix is ensuring Singletons only ever take `context.applicationContext`. The Application context shares the process lifecycle, making it leak-free for long-lived components. Alternatively, we use dependency injection frameworks like Hilt with `@Singleton` scoped classes that inject `@ApplicationContext` directly.
 
+
 ## Interview answer — deep senior
 
 It is also critical to understand when `applicationContext` is *not* a drop-in replacement. The Application context does not have a themed UI scope or a Window token. If you attempt to inflate themed views or display a Dialog (`AlertDialog.Builder(applicationContext)`), the app will crash with an `IllegalStateException` or render without the appropriate theme attributes.
@@ -124,6 +125,7 @@ It is also critical to understand when `applicationContext` is *not* a drop-in r
 When analyzing a memory dump in LeakCanary or Memory Profiler, this pattern manifests as a clear shortest path to GC Root: `com.example.Singleton.context` -> `MainActivity`. The retained size will equal the entire Activity graph.
 
 If a component truly needs short-term access to an Activity (for example, a global UI navigator or lifecycle observer), it should either accept the Activity as a method parameter rather than storing it as a property, or wrap it in a `WeakReference<Activity>` and verify nullability before invoking UI operations.
+
 
 ## How to answer in the interview
 

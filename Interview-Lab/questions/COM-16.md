@@ -116,20 +116,18 @@ Identify avoidable recomposition using Android Studio Layout Inspector (tracking
 
 Detecting and eliminating avoidable recompositions is central to maintaining 60/120fps UI fluidity.
 
-1. **Detection Tools**:
-   - **Android Studio Layout Inspector**: We enable recomposition highlights and inspect the **Recomposition Count** and **Skip Count** columns in real-time. If interacting with a single widget (e.g. typing in a search bar) increments the recomposition count of distant, unrelated UI elements while their skip count remains zero, a state leak or unstable parameter is present.
-   - **Compose Compiler Metrics**: Generating compiler metrics reveals which composables are marked as `unskippable` and highlights exact unstable parameters.
+First, **Detection Tools**. Next, with Android Studio Layout Inspector, we enable recomposition highlights and inspect the **Recomposition Count** and **Skip Count** columns in real-time. If interacting with a single widget (e.g. Typing in a search bar) increments the recomposition count of distant, unrelated UI elements while their skip count remains zero, a state leak or unstable parameter is present.
+Additionally, with Compose Compiler Metrics, generating compiler metrics reveals which composables are marked as `unskippable` and highlights exact unstable parameters. **Common Root Causes & Fixes**.
+With Unstable Parameter Leaks, using unstable collections (`List<T>`). Solved with `@Immutable` or `ImmutableList`. With Premature State Reading, reading rapidly changing state (like scroll offset) in the *composition phase*. Solved by deferring reads to the *layout or draw phase* using lambda-based modifiers (`Modifier.offset { ... }` or `drawBehind { ... }`).
+Finally, with Unmemoized Allocations, creating fresh objects on every recomposition pass without `remember`.
 
-2. **Common Root Causes & Fixes**:
-   - **Unstable Parameter Leaks**: Using unstable collections (`List<T>`). Solved with `@Immutable` or `ImmutableList`.
-   - **Premature State Reading**: Reading rapidly changing state (like scroll offset) in the *composition phase*. Solved by deferring reads to the *layout or draw phase* using lambda-based modifiers (`Modifier.offset { ... }` or `drawBehind { ... }`).
-   - **Unmemoized Allocations**: Creating fresh objects on every recomposition pass without `remember`.
 
 ## Interview answer — deep senior
 
 Understanding Compose's three rendering phases—**Composition**, **Layout**, and **Draw**—is the highest-leverage insight for optimization. If a state is read during the Composition phase, any mutation forces the composable function to re-execute from top to bottom. If state is read strictly during the Layout phase (inside `MeasurePolicy` or a layout lambda modifier), Compose **skips composition entirely** and executes only layout measurement. If state is read in the Draw phase (inside `Modifier.drawWithContent { ... }`), Compose skips both composition and layout, jumping directly to the canvas draw pass!
 
 Another critical check is **Lambda Stabilization**. Passing inline lambdas that capture changing values or unstable parent properties invalidates the lambda instance on every pass unless Strong Skipping is enabled or the lambda is hoisted or wrapped in `remember`.
+
 
 ## How to answer in the interview
 

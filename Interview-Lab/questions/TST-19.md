@@ -170,28 +170,22 @@ Test parallel APIs by wrapping concurrent async calls inside supervisorScope wit
 
 ## Interview answer — structured
 
-Writing tests for concurrent multi-service aggregation requires validating both partial fault tolerance and structured cancellation boundaries:
+Writing tests for concurrent multi-service aggregation requires validating both partial fault tolerance and structured cancellation boundaries.
 
-1. **Testing Partial Success (Fault Isolation)**:
-   - Implement the aggregator using `supervisorScope` so that failure in one async branch does not automatically cancel sibling branches.
-   - Configure test stubs such that Service A returns valid user data, Service B returns order records, and Service C throws `IOException("503 Service Unavailable")`.
-   - Assert that the aggregated result contains populated data for Services A and B alongside an explicit typed error or empty fallback for Service C, verifying graceful UI degradation.
+First, **Testing Partial Success (Fault Isolation)**. Next, implement the aggregator using `supervisorScope` so that failure in one async branch does not automatically cancel sibling branches.
+Configure test stubs such that Service A returns valid user data, Service B returns order records, and Service C throws `IOException("503 Service Unavailable")`. Assert that the aggregated result contains populated data for Services A and B alongside an explicit typed error or empty fallback for Service C, verifying graceful UI degradation.
+**Testing Coordinated Cancellation**. Launch the aggregation call inside a parent `launch` coroutine job.
+Provide mock functions configured with long delays (`delay(10_000L)`) instrumented with `finally` blocks tracking cancellation flags. Advance time partially, invoke `job.cancel()`, and advance the scheduler.
+Finally, assert that `job.isCancelled` becomes true and all child jobs terminate cleanly without leaking un-cancelled background coroutines.
 
-2. **Testing Coordinated Cancellation**:
-   - Launch the aggregation call inside a parent `launch` coroutine job.
-   - Provide mock functions configured with long delays (`delay(10_000L)`) instrumented with `finally` blocks tracking cancellation flags.
-   - Advance time partially, invoke `job.cancel()`, and advance the scheduler.
-   - Assert that `job.isCancelled` becomes true and all child jobs terminate cleanly without leaking un-cancelled background coroutines.
 
 ## Interview answer — deep senior
 
-From an advanced concurrency testing perspective, verifying thread safety and race conditions requires strict assertions:
+From an advanced concurrency testing perspective, verifying thread safety and race conditions requires strict assertions.
 
-1. **Concurrent Dispatcher Stress Testing**: In addition to virtual time tests in `runTest`, run concurrent aggregation routines against `Dispatchers.Default` under multi-threaded stress tests with 100 iterations. This verifies that shared state aggregators or cache mutations do not throw `ConcurrentModificationException` when three parallel network threads complete at the exact same physical millisecond.
+First, with Concurrent Dispatcher Stress Testing, in addition to virtual time tests in `runTest`, run concurrent aggregation routines against `Dispatchers.Default` under multi-threaded stress tests with 100 iterations. This verifies that shared state aggregators or cache mutations do not throw `ConcurrentModificationException` when three parallel network threads complete at the exact same physical millisecond. Next, with Asserting Non-Blocking Concurrency, assert that execution is genuinely parallel rather than sequential by measuring virtual elapsed time. If three independent APIs each take 1,000ms, the entire aggregated call must complete in exactly 1,000ms of virtual time, not 3,000ms.
+Finally, with CancellationException Preservation, ensure your error-handling operators (`runCatching`) do not swallow `CancellationException`. If cancellation is swallowed, cancelling the screen or leaving the view fails to abort child HTTP requests, resulting in wasted radio bandwidth.
 
-2. **Asserting Non-Blocking Concurrency**: Assert that execution is genuinely parallel rather than sequential by measuring virtual elapsed time. If three independent APIs each take 1,000ms, the entire aggregated call must complete in exactly 1,000ms of virtual time, not 3,000ms.
-
-3. **CancellationException Preservation**: Ensure your error-handling operators (`runCatching`) do not swallow `CancellationException`. If cancellation is swallowed, cancelling the screen or leaving the view fails to abort child HTTP requests, resulting in wasted radio bandwidth.
 
 ## How to answer in the interview
 

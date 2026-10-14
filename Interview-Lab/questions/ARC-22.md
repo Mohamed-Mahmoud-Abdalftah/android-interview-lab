@@ -90,19 +90,16 @@ Returning API DTOs directly to Compose tightly couples the UI to backend API sch
 
 Allowing API DTOs to cross the repository boundary into Jetpack Compose is a severe architectural smell with immediate stability and maintenance risks.
 
-1. **Backend Volatility Spilling into UI**: DTOs are volatile models dictated by server API schemas. If the backend team refactors a field (e.g. from `userName` to `user_handle` or wraps an object in an envelope), that network modification immediately breaks Composable layout files and UI tests across the app.
+First, with Backend Volatility Spilling into UI, dTOs are volatile models dictated by server API schemas. If the backend team refactors a field (e.g. From `userName` to `user_handle` or wraps an object in an envelope), that network modification immediately breaks Composable layout files and UI tests across the app. Next, with Compose Performance & Stability Degradation, dTO classes are not optimized for Compose smart skipping. They often contain mutable properties, standard collections (`List<T>`), or unvalidated nullables, forcing composables to become unskippable and re-render unnecessarily.
+Additionally, with In-Composition Formatting Overhead, when using raw DTOs, composable functions are forced to format currency, parse ISO dates, and concatenate strings inside the composition pass, creating memory churn and dropped frames during 120fps scrolling. Finally, a Destruction of Offline-First Architecture is an API DTO represents HTTP traffic. It cannot unify data with Room database entities or in-memory caches, sabotaging Single Source of Truth architecture.
 
-2. **Compose Performance & Stability Degradation**: DTO classes are not optimized for Compose smart skipping. They often contain mutable properties, standard collections (`List<T>`), or unvalidated nullables, forcing composables to become unskippable and re-render unnecessarily.
-
-3. **In-Composition Formatting Overhead**: When using raw DTOs, composable functions are forced to format currency, parse ISO dates, and concatenate strings inside the composition pass, creating memory churn and dropped frames during 120fps scrolling.
-
-4. **Destruction of Offline-First Architecture**: An API DTO represents HTTP traffic. It cannot unify data with Room database entities or in-memory caches, sabotaging Single Source of Truth architecture.
 
 ## Interview answer — deep senior
 
 Under the hood, DTOs prioritize **deserialization ergonomics** (e.g. `@SerialName`, `@JsonClass`, nullable default fallbacks). In contrast, Compose UI models prioritize **rendering efficiency and immutability** (e.g. `@Immutable`, pre-calculated `AnnotatedString`s, localized string resources).
 
 The repository's explicit contractual duty is to map raw DTOs into Domain Entities. The ViewModel then maps Domain Entities into specialized, immutable `UiModel`s. This insulation allows the backend schema to undergo major revisions while the Composable UI remains 100% stable, untouched, and fully functional.
+
 
 ## How to answer in the interview
 

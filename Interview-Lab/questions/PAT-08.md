@@ -100,28 +100,23 @@ Singleton appears in Room database instances, OkHttpClient, and Android System S
 
 ## Interview answer — structured
 
-These three Gang of Four patterns are deeply woven into the fabric of the Android Operating System and Jetpack libraries:
+These three Gang of Four patterns are deeply woven into the fabric of the Android Operating System and Jetpack libraries.
 
-1. **Singleton Pattern in Android**:
-   - **Room Database**: Creating multiple database instances causes database lock contention and memory thrashing; Room requires a single process-level instance.
-   - **OkHttpClient**: Shares an HTTP connection pool, thread pool, and disk cache across the application.
-   - **Android System Services**: System managers retrieved via `context.getSystemService()` (e.g. `NotificationManager`, `ConnectivityManager`) act as system-wide service singletons.
+First, **Singleton Pattern in Android**. Next, with Room Database, creating multiple database instances causes database lock contention and memory thrashing; Room requires a single process-level instance.
+Additionally, with OkHttpClient, shares an HTTP connection pool, thread pool, and disk cache across the application. With Android System Services, system managers retrieved via `context.getSystemService()` (e.g. `NotificationManager`, `ConnectivityManager`) act as system-wide service singletons.
+**Adapter Pattern in Android**. With RecyclerView.Adapter, converts raw application domain collections (`List<Item>`) into Android UI nodes (`ViewHolder` and `View`).
+With Retrofit Converter Factories, adapts raw HTTP byte streams from OkHttp into structured Kotlin data classes via Moshi or Kotlinx Serialization. **Observer Pattern in Android**.
+With Reactive Streams (`StateFlow` / `LiveData`), observables emit state updates to observing UI controllers. BroadcastReceiver is the OS acts as the Subject broadcasting system events (battery status, network changes) to registered receiver Observers.
+Finally, with Jetpack Compose Runtime, Compose's Snapshot system registers composable scopes as observers of `State<T>` properties, re-executing functions upon mutation.
 
-2. **Adapter Pattern in Android**:
-   - **`RecyclerView.Adapter`**: Converts raw application domain collections (`List<Item>`) into Android UI nodes (`ViewHolder` and `View`).
-   - **Retrofit Converter Factories**: Adapts raw HTTP byte streams from OkHttp into structured Kotlin data classes via Moshi or Kotlinx Serialization.
-
-3. **Observer Pattern in Android**:
-   - **Reactive Streams (`StateFlow` / `LiveData`)**: Observables emit state updates to observing UI controllers.
-   - **`BroadcastReceiver`**: The OS acts as the Subject broadcasting system events (battery status, network changes) to registered receiver Observers.
-   - **Jetpack Compose Runtime**: Compose's Snapshot system registers composable scopes as observers of `State<T>` properties, re-executing functions upon mutation.
 
 ## Interview answer — deep senior
 
-Under the hood, understanding how the OS implements these patterns avoids common bugs:
-- A non-scoped Singleton holding an Activity Context produces a severe memory leak, which is why Android Singletons must strictly bind to `applicationContext`.
-- In `RecyclerView.Adapter`, calling `notifyDataSetChanged()` is an unoptimized observer broadcast invalidating the whole layout; using `ListAdapter` with `DiffUtil` applies granular observer updates (`notifyItemInserted`, `notifyItemMoved`).
-- In Compose, the Snapshot observer system operates at the microsecond level, tracking exact property reads within the Slot Table to skip recomposition of unobserved UI branches.
+Under the hood, understanding how the OS implements these patterns avoids common bugs.
+
+First, a non-scoped Singleton holding an Activity Context produces a severe memory leak, which is why Android Singletons must strictly bind to `applicationContext`. Next, in `RecyclerView.Adapter`, calling `notifyDataSetChanged()` is an unoptimized observer broadcast invalidating the whole layout; using `ListAdapter` with `DiffUtil` applies granular observer updates (`notifyItemInserted`, `notifyItemMoved`).
+Finally, in Compose, the Snapshot observer system operates at the microsecond level, tracking exact property reads within the Slot Table to skip recomposition of unobserved UI branches.
+
 
 ## How to answer in the interview
 

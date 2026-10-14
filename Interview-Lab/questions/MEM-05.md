@@ -78,25 +78,19 @@ A Memory Leak is an unintended object retention in the Heap; an OutOfMemoryError
 
 ## Interview answer — structured
 
-These four system failure modes represent fundamentally different failure domains across memory and threading architecture:
+These four system failure modes represent fundamentally different failure domains across memory and threading architecture.
 
-1. **Memory Leak**: An architectural retention defect where unreachable heap objects are retained by active GC Roots. It does not crash immediately, but progressively inflates the heap baseline.
+First, a Memory Leak is an architectural retention defect where unreachable heap objects are retained by active GC Roots. It does not crash immediately, but progressively inflates the heap baseline. Next, an OutOfMemoryError (OOM) is a runtime fatal error thrown when the application requests heap allocation (e.g. Allocating a bitmap) and the ART garbage collector cannot reclaim sufficient contiguous memory despite garbage collection.
+Additionally, an ANR (Application Not Responding) is a threading and responsiveness defect caused by blocking the **Main UI Thread** for longer than 5 seconds (preventing touch input dispatch) or 10-20 seconds in services and broadcast receivers. It prompts a system dialog offering the user to force-close the app. Finally, a StackOverflowError is a thread call stack failure thrown when the LIFO execution stack exceeds its physical frame budget (typically 1MB), almost universally caused by infinite or excessively deep recursive method calls.
 
-2. **OutOfMemoryError (OOM)**: A runtime fatal error thrown when the application requests heap allocation (e.g. allocating a bitmap) and the ART garbage collector cannot reclaim sufficient contiguous memory despite garbage collection.
-
-3. **ANR (Application Not Responding)**: A threading and responsiveness defect caused by blocking the **Main UI Thread** for longer than 5 seconds (preventing touch input dispatch) or 10-20 seconds in services and broadcast receivers. It prompts a system dialog offering the user to force-close the app.
-
-4. **StackOverflowError**: A thread call stack failure thrown when the LIFO execution stack exceeds its physical frame budget (typically 1MB), almost universally caused by infinite or excessively deep recursive method calls.
 
 ## Interview answer — deep senior
 
-In Android production diagnostics, each failure triggers different tracing artifacts:
+In Android production diagnostics, each failure triggers different tracing artifacts.
 
-- **OOM**: Captured in Crashlytics with stack traces originating at allocation sites (e.g., `BitmapFactory.nativeDecodeStream` or `ByteArrayOutputStream.toByteArray()`). Resolving it requires analyzing heap dumps (`.hprof`) via LeakCanary or Memory Profiler.
+First, with OOM, captured in Crashlytics with stack traces originating at allocation sites (e.g., `BitmapFactory.nativeDecodeStream` or `ByteArrayOutputStream.toByteArray()`). Resolving it requires analyzing heap dumps (`.hprof`) via LeakCanary or Memory Profiler. Next, with ANR, captured in the Android OS system dump `/data/anr/traces.txt`. The trace reveals what state the Main thread was in (e.g., `BLOCKED` on a database lock or executing a synchronous network read). It is resolved by offloading the blocked work to `withContext(Dispatchers.IO)`.
+Finally, with StackOverflowError, manifests with hundreds of repeated lines of the same method in Crashlytics. It is resolved by applying tail recursion (`tailrec`) or converting recursive algorithms into iterative loops with explicit queue/stack data structures.
 
-- **ANR**: Captured in the Android OS system dump `/data/anr/traces.txt`. The trace reveals what state the Main thread was in (e.g., `BLOCKED` on a database lock or executing a synchronous network read). It is resolved by offloading the blocked work to `withContext(Dispatchers.IO)`.
-
-- **StackOverflowError**: Manifests with hundreds of repeated lines of the same method in Crashlytics. It is resolved by applying tail recursion (`tailrec`) or converting recursive algorithms into iterative loops with explicit queue/stack data structures.
 
 ## How to answer in the interview
 

@@ -123,21 +123,18 @@ Recover safely from lost payment responses by treating network drops on mutating
 
 In distributed mobile networking, a lost response after a mutating payment request represents an **Uncertain Outcome (the Two Generals' Problem)**. The server may have already committed the card charge. Retrying blindly or showing a failure screen causes double charges and furious customers.
 
-A production recovery architecture operates in three phases:
+A production recovery architecture operates in three phases.
 
-1. **Pre-Flight Idempotency Persistence**: Prior to making the network call, persist the transaction intention in Room: `orderId`, `amount`, `status = PENDING`, and a deterministic `Idempotency-Key` (e.g. `UUID`).
+First, with Pre-Flight Idempotency Persistence, prior to making the network call, persist the transaction intention in Room: `orderId`, `amount`, `status = PENDING`, and a deterministic `Idempotency-Key` (e.g. `UUID`). Next, with State Transition to Uncertain UI, if the call fails with `SocketTimeoutException` or `IOException`, do **NOT** show a 'Payment Failed - Tap to Retry' button. Update local state to `PaymentStatus.PENDING_VERIFICATION` and inform the user: 'Verifying payment with your bank...'.
+Finally, with Authoritative Reconciliation, query a dedicated reconciliation endpoint (`GET /orders/{id}/payment-status` or re-issue the `POST` with the *identical* Idempotency-Key). A compliant backend recognizes the key and returns the existing transaction status without charging again. If the server confirms payment, update local state to `SUCCESS`.
 
-2. **State Transition to Uncertain UI**: If the call fails with `SocketTimeoutException` or `IOException`, do **NOT** show a 'Payment Failed - Tap to Retry' button. Update local state to `PaymentStatus.PENDING_VERIFICATION` and inform the user: 'Verifying payment with your bank...'.
-
-3. **Authoritative Reconciliation**: Query a dedicated reconciliation endpoint (`GET /orders/{id}/payment-status` or re-issue the `POST` with the *identical* Idempotency-Key). A compliant backend recognizes the key and returns the existing transaction status without charging again. If the server confirms payment, update local state to `SUCCESS`.
 
 ## Interview answer — deep senior
 
-From an engineering telemetry and edge-case standpoint:
+From an engineering telemetry and edge-case standpoint.
 
-1. **Background Polling via WorkManager**: If the user closes the app while in `PENDING_VERIFICATION`, schedule a constrained `PaymentReconciliationWorker` in WorkManager. When connectivity returns, the worker polls the backend, resolves the payment receipt, and triggers a local notification: 'Your order #123 is confirmed!'.
+First, with Background Polling via WorkManager, if the user closes the app while in `PENDING_VERIFICATION`, schedule a constrained `PaymentReconciliationWorker` in WorkManager. When connectivity returns, the worker polls the backend, resolves the payment receipt, and triggers a local notification: 'Your order #123 is confirmed!'. Finally, with Backend Webhooks as Secondary Confirmation, in robust payment flows (Stripe, Adyen, Apple Pay), mobile apps do not rely solely on client polling. The payment provider delivers an asynchronous server-to-server webhook directly to your backend. The backend updates the order status in the cloud database, which your app observes via WebSocket or a silent push notification upon relaunch.
 
-2. **Backend Webhooks as Secondary Confirmation**: In robust payment flows (Stripe, Adyen, Apple Pay), mobile apps do not rely solely on client polling. The payment provider delivers an asynchronous server-to-server webhook directly to your backend. The backend updates the order status in the cloud database, which your app observes via WebSocket or a silent push notification upon relaunch.
 
 ## How to answer in the interview
 

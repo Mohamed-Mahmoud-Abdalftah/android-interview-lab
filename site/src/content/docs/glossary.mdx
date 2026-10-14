@@ -1,18 +1,19 @@
 ---
-title: Glossary — المصطلحات المهمة
-description: قاموس سريع للمصطلحات العربية والإنجليزية المستخدمة في الأكاديمية
+title: Technical Glossary
+description: Core architectural and runtime concepts for senior Android interviews
 ---
-# قاموس سريع
 
-| المصطلح | المعنى العملي |
+# Technical Glossary
+
+| Term | Practical Definition |
 |---|---|
-| `Source of Truth` | المكان اللي بقية النظام تعتبر حالته المرجع الأساسي للقراءة. |
-| `Structured Concurrency` | كل شغل asynchronous له owner واضح وعمر مرتبط بالـscope. |
-| `Idempotency` | تكرار نفس الطلب بنفس الهوية ما يعملش أثر business جديد. |
-| `Backpressure` | المنتج أسرع من المستهلك، فلازم تحدد buffering أو إسقاط أو إبطاء. |
-| `Type Erasure` | أغلب generic arguments مش بتفضل متاحة كاملة وقت JVM runtime. |
-| `WAL` | سجل كتابة تستخدمه SQLite قبل دمج الصفحات في الملف الرئيسي. |
-| `UDF` | الأحداث تدخل في اتجاه، والـstate الجديدة تخرج في اتجاه واحد. |
-| `Unknown Outcome` | العملية قد تكون حصلت لكن الرد ضاع؛ لازم reconcile قبل retry مؤثر. |
+| `Source of Truth` | The single canonical location that the rest of the application considers authoritative for state. |
+| `Structured Concurrency` | Concurrency where every asynchronous operation has a clear lifecycle owner and parent scope. |
+| `Idempotency` | The property where retrying an identical request produces no duplicate side effects. |
+| `Backpressure` | Flow control when a producer emits faster than a consumer can process, requiring buffering, dropping, or suspension. |
+| `Type Erasure` | The JVM mechanism where generic type arguments are removed at compile time and unavailable at runtime. |
+| `WAL` | Write-Ahead Logging; SQLite write log format where mutations append sequentially before checkpointing into the database. |
+| `UDF` | Unidirectional Data Flow; user actions flow inward as events, and state flows outward as immutable snapshots. |
+| `Unknown Outcome` | A network condition where a request may have succeeded remotely but the client received no acknowledgment, requiring reconciliation before retrying. |
 
-استخدم البحث بكلمة عربية أو الاسم الإنجليزي للوصول للدرس الكامل والسياق العملي.
+Search by term or concept to explore related interview questions and deep-dive lessons.

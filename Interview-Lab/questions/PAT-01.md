@@ -86,23 +86,19 @@ Architecture is the macro-level system blueprint defining global layers, module 
 
 The distinction between Architecture and Design Patterns is fundamentally a matter of scope and structural impact.
 
-1. **Architecture (Macro-Level / System Blueprint)**:
-   - Defines the high-level organization of the entire software system.
-   - Establishes foundational layers (Presentation, Domain, Data), dependency boundaries, data flow rules (Unidirectional Data Flow), and modularization strategy.
-   - Architectural decisions are costly and difficult to change once implemented (e.g. migrating from Monolithic MVC to Multi-Module Clean Architecture).
-   - Answers: *'Where do responsibilities live and in which direction does information flow across the app?'*
+First, **Architecture (Macro-Level / System Blueprint)**. Next, defines the high-level organization of the entire software system.
+Establishes foundational layers (Presentation, Domain, Data), dependency boundaries, data flow rules (Unidirectional Data Flow), and modularization strategy. Architectural decisions are costly and difficult to change once implemented (e.g. Migrating from Monolithic MVC to Multi-Module Clean Architecture).
+Answers: *'Where do responsibilities live and in which direction does information flow across the app?'* **Design Patterns (Micro-Level / Tactical Solutions)**.
+Localized, reusable idioms solving specific recurring design challenges between collaborating classes. Examples: Using the Builder pattern for complex notification construction, the Adapter pattern for converting third-party analytics APIs, or the Strategy pattern for dynamic fee calculations.
+Tactical decisions that can be refactored within a single package without destabilizing the broader system. Finally, answers: *'How should these specific objects collaborate to solve a localized problem?'*
 
-2. **Design Patterns (Micro-Level / Tactical Solutions)**:
-   - Localized, reusable idioms solving specific recurring design challenges between collaborating classes.
-   - Examples: Using the Builder pattern for complex notification construction, the Adapter pattern for converting third-party analytics APIs, or the Strategy pattern for dynamic fee calculations.
-   - Tactical decisions that can be refactored within a single package without destabilizing the broader system.
-   - Answers: *'How should these specific objects collaborate to solve a localized problem?'*
 
 ## Interview answer — deep senior
 
 A helpful mental model is urban planning: Architecture is the zoning laws, highway networks, and utility grids of a city. Design patterns are the architectural blueprints for individual houses, doorways, and interior plumbing.
 
 Architecture dictates the constraints within which design patterns operate. For example, inside a Clean Architecture system, you might employ the **Repository pattern** to mediate data access, the **Factory pattern** to instantiate network decoders, and the **Observer pattern** (`Flow`) to project UI state. The design patterns live harmoniously within the architectural boundaries established by the system.
+
 
 ## How to answer in the interview
 

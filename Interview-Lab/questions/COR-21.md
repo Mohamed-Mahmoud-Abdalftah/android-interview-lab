@@ -101,11 +101,13 @@ When a coroutine invokes `semaphore.withPermit { ... }`, it attempts to acquire 
 
 I use Semaphores in Android whenever I need to bound parallel resource consumption—such as limiting concurrent media uploads to 3 at a time, restricting simultaneous image decodes to avoid memory spikes, or capping database write connections. It prevents thread starvation, network congestion, and out-of-memory crashes.
 
+
 ## Interview answer — deep senior
 
 Internally, Kotlin's `Semaphore` is implemented as a lock-free segment-based queue of continuations. When permits reach zero, callers are suspended and their continuations are enqueued onto a lock-free linked list. When a permit is released, the head continuation is resumed and dispatched to its coroutine dispatcher.
 
 In modern Kotlin (1.6+), you can also limit parallelism at the dispatcher level using `dispatcher.limitedParallelism(N)`. How do they compare? `limitedParallelism(N)` creates a new Dispatcher view that constrains execution to N threads, which limits CPU/thread allocation. `Semaphore(N)` controls logical permit access regardless of which dispatcher is running the work. For example, if you want tasks to run on the broad `Dispatchers.IO` pool (scaling up to 64 threads) but want strictly 4 concurrent network uploads to an API, `Semaphore(4)` is the right abstraction.
+
 
 ## How to answer in the interview
 

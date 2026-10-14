@@ -115,13 +115,10 @@ Excessive recomposition on keystrokes occurs when a single monolithic `UiState` 
 
 A screen re-rendering excessively after each keystroke is a classic symptom of poor state granularity and un-hoisted state coupling.
 
-1. **Root Cause**: When a user types a letter, the `TextField` emits `onValueChange`. The ViewModel modifies a property (e.g. `query`) inside a monolithic `ScreenUiState` data class. Because the root composable reads `val state by viewModel.uiState.collectAsStateWithLifecycle()`, the root and every child composable that accepts `state` as a parameter are re-evaluated. If heavy feeds, charts, or lists take `ScreenUiState`, they fail smart skipping and recompose on every typed character, inducing severe keyboard lag.
+First, with Root Cause, when a user types a letter, the `TextField` emits `onValueChange`. The ViewModel modifies a property (e.g. `query`) inside a monolithic `ScreenUiState` data class. Because the root composable reads `val state by viewModel.uiState.collectAsStateWithLifecycle()`, the root and every child composable that accepts `state` as a parameter are re-evaluated. If heavy feeds, charts, or lists take `ScreenUiState`, they fail smart skipping and recompose on every typed character, inducing severe keyboard lag. Next, with Diagnosis, in the Android Studio **Layout Inspector**, I type into the search field and watch the Recomposition counter. If the product list or summary card recomposition count increments alongside the search bar, the state boundary is leaking.
+**Architectural Fix**. With Granular Parameter Passing, do not pass the whole state class to children. Pass only the data each child requires (e.g. `items = state.feedItems`). If `feedItems` has not mutated, Compose skips the feed completely.
+Finally, with State Isolation & Debouncing, in the ViewModel, decouple raw text typing from query execution using a distinct `MutableStateFlow<String>` with `.debounce(300ms).distinctUntilChanged()` before executing searches.
 
-2. **Diagnosis**: In the Android Studio **Layout Inspector**, I type into the search field and watch the Recomposition counter. If the product list or summary card recomposition count increments alongside the search bar, the state boundary is leaking.
-
-3. **Architectural Fix**:
-   - **Granular Parameter Passing**: Do not pass the whole state class to children. Pass only the data each child requires (e.g. `items = state.feedItems`). If `feedItems` has not mutated, Compose skips the feed completely.
-   - **State Isolation & Debouncing**: In the ViewModel, decouple raw text typing from query execution using a distinct `MutableStateFlow<String>` with `.debounce(300ms).distinctUntilChanged()` before executing searches.
 
 ## Interview answer — deep senior
 
@@ -130,6 +127,7 @@ Under the hood, Kotlin data classes implement structural equality across all fie
 Another critical lever is using **Lambda-based State Readers** when children only need derived calculations. If a child merely needs to check if the query is empty, pass a lambda `isQueryEmpty: () -> Boolean = { query.isEmpty() }`, keeping the state read scoped strictly to the child that needs it.
 
 In Compose Compiler metrics, we ensure all child item parameters are marked `@Immutable` or `ImmutableList` so Strong Skipping can cleanly bypass them while text mutations occur in adjacent branches.
+
 
 ## How to answer in the interview
 

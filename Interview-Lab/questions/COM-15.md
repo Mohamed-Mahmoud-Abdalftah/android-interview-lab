@@ -109,10 +109,11 @@ Type stability is the core contract that governs the Compose Compiler's smart sk
 
 When a parent composable recomposes, Compose evaluates child composables. If all parameters passed to a child are **Stable** and their values evaluate as equal via `equals()`, Compose skips re-executing that child composable entirely.
 
-The compiler infers stability into three categories:
-1. **Immutable (`@Immutable`)**: All public properties are `val` and their types are also immutable. The object's state is guaranteed never to change post-creation (e.g. primitives, `String`, or annotated data classes).
-2. **Stable (`@Stable`)**: The object may be mutable, but it guarantees that any state mutations notify the composition (such as holding `mutableStateOf` properties).
-3. **Unstable**: Any class containing public `var` properties, external multi-module classes uncompiled by the Compose compiler plugin, or standard Kotlin collection interfaces (`List`, `Set`, `Map`). Because `List<T>` is an interface that could hide a mutable `ArrayList`, Compose assumes it can change without notification, marking any composable accepting it as unskippable.
+The compiler infers stability into three categories.
+
+First, with Immutable (`@Immutable`), all public properties are `val` and their types are also immutable. The object's state is guaranteed never to change post-creation (e.g. Primitives, `String`, or annotated data classes). Next, stable (`@Stable`) is the object may be mutable, but it guarantees that any state mutations notify the composition (such as holding `mutableStateOf` properties).
+Finally, with Unstable, any class containing public `var` properties, external multi-module classes uncompiled by the Compose compiler plugin, or standard Kotlin collection interfaces (`List`, `Set`, `Map`). Because `List<T>` is an interface that could hide a mutable `ArrayList`, Compose assumes it can change without notification, marking any composable accepting it as unskippable.
+
 
 ## Interview answer — deep senior
 
@@ -121,6 +122,7 @@ To resolve collection instability in production architectures, teams historicall
 In recent releases, Compose introduced **Strong Skipping Mode** (standard in Kotlin 2.0+). Under strong skipping, composables with unstable parameters *can* still be skipped if the instance reference has not changed (`===`), and lambdas with captures are automatically remembered. However, if a new instance of an unstable class is passed—even with identical data—it still forces recomposition.
 
 We audit stability using Compose Compiler metrics (`./gradlew assembleRelease -PcomposeCompilerReports=true`), inspecting the generated `-classes.txt` and `-composables.txt` files to eliminate any accidental stability regressions.
+
 
 ## How to answer in the interview
 

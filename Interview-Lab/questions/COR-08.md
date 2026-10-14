@@ -85,6 +85,7 @@ Yes to both, and understanding their runtime implementation is key to writing hi
 
 `Dispatchers.IO` is explicitly backed by an elastic thread pool. It shares a common worker pool with `Dispatchers.Default` but overrides its parallelism limit to a default cap of 64 threads (or the number of CPU cores if greater). This design recognizes that I/O tasks spend most of their time waiting on external hardware or network sockets, so having up to 64 threads blocked on I/O does not degrade CPU performance.
 
+
 ## Interview answer — deep senior
 
 At the architectural level, `Dispatchers.IO` solves the thread starvation dilemma. If blocking I/O ran on `Dispatchers.Default`, which only has as many threads as CPU cores (e.g., 4 or 8), a few blocking database reads would completely saturate all available threads, preventing compute tasks and animations from running.
@@ -92,6 +93,7 @@ At the architectural level, `Dispatchers.IO` solves the thread starvation dilemm
 By setting the capacity to 64 on `Dispatchers.IO`, the coroutine scheduler can spin up additional OS threads on demand when threads block on `read()` or `write()` calls. When those threads become idle, they are eventually timed out and reclaimed by the runtime.
 
 In Android profiling, you can observe these named threads in Android Studio's Profiler as `DefaultDispatcher-worker-X`. If your application frequently hits the 64-thread ceiling due to slow external APIs, it indicates an architectural bottleneck that should be refactored using non-blocking asynchronous APIs (like OkHttp asynchronous enqueue or Flow) rather than scaling thread pools indefinitely.
+
 
 ## How to answer in the interview
 

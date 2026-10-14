@@ -243,6 +243,7 @@ For example, if I'm implementing transfer eligibility, I'd keep that rule in a u
 
 The trade-off is extra abstractions and mapping code. For a simple CRUD feature I might keep the design lighter; I introduce additional boundaries when they solve a real change or testing problem.
 
+
 ## Interview answer — deep senior
 
 When I think about Clean Architecture in a large Android codebase, it is really about boundary control and change isolation, not about dogmatically creating interfaces for every class.
@@ -252,6 +253,7 @@ Over the lifespan of an enterprise app, frameworks change constantly. You might 
 By keeping the Domain layer pure Kotlin with zero Android SDK dependencies, the business logic remains the stable center of the app. The Data layer implements repository contracts via Dependency Inversion, mapping backend DTOs into domain entities. If the backend changes a JSON field name, only the data mapper changes; Domain and UI remain untouched.
 
 However, you have to be pragmatic. If a feature is just simple CRUD where a Use Case only does `return repository.getItems()`, it adds pure boilerplate without architectural value. In those cases, having the ViewModel call the Repository directly is completely aligned with official Android guidance. We introduce Use Cases when there is genuine policy, validation, or multi-repository coordination to orchestrate.
+
 
 ## How to answer in the interview
 

@@ -92,29 +92,22 @@ Build artifacts are the compiled deliverables of a build: AAB for Play Store dis
 
 ## Interview answer — structured
 
-Build artifacts and release tracks form the operational pipeline connecting local compilation to production delivery:
+Build artifacts and release tracks form the operational pipeline connecting local compilation to production delivery.
 
-1. **Core Android Build Artifacts**:
-   - **Android App Bundle (.aab)**: The mandatory distribution format for Google Play. Enables Dynamic Delivery where Google Play generates device-optimized Split APKs tailored to screen density, language, and CPU architecture (ABI).
-   - **APK (.apk)**: Standalone installable packages primarily built for local development, QA testing, and distribution via Firebase App Distribution.
-   - **ProGuard / R8 Mapping File (`mapping.txt`)**: Crucial metadata that maps obfuscated class and method names back to original Kotlin source lines. Without uploading this to Crashlytics or Play Console, stack traces remain unreadable.
-   - **Baseline Profile (`baseline.prof`)**: Compiled profile rules that guide ART ahead-of-time compilation for instant app startup.
+First, **Core Android Build Artifacts**. Next, an Android App Bundle (.aab) is the mandatory distribution format for Google Play. Enables Dynamic Delivery where Google Play generates device-optimized Split APKs tailored to screen density, language, and CPU architecture (ABI).
+Additionally, with APK (.apk), standalone installable packages primarily built for local development, QA testing, and distribution via Firebase App Distribution. With ProGuard / R8 Mapping File (`mapping.txt`), crucial metadata that maps obfuscated class and method names back to original Kotlin source lines. Without uploading this to Crashlytics or Play Console, stack traces remain unreadable.
+With Baseline Profile (`baseline.prof`), compiled profile rules that guide ART ahead-of-time compilation for instant app startup. **Google Play Release Tracks**.
+With Internal Testing Track, fast-tracked to up to 100 authorized testers, bypassing deep review gates in minutes. With Closed (Alpha/Beta) Track, targeted tester pools for feature validation.
+With Open Track, broad public opt-in beta testing. Finally, a Production Track is the general consumer release channel, configured with staged percentage rollouts (1% to 100%) to mitigate blast radius.
 
-2. **Google Play Release Tracks**:
-   - **Internal Testing Track**: Fast-tracked to up to 100 authorized testers, bypassing deep review gates in minutes.
-   - **Closed (Alpha/Beta) Track**: Targeted tester pools for feature validation.
-   - **Open Track**: Broad public opt-in beta testing.
-   - **Production Track**: The general consumer release channel, configured with staged percentage rollouts (1% to 100%) to mitigate blast radius.
 
 ## Interview answer — deep senior
 
-From an architectural release management standpoint, artifact immutability and track promotion are fundamental:
+From an architectural release management standpoint, artifact immutability and track promotion are fundamental.
 
-1. **Artifact Immutability**: A fundamental CI/CD anti-pattern is compiling one artifact for QA testing and recompiling another binary for production. High-performing teams compile a single signed release AAB once, promote it through Internal -> Beta -> Production tracks without rebuilding. Recompiling introduces timestamp drift, dependency version discrepancies, and untracked code changes.
+First, an Artifact Immutability is a fundamental CI/CD anti-pattern is compiling one artifact for QA testing and recompiling another binary for production. High-performing teams compile a single signed release AAB once, promote it through Internal -> Beta -> Production tracks without rebuilding. Recompiling introduces timestamp drift, dependency version discrepancies, and untracked code changes. Next, with Dynamic Delivery & App Slicing, distributing raw Universal APKs inflates download sizes by bundling multiple densities (hdpi to xxxhdpi) and CPU ABIs (armeabi-v7a, arm64-v8a, x86_64). Google Play uses the AAB to serve minimal split APKs, reducing data usage and uninstallation rates.
+Finally, with Automated Crashlytics Symbol Uploading, cI workflows must integrate the Firebase Crashlytics Gradle plugin (`uploadCrashlyticsSymbolFileRelease`) or Play Developer API to guarantee that every release artifact is strictly paired with its corresponding obfuscation mapping in observability tools.
 
-2. **Dynamic Delivery & App Slicing**: Distributing raw Universal APKs inflates download sizes by bundling multiple densities (hdpi to xxxhdpi) and CPU ABIs (armeabi-v7a, arm64-v8a, x86_64). Google Play uses the AAB to serve minimal split APKs, reducing data usage and uninstallation rates.
-
-3. **Automated Crashlytics Symbol Uploading**: CI workflows must integrate the Firebase Crashlytics Gradle plugin (`uploadCrashlyticsSymbolFileRelease`) or Play Developer API to guarantee that every release artifact is strictly paired with its corresponding obfuscation mapping in observability tools.
 
 ## How to answer in the interview
 

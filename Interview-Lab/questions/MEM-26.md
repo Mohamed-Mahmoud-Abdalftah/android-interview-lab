@@ -96,15 +96,11 @@ To enforce performance budgets, I define explicit numeric thresholds for cold st
 
 Establishing performance budgets transforms performance from an afterthought into a measurable engineering contract.
 
-1. **Defining Explicit Numeric Budgets**: In an enterprise Android app, we define contracts around four core pillars:
-   - **Startup Latency**: Cold start < 1,200ms, Warm start < 800ms on reference mid-tier hardware.
-   - **Render Smoothness**: Frame drop rate < 2% and zero frozen frames (>700ms) during standard user flows.
-   - **Memory Retained Size**: Process baseline PSS < 160MB, with 0 detected leaks.
-   - **Binary Size**: Max APK download size of 30MB, with PR budget capped at +250KB.
+First, with Defining Explicit Numeric Budgets, in an enterprise Android app, we define contracts around four core pillars. Next, with Startup Latency, cold start < 1,200ms, Warm start < 800ms on reference mid-tier hardware.
+Additionally, with Render Smoothness, frame drop rate < 2% and zero frozen frames (>700ms) during standard user flows. With Memory Retained Size, process baseline PSS < 160MB, with 0 detected leaks.
+With Binary Size, max APK download size of 30MB, with PR budget capped at +250KB. With Automating CI Regression Testing, we integrate **Jetpack Macrobenchmark** running on a dedicated physical device farm (or Firebase Test Lab). Macrobenchmark measures startup timing and frame duration over multiple iterations, generating JSON results that compare pull requests against the target branch.
+Finally, with Gating & Tooling, we use **Diffuse** in GitHub Actions to comment detailed DEX, resource, and asset size diffs on every PR. If a benchmark exceeds budget thresholds by >5%, the CI build fails automatically.
 
-2. **Automating CI Regression Testing**: We integrate **Jetpack Macrobenchmark** running on a dedicated physical device farm (or Firebase Test Lab). Macrobenchmark measures startup timing and frame duration over multiple iterations, generating JSON results that compare pull requests against the target branch.
-
-3. **Gating & Tooling**: We use **Diffuse** in GitHub Actions to comment detailed DEX, resource, and asset size diffs on every PR. If a benchmark exceeds budget thresholds by >5%, the CI build fails automatically.
 
 ## Interview answer — deep senior
 
@@ -113,6 +109,7 @@ Under the hood, executing reliable performance tests in CI requires eliminating 
 For memory regression testing, we utilize LeakCanary's instrumentation test runner (`LeakAssertions.assertNoLeaks()`). Running UI journeys via Espresso or UI Automator finishes with an automated leak check that dumps heap and fails the test if any destroyed Activity or View remains retained.
 
 Finally, in production, we close the feedback loop using Firebase Performance Monitoring and Google Play Vitals API. If an incremental rollout in production breaches the ANR threshold (>0.47%) or cold launch SLA, an automated webhook halts the phased release in Google Play Console.
+
 
 ## How to answer in the interview
 

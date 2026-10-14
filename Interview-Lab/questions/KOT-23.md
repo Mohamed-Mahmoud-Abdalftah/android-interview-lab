@@ -94,6 +94,7 @@ For functional APIs, Kotlin provides automatic SAM (Single Abstract Method) conv
 
 Finally, when exposing Kotlin libraries to Java callers, we use @JvmStatic to produce true static bytecode methods, @JvmOverloads to generate multiple method signatures for default arguments, and @JvmField to expose fields without getter overhead.
 
+
 ## Interview answer — deep senior
 
 Under the hood, Kotlin enforces strict bytecode contracts when interacting with Java. For every non-null parameter in a public Kotlin function, the compiler inserts `Intrinsics.checkNotNullParameter()` at the very beginning of the bytecode method. If Java code passes null, it throws an IllegalArgumentException before any method logic runs, defending Kotlin's null-safety guarantees.
@@ -101,6 +102,7 @@ Under the hood, Kotlin enforces strict bytecode contracts when interacting with 
 With platform types, the compiler inserts `Intrinsics.checkNotNullExpressionValue()` at the call site in Kotlin. If Java returns null, the exception is thrown immediately upon assignment rather than later when dereferenced, aiding debugging. However, to maintain architectural safety in multi-module codebases where legacy Java modules feed domain layers, we enforce an ingress adapter pattern: wrap Java SDK models in pure Kotlin data classes at the repository boundary, verifying nullability once.
 
 Another critical interop consideration is exception handling. Kotlin does not have checked exceptions. If a Kotlin function throws an IOException, Java callers are not forced to catch it unless the Kotlin function is annotated with `@Throws(IOException::class)`. Without `@Throws`, Java code attempting to catch IOException will not even compile if the Java compiler thinks no checked exception can be thrown.
+
 
 ## How to answer in the interview
 

@@ -93,6 +93,7 @@ However, inline causes code bloat when developers inline large functions or func
 
 In production, I follow the rule: only inline higher-order functions with small, concise bodies. If a function requires inlining for a reified type parameter but contains substantial logic, I extract the heavy work into a non-inlined private helper, keeping the inline public shell as minimal as possible.
 
+
 ## Interview answer — deep senior
 
 At the JVM and ART level, the runtime JIT compiler is already capable of inlining hot standard methods during execution using runtime profiling. Forcing Kotlin compiler-level inlining on non-higher-order methods bypasses runtime heuristics and permanently bloats compiled DEX binaries.
@@ -100,6 +101,7 @@ At the JVM and ART level, the runtime JIT compiler is already capable of inlinin
 When using `reified` type parameters—which mandate the `inline` keyword because the compiler needs concrete class metadata at the call site—developers frequently write monolithic functions like `inline fun <reified T> parseNetworkResponse(json: String): T`. If that function contains 80 lines of error-handling and logging logic, that entire block is stamped into every API call site across the project.
 
 To solve this, we use the 'trampoline' or 'delegate' pattern: the public inline function extracts `T::class.java` and immediately passes `Class<T>` to an internal, non-inlined function that does the heavy lifting. Furthermore, if an inline higher-order function takes multiple lambdas and one of them is large or executed infrequently, annotating it with `noinline` prevents unnecessary call-site expansion.
+
 
 ## How to answer in the interview
 

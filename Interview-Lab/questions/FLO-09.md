@@ -104,6 +104,7 @@ The `SharingStarted` strategy governs the lifecycle of the upstream flow in `sta
 
 **SharingStarted.WhileSubscribed(5000)** is the gold standard for Android UI development. It only activates upstream collection when there is at least one active subscriber. When subscribers drop to zero, it waits 5,000 milliseconds before cancelling the upstream flow. This 5-second window prevents cancelling and restarting expensive network or database queries during configuration changes like screen rotations.
 
+
 ## Interview answer — deep senior
 
 At the technical mechanism level, `WhileSubscribed` monitors the `subscriptionCount` state flow of the underlying `SharedFlow`. When `subscriptionCount.value` transitions from 0 to 1, it starts the upstream collector coroutine. When it drops back to 0, it launches a delay timer:
@@ -115,6 +116,7 @@ SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000, replayExpirationMillis
 If a new subscriber attaches within the 5,000ms window (which happens during Activity recreation upon screen rotation), the cancellation timer is cancelled and upstream collection continues uninterrupted.
 
 The second parameter, `replayExpirationMillis`, determines when the cached replay buffer is reset. Leaving it at 0 means that when the upstream is cancelled due to inactivity, the cached state is kept. If set to a duration, it evicts stale cached state after the user leaves the screen for an extended period.
+
 
 ## How to answer in the interview
 

@@ -106,9 +106,8 @@ App freezes during image decoding are caused by decoding high-resolution images 
 
 An app freeze localized to image decoding points to two culprits: executing the decode operation synchronously on the main thread, or triggering intense Garbage Collector thrashing due to severe memory pressure.
 
-1. **Diagnosis**: I begin by reproducing the freeze with the **Android Studio CPU Profiler** recording a System Trace. If the Flame Chart reveals `BitmapFactory.nativeDecodeStream()` occupying hundreds of milliseconds on the `main` thread, the root cause is thread misplacement. Concurrently, in the Memory Profiler, I check whether memory spikes into near-OOM territory. If memory is exhausted, ART executes back-to-back compacting GCs, freezing application threads in Stop-The-World pauses.
+First, with Diagnosis, i begin by reproducing the freeze with the **Android Studio CPU Profiler** recording a System Trace. If the Flame Chart reveals `BitmapFactory.nativeDecodeStream()` occupying hundreds of milliseconds on the `main` thread, the root cause is thread misplacement. Concurrently, in the Memory Profiler, I check whether memory spikes into near-OOM territory. If memory is exhausted, ART executes back-to-back compacting GCs, freezing application threads in Stop-The-World pauses. Finally, with Resolution, first, all decoding must be isolated on a background dispatcher (`Dispatchers.IO`). Second, we must avoid full-resolution decodes by implementing two-pass downsampling: using `BitmapFactory.Options.inJustDecodeBounds = true` to query the image's raw dimensions with zero pixel allocation, calculating a power-of-two `inSampleSize` matching the destination ImageView bounds, and decoding only the scaled-down bitmap.
 
-2. **Resolution**: First, all decoding must be isolated on a background dispatcher (`Dispatchers.IO`). Second, we must avoid full-resolution decodes by implementing two-pass downsampling: using `BitmapFactory.Options.inJustDecodeBounds = true` to query the image's raw dimensions with zero pixel allocation, calculating a power-of-two `inSampleSize` matching the destination ImageView bounds, and decoding only the scaled-down bitmap.
 
 ## Interview answer — deep senior
 
@@ -117,6 +116,7 @@ Under the hood, `BitmapFactory` utilizes native Skia C++ decoders (`libskia.so`)
 Another nuance is color depth: by default, `BitmapFactory` decodes in `ARGB_8888` (4 bytes/pixel). If alpha transparency is unnecessary, decoding using `RGB_565` (2 bytes/pixel) cuts memory consumption by 50% immediately.
 
 In modern enterprise apps, rather than writing custom `BitmapFactory` code, we rely on established libraries like **Coil**, configuring custom `Decoder.Factory` components and enabling `Bitmap.Config.HARDWARE` to offload bitmap storage to GPU graphic buffers.
+
 
 ## How to answer in the interview
 

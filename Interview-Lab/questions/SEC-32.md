@@ -100,27 +100,21 @@ Manage security SDK false positives by implementing a graduated, risk-based resp
 
 ## Interview answer — structured
 
-Balancing application availability with security enforcement requires a risk-scoring architecture rather than hardcoded binary kill-switches:
+Balancing application availability with security enforcement requires a risk-scoring architecture rather than hardcoded binary kill-switches.
 
-1. **The False Positive Dilemma**: Third-party RASP SDKs rely on heuristics like checking for test keys or custom build tags. Across fragmented Android OEM ecosystems (e.g. customized budget devices in emerging markets), legitimate vendor ROMs trigger false detections, causing widespread user lockouts.
+First, with The False Positive Dilemma, third-party RASP SDKs rely on heuristics like checking for test keys or custom build tags. Across fragmented Android OEM ecosystems (e.g. Customized budget devices in emerging markets), legitimate vendor ROMs trigger false detections, causing widespread user lockouts. Next, **Graduated Response Ladder**.
+Additionally, with Informational, low-confidence anomalies (e.g. Unknown device build) trigger client telemetry logging without disrupting user UX. With Step-Up Verification, suspicious environments (e.g. Unlocked bootloader) require stepped-up authentication (e.g., SMS OTP, passkey verification, or email confirmation).
+With Scoped Feature Restriction, moderate risks restrict sensitive operations (e.g., initiating high-value transfers) while leaving non-sensitive areas (viewing transaction history, support chat) fully operational. With Session Termination, reserved exclusively for high-confidence active tampering (e.g. Frida memory hooks detected during transaction signing).
+Finally, with Dynamic Remote Governance, wrap security SDK evaluation inside server-driven feature flags (e.g., Firebase Remote Config). If an SDK update causes false-positive lockouts, ops can remotely dial back detection sensitivity in minutes without waiting for Play Store updates.
 
-2. **Graduated Response Ladder**:
-   - **Informational**: Low-confidence anomalies (e.g. unknown device build) trigger client telemetry logging without disrupting user UX.
-   - **Step-Up Verification**: Suspicious environments (e.g. unlocked bootloader) require stepped-up authentication (e.g., SMS OTP, passkey verification, or email confirmation).
-   - **Scoped Feature Restriction**: Moderate risks restrict sensitive operations (e.g., initiating high-value transfers) while leaving non-sensitive areas (viewing transaction history, support chat) fully operational.
-   - **Session Termination**: Reserved exclusively for high-confidence active tampering (e.g. Frida memory hooks detected during transaction signing).
-
-3. **Dynamic Remote Governance**: Wrap security SDK evaluation inside server-driven feature flags (e.g., Firebase Remote Config). If an SDK update causes false-positive lockouts, ops can remotely dial back detection sensitivity in minutes without waiting for Play Store updates.
 
 ## Interview answer — deep senior
 
-From an operational reliability perspective, senior architects treat security SDKs as untrusted third-party dependencies requiring observability SLAs:
+From an operational reliability perspective, senior architects treat security SDKs as untrusted third-party dependencies requiring observability SLAs.
 
-1. **False Positive Telemetry & Alerting**: Track the 'Security Block Rate' metric in real-time dashboards. If blocks spike above a statistical baseline (e.g., jumping from 0.05% to 2.0% post-app update), automated alerts fire immediately to investigate OEM-specific clusters.
+First, with False Positive Telemetry & Alerting, track the 'Security Block Rate' metric in real-time dashboards. If blocks spike above a statistical baseline (e.g., jumping from 0.05% to 2.0% post-app update), automated alerts fire immediately to investigate OEM-specific clusters. Next, with Silent Shadow-Mode Deployment, when evaluating or upgrading a security SDK, deploy it first in 'Observation / Shadow Mode' for 2–4 weeks. Log what the SDK *would* have blocked without executing the block action, allowing the team to measure actual false-positive rates across millions of production devices before enabling enforcement.
+Finally, with Customer Support Recovery Channels, provide clear, non-technical error codes (e.g. `ERR-SEC-402`) in the UI when restrictions occur, enabling tier-1 customer support agents to look up backend risk logs and grant temporary device exemptions if legitimate customers are affected.
 
-2. **Silent Shadow-Mode Deployment**: When evaluating or upgrading a security SDK, deploy it first in 'Observation / Shadow Mode' for 2–4 weeks. Log what the SDK *would* have blocked without executing the block action, allowing the team to measure actual false-positive rates across millions of production devices before enabling enforcement.
-
-3. **Customer Support Recovery Channels**: Provide clear, non-technical error codes (e.g. `ERR-SEC-402`) in the UI when restrictions occur, enabling tier-1 customer support agents to look up backend risk logs and grant temporary device exemptions if legitimate customers are affected.
 
 ## How to answer in the interview
 

@@ -157,6 +157,7 @@ Kotlin is a modern, statically typed language that works very well with Java, wh
 
 It doesn't magically prevent crashes, though. For example, a Java SDK without nullability annotations can still return null unexpectedly. In that case I'd validate the value at the boundary instead of trusting the platform type. So for me, Kotlin improves clarity and safety, but good lifecycle handling, testing, and API design are still essential.
 
+
 ## Interview answer — deep senior
 
 From an engineering perspective, adopting Kotlin was about risk mitigation and team velocity. Because Kotlin compiles to standard JVM bytecode and produces DEX files indistinguishable from Java, enterprise teams could migrate module by module without rewriting existing libraries or incurring runtime performance penalties.
@@ -164,6 +165,7 @@ From an engineering perspective, adopting Kotlin was about risk mitigation and t
 Language-wise, the core win is sound type contracts. Nullability is checked statically, data classes eliminate error-prone equals, hashCode, and copy implementations, and sealed hierarchies make UI state modeling exhaustive in when expressions. Furthermore, Kotlin coroutines provide structured concurrency natively without the heavy reactive stream overhead of RxJava.
 
 However, senior engineers must watch the boundaries. When interacting with unannotated legacy Java SDKs, Kotlin treats returned values as platform types (`T!`), which bypasses compiler null checks and can crash with a NullPointerException at runtime. In production, I treat platform types as nullable immediately at the ingress adapter, validate them, and map them to domain models. Adoption also requires tracking build performance, configuring incremental compilation in Gradle, and establishing team conventions against chained scope functions that obscure intent.
+
 
 ## How to answer in the interview
 

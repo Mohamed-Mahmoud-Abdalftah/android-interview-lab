@@ -134,13 +134,12 @@ A Route Composable is stateful and navigation-aware: it injects the ViewModel, c
 
 Separating a feature screen into a **Route Composable** and a **Screen Composable** is the industry standard for scalable Jetpack Compose architecture.
 
-1. **The Route Composable (`...Route`)**: Acts as the orchestration boundary registered inside the `NavHost`. Its sole purpose is dependency resolution and lifecycle coordination: it retrieves the ViewModel (e.g. `hiltViewModel()`), collects UI state using `collectAsStateWithLifecycle()`, and bridges navigation callbacks (`onNavigateToDetail`). It contains zero layout logic.
+First, with The Route Composable (`...Route`), acts as the orchestration boundary registered inside the `NavHost`. Its sole purpose is dependency resolution and lifecycle coordination: it retrieves the ViewModel (e.g. `hiltViewModel()`), collects UI state using `collectAsStateWithLifecycle()`, and bridges navigation callbacks (`onNavigateToDetail`). It contains zero layout logic. Finally, with The Screen Composable (`...Screen`), acts as the pure declarative presentation layer. It takes only the resolved, immutable `UiState` and hoisted event callbacks (`onAction: (Action) -> Unit`). It knows nothing about `ViewModel`, Hilt, or `NavController`.
 
-2. **The Screen Composable (`...Screen`)**: Acts as the pure declarative presentation layer. It takes only the resolved, immutable `UiState` and hoisted event callbacks (`onAction: (Action) -> Unit`). It knows nothing about `ViewModel`, Hilt, or `NavController`.
+This architectural separation delivers enormous benefits.
 
-This architectural separation delivers enormous benefits:
-- **Frictionless Previews**: The Screen composable can be rendered in Android Studio `@Preview` instantly with fake data without mocking complex ViewModel dependencies.
-- **Screenshot & UI Testing**: Screenshot tests (using Paparazzi or Roborazzi) and Compose UI tests can assert every visual permutation (`Loading`, `Error`, `Empty`) purely by passing fake states.
+First, frictionless Previews is the Screen composable can be rendered in Android Studio `@Preview` instantly with fake data without mocking complex ViewModel dependencies. Finally, with Screenshot & UI Testing, screenshot tests (using Paparazzi or Roborazzi) and Compose UI tests can assert every visual permutation (`Loading`, `Error`, `Empty`) purely by passing fake states.
+
 
 ## Interview answer — deep senior
 
@@ -149,6 +148,7 @@ Under the hood, passing a `ViewModel` directly into a leaf UI Composable creates
 Furthermore, passing `NavController` deep into composable trees violates encapsulation and modularization. In multi-module Android apps, feature modules should not depend on the global app navigation graph. By hoisting navigation callbacks out of the Screen composable up to the Route composable, each feature module remains completely isolated and independently compilable.
 
 In our enterprise design pattern, every screen file has the canonical structure: `OrderDetailsRoute` at the top, `OrderDetailsScreen` below it, and multiple preview functions demonstrating distinct UI states.
+
 
 ## How to answer in the interview
 

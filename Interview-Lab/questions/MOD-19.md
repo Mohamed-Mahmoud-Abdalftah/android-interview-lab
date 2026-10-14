@@ -86,13 +86,11 @@ When two feature teams share business logic, never couple the features directly 
 
 ## Interview answer — structured
 
-When two feature teams require identical business logic, resolving placement demands strict architectural governance:
+When two feature teams require identical business logic, resolving placement demands strict architectural governance.
 
-1. **Never Create Feature-to-Feature Dependencies**: Permitting `:feature:cart` to depend on `:feature:checkout` violates the fundamental acyclic boundary rule and entangles two distinct user journeys.
+First, with Never Create Feature-to-Feature Dependencies, permitting `:feature:cart` to depend on `:feature:checkout` violates the fundamental acyclic boundary rule and entangles two distinct user journeys. Next, with Extract to a Focused Domain Module, create a dedicated JVM module representing the specific business capability: e.g. `:domain:pricing` or `:domain:identity`. This module houses pure Kotlin business entities, invariants, and Use Cases (`CalculateTaxUseCase`). Both feature modules depend downward on this domain module.
+Finally, with Establish Clear Code Ownership, designate a single team as the primary owner in `CODEOWNERS` (e.g. Payments team owns `:domain:pricing`). If the other team needs enhancements, they submit pull requests subject to the owning team's review and automated test suites.
 
-2. **Extract to a Focused Domain Module**: Create a dedicated JVM module representing the specific business capability: e.g. `:domain:pricing` or `:domain:identity`. This module houses pure Kotlin business entities, invariants, and Use Cases (`CalculateTaxUseCase`). Both feature modules depend downward on this domain module.
-
-3. **Establish Clear Code Ownership**: Designate a single team as the primary owner in `CODEOWNERS` (e.g. Payments team owns `:domain:pricing`). If the other team needs enhancements, they submit pull requests subject to the owning team's review and automated test suites.
 
 ## Interview answer — deep senior
 
@@ -101,6 +99,7 @@ Before extracting shared business logic into a common module, senior engineers e
 Often, two features appear to need the 'same' logic, but their underlying domain invariants are actually diverging. For example, calculating price in a product catalog may tolerate cached approximate tax estimations, whereas calculating price in final checkout requires strict real-time fiscal compliance.
 
 If you force divergent requirements into a single shared function with boolean flags (`calculatePrice(isCheckout: Boolean)`), you introduce toxic coupling. If the business rules have fundamentally different lifecycles or reasons to change, it is better to maintain separate use cases. Only extract shared code when the underlying business invariant is mathematically or legally identical.
+
 
 ## How to answer in the interview
 

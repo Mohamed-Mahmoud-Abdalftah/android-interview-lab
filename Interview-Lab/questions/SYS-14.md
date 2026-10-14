@@ -109,28 +109,21 @@ Design cross-team API boundaries using contract-first schemas like OpenAPI or Pr
 
 ## Interview answer — structured
 
-Establishing clean API boundaries across distributed engineering teams prevents communication bottlenecks and contract drift:
+Establishing clean API boundaries across distributed engineering teams prevents communication bottlenecks and contract drift.
 
-1. **Contract-First Design & Parallel Development**:
-   - Mobile and backend teams negotiate the API contract (OpenAPI 3.0 or Protocol Buffers) during sprint planning before implementation begins.
-   - CI generates type-safe client models and stubbed mock servers (e.g. WireMock, Prism), enabling mobile teams to build and verify features against accurate mocks without waiting for backend deployments.
+First, **Contract-First Design & Parallel Development**. Next, mobile and backend teams negotiate the API contract (OpenAPI 3.0 or Protocol Buffers) during sprint planning before implementation begins.
+CI generates type-safe client models and stubbed mock servers (e.g. WireMock, Prism), enabling mobile teams to build and verify features against accurate mocks without waiting for backend deployments. **The Backend-for-Frontend (BFF) Pattern**.
+Microservices architectures fragment data across domain services (User, Orders, Inventory, Recommendations). Direct client-to-microservice communication causes cellular radio drain, high latency, and fragile error handling. A mobile-specific BFF aggregates multiple microservices server-side, returning a single tailored response payload matching the client screen layout.
+**Strict Domain Layer Isolation**. Finally, never leak API DTOs directly into UI Composables or ViewModels. Maintain explicit mapping layers (`NetworkDto -> DomainEntity -> UiState`). If the backend team renames a field, only the single mapping function requires modification; UI layers remain unaffected.
 
-2. **The Backend-for-Frontend (BFF) Pattern**:
-   - Microservices architectures fragment data across domain services (User, Orders, Inventory, Recommendations). Direct client-to-microservice communication causes cellular radio drain, high latency, and fragile error handling.
-   - A mobile-specific BFF aggregates multiple microservices server-side, returning a single tailored response payload matching the client screen layout.
-
-3. **Strict Domain Layer Isolation**:
-   - Never leak API DTOs directly into UI Composables or ViewModels. Maintain explicit mapping layers (`NetworkDto -> DomainEntity -> UiState`). If the backend team renames a field, only the single mapping function requires modification; UI layers remain unaffected.
 
 ## Interview answer — deep senior
 
-From an organizational scaling perspective, robust API boundaries require automated contract verification:
+From an organizational scaling perspective, robust API boundaries require automated contract verification.
 
-1. **Consumer-Driven Contract Testing (Pact)**: Implement contract testing where the mobile client publishes its schema expectations to a central Pact broker. Before the backend team deploys an API change, their CI pipeline runs contract tests against the mobile schema to verify that no expected fields were broken or removed.
+First, with Consumer-Driven Contract Testing (Pact), implement contract testing where the mobile client publishes its schema expectations to a central Pact broker. Before the backend team deploys an API change, their CI pipeline runs contract tests against the mobile schema to verify that no expected fields were broken or removed. Next, with Tolerant Reader Pattern, mobile JSON parsers (Moshi / Kotlinx Serialization) must ignore unknown properties (`ignoreUnknownKeys = true`). If the backend adds new fields for other platforms, older mobile versions parse the payload without throwing deserialization exceptions.
+Finally, with Deprecation Strategy & Graceful Decommissioning, backends must never alter existing field data types. When deprecating fields, mark them `@Deprecated` in contracts, support them concurrently for at least 12 months, and monitor mobile version usage metrics before hard field removal.
 
-2. **Tolerant Reader Pattern**: Mobile JSON parsers (Moshi / Kotlinx Serialization) must ignore unknown properties (`ignoreUnknownKeys = true`). If the backend adds new fields for other platforms, older mobile versions parse the payload without throwing deserialization exceptions.
-
-3. **Deprecation Strategy & Graceful Decommissioning**: Backends must never alter existing field data types. When deprecating fields, mark them `@Deprecated` in contracts, support them concurrently for at least 12 months, and monitor mobile version usage metrics before hard field removal.
 
 ## How to answer in the interview
 

@@ -91,30 +91,22 @@ Debug release-only crashes by creating a debuggable minified build type (isDebug
 
 ## Interview answer — structured
 
-Release-only crashes almost universally stem from bytecode optimizations, identifier obfuscation, or tree shaking executed by R8:
+Release-only crashes almost universally stem from bytecode optimizations, identifier obfuscation, or tree shaking executed by R8.
 
-1. **Common Failure Vectors**:
-   - **Reflection Stripping**: Classes instantiated via `Class.forName()` or dynamic reflection appear unreachable in static call graphs, causing R8 to strip them (`ClassNotFoundException`).
-   - **Serialization Mismatches**: Reflection-based serializers (GSON) expect exact field names. Obfuscation renames fields to `a`, leaving deserialized objects populated with `null` values.
-   - **JNI Breakage**: Native C/C++ code referencing Java methods via JNI signatures fails when R8 renames or inlines the Java method.
-   - **Dynamic Resource Lookups**: Using `Resources.getIdentifier()` fails when `shrinkResources = true` strips drawables flagged as unreferenced.
+First, **Common Failure Vectors**. Next, with Reflection Stripping, classes instantiated via `Class.forName()` or dynamic reflection appear unreachable in static call graphs, causing R8 to strip them (`ClassNotFoundException`).
+Additionally, with Serialization Mismatches, reflection-based serializers (GSON) expect exact field names. Obfuscation renames fields to `a`, leaving deserialized objects populated with `null` values. With JNI Breakage, native C/C++ code referencing Java methods via JNI signatures fails when R8 renames or inlines the Java method.
+With Dynamic Resource Lookups, using `Resources.getIdentifier()` fails when `shrinkResources = true` strips drawables flagged as unreferenced. **Local Reproduction Strategy**.
+Add a hybrid build type (`debugMinified`) that mirrors `release` (`isMinifyEnabled = true`, identical ProGuard rules), but sets `isDebuggable = true` and debug signing. This allows developers to attach Android Studio's debugger and reproduce the exact crash locally. **Investigating R8 Diagnostic Reports**.
+Inspect `build/outputs/mapping/release/usage.txt` to confirm if R8 pruned the missing class. Finally, inspect `seeds.txt` to verify whether keep rules successfully preserved intended entry points.
 
-2. **Local Reproduction Strategy**:
-   - Add a hybrid build type (`debugMinified`) that mirrors `release` (`isMinifyEnabled = true`, identical ProGuard rules), but sets `isDebuggable = true` and debug signing. This allows developers to attach Android Studio's debugger and reproduce the exact crash locally.
-
-3. **Investigating R8 Diagnostic Reports**:
-   - Inspect `build/outputs/mapping/release/usage.txt` to confirm if R8 pruned the missing class.
-   - Inspect `seeds.txt` to verify whether keep rules successfully preserved intended entry points.
 
 ## Interview answer — deep senior
 
-From an advanced compiler engineering perspective, release-only crashes also involve timing and aggressive method inlining:
+From an advanced compiler engineering perspective, release-only crashes also involve timing and aggressive method inlining.
 
-1. **Aggressive Method Inlining & Class Merging**: With `proguard-android-optimize.txt`, R8 merges single-implementation interfaces directly into concrete classes and inlines short methods. If an SDK inspects the runtime class hierarchy or checks `instanceof` on merged interfaces, type casting exceptions (`ClassCastException`) arise exclusively in release builds.
+First, with Aggressive Method Inlining & Class Merging, with `proguard-android-optimize.txt`, R8 merges single-implementation interfaces directly into concrete classes and inlines short methods. If an SDK inspects the runtime class hierarchy or checks `instanceof` on merged interfaces, type casting exceptions (`ClassCastException`) arise exclusively in release builds. Next, with Concurrency & Timing Discrepancies, release builds run significantly faster than debug builds because debug assertions are eliminated and bytecode is optimized. Race conditions or thread safety defects in asynchronous Coroutines that were masked by debug overhead can surface as timing bugs in optimized release binaries.
+Finally, with Deobfuscating Production Traces, when diagnosing in the field, run Google's `retrace` CLI locally with the matching `mapping.txt`: `retrace mapping.txt obfuscated_trace.txt`. Ensure CI archives `mapping.txt` as a required build artifact for every released version code.
 
-2. **Concurrency & Timing Discrepancies**: Release builds run significantly faster than debug builds because debug assertions are eliminated and bytecode is optimized. Race conditions or thread safety defects in asynchronous Coroutines that were masked by debug overhead can surface as timing bugs in optimized release binaries.
-
-3. **Deobfuscating Production Traces**: When diagnosing in the field, run Google's `retrace` CLI locally with the matching `mapping.txt`: `retrace mapping.txt obfuscated_trace.txt`. Ensure CI archives `mapping.txt` as a required build artifact for every released version code.
 
 ## How to answer in the interview
 

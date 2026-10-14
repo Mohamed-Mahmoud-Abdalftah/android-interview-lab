@@ -87,6 +87,7 @@ We use C++ in Android primarily for four scenarios: 1) low-latency, real-time au
 
 However, JNI is not a silver bullet. Crossing the JNI boundary incurs noticeable CPU overhead due to argument marshaling, memory boundary synchronization, and ART JNI transition frames. If you make high-frequency native calls in a loop, it will actually perform worse than pure Kotlin. To use JNI effectively, you batch data using Direct ByteBuffers, minimizing crossings.
 
+
 ## Interview answer — deep senior
 
 At the systems level, ART manages native interactions through JNIEnv pointers. Calling a native method requires ART to transition thread states from Runnable to Native. During this time, the garbage collector cannot relocate objects referenced by native pointers unless they are properly registered as JNI Global, Local, or Weak references. Passing Java arrays across JNI often forces the runtime to either pin the array memory or allocate a duplicate native buffer via `GetPrimitiveArrayCritical`, risking severe memory fragmentation or thread stalls.
@@ -94,6 +95,7 @@ At the systems level, ART manages native interactions through JNIEnv pointers. C
 To achieve peak performance with JNI: 1) Allocate off-heap native memory using `ByteBuffer.allocateDirect()`, which lets C++ access the memory pointer via `GetDirectBufferAddress()` with zero copies; 2) Leverage CPU-specific vectorization like ARM NEON instructions in C++; 3) Keep the API surface coarse-grained—send one heavy buffer per frame rather than hundreds of granular calls.
 
 Finally, native crashes (SIGSEGV, SIGBUS) do not trigger standard Java crash handlers; they terminate the process instantly unless hooked via a native crash reporting library like Google Breakpad or Firebase Crashlytics NDK.
+
 
 ## How to answer in the interview
 

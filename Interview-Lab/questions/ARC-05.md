@@ -117,21 +117,14 @@ ViewModel manages UI lifecycle and exposes `StateFlow<UiState>` to the presentat
 
 Clear boundary division among ViewModel, UseCase, and Repository prevents monolithic architectural bloat.
 
-1. **ViewModel (Presentation Layer)**:
-   - Owns UI state and survives configuration changes.
-   - Converts domain outputs into immutable `StateFlow<UiState>` tailored for rendering.
-   - Translates raw user actions into business commands.
-   - Never performs I/O directly, never references Android `Context`, and contains zero business calculations.
+First, **ViewModel (Presentation Layer)**. Next, owns UI state and survives configuration changes.
+Converts domain outputs into immutable `StateFlow<UiState>` tailored for rendering. Translates raw user actions into business commands.
+Never performs I/O directly, never references Android `Context`, and contains zero business calculations. **UseCase (Domain Layer)**.
+Encapsulates discrete, reusable business rules (e.g. Eligibility criteria, tax calculations). Coordinates multiple repositories (e.g. Querying user balance from `AccountRepository` and deducting inventory from `ProductRepository`).
+Operates strictly on pure Kotlin domain models without UI or database dependencies. **Repository (Data Layer)**.
+Single source of truth for a specific data aggregate. Decides whether to query local database, fetch from network, or return cached memory.
+Finally, maps external schemas (DTOs, Room entities) to clean domain models.
 
-2. **UseCase (Domain Layer)**:
-   - Encapsulates discrete, reusable business rules (e.g. eligibility criteria, tax calculations).
-   - Coordinates multiple repositories (e.g. querying user balance from `AccountRepository` and deducting inventory from `ProductRepository`).
-   - Operates strictly on pure Kotlin domain models without UI or database dependencies.
-
-3. **Repository (Data Layer)**:
-   - Single source of truth for a specific data aggregate.
-   - Decides whether to query local database, fetch from network, or return cached memory.
-   - Maps external schemas (DTOs, Room entities) to clean domain models.
 
 ## Interview answer — deep senior
 
@@ -140,6 +133,7 @@ A frequent anti-pattern is **Fat ViewModel Syndrome**, where ViewModels perform 
 Conversely, pushing business rules down into Repositories is an equal architectural mistake. A Repository should never know business policy (e.g. 'a gold member gets 15% discount'); the Repository simply stores and retrieves orders and user profiles. Calculating the discount is the strict domain responsibility of a Use Case.
 
 By strictly adhering to these boundaries, each component remains easily testable in isolation: Repositories are verified via Fake DataSources, UseCases are verified via Fake Repositories, and ViewModels are verified by asserting `uiState` emissions.
+
 
 ## How to answer in the interview
 

@@ -75,29 +75,21 @@ Explain architectural trade-offs by anchoring discussions in specific business a
 
 ## Interview answer — structured
 
-Senior engineers distinguish themselves by articulating engineering decisions as conscious trade-offs rather than absolute truths:
+Senior engineers distinguish themselves by articulating engineering decisions as conscious trade-offs rather than absolute truths.
 
-1. **Anchor in Context and Business Constraints**:
-   - Frame the decision around concrete variables: team size and experience, delivery timelines, codebase modularity, app performance budgets, and long-term maintainability.
+First, **Anchor in Context and Business Constraints**. Next, frame the decision around concrete variables: team size and experience, delivery timelines, codebase modularity, app performance budgets, and long-term maintainability.
+**Comparative Multi-Option Evaluation**. Present at least two viable architectural paths. Explicitly state what each option optimizes for and what penalty it exacts. For instance: 'Modularizing into 40 dynamic-feature modules decouples feature squads and isolates build boundaries, but increases Gradle configuration overhead and dependency graph complexity.'
+**Justify the Decisive Choice**. Explain why the chosen trade-off aligns with organizational priorities. Demonstrate maturity by acknowledging the drawbacks of your choice and outlining mitigation tactics (e.g., configuring remote build caching to counteract multi-module build times).
+**Reversibility and Exit Gates**. Finally, categorize whether the choice is a one-way door (irreversible database migration) or a two-way door (state management pattern behind an interface), demonstrating risk management.
 
-2. **Comparative Multi-Option Evaluation**:
-   - Present at least two viable architectural paths. Explicitly state what each option optimizes for and what penalty it exacts. For instance: 'Modularizing into 40 dynamic-feature modules decouples feature squads and isolates build boundaries, but increases Gradle configuration overhead and dependency graph complexity.'
-
-3. **Justify the Decisive Choice**:
-   - Explain why the chosen trade-off aligns with organizational priorities. Demonstrate maturity by acknowledging the drawbacks of your choice and outlining mitigation tactics (e.g., configuring remote build caching to counteract multi-module build times).
-
-4. **Reversibility and Exit Gates**:
-   - Categorize whether the choice is a one-way door (irreversible database migration) or a two-way door (state management pattern behind an interface), demonstrating risk management.
 
 ## Interview answer — deep senior
 
-From an engineering leadership and systems architecture perspective, evaluating trade-offs involves balancing immediate delivery against long-term operational costs:
+From an engineering leadership and systems architecture perspective, evaluating trade-offs involves balancing immediate delivery against long-term operational costs.
 
-1. **The Cost of Abstraction (Indirection Debt)**: Juniors often over-engineer solutions with 5 layers of interfaces and Clean Architecture interactors for a simple static FAQ screen. A senior explains: 'Every layer of indirection introduces cognitive overhead, file count bloat, and navigation friction. We strictly enforce Clean Architecture boundaries on core transactional domains (payments, checkout), but permit lightweight pragmatic patterns on static presentation modules.'
+First, with The Cost of Abstraction (Indirection Debt), juniors often over-engineer solutions with 5 layers of interfaces and Clean Architecture interactors for a simple static FAQ screen. A senior explains: 'Every layer of indirection introduces cognitive overhead, file count bloat, and navigation friction. We strictly enforce Clean Architecture boundaries on core transactional domains (payments, checkout), but permit lightweight pragmatic patterns on static presentation modules.' Next, with Team Topology and Conway's Law, software architectures inevitably mirror team communication structures. Modularizing by feature (`:feature:checkout`, `:feature:catalog`) mirrors cross-functional squad ownership, reducing PR merge collisions, whereas modularizing by technical layer (`:data`, `:domain`, `:presentation`) forces 4 squads to touch the identical data module concurrently.
+Finally, with Pragmatic Compromise Over Dogmatism, articulate instances where you deliberately chose an imperfect architecture to hit a critical company milestone, accompanied by an explicit tech-debt repayment plan recorded in an Architecture Decision Record (ADR).
 
-2. **Team Topology and Conway's Law**: Software architectures inevitably mirror team communication structures. Modularizing by feature (`:feature:checkout`, `:feature:catalog`) mirrors cross-functional squad ownership, reducing PR merge collisions, whereas modularizing by technical layer (`:data`, `:domain`, `:presentation`) forces 4 squads to touch the identical data module concurrently.
-
-3. **Pragmatic Compromise Over Dogmatism**: Articulate instances where you deliberately chose an imperfect architecture to hit a critical company milestone, accompanied by an explicit tech-debt repayment plan recorded in an Architecture Decision Record (ADR).
 
 ## How to answer in the interview
 

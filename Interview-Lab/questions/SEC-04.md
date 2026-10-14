@@ -88,15 +88,13 @@ local.properties keeps secrets out of Git version control during development, bu
 
 ## Interview answer — structured
 
-A pervasive misconception among Android developers is conflating **Source Control Hygiene** with **Runtime Binary Confidentiality**:
+A pervasive misconception among Android developers is conflating **Source Control Hygiene** with **Runtime Binary Confidentiality**.
 
-1. **What `local.properties` Actually Does**: It prevents developers from accidentally committing credentials to public or shared Git repositories. It is strictly a build-time configuration tool for the local developer machine.
-
-2. **Why It Provides Zero Runtime Security**: When Gradle reads a property from `local.properties` and injects it via `buildConfigField`, the Kotlin/Java compiler embeds the raw string literal directly into `BuildConfig.class`. During D8/R8 compilation, the string literal is placed into the APK's `classes.dex` string constant pool.
-
-3. **Trivial Extraction**: An attacker does not need sophisticated reverse engineering skills. Running `jadx` or executing `strings classes.dex | grep -i key` on the distributed APK dumps the secret in plain text.
+First, with What `local.properties` Actually Does, it prevents developers from accidentally committing credentials to public or shared Git repositories. It is strictly a build-time configuration tool for the local developer machine. Next, with Why It Provides Zero Runtime Security, when Gradle reads a property from `local.properties` and injects it via `buildConfigField`, the Kotlin/Java compiler embeds the raw string literal directly into `BuildConfig.class`. During D8/R8 compilation, the string literal is placed into the APK's `classes.dex` string constant pool.
+Finally, a Trivial Extraction is an attacker does not need sophisticated reverse engineering skills. Running `jadx` or executing `strings classes.dex | grep -i key` on the distributed APK dumps the secret in plain text.
 
 Private backend API secrets (payment gateway private keys, database master credentials, encryption secret seeds) must **NEVER** be present anywhere in the Android build system. They must reside exclusively on authenticated backend servers.
+
 
 ## Interview answer — deep senior
 
@@ -105,6 +103,7 @@ Does using Native NDK C++ (`CMake` / `.so` libraries) hide secrets injected from
 Some teams inject secrets from `local.properties` into C/C++ files via CMake compiler flags, believing that compiling to native machine code (`.so`) protects the secret.
 
 This is also completely ineffective. Running `strings libnative-lib.so | grep -i secret` or opening the library in Ghidra / IDA Pro reveals the string in the `.rodata` (read-only data) section of the ELF binary in seconds. Even if obscured with XOR masking in C++, dynamic hooking tools like Frida intercept the function that returns the decoded buffer at runtime with a 3-line JavaScript script. Client-side secrecy in distributed binaries is fundamentally impossible.
+
 
 ## How to answer in the interview
 

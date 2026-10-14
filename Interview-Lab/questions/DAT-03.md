@@ -107,25 +107,20 @@ connectTimeout bounds TCP/TLS handshake duration. readTimeout bounds inactivity 
 
 ## Interview answer — structured
 
-OkHttp divides timeouts into granular socket-level phases and a top-level end-to-end deadline:
+OkHttp divides timeouts into granular socket-level phases and a top-level end-to-end deadline.
 
-1. **`connectTimeout`**: The maximum time allotted to establish a physical connection to the remote host. It includes DNS resolution, TCP handshake, and TLS session negotiation. If the server is unreachable or cellular towers drop the SYN packet, OkHttp aborts with a connection timeout.
+First, connectTimeout is the maximum time allotted to establish a physical connection to the remote host. It includes DNS resolution, TCP handshake, and TLS session negotiation. If the server is unreachable or cellular towers drop the SYN packet, OkHttp aborts with a connection timeout. Next, readTimeout is the maximum duration of inactivity allowed between two incoming bytes read from the socket. Crucially, **this is NOT the total download timeout**. A 100MB download taking 10 minutes will never trigger a `readTimeout` as long as data packets continue arriving within the configured threshold.
+Additionally, writeTimeout is the maximum duration of inactivity allowed when pushing bytes to the socket, essential during large multipart image or video uploads. Finally, with callTimeout, introduced in OkHttp 3.12 as an absolute upper bound for the **entire HTTP transaction**. It encompasses DNS, redirects, multi-hop proxy chains, authentication retries, and full body reading. If the entire operation exceeds this threshold, OkHttp immediately aborts the call.
 
-2. **`readTimeout`**: The maximum duration of inactivity allowed between two incoming bytes read from the socket. Crucially, **this is NOT the total download timeout**. A 100MB download taking 10 minutes will never trigger a `readTimeout` as long as data packets continue arriving within the configured threshold.
-
-3. **`writeTimeout`**: The maximum duration of inactivity allowed when pushing bytes to the socket, essential during large multipart image or video uploads.
-
-4. **`callTimeout`**: Introduced in OkHttp 3.12 as an absolute upper bound for the **entire HTTP transaction**. It encompasses DNS, redirects, multi-hop proxy chains, authentication retries, and full body reading. If the entire operation exceeds this threshold, OkHttp immediately aborts the call.
 
 ## Interview answer — deep senior
 
-From an error-handling and idempotency perspective, distinguishing between `connectTimeout` and `readTimeout` is vital in production:
+From an error-handling and idempotency perspective, distinguishing between `connectTimeout` and `readTimeout` is vital in production.
 
-- A **`connectTimeout`** guarantees that **the server never received the request**. The TCP connection never established. Retrying this request immediately (even a `POST` payment request) is 100% safe because no server state was altered.
-
-- A **`readTimeout`** guarantees that **the server received the request, and may have already committed the database transaction**. The socket timeout occurred only while waiting for the response. Retrying a `readTimeout` blindly on a non-idempotent endpoint risks duplicate operations and double charges.
+First, a **`connectTimeout`** guarantees that **the server never received the request**. The TCP connection never established. Retrying this request immediately (even a `POST` payment request) is 100% safe because no server state was altered. Finally, a **`readTimeout`** guarantees that **the server received the request, and may have already committed the database transaction**. The socket timeout occurred only while waiting for the response. Retrying a `readTimeout` blindly on a non-idempotent endpoint risks duplicate operations and double charges.
 
 Senior architectures treat `readTimeout` on mutating operations as an *uncertain state*, querying the server via an idempotency reconciliation check rather than issuing a raw retry.
+
 
 ## How to answer in the interview
 

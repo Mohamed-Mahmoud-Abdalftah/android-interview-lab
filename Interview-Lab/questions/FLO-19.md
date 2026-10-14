@@ -106,11 +106,13 @@ These three parameters configure the buffer mechanics and backpressure semantics
 
 **`onBufferOverflow`** configures backpressure behavior when the combined buffer is full. `BufferOverflow.SUSPEND` suspends `emit()` until downstream collectors catch up. `BufferOverflow.DROP_OLDEST` evicts the oldest buffered element to make room for the new one, enabling non-suspending `tryEmit()` to always succeed. `BufferOverflow.DROP_LATEST` discards the incoming item, preserving the existing buffer.
 
+
 ## Interview answer — deep senior
 
 At the internal implementation level, `SharedFlowImpl` allocates a continuous array of slots representing the buffer. A critical engineering requirement involves `tryEmit()`. `tryEmit()` is a non-suspending method to post events. If `onBufferOverflow` is set to `BufferOverflow.SUSPEND` (the default) and there are slow collectors or the buffer is saturated, **`tryEmit()` will return `false` and drop the event silently**!
 
 Therefore, in Android architecture, if you intend to dispatch events from synchronous callbacks using `tryEmit()` (such as view click listeners without launching a coroutine), you must configure `extraBufferCapacity >= 1` and `onBufferOverflow = BufferOverflow.DROP_OLDEST`. This guarantees that `tryEmit()` never fails and never drops events unexpectedly.
+
 
 ## How to answer in the interview
 

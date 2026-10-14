@@ -116,21 +116,18 @@ SharedPreferences is legacy synchronous storage prone to UI thread blocking and 
 
 ## Interview answer — structured
 
-Modern Android applications eliminate SharedPreferences entirely, choosing between DataStore and Room based on data structure complexity:
+Modern Android applications eliminate SharedPreferences entirely, choosing between DataStore and Room based on data structure complexity.
 
-1. **SharedPreferences (Legacy / Deprecated Practice)**: Reads entire XML files into memory synchronously on the UI thread, causing frames drops and ANRs. Write calls (`commit` blocks the main thread; `apply` blocks `onStop` in the Activity lifecycle). It lacks transactional safety, type safety, and reactive observation.
+First, with SharedPreferences (Legacy / Deprecated Practice), reads entire XML files into memory synchronously on the UI thread, causing frames drops and ANRs. Write calls (`commit` blocks the main thread; `apply` blocks `onStop` in the Activity lifecycle). It lacks transactional safety, type safety, and reactive observation. Next, with DataStore (Modern Preferences), built on Kotlin Coroutines and Flow. It operates strictly off the main thread (`Dispatchers.IO`), provides atomic transactional updates via ACID file snapshots, handles disk IO corruption gracefully, and offers compile-time type safety via Proto DataStore. It is ideal for user settings, feature flags, and auth tokens.
+Finally, a Room (Structured Relational Storage) is an enterprise SQLite abstraction. Provides compile-time SQL query validation, multi-table joins, relational indexing, schema migrations, and reactive `Flow` emissions triggered by database invalidation. It is the mandatory engine for complex offline-first data, feeds, and shopping carts.
 
-2. **DataStore (Modern Preferences)**: Built on Kotlin Coroutines and Flow. It operates strictly off the main thread (`Dispatchers.IO`), provides atomic transactional updates via ACID file snapshots, handles disk IO corruption gracefully, and offers compile-time type safety via Proto DataStore. It is ideal for user settings, feature flags, and auth tokens.
-
-3. **Room (Structured Relational Storage)**: An enterprise SQLite abstraction. Provides compile-time SQL query validation, multi-table joins, relational indexing, schema migrations, and reactive `Flow` emissions triggered by database invalidation. It is the mandatory engine for complex offline-first data, feeds, and shopping carts.
 
 ## Interview answer — deep senior
 
-Neither Room nor DataStore encrypt data on disk by default:
+Neither Room nor DataStore encrypt data on disk by default.
 
-- SharedPreferences and Preferences DataStore store plain text on disk under `/data/data/com.example/`. On rooted devices or via ADB backup, sensitive data can be read trivially.
+First, sharedPreferences and Preferences DataStore store plain text on disk under `/data/data/com.example/`. On rooted devices or via ADB backup, sensitive data can be read trivially. Finally, for **Sensitive Credentials (Auth Tokens, Cryptographic Keys)**, neither standard DataStore nor standard Room is sufficient. Secure architectures utilize **EncryptedSharedPreferences / Jetpack Security**, or store Master Keys in the **Android Keystore System** to encrypt DataStore payloads via Proto DataStore serialization, or configure **SQLCipher** for Room.
 
-- For **Sensitive Credentials (Auth Tokens, Cryptographic Keys)**, neither standard DataStore nor standard Room is sufficient. Secure architectures utilize **EncryptedSharedPreferences / Jetpack Security**, or store Master Keys in the **Android Keystore System** to encrypt DataStore payloads via Proto DataStore serialization, or configure **SQLCipher** for Room.
 
 ## How to answer in the interview
 

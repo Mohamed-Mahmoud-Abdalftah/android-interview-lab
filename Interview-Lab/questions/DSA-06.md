@@ -90,26 +90,20 @@ HashMap lookup is O(1) on average because a well-distributed hashCode maps keys 
 
 ## Interview answer — structured
 
-The performance characteristics of HashMap lookups derive from hash table bucket distribution:
+The performance characteristics of HashMap lookups derive from hash table bucket distribution.
 
-1. **Average Case — $O(1)$**:
-   - When keys provide a uniform hash distribution, computing `key.hashCode()` and modulating it against bucket array size yields a deterministic index. Because each bucket contains approximately $\le 1$ element on average (governed by the load factor, typically 0.75), retrieving the entry takes constant time $O(1)$.
+First, **Average Case — $O(1)$**. Next, when keys provide a uniform hash distribution, computing `key.hashCode()` and modulating it against bucket array size yields a deterministic index. Because each bucket contains approximately $\le 1$ element on average (governed by the load factor, typically 0.75), retrieving the entry takes constant time $O(1)$.
+**Worst Case in Java 7 — $O(n)$**. If all keys hash to the identical bucket index due to poor hash functions or deliberate hash collision attacks, all entries are stored in a single linked list. Finding an element requires linear traversal comparing keys via `equals()`, degrading lookup to $O(n)$.
+**Worst Case in Java 8+ / Modern ART — $O(\log n)$**. Finally, to prevent catastrophic degradation, modern runtimes introduce **bucket treeification**. When a bucket exceeds 8 entries (`TREEIFY_THRESHOLD`) and the table exceeds 64 buckets, the bucket converts from a singly-linked list into a balanced Red-Black tree (`TreeNode`), capping worst-case search complexity at $O(\log n)$.
 
-2. **Worst Case in Java 7 — $O(n)$**:
-   - If all keys hash to the identical bucket index due to poor hash functions or deliberate hash collision attacks, all entries are stored in a single linked list. Finding an element requires linear traversal comparing keys via `equals()`, degrading lookup to $O(n)$.
-
-3. **Worst Case in Java 8+ / Modern ART — $O(\log n)$**:
-   - To prevent catastrophic degradation, modern runtimes introduce **bucket treeification**. When a bucket exceeds 8 entries (`TREEIFY_THRESHOLD`) and the table exceeds 64 buckets, the bucket converts from a singly-linked list into a balanced Red-Black tree (`TreeNode`), capping worst-case search complexity at $O(\log n)$.
 
 ## Interview answer — deep senior
 
-From an Android performance and memory optimization standpoint, several nuances govern HashMaps:
+From an Android performance and memory optimization standpoint, several nuances govern HashMaps.
 
-1. **The Rehash Resize Penalty**: When the number of entries exceeds `capacity * loadFactor` (e.g. 16 * 0.75 = 12 entries), HashMap doubles its internal bucket array (e.g. 16 to 32) and rehashes every existing entry into new bucket positions. If inserting 100,000 items without an initial capacity, the map resizes ~14 times, producing massive garbage and execution spikes. Always specify initial capacity: `HashMap(expectedSize / 0.75f + 1)`.
+First, with The Rehash Resize Penalty, when the number of entries exceeds `capacity * loadFactor` (e.g. 16 * 0.75 = 12 entries), HashMap doubles its internal bucket array (e.g. 16 to 32) and rehashes every existing entry into new bucket positions. If inserting 100,000 items without an initial capacity, the map resizes ~14 times, producing massive garbage and execution spikes. Always specify initial capacity: `HashMap(expectedSize / 0.75f + 1)`. Next, with Mutable Key Mutation Trap, if an object is used as a HashMap key and its mutable properties change after insertion, its `hashCode()` changes. Calling `map[key]` computes a new bucket index, rendering the previously inserted value permanently unfindable (a silent memory leak).
+Finally, a Memory Footprint is a standard `HashMap` entry requires a `Node` object with 4 references (hash, key, value, next), taking 32 bytes on 64-bit ART plus the key and value objects themselves. For integer keys, `SparseArray` cuts this memory by over 60%.
 
-2. **Mutable Key Mutation Trap**: If an object is used as a HashMap key and its mutable properties change after insertion, its `hashCode()` changes. Calling `map[key]` computes a new bucket index, rendering the previously inserted value permanently unfindable (a silent memory leak).
-
-3. **Memory Footprint**: A standard `HashMap` entry requires a `Node` object with 4 references (hash, key, value, next), taking 32 bytes on 64-bit ART plus the key and value objects themselves. For integer keys, `SparseArray` cuts this memory by over 60%.
 
 ## How to answer in the interview
 

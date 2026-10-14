@@ -90,31 +90,23 @@ Structure your incident narrative using the STAR framework: quantify the blast r
 
 ## Interview answer — structured
 
-A compelling production incident narrative showcases technical calmness, operational rigor, and systemic ownership under pressure:
+A compelling production incident narrative showcases technical calmness, operational rigor, and systemic ownership under pressure.
 
-1. **Situation & Immediate Triage (STAR — Situation & Task)**:
-   - Frame a realistic, high-stakes scenario: e.g. a startup crash spiking during an active release cycle due to an unhandled Room database migration path affecting 5% of users. Quantify the business impact and user friction immediately.
+First, **Situation & Immediate Triage (STAR — Situation & Task)**. Next, frame a realistic, high-stakes scenario: e.g. A startup crash spiking during an active release cycle due to an unhandled Room database migration path affecting 5% of users. Quantify the business impact and user friction immediately.
+**Methodical Incident Containment (STAR — Action)**. Detail the systematic triage sequence.
+With Blast Radius Containment, immediately halt the Google Play staged rollout to prevent further user exposure. With Telemetry Forensics, inspect de-obfuscated Crashlytics breadcrumbs and device logs to isolate the exact commit introducing the defect.
+With Surgical Hotfix Isolation, branch directly from the production release tag (`hotfix/2.4.1`), write the missing database migration script, and accompany it with an automated test reproducing the upgrade failure. With Deployment & Verification, fast-track the signed build through the Internal Testing track, verify migration integrity, and submit an expedited production release to Google Play.
+**Business Impact & Permanent Safeguards (STAR — Result)**. Highlight metric restoration (crash-free rate returned to 99.95%).
+Finally, detail institutional prevention: host a blameless postmortem and implement automated CI gates (e.g. Running AndroidX `MigrationTestHelper` across all historical schema JSON exports on every PR touching Room entities).
 
-2. **Methodical Incident Containment (STAR — Action)**:
-   - Detail the systematic triage sequence:
-     - **Blast Radius Containment**: Immediately halt the Google Play staged rollout to prevent further user exposure.
-     - **Telemetry Forensics**: Inspect de-obfuscated Crashlytics breadcrumbs and device logs to isolate the exact commit introducing the defect.
-     - **Surgical Hotfix Isolation**: Branch directly from the production release tag (`hotfix/2.4.1`), write the missing database migration script, and accompany it with an automated test reproducing the upgrade failure.
-     - **Deployment & Verification**: Fast-track the signed build through the Internal Testing track, verify migration integrity, and submit an expedited production release to Google Play.
-
-3. **Business Impact & Permanent Safeguards (STAR — Result)**:
-   - Highlight metric restoration (crash-free rate returned to 99.95%).
-   - Detail institutional prevention: host a blameless postmortem and implement automated CI gates (e.g. running AndroidX `MigrationTestHelper` across all historical schema JSON exports on every PR touching Room entities).
 
 ## Interview answer — deep senior
 
-From an engineering leadership and executive communication angle, owning an incident demonstrates character:
+From an engineering leadership and executive communication angle, owning an incident demonstrates character.
 
-1. **Radical Ownership vs. Defensiveness**: Never deflect blame onto third-party libraries, QA testers, or junior developers. State clearly: 'As the technical lead, I owned the deployment gate, and our automated testing framework failed to catch the regression.' Taking radical ownership builds immense credibility with interviewers.
+First, with Radical Ownership vs. Defensiveness, never deflect blame onto third-party libraries, QA testers, or junior developers. State clearly: 'As the technical lead, I owned the deployment gate, and our automated testing framework failed to catch the regression.' Taking radical ownership builds immense credibility with interviewers. Next, with Communication Cadence During Sev-1 Outages, describe how you managed cross-functional stakeholders during the crisis. Establishing a dedicated incident Slack bridge, updating Product and Customer Support every 30 minutes with factual progress, and shielding the core engineering triage team from executive noise illustrates true leadership.
+Finally, with Long-Term Architectural Hardening, beyond immediate bug fixes, explain how the incident triggered deeper platform resilience: e.g., decoupling critical startup initialization tasks so a single module crash does not bring down the entire Android process.
 
-2. **Communication Cadence During Sev-1 Outages**: Describe how you managed cross-functional stakeholders during the crisis. Establishing a dedicated incident Slack bridge, updating Product and Customer Support every 30 minutes with factual progress, and shielding the core engineering triage team from executive noise illustrates true leadership.
-
-3. **Long-Term Architectural Hardening**: Beyond immediate bug fixes, explain how the incident triggered deeper platform resilience: e.g., decoupling critical startup initialization tasks so a single module crash does not bring down the entire Android process.
 
 ## How to answer in the interview
 

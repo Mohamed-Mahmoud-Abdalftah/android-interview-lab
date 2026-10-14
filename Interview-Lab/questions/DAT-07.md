@@ -96,30 +96,25 @@ An offline-first application treats local persistence (Room) as the single sourc
 
 ## Interview answer — structured
 
-An offline-first architecture treats network connectivity as an intermittent enhancement rather than a prerequisite for app operation:
+An offline-first architecture treats network connectivity as an intermittent enhancement rather than a prerequisite for app operation.
 
-1. **Read Pipeline (Single Source of Truth)**:
-   - The presentation layer never queries the network directly. UI screens observe Room database entities via reactive Kotlin `Flow`.
-   - Network fetches occur asynchronously in the background. Fresh payloads are written directly into Room. Room's invalidation triggers automatic UI updates.
+First, **Read Pipeline (Single Source of Truth)**. Next, the presentation layer never queries the network directly. UI screens observe Room database entities via reactive Kotlin `Flow`.
+Network fetches occur asynchronously in the background. Fresh payloads are written directly into Room. Room's invalidation triggers automatic UI updates. **Write Pipeline (Optimistic Local Writes)**.
+User mutations (e.g. Creating a comment or editing an order) are immediately committed to Room with a local status (`SyncStatus.PENDING`) and a deterministic client UUID. The UI reflects the change in single-digit milliseconds, eliminating network spinners.
+A durable background synchronizer (`WorkManager`) observes network constraints, queues pending mutations, and submits them to the backend with idempotency headers. Finally, with Resilience Across Process Death, because pending edits live in persistent SQLite storage, killing the app or rebooting the phone does not lose user changes; syncing resumes automatically when connectivity restores.
 
-2. **Write Pipeline (Optimistic Local Writes)**:
-   - User mutations (e.g. creating a comment or editing an order) are immediately committed to Room with a local status (`SyncStatus.PENDING`) and a deterministic client UUID.
-   - The UI reflects the change in single-digit milliseconds, eliminating network spinners.
-   - A durable background synchronizer (`WorkManager`) observes network constraints, queues pending mutations, and submits them to the backend with idempotency headers.
-
-3. **Resilience Across Process Death**: Because pending edits live in persistent SQLite storage, killing the app or rebooting the phone does not lose user changes; syncing resumes automatically when connectivity restores.
 
 ## Interview answer — deep senior
 
 The foundational engineering challenge of offline-first systems is **Reconciliation and Conflict Resolution**.
 
-When multiple devices edit the same entity offline, local and remote states inevitably diverge. A production offline-first engine must define an explicit conflict resolution policy:
+When multiple devices edit the same entity offline, local and remote states inevitably diverge. A production offline-first engine must define an explicit conflict resolution policy.
 
-- **Server-Wins / Timestamp-based (Last-Write-Wins - LWW)**: Simple but risks silent data loss if device clocks drift.
-- **Entity Version Vectors / ETags**: The client sends its base version. If the server's version has advanced, the server rejects the write with HTTP 409 Conflict.
-- **Field-Level 3-Way Merging**: Merging non-overlapping field edits (e.g., Device A updated `shippingAddress`, Device B updated `phoneNumber`).
+First, with Server-Wins / Timestamp-based (Last-Write-Wins - LWW), simple but risks silent data loss if device clocks drift. Next, entity Version Vectors / ETags is the client sends its base version. If the server's version has advanced, the server rejects the write with HTTP 409 Conflict.
+Finally, with Field-Level 3-Way Merging, merging non-overlapping field edits (e.g., Device A updated `shippingAddress`, Device B updated `phoneNumber`).
 
 Furthermore, for financial or inventory transactions, offline actions cannot be treated as definitive; they are modeled as **Intentions/Drafts** pending backend settlement.
+
 
 ## How to answer in the interview
 

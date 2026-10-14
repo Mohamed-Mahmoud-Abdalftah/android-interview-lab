@@ -48,15 +48,22 @@ const required = [
   'lab/practice/index.html',
   'lab/questions/kot-01/index.html',
   'lab/questions/pay-15/index.html',
+  'ar/index.html',
+  'ar/lab/index.html',
+  'ar/lab/questions/kot-01/index.html',
+  'ar/lab/questions/pay-15/index.html',
 ];
 
 for (const name of required) {
   if (!(await exists(join(dist, name)))) errors.push(`missing required output: ${name}`);
 }
 
-const home = await readFile(join(dist, 'index.html'), 'utf8');
-if (!/<html[^>]+lang="ar-EG"[^>]+dir="rtl"/.test(home)) errors.push('home page must render lang="ar-EG" and dir="rtl"');
-if (!home.includes('Android Interview Lab')) errors.push('home page is missing the product title');
+const homeEn = await readFile(join(dist, 'index.html'), 'utf8');
+const homeAr = await readFile(join(dist, 'ar/index.html'), 'utf8');
+if (!/<html[^>]+lang="en"[^>]+dir="ltr"/.test(homeEn)) errors.push('English root home page must render lang="en" and dir="ltr"');
+if (!/<html[^>]+lang="ar-EG"[^>]+dir="rtl"/.test(homeAr)) errors.push('Arabic home page must render lang="ar-EG" and dir="rtl"');
+if (!homeEn.includes('Android Interview Lab')) errors.push('English home page is missing the product title');
+if (!homeAr.includes('Android Interview Lab')) errors.push('Arabic home page is missing the product title');
 
 for (const htmlPath of htmlFiles) {
   const html = await readFile(htmlPath, 'utf8');
@@ -79,6 +86,8 @@ for (const htmlPath of htmlFiles) {
 
 const labPages = htmlFiles.filter((name) => relative(dist, name).startsWith('lab/questions/'));
 if (labPages.length !== 485) errors.push(`expected 485 canonical question routes; found ${labPages.length}`);
+const labPagesAr = htmlFiles.filter((name) => relative(dist, name).startsWith('ar/lab/questions/'));
+if (labPagesAr.length !== 485) errors.push(`expected 485 Arabic canonical question routes; found ${labPagesAr.length}`);
 if (htmlFiles.length < 1300) errors.push(`expected at least 1300 rendered pages; found ${htmlFiles.length}`);
 
 if (errors.length) {
@@ -86,5 +95,5 @@ if (errors.length) {
   errors.slice(0, 50).forEach((error) => console.error(`- ${error}`));
   process.exitCode = 1;
 } else {
-  console.log(`Static site verified: ${htmlFiles.length} HTML pages, required routes, RTL root, and internal links.`);
+  console.log(`Static site verified: ${htmlFiles.length} HTML pages, bilingual EN/AR routes, and internal links.`);
 }

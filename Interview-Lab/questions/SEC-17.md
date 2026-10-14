@@ -97,25 +97,19 @@ Protect sensitive buffers by minimizing allocations, processing data strictly as
 
 ## Interview answer — structured
 
-Minimizing sensitive memory residence time requires controlling the allocation and lifecycle of byte buffers:
+Minimizing sensitive memory residence time requires controlling the allocation and lifecycle of byte buffers.
 
-1. **Eliminate Intermediate String Copies**: Strings cannot be mutated or wiped programmatically. Avoid transforming credentials into `String` representations. Handle inputs as `ByteArray` or `CharArray` from entry point to crypto consumer.
+First, with Eliminate Intermediate String Copies, strings cannot be mutated or wiped programmatically. Avoid transforming credentials into `String` representations. Handle inputs as `ByteArray` or `CharArray` from entry point to crypto consumer. Next, with Deterministic Memory Zeroization, in Java/Kotlin, always execute cleanup inside a `finally` block using `Arrays.fill(bytes, 0.toByte())`. This ensures that even if an exception occurs during processing, the sensitive buffer is overwritten with zeroes before execution leaves the scope.
+Additionally, with Direct Byte Buffers, `ByteBuffer.allocateDirect()` allocates memory outside the standard JVM managed heap. This bypasses ART moving garbage collectors, preventing unzeroed duplicate copies from lingering in fragmented memory blocks. Finally, with Isolated Process Lifecycle, for extreme risk profiles (e.g., signing hardware transactions or decrypting seed phrases), launch a transient private Android Service marked with `android:isolatedProcess="true"`. Once the computation concludes, kill the process with `Process.killProcess(Process.myPid())`, forcing the Linux kernel to reclaim and unmap the entire address space.
 
-2. **Deterministic Memory Zeroization**: In Java/Kotlin, always execute cleanup inside a `finally` block using `Arrays.fill(bytes, 0.toByte())`. This ensures that even if an exception occurs during processing, the sensitive buffer is overwritten with zeroes before execution leaves the scope.
-
-3. **Direct Byte Buffers**: `ByteBuffer.allocateDirect()` allocates memory outside the standard JVM managed heap. This bypasses ART moving garbage collectors, preventing unzeroed duplicate copies from lingering in fragmented memory blocks.
-
-4. **Isolated Process Lifecycle**: For extreme risk profiles (e.g., signing hardware transactions or decrypting seed phrases), launch a transient private Android Service marked with `android:isolatedProcess="true"`. Once the computation concludes, kill the process with `Process.killProcess(Process.myPid())`, forcing the Linux kernel to reclaim and unmap the entire address space.
 
 ## Interview answer — deep senior
 
-From an OS internals perspective, managing memory exposure in managed runtimes faces architectural challenges:
+From an OS internals perspective, managing memory exposure in managed runtimes faces architectural challenges.
 
-1. **Compiler Optimization Hazards (Dead Store Elimination)**: In native C/C++ code, standard compilers often optimize away calls like `memset()` if the variable is not referenced subsequently. Production native libraries must use `explicit_bzero()` or volatile pointer loops to guarantee that the wiping operation is physically executed in hardware cache.
+First, with Compiler Optimization Hazards (Dead Store Elimination), in native C/C++ code, standard compilers often optimize away calls like `memset()` if the variable is not referenced subsequently. Production native libraries must use `explicit_bzero()` or volatile pointer loops to guarantee that the wiping operation is physically executed in hardware cache. Next, with Swap and Linux OOM Killer, Android devices utilize `zRAM` (compressed RAM swap) to manage memory pressure. If sensitive unencrypted memory pages are compressed and swapped to zRAM before zeroization, copies persist in compressed system swap partitions. Allocating small buffers and wiping them in millisecond timeframes reduces the probability of a page being selected for compaction.
+Finally, a Hardware Keystore Offloading is the ultimate mitigation is ensuring the secret never enters application memory at all. By delegating key generation, signing, and decryption entirely to Android Keystore and the hardware Secure Element (StrongBox), zero private key bytes ever touch user-space RAM.
 
-2. **Swap and Linux OOM Killer**: Android devices utilize `zRAM` (compressed RAM swap) to manage memory pressure. If sensitive unencrypted memory pages are compressed and swapped to zRAM before zeroization, copies persist in compressed system swap partitions. Allocating small buffers and wiping them in millisecond timeframes reduces the probability of a page being selected for compaction.
-
-3. **Hardware Keystore Offloading**: The ultimate mitigation is ensuring the secret never enters application memory at all. By delegating key generation, signing, and decryption entirely to Android Keystore and the hardware Secure Element (StrongBox), zero private key bytes ever touch user-space RAM.
 
 ## How to answer in the interview
 

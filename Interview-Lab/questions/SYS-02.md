@@ -111,33 +111,23 @@ Design a scalable multi-feature app by splitting features into separate :api and
 
 ## Interview answer — structured
 
-Scaling an Android codebase across multiple autonomous engineering teams requires decoupling compilation and architectural boundaries:
+Scaling an Android codebase across multiple autonomous engineering teams requires decoupling compilation and architectural boundaries.
 
-1. **The Feature API / Implementation Separation**:
-   - Split each business domain into two modules: `:feature:name:api` and `:feature:name:impl`.
-   - The `:api` module exposes public interfaces, navigation arguments, and lightweight data contracts. Other features depend strictly on `:api`.
-   - The `:impl` module contains internal composables, ViewModels, and data repositories. No other module depends directly on `:impl`.
+First, **The Feature API / Implementation Separation**. Next, split each business domain into two modules: `:feature:name:api` and `:feature:name:impl`.
+The `:api` module exposes public interfaces, navigation arguments, and lightweight data contracts. Other features depend strictly on `:api`. The `:impl` module contains internal composables, ViewModels, and data repositories. No other module depends directly on `:impl`.
+**Layered Module Hierarchy**. With App Layer (`:app`), thin application orchestrator that includes all `:impl` modules and wires Dagger/Hilt dependency graphs.
+**Feature Layer (`:feature:*`)**: Isolated vertical slices owning specific user journeys. **Core Layer (`:core:*`)**: Horizontal building blocks (`:core:network`, `:core:database`, `:core:designsystem`, `:core:common`).
+**Decoupled Navigation & Communication**. Features navigate to other features via exposed entry-point interfaces or typed deep link contracts, eliminating direct cross-feature class imports.
+**Build Performance Optimization**. Finally, decoupled modules leverage Gradle build caching, parallel execution, and configuration caching, preventing full-project recompilations when a single feature changes.
 
-2. **Layered Module Hierarchy**:
-   - **App Layer (`:app`)**: Thin application orchestrator that includes all `:impl` modules and wires Dagger/Hilt dependency graphs.
-   - **Feature Layer (`:feature:*`)**: Isolated vertical slices owning specific user journeys.
-   - **Core Layer (`:core:*`)**: Horizontal building blocks (`:core:network`, `:core:database`, `:core:designsystem`, `:core:common`).
-
-3. **Decoupled Navigation & Communication**:
-   - Features navigate to other features via exposed entry-point interfaces or typed deep link contracts, eliminating direct cross-feature class imports.
-
-4. **Build Performance Optimization**:
-   - Decoupled modules leverage Gradle build caching, parallel execution, and configuration caching, preventing full-project recompilations when a single feature changes.
 
 ## Interview answer — deep senior
 
-From an organizational and platform engineering perspective, modularization must be protected by governance tooling:
+From an organizational and platform engineering perspective, modularization must be protected by governance tooling.
 
-1. **Enforcing Dependency Direction via Tooling**: Architecture rules rot without automated guardrails. Use Gradle plugins like `dependency-analysis-android-plugin` or custom ArchUnit/Konsist tests to enforce that no feature module ever imports another feature's `:impl` module, and that `:core` modules never depend on `:feature` modules.
+First, with Enforcing Dependency Direction via Tooling, architecture rules rot without automated guardrails. Use Gradle plugins like `dependency-analysis-android-plugin` or custom ArchUnit/Konsist tests to enforce that no feature module ever imports another feature's `:impl` module, and that `:core` modules never depend on `:feature` modules. Next, with Independent Standalone Sample Apps, each major feature module should maintain a lightweight `:feature:name:sample` runnable app module. Developers on the checkout team can run and iterate on their feature in isolation within 5 seconds without compiling the remaining 50 features of the monolithic app.
+Finally, with Binary Dependency Substitution, in mega-apps (100+ engineers), build times can be further reduced by substituting local module projects with pre-compiled AAR artifacts hosted on an internal Maven cache for modules outside the engineer's active feature domain.
 
-2. **Independent Standalone Sample Apps**: Each major feature module should maintain a lightweight `:feature:name:sample` runnable app module. Developers on the checkout team can run and iterate on their feature in isolation within 5 seconds without compiling the remaining 50 features of the monolithic app.
-
-3. **Binary Dependency Substitution**: In mega-apps (100+ engineers), build times can be further reduced by substituting local module projects with pre-compiled AAR artifacts hosted on an internal Maven cache for modules outside the engineer's active feature domain.
 
 ## How to answer in the interview
 

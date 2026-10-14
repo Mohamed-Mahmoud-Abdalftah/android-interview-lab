@@ -80,6 +80,7 @@ In Android, we use higher-order functions constantly for UI callbacks, asynchron
 
 The critical engineering nuance is memory allocation. On the JVM, a lambda is compiled into an instance of a Function interface like Function1. If that lambda captures a local variable from the surrounding scope, a new heap allocation occurs on every invocation. To prevent garbage collection churn, standard collection operators use the inline modifier, which copies the lambda bytecode directly into the call site.
 
+
 ## Interview answer — deep senior
 
 Under the hood, Kotlin's function types like (Int) -> String compile to generic JVM interfaces: kotlin.jvm.functions.Function1<Integer, String>. When you invoke the lambda, the JVM executes its invoke() virtual method.
@@ -87,6 +88,7 @@ Under the hood, Kotlin's function types like (Int) -> String compile to generic 
 The memory characteristics depend on variable capture. A stateless lambda that references no external variables is instantiated once as a singleton object. However, if the lambda captures a variable from its outer scope—creating a closure—the compiler generates an anonymous class that holds a reference to that captured variable. If the captured variable is a mutable var, the compiler wraps it in a synthetic Ref.ObjectRef container on the heap. This causes object allocations on every execution.
 
 This is why the inline modifier is so fundamental in Kotlin. Inlining tells the compiler to replace the higher-order function call and its lambda argument with actual inline bytecode, completely eliminating the FunctionN object instantiation and virtual call overhead. In production Android apps, we inline utility higher-order functions that take lambdas, and we avoid creating closures inside hot rendering loops or frame drawing callbacks.
+
 
 ## How to answer in the interview
 

@@ -98,30 +98,22 @@ Achieve payment observability without PCI-DSS violations by logging semantic sta
 
 ## Interview answer — structured
 
-Observability in financial applications must balance deep diagnostic telemetry with non-negotiable PCI-DSS compliance:
+Observability in financial applications must balance deep diagnostic telemetry with non-negotiable PCI-DSS compliance.
 
-1. **PCI-DSS Requirement 3 Prohibitions**:
-   - Explicitly forbids storing or transmitting sensitive authentication data (SAD) post-authorization: full Magnetic Stripe Track data, CVV/CVC codes, and PIN blocks. Full Primary Account Numbers (PAN) must be masked to a maximum of the first 6 digits (BIN) and last 4 digits (`411122******1111`).
+First, **PCI-DSS Requirement 3 Prohibitions**. Next, explicitly forbids storing or transmitting sensitive authentication data (SAD) post-authorization: full Magnetic Stripe Track data, CVV/CVC codes, and PIN blocks. Full Primary Account Numbers (PAN) must be masked to a maximum of the first 6 digits (BIN) and last 4 digits (`411122******1111`).
+**Safe Semantic Telemetry Architecture**. Structure logs around high-level business milestones rather than raw payloads.
+`EVENT_EMV_INITIATED`: Correlation ID, reader type, battery level. `EVENT_CARD_PRESENTED`: Tech type (Contactless/NFC vs Chip), Card Scheme (Visa/Mastercard), Masked PAN.
+`EVENT_ONLINE_AUTHORIZATION`: Gateway latency, response codes (ISO 8583 Field 39: `00 Approved`). **Automated Defensive Scrubbing**.
+Finally, implement custom logging trees (e.g., Timber/Logback filters) configured with regex patterns that detect high-entropy digit sequences and Luhn-valid card numbers, automatically redacting violations before outputting to Logcat or cloud aggregators.
 
-2. **Safe Semantic Telemetry Architecture**:
-   - Structure logs around high-level business milestones rather than raw payloads:
-     - `EVENT_EMV_INITIATED`: Correlation ID, reader type, battery level.
-     - `EVENT_CARD_PRESENTED`: Tech type (Contactless/NFC vs Chip), Card Scheme (Visa/Mastercard), Masked PAN.
-     - `EVENT_ONLINE_AUTHORIZATION`: Gateway latency, response codes (ISO 8583 Field 39: `00 Approved`).
-
-3. **Automated Defensive Scrubbing**:
-   - Implement custom logging trees (e.g., Timber/Logback filters) configured with regex patterns that detect high-entropy digit sequences and Luhn-valid card numbers, automatically redacting violations before outputting to Logcat or cloud aggregators.
 
 ## Interview answer — deep senior
 
-From an enterprise audit and zero-trust security architecture perspective, observability requires hardened pipelines:
+From an enterprise audit and zero-trust security architecture perspective, observability requires hardened pipelines.
 
-1. **Production Logcat Redaction via R8**: In production release builds, stripping Logcat logging via ProGuard rules (`-assumenosideeffects class android.util.Log { *; }`) is mandatory. Even non-sensitive logs left in production Logcat can be read by malicious side-loaded apps on non-rooted Android 12+ devices via `adb logcat`.
+First, with Production Logcat Redaction via R8, in production release builds, stripping Logcat logging via ProGuard rules (`-assumenosideeffects class android.util.Log { *; }`) is mandatory. Even non-sensitive logs left in production Logcat can be read by malicious side-loaded apps on non-rooted Android 12+ devices via `adb logcat`. Next, with Encrypted In-Memory Telemetry Ring Buffers, when diagnosing rare transient hardware crashes in the field, maintain a rolling, in-memory circular buffer of the last 100 sanitized diagnostic events. If an unhandled exception or crash occurs, attach this sanitized ring buffer to the Crashlytics non-fatal exception report.
+**PCI Point-to-Point Encryption (P2PE)**. Finally, on certified Smart POS terminals, card data is encrypted directly at the hardware Secure Read Head (SCR) before hitting Android OS RAM. The Android app only receives an opaque encrypted blob (P2PE payload); it literally never possesses the raw PAN, rendering accidental memory leaks physically impossible.
 
-2. **Encrypted In-Memory Telemetry Ring Buffers**: When diagnosing rare transient hardware crashes in the field, maintain a rolling, in-memory circular buffer of the last 100 sanitized diagnostic events. If an unhandled exception or crash occurs, attach this sanitized ring buffer to the Crashlytics non-fatal exception report.
-
-3. **PCI Point-to-Point Encryption (P2PE)**:
-   - On certified Smart POS terminals, card data is encrypted directly at the hardware Secure Read Head (SCR) before hitting Android OS RAM. The Android app only receives an opaque encrypted blob (P2PE payload); it literally never possesses the raw PAN, rendering accidental memory leaks physically impossible.
 
 ## How to answer in the interview
 

@@ -115,6 +115,7 @@ suspend fun fetchDashboardData(): DashboardData = coroutineScope {
 
 If `api.getUser()` fails with a NetworkException, structured concurrency guarantees that the failure propagates to `coroutineScope`. The scope cancels itself and immediately sends cancellation signals to `config` and `feed`, aborting their HTTP connections and rethrowing the initial exception to the caller.
 
+
 ## Interview answer — deep senior
 
 Under the hood, when `user` throws an exception, it triggers `parent.childCancelled(cause)`. The parent `coroutineScope` transitions into the `CANCELLING` state and traverses its child list, invoking `child.cancel(CancellationException(cause))` on `config` and `feed`. If OkHttp or Ktor is used, the underlying HTTP socket connection is immediately closed and its read loop is interrupted.
@@ -122,6 +123,7 @@ Under the hood, when `user` throws an exception, it triggers `parent.childCancel
 If one of the sibling coroutines also throws an exception while being cancelled, `coroutineScope` collects that secondary exception and adds it to the root cause via `Throwable.addSuppressed()`. This preserves full diagnostic logging in Crashlytics.
 
 Do NOT use `supervisorScope` for this use case: a supervisor scope would isolate the failure, allowing the remaining two calls to complete and waste bandwidth on a request that has already fundamentally failed.
+
 
 ## How to answer in the interview
 

@@ -126,29 +126,21 @@ Guarantee eventual reversal delivery without duplicates by implementing a persis
 
 ## Interview answer — structured
 
-Guaranteeing eventual delivery of financial reversals during network blackouts relies on the Store-and-Forward (SaF) architecture:
+Guaranteeing eventual delivery of financial reversals during network blackouts relies on the Store-and-Forward (SaF) architecture.
 
-1. **Store-and-Forward (SaF) Architecture**:
-   - When an in-doubt transaction requires reversal while offline, the client durably writes the immutable reversal payload to a local SQLite `reversal_queue` table before acknowledging the failure to the UI.
+First, **Store-and-Forward (SaF) Architecture**. Next, when an in-doubt transaction requires reversal while offline, the client durably writes the immutable reversal payload to a local SQLite `reversal_queue` table before acknowledging the failure to the UI.
+**Resilient WorkManager Orchestration**. Enqueue a unique WorkManager background task (`ExistingWorkPolicy.KEEP`) configured with a `NetworkType.CONNECTED` constraint and `BackoffPolicy.EXPONENTIAL`. WorkManager guarantees OS-level persistent execution attempts once connectivity is restored, surviving device reboots and app closures.
+**Duplicate Prevention via Server Idempotency**. The outbound reversal message carries the immutable `original_transaction_id` and a unique `reversal_id`. The acquiring gateway treats the reversal idempotently: if the reversal was already processed by a prior retry, the host returns an HTTP 200 / ISO 8583 Code 00 success response rather than flagging a duplicate error.
+**Atomic Dequeue on Acknowledged Delivery**. Finally, the local queue entry is deleted from SQLite only upon receiving an explicit confirmation (HTTP 200 / ISO approved) from the gateway. If a network drop occurs during response delivery, the subsequent retry safely dedupes on the server.
 
-2. **Resilient WorkManager Orchestration**:
-   - Enqueue a unique WorkManager background task (`ExistingWorkPolicy.KEEP`) configured with a `NetworkType.CONNECTED` constraint and `BackoffPolicy.EXPONENTIAL`. WorkManager guarantees OS-level persistent execution attempts once connectivity is restored, surviving device reboots and app closures.
-
-3. **Duplicate Prevention via Server Idempotency**:
-   - The outbound reversal message carries the immutable `original_transaction_id` and a unique `reversal_id`. The acquiring gateway treats the reversal idempotently: if the reversal was already processed by a prior retry, the host returns an HTTP 200 / ISO 8583 Code 00 success response rather than flagging a duplicate error.
-
-4. **Atomic Dequeue on Acknowledged Delivery**:
-   - The local queue entry is deleted from SQLite only upon receiving an explicit confirmation (HTTP 200 / ISO approved) from the gateway. If a network drop occurs during response delivery, the subsequent retry safely dedupes on the server.
 
 ## Interview answer — deep senior
 
-From an ISO 8583 financial interchange and settlement perspective, SaF engines must handle protocol edge cases:
+From an ISO 8583 financial interchange and settlement perspective, SaF engines must handle protocol edge cases.
 
-1. **Reversal Expiration Windows (The 24-Hour Settlement Cutoff)**: If a POS terminal remains disconnected in an offline van for 4 days, issuing an ISO 8583 reversal against an authorization that was settled 3 days ago will be rejected with `Response Code 94: Duplicate or Expired`. High-reliability fintech apps implement time-to-live (TTL) checks: reversals older than the acquiring cutoff transition into a `DISPUTE_RECONCILIATION_REQUIRED` state for human back-office settlement.
+First, with Reversal Expiration Windows (The 24-Hour Settlement Cutoff), if a POS terminal remains disconnected in an offline van for 4 days, issuing an ISO 8583 reversal against an authorization that was settled 3 days ago will be rejected with `Response Code 94: Duplicate or Expired`. High-reliability fintech apps implement time-to-live (TTL) checks: reversals older than the acquiring cutoff transition into a `DISPUTE_RECONCILIATION_REQUIRED` state for human back-office settlement. Next, with Jittered Backoff to Prevent Server DDOS, when an airport or shopping mall Wi-Fi network reconnects after an outage, thousands of POS devices fire reversal retries simultaneously (the Thundering Herd Problem). WorkManager's exponential backoff applies randomized jitter to spread connection spikes smoothly over time.
+Finally, with Terminal Pre-Flight Blocker, as mandated in EMV certification, the terminal must prioritize flushing the offline reversal queue before permitting cashiers to initiate new customer sales, guaranteeing ledger synchronization.
 
-2. **Jittered Backoff to Prevent Server DDOS**: When an airport or shopping mall Wi-Fi network reconnects after an outage, thousands of POS devices fire reversal retries simultaneously (the Thundering Herd Problem). WorkManager's exponential backoff applies randomized jitter to spread connection spikes smoothly over time.
-
-3. **Terminal Pre-Flight Blocker**: As mandated in EMV certification, the terminal must prioritize flushing the offline reversal queue before permitting cashiers to initiate new customer sales, guaranteeing ledger synchronization.
 
 ## How to answer in the interview
 

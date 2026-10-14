@@ -102,25 +102,20 @@ Native code in .so files is disassembled into readable C pseudocode using Ghidra
 
 ## Interview answer — structured
 
-Compiling security logic into C/C++ `.so` files using the Android NDK raises reverse engineering difficulty compared to DEX bytecode, but does not provide confidentiality:
+Compiling security logic into C/C++ `.so` files using the Android NDK raises reverse engineering difficulty compared to DEX bytecode, but does not provide confidentiality.
 
-1. **Static Analysis of ELF Binaries**: Reverse engineers analyze shared libraries using disassemblers like Ghidra, IDA Pro, and Binary Ninja. String constants reside in the `.rodata` segment, readable instantly via the `strings` utility. Standard exported JNI functions (`Java_com_example_...`) are mapped directly in the ELF export table, providing clear starting points for decompilation.
+First, with Static Analysis of ELF Binaries, reverse engineers analyze shared libraries using disassemblers like Ghidra, IDA Pro, and Binary Ninja. String constants reside in the `.rodata` segment, readable instantly via the `strings` utility. Standard exported JNI functions (`Java_com_example_...`) are mapped directly in the ELF export table, providing clear starting points for decompilation. Next, with Dynamic Instrumentation with Frida, frida attaches directly to native memory address spaces via `Interceptor.attach()`. Attackers hook exported functions or specific instruction offsets in memory, inspect CPU registers (`x0`, `x1` on ARM64), read decrypted payloads, and alter return values.
+**Hardening Techniques**. With Dynamic Registration, register native methods dynamically in `JNI_OnLoad` via `RegisterNatives()`. This prevents exposing explicit package-mangled function names in the dynamic symbol table.
+Finally, with Symbol Stripping, ensure `strip --strip-all` is configured in CMake/NDK build scripts to remove debugging symbols.
 
-2. **Dynamic Instrumentation with Frida**: Frida attaches directly to native memory address spaces via `Interceptor.attach()`. Attackers hook exported functions or specific instruction offsets in memory, inspect CPU registers (`x0`, `x1` on ARM64), read decrypted payloads, and alter return values.
-
-3. **Hardening Techniques**:
-   - **Dynamic Registration**: Register native methods dynamically in `JNI_OnLoad` via `RegisterNatives()`. This prevents exposing explicit package-mangled function names in the dynamic symbol table.
-   - **Symbol Stripping**: Ensure `strip --strip-all` is configured in CMake/NDK build scripts to remove debugging symbols.
 
 ## Interview answer — deep senior
 
-From an offensive security perspective, relying on native code for client security is classic security-through-obscurity:
+From an offensive security perspective, relying on native code for client security is classic security-through-obscurity.
 
-1. **Automated Decompilation Fidelity**: Modern decompilers reconstruct control flow graphs, loop structures, and type inferences for ARM64 ELF binaries with remarkable accuracy. While decompiled C is harder to read than decompiled Kotlin, an experienced analyst can locate cryptographic transformations and key derivations within hours.
+First, with Automated Decompilation Fidelity, modern decompilers reconstruct control flow graphs, loop structures, and type inferences for ARM64 ELF binaries with remarkable accuracy. While decompiled C is harder to read than decompiled Kotlin, an experienced analyst can locate cryptographic transformations and key derivations within hours. Next, with Anti-Debugging & Ptrace Limitations, native libraries often attempt anti-debugging by invoking `ptrace(PTRACE_TRACEME, 0, 1, 0)` or monitoring `/proc/self/status` for `TracerPid`. However, dynamic instrumentation engines (e.g. Frida / Gum) do not rely on standard gdb `ptrace` mechanisms, bypassing these checks unless specialized kernel-level hooks are implemented.
+Finally, with Architectural Rule, use native C/C++ libraries for performance, cross-platform audio/graphics engines, or low-level cryptographic algorithm execution. Never use native code as an alleged secure vault for private API keys or unverified business decisions.
 
-2. **Anti-Debugging & Ptrace Limitations**: Native libraries often attempt anti-debugging by invoking `ptrace(PTRACE_TRACEME, 0, 1, 0)` or monitoring `/proc/self/status` for `TracerPid`. However, dynamic instrumentation engines (e.g. Frida / Gum) do not rely on standard gdb `ptrace` mechanisms, bypassing these checks unless specialized kernel-level hooks are implemented.
-
-3. **Architectural Rule**: Use native C/C++ libraries for performance, cross-platform audio/graphics engines, or low-level cryptographic algorithm execution. Never use native code as an alleged secure vault for private API keys or unverified business decisions.
 
 ## How to answer in the interview
 

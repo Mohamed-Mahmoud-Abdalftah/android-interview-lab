@@ -117,13 +117,11 @@ Map technical errors into actionable UI errors through layer boundaries: Data ma
 
 Transforming raw technical failures into actionable user experiences is a benchmark of enterprise architecture.
 
-1. **Data Layer Translation**: Data sources catch raw platform exceptions (`HttpException`, `SocketTimeoutException`, `SQLiteConstraintException`) and convert them into strongly typed **Domain Errors** (e.g. `DataError.Network.Timeout`, `DataError.Auth.Unauthorized`). Raw stack traces and HTTP status codes must never cross into presentation.
-
-2. **Presentation Layer Mapping**: The ViewModel maps domain errors into a presentation-centric model: the **Actionable UI Error**:
-   - **Localized Message**: Encapsulated using a `UiText` wrapper (`UiText.StringResource(R.string.error_no_internet)`), allowing the ViewModel to stay pure and Context-free while supporting instant language changes.
-   - **Recovery Action**: Every error must empower the user with an actionable recourse—such as a 'Retry' button, 'Re-authenticate' redirect, or 'Check Settings' link.
+First, with Data Layer Translation, data sources catch raw platform exceptions (`HttpException`, `SocketTimeoutException`, `SQLiteConstraintException`) and convert them into strongly typed **Domain Errors** (e.g. `DataError.Network.Timeout`, `DataError.Auth.Unauthorized`). Raw stack traces and HTTP status codes must never cross into presentation. Next, a Presentation Layer Mapping is the ViewModel maps domain errors into a presentation-centric model: the **Actionable UI Error**.
+Additionally, with Localized Message, encapsulated using a `UiText` wrapper (`UiText.StringResource(R.string.error_no_internet)`), allowing the ViewModel to stay pure and Context-free while supporting instant language changes. Finally, with Recovery Action, every error must empower the user with an actionable recourse—such as a 'Retry' button, 'Re-authenticate' redirect, or 'Check Settings' link.
 
 This ensures users are never greeted with incomprehensible raw exceptions while decoupling the UI from backend status codes.
+
 
 ## Interview answer — deep senior
 
@@ -132,6 +130,7 @@ The `UiText` pattern is vital for ViewModel testability. If a ViewModel injects 
 In Compose, extracting the string is seamless: composables call `error.message.asString()` which internally invokes `stringResource()`, reacting to configuration changes automatically.
 
 For production telemetry, the raw technical exception is logged to Crashlytics or Datadog in the Data layer before being sanitized, ensuring engineers have stack traces while users receive friendly, actionable prompts.
+
 
 ## How to answer in the interview
 

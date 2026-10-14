@@ -92,16 +92,13 @@ A separate Domain layer is genuinely useful when business logic is complex, requ
 
 The Domain layer is an architectural investment that pays dividends under specific complexity thresholds, but introduces counterproductive boilerplate when applied dogmatically.
 
-1. **When Domain Layer is Genuinely Useful**:
-   - **Multi-Entry Business Logic**: When the same business flow (e.g. `AddToCartUseCase`, `LogOutUseCase`) is triggered from multiple ViewModels, Push Notification receivers, or Widgets.
-   - **Complex Business Rules & Invariants**: Financial, healthcare, or security domains requiring mathematical calculations, threshold evaluations, or conditional validations independent of UI.
-   - **Cross-Repository Orchestration**: When a single operation coordinates multiple repositories (e.g. updating local database, calling third-party payment, and flushing cache).
-   - **Kotlin Multiplatform (KMP)**: When business logic is shared verbatim across Android, iOS, and Desktop platforms.
-
-2. **When it is Overengineering**:
-   - **Simple CRUD Applications**: In news readers, blogs, or basic display lists where the UI merely queries and displays data. Creating a `GetArticlesUseCase` that contains only `invoke() = repo.getArticles()` is pure pass-through noise.
+First, **When Domain Layer is Genuinely Useful**. Next, with Multi-Entry Business Logic, when the same business flow (e.g. `AddToCartUseCase`, `LogOutUseCase`) is triggered from multiple ViewModels, Push Notification receivers, or Widgets.
+Additionally, with Complex Business Rules & Invariants, financial, healthcare, or security domains requiring mathematical calculations, threshold evaluations, or conditional validations independent of UI. With Cross-Repository Orchestration, when a single operation coordinates multiple repositories (e.g. Updating local database, calling third-party payment, and flushing cache).
+With Kotlin Multiplatform (KMP), when business logic is shared verbatim across Android, iOS, and Desktop platforms. **When it is Overengineering**.
+Finally, with Simple CRUD Applications, in news readers, blogs, or basic display lists where the UI merely queries and displays data. Creating a `GetArticlesUseCase` that contains only `invoke() = repo.getArticles()` is pure pass-through noise.
 
 Google's official Android Architecture Guidelines explicitly classify the Domain layer as **optional**, encouraging ViewModels to directly consume Repositories when business transformation is absent.
+
 
 ## Interview answer — deep senior
 
@@ -110,6 +107,7 @@ A pragmatic Senior Architect evaluates the ROI of an explicit Domain module base
 However, in large enterprise teams with 20+ Android engineers, establishing a distinct `:domain` module enforces code ownership boundaries. Feature teams cannot accidentally introduce database migrations or UI widgets into business policy files. Furthermore, JVM unit tests for the `:domain` module run in under 2 seconds across thousands of tests because there is zero Android Gradle plugin overhead.
 
 The recommended approach is **Pragmatic Layering**: allow ViewModels to call Repositories directly by default, and extract a Use Case only when business logic emerges, becomes complex, or requires reuse.
+
 
 ## How to answer in the interview
 

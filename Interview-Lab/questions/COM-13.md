@@ -117,19 +117,18 @@ Model one-off UI events (like Snackbars) as consumable state properties inside t
 
 Handling one-off events in Jetpack Compose requires transitioning away from legacy event-bus and channel antipatterns toward state-driven architectures.
 
-1. **Snackbar and Transient Messages as State**: Rather than pushing side-effect events through `Channel` or `SharedFlow`, the modern official pattern models messages as state: `userMessage: UserMessage?` inside `ScreenUiState`. In Compose, a `LaunchedEffect(uiState.userMessage)` observes this field. When non-null, it invokes `snackbarHostState.showSnackbar(message)`, and immediately fires a callback `viewModel.onMessageShown(id)` to reset the state to `null`. This prevents missed messages or duplicate displays upon screen rotation.
+First, with Snackbar and Transient Messages as State, rather than pushing side-effect events through `Channel` or `SharedFlow`, the modern official pattern models messages as state: `userMessage: UserMessage?` inside `ScreenUiState`. In Compose, a `LaunchedEffect(uiState.userMessage)` observes this field. When non-null, it invokes `snackbarHostState.showSnackbar(message)`, and immediately fires a callback `viewModel.onMessageShown(id)` to reset the state to `null`. This prevents missed messages or duplicate displays upon screen rotation. Next, with User-Driven Navigation, clicks and direct user navigation (e.g. Tapping an item) should be handled immediately in the UI layer through hoisted lambda callbacks (`onItemClick: (Id) -> Unit`), directly invoking the `NavController`.
+Finally, with Business-Driven Navigation, when navigation depends on business outcomes (e.g. Successful authentication), the ViewModel emits a distinct terminal state (e.g. `AuthState.Authenticated`), which the UI observes to execute navigation.
 
-2. **User-Driven Navigation**: Clicks and direct user navigation (e.g. tapping an item) should be handled immediately in the UI layer through hoisted lambda callbacks (`onItemClick: (Id) -> Unit`), directly invoking the `NavController`.
-
-3. **Business-Driven Navigation**: When navigation depends on business outcomes (e.g. successful authentication), the ViewModel emits a distinct terminal state (e.g. `AuthState.Authenticated`), which the UI observes to execute navigation.
 
 ## Interview answer — deep senior
 
-Why did Google advise against using `Channel` or `SharedFlow` for one-off UI events in Compose? Channels buffer events imperatively. If an event is posted while the UI is transitioning lifecycles (e.g. during an Activity recreation or rotation), the collector may either drop the event or consume it before the new composition is ready, resulting in dropped Snackbars or phantom double navigations.
+Why did Google advise against using `Channel` or `SharedFlow` for one-off UI events in Compose? Channels buffer events imperatively. If an event is posted while the UI is transitioning lifecycles (e.g. During an Activity recreation or rotation), the collector may either drop the event or consume it before the new composition is ready, resulting in dropped Snackbars or phantom double navigations.
 
 By embedding events in the immutable `UiState`, state restoration is guaranteed: if the screen dies and is recreated via `SavedStateHandle`, the pending message is preserved and displayed reliably.
 
 For navigation specifically, to prevent rapid double-clicks from pushing two duplicate screens onto the backstack, we either guard navigations with a boolean gate or debounce click modifiers, and verify that the destination is not already the top destination on the NavController backstack.
+
 
 ## How to answer in the interview
 

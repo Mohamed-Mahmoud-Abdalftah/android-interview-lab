@@ -94,6 +94,7 @@ A standard non-nullable `Int` compiles directly to a primitive `int` on JVM byte
 
 The memory impact is drastic: while a primitive `int` requires 4 bytes, a `java.lang.Integer` requires a 12-byte object header, 4 bytes of value payload, and 8-byte alignment padding, consuming 16 to 24 bytes on the heap, plus 4 to 8 bytes for the reference pointer. In high-frequency loops or graphics/sensor processing, this creates massive memory bloat and garbage collection churn. In production, we mitigate this by using primitive arrays like `IntArray` instead of `Array<Int>`, or specialized Android collections like `SparseIntArray` to avoid boxing entirely.
 
+
 ## Interview answer — deep senior
 
 Java interoperability introduces subtle boxing pitfalls. If a Kotlin function expects `Int` and calls a Java method returning `Integer`, or vice-versa with platform types (`Integer!`), implicit boxing and unboxing occur at bytecode boundaries (`Integer.valueOf()` and `intValue()`). Furthermore, unboxing a null `Integer` returned from Java produces a fatal `NullPointerException` at runtime in Kotlin.
@@ -101,6 +102,7 @@ Java interoperability introduces subtle boxing pitfalls. If a Kotlin function ex
 Another critical JVM optimization to understand is the **Integer Cache** (`java.lang.IntegerCache`), which caches boxed values between -128 and 127 by default. Comparing boxed integers inside this range with reference equality (`===`) might deceptively evaluate to `true`, but comparing values outside this range fails because distinct instances are allocated on the heap.
 
 When profiling memory in Android Studio, collections of boxed primitives appear as massive retained sizes dominated by millions of tiny `java.lang.Integer` instances. Replacing `Map<Int, CustomObject>` with Android's `SparseArray<CustomObject>` eliminates the `Integer` key boxing completely, saving megabytes of heap in large list adapters or cache layers.
+
 
 ## How to answer in the interview
 

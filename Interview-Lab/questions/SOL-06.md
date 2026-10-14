@@ -108,23 +108,25 @@ The Dependency Inversion Principle (DIP) establishes that **high-level policies 
 
 In procedural or coupled architectures, control and dependencies flow in the same direction: a ViewModel (high-level) directly instantiates a Database or Retrofit client (low-level). Consequently, if the database schema or network library changes, the high-level business code is forced to change.
 
-DIP inverts this relationship:
-1. The high-level layer (Domain/Presentation) defines the abstraction: `interface UserRepository`.
-2. The low-level infrastructure layer (Data) imports that interface and implements it: `class UserRepositoryImpl : UserRepository`.
-3. At compile time, the source code dependency points inward toward the high-level abstraction. At runtime, the Dependency Injection container (Hilt) resolves and injects the implementation.
+DIP inverts this relationship.
+
+First, the high-level layer (Domain/Presentation) defines the abstraction: `interface UserRepository`. Next, the low-level infrastructure layer (Data) imports that interface and implements it: `class UserRepositoryImpl : UserRepository`.
+Finally, at compile time, the source code dependency points inward toward the high-level abstraction. At runtime, the Dependency Injection container (Hilt) resolves and injects the implementation.
 
 This insulates critical business rules: the network library can be swapped from Retrofit to Ktor without altering a single line of business logic.
+
 
 ## Interview answer — deep senior
 
 DIP is the foundational mechanism that powers the **Dependency Rule in Clean Architecture**. Without DIP, Clean Architecture would be impossible because the core domain would be forced to depend on database drivers and network libraries to fetch data.
 
-In Gradle multi-module architecture, DIP is enforced via Gradle configuration:
-- `:core:domain` defines `interface AuthRepository`. It has zero dependencies on network or database modules.
-- `:core:data` has `implementation(project(":core:domain"))` and provides `AuthRepositoryImpl`.
-- The compile graph physically forbids `:core:domain` from accessing `:core:data`.
+In Gradle multi-module architecture, DIP is enforced via Gradle configuration.
+
+First, `:core:domain` defines `interface AuthRepository`. It has zero dependencies on network or database modules. Next, `:core:data` has `implementation(project(":core:domain"))` and provides `AuthRepositoryImpl`.
+Finally, the compile graph physically forbids `:core:domain` from accessing `:core:data`.
 
 This inversion enables 100% pure JVM unit testability: we can test `AuthUseCase` by passing an in-memory `FakeAuthRepository` without touching SQLite or mocking HTTP calls.
+
 
 ## How to answer in the interview
 

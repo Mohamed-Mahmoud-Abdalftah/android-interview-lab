@@ -91,32 +91,22 @@ Test double is the umbrella term. Dummies fill parameter slots without being use
 
 ## Interview answer — structured
 
-Understanding test doubles follows the classic Martin Fowler taxonomy:
+Understanding test doubles follows the classic Martin Fowler taxonomy.
 
-1. **Dummy**:
-   - Objects passed around simply to satisfy method signatures (e.g. an empty constructor parameter), never actually interrogated or invoked.
+First, **Dummy**. Next, objects passed around simply to satisfy method signatures (e.g. An empty constructor parameter), never actually interrogated or invoked.
+**Stub**. Provides canned responses to method calls during a test (e.g. `every { api.getUser() } returns sampleUser`). Stubs do not verify interaction behavior; they only supply required data state.
+**Spy**. Wraps a real or stubbed instance to record telemetry: capturing argument parameters, invocation counts, and order of calls for post-execution assertions.
+**Mock**. Objects pre-programmed with expected interaction behavior and verified at assertion time (`verify { service.trackEvent("purchase") }`). Mocks focus on behavior verification rather than state verification.
+**Fake**. Finally, objects that have working business logic, but take shortcuts unsuitable for production (e.g., an in-memory `FakeUserRepository` backed by a `ConcurrentHashMap` rather than SQLite).
 
-2. **Stub**:
-   - Provides canned responses to method calls during a test (e.g. `every { api.getUser() } returns sampleUser`). Stubs do not verify interaction behavior; they only supply required data state.
-
-3. **Spy**:
-   - Wraps a real or stubbed instance to record telemetry: capturing argument parameters, invocation counts, and order of calls for post-execution assertions.
-
-4. **Mock**:
-   - Objects pre-programmed with expected interaction behavior and verified at assertion time (`verify { service.trackEvent("purchase") }`). Mocks focus on behavior verification rather than state verification.
-
-5. **Fake**:
-   - Objects that have working business logic, but take shortcuts unsuitable for production (e.g., an in-memory `FakeUserRepository` backed by a `ConcurrentHashMap` rather than SQLite).
 
 ## Interview answer — deep senior
 
-From a software maintainability and Google engineering practices perspective, Fakes are heavily favored over Mocks:
+From a software maintainability and Google engineering practices perspective, Fakes are heavily favored over Mocks.
 
-1. **The Fragility of Over-Mocking**: Tests relying heavily on MockK/Mockito verify implementation details (which methods were called and how many times) rather than observable behavior and state. When an engineer refactors internal repository code to batch calls or use caching, mocked tests break instantly despite correct user behavior.
+First, with The Fragility of Over-Mocking, tests relying heavily on MockK/Mockito verify implementation details (which methods were called and how many times) rather than observable behavior and state. When an engineer refactors internal repository code to batch calls or use caching, mocked tests break instantly despite correct user behavior. Next, fakes Enable Realistic Multi-Feature Tests is a well-designed `FakeCartRepository` behaves like the real repository: saving items, updating quantities, and emitting reactive state flows. Multiple ViewModels and tests can share the same fake across integration suites with zero mocking boilerplate.
+Finally, with When Mocks are Justified, use mocks sparingly: primarily for un-fakeable external boundaries where asserting exact side effects is the direct goal (e.g. Asserting that a payment SDK's `initiatePayment()` or analytics tracker was triggered exactly once).
 
-2. **Fakes Enable Realistic Multi-Feature Tests**: A well-designed `FakeCartRepository` behaves like the real repository: saving items, updating quantities, and emitting reactive state flows. Multiple ViewModels and tests can share the same fake across integration suites with zero mocking boilerplate.
-
-3. **When Mocks are Justified**: Use mocks sparingly: primarily for un-fakeable external boundaries where asserting exact side effects is the direct goal (e.g. asserting that a payment SDK's `initiatePayment()` or analytics tracker was triggered exactly once).
 
 ## How to answer in the interview
 

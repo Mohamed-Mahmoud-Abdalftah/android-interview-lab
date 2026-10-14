@@ -93,32 +93,22 @@ Formulate R8 keep rules precisely: use -keepclassmembers for serialization DTO f
 
 ## Interview answer — structured
 
-Crafting surgical R8 keep rules preserves runtime functionality while maximizing dead-code elimination and obfuscation:
+Crafting surgical R8 keep rules preserves runtime functionality while maximizing dead-code elimination and obfuscation.
 
-1. **Serialization Models (DTOs)**:
-   - Avoid broad `-keep class com.my.model.** { *; }`. Instead, preserve only the field names required by reflection serializers:
-     `-keepclassmembers class com.example.dto.** { <fields>; }`.
-   - Better yet, adopt Kotlinx Serialization or Moshi Codegen with KSP, which generate explicit adapters at compile time and require zero reflection keep rules.
+First, **Serialization Models (DTOs)**. Next, avoid broad `-keep class com.my.model.** { *; }`. Instead, preserve only the field names required by reflection serializers: `-keepclassmembers class com.example.dto.** { <fields>; }`.
+Better yet, adopt Kotlinx Serialization or Moshi Codegen with KSP, which generate explicit adapters at compile time and require zero reflection keep rules. **JNI Native Invocations**.
+Native C/C++ libraries resolve Java methods using explicit class and descriptor signatures. Preserve all native methods and their parameter types: `-keepclasseswithmembernames,includedescriptorclasses class * { native <methods>; }`. **Reflection Targets**.
+Rather than maintaining fragile string patterns in `proguard-rules.pro`, decorate reflection-instantiated classes with `@Keep` (from AndroidX annotations). AGP bundles default rules preserving any class or member annotated with `@Keep`. **Third-Party SDKs**.
+Finally, rely on the SDK's bundled `consumerProguardFiles`. Only author manual keep rules for legacy libraries that fail to publish their own consumer rules.
 
-2. **JNI Native Invocations**:
-   - Native C/C++ libraries resolve Java methods using explicit class and descriptor signatures. Preserve all native methods and their parameter types:
-     `-keepclasseswithmembernames,includedescriptorclasses class * { native <methods>; }`.
-
-3. **Reflection Targets**:
-   - Rather than maintaining fragile string patterns in `proguard-rules.pro`, decorate reflection-instantiated classes with `@Keep` (from AndroidX annotations). AGP bundles default rules preserving any class or member annotated with `@Keep`.
-
-4. **Third-Party SDKs**:
-   - Rely on the SDK's bundled `consumerProguardFiles`. Only author manual keep rules for legacy libraries that fail to publish their own consumer rules.
 
 ## Interview answer — deep senior
 
-From an architectural code-shrinkage perspective, broad keep rules constitute silent technical debt:
+From an architectural code-shrinkage perspective, broad keep rules constitute silent technical debt.
 
-1. **The allowshrinking and allowobfuscation Modifiers**: ProGuard rules support granular modifier flags. For example, `-keepnames` is equivalent to `-keep,allowshrinking`. It permits R8 to delete the class if unused, but prevents renaming if the class survives. This is ideal for analytics DTOs.
+First, with The allowshrinking and allowobfuscation Modifiers, proGuard rules support granular modifier flags. For example, `-keepnames` is equivalent to `-keep,allowshrinking`. It permits R8 to delete the class if unused, but prevents renaming if the class survives. This is ideal for analytics DTOs. Next, with Auditing Rule Impact with -whyareyoukeeping, when investigating why an unused class was unexpectedly retained in the final DEX, inject `-whyareyoukeeping class com.example.UnusedClass` into `proguard-rules.pro`. During build execution, R8 prints the exact chain of reachability references and keep rules that forced its preservation.
+Finally, with Automated CI Size Regression Testing, enforce a maximum binary size ceiling in CI. Overly broad keep rules introduced in PRs immediately trigger size alert regressions, enforcing strict scrutiny during code reviews.
 
-2. **Auditing Rule Impact with -whyareyoukeeping**: When investigating why an unused class was unexpectedly retained in the final DEX, inject `-whyareyoukeeping class com.example.UnusedClass` into `proguard-rules.pro`. During build execution, R8 prints the exact chain of reachability references and keep rules that forced its preservation.
-
-3. **Automated CI Size Regression Testing**: Enforce a maximum binary size ceiling in CI. Overly broad keep rules introduced in PRs immediately trigger size alert regressions, enforcing strict scrutiny during code reviews.
 
 ## How to answer in the interview
 

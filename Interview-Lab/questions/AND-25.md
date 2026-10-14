@@ -120,11 +120,11 @@ To support predictable navigation when users tap notifications—even after proc
 
 If you launch a detail screen directly via a plain Intent from a notification, that Activity becomes the sole task root. When the user taps Back, the application exits immediately to the OS launcher, violating user expectations of hierarchical navigation.
 
-`TaskStackBuilder` resolves this:
+`TaskStackBuilder` resolves this.
 
-1. In `AndroidManifest.xml`, we declare hierarchical parent relationships using `android:parentActivityName=".MainActivity"`.
-2. When building the notification's PendingIntent, we use `TaskStackBuilder.create(context).addNextIntentWithParentStack(detailIntent).getPendingIntent(...)`.
-3. The OS constructs a synthetic task stack: when the notification is tapped, Android launches the detail screen, but synthesizes the parent Activity below it on the backstack. Pressing Back smoothly navigates the user up to the parent list or home screen.
+First, in `AndroidManifest.xml`, we declare hierarchical parent relationships using `android:parentActivityName=".MainActivity"`. Next, when building the notification's PendingIntent, we use `TaskStackBuilder.create(context).addNextIntentWithParentStack(detailIntent).getPendingIntent(...)`.
+Finally, the OS constructs a synthetic task stack: when the notification is tapped, Android launches the detail screen, but synthesizes the parent Activity below it on the backstack. Pressing Back smoothly navigates the user up to the parent list or home screen.
+
 
 ## Interview answer — deep senior
 
@@ -139,6 +139,7 @@ val pendingIntent = NavDeepLinkBuilder(context)
 ```
 
 Under the hood, `NavDeepLinkBuilder` inspects the navigation graph hierarchy and pushes all antecedent destinations onto the synthetic `NavController` backstack. Even if the process was completely dead when the notification was clicked, Android starts the single Activity and initializes the full navigation stack, allowing fluid Back and Up navigation across the entire application.
+
 
 ## How to answer in the interview
 

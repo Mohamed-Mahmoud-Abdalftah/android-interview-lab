@@ -82,28 +82,21 @@ Prove the cause by retrieving the crash from Logcat, retracing it with mapping.t
 
 ## Interview answer — structured
 
-Proving and remediating an immediate startup crash caused by obfuscated or stripped classes follows a forensic debugging pipeline:
+Proving and remediating an immediate startup crash caused by obfuscated or stripped classes follows a forensic debugging pipeline.
 
-1. **Capture & Retrace the Exception**:
-   - Extract the startup crash log via `adb logcat -d *:E`. Run the trace through `retrace mapping.txt`. The deobfuscated trace pinpoints the exact class (e.g. `ClassNotFoundException: Didn't find class com.example.analytics.AppInitializer`).
+First, **Capture & Retrace the Exception**. Next, extract the startup crash log via `adb logcat -d *:E`. Run the trace through `retrace mapping.txt`. The deobfuscated trace pinpoints the exact class (e.g. `ClassNotFoundException: Didn't find class com.example.analytics.AppInitializer`).
+**Definitive Proof via R8 Diagnostic Reports**. Search for the class inside `app/build/outputs/mapping/release/usage.txt`. If present, R8 explicitly determined it was unreferenced dead code and pruned it from `classes.dex`.
+If the class exists in `classes.dex` under an obfuscated name (`a.b.c`), but dynamic instantiation points (e.g., `Class.forName("com.example.analytics.AppInitializer")` or an unmerged manifest entry) look for the original string name, the failure is proven. **Surgical Remediation**.
+Decorate the class with `@androidx.annotation.Keep` or add a surgical rule in `proguard-rules.pro`: `-keep class com.example.analytics.AppInitializer { <init>(); }`. Finally, rebuild and verify that the class now appears in `seeds.txt` and the app boots cleanly.
 
-2. **Definitive Proof via R8 Diagnostic Reports**:
-   - Search for the class inside `app/build/outputs/mapping/release/usage.txt`. If present, R8 explicitly determined it was unreferenced dead code and pruned it from `classes.dex`.
-   - If the class exists in `classes.dex` under an obfuscated name (`a.b.c`), but dynamic instantiation points (e.g., `Class.forName("com.example.analytics.AppInitializer")` or an unmerged manifest entry) look for the original string name, the failure is proven.
-
-3. **Surgical Remediation**:
-   - Decorate the class with `@androidx.annotation.Keep` or add a surgical rule in `proguard-rules.pro`: `-keep class com.example.analytics.AppInitializer { <init>(); }`.
-   - Rebuild and verify that the class now appears in `seeds.txt` and the app boots cleanly.
 
 ## Interview answer — deep senior
 
-From an architectural systems perspective, startup obfuscation crashes frequently result from Manifest Merging and DI service loading:
+From an architectural systems perspective, startup obfuscation crashes frequently result from Manifest Merging and DI service loading.
 
-1. **ServiceLoader & Provider Reflection**: Libraries using Java `ServiceLoader` (e.g. Kotlin Coroutines `AndroidDispatcherFactory`, OkHttp platform engines) rely on metadata files inside `META-INF/services/`. If R8 obfuscates the implementing class without rewriting the service provider configuration file, `ServiceLoader` throws runtime initialization exceptions on startup. Configure R8 with `-keepnames` for service provider classes.
+First, with ServiceLoader & Provider Reflection, libraries using Java `ServiceLoader` (e.g. Kotlin Coroutines `AndroidDispatcherFactory`, OkHttp platform engines) rely on metadata files inside `META-INF/services/`. If R8 obfuscates the implementing class without rewriting the service provider configuration file, `ServiceLoader` throws runtime initialization exceptions on startup. Configure R8 with `-keepnames` for service provider classes. Next, with Manifest Class Reference Obfuscation, aGP automatically preserves any Activity or Service declared in the application's merged manifest. However, if an activity is declared in an external library manifest that was modified dynamically via manifest placeholders or instantiated via custom classloaders, AGP may miss the reference. Always verify the merged manifest inside `intermediates/merged_manifests/release/`.
+Finally, with Automated Release Smoke Testing in CI, before deploying, CI release pipelines must execute an automated monkey test or startup smoke test (`adb shell monkey -p <pkg> 500`) against the signed release APK on an emulator to assert that startup initialization succeeds.
 
-2. **Manifest Class Reference Obfuscation**: AGP automatically preserves any Activity or Service declared in the application's merged manifest. However, if an activity is declared in an external library manifest that was modified dynamically via manifest placeholders or instantiated via custom classloaders, AGP may miss the reference. Always verify the merged manifest inside `intermediates/merged_manifests/release/`.
-
-3. **Automated Release Smoke Testing in CI**: Before deploying, CI release pipelines must execute an automated monkey test or startup smoke test (`adb shell monkey -p <pkg> 500`) against the signed release APK on an emulator to assert that startup initialization succeeds.
 
 ## How to answer in the interview
 

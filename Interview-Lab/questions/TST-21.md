@@ -93,31 +93,23 @@ Triage flaky CI tests by reproducing locally via stress-run loops (--repeat 100)
 
 ## Interview answer — structured
 
-A test that passes locally but fails intermittently on CI indicates an environmental assumption or timing vulnerability:
+A test that passes locally but fails intermittently on CI indicates an environmental assumption or timing vulnerability.
 
-1. **Root Cause Analysis (Local vs. CI Discrepancies)**:
-   - **CPU Throttling & Core Starvation**: CI virtual runners operate on resource-constrained containers (1–2 vCPUs) under high I/O load. Operations that execute in 5ms locally take 500ms on CI, exposing uncoordinated asynchronous race conditions.
-   - **Locale & Timezone Drift**: Host developer machines run local timezones (e.g. Cairo GMT+2, US PST), while CI runs on `UTC`. Tests formatting dates or decimal numbers fail if assertions assume local time.
-   - **Parallel Execution Contamination**: Shared files or static singletons leak state when Gradle runs parallel test workers on CI.
+First, **Root Cause Analysis (Local vs. CI Discrepancies)**. Next, with CPU Throttling & Core Starvation, cI virtual runners operate on resource-constrained containers (1–2 vCPUs) under high I/O load. Operations that execute in 5ms locally take 500ms on CI, exposing uncoordinated asynchronous race conditions.
+Additionally, with Locale & Timezone Drift, host developer machines run local timezones (e.g. Cairo GMT+2, US PST), while CI runs on `UTC`. Tests formatting dates or decimal numbers fail if assertions assume local time. With Parallel Execution Contamination, shared files or static singletons leak state when Gradle runs parallel test workers on CI.
+**Triaging Protocol**. With Stress-Run Locally, execute the test 100 times in a loop locally: `./gradlew test --tests MyFlakyTest --rerun-tasks`.
+With Inspect CI Artifacts, review Logcat dumps, stack traces, and emulator video recordings generated at failure time. **Definitive Remediation**.
+Replace all asynchronous timing sleeps with `StandardTestDispatcher` and Turbine. Enforce explicit `Locale.US` and `UTC` timezones inside test setup rules.
+Finally, quarantine the test with a team alert ticket if immediate resolution cannot be found within 2 hours, preventing PR pipeline paralysis.
 
-2. **Triaging Protocol**:
-   - **Stress-Run Locally**: Execute the test 100 times in a loop locally: `./gradlew test --tests MyFlakyTest --rerun-tasks`.
-   - **Inspect CI Artifacts**: Review Logcat dumps, stack traces, and emulator video recordings generated at failure time.
-
-3. **Definitive Remediation**:
-   - Replace all asynchronous timing sleeps with `StandardTestDispatcher` and Turbine.
-   - Enforce explicit `Locale.US` and `UTC` timezones inside test setup rules.
-   - Quarantine the test with a team alert ticket if immediate resolution cannot be found within 2 hours, preventing PR pipeline paralysis.
 
 ## Interview answer — deep senior
 
-From an engineering governance and infrastructure perspective, managing flaky tests requires automated quarantine policies:
+From an engineering governance and infrastructure perspective, managing flaky tests requires automated quarantine policies.
 
-1. **Automated Quarantine Gateways**: Configure CI pipelines (e.g. using TestFlaky Gradle plugins) to automatically detect tests failing intermittently without code changes. Automatically tag them as `@Quarantine`, route them to an isolated non-blocking monitoring track, and create an automated engineering ticket assigned to the owning team.
+First, with Automated Quarantine Gateways, configure CI pipelines (e.g. Using TestFlaky Gradle plugins) to automatically detect tests failing intermittently without code changes. Automatically tag them as `@Quarantine`, route them to an isolated non-blocking monitoring track, and create an automated engineering ticket assigned to the owning team. Next, with Emulator Snapshot & Cold Boot Stability, for UI tests, CI emulators often flake during initial boot. Ensure CI setup scripts execute `adb wait-for-device` and check `sys.boot_completed=1` before triggering test execution.
+Finally, with Zero-Flake SLA, establish a team SLA: a PR cannot merge if it introduces flaky tests. High-performing engineering cultures treat a 1% flaky test rate as equivalent to a broken build because it desensitizes engineers to legitimate regressions.
 
-2. **Emulator Snapshot & Cold Boot Stability**: For UI tests, CI emulators often flake during initial boot. Ensure CI setup scripts execute `adb wait-for-device` and check `sys.boot_completed=1` before triggering test execution.
-
-3. **Zero-Flake SLA**: Establish a team SLA: a PR cannot merge if it introduces flaky tests. High-performing engineering cultures treat a 1% flaky test rate as equivalent to a broken build because it desensitizes engineers to legitimate regressions.
 
 ## How to answer in the interview
 

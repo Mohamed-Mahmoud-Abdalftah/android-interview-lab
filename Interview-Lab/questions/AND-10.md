@@ -108,23 +108,23 @@ An Intent is an asynchronous messaging object requesting an action: Explicit spe
 
 ## Interview answer — structured
 
-An **`Intent`** is an operational message that requests an action from an Android component:
+An **`Intent`** is an operational message that requests an action from an Android component.
 
-- **Explicit Intent**: Explicitly names the target component class (`Intent(context, TargetActivity::class.java)`). Used almost exclusively for internal application navigation.
-- **Implicit Intent**: Declares a general action to perform (e.g., `Intent.ACTION_DIAL` with `tel:123`, or `ACTION_SEND` for sharing). The Android OS queries all package manifests for matching `<intent-filter>` declarations and displays the system app chooser.
+First, with Explicit Intent, explicitly names the target component class (`Intent(context, TargetActivity::class.java)`). Used almost exclusively for internal application navigation. Finally, an Implicit Intent declares a general action to perform (e.g., `Intent.ACTION_DIAL` with `tel:123`, or `ACTION_SEND` for sharing). The Android OS queries all package manifests for matching `<intent-filter>` declarations and displays the system app chooser.
 
 A **`PendingIntent`** is a security token wrapping an Intent. It delegates execution permission to a foreign application or system process—most commonly `NotificationManager`, `AlarmManager`, or App Widgets. When triggered, the system executes the pre-configured Intent with the permissions and identity of *your application*, even if your app's process is currently dead.
+
 
 ## Interview answer — deep senior
 
 At the systems and security architecture level, a `PendingIntent` is essentially an IPC handle referencing a token maintained by the system's `ActivityManagerService` (AMS). Because foreign apps execute it using your app's Linux UID, security vulnerabilities historically arose if malicious apps mutated the underlying intent parameters.
 
-Starting in Android 12 (API 31), the platform mandates declaring mutability flags on every `PendingIntent`:
+Starting in Android 12 (API 31), the platform mandates declaring mutability flags on every `PendingIntent`.
 
-- **`FLAG_IMMUTABLE`**: The default standard. Freezes the Intent parameters completely; the receiving app or system cannot modify its extras or URI.
-- **`FLAG_MUTABLE`**: Allows callers to inject extra parameters via `fillIn()`. Only used in specialized features like notification inline replies or bubbles.
+First, fLAG_IMMUTABLE is the default standard. Freezes the Intent parameters completely; the receiving app or system cannot modify its extras or URI. Finally, with FLAG_MUTABLE, allows callers to inject extra parameters via `fillIn()`. Only used in specialized features like notification inline replies or bubbles.
 
 Attempting to create a `PendingIntent` without declaring one of these flags on Android 12+ crashes immediately with an `IllegalArgumentException`.
+
 
 ## How to answer in the interview
 

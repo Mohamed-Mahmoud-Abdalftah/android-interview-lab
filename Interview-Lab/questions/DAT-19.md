@@ -133,29 +133,27 @@ Prevent dual refresh invalidation by strictly serializing refresh calls behind a
 
 Under modern OAuth 2.0 Refresh Token Rotation (RTR), using an expired refresh token triggers backend breach detection, instantly revoking all active client sessions. When two concurrent requests receive 401s, both attempting to refresh using the same stale token inevitably invalidates the session.
 
-To serialize refresh correctly and prevent false logouts:
+To serialize refresh correctly and prevent false logouts.
 
-1. **Lock Funneling**: Wrap the refresh block inside a thread-safe lock (`synchronized(lock)` in OkHttp Authenticator or a coroutine `Mutex`).
+First, with Lock Funneling, wrap the refresh block inside a thread-safe lock (`synchronized(lock)` in OkHttp Authenticator or a coroutine `Mutex`). Next, with The Double-Check Token Protocol, before making any network call, extract the `failedToken` from the triggering request header and compare it to `sessionStore.getAccessToken()`.
+If `currentToken != failedToken`, another thread already executed the refresh while this thread was waiting on the lock. **Skip the refresh call entirely** and retry the request using `currentToken`. If `currentToken == failedToken`, this thread is the first to arrive. Execute exactly one refresh network request.
+Finally, with Atomic Session Mutation, save both the new access token and the rotated refresh token atomically before releasing the lock.
 
-2. **The Double-Check Token Protocol**: Before making any network call, extract the `failedToken` from the triggering request header and compare it to `sessionStore.getAccessToken()`:
-   - If `currentToken != failedToken`, another thread already executed the refresh while this thread was waiting on the lock. **Skip the refresh call entirely** and retry the request using `currentToken`.
-   - If `currentToken == failedToken`, this thread is the first to arrive. Execute exactly one refresh network request.
-
-3. **Atomic Session Mutation**: Save both the new access token and the rotated refresh token atomically before releasing the lock.
 
 ## Interview answer — deep senior
 
 A critical edge case is the **Stale Response Race Across Logout**:
 
-Consider this sequence:
-1. Thread A fires a token refresh request.
-2. While the refresh is in flight on the network, the user explicitly taps 'Log Out'. The app clears credentials from storage.
-3. Thread A's refresh network request succeeds 1 second later and writes fresh tokens back into storage, accidentally resurrecting a logged-out session!
+Consider this sequence.
 
-To prevent this, implement a **Session Generation Counter**:
-- Maintain an atomic `sessionGeneration: Long` that increments on every explicit logout or login.
-- Capture the generation ID before initiating the refresh.
-- Before committing new tokens to storage, verify that `currentGeneration == capturedGeneration`. If mismatched, discard the newly fetched tokens.
+First, thread A fires a token refresh request. Next, while the refresh is in flight on the network, the user explicitly taps 'Log Out'. The app clears credentials from storage.
+Finally, thread A's refresh network request succeeds 1 second later and writes fresh tokens back into storage, accidentally resurrecting a logged-out session!
+
+To prevent this, implement a **Session Generation Counter**.
+
+First, maintain an atomic `sessionGeneration: Long` that increments on every explicit logout or login. Next, capture the generation ID before initiating the refresh.
+Finally, before committing new tokens to storage, verify that `currentGeneration == capturedGeneration`. If mismatched, discard the newly fetched tokens.
+
 
 ## How to answer in the interview
 

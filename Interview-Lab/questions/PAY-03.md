@@ -99,32 +99,22 @@ Authorization holds funds on the card. Reversal immediately cancels an in-flight
 
 ## Interview answer — structured
 
-Understanding financial lifecycle operations is essential for architects building transactional mobile systems:
+Understanding financial lifecycle operations is essential for architects building transactional mobile systems.
 
-1. **Authorization (Auth)**:
-   - Verifies card authenticity and places a temporary hold on the customer's credit line. Does not transfer money; funds are transferred only upon subsequent 'Capture' or batch settlement.
+First, **Authorization (Auth)**. Next, verifies card authenticity and places a temporary hold on the customer's credit line. Does not transfer money; funds are transferred only upon subsequent 'Capture' or batch settlement.
+**Reversal (Auto-Reversal / 0400 Message)**. An automated, immediate technical rollback executed by terminal firmware or client code when a transaction succeeds at the bank but fails locally (e.g. Printer paper jam, EMV chip reader failure, or client timeout). Releases the hold within seconds.
+**Void**. A merchant-initiated cancellation of an approved transaction executed **prior to end-of-day batch settlement**. The transaction is dropped from the clearing batch; no interchange fees are incurred, and the hold drops off.
+**Refund**. Executed **post-settlement** when funds have already migrated into the merchant's acquiring bank. It initiates an inverse funds transfer, incurring interchange transaction processing fees and taking 3–7 business days.
+**Reconciliation**. Finally, the operational auditing process matching local terminal transaction storage records against payment gateway settlement logs, isolating discrepancies and stranded balances.
 
-2. **Reversal (Auto-Reversal / 0400 Message)**:
-   - An automated, immediate technical rollback executed by terminal firmware or client code when a transaction succeeds at the bank but fails locally (e.g. printer paper jam, EMV chip reader failure, or client timeout). Releases the hold within seconds.
-
-3. **Void**:
-   - A merchant-initiated cancellation of an approved transaction executed **prior to end-of-day batch settlement**. The transaction is dropped from the clearing batch; no interchange fees are incurred, and the hold drops off.
-
-4. **Refund**:
-   - Executed **post-settlement** when funds have already migrated into the merchant's acquiring bank. It initiates an inverse funds transfer, incurring interchange transaction processing fees and taking 3–7 business days.
-
-5. **Reconciliation**:
-   - The operational auditing process matching local terminal transaction storage records against payment gateway settlement logs, isolating discrepancies and stranded balances.
 
 ## Interview answer — deep senior
 
-From an EMV L2 kernel and payment network compliance perspective, subtle operational nuances exist:
+From an EMV L2 kernel and payment network compliance perspective, subtle operational nuances exist.
 
-1. **The 'Void vs. Reversal' Architecture Nuance**: Developers often confuse Voids and Reversals. A Reversal undoes an authorization that never successfully finished its complete terminal protocol handshake. A Void cancels a transaction that was 100% completed, printed, and approved, but the merchant manually voids it before midnight settlement.
+First, with The 'Void vs. Reversal' Architecture Nuance, developers often confuse Voids and Reversals. A Reversal undoes an authorization that never successfully finished its complete terminal protocol handshake. A Void cancels a transaction that was 100% completed, printed, and approved, but the merchant manually voids it before midnight settlement. Next, with Partial Reversals in Split Tenders, in multi-tender checkouts (e.g. Paying $50 with Gift Card and $50 with Visa), if the Visa authorization succeeds but the Gift Card fails, the client engine must trigger a Partial Reversal strictly against the Visa transaction while restoring the cart state.
+Finally, with Reconciliation Batch Balancing, in Smart POS Android devices (Pax, Poynt, Sunmi), closing the business batch sends an ISO 8583 0500 Batch Upload message summarizing total counts and debit volumes. If terminal and host totals mismatch by even 1 cent, the host halts settlement and forces a manual transaction-by-transaction reconciliation audit.
 
-2. **Partial Reversals in Split Tenders**: In multi-tender checkouts (e.g. paying $50 with Gift Card and $50 with Visa), if the Visa authorization succeeds but the Gift Card fails, the client engine must trigger a Partial Reversal strictly against the Visa transaction while restoring the cart state.
-
-3. **Reconciliation Batch Balancing**: In Smart POS Android devices (Pax, Poynt, Sunmi), closing the business batch sends an ISO 8583 0500 Batch Upload message summarizing total counts and debit volumes. If terminal and host totals mismatch by even 1 cent, the host halts settlement and forces a manual transaction-by-transaction reconciliation audit.
 
 ## How to answer in the interview
 

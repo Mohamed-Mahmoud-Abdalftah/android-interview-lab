@@ -94,19 +94,18 @@ Cold Start starts from scratch: the OS forks the process from Zygote, initialize
 
 The distinction between startup types hinges on whether the application process and Activity instance already reside in RAM.
 
-1. **Cold Start**: The process does not exist. The OS must fork a new process from Zygote, allocate memory, initialize runtime classes, instantiate the `Application` class, run `Application.onCreate()`, instantiate the launch `Activity`, inflate the layout, and complete the initial draw pass. It is the most expensive launch state and must be optimized aggressively.
-
-2. **Warm Start**: The application process is still resident in RAM, but the Activity was destroyed (for instance, via back navigation or memory trimming). The system skips process and Application creation, jumping directly into Activity recreation and state restoration (`savedInstanceState`).
-
-3. **Hot Start**: Both the application process and Activity remain fully initialized in memory (e.g. the user pressed Home and immediately returned). The OS merely brings the Activity to the foreground, invoking `onRestart()`, `onStart()`, and `onResume()` without recreating views, making it virtually instantaneous.
+First, a Cold Start is the process does not exist. The OS must fork a new process from Zygote, allocate memory, initialize runtime classes, instantiate the `Application` class, run `Application.onCreate()`, instantiate the launch `Activity`, inflate the layout, and complete the initial draw pass. It is the most expensive launch state and must be optimized aggressively. Next, a Warm Start is the application process is still resident in RAM, but the Activity was destroyed (for instance, via back navigation or memory trimming). The system skips process and Application creation, jumping directly into Activity recreation and state restoration (`savedInstanceState`).
+Finally, with Hot Start, both the application process and Activity remain fully initialized in memory (e.g. The user pressed Home and immediately returned). The OS merely brings the Activity to the foreground, invoking `onRestart()`, `onStart()`, and `onResume()` without recreating views, making it virtually instantaneous.
 
 In production, Google Play Vitals monitors Cold Starts targeting under **5 seconds** (ideally <1.5s), Warm starts under **2 seconds**, and Hot starts under **1.5 seconds**.
+
 
 ## Interview answer — deep senior
 
 Under the hood, optimizing Cold Start requires minimizing work done in `Application.onCreate()`. Third-party SDK initializations (analytics, crash reporting, ads, feature flags) should not run synchronously on the main thread during startup. Using Jetpack **App Startup** allows libraries to share a single `ContentProvider` and define explicit dependency graphs, enabling asynchronous or on-demand initialization.
 
 Another critical milestone is the difference between **Time to Initial Display (TTID)** and **Time to Full Display (TTFD)**. TTID is the timestamp when the first visual frame is drawn (often a skeleton or splash screen). TTFD occurs when the screen has finished populating asynchronous data, marked explicitly by calling `activity.reportFullyDrawn()`. Android Vitals and Macrobenchmark use `reportFullyDrawn()` as the true golden metric for cold start quality.
+
 
 ## How to answer in the interview
 

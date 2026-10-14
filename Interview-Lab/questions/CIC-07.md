@@ -88,29 +88,22 @@ Git stash shelves uncommitted changes to allow switching branches cleanly. Git c
 
 ## Interview answer — structured
 
-These three Git mechanisms solve distinct workflow and isolation problems:
+These three Git mechanisms solve distinct workflow and isolation problems.
 
-1. **`git stash`**:
-   - Temporarily shelves uncommitted changes (both staged and unstaged) onto an internal stack (`stash@{0}`), returning the working directory to a pristine HEAD state.
-   - Crucial for rapid context-switching, such as investigating an urgent production bug while mid-refactor. Using `-u` (include untracked) ensures newly created files are also stashed.
+First, **`git stash`**. Next, temporarily shelves uncommitted changes (both staged and unstaged) onto an internal stack (`stash@{0}`), returning the working directory to a pristine HEAD state.
+Crucial for rapid context-switching, such as investigating an urgent production bug while mid-refactor. Using `-u` (include untracked) ensures newly created files are also stashed. **`git cherry-pick <commit-sha>`**.
+Extracts the exact diff introduced by a single commit from any branch and applies it as a brand-new commit on the currently checked-out branch. Ideal for backporting critical bug fixes from `main` to existing maintenance or release branches without pulling unreleased features.
+**Fork**. A remote server-side clone of a repository hosted under an independent user or organization account.
+Finally, establishes a decoupled contribution boundary standard in open-source projects or enterprise contractor models, where external contributors lack direct push permissions and submit pull requests across forks.
 
-2. **`git cherry-pick <commit-sha>`**:
-   - Extracts the exact diff introduced by a single commit from any branch and applies it as a brand-new commit on the currently checked-out branch.
-   - Ideal for backporting critical bug fixes from `main` to existing maintenance or release branches without pulling unreleased features.
-
-3. **Fork**:
-   - A remote server-side clone of a repository hosted under an independent user or organization account.
-   - Establishes a decoupled contribution boundary standard in open-source projects or enterprise contractor models, where external contributors lack direct push permissions and submit pull requests across forks.
 
 ## Interview answer — deep senior
 
-From an engineering governance standpoint, there are subtle pitfalls with cherry-pick and stash:
+From an engineering governance standpoint, there are subtle pitfalls with cherry-pick and stash.
 
-1. **The Cherry-Pick Duplicate Commit Hazard**: When you cherry-pick commit `A` into branch `B`, Git creates a new commit `A'` with a different hash. If branch `B` is later merged back into the original branch, Git must reconcile two commits that share identical diffs. In complex histories, this can trigger redundant conflict resolution or misleading blame graphs. Always record origin metadata using `git cherry-pick -x` to append the source commit hash to the commit message.
+First, with The Cherry-Pick Duplicate Commit Hazard, when you cherry-pick commit `A` into branch `B`, Git creates a new commit `A'` with a different hash. If branch `B` is later merged back into the original branch, Git must reconcile two commits that share identical diffs. In complex histories, this can trigger redundant conflict resolution or misleading blame graphs. Always record origin metadata using `git cherry-pick -x` to append the source commit hash to the commit message. Next, with Stash Volatility in Team Environments, git stashes are local to your workstation and not backed up to the remote repository. Leaving large, multi-day refactors in `git stash` risks unrecoverable data loss during machine failures or accidental directory cleanups (`git stash drop` or hard cleans). Incomplete work should instead be committed to a personal remote draft branch (`draft/feature-wip`).
+Finally, with Upstream Fork Synchronization, in forked workflows, keeping the local fork synchronized with `upstream` via automated rebase workflows prevents massive drift and painful merge conflicts when PRs are opened against the canonical repo.
 
-2. **Stash Volatility in Team Environments**: Git stashes are local to your workstation and not backed up to the remote repository. Leaving large, multi-day refactors in `git stash` risks unrecoverable data loss during machine failures or accidental directory cleanups (`git stash drop` or hard cleans). Incomplete work should instead be committed to a personal remote draft branch (`draft/feature-wip`).
-
-3. **Upstream Fork Synchronization**: In forked workflows, keeping the local fork synchronized with `upstream` via automated rebase workflows prevents massive drift and painful merge conflicts when PRs are opened against the canonical repo.
 
 ## How to answer in the interview
 
