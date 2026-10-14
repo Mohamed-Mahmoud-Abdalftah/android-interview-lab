@@ -104,7 +104,7 @@ If your architecture requires guaranteed delivery of queued events to future sub
 
 Under the hood, in `SharedFlowImpl`, the internal buffer consists of a `head` and `tail` pointer array representing replay slots and extra buffer slots. When `emit()` or `tryEmit()` is called, the implementation checks `if (nSubscribers == 0)`. If true, the code path strictly executes `updateReplayCache(value)` and returns immediately. It completely skips queuing items into the extra buffer indices.
 
-This behavior is by design: `SharedFlow` models broadcast pub-sub, not a persistent task queue. If a SharedFlow preserved unconsumed items without subscribers, a ViewModel that emits analytics or telemetry while unobserved would leak memory infinitely until a subscriber attached. For guaranteed queueing semantics across lifecycles, `Channel.send()` is the appropriate concurrency primitive.
+This behavior is by design: `SharedFlow` models broadcast pub-sub, not a persistent task queue. If a SharedFlow preserved unconsumed items without subscribers, a ViewModel that emits analytics or telemetry while unobserved would grow memory without bound until a subscriber attached. For guaranteed queueing semantics across lifecycles, `Channel.send()` is the appropriate concurrency primitive.
 
 ## How to answer in the interview
 

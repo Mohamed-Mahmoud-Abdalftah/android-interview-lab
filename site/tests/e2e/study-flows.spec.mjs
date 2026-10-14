@@ -99,10 +99,13 @@ test('mobile RTL prose and LTR code fit the viewport', async ({ page }) => {
   const width = await page.evaluate(() => ({ body: document.documentElement.scrollWidth, viewport: innerWidth }));
   expect(width.body).toBeLessThanOrEqual(width.viewport + 1);
   await page.goto(`${base}lab/questions/sec-01/`);
-  const secondArabicParagraph = page.getByText('مثال: شاشة رفع إيصال', { exact: false });
-  expect(await secondArabicParagraph.evaluate((node) => getComputedStyle(node).direction)).toBe('rtl');
-  const inlineCode = secondArabicParagraph.locator('code').first();
+  const arabicProseWithCode = page.locator('.sl-markdown-content').locator('p:has(code), li:has(code)').first();
+  await expect(arabicProseWithCode).toBeVisible();
+  expect(await arabicProseWithCode.evaluate((node) => getComputedStyle(node).direction)).toBe('rtl');
+  const inlineCode = arabicProseWithCode.locator('code').first();
   expect(await inlineCode.evaluate((node) => getComputedStyle(node).direction)).toBe('ltr');
+  const secWidth = await page.evaluate(() => ({ body: document.documentElement.scrollWidth, viewport: innerWidth }));
+  expect(secWidth.body).toBeLessThanOrEqual(secWidth.viewport + 1);
 });
 
 test('flashcard grades update schedule and explorer shows an empty state', async ({ page }) => {

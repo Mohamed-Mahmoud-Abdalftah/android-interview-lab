@@ -44,9 +44,21 @@ class DashboardAggregator(
     private val ratesApi: suspend () -> Double
 ) {
     suspend fun loadDashboard(): DashboardResult = supervisorScope {
-        val profileDeferred = async { runCatching { profileApi() } }
-        val ordersDeferred = async { runCatching { ordersApi() } }
-        val ratesDeferred = async { runCatching { ratesApi() } }
+        val profileDeferred = async {
+            try { Result.success(profileApi()) }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) { Result.failure(e) }
+        }
+        val ordersDeferred = async {
+            try { Result.success(ordersApi()) }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) { Result.failure(e) }
+        }
+        val ratesDeferred = async {
+            try { Result.success(ratesApi()) }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) { Result.failure(e) }
+        }
 
         DashboardResult(
             profile = profileDeferred.await().getOrNull(),

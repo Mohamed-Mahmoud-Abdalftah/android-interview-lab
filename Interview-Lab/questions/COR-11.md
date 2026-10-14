@@ -79,16 +79,44 @@ Compare coroutineScope and supervisorScope including failure propagation.
       Dashboard(user.await(), banners.await(), count.await())
   }
   ```
-- **النهج الصحيح:** استخدام `supervisorScope` مع حماية كل Task وإرجاع `Result`:
+- **النهج الصحيح:** استخدام `supervisorScope` مع الحفاظ الصريح على `CancellationException`:
   ```kotlin
   supervisorScope {
-      val userDeferred = async { runCatching { api.getUser() } }
-      val bannersDeferred = async { runCatching { api.getBanners() } }
-      val countDeferred = async { runCatching { api.getCount() } }
-      // كل child هيرجع نتيجته، والشاشة تقدر تعرض النجاح وتعمل retry للفشل
+      val userDeferred = async {
+          try {
+              Result.success(api.getUser())
+          } catch (e: CancellationException) {
+              throw e // الحفاظ على إلغاء الـ Scope عند خروج المستخدم
+          } catch (e: Exception) {
+              Result.failure(e)
+          }
+      }
+      val bannersDeferred = async {
+          try {
+              Result.success(api.getBanners())
+          } catch (e: CancellationException) {
+              throw e
+          } catch (e: Exception) {
+              Result.failure(e)
+          }
+      }
+      val countDeferred = async {
+          try {
+              Result.success(api.getCount())
+          } catch (e: CancellationException) {
+              throw e
+          } catch (e: Exception) {
+              Result.failure(e)
+          }
+      }
+      
+      // نجمع النتائج بأمان، وكل child معزول تماماً
+      val user = userDeferred.await()
+      val banners = bannersDeferred.await()
+      val count = countDeferred.await()
   }
   ```
-- **تنبيه حرج:** داخل كل child، لازم تنتبه لـ `CancellationException`. لو عملت `catch (e: Exception)` عامة وبلعت الـ Cancellation، هتعطل آلية إلغاء الشاشة لما المستخدم يخرج!
+- **تنبيه حرج:** تجنب استخدام `runCatching` العادية داخل كود الـ Coroutines لأنها تلتقط `Throwable` (بما فيها `CancellationException`) وتبتلعها، مما يعطل إلغاء العمليات الخلفية ويسرب الموارد عند مغادرة الشاشة. يجب إما استخدام `try-catch` مع إعادة رمي `CancellationException`، أو دالة مساعدة تعيد رمي الإلغاء.
 
 ## Why it matters and how it works
 

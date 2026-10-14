@@ -36,7 +36,8 @@ val generateLabSnippets by tasks.registering {
         output.mkdirs()
         for (id in labSnippetIds) {
             val markdown = labSnippetBank.resolve("$id.md").readText()
-            val snippet = Regex("```kotlin\\n([\\s\\S]*?)```").find(markdown)?.groupValues?.get(1)
+            val snippet = Regex("## Worked example[\\s\\S]*?```kotlin\\n([\\s\\S]*?)```").find(markdown)?.groupValues?.get(1)
+                ?: Regex("```kotlin\\n([\\s\\S]*?)```").find(markdown)?.groupValues?.get(1)
                 ?: error("Missing Kotlin example in $id")
             output.resolve("${id.replace('-', '_')}.kt").writeText(
                 "package interviewlab.${id.replace('-', '_').lowercase()}\n\n$snippet"

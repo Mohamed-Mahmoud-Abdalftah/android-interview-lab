@@ -122,18 +122,18 @@ Using ordinary coroutineScope may cancel all three on one child failure. Bare ru
 A commerce Home loads offers, order status and support tips independently, each with its own state and targeted retry. A server correlation ID and per-card metrics identify outages; process death rebuilds from cached Room snapshots.
 
 ## Interview answer — short
-
-Design aggregate screens for partial failure by fetching independent services concurrently using isolated coroutine scopes and runCatching blocks. Represent sections with independent state streams in a unified UI state, fall back to local cached data where available, and render inline section retries without blocking or failing the entire screen.
-
+ 
+Design aggregate screens for partial failure by fetching independent services concurrently using isolated supervisor scopes with cancellation-preserving error handling. Represent sections with independent state streams in a unified UI state, fall back to local cached data where available, and render inline section retries without blocking or failing the entire screen.
+ 
 ## Interview answer — structured
-
+ 
 Aggregating multiple microservices into a single mobile dashboard requires defensive concurrency and resilient UI state composition:
-
+ 
 1. **Avoid All-or-Nothing Composition**:
    - Combining calls via `zip`, `combine` with synchronous throws, or `awaitAll` creates an all-or-nothing anti-pattern. If a non-essential service (e.g. Recommendations) throws a 500 or times out, the entire screen fails.
-
+ 
 2. **Independent Section Concurrency**:
-   - Launch three independent coroutine jobs within `viewModelScope` using `runCatching` or supervisory scopes. If the Recommendations service fails, its exception is caught in isolation, allowing the Feed and Hero Banners to load and render immediately.
+   - Launch three independent coroutine jobs within a supervisory scope (`supervisorScope`), capturing exceptions while strictly preserving `CancellationException`. If the Recommendations service fails, its exception is caught in isolation, allowing the Feed and Hero Banners to load and render immediately.
 
 3. **Modular State Modeling**:
    - Model the overall screen state as an aggregate data class holding individual `SectionState<T>` wrappers (`Loading`, `Success`, `Error`). Compose renders each section according to its discrete state.
