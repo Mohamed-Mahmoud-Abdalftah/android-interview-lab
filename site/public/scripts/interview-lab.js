@@ -86,7 +86,8 @@ const attachCodeCopy = () => {
   const ar = isAr();
   const copyLabel = ar ? 'نسخ الكود' : 'Copy code';
   const ariaLabel = ar ? 'نسخ الكود البرمجي' : 'Copy code snippet';
-  document.querySelectorAll('.sl-markdown-content pre').forEach((pre) => {
+  document.querySelectorAll('pre').forEach((pre) => {
+    if (!pre.hasAttribute('tabindex')) pre.setAttribute('tabindex', '0');
     if (pre.querySelector('.lab-code-copy-btn')) return;
     const code = pre.querySelector('code');
     if (!code) return;
@@ -98,6 +99,19 @@ const attachCodeCopy = () => {
     pre.append(btn);
   });
 };
+
+if (typeof document !== 'undefined') {
+  const initPre = () => {
+    document.querySelectorAll('pre').forEach((pre) => {
+      if (!pre.hasAttribute('tabindex')) pre.setAttribute('tabindex', '0');
+    });
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initPre);
+  } else {
+    initPre();
+  }
+}
 
 const enhanceSpokenAnswersAndFollowups = () => {
   const ar = isAr();
