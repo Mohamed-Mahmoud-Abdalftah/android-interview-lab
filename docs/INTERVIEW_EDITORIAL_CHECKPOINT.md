@@ -4,7 +4,7 @@
 
 The requested goal is a question-by-question editorial review of all 485 English and Egyptian-Arabic interview records. A passing validator establishes structure, route parity, and limited text rules; it does not establish that a candidate can say and defend an answer aloud. The existing `editorial_status: reviewed` values predate this review and must not be used as evidence that the new speaking standard has been met.
 
-The first exploratory pass inspected the opening, middle, and final records in each of the 21 topics, plus the full spoken sections and bilingual metadata of the thirteen records below. The remaining 472 records still require complete reading of Quick, Best, Deep, and interviewer dialogue. This checkpoint is deliberately not a completion claim.
+The first exploratory pass inspected the opening, middle, and final records in each of the 21 topics, plus the full spoken sections and bilingual metadata of the sixteen records below. The remaining 469 records still require complete reading of Quick, Best, Deep, and interviewer dialogue. This checkpoint is deliberately not a completion claim.
 
 ## Completed manual rewrites
 
@@ -15,6 +15,9 @@ The first exploratory pass inspected the opening, middle, and final records in e
 | COR-03 | Scope/context/job definitions displaced the ownership decision; examples assumed IO for suspending calls | Rewrote both languages around scope ownership, `Deferred` results, and the `Job()` override trap; changed the example to main-safe suspending calls. |
 | COR-04 | Structured concurrency presented as leak-proof and as atomic recovery for payment and inventory side effects | Rewrote both languages with a read-only concurrent example and a clear warning that cancellation does not undo remote mutations. |
 | COR-05 | `launch` and `async` described mostly through implementation classes; `async` example implied a background hop | Rewrote both languages around result needs, concurrent independent calls, and failure propagation; corrected the example and error handling. |
+| COR-06 | Scope choice was taught as an automatic delivery guarantee, including an in-memory application scope for message sending | Rewrote both languages around ownership, persistent pending state, WorkManager scheduling, and backend idempotency; corrected the chat walkthrough. |
+| COR-07 | IO described as a fixed 64-thread ceiling and `limitedParallelism` as a request throttle | Rewrote both languages around workload choice, IO elasticity, and separate request limits. |
+| COR-08 | Any blocking Main call described as an immediate ANR; IO example launched 50 database calls and promised flawless UI | Rewrote both languages around jank versus ANR, an isolated blocking SDK call, bounded concurrency, and cancellation limits. |
 | SOL-01 | Grand claims that SOLID affects classloader, GC, and build speed; acronym recitation without a real decision | Rewrote both languages around change pressure, behavioral contracts, and the cost of unnecessary abstraction. |
 | ARC-01 | Academic layer description; no clear limit on a client's authority in a transfer example | Rewrote both languages around dependency direction, a concrete rule, server authority, and when a pass-through use case is unnecessary. |
 | PAY-01 | Automatic reversal and perfect-accounting guarantees from a client state machine | Rewrote both languages around `Unknown`, provider-specific recovery, confirmed reversal, and the gap between local persistence and remote processing. |
