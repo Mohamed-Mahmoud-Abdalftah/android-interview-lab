@@ -22,70 +22,42 @@ Whether the candidate chooses a result-bearing `async` versus side-effect `launc
 
 ## Concept and technical explanation
 
-The launch and async coroutine builders are the two primary mechanisms for creating new coroutines in Kotlin, differing fundamentally in their intent, return types, and exception propagation semantics. The launch builder is designed for fire-and-forget asynchronous tasks where the caller does not require a computed result value; it returns a Job instance that allows the caller to monitor lifecycle state, join completion, or cancel execution. Exceptions thrown inside a launch coroutine are considered uncaught failures and are immediately propagated up the Job hierarchy to the enclosing parent scope, triggering sibling cancellation and delegating to any configured CoroutineExceptionHandler or terminating the process. Conversely, the async builder is designed for concurrent computations that yield an eventual result; it returns a Deferred<T> instance, which is a lightweight future subclassing Job. The caller retrieves the computed result by calling the suspending await method. In terms of exception propagation, while an async root coroutine encapsulates exceptions within the Deferred until await is called, an async coroutine launched inside a standard coroutineScope will still propagate its failure up to the parent Job immediately upon crashing, cancelling the entire scope even before await is invoked.
+`launch` and `async` both start child coroutines in a scope. `launch` returns a `Job` for work whose caller does not need a result value; `async` returns a `Deferred<T>` whose value is obtained with `await()`. Both inherit the scope context by default and start immediately unless configured otherwise. A `Deferred` stores a failure for `await()`, but a child `async` in an ordinary job hierarchy can also cancel its parent as soon as it fails. Choosing the builder does not replace a decision about ownership, error handling, or whether concurrent calls are actually independent.
 
 ## Practical walkthrough (English)
 
-Consider a dashboard screen that triggers an analytics event while concurrently loading two independent data widgets.
+A dashboard needs two independent values before it can show one combined state:
 
-Illustrating the distinct usage of launch versus async:
 ```kotlin
 fun refreshDashboard() {
-    // 1. launch: Fire-and-forget side effect, returns Job
     viewModelScope.launch {
-        analyticsTracker.logEvent("dashboard_refreshed")
-    }
-
-    // 2. async: Concurrent value computations, returns Deferred<T>
-    viewModelScope.launch {
-        val balanceDeferred: Deferred<AccountBalance> = async(Dispatchers.IO) {
-            accountApi.fetchBalance()
+        try {
+            val result = coroutineScope {
+                val balance = async { accountApi.fetchBalance() }
+                val alerts = async { alertApi.fetchAlerts() }
+                DashboardUiState.Ready(balance.await(), alerts.await())
+            }
+            _uiState.value = result
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _uiState.value = DashboardUiState.Error(e)
         }
-        val notificationsDeferred: Deferred<List<Notification>> = async(Dispatchers.IO) {
-            notificationApi.fetchNotifications()
-        }
-
-        // Await concurrent values in parallel
-        val balance = balanceDeferred.await()
-        val notifications = notificationsDeferred.await()
-        _uiState.value = DashboardUiState.Ready(balance, notifications)
     }
 }
 ```
-If fetchBalance throws an exception, the async child fails. Even if await has not yet been called on notificationsDeferred, the failure propagates up the parent Job, immediately cancelling notificationsDeferred and the parent coroutine, preventing wasted network operations.
+
+The outer `launch` is owned by the ViewModel. The two `async` children overlap while their values are needed together. The example assumes main-safe suspending APIs; `async` does not itself switch to IO. If either required request fails, the ordinary parent fails and the sibling is cancelled. If partial widget success is acceptable, give each result an explicit success/error representation under supervision.
 
 ## Explanation in Arabic
 
-المقارنة بين `launch` و `async` بتكشف فهمك لطرق استدعاء الـ Coroutines والتعامل مع النتائج والاستثناءات:
+`launch` و`async` الاتنين بيبدأوا Coroutines فرعية داخل Scope. `launch` بترجع `Job` للشغل اللي المستدعي مش محتاج منه قيمة، و`async` بترجع `Deferred<T>` آخذ نتيجتها بـ `await()`. الاتنين بيورثوا السياق ويبدأوا فوراً بشكل افتراضي؛ ولا واحد فيهم بينقل الكود تلقائياً للخلفية.
 
-1. دالة `launch` (Fire-and-Forget):
-   - بتستخدم لما تكون عايز تبدأ عملية ومش مستني منها قيمة مرجعة (No return value).
-   - بترجع كائن `Job` يُستخدم للتحكم في دورة الحياة (زي الإلغاء بـ `job.cancel()` أو الانتظار بـ `job.join()`).
-   - **التعامل مع الاستثناءات (Exception Handling):** أي Uncaught Exception بيحدث داخل `launch` بيتم رميه وتصعيده فوراً للـ Parent Job والـ Uncaught Exception Handler؛ لا ينتظر أن تنادي أي دالة.
-
-2. دالة `async` (Compute-and-Return):
-   - بتستخدم لما تكون بتشغل عملية غير متزامنة وعايز ترجع منها نتيجة (Returns a computed value).
-   - بترجع كائن `Deferred<T>` (وهو نوع من أنواع الـ Job).
-   - للحصول على النتيجة، بتنادي الدالة المعلقة `await(): T`.
-   - **التعامل مع الاستثناءات:** الاستثناء بيتم تغليفه داخل الـ `Deferred`، وبيترمي لما المتصل ينادي `await()`. لكن انتبه: في الـ Standard `coroutineScope`، حتى لو منادتش `await()`، فشل `async` هيصعد الاستثناء للأب ويلغي باقي الإخوة!
-
-3. خطأ شائع جداً (Anti-pattern):
-   - استخدام `async` لما مفيش قيمة مرجعة، أو استخدام `async` متتالي في سطرين وراء بعض بدون توازي حقيقي: `val a = async { ... }.await()` ده بيمشي تسلسلي مش متوازي!
+لو `async` فرعية فشلت داخل Job hierarchy عادية، فشلها ممكن يلغي الأب فوراً حتى قبل `await()`. عشان كده بحدد من الأول هل كل النتائج مطلوبة، ولا محتاج نجاح جزئي مع supervision ومعالجة واضحة لكل خطأ.
 
 ## Practical walkthrough
 
-في شاشة الحساب: جلب الملف الشخصي وقائمة الإشعارات بالتوازي:
-- **النهج الخاطئ (Sequential async):**
-  val profile = async { api.getProfile() }.await() // انتظر حتى ينتهي بالكامل أولاً!
-  val notifications = async { api.getNotifications() }.await() // بدأ بعد ما الأول خلص!
-  كده مفيش أي توازي؛ الكود اشتغل تسلسلي وخسرنا ميزة الـ async.
-- **النهج الصحيح (True Parallelism):**
-  val profileDeferred = async { api.getProfile() } // بدأ فوراً في الخلفية
-  val notificationsDeferred = async { api.getNotifications() } // بدأ في نفس اللحظة بالتوازي
-  // الآن ننتظر النتيجتين معاً:
-  val state = UiState(profileDeferred.await(), notificationsDeferred.await())
-- **متى نستخدم launch؟**
-  `viewModelScope.launch { repo.logAnalyticsEvent(event) }` // عملية إرسال لا تحتاج انتظار نتيجة.
+في Dashboard محتاجة رصيد وتنبيهات معاً، أبدأ `viewModelScope.launch`، وداخلها `async` لكل API معلّقة وآمنة على Main، ثم أستنى القيمتين وأبني الـ UI state. `async` لا تعني Background Thread؛ لو API حظرية أنقلها عند الحد اللي يملكها. لو واحد من الطلبين فشل، أعرض خطأ وأترك `CancellationException` تمر من غير تحويلها لفشل عادي. لو كل كارت مستقل، أمثل نجاح وخطأ كل كارت تحت supervision بدل ما ألغي الكل.
 
 ## Why it matters and how it works
 
@@ -123,28 +95,25 @@ A home screen fetches account and notification count concurrently because the AP
 
 ## Interview answer — short
 
-launch is a fire-and-forget coroutine builder returning a Job for operations where no value is returned, propagating uncaught exceptions immediately up the Job hierarchy. async is for concurrent computations returning a Deferred<T>, allowing callers to retrieve the result via await. Within a standard scope, async exceptions still cancel the parent hierarchy immediately.
+`launch` starts work and returns a `Job` to cancel or wait for it. `async` starts work that will produce a value and returns a `Deferred` whose result I get with `await()`. I use `async` when concurrent results help the caller, and I keep both inside a scope that owns their cancellation and failures.
 
 ## Interview answer — structured
 
-The core distinction between launch and async centers on whether the asynchronous operation produces a computational result or performs a fire-and-forget action.
+I choose based on whether the caller needs a result. `launch` returns a `Job`, so it fits a screen event that updates state but does not return a value to the launching code. `async` returns a `Deferred<T>` and `await()` gives me the value. If a screen needs a profile and permissions and those requests are independent, I can start both with `async` inside `coroutineScope`, then await both before building the screen state.
 
-Launch returns a Job that represents the running task, making it ideal for background operations such as logging analytics, caching database entries, or firing UI notifications where the caller only cares about completion status.
+I would not use `async` just to make every suspend call look more advanced. If one request depends on the other, sequential calls are clearer and do not add useful concurrency. Both builders inherit the owner's context and produce child jobs, so neither is a free-floating background task by default.
 
-In production, async returns a Deferred instance, which represents a promise of an eventual value retrieved through the suspending await method. We use async primarily when decomposing a complex screen into parallel network calls that need to be aggregated together.
-
-Exception handling differs significantly. Uncaught exceptions in launch immediately propagate up the parent Job hierarchy. With async, while exceptions are thrown when calling await, an unhandled failure in an async child inside a standard scope still cancels the parent Job and all siblings immediately, unless wrapped in a supervisorScope.
-
+The failure behavior is the part people miss. A child `async` failure inside a regular scope can cancel the parent and siblings before I reach `await()`. Catching only around `await()` may be too late to keep the scope alive. If partial success is required, I would use supervision and model each result or error explicitly.
 
 ## Interview answer — deep senior
 
-Under the hood, launch creates a StandaloneCoroutine instance, whereas async creates a DeferredCoroutine instance. Both inherit the CoroutineScope context and instantiate a child Job linked to the parent. However, their internal completion and exception reporting logic diverges markedly in the handleJobException method.
+`launch` and `async` both create child coroutines in the supplied scope. `launch` exposes completion and cancellation through `Job`; `async` adds a result through `Deferred<T>`. `await()` suspends until the result is ready and rethrows a failure stored by the deferred.
 
-In a StandaloneCoroutine created by launch, an unhandled exception thrown in the coroutine body causes the coroutine to cancel itself and call parentContext.handleCoroutineException(exception). The failure traverses directly up to the root Job. If no supervisor boundary exists, the root coroutine either delegates the exception to an installed CoroutineExceptionHandler or passes it to the thread default uncaught exception handler, crashing the Android runtime.
+A root `async` keeps its exception for `await()`, but a child `async` in an ordinary scope still reports failure to its parent immediately. That parent can already be cancelling when the caller catches an exception from `await()`. I therefore choose the failure boundary before starting work: `coroutineScope` when all results are required; `supervisorScope` plus explicit per-task handling when partial results are valid. A `launch` child under supervision also needs its own error handling because no caller awaits a value from it.
 
-In contrast, a DeferredCoroutine created by async stores the resulting outcome—whether a value or an exception—inside its internal state. When await is called, the state is evaluated: if the computation completed normally, the value is returned; if it completed exceptionally, await unpacks and re-throws the original exception. However, a critical pitfall in Kotlin coroutines is assuming that wrapping await in a try-catch block protects the scope from cancellation. Inside a regular coroutineScope, the Deferred child notifies its parent of failure immediately upon crashing. By the time await throws the exception in the caller, the parent Job is already in the Cancelling state, and all siblings have been cancelled.
+I would also avoid a detached `async` whose `Deferred` escapes its owner's lifetime. It becomes easy to lose cancellation or forget to observe the failure. For truly sequential work, plain suspend calls give a simpler failure path. If I use `CoroutineStart.LAZY`, I remember that awaiting lazy deferreds one by one can remove the intended concurrency unless I start them before waiting.
 
-To achieve true resilience when using async for parallel operations where one failure should not cancel the others, senior engineers wrap the parallel operations in supervisorScope or invoke supervisorScope with individual try-catch blocks around each await call.
+If the values feed a single UI state, I return them from a local `coroutineScope` to the outer ViewModel operation and catch the aggregate failure outside that boundary. That avoids publishing one half of a required pair. For independent widgets I model each outcome separately so one error does not silently become a successful empty value.
 
 ## How to answer in the interview
 
@@ -160,14 +129,14 @@ Explain eager start, `join` versus `await`, ordinary parent failure, lazy start 
 
 ## Follow-up questions
 
-- **Interviewer:** "What happens if an `async` coroutine fails and you wrap `deferred.await()` in a `try-catch`?"
-  **Answer:** "If you are inside a standard `coroutineScope`, wrapping `deferred.await()` in `try-catch` catches the exception locally at the call site, but the parent `coroutineScope` has already been cancelled by the failure of the child! To catch child exceptions locally without cancelling siblings, you must use `supervisorScope`."
+- **Interviewer:** "I caught the error from `await()`. Why did the sibling still get cancelled?"
+  **Answer:** "The failing `async` was a child of an ordinary scope. It reported failure to its parent as soon as it failed, before my catch around `await()` could change the parent's state. If partial success is the contract, I would choose supervision and handle each result."
 
-- **Interviewer:** "Can you await multiple Deferred instances concurrently?"
-  **Answer:** "Yes, using the `awaitAll()` extension function on a collection of Deferreds (e.g., `listOf(task1, task2).awaitAll()`). It awaits all results concurrently and returns a `List<T>`, failing fast if any of the tasks throw an exception."
+- **Interviewer:** "Would you use `async` for one network request?"
+  **Answer:** "Usually no. A plain suspend call is simpler if there is nothing useful to run concurrently. `async` helps when I really need overlapping results."
 
-- **Interviewer:** "What is `CoroutineStart.LAZY` and how does it affect `async`?"
-  **Answer:** "By default, `async` starts executing immediately. When started with `CoroutineStart.LAZY`, the coroutine does not start executing until you either explicitly call `deferred.start()` or call `deferred.await()`. Calling `await()` on two lazy async blocks sequentially will run them sequentially rather than in parallel."
+- **Interviewer:** "What happens if you create two lazy deferreds and await the first before the second?"
+  **Answer:** "The first `await()` starts the first task and waits for it. The second has not started yet, so I lose the overlap. I would start both first or use the default eager start if concurrency is intended."
 
 ## Self-check rubric
 
@@ -178,4 +147,4 @@ Can I choose the right builder, predict result and exception behavior, justify c
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — `launch`, `async`, Job and Deferred.
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — failure observation and propagation.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against primary documentation on 2026-10-17.

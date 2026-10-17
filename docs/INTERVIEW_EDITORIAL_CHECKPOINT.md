@@ -4,13 +4,17 @@
 
 The requested goal is a question-by-question editorial review of all 485 English and Egyptian-Arabic interview records. A passing validator establishes structure, route parity, and limited text rules; it does not establish that a candidate can say and defend an answer aloud. The existing `editorial_status: reviewed` values predate this review and must not be used as evidence that the new speaking standard has been met.
 
-The first exploratory pass inspected the opening, middle, and final records in each of the 21 topics, plus the full spoken sections and bilingual metadata of the nine records below. The remaining 476 records still require complete reading of Quick, Best, Deep, and interviewer dialogue. This checkpoint is deliberately not a completion claim.
+The first exploratory pass inspected the opening, middle, and final records in each of the 21 topics, plus the full spoken sections and bilingual metadata of the thirteen records below. The remaining 472 records still require complete reading of Quick, Best, Deep, and interviewer dialogue. This checkpoint is deliberately not a completion claim.
 
 ## Completed manual rewrites
 
 | ID | Editorial defect found | Change made |
 | --- | --- | --- |
 | COR-01 | Abstract opening; unsupported fixed thread and memory numbers; an example that launched 1,000 requests | Rewrote all three spoken levels and pushback in both languages; corrected the learning example and explained bounded requests, blocking SDKs, and cancellation. |
+| COR-02 | `suspend` presented as a compiler lecture and blanket dispatcher-switch rule | Rewrote the interview flow and Arabic counterpart around inherited context, main safety at the blocking boundary, and cancellation limits; corrected surrounding learning prose. |
+| COR-03 | Scope/context/job definitions displaced the ownership decision; examples assumed IO for suspending calls | Rewrote both languages around scope ownership, `Deferred` results, and the `Job()` override trap; changed the example to main-safe suspending calls. |
+| COR-04 | Structured concurrency presented as leak-proof and as atomic recovery for payment and inventory side effects | Rewrote both languages with a read-only concurrent example and a clear warning that cancellation does not undo remote mutations. |
+| COR-05 | `launch` and `async` described mostly through implementation classes; `async` example implied a background hop | Rewrote both languages around result needs, concurrent independent calls, and failure propagation; corrected the example and error handling. |
 | SOL-01 | Grand claims that SOLID affects classloader, GC, and build speed; acronym recitation without a real decision | Rewrote both languages around change pressure, behavioral contracts, and the cost of unnecessary abstraction. |
 | ARC-01 | Academic layer description; no clear limit on a client's authority in a transfer example | Rewrote both languages around dependency direction, a concrete rule, server authority, and when a pass-through use case is unnecessary. |
 | PAY-01 | Automatic reversal and perfect-accounting guarantees from a client state machine | Rewrote both languages around `Unknown`, provider-specific recovery, confirmed reversal, and the gap between local persistence and remote processing. |
