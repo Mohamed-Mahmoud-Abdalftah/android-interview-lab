@@ -131,7 +131,7 @@ test('bilingual language switching and shared progress persistence', async ({ pa
   await expect(practiceEn.getByText('Saved locally')).toBeVisible();
 
   // 2. Switch to Arabic using the REAL Starlight header language dropdown
-  const langSelectEn = page.getByLabel('Select language').first();
+  const langSelectEn = page.locator('starlight-lang-select select').first();
   await langSelectEn.selectOption({ label: 'العربية' });
   await expect(page).toHaveURL(/\/ar\/lab\/questions\/kot-01\/$/);
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
@@ -148,7 +148,7 @@ test('bilingual language switching and shared progress persistence', async ({ pa
   await expect(practiceAr.getByRole('textbox', { name: 'ملاحظة خاصة / إجابتك الشخصية' })).toHaveValue('Bilingual persistence test note.');
 
   // 3. Switch back to English using the Arabic page's Starlight header language dropdown
-  const langSelectAr = page.getByLabel('Select language').first();
+  const langSelectAr = page.locator('starlight-lang-select select').first();
   await langSelectAr.selectOption({ label: 'English' });
   await expect(page).toHaveURL(/\/lab\/questions\/kot-01\/$/);
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
