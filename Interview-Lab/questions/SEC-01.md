@@ -36,12 +36,10 @@ class SecurePaymentService : IPaymentService.Stub() {
         val callingUid = Binder.getCallingUid()
         val context = applicationContext
         
-        val permissionCheck = context.checkCallingOrSelfPermission(
-            "com.example.bank.permission.EXECUTE_PAYMENT"
+        context.enforceCallingPermission(
+            "com.example.bank.permission.EXECUTE_PAYMENT",
+            "Calling UID $callingUid lacks payment permission"
         )
-        if (permissionCheck != PackageManager.PERMISSION_GRANTED) {
-            throw SecurityException("Calling UID $callingUid lacks payment permission")
-        }
         
         // 2. Validate package identity matches expected trusted signer certificate
         val callerPackages = context.packageManager.getPackagesForUid(callingUid)
@@ -151,30 +149,23 @@ For a fintech app, keep customer data in app-private storage, request only neces
 
 ## Interview answer — short
 
-The Android sandbox isolates applications using Linux kernel UID separation and SELinux mandatory access controls. Each app runs as a distinct user with private storage that other apps cannot touch. The permission model layers install-time, runtime, and signature gates on top of this sandbox, requiring explicit user or cryptographic approval before an app can access sensitive hardware, personal data, or privileged system APIs.
+Android gives each app a sandbox, normally with its own Linux UID and private storage, and SELinux adds another layer of access control. Permissions govern access to capabilities outside that sandbox; some are granted at install time, some need a runtime decision, and some depend on the app's signing identity. For an exported component I would also check who can call it and validate the input, because a permission request alone does not secure that boundary.
 
 ## Interview answer — structured
 
-Android security begins at the Linux kernel level, where each installed application receives a unique user identifier rather than running under a shared user account.
-This UID separation gives the app an isolated process space and private file storage where files are non-readable by neighboring applications.
-Beyond standard Linux file permissions, SEAndroid enforces SELinux mandatory access control policies that confine application domains even if an attacker manages to exploit a native memory vulnerability.
-To access protected capabilities outside its sandbox, an application must request permissions through the platform model.
-Install-time permissions cover normal low-risk capabilities like internet access and are granted automatically upon installation.
-Runtime permissions govern privacy-sensitive resources like camera, location, and contacts, requiring explicit user consent in context and allowing runtime revocation at any point from system settings.
-Signature permissions restrict sensitive integration points strictly to applications signed with the identical developer certificate, enabling secure modular communication across proprietary app suites.
+I think of the sandbox as the default boundary between apps. Android normally runs an app under its own Linux UID, so another ordinary app cannot simply read its private files. SELinux adds restrictions on what app processes may access. That is a useful baseline, but it is not encryption of every app file and it does not make an app safe from its own bugs or a compromised device.
+
+Permissions let an app request access beyond that baseline. Normal permissions are granted without a runtime prompt; dangerous permissions such as location need a user decision, and the user can later revoke them. Signature permissions are useful when two apps signed by the same developer need a protected IPC contract.
+
+In practice I minimize permissions and check the current grant before a protected operation. I also review every exported Activity, Service, Receiver, and Provider. If a component is private, I keep it unexported. If another app must call it, I choose the right permission or caller check, validate incoming data, and test the denial path. The sandbox is the starting point; secure cross-app boundaries still need deliberate design.
 
 ## Interview answer — deep senior
 
-From a security architecture standpoint, Android shifts the traditional desktop trust model from trusting the user to isolating mutually untrusted applications from each other and the operating system.
-The Linux kernel enforces Discretionary Access Control through assigned UIDs, while SEAndroid provides Mandatory Access Control via typed domains like untrusted_app.
-This means that even if a process achieves code execution, SELinux prevents it from mapping arbitrary memory, executing raw system calls, or inspecting unauthorized IPC channels.
-At the application framework layer, Inter-Process Communication occurs over Binder drivers.
-Because the kernel securely passes the calling UID and PID during every Binder transaction, the operating system never relies on client-reported identifiers for access control.
-Framework services query PermissionManagerService and AppOpsManager using these kernel-verified credentials.
-When designing modern fintech or high-assurance applications, I treat runtime permissions as ephemeral states rather than one-time gates.
-Users can revoke permissions at any moment, the system can auto-reset permissions for dormant apps, and Android 14 introduces partial photo pickers where grants are granular.
-        Therefore, robust production architecture checks permissions immediately prior to invoking protected APIs, gracefully handles denials without crashing, and relies on signature-level permissions and signature certificate validation to secure inter-app IPC endpoints.
-Furthermore, we minimize component attack surfaces by setting exported to false by default on all activities, services, and broadcast receivers, relying exclusively on explicit intents to prevent malicious cross-process hijacking.
+The kernel UID and file permissions isolate ordinary app processes. SELinux policy adds mandatory rules that the process cannot opt out of. Those layers limit access, but I would avoid saying they make exploitation impossible. A vulnerable exported component, an overly broad URI grant, code running inside the app, or a compromised operating system can change the threat picture. Private internal storage is access-controlled; application-specific encryption is a separate choice based on the data and threat model.
+
+For an IPC endpoint, I would start with whether it must be exported at all. An explicit intent does not secure an exported component by itself. If the endpoint is shared only with apps we sign, a signature-level permission can be appropriate. If third parties need access, I would define a narrower authorization policy, validate the caller and every supplied URI or extra, and avoid returning more data than the contract requires. On a Binder call, I would use a caller-oriented check, not one that can fall back to the service's own permissions. I would test with a separate app that lacks the permission.
+
+Runtime permissions are also changing state. A grant can be denied, revoked, or limited, and the API call can still fail even after a prior check. So I check close to use and handle the failure. I would use the system Photo Picker when it meets the feature need rather than request broad media access. This is defense in depth: each layer has a specific guarantee, and I would describe those guarantees precisely instead of claiming that SELinux or a permission dialog makes the whole app secure.
 
 ## How to answer in the interview
 
@@ -190,11 +181,14 @@ Trace one cross-UID data path through a provider or URI grant; distinguish platf
 
 ## Follow-up questions
 
-- **Interviewer:** "Can two different apps share the same Linux UID?"
-  **Answer:** "Historically yes, using `sharedUserId` in the Manifest if signed with the exact same certificate; however, Google deprecated `sharedUserId` in API 29 due to severe security and update risks. Modern Android applications should use custom permissions with `protectionLevel=\"signature\"` to share services while keeping distinct UIDs and isolated storage."
+- **Interviewer:** "Are files in an app's private directory automatically encrypted by the sandbox?"
+  **Answer:** "The sandbox controls which app process can access them; that is different from encryption. Device storage encryption and any app-level encryption have separate guarantees and threat models."
 
-- **Interviewer:** "Why is `checkCallingOrSelfPermission` dangerous when securing an exported Service?"
-  **Answer:** "`checkCallingOrSelfPermission` checks the caller's permission during an IPC, but if the caller doesn't have it, it falls back to checking whether the hosting service process has the permission. If your app declared that permission in its own manifest, the call will succeed even if an unauthorized third-party caller invoked it. Exported services must use `checkCallingPermission` or `enforceCallingPermission`."
+- **Interviewer:** "Does an explicit intent make an exported Service safe?"
+  **Answer:** "No. Another app can address an exported component explicitly if it knows its name. I would restrict export or enforce an appropriate permission and validate the caller's input."
+
+- **Interviewer:** "What if location permission is revoked while the app is running?"
+  **Answer:** "I treat permission as current state, check near the operation, and handle the API failure or denial path. I would not rely on a grant cached when the screen opened."
 
 ## Self-check rubric
 

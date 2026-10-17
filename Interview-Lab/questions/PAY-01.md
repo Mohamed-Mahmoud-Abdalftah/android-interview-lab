@@ -23,19 +23,9 @@ What is a payment state machine (initiated, processing, approved, declined, unkn
 
 ## Concept and technical explanation
 
-A payment state machine is a deterministic finite state automaton governing the lifecycle of financial transactions across mutually exclusive, strictly monotonic states:
-- The Binary Fallacy in Financial Systems:
-  - In ordinary applications, network requests are often modeled as a boolean `Result.Success` or `Result.Failure`.
-  - In point-of-sale (POS) and fintech systems, this simplification causes catastrophic double-charging. A network timeout does not mean the transaction failed; the issuing bank may have deducted funds while the mobile client failed to receive the TCP packet.
-- The 6 Canonical Payment States:
-  1. `Initiated`: Transaction intent, cryptographic correlation ID, and amount are durably committed to SQLite/Room before opening any network socket.
-  2. `Processing`: The transaction payload has been dispatched to the payment gateway or bank switch; client awaits cryptographic authorization.
-  3. `Approved`: The issuer returns a signed authorization code confirming funds hold; receipt can be printed.
-  4. `Declined`: Explicit rejection code from the card issuer (e.g., insufficient balance, expired card, incorrect PIN); a definitive terminal state requiring no retry.
-  5. `Unknown` (In-Doubt): The socket dropped, timed out, or process terminated while waiting for response. The ledger state is undefined; funds may or may not be debited.
-  6. `Reversed`: An automated reversal (such as ISO 8583 message 0400/0420) was dispatched and acknowledged, releasing any pre-authorized hold on the cardholder's funds.
-- Monotonicity and Durability Invariants:
-  - State transitions must be strictly unidirectional and written using write-ahead logging (WAL) transactions. Once a transaction reaches `Approved` or `Declined`, it can never transition back to `Processing`.
+A payment state machine records what the client and backend actually know about one attempt. `Initiated` means an attempt ID and intent have been persisted. `Processing` means the request may be in flight. `Approved` and `Declined` require authoritative outcomes under the provider contract. `Unknown` means the response is missing or ambiguous; it must not be treated as a decline. `Reversed` should be used only after the provider confirms a reversal, if that operation applies to the integration.
+
+Persist transitions atomically within the local database, but never claim that a local transaction is atomic with a remote payment. Keep a stable attempt ID and any provider correlation reference so the backend can resolve an unknown outcome after a crash. An idempotency key helps with retries only if the provider or backend honors it under documented rules. Recovery may involve a status inquiry, reconciliation, or a protocol-specific reversal; no single command works for every provider. Test every failure window, including a lost approval response and an unconfirmed reversal.
 
 ## Practical walkthrough (English)
 
@@ -59,7 +49,7 @@ sealed interface PaymentState {
         val idempotencyKey: String
     ) : PaymentState
 
-    // 3. Terminal success: Authorization code granted
+    // 3. Provider-confirmed authorization under this integration's contract
     data class Approved(
         override val transactionId: String,
         override val amountCents: Long,
@@ -67,7 +57,7 @@ sealed interface PaymentState {
         val rrn: String // Retrieval Reference Number
     ) : PaymentState
 
-    // 4. Terminal failure: Explicit bank refusal
+    // 4. Provider-confirmed decline under this integration's contract
     data class Declined(
         override val transactionId: String,
         override val amountCents: Long,
@@ -79,10 +69,10 @@ sealed interface PaymentState {
     data class Unknown(
         override val transactionId: String,
         override val amountCents: Long,
-        val failureReason: Throwable
+        val reasonCode: String // safe to persist; do not persist Throwable
     ) : PaymentState
 
-    // 6. Terminal release: Pre-authorization hold cancelled
+    // 6. Provider-confirmed reversal; release timing may differ
     data class Reversed(
         override val transactionId: String,
         override val amountCents: Long,
@@ -93,24 +83,13 @@ sealed interface PaymentState {
 
 ## Explanation in Arabic
 
-ما هي آلة حالة الدفع (Payment State Machine) وما هي الحالات الأساسية (Initiated, Processing, Approved, Declined, Unknown, Reversed) ولماذا تعتبر حاسمة في التطبيقات المالية؟
+آلة حالات الدفع بتسجل إحنا نعرف إيه فعلاً عن محاولة واحدة. `Initiated` معناها حفظ نية الدفع ومعرف ثابت، و`Processing` معناها إن الطلب قد يكون خرج، و`Approved` أو `Declined` يحتاجان رداً موثوقاً حسب عقد مزود الدفع. `Unknown` معناها إن الرد ناقص أو ملتبس، ومش مسموح نعتبرها رفضاً. `Reversed` تُستخدم بعد تأكيد العكس من المزود، لو العملية دي موجودة في البروتوكول.
 
-1. خطورة التعامل مع المدفوعات كـ Boolean (Success/Failure):
-   - في التطبيقات العادية، قد تكفيك نتيجة `true` أو `false`.
-   - في الأنظمة المالية ونقاط البيع (POS/Fintech)، **هذا التبسيط يؤدي لكوارث مالية (Double-charging أو خسارة أموال التاجر)**!
-   - الشبكة قد تنقطع بعد خصم الأموال من حساب العميل وقبل وصول الرد للهاتف؛ فإذا اعتبرت العملية "فاشلة"، سيقوم العميل بالدفع مرة أخرى ويُخصم منه مرتين!
-
-2. الحالات الست الصارمة لآلة حالة الدفع (The 6 Payment States):
-   - **1. Initiated (تم البدء)**: تم إنشاء الطلب محلياً وتوليد معرف ارتباط فريد (Correlation ID) وحفظه في قاعدة البيانات المحلية (Room) قبل إرسال أي بايت عبر الشبكة.
-   - **2. Processing (قيد المعالجة)**: تم إرسال الطلب إلى معالج الدفع (Payment Gateway / Bank Switch) وننتظر الرد.
-   - **3. Approved (مقبول ومؤكد)**: وصل رد رسمي وبتوقيع رقمي من البنك يؤكد حجز الأموال بنجاح.
-   - **4. Declined (مرفوض)**: رد صريح من البنك بالرفض (رصيد غير كافٍ، بطاقة منتهية، كلمة سر خاطئة). حالة نهائية لا تتطلب إعادة محاولة.
-   - **5. Unknown / In-Doubt (حالة معلقة وغير محددة)**: **أهم وأخطر حالة**! انقطاع اتصال (Timeout)، سقوط الخادم، أو إعادة تشغيل الهاتف أثناء انتظار الرد. لا يجوز اعتبارها نجاحاً ولا فشلاً، بل تتطلب استعلاماً لاحقاً (Reconciliation) أو عملية عكس (Reversal).
-   - **6. Reversed (معكوس / ملغى)**: تم إرسال طلب إلغاء فوري للبنك لحذف الحجز واستعادة رصيد العميل بسبب عطل محلي.
+أحفظ كل انتقال محلي داخل Transaction مناسبة، لكن قاعدة البيانات المحلية ما تقدرش تعمل Transaction ذرية مع خصم بعيد على الشبكة. معرف المحاولة ومرجع المزود يسمحان للـ Backend بحسم الحالة بعد سقوط التطبيق. Idempotency Key مفيد فقط ضمن شروط المزود ومدة احتفاظه. الاسترداد ممكن يحتاج Status Inquiry أو Reconciliation أو Reversal محدداً؛ مفيش أمر واحد صالح لكل تكامل. أختبر ضياع رد الموافقة وتعطل الجهاز والعكس غير المؤكد.
 
 ## Practical walkthrough
 
-تمثيل آلة حالة الدفع الصارمة باستخدام Kotlin Sealed Class في كود معماري آمن:
+تمثيل توضيحي لحالات محاولة دفع؛ قواعد الانتقال تأتي من عقد مزود الدفع:
 ```kotlin
 sealed interface PaymentState {
     val transactionId: String
@@ -122,16 +101,16 @@ sealed interface PaymentState {
     // 2. تم إرسال الطلب للبنك وننتظر الرد:
     data class Processing(override val transactionId: String, override val amountInCents: Long, val idempotencyKey: String) : PaymentState
 
-    // 3. تأكيد نهائي بالخصم:
+    // 3. تأكيد التفويض وفق عقد المزود:
     data class Approved(override val transactionId: String, override val amountInCents: Long, val authCode: String) : PaymentState
 
     // 4. رفض صريح من البنك:
     data class Declined(override val transactionId: String, override val amountInCents: Long, val reason: String) : PaymentState
 
-    // 5. حالة معلقة (انقطاع شبكة أثناء المعالجة - تتطلب تحقيق ومطابقة):
-    data class Unknown(override val transactionId: String, override val amountInCents: Long, val error: Throwable) : PaymentState
+    // 5. حالة معلقة تحتاج استعلاماً أو مطابقة؛ نخزن رمزاً آمناً لا Throwable:
+    data class Unknown(override val transactionId: String, override val amountInCents: Long, val reasonCode: String) : PaymentState
 
-    // 6. تم إلغاء المعاملة واسترجاع الرصيد بنجاح:
+    // 6. المزود أكد العكس؛ توقيت تحرير الرصيد قد يختلف:
     data class Reversed(override val transactionId: String, override val amountInCents: Long, val reversalRef: String) : PaymentState
 }
 ```
@@ -174,21 +153,23 @@ Keep a transition table with allowed evidence, actor and durable write for each 
 
 ## Interview answer — short
 
-A payment state machine is a deterministic automaton that manages financial lifecycles across six explicit states: Initiated, Processing, Approved, Declined, Unknown, and Reversed. It replaces dangerous boolean success-failure models with durable, crash-resilient transitions, ensuring that network timeouts enter an in-doubt state requiring automated reconciliation or ISO 8583 reversal rather than risking double-charging.
+A payment state machine gives each attempt a clear status: initiated, processing, approved, declined, unknown, or reversed. The key distinction is that a timeout means unknown, not declined; the provider may have processed the payment even though the app missed the reply. I persist an attempt identifier and use the provider's status or reconciliation flow before offering a new charge. The exact transitions depend on the payment contract.
 
 ## Interview answer — structured
 
-A deterministic payment state machine is the core architectural safeguard in mobile point-of-sale and fintech engineering.
-Standard mobile applications frequently treat network operations as a binary success or failure. In financial systems, this binary assumption leads to double-charging because a socket timeout indicates an ambiguous state where the bank might have debited funds while the client lost connectivity.
-The state machine models six mutually exclusive states. Initiated guarantees that the transaction intent and idempotency key are durably saved to local storage before opening a network socket. Processing marks the request in-flight. Approved and Declined represent definitive terminal outcomes from the card issuer.
-The critical state is Unknown or In-Doubt, triggered by connection drops or process termination. Transactions in this state are never treated as declined and are never naively retried. Instead, they transition to Reversed via an automated ISO 8583 reversal message or are resolved through backend ledger reconciliation.
+I use a payment state machine so the UI cannot turn every network error into “payment failed.” The states describe what we actually know: initiated and processing while an attempt is underway, approved or declined when the processor gives a definitive result, unknown when the response is missing, and reversed when a reversal is confirmed.
+
+The important case is a timeout after we sent the request. The customer might have been charged, so I would not show a definite decline or create a fresh payment attempt just because the phone lost connectivity. I would persist the attempt's identifier before sending it, then ask the backend or provider for its status. If the provider supports idempotent retries, I reuse the same key within that contract. Reversal is a separate operation with its own acknowledgement, not something the phone can assume happened.
+
+For a POS app I would make the on-screen message honest: “We are checking this payment” is safer than “Try again” while the outcome is unknown. The server and payment processor are authoritative for the final result. Local state helps recovery after process death, but it does not by itself guarantee exactly-once charging or perfect reconciliation.
 
 ## Interview answer — deep senior
 
-From an ISO 8583 banking switch and EMV terminal architecture perspective, a payment state machine enforces ledger consistency across distributed, unreliable mobile networks.
-The most dangerous vulnerability in client-side payments is treating an in-doubt state as a declined transaction. When a merchant taps to charge fifty dollars, a thirty-second gateway timeout can occur after the issuing bank captures the funds but before the mobile client receives the HTTP response. If the client naive logic marks this as failed, the cashier prompts the customer to swipe again, causing a catastrophic duplicate charge and merchant chargeback penalties.
-To prevent this, the client architecture must enforce an atomic state machine backed by persistent storage like SQLite Room with Write-Ahead Logging. The transition to Initiated occurs inside a local transaction. When entering Processing, the app assigns an immutable idempotency key and correlation ID.
-If a timeout or sudden power failure occurs, the state engine transitions to Unknown. The system immediately enqueues a background task in an isolated reversal queue, utilizing ISO 8583 0400 reversal messages. Furthermore, before initiating any subsequent transaction on the terminal, the POS software queries the gateway status endpoint. If the gateway confirms that authorization succeeded, the local transaction updates monotonically to Approved and prints the customer receipt. If authorization failed or was absent, the reversal releases held funds. This ensures perfect accounting balance regardless of battery pulls or carrier drops.
+I would first ask which payment provider and protocol we are integrating with, because the state names are our application model, while valid transitions and recovery commands come from the provider contract. A local record should include a stable attempt ID, provider correlation data, the latest known state, and enough safe metadata to investigate without storing sensitive card data. I would persist the intent before the irreversible call, but I would not claim the local database transaction is atomic with the remote payment. There is always a failure window between them.
+
+After a timeout, I treat the result as unknown. I can query a provider status endpoint, reconcile with backend events, or use a prescribed reversal flow where the protocol calls for one. I must not automatically fire an ISO 8583 reversal for every missing HTTP response; some integrations do not expose that operation, and a reversal request can itself time out. Until a confirmed response arrives, the app should preserve the uncertainty and prevent an accidental new charge. An idempotency key helps only if the server honors it for the relevant operation and retention window.
+
+For recovery, I would test power loss before send, after send but before response, after approval but before local persistence, and during reversal. The backend should resolve attempts using stable IDs and durable records, with an operator path for cases that remain ambiguous. The client can schedule retries under OS limits, but it cannot promise immediate delivery or guarantee that a payment was reversed. I would measure unresolved attempts and time to reconciliation, while keeping PAN, PIN, and secrets out of logs.
 
 ## How to answer in the interview
 
@@ -204,11 +185,14 @@ Prompt for transition table, unknown timeout, durable intent, late callback orde
 
 ## Follow-up questions
 
-- **Interviewer:** "Why is treating a network timeout as a 'Declined' payment dangerous in financial apps?"
-  **Answer:** "Because the issuer may have already approved and deducted the funds; treating it as declined causes the customer to pay twice upon re-trying."
+- **Interviewer:** "The app timed out. Can the cashier simply retry?"
+  **Answer:** "Not as a new charge. First I would look up the existing attempt. If the provider supports an idempotent retry, I would reuse that attempt's key under its documented rules; otherwise I would wait for status or reconciliation."
 
-- **Interviewer:** "What is the primary objective of an ISO 8583 reversal message?"
-  **Answer:** "To instruct the issuer to release pre-authorized funds and void an in-doubt transaction when the client terminal did not receive confirmation."
+- **Interviewer:** "Would you send a reversal for every unknown result?"
+  **Answer:** "Only if the provider's protocol requires it for that state. I would track the reversal as its own pending operation and wait for confirmation, because a reversal request can fail or time out too."
+
+- **Interviewer:** "What if power dies after approval but before the app saves it?"
+  **Answer:** "The local record may still say processing. On restart I would resolve the stable attempt ID against the authoritative backend or provider rather than infer the result from local state."
 
 ## Self-check rubric
 
