@@ -20,10 +20,6 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - name: Check editorial release gate
-        run: python3 scripts/validate_interview_lab.py --require-complete
-      - name: Check bilingual parity and spoken quality gate
-        run: python3 scripts/validate_bilingual_parity.py
       - uses: pnpm/action-setup@v4
         with:
           version: 11.25.0
@@ -34,10 +30,14 @@ jobs:
           cache-dependency-path: site/pnpm-lock.yaml
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: python3 scripts/validate.py
+      - name: Check editorial release gate
+        run: python3 scripts/validate_interview_lab.py --require-complete
       - run: pnpm install --frozen-lockfile
         working-directory: site
       - run: pnpm sync
         working-directory: site
+      - name: Check bilingual parity and spoken quality gate
+        run: python3 scripts/validate_bilingual_parity.py
       - run: pnpm lint
         working-directory: site
       - run: pnpm typecheck

@@ -24,11 +24,11 @@ jobs:
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: python3 scripts/validate.py
       - run: python3 scripts/validate_interview_lab.py --require-complete
-      - run: python3 scripts/validate_bilingual_parity.py
       - run: pnpm install --frozen-lockfile
         working-directory: site
       - run: pnpm sync
         working-directory: site
+      - run: python3 scripts/validate_bilingual_parity.py
       - run: pnpm lint
         working-directory: site
       - run: pnpm typecheck

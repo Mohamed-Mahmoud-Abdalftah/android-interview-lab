@@ -129,6 +129,18 @@ def validate():
         print(f"FAIL: Expected 485 canonical questions, found {total_questions}", file=sys.stderr)
         return 1
 
+    # Auto-generate pages if not yet built and a JS runtime is present
+    if not DOCS_EN.exists() or len(list(DOCS_EN.glob("*.md"))) < 485:
+        sync_script = ROOT / "site" / "scripts" / "sync-interview-lab.mjs"
+        if sync_script.exists():
+            import shutil
+            import subprocess
+            runtime = shutil.which("node") or shutil.which("deno")
+            if runtime:
+                cmd = [runtime, "run", "-A", str(sync_script)] if "deno" in runtime else [runtime, str(sync_script)]
+                print(f"Generated docs not found ({len(list(DOCS_EN.glob('*.md'))) if DOCS_EN.exists() else 0}/485). Running {sync_script.name} with {runtime}...")
+                subprocess.run(cmd, cwd=str(ROOT), check=True)
+
     topic_filter = None
     qid_filter = None
     if "--topic" in sys.argv:
