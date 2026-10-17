@@ -284,24 +284,23 @@ In a production banking or enterprise Android app:
 
 ## Interview answer — short
 
-Clean Architecture isolates core business rules from frameworks, databases, and UI implementations through concentric abstraction layers. In Android, it prevents UI components from coupling directly to data sources or framework APIs, ensuring business logic remains framework-agnostic, modular, and purely testable on local JVMs without Android runtime dependencies.
+Clean Architecture keeps business decisions separate from UI and data details, with dependencies pointing toward the core rules. In Android, that can keep a ViewModel from owning Retrofit and Room behavior directly, and make important rules easier to test. I use the separation where it protects a real boundary; a small feature does not automatically need every possible layer.
 
 ## Interview answer — structured
 
-Clean Architecture addresses the fundamental vulnerability of Android development where framework volatility and UI lifecycles corrupt enterprise business logic.
+Clean Architecture is a way to keep the rules of the app from depending on the UI framework, database, or network client. The key idea is dependency direction: an outer layer can depend on a core contract, while the core does not need to know whether data came from Room or an HTTP response.
 
-The system is separated into concentric layers governed by the Dependency Rule, dictating that dependencies must point inward toward pure domain entities and use cases. The domain layer contains zero Android dependencies, operating entirely on pure Kotlin data classes and interfaces.
+For example, a transfer screen might ask a use case whether a transfer is eligible. The rule can use an account repository contract, and the data layer can implement that contract with local and remote sources. The ViewModel turns the result into UI state. That gives me a place to test limits and failure outcomes without creating an Activity or a real server.
 
-In production, presentation and data layers act as swappable plugins. The UI consumes view states through ViewModels, while data repositories implement domain contracts via Retrofit, Room, or DataStore.
-As for operational advantages, this boundary isolation enables lightning-fast local JVM unit tests, prevents network DTO schema changes from cascading into UI widgets, and allows engineering teams to parallelize development across isolated modules without merge conflicts or architectural degradation.
-
+I would choose the amount of layering to fit the app. If a feature only displays one endpoint, adding a use case that simply forwards a call may make the code harder to follow. If the business rule matters, changes often come from several teams, or data sources may change, a clear boundary pays for itself. The goal is controlled dependencies and testable decisions, not a fixed folder diagram.
 
 ## Interview answer — deep senior
 
-Under the hood, Clean Architecture solves coupling and testability bottlenecks by inverting source code dependencies across layer boundaries using polymorphism. In typical legacy Android codebases, an Activity or ViewModel directly imports network clients or database DAOs, binding domain validation directly to JSON schemas or SQLite tables. When backend APIs change or libraries update, the entire presentation layer shatters.
-Clean Architecture resolves this by declaring repository interfaces inside the inner domain layer. The outer data layer implements these interfaces and handles DTO-to-domain mapping, meaning the domain layer dictates the contractual data requirements of the enterprise rather than subserviently reacting to external transport protocols.
-In production environments, this architectural purity demands pragmatic trade-offs. Introducing use cases, duplicate domain models, and bi-directional mappers for simple CRUD operations introduces boilerplate and navigation indirection that can slow delivery if applied dogmatically.
-Staff engineers assess team size, domain complexity, and multi-platform ambitions before committing to full three-layer isolation. While complex domains like fintech checkout flows, offline transaction reconciliation, and risk validation mandate use cases and strict module boundaries, simpler feature verticals often expose repository streams directly to ViewModels to avoid unnecessary layer overhead while maintaining complete testability. By strictly enforcing layer boundaries at compile time through Gradle modules, large engineering teams prevent accidental coupling and maintain pristine architectural hygiene.
+I would start by drawing the actual dependencies, because package names alone do not create an architecture. If a supposedly pure domain module imports `Context`, Retrofit DTOs, or Room entities, the rule has already leaked outward. A pure Kotlin domain module can make that boundary visible at compile time, but a Gradle module is a tool, not the definition of Clean Architecture.
+
+For a transfer flow, the domain rule might decide eligibility based on a policy and account state. The repository interface describes the information the rule needs; the data implementation maps transport and storage models into that contract. At the boundary I would define error semantics explicitly. A timeout, an authorization decline, and a stale local balance are different outcomes. In a financial workflow, the server remains authoritative for the final transaction decision, and a client-side eligibility check is only an early validation.
+
+There are trade-offs. More mappings and interfaces add maintenance work and can obscure a straightforward path through the code. I would introduce a use case when it owns a meaningful rule or orchestration, not just because every screen needs one in a template. I would test the rule on the JVM, then test the repository mapping and transaction behavior at the integration boundary. For an offline feature, I would also state which store is the source of truth and what happens after process death. Those choices matter more than whether every file sits in a textbook layer.
 
 ## How to answer in the interview
 
@@ -320,14 +319,14 @@ Staff engineers assess team size, domain complexity, and multi-platform ambition
 
 ## Follow-up questions
 
-- [ARC-03](../arc-03/): **Interviewer:** "Which direction do source code dependencies point in Clean Architecture, and how is that enforced?"
-  **Answer:** "Dependencies strictly point inward toward the domain layer. The UI layer depends on Domain Use Cases, and the Data layer depends on Domain repository interfaces by implementing them via Dependency Inversion. In our Gradle setup, we enforce this at compile time: the `:core:domain` module is a pure Kotlin library with no Android plugin, so it's physically impossible for someone to accidentally import `Context` or Retrofit annotations inside domain logic."
+- **Interviewer:** "Does Clean Architecture require a use case for every button click?"
+  **Answer:** "No. I add a use case when it owns a business decision or coordinates work that the UI should not own. A pass-through function with no policy may be unnecessary."
 
-- [ARC-13](../arc-13/): **Interviewer:** "When is the Domain layer strictly necessary versus when is it unnecessary overhead?"
-  **Answer:** "The Domain layer is justified when there is real business logic to protect—such as complex client-side validations, financial eligibility rules, or coordination between multiple repositories like local database plus remote sync. If a screen is just reading a list of items and displaying them without any business logic, creating a pass-through Use Case is wasteful boilerplate. In that case, having the ViewModel talk directly to the Repository is cleaner and faster."
+- **Interviewer:** "Where would you put a Retrofit response model?"
+  **Answer:** "In the data boundary. I would map it before it reaches a rule that should not depend on that API shape, especially if the backend contract can change independently."
 
-- **Interviewer:** "What happens if a backend team decides to redesign their entire API schema? How does Clean Architecture protect you?"
-  **Answer:** "It confines the blast radius entirely to the Data layer. Because the Domain and UI layers only know about immutable Domain entities, only the Retrofit DTOs and the mapper functions inside the Data layer need to be updated. Not a single line of business policy or Jetpack Compose code has to change, and all our domain unit tests continue to pass."
+- **Interviewer:** "If the client checks a transfer limit, can it approve the transfer?"
+  **Answer:** "No. The client check can improve feedback, but the server must make the authoritative decision against current state and enforce the limit atomically."
 
 ## Self-check rubric
 

@@ -24,18 +24,18 @@ When should you avoid derivedStateOf because its overhead exceeds the benefit?
 
 ## Concept and technical explanation
 
-While derivedStateOf is a vital optimization tool in Jetpack Compose, it introduces measurable memory and computation overhead that can degrade performance if misused. derivedStateOf should be strictly avoided when the calculated output state mutates at the exact same or higher frequency as the input state, such as performing simple string concatenations or basic uppercase transformations. In these scenarios, derivedStateOf cannot filter out any recompositions, but still incurs the continuous penalty of allocating DerivedSnapshotState objects, maintaining dependency read observers, and performing change comparisons. It should also be avoided when calculating values derived from plain Kotlin variables that are not Compose Snapshot States.
+`derivedStateOf` is useful when a rapidly changing Compose state produces a result that changes less often, allowing observers to skip work when the derived value stays equal. It has dependency-tracking overhead, so it is usually unnecessary for simple one-to-one transformations such as joining name fields. A direct expression or keyed `remember` is clearer for ordinary parameters. Be careful with plain parameters captured inside `remember { derivedStateOf { ... } }`: they are not snapshot reads and may remain stale when the parameter changes. The exact runtime cost depends on use and Compose version, so measure before treating this as a performance fix.
 
 ## Practical walkthrough (English)
 
 Contrasting wasteful vs beneficial uses of derivedStateOf:
 ```kotlin
-// ❌ ANTI-PATTERN: Wasteful derivedStateOf! Output changes on EVERY input change!
-// When 'query' updates, 'uppercaseQuery' updates simultaneously! Zero recomposition filtering!
-// Incurs allocation overhead of DerivedSnapshotState and read tracking for NO benefit!
+// Avoid this: the plain query parameter can become stale in remember.
+// Every query edit normally changes the uppercase result, so little is filtered.
+// A direct expression or keyed remember is clearer here.
 @Composable
 fun BadSearchInput(query: String) {
-    // ❌ WRONG: Plain calculation is cheaper than derivedStateOf!
+    // Plain calculation also avoids a stale captured query.
     val uppercaseQuery = remember {
         derivedStateOf { query.uppercase() }
     }
@@ -44,10 +44,10 @@ fun BadSearchInput(query: String) {
     Text("Search: ${uppercaseQuery.value}")
 }
 
-// ✅ ARCHITECTURAL BEST PRACTICE: High-frequency input -> Low-frequency output!
-// Input (scrollOffset) changes hundreds of times per second (every pixel)!
-// Output (showScrollToTop) changes ONLY TWICE (false -> true or true -> false)!
-// Saves thousands of recomposition passes during scrolling!
+// Useful case: a changing list position yields a less-changing boolean.
+// The first visible item index can change while the boolean stays true.
+// The output changes only when the threshold is crossed.
+// Profile the screen to establish the actual benefit.
 @Composable
 fun OptimizedScrollToTopButton(listState: LazyListState) {
     val showButton by remember {
@@ -62,22 +62,7 @@ fun OptimizedScrollToTopButton(listState: LazyListState) {
 
 ## Explanation in Arabic
 
-متى يجب تجنب استخدام `derivedStateOf` لأن تكلفة استخدامه (Overhead) تتجاوز فائدته؟
-
-1. كيف يعمل `derivedStateOf` وما هي تكلفته الخفية؟
-   - دالة `derivedStateOf` تنشئ كائناً خاصاً في الذاكرة يُسجل نفسه في نظام الـ Snapshot System لمراقبة كل الحالات المقروءة بداخله.
-   - في كل تعديل لأي حالة، يتم حساب الدالة، ومقارنة الناتج عبر `equals()`، وتحديث الـ Snapshot Records.
-   - هذا يعني وجود **تكلفة حجز ذاكرة (Allocation Overhead)** وتكلفة معالجة مستمرة للمراقبة.
-
-2. متى يجب **تجنب** `derivedStateOf` تماماً؟
-   - **عندما تتغير الحالة المدخلة بنفس معدل تغير الناتج (1:1 Change Ratio)**:
-     * مثال: دمج اسمين `derivedStateOf { "$firstName $lastName" }`.
-     * هنا، كلما تغير الاسم سيتغير الناتج حتماً! لا يوجد أي تخميد (Dampening) للتردد! استخدام `remember(firstName, lastName) { "$firstName $lastName" }` أسرع وأخف بمراحل بدون أي Snapshot overhead.
-   - **عند العمليات الحسابية البسيطة جداً**: العمليات البدائية (مثل جمع رقمين) لا تستحق إنشاء كائن مراقبة كامل في الـ Heap.
-
-3. متى يكون `derivedStateOf` مفيداً وضرورياً فقط؟
-   - **فقط عندما تتغير المدخلات بمعدل أعلى بكثير من تغير الناتج (Many-to-One / Frequency Dampening)**:
-     * مثال: موضع التمرير `scrollOffset` يتغير 60 مرة في الثانية (آلاف البكسلات)، ولكن الناتج قيمة منطقية بسيطة: `derivedStateOf { scrollOffset > 100 }` (تتغير مرتين فقط: true أو false).
+`derivedStateOf` مفيدة لما Compose State تتغير بسرعة لكن النتيجة المطلوبة تتغير أقل، فيقدر المستهلك يتجنب شغلاً غير لازم لما القيمة المشتقة تفضل نفسها. تتبع التبعيات له تكلفة، لذلك غالباً لا أحتاجها لعملية واحد لواحد مثل دمج اسمين. تعبير مباشر أو `remember` بمفاتيح واضح أكثر مع Parameters عادية. لازم أنتبه لو `remember { derivedStateOf { ... } }` التقط Parameter عادي: ده مش Snapshot Read وممكن القيمة تفضل قديمة بعد تغير الـ Parameter. تكلفة التنفيذ الدقيقة تعتمد على الاستخدام ونسخة Compose، فالمقياس الفعلي أهم من افتراض تحسن ثابت.
 
 ## Practical walkthrough
 
@@ -150,33 +135,23 @@ Use a representative trace and frame benchmark, count actual output transitions 
 
 ## Interview answer — short
 
-Avoid derivedStateOf when the output changes at the same frequency as the input, such as converting text to uppercase or simple formatting. In these cases, derivedStateOf cannot filter out any recompositions, but still adds the overhead of allocating snapshot state objects and tracking dependency reads. Only use derivedStateOf when the input updates significantly more frequently than the output, like checking a scroll threshold where pixels change constantly but the boolean output changes rarely.
+I avoid `derivedStateOf` when the result changes whenever its input changes, such as joining two name fields. It adds snapshot tracking without preventing a useful recomposition. A direct expression or `remember` with keys is usually clearer there. I use `derivedStateOf` when rapidly changing Compose state produces a result that changes much less often, like whether a list has scrolled past its first item. I would measure a performance concern rather than assume a universal speedup.
 
 ## Interview answer — structured
 
-Understanding when NOT to use derivedStateOf separates junior Compose developers from seasoned performance engineers.
-The purpose of derivedStateOf is to act as a recomposition filter: it prevents observers from recomposing when high-frequency input mutations do not alter the final calculated output.
-Consequently, applying derivedStateOf is counterproductive in two primary scenarios.
-First, avoid derivedStateOf when the derived result mutates at the exact same frequency as the input state.
-A classic anti-pattern is writing: derivedStateOf { firstName + " " + lastName } or derivedStateOf { text.uppercase() }.
-Every time the input changes, the derived string changes as well.
-Because the output changes on every single step, derivedStateOf skips zero recompositions.
-However, it still incurs the penalty of allocating a DerivedSnapshotState heap object, registering snapshot read observers, and executing equality comparisons on every frame.
-In this case, a plain inline expression or simple remember(key) is vastly faster and consumes less memory.
-Second, avoid derivedStateOf when inputs are not Compose Snapshot States.
-If the dependencies inside the lambda are standard Kotlin variables or immutable parameters, derivedStateOf cannot observe them, leading to stale or broken UI states.
+I reach for `derivedStateOf` when the UI reads a fast-changing state but only needs to react when a simpler result actually changes. A list scroll position can move on every drag, while a “show scroll-to-top button” boolean changes only when the first item crosses a boundary. That is a good fit.
+
+I avoid it for a one-to-one calculation. If I derive `firstName + " " + lastName`, the output changes each time a name changes, so the extra derived state is unlikely to save recompositions. A direct expression is easier to read; `remember(firstName, lastName)` can help if the calculation is expensive and those values are ordinary parameters.
+
+I also check what the lambda reads. `derivedStateOf` tracks Compose snapshot state reads; ordinary values captured without proper keys may become stale. If there is no high-frequency input or no meaningful reduction in downstream updates, I start with simpler code. I would inspect recomposition behavior and measure the screen before claiming the derived state improves performance.
 
 ## Interview answer — deep senior
 
-Under the hood, derivedStateOf instantiates an internal DerivedSnapshotState<T> object, which is significantly more complex and resource-intensive than a standard MutableState primitive.
-When a derivedStateOf calculation executes, Compose initializes a calculation scope and attaches an active Snapshot.readObserver.
-This observer intercepts every SnapshotMutableState read within the lambda block, constructing a dynamic dependency array stored in the SlotTable.
-On every subsequent frame where any state commits in the global Snapshot system, the Compose runtime must traverse these registered dependency arrays to determine if any tracked inputs were modified.
-If inputs changed, it executes the calculation lambda, retrieves the new result, and performs an equals() structural equality check against the cached value.
-If the output changed, it invalidates downstream RecomposeScopes.
-If you apply this machinery to a 1:1 mapping (where input change always produces output change), you force the CPU to perform all this dependency recording, array traversal, and equality diffing without gaining any skipping benefits.
-By contrast, a simple remember(key1, key2) { calculation } uses standard compiler bitmask checks: if the keys equal their previous SlotTable slot values, it returns the cached instance in O(1) time with zero read-observer overhead.
-Senior engineers reserve derivedStateOf strictly for N:1 reduction scenarios, such as mapping continuous pixel scroll offsets to boolean visibility toggles.
+The distinction is between caching a calculation and filtering observations. `remember(keys)` stores a value across recompositions and recalculates when the keys change. `derivedStateOf` creates a snapshot-derived state whose observed value can stay the same while its snapshot inputs change. That lets a composable avoid work when the derived result is unchanged, but dependency tracking has its own cost.
+
+For a scrolling list, I might write `remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }`. The index may change through many values while the boolean stays true, so consumers do not need to respond to every index change. For a name string, every input edit normally changes the output, so the extra layer buys little. If the calculation reads plain parameters captured in a `remember { ... }` block, I would check whether those captures can change without recreating the derived state; stale captures are a correctness bug, not just a performance issue.
+
+I would not present internal snapshot arrays, a fixed per-frame traversal cost, or a guaranteed memory comparison as the reason. Those details can change between Compose versions and depend on use. Instead I would use the documented behavior, then profile the actual screen when performance matters. Sometimes the right fix is to move a state read lower in the tree or simplify the composition rather than add derived state. The decision is whether the derived value filters enough changes to justify its complexity.
 
 ## How to answer in the interview
 
@@ -192,11 +167,14 @@ Discuss input/output change ratio, observation overhead, comparison to remember,
 
 ## Follow-up questions
 
-- **Interviewer:** "What happens if no Compose `State` is read inside a `derivedStateOf` block?"
-  **Answer:** "It registers zero snapshot dependencies. If plain parameters change, the derived state will never invalidate or recalculate, producing a stale value indefinitely."
+- **Interviewer:** "Would you use `derivedStateOf` to combine first and last name?"
+  **Answer:** "Usually no. Each name edit changes the combined string, so there is little recomposition to filter. I would calculate it directly or use keyed `remember` if the calculation itself is expensive."
 
-- **Interviewer:** "How does `remember(keys)` differ from `derivedStateOf` in memory footprint?"
-  **Answer:** "`remember(keys)` stores only the computed value in the Slot Table and checks parameter equality. `derivedStateOf` allocates a `DerivedSnapshotState` object, dependency tracking sets, and registers a snapshot observer."
+- **Interviewer:** "What can go wrong if the lambda captures a plain parameter?"
+  **Answer:** "Snapshot tracking observes snapshot state reads, not every ordinary variable. If the derived state is remembered without the right keys, it can keep an old captured value."
+
+- **Interviewer:** "How would you decide whether it helped?"
+  **Answer:** "I would inspect the affected composable's recomposition behavior and profile the screen. I would not infer a speedup simply because the code uses `derivedStateOf`."
 
 ## Self-check rubric
 

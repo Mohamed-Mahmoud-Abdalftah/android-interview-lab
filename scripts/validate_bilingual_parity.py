@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Strict bilingual parity and conversational spoken quality validator.
+"""Bilingual parity and structural spoken-answer validator.
 
 Asserts:
 1. Complete bilingual coverage: 485 English pages and 485 Arabic pages.
@@ -7,7 +7,7 @@ Asserts:
 3. Zero silent fallback: Arabic pages must have distinct, independently authored Arabic translations for all explanatory sections.
 4. Zero untranslated English paragraphs in Arabic question pages.
 5. Zero Arabic characters in English question pages.
-6. Genuinely conversational spoken answers:
+6. Mechanical checks on spoken-answer shape:
    - Zero bullet points and zero numbered lists in spoken answers
    - Quick answers: 35-110 words
    - Best answers: 100-280 words
@@ -181,7 +181,7 @@ def validate():
                         errors.append(f"{qid}: Metadata key '{key}' contains no Arabic prose!")
 
     scope_desc = f"topic {topic_filter}" if topic_filter else (f"question {qid_filter}" if qid_filter else f"all {total_questions} questions")
-    print(f"Validating bilingual parity and spoken quality across {len(canonical_files)} questions ({scope_desc})...")
+    print(f"Validating bilingual parity and structural spoken-answer rules across {len(canonical_files)} questions ({scope_desc})...")
 
     seen_en_best = {}
     seen_ar_best = {}
@@ -326,7 +326,7 @@ def validate():
             print(f"  ... and {len(errors) - 50} more errors", file=sys.stderr)
         return 1
 
-    print(f"SUCCESS: All {total_questions} questions verified for 100% bilingual parity, zero silent fallbacks, and senior spoken quality!")
+    print(f"SUCCESS: {total_questions} questions passed bilingual parity and structural spoken-answer checks. Natural interview quality still requires editorial review.")
     return 0
 
 

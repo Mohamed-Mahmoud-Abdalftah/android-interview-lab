@@ -112,23 +112,23 @@ A multi-provider payment app isolates provider SDKs behind a narrow contract and
 
 ## Interview answer — short
 
-SOLID represents five foundational object-oriented design principles: Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, and Dependency Inversion. In Android engineering, these principles prevent monolithic God Activities, protect business logic from Android framework churn, enable fast parallel JVM unit testing through abstraction seams, and ensure that feature modules can be maintained and refactored independently without triggering application-wide regressions.
+SOLID stands for Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, and Dependency Inversion. I use those ideas to make changes safer: keep a class focused, let implementations honor their contracts, and keep business rules away from concrete framework details. They are useful checks when a design is hard to change or test, not a reason to add an interface to every class.
 
 ## Interview answer — structured
 
-SOLID principles serve as the structural backbone of modern Android software engineering, transforming fragile codebases into modular, testable systems.
-Each letter addresses a specific structural vulnerability. Single Responsibility prevents massive God Activities by ensuring each class has only one reason to change, dividing tasks across dedicated ViewModels, UseCases, and Repositories. Open/Closed allows features to be extended using polymorphic interfaces or strategies without editing existing tested code.
-Liskov Substitution guarantees that subclasses and interface implementations can replace their parent abstractions without breaking behavioral contracts or throwing unexpected runtime exceptions. Interface Segregation prevents bloated interfaces by splitting monolithic contracts into fine-grained, client-specific APIs so consumers depend only on methods they actually use.
-Finally, Dependency Inversion inverts source code dependencies: high-level business rules depend on pure domain abstractions rather than concrete database DAOs or network clients.
-Together, these principles establish clear architectural seams, drastically cut down technical debt, and enable multiple engineering squads to scale multi-module Android codebases safely.
+SOLID is a set of five design principles: Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, and Dependency Inversion. In an interview I would name them, then explain the common purpose: make a change in one part of the app without surprising unrelated parts.
+
+In Android, a large Activity that draws the screen, calls Retrofit, validates input, and writes to Room is a useful warning sign. I would move the decision logic out of the UI and give it a clear dependency on the data it needs. That makes the behavior easier to test. If I have several payment providers, I might put their differing behavior behind a narrow contract; each implementation must still honor the same failure semantics.
+
+I would not apply the acronym mechanically. A one-off class does not need an interface just because Dependency Inversion exists, and forcing every variation into a shared base class can make things worse. I use the principles when they answer a real change or testing problem, then keep the simplest design that does that.
 
 ## Interview answer — deep senior
 
-Under the hood, SOLID principles are not academic ideals; they directly govern compilation boundaries, classloader efficiency, and memory allocations in production Android applications.
-When a codebase violates Dependency Inversion and Single Responsibility by instantiating Room databases and Retrofit instances directly inside an Activity, the Android framework context becomes inextricably coupled to networking and persistence. This destroys JVM testability, forcing teams to rely on slow, flaky emulator-based instrumentation tests that hinder continuous delivery pipelines.
-By enforcing Dependency Inversion via Dagger or Hilt, compilation graphs become directed acyclic graphs where high-level domain modules compile in parallel without depending on infrastructure details.
-Furthermore, Interface Segregation and Liskov Substitution protect against binary incompatibility and fragile base class anti-patterns. In large Android teams, fat base classes like BaseActivity accumulate dozens of uncoordinated callbacks, lifecycle hooks, and analytics trackers. When a child screen overrides a method with an empty body or throws an exception, it violates Liskov Substitution and destabilizes UI navigation state machines.
-By replacing bloated inheritance hierarchies with fine-grained interfaces and composition, memory footprints remain lean, Garbage Collection pressure decreases, and incremental Gradle build times improve dramatically because changes remain strictly localized within their corresponding module boundaries, ensuring sustainable long-term development velocity. This structural resilience protects large applications against regressions during rapid sprint cycles.
+The interesting part is how the principles interact when requirements change. Single Responsibility is about reasons to change, not about making every class tiny. If a ViewModel owns UI state and delegates payment authorization rules, a policy change can be tested without booting an Activity. Open/Closed can help when new providers arrive, but only if the variation is real; an elaborate plugin system for one provider adds cost without benefit.
+
+Liskov Substitution is the contract check. A provider implementation that silently treats a timeout as a decline cannot safely replace one that reports an unknown outcome. That is a correctness issue, even if both satisfy the same Kotlin interface. Interface Segregation helps keep consumers from depending on operations they cannot use, such as a read-only screen receiving a repository with mutation methods. Dependency Inversion puts important policy behind an abstraction that can be supplied by a data implementation, but using Hilt alone does not prove that the dependency direction is healthy.
+
+I would test these boundaries with behavior-focused tests: the same contract cases for each provider, plus tests for failures and cancellation. I would also review whether the new abstraction made the code easier to change. If the change still touches ten unrelated classes, the boundary is probably in the wrong place. If a tiny feature now has five pass-through layers, I would simplify it. SOLID is most useful as a way to reason about change and substitutability, not as a scoring checklist.
 
 ## How to answer in the interview
 
@@ -144,11 +144,14 @@ Map each letter to one concrete Android failure and an appropriate refactor; dis
 
 ## Follow-up questions
 
-- **Interviewer:** "Which SOLID principle is most commonly violated in legacy Android codebases?"
-  **Answer:** "The Single Responsibility Principle (SRP), typically resulting in massive 'God Activities' or 'God Fragments' managing UI inflation, network calls, SQLite transactions, and business calculations in a single file."
+- **Interviewer:** "Does using Hilt mean the app follows Dependency Inversion?"
+  **Answer:** "No. Hilt wires objects. If the business rule still imports a Retrofit DTO or depends directly on an Android component, its policy is coupled to that detail. I would look at the dependency direction, not just the constructor annotation."
 
-- **Interviewer:** "How does Kotlin's language design support SOLID out of the box?"
-  **Answer:** "Kotlin promotes SOLID via first-class composition (delegation via `by`), pure functions, interface default implementations, immutability by default (`val`), and sealed hierarchies for type-safe extension."
+- **Interviewer:** "Would you create an interface for every repository and use case?"
+  **Answer:** "Only where the contract gives us a useful boundary or real variation. For one simple implementation, an extra interface can hide the flow without making change easier."
+
+- **Interviewer:** "How can an implementation satisfy an interface and still violate Liskov Substitution?"
+  **Answer:** "The method signatures can match while behavior differs. If one payment provider reports a timeout as a decline, callers may retry and charge twice. The behavioral contract has to cover those outcomes."
 
 ## Self-check rubric
 

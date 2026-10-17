@@ -22,81 +22,42 @@ Can the candidate separate the scope that owns work, its context elements, the l
 
 ## Concept and technical explanation
 
-In Kotlin coroutines, CoroutineScope, CoroutineContext, Job, and Deferred are the fundamental structural abstractions that govern lifecycle, context propagation, and asynchronous results. A CoroutineScope is an interface that encapsulates a single CoroutineContext reference; it defines the structural boundary and lifetime within which child coroutines are spawned. The CoroutineContext is an indexed, type-safe heterogeneous collection of Element objects, such as a Job, CoroutineDispatcher, CoroutineExceptionHandler, and CoroutineName. The Job element controls the coroutine lifecycle through well-defined states including New, Active, Completing, Completed, Cancelling, and Cancelled, while organizing coroutines into parent-child hierarchies where parent cancellation recursively cascades to all children. A Deferred is a specialized subtype of Job created by the async builder; it represents an active computation that produces a future value accessed via the suspending await method. Together, these abstractions enforce structured concurrency: when an enclosing CoroutineScope is cancelled, its internal Job terminates all descendant Jobs and Deferred operations deterministically, preventing background leaks and orphaned network requests.
+A `CoroutineScope` supplies the context for new coroutines and should have an owner with a clear lifetime. The `CoroutineContext` is a keyed collection that can hold a dispatcher, `Job`, name, and exception handler. A builder normally creates a child `Job` under the scope's job; cancelling the parent signals cancellation to its descendants. `launch` returns a `Job` for completion and cancellation, while `async` returns `Deferred<T>`, a job that also holds a result available through suspending `await()`. These relationships help contain work, but they do not guarantee that a blocking library call stops immediately or that a detached scope cannot be created.
 
 ## Practical walkthrough (English)
 
-Consider a user profile screen where an application must fetch user profile details and user permissions concurrently before displaying the screen.
+A profile screen needs user data and permissions before it can show one combined state. The ViewModel owns this work:
 
-If an engineer breaks structured concurrency by instantiating an ad-hoc unmanaged CoroutineScope:
-```kotlin
-fun loadProfile() {
-    // Anti-pattern: Creating an unlinked scope loses lifecycle binding
-    CoroutineScope(Dispatchers.IO).launch {
-        val user = api.fetchUser()
-        val perms = api.fetchPermissions()
-        updateUi(user, perms) // Leaks work if the screen is closed!
-    }
-}
-```
-If the user navigates away immediately, this detached scope continues executing, wasting battery and attempting to update destroyed UI views.
-
-The correct architecture leverages structured scope boundaries:
 ```kotlin
 fun loadProfile() {
     viewModelScope.launch {
-        val userDeferred: Deferred<User> = async(Dispatchers.IO) { api.fetchUser() }
-        val permsDeferred: Deferred<Permissions> = async(Dispatchers.IO) { api.fetchPermissions() }
-        val user = userDeferred.await()
-        val perms = permsDeferred.await()
-        _uiState.value = ProfileUiState.Success(user, perms)
+        try {
+            val result = coroutineScope {
+                val user = async { api.fetchUser() }
+                val permissions = async { api.fetchPermissions() }
+                ProfileUiState.Success(user.await(), permissions.await())
+            }
+            _uiState.value = result
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _uiState.value = ProfileUiState.Error(e)
+        }
     }
 }
 ```
-Here, viewModelScope provides the enclosing CoroutineScope. The launch builder creates a child Job linked to the ViewModel lifecycle, while async creates two child Deferred instances. If the ViewModel clears, the parent Job cancels both child Deferred computations immediately.
+
+This assumes both API methods are main-safe suspending calls. The two `Deferred` children overlap while their results are needed together. The ViewModel's job owns them; if it is cleared, cancellation reaches them. Whether the HTTP requests stop immediately depends on the client implementation. Passing a fresh `Job()` to `launch` would break the expected ownership link.
 
 ## Explanation in Arabic
 
-لفهم هيكل الـ Coroutines، لازم تفكك العناصر الأربعة الأساسية اللي بتبني أي Coroutine في Kotlin:
+`CoroutineScope` بتوفر سياق لإنشاء Coroutines جديدة، ولازم يكون ليها مالك وعمر واضحين. `CoroutineContext` مجموعة عناصر بمفاتيح؛ منها Dispatcher و`Job` واسم للمتابعة ومعالج أخطاء عند الحاجة. الـ builder عادة بتعمل Job فرعية تحت Job الـ Scope. إلغاء الأب بيبعت الإلغاء لأبنائه، لكنه مش ضمان إن SDK حظري هيتوقف فوراً.
 
-1. الـ `CoroutineContext` (سياق العمل):
-   - هو عبارة عن **Map من العناصر الفردية** التي تحدد سلوك الـ Coroutine.
-   - بيحتوي على 4 عناصر رئيسية:
-     * `Job`: يدير دورة الحياة والإلغاء والعلاقة الهرمية (Parent-Child).
-     * `CoroutineDispatcher`: يحدد أي Thread أو Thread Pool سينفذ الكود (Main, IO, Default).
-     * `CoroutineName`: اسم للـ Debugging والـ Logging.
-     * `CoroutineExceptionHandler`: يتعامل مع الـ Uncaught Exceptions في Root Coroutines.
-   - العناصر بتندمج باستخدام المعامل `+` (زي `Dispatchers.IO + CoroutineName("Upload")`).
-
-2. الـ `CoroutineScope` (نطاق العمل):
-   - هو مجرد **Wrapper حول `CoroutineContext`** (`interface CoroutineScope { val coroutineContext: CoroutineContext }`).
-   - وظيفته الأساسية هي تطبيق **Structured Concurrency**: يضمن أن كل Coroutine ليها نطاق حياة محدد (Scope Boundary)، ولو انتهى الـ Scope (زي مسح الـ ViewModel)، يتم إلغاء كل العمليات التابعة له فوراً لمنع Memory Leaks.
-
-3. الـ `Job`:
-   - كائن يمثل دورة حياة الـ Coroutine وحالاتها: `isActive`, `isCompleted`, `isCancelled`.
-   - لا يحمل قيمة مرجعة؛ وظيفته التحكم في الإلغاء والانتظار (`join()`).
-
-4. الـ `Deferred<T>`:
-   - هو **Job يحمل قيمة مرجعة في المستقبل (Future/Promise)**.
-   - يورث من `Job` ويضيف دالة `await(): T` للحصول على النتيجة بمجرد اكتمالها.
+`launch` بترجع `Job` للانتظار أو الإلغاء. `async` بترجع `Deferred<T>`، وهي Job شايلة نتيجة أقدر أستناها بـ `await()`. ولو مررت `Job()` مستقلة عند إنشاء Coroutine من `viewModelScope`، هغيّر علاقة الأبوة وأخسر الإلغاء المرتبط بالـ ViewModel.
 
 ## Practical walkthrough
 
-في دالة البحث وجلب تفاصيل المستخدم:
-- **استخدام Scope و Context و Job و Deferred معاً:**
-  // 1. الـ CoroutineScope يحدد النطاق (مثلاً viewModelScope)
-  // 2. دمج عناصر الـ CoroutineContext باستخدام +
-  val customContext = Dispatchers.IO + CoroutineName("UserFetchJob")
-  // 3. launch ترجع Job للتحكم في الإلغاء بدون انتظار قيمة:
-  val syncJob: Job = viewModelScope.launch(customContext) {
-      syncDatabase()
-  }
-  // 4. async ترجع Deferred<T> لانتظار قيمة في المستقبل:
-  val userDeferred: Deferred<User> = viewModelScope.async(Dispatchers.IO) {
-      api.getUserDetails()
-  }
-  // في دالة العرض: ننتظر النتيجة بـ await()
-  val user = userDeferred.await()
+في شاشة Profile محتاجة بيانات المستخدم وصلاحياته مع بعض، الـ ViewModel يبدأ Coroutine واحدة في `viewModelScope`، وداخلها `async` لكل API معلّقة وآمنة على Main. أستنى النتيجتين قبل ما أنشر حالة نجاح واحدة. لو طلب فشل، أظهر حالة خطأ، وأسيب `CancellationException` تعدي من غير ما أحولها لخطأ UI. إلغاء الـ ViewModel بيوصل للأبناء، لكن لازم أراجع هل عميل الشبكة نفسه بيلغي الطلب الجاري.
 
 ## Why it matters and how it works
 
@@ -140,28 +101,25 @@ For a profile screen, `viewModelScope` owns requests; a repository offers a susp
 
 ## Interview answer — short
 
-CoroutineScope defines the lifetime boundary holding a CoroutineContext. CoroutineContext is an indexed set of elements including Dispatcher, Job, and ExceptionHandler. Job manages lifecycle states and cancellation trees. Deferred is a Job subclass created by async that produces a future value accessible via await.
+A `CoroutineScope` says who owns the work. Its `CoroutineContext` carries things such as the dispatcher and parent `Job`. The `Job` lets us cancel or wait for that work. `Deferred` is a `Job` from `async` that also gives us a value through `await()`.
 
 ## Interview answer — structured
 
-CoroutineScope serves as the lifecycle anchor for launching coroutines, exposing a CoroutineContext that defines the operating environment for all spawned children.
+I separate these by the question each one answers. The scope answers, "Who owns these coroutines?" A ViewModel scope is a good owner for loading a screen because its work is cancelled when the ViewModel is cleared. The scope's context carries the dispatcher and a parent `Job`, among other elements. The dispatcher decides where code runs, while the job tracks lifetime and cancellation.
 
-CoroutineContext is an immutable, type-safe map of elements accessed by unique Key types. It holds critical components such as the CoroutineDispatcher, CoroutineExceptionHandler, CoroutineName, and the active Job.
+When I call `launch`, I get a `Job` I can cancel or join. When I call `async`, I get a `Deferred<T>`, which is also a job but lets me `await()` a result. I would use `async` when I need concurrent results, such as two independent requests that feed one screen. For a single request, plain sequential suspend calls are clearer.
 
-In production, the Job element represents the coroutine lifecycle state machine, managing transitions between Active, Cancelling, and Completed. When a parent Job is cancelled, it recursively cancels its entire child Job tree. Deferred extends Job by encapsulating an eventual result, exposing the suspending await method to retrieve the computed value.
-
-Adhering to structured concurrency means never instantiating arbitrary unmanaged scopes like CoroutineScope(Dispatchers.IO). Instead, work must belong to established owners like viewModelScope to ensure automatic cleanup upon screen departure.
-
+The important failure case is ownership. If I pass a fresh `Job()` into a launch from `viewModelScope`, I replace the inherited parent job and break that cancellation link. I normally inherit the scope's job and pass only the extra context I need, such as an injected dispatcher.
 
 ## Interview answer — deep senior
 
-Under the hood, CoroutineContext operates as a persistent data structure resembling a type-indexed map, implemented via CombinedContext, Element, and EmptyCoroutineContext. When coroutines are launched, context inheritance follows a precise merging algorithm: ChildContext equals ParentContext plus BuilderArguments. By default, the builder generates a brand-new child Job instance that registers itself with the parent Job in the context, forming a bidirectional tree node.
+A `CoroutineContext` is a keyed collection of elements. Builders inherit the scope context and add their own child job; an explicit element with the same key replaces the inherited one. That explains why `launch(Job())` inside a ViewModel scope is dangerous: the new job is no longer a child of the ViewModel's job. If I only need to change execution, I pass a dispatcher, not an unrelated job.
 
-The Job state machine governs execution integrity through distinct states: New, Active, Completing, Completed, Cancelling, and Cancelled. A parent Job cannot transition from Completing to Completed until every single one of its registered child Jobs has terminated. If a child Job fails with an uncaught exception, it propagates the failure upward to its parent Job, which in turn cancels all other sibling Jobs before failing itself. The only exception to this bidirectional failure propagation is when the parent context contains a SupervisorJob.
+Jobs form the cancellation tree. A parent waits for its children, and cancelling the parent cancels descendants. Ordinary child failures also reach the parent unless supervision changes that rule. `Deferred` represents a result as well as a job: `await()` suspends until completion and throws if the computation failed. Calling `await()` again observes the same completed outcome; it does not rerun the work.
 
-Deferred is a parameterized specialization of Job that represents a non-blocking asynchronous value computation. Underneath, Deferred holds an internal state of type Incomplete or CompletedWithResult. When await is invoked on an incomplete Deferred, it suspends the calling coroutine and registers its continuation with the Deferred completion listener. If the Deferred completes with an exception, await unpacks and re-throws that exact exception to the caller.
+In Android code, I would make the owner visible in the API. A repository usually exposes a suspend function so the caller owns the job; work that must outlive a screen needs an explicitly injected longer-lived owner. I test the lifetime behavior with a controlled scope and dispatcher, including what happens when the owner is cancelled.
 
-In enterprise Android codebases, mismanaging these primitives leads to memory leaks and broken cancellation. Injecting CoroutineDispatcher instances while allowing the host CoroutineScope to provide the parent Job ensures that tests can control execution timing with TestScope while preserving production lifecycle safety.
+I distinguish `join()` from `await()` in a failure discussion. `join()` waits for a job to finish but gives me no value; `await()` gives me the deferred result or its exception. Neither call repairs a parent that a failing child has already cancelled. I choose a supervision boundary deliberately when sibling results are independent.
 
 ## How to answer in the interview
 
@@ -177,14 +135,14 @@ Trace context element replacement, child Job creation, `join` versus `await`, an
 
 ## Follow-up questions
 
-- **Interviewer:** "What happens if you pass an explicit Job to `launch` inside `viewModelScope` (e.g., `viewModelScope.launch(Job())`)?"
-  **Answer:** "Passing `Job()` breaks structured concurrency. It severs the parent-child relationship between `viewModelScope` and the new coroutine. If the ViewModel is cleared, the newly launched coroutine will NOT be cancelled automatically, causing background memory leaks."
+- **Interviewer:** "What happens if you write `viewModelScope.launch(Job())`?"
+  **Answer:** "The explicit job replaces the inherited parent job. The launched coroutine is no longer cancelled by that ViewModel scope in the usual way. I would remove the fresh job and inherit the owner, or pass only the dispatcher I intended to change."
 
-- **Interviewer:** "How does `Job.cancel()` differ from `Job.cancelChildren()`?"
-  **Answer:** "`Job.cancel()` cancels the parent Job and all its children permanently; the parent can never be used to launch new coroutines again. `Job.cancelChildren()` cancels all active child coroutines while keeping the parent Job active, allowing you to launch new tasks under the same scope."
+- **Interviewer:** "Could you call `await()` twice on the same `Deferred`?"
+  **Answer:** "Yes. It returns the same completed result or throws the stored failure; it does not start another request."
 
-- **Interviewer:** "Is `Deferred.await()` safe to call multiple times?"
-  **Answer:** "Yes. Once a `Deferred` completes, its result is cached. Calling `await()` multiple times returns the already-computed value immediately without re-executing the underlying task."
+- **Interviewer:** "Why not return a `Deferred` from every repository method?"
+  **Answer:** "That makes the repository choose a scope and lifetime that the caller may not want. A suspend function normally leaves ownership with the caller; I use `Deferred` when the caller explicitly starts concurrent work and needs its result."
 
 ## Self-check rubric
 
@@ -195,4 +153,4 @@ Can I identify each type, trace parent cancellation, explain `join` versus `awai
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — scope, context, Job and builders.
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — child failure behavior.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against primary documentation on 2026-10-17.

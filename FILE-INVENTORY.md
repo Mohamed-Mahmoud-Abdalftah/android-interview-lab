@@ -1,6 +1,6 @@
-# Actual academy source inventory — 2026-10-13
+# Actual academy source inventory — 2026-10-17
 
-These 1222 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
+These 1223 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
 
 ```text
 .github/workflows/ci.yml
@@ -884,6 +884,7 @@ docs/CONTENT_GUIDELINES.md
 docs/DEPLOYMENT.md
 docs/EXECUTION_PROGRESS.md
 docs/IMPLEMENTATION_AUDIT.md
+docs/INTERVIEW_EDITORIAL_CHECKPOINT.md
 docs/VERIFICATION_REPORT.md
 fixtures/RTL-MIXED-LANGUAGE.md
 projects/CAPSTONE-ARCHITECTURE.md
