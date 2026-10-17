@@ -22,6 +22,31 @@ What is a dependency graph? Why must it be acyclic?
 - Explain topological build/composition order and cycle consequences.
 - Resolve a realistic feature cycle by extracting a smaller contract.
 
+## Concept and technical explanation
+
+A dependency graph in a multi-module Gradle project is a formal directed graph where vertices represent independent modules (subprojects) and directed edges represent compile-time or runtime dependencies between them. The graph MUST be acyclic—meaning it forms a Directed Acyclic Graph (DAG)—because build systems depend on topological sorting to compute a deterministic compilation order. If Module A depends on Module B, Module B must finish compilation and produce its symbols and AAR artifact before Module A can begin compilation. If a cycle exists (e.g., A depends on B, and B depends on A), topological sorting is mathematically impossible: neither module can compile first, resulting in infinite recursion or an immediate Gradle build failure with a circular dependency error. Resolving cycles requires inverting dependencies (DIP), extracting shared interface contracts into a third module, or mediating interactions via dependency injection.
+
+## Practical walkthrough (English)
+
+Resolving circular dependencies by extracting a shared API contract module:
+```kotlin
+// ❌ CIRCULAR DEPENDENCY TRAP:
+// :feature:cart depends on :feature:checkout
+// :feature:checkout depends on :feature:cart
+// FAILS: Circular dependency between project ':feature:cart' and project ':feature:checkout'
+
+// ✅ RESOLUTION VIA API EXTRACTION:
+// 1. Create :feature:checkout:api containing only the interface
+// feature/checkout/api/src/main/kotlin/CheckoutContract.kt
+interface CheckoutNavigator {
+    fun openCheckout(context: Context, cartId: String)
+}
+
+// 2. :feature:cart depends ONLY on :feature:checkout:api (DAG is preserved)
+// 3. :feature:checkout:impl implements CheckoutNavigator
+// 4. :app binds CheckoutNavigator implementation via Hilt
+```
+
 ## Explanation in Arabic
 
 ما هو الـ Dependency Graph (الرسم البياني للتبعيات) في Gradle، ولماذا يجب أن يكون خاليًا تمامًا من الحلقات (Acyclic - DAG)؟
@@ -84,27 +109,31 @@ Visualize and enforce allowed edges in CI, review new dependency changes, and pe
 
 ## Interview answer — short
 
-A dependency graph models modules as nodes and dependencies as directed edges. It must be a Directed Acyclic Graph (DAG) because Gradle relies on topological sorting to determine compilation order. A cycle (A depends on B, B depends on A) causes an unresolvable compiler deadlock, which is resolved by extracting shared interfaces into a separate API module.
+A dependency graph represents modules as nodes and their dependencies as directed edges. It must be strictly acyclic because Gradle uses topological sorting to determine task execution order. A circular dependency creates an impossible chicken-and-egg compilation loop where neither module can build first, breaking builds and paralyzing incremental caching.
 
 ## Interview answer — structured
 
-In Gradle, the project architecture is modeled as a Directed Graph where modules are nodes and project dependencies (`implementation(projects.foo)`) form directed edges.
-
-The graph **must strictly be acyclic (a DAG)** because the compiler requires a deterministic **Topological Sort** to establish the build order.
-
-First, if module `B` depends on `A`, `A` must compile into bytecode, package its public ABI, and expose it on `B`'s compile classpath before `B` can even begin parsing code. Finally, if a cycle exists (`A -> B -> A`), an impossible paradox occurs: neither module can compile before the other. Gradle terminates build graph evaluation immediately with a `CircularDependencyException`.
-
-To resolve circular dependencies in production, never hack around it with reflection. Apply the **Dependency Inversion Principle**: extract the shared interfaces, routes, and data models into a lightweight `:feature:x-api` module. Both modules then depend downward on the API module, breaking the cycle.
-
+In multi-module Gradle engineering, the dependency graph models how modules connect across the codebase.
+Each module serves as a vertex, while implementation and api declarations define directed edges pointing toward dependencies.
+This graph must strictly form a Directed Acyclic Graph, meaning following the arrows never leads back to the originating module.
+Gradle relies on topological sorting to calculate the exact execution order of compilation tasks.
+When Module A depends on Module B, Gradle compiles Module B first, producing the necessary class files and symbol tables before starting compilation on Module A.
+If a cycle occurs, such as Module A depending on Module B while Module B simultaneously depends on Module A, Gradle encounters an unresolvable circular dependency error.
+To resolve cyclical dependencies in production, engineers apply the Dependency Inversion Principle.
+By extracting shared data models or contract interfaces into an independent API module, both features depend downward on the contract without depending directly on each other.
 
 ## Interview answer — deep senior
 
-Cycles do not only occur between Gradle modules; they frequently occur as **transitive classpath cycles and task dependency cycles**.
-
-For example, if `:app` has a custom task that packages assets generated by a downstream module, and that downstream module has a task that reads resources from `:app`, Gradle's task execution engine deadlocks.
-
-In enterprise Android repositories with dozens of engineers, teams use automated architectural enforcement plugins like **Graphite** or **Gradle Dependency Guard** in CI. These tools inspect the project DAG on every pull request, calculating graph metrics such as **Longest Critical Path (Depth)** and **Module Fan-in / Fan-out**. If an engineer attempts to introduce an unauthorized cross-feature edge or creates a dependency cycle, the CI pipeline blocks the PR before code ever merges to main.
-
+The dependency graph is the foundational blueprint of your Android build performance and architectural health.
+From a graph theory perspective, Gradle treats tasks as nodes within an execution DAG, resolving task dependencies such as compileKotlin and packageDebug through topological sorting.
+If an edge introduces a cycle, the graph loses its partial ordering property, making it mathematically impossible for the compiler to schedule tasks without deadlock.
+Beyond direct two-module loops, large codebases frequently suffer from insidious multi-hop cycles, where module A depends on B, B on C, and C imports an internal helper from A.
+These transitive loops instantly crash project synchronization and break build caching.
+In enterprise architectures, we enforce acyclic dependency rules using continuous integration linters such as Gradle Dependency Analysis Plugin or custom Konsist unit tests that assert forbidden dependency paths.
+When an apparent cycle arises between two domain features—such as user profile needing payment data while payment requires user address details—we refuse to merge the modules.
+Instead, we extract an explicit interface contract into a lightweight API module or invert the dependency using Hilt.
+Feature A consumes the interface, Feature B implements it, and the root app module wires the binding at runtime.
+This maintains a clean, single-direction DAG that maximizes Gradle parallel compilation lanes across developer workstations.
 
 ## How to answer in the interview
 

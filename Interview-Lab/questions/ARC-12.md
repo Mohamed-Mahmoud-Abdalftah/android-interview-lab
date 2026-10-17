@@ -20,6 +20,47 @@ How should domain/data errors be mapped into actionable UI errors?
 
 Map typed domain/data failure categories into actionable UI behavior without leaking raw exception text.
 
+## Concept and technical explanation
+
+Domain and data layer errors represent technical, transport, or business invariant failures (such as SocketTimeoutException, HTTP 401/403/500, SQLiteConstraintException, or DomainValidationException). The UI layer must never consume or display raw exceptions directly, as doing so leaks infrastructure details, displays unlocalized cryptic messages to users, and causes main-thread crashes when uncaught exceptions bubble up. Instead, robust architectures apply an error transformation pipeline: the Data layer intercepts raw throwables and categorizes them into typed, domain-safe failure models. The Presentation layer (ViewModel) maps these domain errors into user-actionable UI error representations containing localized string resource identifiers, error severities, and explicit recovery actions (such as retry lambdas, re-authentication triggers, or navigation intents).
+
+## Practical walkthrough (English)
+
+Transforming low-level exceptions into user-actionable UI models:
+```kotlin
+// 1. DOMAIN LAYER: Typed, framework-agnostic error hierarchy
+sealed interface DomainError {
+    object NetworkUnavailable : DomainError
+    object Unauthorized : DomainError
+    data class ServerError(val code: Int) : DomainError
+    data class BusinessRuleViolated(val reason: String) : DomainError
+}
+
+// 2. PRESENTATION LAYER: Actionable UI error model with string resources
+data class ActionableUiError(
+    @StringRes val titleRes: Int,
+    @StringRes val messageRes: Int,
+    @StringRes val actionLabelRes: Int?,
+    val recoveryAction: (() -> Unit)?
+)
+
+fun DomainError.toUiError(onRetry: () -> Unit, onReAuth: () -> Unit): ActionableUiError = when (this) {
+    is DomainError.NetworkUnavailable -> ActionableUiError(
+        titleRes = R.string.error_no_internet_title,
+        messageRes = R.string.error_no_internet_desc,
+        actionLabelRes = R.string.action_retry,
+        recoveryAction = onRetry
+    )
+    is DomainError.Unauthorized -> ActionableUiError(
+        titleRes = R.string.error_session_expired_title,
+        messageRes = R.string.error_session_expired_desc,
+        actionLabelRes = R.string.action_login_again,
+        recoveryAction = onReAuth
+    )
+    else -> ActionableUiError(R.string.error_generic_title, R.string.error_generic_desc, null, null)
+}
+```
+
 ## Explanation in Arabic
 
 كيف يتم تحويل أخطاء طبقتي النطاق والبيانات (Domain / Data Errors) إلى أخطاء واجهة مستخدم مفهومة وقابلة للتنفيذ (Actionable UI Errors)؟
@@ -111,26 +152,24 @@ An account app gives offline users a retry with cached data, unauthorized users 
 
 ## Interview answer — short
 
-Map technical errors into actionable UI errors through layer boundaries: Data maps raw IO/HTTP exceptions into typed Domain errors (e.g. `NetworkOffline`, `SessionExpired`). The ViewModel maps Domain errors into `ActionableUiError` containing localized `UiText` resource references and executable recovery callbacks (e.g. Retry, Login).
+Catch raw low-level exceptions in the data layer, translate them into typed domain errors, and map them in the ViewModel into actionable UI models. UI errors should provide localized string resources and clear recovery actions, such as retry callbacks or re-authentication triggers, rather than raw exception messages.
 
 ## Interview answer — structured
 
-Transforming raw technical failures into actionable user experiences is a benchmark of enterprise architecture.
+Converting technical exceptions into actionable UI errors is essential for building resilient, user-friendly Android applications.
 
-First, with Data Layer Translation, data sources catch raw platform exceptions (`HttpException`, `SocketTimeoutException`, `SQLiteConstraintException`) and convert them into strongly typed **Domain Errors** (e.g. `DataError.Network.Timeout`, `DataError.Auth.Unauthorized`). Raw stack traces and HTTP status codes must never cross into presentation. Next, a Presentation Layer Mapping is the ViewModel maps domain errors into a presentation-centric model: the **Actionable UI Error**.
-Additionally, with Localized Message, encapsulated using a `UiText` wrapper (`UiText.StringResource(R.string.error_no_internet)`), allowing the ViewModel to stay pure and Context-free while supporting instant language changes. Finally, with Recovery Action, every error must empower the user with an actionable recourse—such as a 'Retry' button, 'Re-authenticate' redirect, or 'Check Settings' link.
+Raw network exceptions like SocketTimeoutException or HTTP 500 status codes must never leak into the presentation layer. The repository intercepts infrastructure failures and maps them into a typed domain failure hierarchy, such as NetworkUnavailable or SessionExpired.
 
-This ensures users are never greeted with incomprehensible raw exceptions while decoupling the UI from backend status codes.
+In production, the ViewModel translates these domain failures into UI-facing models. Rather than exposing raw strings that violate localization, it binds Android string resource IDs alongside explicit recovery actions, such as triggering a retry lambda or launching an account recovery intent.
+As for user experience, this mapping ensures the UI presents empathetic, actionable guidance. The interface informs users exactly what went wrong and how to fix it, whether that means enabling airplane mode, checking card limits, or tapping a retry button.
 
 
 ## Interview answer — deep senior
 
-The `UiText` pattern is vital for ViewModel testability. If a ViewModel injects Android `Context` or `Resources` merely to call `getString(R.string.error)`, it breaks pure JVM unit test isolation and requires mocking Android framework objects. With `UiText.Resource(R.string.error_id)`, the ViewModel returns a lightweight data class holding the integer resource ID. Unit tests simply assert `assertThat(state.error.message.resId).isEqualTo(R.string.error_id)` in sub-millisecond JVM tests.
-
-In Compose, extracting the string is seamless: composables call `error.message.asString()` which internally invokes `stringResource()`, reacting to configuration changes automatically.
-
-For production telemetry, the raw technical exception is logged to Crashlytics or Datadog in the Data layer before being sanitized, ensuring engineers have stack traces while users receive friendly, actionable prompts.
-
+Under the hood, robust error architecture follows an anti-corruption pipeline that prevents infrastructure crashes while preserving actionable diagnostic context. When an HTTP client throws a 401 Unauthorized or a database write violates a foreign key constraint, the Data layer catches the throwable and categorizes it into a sealed domain error type. By wrapping operations in a custom domain Result, the system eliminates uncaught runtime exceptions on coroutine dispatchers.
+Inside the Presentation layer, the ViewModel maps the domain error into a presentation state model. A major pitfall in legacy applications is passing raw exception messages like java.net.UnknownHostException directly into UI TextViews, which exposes internal implementation details and fails multi-language localization.
+Senior engineers model actionable errors as structured data classes: data class UserMessage containing message resource IDs, action labels, and action types. This decouples the Composable from error decisions; Compose simply renders the text resource and invokes the callback when the user taps the action button.
+Furthermore, staff engineers distinguish between transient errors—which are presented via Snackbars or dialogs without clearing screen content—and terminal errors, which replace the entire screen with a full-page empty error layout. In production telemetry, raw error details and correlation trace IDs are simultaneously dispatched to crash reporting services like Datadog or Crashlytics while the user receives a graceful, localized recovery experience.
 
 ## How to answer in the interview
 

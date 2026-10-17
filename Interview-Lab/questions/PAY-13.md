@@ -21,6 +21,64 @@ A timeout handler exits the UI before enqueueing a reversal. How do you redesign
 - Ownership of timeout/reversal beyond an Activity lifecycle.
 - Ordering of durable intent before UI exit.
 
+## Concept and technical explanation
+
+Allowing a UI presentation timeout handler to dismiss the screen or cancel coroutines before a financial reversal is durably enqueued creates an orphaned hold vulnerability:
+- The Flawed Architecture (UI-Owned Financial Lifecycle):
+  - In flawed architectures, the financial transaction and reversal logic reside inside an Activity or ViewModel `viewModelScope`.
+  - When a timeout occurs, the UI layer catches the timeout, immediately pops the backstack or navigates away, terminating the coroutine scope before the background network reversal request can be scheduled or dispatched.
+  - Consequence: The customer's funds remain held at the issuing bank indefinitely; the app never retries because the task was bound to the dead UI component.
+- The Redesigned Architecture (Application-Owned Coordination):
+  1. Separation of Concerns & Ownership Inversion:
+     - The financial state machine and reversal queue belong to a singleton Application-scoped Coordinator (`applicationScope` / persistent `PaymentRepository`), completely independent of Android Activity or ViewModel lifecycles.
+     - The ViewModel acts purely as an observer, collecting state from a domain `StateFlow`.
+  2. Inverted Transactional Ordering (Write Intent First):
+     - Order of Operations:
+       1. Timeout detected at the domain repository layer.
+       2. The repository updates the transaction to `IN_DOUBT` and commits the reversal record into the persistent SQLite `reversal_queue` table inside a single atomic database transaction.
+       3. Only *after* the local database confirms durable disk persistence does the repository emit the `Timeout` state to the UI.
+     - Even if the user destroys the Activity, powers off the screen, or Android kills the UI process, the reversal intent is already safely burned into flash memory, ready for background dispatch.
+
+## Practical walkthrough (English)
+
+Redesigning ownership and transactional ordering for payment timeouts in Kotlin:
+```kotlin
+// 1. Domain Coordinator owned by Application Scope, NOT ViewModel
+class PaymentCoordinator(
+    private val appScope: CoroutineScope, // Injected ApplicationScope (SupervisorJob + Dispatchers.Default)
+    private val appDatabase: AppDatabase,
+    private val journalDao: PaymentJournalDao,
+    private val reversalDao: ReversalDao,
+    private val paymentGatewayApi: PaymentGatewayApi
+) {
+    private val _paymentState = MutableStateFlow<PaymentState>(PaymentState.Idle)
+    val paymentState: StateFlow<PaymentState> = _paymentState.asStateFlow()
+
+    fun executeTransaction(orderId: String, amount: Long) {
+        // Launch in ApplicationScope: Outlives UI teardown and screen navigation
+        appScope.launch {
+            _paymentState.value = PaymentState.Processing
+
+            try {
+                withTimeout(20_000L) {
+                    val auth = paymentGatewayApi.authorize(orderId, amount)
+                    _paymentState.value = PaymentState.Approved(auth.code)
+                }
+            } catch (e: TimeoutCancellationException) {
+                // CRITICAL ORDERING: Commit to disk FIRST before notifying UI
+                appDatabase.withTransaction {
+                    journalDao.markInDoubt(orderId)
+                    reversalDao.insert(ReversalEntity(orderId, amount, System.currentTimeMillis()))
+                }
+
+                // Safe to notify UI now: Reversal intent is already durably persisted
+                _paymentState.value = PaymentState.InDoubtTimeout
+            }
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 معالج نفاد الوقت (Timeout Handler) يغلق شاشة الواجهة (UI) قبل إدراج طلب العكس (Reversal) في الطابور، مما يفقد العملية. كيف تعيد هندسة الملكية والترتيب المعماري لحل المشكلة؟
@@ -116,25 +174,26 @@ Tests assert no navigation completion before DB commit, that reboot resumes the 
 
 ## Interview answer — short
 
-Redesign ownership and ordering by decoupling payment execution from the UI lifecycle into an Application-scoped coroutine or WorkManager, and inverting operation order so the reversal intent is durably committed to SQLite before the UI is notified or dismissed.
+Redesign ownership and ordering by decoupling the payment lifecycle from the UI, moving coordination into an Application-scoped repository. Invert the operational sequence: when a timeout occurs, durably persist the in-doubt state and reversal queue entry inside an atomic SQLite transaction first, and only notify the UI after disk commit succeeds.
 
 ## Interview answer — structured
 
-Coupling financial reversal persistence to ephemeral Android UI component lifecycles represents a catastrophic anti-pattern.
-
-First, **Root-Cause Flaws**. Next, with Fragile Ownership, launching payment coroutines within `lifecycleScope` or UI ViewModels binds business logic to the screen. When a timeout occurs and the user or handler executes `finish()`, the lifecycle cancels all active coroutine jobs, silently aborting incomplete database inserts.
-Additionally, with Inverted Sequencing, notifying the UI before completing disk persistence creates a race condition where the screen tears down the process while the disk write is in-flight. **Architectural Redesign Blueprint**.
-With Inversion of Ownership, transfer transaction ownership to a singleton `PaymentEngine` backed by an uncancelled `ApplicationScope` or persistent WorkManager. Transaction execution continues unhindered regardless of UI navigation, orientation changes, or screen dismissals. With Strict Persistence-First Sequencing, upon timeout detection, the engine must atomically commit the in-doubt state and reversal payload to SQLite *first* (`paymentDao.markInDoubtAndEnqueueReversal()`). Only after disk confirmation does it emit state updates to UI observers.
-Finally, a Passive State-Driven UI is the UI becomes a purely passive observer of `StateFlow<PaymentState>`. If the user closes the screen, the reversal worker still dispatches reliably in the background.
-
+Allowing a UI timeout to dismiss a screen before enqueueing a reversal causes catastrophic orphaned holds.
+This flaw occurs when financial logic is coupled to UI lifecycles like ViewModel scopes. If a timeout timer cancels the scope or the user navigates away, execution terminates prematurely, leaving the customer's funds locked at the bank without a reversal.
+To correct this, we execute an ownership redesign and an ordering inversion.
+First, we transfer ownership of the payment state machine from the UI to an application-scoped domain coordinator. The coordinator runs in a persistent application coroutine scope or background service that survives Activity destruction. The UI simply observes state updates.
+Second, we invert the execution ordering. When a network timeout occurs, the coordinator never notifies the UI immediately. Instead, it executes an atomic SQLite transaction that updates the transaction status to in-doubt and inserts a reversal task into the persistent queue table.
+Only after the database write is confirmed does the coordinator emit the timeout state to the UI, guaranteeing that user navigation can never abort reversal dispatch.
 
 ## Interview answer — deep senior
 
-From an Android process lifecycle and Coroutines concurrency standpoint, execution boundaries must be hardened.
-
-First, with NonCancellable` Context Protection, in Kotlin Coroutines, when a timeout block cancels (`TimeoutCancellationException`), standard coroutine blocks immediately terminate. Enqueuing the reversal must be wrapped in `withContext(NonCancellable)` to prevent the active cancellation exception from aborting the emergency database commit. Next, with Handling Low-Memory Process Termination (LMK), even an `ApplicationScope` will not survive if Android's Low Memory Killer terminates the OS process due to RAM pressure. Pairing `ApplicationScope` with an immediate WorkManager job registration (`ExistingWorkPolicy.REPLACE`) guarantees that if the process is killed mid-write, the Android OS will reschedule and execute the reversal upon system recovery.
-Finally, with UI Event Back-Pressure, if the UI exits during timeout, prevent the user from immediately re-entering the checkout flow until the background engine confirms the reversal intent has been durably secured.
-
+From a software architecture, reactive state boundaries, and financial mission-critical resilience perspective, coupling payment execution to Android UI lifecycles is an architectural anti-pattern that directly causes ledger desynchronization.
+Activities and Fragments in Android are inherently ephemeral: they are destroyed and recreated during screen rotations, configuration changes, user back-presses, and system memory pressure. If a payment flow is launched inside viewModelScope and the timeout handler immediately triggers a navigation event like findNavController().popBackStack(), Android cancels the active coroutine job. Any subsequent code intended to enqueue a reversal task in Room or dispatch an ISO 8583 0400 cancellation is dropped mid-execution. The cardholder's account remains charged with an orphaned authorization hold, and the system loses all automated recovery momentum.
+The senior architectural solution enforces two uncompromising principles: Application Scope Ownership and Inverted Transactional Ordering.
+We decouple the transaction coordinator entirely from the UI layer, injecting an ApplicationScope backed by a SupervisorJob. The ViewModel becomes a passive presentation observer that exposes a StateFlow to Compose or XML views.
+Furthermore, we enforce strict ordering invariants. When a timeout occurs, the domain engine catches the exception and immediately enters an atomic SQLite transaction using Room withTransaction. It updates the payment journal record to IN_DOUBT and inserts a persistent reversal task into the reversal_queue table.
+Only after the Linux kernel flushes the SQLite Write-Ahead Log to physical NAND storage does the coordinator emit the Timeout UI state.
+Even if the user vigorously mashes the home button, swipes away the app, or unplugs the POS device, the reversal intent has already been durably anchored to disk, ensuring that background workers will reliably dispatch the reversal to the bank switch.
 
 ## How to answer in the interview
 

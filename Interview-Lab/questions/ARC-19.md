@@ -20,6 +20,43 @@ How do you handle cache and server updates within the data layer?
 
 Design cache/server synchronization with a source of truth, stale policy, conflict rules and errors.
 
+## Concept and technical explanation
+
+Handling cache and server updates within the Data Layer requires establishing the local persistent database (such as Room) as the authoritative Single Source of Truth. In an offline-first architecture, read queries expose continuous Flow streams directly from local storage, allowing the UI to render cached data instantaneously without blocking on remote endpoints. When background synchronizations or explicit user refreshes fetch updated payloads from Retrofit, the repository writes the raw data into the local database inside an atomic transaction. Room's InvalidationTracker automatically detects the table mutations and pushes fresh data downstream to active UI collectors. For interactive user actions, repositories perform optimistic updates by mutating local storage immediately, rolling back changes with compensating transactions if subsequent network calls fail.
+
+## Practical walkthrough (English)
+
+Implementing offline-first cache and server synchronization in a repository:
+```kotlin
+class ProductRepositoryImpl(
+    private val localDao: ProductDao,
+    private val remoteApi: ProductApi,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) : ProductRepository {
+    // 1. Single Source of Truth: UI always observes local Room database
+    override fun observeProducts(): Flow<List<Product>> =
+        localDao.observeAllProducts().map { entities -> entities.map { it.toDomain() } }
+
+    // 2. Network sync writes directly into Room inside an atomic transaction
+    override suspend fun syncProducts(): Result<Unit> = withContext(ioDispatcher) {
+        runCatching {
+            val networkDtos = remoteApi.fetchProducts()
+            localDao.replaceProductsTransaction(networkDtos.map { it.toEntity() })
+        }
+    }
+
+    // 3. Optimistic update: mutate local cache immediately, rollback on failure
+    override suspend fun toggleFavorite(productId: String, isFav: Boolean): Result<Unit> = withContext(ioDispatcher) {
+        localDao.updateFavoriteStatus(productId, isFav) // Immediate UI update via Room Flow
+        runCatching {
+            remoteApi.postFavoriteStatus(productId, isFav)
+        }.onFailure {
+            localDao.updateFavoriteStatus(productId, !isFav) // Compensating rollback on network error
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تدير تحديثات الكاش (Cache) والسيرفر (Server) داخل طبقة البيانات (Data Layer) باحترافية؟
@@ -91,29 +128,22 @@ A delivery app stores route tasks in Room for offline display and queues permitt
 
 ## Interview answer — short
 
-Manage cache and server updates within the data layer using the Offline-First (Network-Bound Resource) pattern: emit local cached data from Room immediately, fetch updates from the network in the background, write payloads into the database inside a transaction, and let Room reactively emit updated state.
+Manage cache and server updates using an offline-first data layer where the local database serves as the single source of truth. The repository exposes a continuous Flow from Room, immediately delivering cached entities to the UI. Concurrently, it triggers background network synchronization, writing fresh remote payloads directly into the database within an atomic transaction. For user mutations, apply optimistic updates locally with compensating rollback mechanisms if network requests fail.
 
 ## Interview answer — structured
 
-Managing cache and server synchronization is the primary responsibility of the Data layer, isolating presentation code from networking and storage complexity.
-
-First, **The Offline-First (Network-Bound Resource) Pattern**. Next, an Immediate Local Emission is the repository reads from the local database (Room) and emits cached data immediately, providing instantaneous screen loads.
-Additionally, with Background Synchronization, concurrently, the repository triggers an asynchronous network fetch. With Atomic Ingestion, when the network succeeds, the repository writes the new entities into Room inside a database transaction (`@Transaction`), clearing obsolete records.
-With Reactive Propagation, Room's `InvalidationTracker` detects the write and emits the fresh dataset on the active `Flow`, updating observers automatically. **Optimistic Updates**.
-For interactive user mutations (e.g. Liking a post or archiving an email), waiting for server roundtrips introduces unacceptable UI latency. Finally, the repository modifies local database state immediately. If the network request fails, the repository rolls back the mutation and surfaces an actionable error.
-
+Handling cache and server synchronization is the primary responsibility of the data layer, isolating UI consumers from transport protocols and storage mechanics.
+In an offline-first architecture, the local database acts as the authoritative source of truth. Repositories expose reactive Flow streams directly from persistent storage, guaranteeing instant UI loading with cached data upon screen launch.
+Concurrently, the repository dispatches an asynchronous network fetch. When fresh payloads arrive from Retrofit, they are committed to the local database inside an atomic transaction. Room's internal invalidation tracker automatically detects table modifications and pushes fresh snapshots downstream to active collectors without requiring manual UI refresh coordination.
+For interactive mutations, we utilize optimistic updates. The repository applies changes immediately to the local database so the interface reacts with zero perceived latency. If the backend network call fails, the repository triggers a compensating rollback and emits an error event. Furthermore, leveraging HTTP ETags and conditional headers avoids re-downloading unchanged server state.
 
 ## Interview answer — deep senior
 
-Under the hood, HTTP cache headers play a pivotal role. By configuring OkHttp's `Cache` directory and leveraging `ETag` and `If-None-Match` headers, the server can return HTTP `304 Not Modified` with zero body payload. This conserves battery and mobile bandwidth while confirming that local cache is fresh.
-
-For conflict resolution (when both client and server update data concurrently), enterprise repositories employ **Conflict Resolution Policies**.
-
-First, *Server-Wins*: The default in most consumer apps; server timestamps overwrite local modifications. Next, *Client-Wins / Last-Write-Wins (LWW)*: Based on monotonic client timestamps.
-Finally, *Merge Policies*: Employed in collaborative apps where fields are merged individually.
-
-In testing, repository synchronization is verified by asserting that simulated network failures still yield cached data, and network successes overwrite stale database records.
-
+Under the hood, orchestrating cache and remote synchronizations safely requires formalizing concurrency and conflict resolution. A common architectural defect is having repositories return combined network and database models directly into presentation coroutines, which invites race conditions when multiple screens request refreshes simultaneously.
+By enforcing that all write operations route exclusively into persistent storage, the repository serializes mutations. Room handles atomic writes via transactions, guaranteeing that partial ingestion never leaves the local database in a corrupted state.
+When dealing with concurrent modifications across distributed clients, repositories must implement explicit conflict resolution policies. In standard mobile workflows, server-authoritative reconciliation takes precedence, where incoming server records overwrite local drafts. However, in collaborative or offline-heavy enterprise applications, field-level merge strategies or last-write-wins based on monotonic server sequence numbers prevent local edits from obliterating remote changes.
+At the HTTP layer, configuring an OkHttp Cache alongside ETag and If-None-Match headers allows the backend to respond with HTTP 304 Not Modified. This conserves mobile bandwidth, reduces radio wakeup cycles, and confirms cache validity with zero payload parsing overhead.
+Staff engineers also safeguard against racing sync responses by attaching client-side sequence counters or timestamps to outbound requests. If an older network response arrives after a newer one has already been committed, the data layer identifies the stale generation and silently discards the payload, guaranteeing monotonic state progression.
 
 ## How to answer in the interview
 

@@ -20,6 +20,72 @@ How would you implement Paging 3 and RemoteMediator?
 
 Design Paging 3 with Room source, RemoteMediator keys and refresh transaction.
 
+## Concept and technical explanation
+
+Jetpack Paging 3 combined with RemoteMediator provides an enterprise-grade architecture for large-dataset pagination backed by local database caching:
+- Paging 3 Architecture Layers:
+  * Local Source of Truth: Room provides the PagingSource via standard SQL queries (SELECT * FROM items ORDER BY index). The UI layer consumes an immutable Flow<PagingData<Item>> pipeline directly from the database, eliminating network flickering and providing instant offline rendering.
+  * Pager Component: Connects the PagingConfig (defining pageSize, prefetchDistance, and enablePlaceholders) with Room's PagingSource and the optional RemoteMediator.
+- RemoteMediator Role & Mechanics:
+  * Boundary Detection: Unlike an in-memory PagingSource that fetches network directly, RemoteMediator acts as a signal listener. When the user scrolls near the end of the cached local list, Paging 3 invokes RemoteMediator.load(loadType, state).
+  * LoadType Taxonomy: REFRESH (initial load or swipe-to-refresh), APPEND (scrolling towards the end of dataset), PREPEND (scrolling towards the start of dataset).
+- RemoteKey Entity & Atomic Refresh:
+  * To track pagination cursors or next/prev page tokens across process death, a companion RemoteKeyEntity table is maintained in Room.
+  * When loadType == REFRESH, Room executes an atomic transaction that clears existing RemoteKeys, clears stale feed items, and inserts the initial batch of network items alongside their updated cursors, ensuring seamless, non-jumping UI rendering.
+
+## Practical walkthrough (English)
+
+Complete Paging 3 and RemoteMediator implementation:
+```kotlin
+@OptIn(ExperimentalPagingApi::class)
+class FeedRemoteMediator(
+    private val db: AppDatabase,
+    private val api: FeedApiService
+) : RemoteMediator<Int, FeedItemEntity>() {
+
+    override suspend fun load(
+        loadType: LoadType,
+        state: PagingState<Int, FeedItemEntity>
+    ): MediatorResult {
+        val page = when (loadType) {
+            LoadType.REFRESH -> {
+                val remoteKeys = getRemoteKeyClosestToCurrentPosition(state)
+                remoteKeys?.nextKey?.minus(1) ?: 1
+            }
+            LoadType.PREPEND -> return MediatorResult.Success(endOfPaginationReached = true)
+            LoadType.APPEND -> {
+                val remoteKeys = getRemoteKeyForLastItem(state)
+                val nextKey = remoteKeys?.nextKey
+                    ?: return MediatorResult.Success(endOfPaginationReached = remoteKeys != null)
+                nextKey
+            }
+        }
+
+        try {
+            val response = api.fetchFeed(page = page, pageSize = state.config.pageSize)
+            val items = response.items.map { it.toEntity() }
+            val endOfPagination = items.isEmpty()
+
+            db.withTransaction {
+                if (loadType == LoadType.REFRESH) {
+                    db.remoteKeyDao().clearRemoteKeys()
+                    db.feedDao().clearFeed()
+                }
+                val prevKey = if (page == 1) null else page - 1
+                val nextKey = if (endOfPagination) null else page + 1
+                val keys = items.map { FeedRemoteKey(it.id, prevKey, nextKey) }
+
+                db.remoteKeyDao().insertAll(keys)
+                db.feedDao().insertAll(items)
+            }
+            return MediatorResult.Success(endOfPaginationReached = endOfPagination)
+        } catch (e: Exception) {
+            return MediatorResult.Error(e)
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تنفذ مكتبة Paging 3 مع RemoteMediator لدعم التصفح بالصفحات في تطبيق Offline-First؟
@@ -119,29 +185,29 @@ A news app opens cached Room articles instantly, appends pages via server cursor
 
 ## Interview answer — short
 
-Paging 3 with RemoteMediator uses Room as the single source of truth for the UI while fetching pages from the network on demand. The Pager streams data from Room's PagingSource, and RemoteMediator intercepts pagination boundaries (REFRESH, APPEND) to load network pages and save them alongside pagination keys in a Room transaction.
+Paging 3 with RemoteMediator uses Room as the single source of truth for UI streams while fetching incremental network pages at scroll boundaries. Companion RemoteKey tables persist pagination tokens across app restarts, and atomic Room transactions coordinate clearing and inserting records during refreshes without UI flickering.
 
 ## Interview answer — structured
 
-Implementing Paging 3 with `RemoteMediator` provides production-grade offline-first pagination.
-
-First, **Architecture Separation**. Next, the presentation layer collects `Flow<PagingData<T>>` served exclusively by Room's generated `PagingSource`.
-`RemoteMediator` acts as the network pump. It does not return items to the UI; it fetches remote payloads and writes them into Room. Room's invalidation tracker then emits updated paging slices to the UI. **LoadTypes & Lifecycle**.
-REFRESH is triggered on initial load or swipe-to-refresh. If online, clears existing database tables and inserts page 1. APPEND is triggered when the user scrolls near the end of the loaded viewport. Fetches the next page and appends entities to Room.
-PREPEND is triggered if scrolling upwards; typically returns `endOfPaginationReached = true` if items are only added forward. Finally, a RemoteKeys Table maintains cursor/page pointers in SQLite for each entity, ensuring accurate page math across app restarts and process recreation.
-
+Implementing Paging 3 with RemoteMediator establishes an offline-first pagination pipeline for large datasets.
+First, Room serves as the absolute single source of truth. The DAO exposes a PagingSource queried by the Pager, streaming immutable PagingData directly to Compose or RecyclerView lists.
+Second, RemoteMediator acts as a bridge between the local database and the remote network API. When the user scrolls near the end of the cached list, Paging 3 triggers RemoteMediator.load with an APPEND or REFRESH load type.
+Third, we persist pagination tokens or cursors in a separate RemoteKeys table in Room.
+During a REFRESH event, we execute an atomic transaction that resets remote keys, purges stale items, and inserts the fresh page, eliminating list jumping and supporting seamless offline paging.
 
 ## Interview answer — deep senior
 
-A frequent failure mode in Paging 3 is **Infinite Refresh Loops caused by Table Invalidation**.
-
-If your `RemoteMediator` writes to a secondary table that triggers invalidation of the primary observed query *before* the transaction finishes, or if `RemoteMediator` returns `MediatorResult.Success(endOfPaginationReached = false)` when the network actually returned an empty list, Paging 3 continuously triggers new `APPEND` loads in an infinite loop, draining battery and flooding the server.
-
-**Defensive Rules**.
-
-First, always write entities and `RemoteKeys` together inside `database.withTransaction { }`. Next, if `response.items.isEmpty()`, immediately set `endOfPaginationReached = true`.
-Finally, use `initialize(): InitializeAction` in `RemoteMediator`. If cached database data is fresh (e.g. Less than 10 minutes old), return `InitializeAction.SKIP_INITIAL_REFRESH` to open the screen instantly without hitting the network.
-
+Architecting paginated feeds using Jetpack Paging 3 and RemoteMediator requires shifting from naive network-bound pagination to local-first database mediation.
+A common anti-pattern is creating a custom PagingSource that calls Retrofit directly.
+While straightforward, this approach breaks offline support, discards cached scroll positions on process death, and causes layout jumps during network re-fetches.
+RemoteMediator solves this by fully decoupling UI pagination from network latency.
+The UI layer observes a cold Flow<PagingData<Item>> queried strictly from Room.
+When the user scrolls past the prefetchDistance threshold, Paging 3 evaluates the viewport and dispatches an APPEND event to RemoteMediator.
+To maintain cursor integrity across app process death and system restarts, we maintain a companion FeedRemoteKeys table in Room storing nextKey and prevKey tokens.
+During a swipe-to-refresh action (LoadType.REFRESH), executing the reset atomically inside db.withTransaction is mandatory.
+We delete outdated remote keys, purge cached feed entities, and insert the new page along with its successor cursors within a single SQLite transaction.
+Because Room is observed via Flow, the UI transitions gracefully to the fresh dataset without visual blinking or scroll glitches, providing a high-performance 120Hz scrolling experience that remains completely functional even when the user enters offline areas.
+Additionally, we configure backpressure handling and prefetch buffers within PagingConfig, ensuring background network fetching completes well ahead of user scroll thresholds for an uninterrupted reading experience.
 
 ## How to answer in the interview
 

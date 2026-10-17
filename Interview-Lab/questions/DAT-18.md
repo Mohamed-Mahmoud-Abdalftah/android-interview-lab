@@ -20,6 +20,48 @@ A transaction is saved but disappears after restart in release builds only. What
 
 Investigate release-only disappearance of saved transaction across persistence, R8, encryption and backup paths.
 
+## Concept and technical explanation
+
+Investigating release-only data disappearance requires systematically auditing build-variant configuration, code shrinking, and SQLite lifecycle behaviors:
+- In-Memory Database Configuration: Check dependency injection modules (Hilt/Koin). A common mistake is injecting Room.inMemoryDatabaseBuilder() in release due to a flipped BuildConfig.DEBUG check, causing SQLite tables to reside solely in RAM and vanish on process death.
+- ProGuard/R8 Obfuscation & Reflection Stripping: R8 shrinks, obfuscates, or strips default constructors, getters/setters, or @TypeConverter classes if proper keep rules are missing. While Room generates code at compile time, reflection-based converters or obfuscated entity column names can fail silently, leading Room to deserialize empty defaults upon app relaunch.
+- Silent Destructive Migration: If the release build increments the database schema version without registering a corresponding Migration, and fallbackToDestructiveMigration() was enabled, Room silently drops and recreates all tables on startup.
+- SQLite WAL Journaling & Unclosed Transactions: In Write-Ahead Logging mode, writes reside in the -wal file. If transactions are never committed, or if the database is opened from cache directories that the OS periodically clears, persisted records disappear after app termination.
+
+## Practical walkthrough (English)
+
+Verifying dependency injection, ProGuard rules, and migration configurations:
+```kotlin
+// 1. Audit DI Module: ensure disk database is consistently configured
+@Module
+@InstallIn(SingletonComponent::class)
+object DatabaseModule {
+    @Provides
+    @Singleton
+    fun provideDatabase(@ApplicationContext context: Context): AppDatabase {
+        return Room.databaseBuilder(
+            context,
+            AppDatabase::class.java,
+            "production_app.db" // Guard against accidental inMemoryDatabaseBuilder
+        )
+        // Strictly forbid destructive migrations in release builds
+        .apply {
+            if (BuildConfig.DEBUG) {
+                fallbackToDestructiveMigration()
+            }
+        }
+        .build()
+    }
+}
+
+// 2. Audit ProGuard / R8 Rules: protect entities and converters from stripping
+// -keepclassmembers class * extends androidx.room.RoomDatabase {
+//     <init>();
+// }
+// -keep class com.example.data.local.entities.** { *; }
+// -keep class * extends androidx.room.TypeConverter { *; }
+```
+
 ## Explanation in Arabic
 
 المعاملة تُحفظ في قاعدة البيانات وتعمل بنجاح في Debug، لكنها تختفي تماماً بعد إعادة تشغيل التطبيق في Release Builds فقط! كيف تشخص وتصلح هذه المشكلة الغامضة؟
@@ -93,23 +135,27 @@ A payments app logs stable operation IDs and local state transitions, reproduces
 
 ## Interview answer — short
 
-Investigate R8 obfuscation stripping Entity properties or default constructors, unexpected Auto Backup restoring stale databases from Google Cloud, fallbackToDestructiveMigration wiping data on version mismatches, or Android Keystore master keys becoming invalidated between app launches in release builds.
+Investigating release-only data loss requires auditing four root causes: verifying dependency injection does not inject an in-memory database, ensuring R8 shrinking does not strip Room entity constructors or TypeConverters, confirming fallbackToDestructiveMigration is disabled, and verifying the database file is stored in permanent app files rather than volatile cache directories.
 
 ## Interview answer — structured
 
-A release-only database disappearance that succeeds in debug points to production compilation transforms or platform backup mechanisms.
-
-First, with R8 / ProGuard Obfuscation, r8 processes release builds aggressively. If Entity classes or TypeConverters lack keep rules (`@Keep` or `-keep @androidx.room.Entity class * { *; }`), R8 renames fields or strips reflective no-arg constructors. Room may fail to deserialize existing rows on subsequent launches, failing silently or catching an internal reflection error and returning empty datasets. Next, with Android Auto Backup Collision, if `android:allowBackup="true"` is enabled in `AndroidManifest.xml`, the OS can restore an older cloud backup over the SQLite database file during installation or app restoration, replacing the newly written database with a stale snapshot.
-Additionally, with Silent Destructive Migration, if the release build has an unversioned migration gap and `fallbackToDestructiveMigration()` is active, Room wipes the entire SQLite file on startup rather than crashing with an `IllegalStateException`. Finally, with Keystore Invalidation (SQLCipher / Encrypted DBs), if the database is encrypted, ensure the master key in Android Keystore wasn't flagged with `setUserAuthenticationRequired(true)` or invalidated by device lockscreen configuration changes.
-
+Diagnosing data disappearance that reproduces exclusively in release builds requires isolating compilation, dependency injection, and storage discrepancies.
+First, audit the dependency injection module. A flipped boolean condition in Hilt or Koin often accidentally injects Room.inMemoryDatabaseBuilder instead of the disk database in release, causing tables to evaporate whenever the process dies.
+Second, examine R8 and ProGuard rules. Aggressive code shrinking can strip no-arg entity constructors or custom TypeConverters, causing Room to silently fail deserialization upon cold restart and return empty default records.
+Third, verify database migration declarations. If release bumped the database version without an explicit migration and fallbackToDestructiveMigration was configured, Room silently drops and recreates SQLite tables on startup.
+Fourth, ensure the database file resides in internal storage rather than temporary cache directories that Android purges under memory pressure.
 
 ## Interview answer — deep senior
 
-To diagnose this systematically in production.
-
-First, with Inspect the Physical SQLite File, using Android Studio Device File Explorer or an internal debug menu on a signed release build, inspect `/data/data/<package>/databases/app.db`. Check file size and dump table contents via the `sqlite3` CLI tool to verify if rows were committed to disk. Next, with Verify WAL (Write-Ahead Logging) Checkpoints, SQLite WAL mode writes transactions into a separate `app.db-wal` file. If the process is killed abruptly before a WAL checkpoint completes and the app configuration disables WAL on restart, uncheckpointed transactions can disappear.
-Finally, with Rule Out Optimistic UI Illusions, ensure the repository actually committed the transaction to SQLite rather than only updating a MutableStateFlow in memory.
-
+When a critical transaction persists during the session but vanishes after app restart exclusively in release builds, senior engineers immediately suspect build configuration differences rather than standard runtime database logic.
+Our first investigation step is examining dependency injection graphs in Hilt.
+We frequently find teams wrapping database creation in conditional logic where release accidentally receives an in-memory database builder, meaning SQLite writes exist only in volatile process RAM and vanish on process death.
+The second critical area is R8 code shrinking and optimization.
+Because release builds execute minification, if entity data classes or TypeConverters lack proper keep annotations, R8 can strip field getters, setters, or synthetic constructors that Room relies on during deserialization.
+This causes Room queries to return default null values after restart without crashing.
+The third and most catastrophic culprit is silent destructive migration.
+If the release version increments the database schema number without registering a corresponding Migration object, and someone left fallbackToDestructiveMigration enabled, Room detects the schema mismatch during launch, drops all tables, and recreates an empty database.
+Finally, we verify storage location and WAL journal flushing: we ensure the database is stored in context.filesDir, and confirm background write transactions are cleanly committed before the process enters background, preventing uncheckpointed Write-Ahead Logging state from getting discarded.
 
 ## How to answer in the interview
 

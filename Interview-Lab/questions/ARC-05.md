@@ -20,6 +20,56 @@ What belongs in ViewModel versus UseCase versus Repository?
 
 Place UI state/lifecycle, reusable policy, and data-source coordination with the right owner.
 
+## Concept and technical explanation
+
+Architectural boundary discipline dictates clear responsibility allocation among ViewModel, UseCase, and Repository to prevent God classes and maintain modular cohesion. The ViewModel (Presentation) acts as a lifecycle-aware state holder that manages UI state production, handles user interactions, triggers navigation events, survives configuration changes, and formats domain data into presentation models. It must never reference View hierarchies, hold Android Activity Context, or execute business transactions directly. The UseCase (Domain) encapsulates single-responsibility, framework-agnostic business logic, mathematical computations, input validation rules, and cross-repository orchestration. The Repository (Data) serves as the authoritative single source of truth for an aggregate entity, mediating between remote APIs, local databases, and caches while managing data synchronization, offline persistence, and entity mapping.
+
+## Practical walkthrough (English)
+
+Mapping clear separation of concerns in a funds transfer feature:
+```kotlin
+// 1. DATA LAYER: Data synchronization and remote execution
+class TransferRepositoryImpl(private val api: BankingApi, private val dao: AccountDao) : TransferRepository {
+    override suspend fun sendMoney(recipientId: String, amount: Double): Result<TransactionId> = runCatching {
+        api.postTransfer(TransferRequest(recipientId, amount)).toDomain()
+    }
+}
+
+// 2. DOMAIN LAYER: Pure business validation and orchestration
+class SendMoneyUseCase(
+    private val accountRepo: AccountRepository,
+    private val transferRepo: TransferRepository
+) {
+    suspend operator fun invoke(recipientId: String, amount: Double): Result<TransactionId> {
+        if (amount <= 0.0) return Result.failure(IllegalArgumentException("Amount must exceed zero"))
+        val balance = accountRepo.getCurrentBalance()
+        if (balance < amount) return Result.failure(IllegalStateException("Insufficient funds"))
+        return transferRepo.sendMoney(recipientId, amount)
+    }
+}
+
+// 3. PRESENTATION LAYER: UI state management and user action dispatch
+class TransferViewModel(
+    private val sendMoneyUseCase: SendMoneyUseCase
+) : ViewModel() {
+    private val _uiState = MutableStateFlow<TransferUiState>(TransferUiState.Idle)
+    val uiState: StateFlow<TransferUiState> = _uiState.asStateFlow()
+
+    fun onTransferConfirmed(recipientId: String, rawAmount: String) {
+        val amount = rawAmount.toDoubleOrNull() ?: run {
+            _uiState.value = TransferUiState.Error("Invalid amount format")
+            return
+        }
+        viewModelScope.launch {
+            _uiState.value = TransferUiState.Loading
+            sendMoneyUseCase(recipientId, amount)
+                .onSuccess { _uiState.value = TransferUiState.Success(it.value) }
+                .onFailure { _uiState.value = TransferUiState.Error(it.localizedMessage ?: "Transfer failed") }
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 ما الذي ينتمي إلى الـ ViewModel مقابل الـ UseCase مقابل الـ Repository؟ وكيف نقسم المسؤوليات بينهم؟
@@ -111,29 +161,23 @@ A checkout feature tests ViewModel state transitions with a fake use case, trans
 
 ## Interview answer — short
 
-ViewModel manages UI lifecycle and exposes `StateFlow<UiState>` to the presentation layer. UseCase encapsulates business operations, validating policies and coordinating multiple repositories. Repository mediates between network, local database, and in-memory caches, abstracting storage mechanisms.
+ViewModel holds and manages UI state, responding to user actions and surviving configuration changes. UseCase encapsulates specific business rules and multi-repository workflows. Repository manages data sources, caching policies, and data synchronization as a single source of truth.
 
 ## Interview answer — structured
 
-Clear boundary division among ViewModel, UseCase, and Repository prevents monolithic architectural bloat.
+Assigning responsibilities cleanly across ViewModel, UseCase, and Repository prevents monolithic classes and keeps codebases maintainable.
 
-First, **ViewModel (Presentation Layer)**. Next, owns UI state and survives configuration changes.
-Converts domain outputs into immutable `StateFlow<UiState>` tailored for rendering. Translates raw user actions into business commands.
-Never performs I/O directly, never references Android `Context`, and contains zero business calculations. **UseCase (Domain Layer)**.
-Encapsulates discrete, reusable business rules (e.g. Eligibility criteria, tax calculations). Coordinates multiple repositories (e.g. Querying user balance from `AccountRepository` and deducting inventory from `ProductRepository`).
-Operates strictly on pure Kotlin domain models without UI or database dependencies. **Repository (Data Layer)**.
-Single source of truth for a specific data aggregate. Decides whether to query local database, fetch from network, or return cached memory.
-Finally, maps external schemas (DTOs, Room entities) to clean domain models.
+The ViewModel is a presentation state holder that lives in the presentation layer. It manages UI state lifecycles, observes domain streams, translates raw business data into display-ready UI models, and processes user events while surviving screen rotations.
+
+In production, the UseCase resides in the domain layer and owns pure business logic. It handles calculations, domain validations, authorization checks, and orchestrates workflows that touch multiple repositories.
+As for the Repository, it belongs to the data layer and acts as the single source of truth for an aggregate entity. It coordinates remote network calls, Room database caching, offline synchronization, and local storage, ensuring upper layers remain unaware of whether data originates from memory, disk, or the cloud.
 
 
 ## Interview answer — deep senior
 
-A frequent anti-pattern is **Fat ViewModel Syndrome**, where ViewModels perform data mapping, HTTP header configuration, and multiple repository joins directly. This makes ViewModels massive (1,000+ lines) and untestable without heavy mocking.
-
-Conversely, pushing business rules down into Repositories is an equal architectural mistake. A Repository should never know business policy (e.g. 'a gold member gets 15% discount'); the Repository simply stores and retrieves orders and user profiles. Calculating the discount is the strict domain responsibility of a Use Case.
-
-By strictly adhering to these boundaries, each component remains easily testable in isolation: Repositories are verified via Fake DataSources, UseCases are verified via Fake Repositories, and ViewModels are verified by asserting `uiState` emissions.
-
+Under the hood, drawing explicit boundaries between ViewModel, UseCase, and Repository ensures high cohesion and localized failure modes. A common architectural smell in Android applications is the Fat ViewModel, where developers place network API calls, database queries, and business calculations directly inside ViewModel coroutines. This tightly couples presentation logic with business rules, making automated testing cumbersome and causing memory leaks if Android Context is captured.
+The rule of thumb for placement is clear: if a concern relates to how data is displayed, screen lifecycle, or navigation events, it belongs in the ViewModel. If a rule must execute regardless of whether the request came from a Composable, a WearOS notification, or a WorkManager background job—such as validating an account balance before a transfer—it belongs in a UseCase. If logic decides whether to read from SQLite or fetch fresh JSON over HTTP, it belongs in the Repository.
+Staff engineers enforce that ViewModels never reference Android View hierarchies, Activity contexts, or database DAOs. Furthermore, Repositories never expose UI-specific models or framework errors; they catch low-level IOExceptions and SQLiteExceptions, translating them into domain-safe failure abstractions before passing them upward. This strict separation guarantees that features remain robust, testable, and adaptable to future platform changes.
 
 ## How to answer in the interview
 

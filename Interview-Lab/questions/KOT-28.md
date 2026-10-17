@@ -20,6 +20,14 @@ How do you design a type-safe result API without losing error information?
 
 Design an outcome API with stable typed categories, retained diagnostic context, cancellation and retry semantics.
 
+## Concept and technical explanation
+
+Designing a type-safe result API in Kotlin without losing error information requires balancing strong compiler type guarantees with rich diagnostic observability. In naive architectures, result types either discard failure details by reducing errors to generic strings or boolean flags, or couple callers to low-level transport exceptions like `IOException` or `SQLException`. A production-grade result API addresses this through a strongly typed, payload-bearing closed hierarchy—such as `sealed interface AppResult<out T, out E : DomainError>`. The error type `E` is itself a sealed hierarchy representing distinct, mutually exclusive business failure categories (such as `ValidationError`, `NetworkError`, `AuthenticationError`, or `PaymentDeclined`). Each failure case carries domain-specific metadata (such as HTTP response codes, failed form field maps, or retry eligibility), while retaining an optional root cause exception for telemetry. This ensures presentation layers handle failures exhaustively in `when` expressions without type casting or string parsing, while diagnostic pipelines capture full root causes without leaking internal stack traces to users.
+
+## Practical walkthrough (English)
+
+Consider a checkout transaction API in an enterprise Android application. A flawed API returns `Result<Receipt>`, forcing the UI layer to inspect untyped exceptions: `if (result.exceptionOrNull() is InsufficientFundsException) ...`, which breaks encapsulation and causes runtime bugs if an exception type changes. A disciplined result API structures the outcome cleanly: `sealed interface CheckoutResult { data class Success(val receipt: Receipt) : CheckoutResult; sealed interface Failure : CheckoutResult { data class InsufficientBalance(val balance: Long, val required: Long) : Failure; data class CardDeclined(val declineCode: String, val canRetry: Boolean) : Failure; data class NetworkTimeout(val cause: Throwable, val correlationId: String) : Failure } }`. In the ViewModel, a `when` expression pattern-matches on `CheckoutResult`. If `InsufficientBalance` occurs, the UI displays a specialized top-up sheet showing exact currency amounts. If `NetworkTimeout` occurs, the UI presents a retry banner while forwarding the `correlationId` and `cause` to Crashlytics, completely separating user messaging from technical diagnostics.
+
 ## Explanation in Arabic
 
 تصميم Type-Safe Result API بدون فقدان تفاصيل الخطأ (Without losing error context) هو الفارق بين كود مبتدئ وكود معماري ناضج:
@@ -91,23 +99,22 @@ A checkout repository returns typed outcomes, logs a correlation ID without card
 
 ## Interview answer — short
 
-Design a typed sealed hierarchy like Result<out T, out E> where both success and failure are strongly typed. Failures carry structured metadata rather than generic strings or raw Throwables, eliminating casting and allowing the compiler to enforce exhaustive, context-rich error handling.
+A type-safe result API models outcomes with a sealed hierarchy carrying strongly typed domain error categories rather than generic strings or raw exceptions. This preserves rich diagnostic metadata and correlation IDs for observability while enabling exhaustive, compiler-checked error handling in presentation layers.
 
 ## Interview answer — structured
 
-To design a type-safe result API without losing error context, I use a parametric sealed hierarchy: `sealed interface NetworkResult<out T, out E>`. The key design principle is treating failures as first-class domain entities rather than second-class exceptions or generic strings.
+Designing a type-safe result API requires preserving structural failure details without tightly coupling the domain layer to low-level transport exceptions. Standard solutions that reduce errors to strings or generic Throwables force presentation code to rely on fragile string parsing or unsafe type casting.
 
-In this design, `Success<T>` holds the strongly typed response payload. The failure branch is not tied to `java.lang.Throwable`; instead, it is typed to a sealed error hierarchy `E` specific to that feature—such as `AuthError.InvalidCredentials(val attemptsRemaining: Int)` or `AuthError.AccountLocked(val unlockTime: Instant)`. This preserves rich diagnostic context and metadata.
+The optimal design employs a closed type hierarchy where the failure branch is constrained to a domain-specific sealed error taxonomy.
 
-Callers consume the API with exhaustive `when` expressions, giving the compiler the ability to verify that every domain error variant is explicitly handled. We also provide functional transformations like `map`, `mapError`, and `flatMap` so pipelines can chain results cleanly without nested try-catch blocks.
+In production, each failure variant carries typed domain properties—such as HTTP status codes, validation maps, or retry eligibility flags—while encapsulating a correlation identifier for diagnostic logging.
+
+This design allows UI layers and MVI reducers to handle errors exhaustively in when expressions with full compiler enforcement, while production telemetry pipelines capture technical root causes without exposing stack traces to end users.
 
 
 ## Interview answer — deep senior
 
-Architecturally, a well-engineered Result type follows Monadic patterns (similar to Arrow's Either<L, R>) while maintaining idiomatic Kotlin ergonomics. To maximize performance and ergonomics in Android: 1. Covariance: use `out T` and `out E` with `Success<out T>` and `Failure<out E> : Result<Nothing, E>`, allowing seamless polymorphism and subtyping. 2. Preserve low-level diagnostics: for network and infrastructure failures, attach the underlying root cause (`val cause: Throwable? = null`) so logging and Crashlytics can report full diagnostic breadcrumbs without exposing Throwables to the domain logic. 3. Inline utility methods: implement combinators like `inline fun <T, E, R> Result<T, E>.map(transform: (T) -> R): Result<R, E>` as inline functions to ensure zero heap allocation overhead during transformation chains.
-
-This pattern completely decouples business error recovery from system crash reporting, providing absolute compile-time safety across multi-module boundaries.
-
+From an architectural and functional perspective, a robust result API incorporates monadic transformation combinators—such as `map`, `flatMap`, `recover`, and `fold`—while maintaining Kotlin's idiomatic readability. Unlike raw functional programming libraries like Arrow, which introduce heavy monadic abstractions and learning curves, a pragmatic Kotlin result API implements lightweight inline extension functions. These combinators transform successful values while propagating strongly typed errors downstream without nesting callback pyramids. Regarding coroutines and structured concurrency, the result API must never intercept or swallow `CancellationException`. When mapping low-level network or database calls inside boundary adapters, engineers must explicitly catch `CancellationException` and rethrow it immediately, ensuring that parent job cancellations propagate properly across scopes. From an observability and security standpoint, enterprise mobile applications must adhere to strict data classification policies. Technical error payloads often contain Personally Identifiable Information (PII) or sensitive banking tokens within network response bodies or stack traces. A well-architected result API decouples the user-facing domain model (which contains localized, sanitized error descriptions) from the internal diagnostic event (which pairs a non-PII Correlation ID with sanitized error codes sent to remote telemetry backends like Datadog or Firebase). This architecture guarantees that even if a full stack trace is logged in internal crash reporting, no sensitive customer data is leaked in presentation layers or logcat outputs.
 
 ## How to answer in the interview
 

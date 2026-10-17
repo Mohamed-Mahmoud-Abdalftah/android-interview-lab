@@ -22,6 +22,39 @@ What does stability mean for Compose types and parameters?
 - Explain skip comparison with version-sensitive strong skipping behavior.
 - Avoid false `@Stable`/`@Immutable` annotations and premature tuning.
 
+## Concept and technical explanation
+
+Stability in Jetpack Compose is a compile-time and runtime behavioral contract that defines whether a data type guarantees immutable or predictable equality over time. The Compose compiler analyzes all classes and categorizes them as Stable, Immutable, or Unstable. A type is Stable if two instances comparing equal via equals() are guaranteed to notify Compose whenever any internal state mutates, or if the type is completely immutable. Stability directly controls smart skipping: a composable function can be skipped during recomposition only if all of its input parameters are proven Stable. Unstable types force conservative, unconditional recompositions on every frame.
+
+## Practical walkthrough (English)
+
+Inspecting stability categories and fixing unstable data models:
+```kotlin
+// ❌ UNSTABLE: Contains a mutable 'var' and a raw standard Kotlin List!
+// Any composable taking UserProfile will NEVER be skipped!
+data class UserProfile(
+    var name: String, // 'var' makes class unstable!
+    val friends: List<String> // Standard List interface is considered unstable by compiler!
+)
+
+// ✅ STABLE / IMMUTABLE: Explicit contract promises compiler data never mutates silently
+@Immutable
+data class StableUserProfile(
+    val name: String, // Immutable val
+    val friends: ImmutableList<String> // Kotlinx Immutable Collections guarantee stability!
+)
+
+// ✅ Skippable Composable: Both parameters are stable!
+@Composable
+fun UserCard(
+    user: StableUserProfile, // Stable type!
+    onFollowClick: () -> Unit // Function types (lambdas) are stable!
+) {
+    // Compose compiler generates zero-overhead early return skipping for this function!
+    Text("User: ${user.name}")
+}
+```
+
 ## Explanation in Arabic
 
 ماذا يعني استقرار الأنواع والبارامترات (Type & Parameter Stability) في Jetpack Compose؟
@@ -101,28 +134,29 @@ Diagnose measured jank first, inspect compiler stability reports for the affecte
 
 ## Interview answer — short
 
-In Compose, type stability determines whether a composable can be skipped during recomposition. An `@Immutable` type never mutates; a `@Stable` type notifies Compose if it mutates. Unstable types—such as classes with mutable `var` properties or standard Kotlin `List<T>`—force recomposition of the composables that accept them.
+Stability in Compose is a contract indicating whether a type's equality remains predictable over time. Primitives, Strings, function types, and classes with only val properties of stable types are automatically stable. The compiler marks classes with var properties or standard collections like List as unstable because they can mutate silently. A composable can only be skipped if all its parameters are stable. We enforce stability using @Immutable, @Stable, Kotlinx Immutable Collections, or Strong Skipping Mode.
 
 ## Interview answer — structured
 
-Type stability is the core contract that governs the Compose Compiler's smart skipping optimization.
-
-When a parent composable recomposes, Compose evaluates child composables. If all parameters passed to a child are **Stable** and their values evaluate as equal via `equals()`, Compose skips re-executing that child composable entirely.
-
-The compiler infers stability into three categories.
-
-First, with Immutable (`@Immutable`), all public properties are `val` and their types are also immutable. The object's state is guaranteed never to change post-creation (e.g. Primitives, `String`, or annotated data classes). Next, stable (`@Stable`) is the object may be mutable, but it guarantees that any state mutations notify the composition (such as holding `mutableStateOf` properties).
-Finally, with Unstable, any class containing public `var` properties, external multi-module classes uncompiled by the Compose compiler plugin, or standard Kotlin collection interfaces (`List`, `Set`, `Map`). Because `List<T>` is an interface that could hide a mutable `ArrayList`, Compose assumes it can change without notification, marking any composable accepting it as unskippable.
-
+Stability is the central compiler mechanism determining whether Jetpack Compose can skip re-executing functions during recomposition.
+The Compose compiler inspects every type passed as a composable parameter and assigns it a stability classification based on strict contracts.
+An Immutable type guarantees that its public properties will never change after instantiation. Primitives, Strings, and data classes with val fields of other immutable types are automatically inferred as immutable.
+A Stable type guarantees that if two instances are equal via equals(), they will remain equal unless Compose is explicitly notified of a mutation, such as through a MutableState field.
+Any type that violates these guarantees is classified as Unstable.
+The most frequent source of instability is Kotlin's standard collection interfaces, like List, Set, or Map. Because List is a read-only interface rather than an immutable collection, a caller could pass a mutable ArrayList behind the scenes.
+The Compose compiler cannot verify that the list will not mutate without its knowledge, so it marks any composable receiving a raw List as unskippable.
+To resolve this, engineers wrap lists in @Immutable classes, adopt Kotlinx Immutable Collections, or leverage Kotlin 2.0 Strong Skipping Mode.
 
 ## Interview answer — deep senior
 
-To resolve collection instability in production architectures, teams historically wrapped lists in `@Immutable data class ImmutableHolder<T>(val items: List<T>)` or adopted `kotlinx.collections.immutable` (`ImmutableList<T>`). Annotating domain entities with `@Immutable` promises the compiler that callers will treat the model as immutable, allowing full skipping.
-
-In recent releases, Compose introduced **Strong Skipping Mode** (standard in Kotlin 2.0+). Under strong skipping, composables with unstable parameters *can* still be skipped if the instance reference has not changed (`===`), and lambdas with captures are automatically remembered. However, if a new instance of an unstable class is passed—even with identical data—it still forces recomposition.
-
-We audit stability using Compose Compiler metrics (`./gradlew assembleRelease -PcomposeCompilerReports=true`), inspecting the generated `-classes.txt` and `-composables.txt` files to eliminate any accidental stability regressions.
-
+Under the hood, stability inference is performed by the Compose Compiler plugin during the Kotlin frontend IR lowering phase.
+The compiler analyzes class declarations and appends synthetic metadata markers, assigning a $stable bit flag to stable classes.
+When a composable function is compiled, the compiler inspects every parameter's stability flag. If all parameters are stable, the compiler generates a change-tracking bitmask check at the beginning of the function body.
+During recomposition, if the bitmask indicates that all stable parameters evaluate to SAME or have STATIC references, the method executes an early-return opcode, skipping function body execution and avoiding all SlotTable reads and allocations.
+If even a single parameter is marked unstable, the compiler flags the parameter as UNCERTAIN. In standard skipping mode, this forces the composable to execute unconditionally, even if the underlying data has not changed.
+In modern Compose compilers (Kotlin 2.0+), Google introduced Strong Skipping Mode, enabled by default.
+Strong skipping transforms this behavior by allowing composables with unstable parameters to be skipped if their instances compare equal via structural equality (equals()).
+Furthermore, developers can configure compiler stability configuration files (stability_config.conf) to mark external third-party classes (like java.time.Instant or external network DTOs) as stable without adding annotations to foreign libraries.
 
 ## How to answer in the interview
 

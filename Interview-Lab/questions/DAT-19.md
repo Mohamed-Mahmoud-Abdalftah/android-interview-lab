@@ -20,6 +20,71 @@ Two refresh-token requests both invalidate the session. How do you serialize ref
 
 Serialize refresh-token rotation and avoid false logout from two concurrent 401 responses.
 
+## Concept and technical explanation
+
+Safe serialization of refresh-token operations resolves concurrency race conditions in modern token rotation architectures:
+- Token Rotation & The Concurrency Trap: Modern OAuth/OIDC backends employ Refresh Token Rotation. Each refresh token is single-use: when presented, the server issues a new pair of access and refresh tokens and invalidates the old refresh token. If two concurrent HTTP requests fail with 401 simultaneously and both attempt to use the existing refresh token, the second request arrives at the backend after the refresh token was already consumed. The server interprets this as a potential token replay attack, revokes the user's entire session family, and forces an immediate logout.
+- OkHttp Authenticator Serialization: OkHttp does not synchronize Authenticator.authenticate() calls across parallel dispatcher threads. A thread-safe TokenManager must coordinate execution:
+  1. Double-Checked Token Inspection: Before executing a network refresh, the Authenticator checks if the failed request's Authorization header differs from the latest access token in memory. If another concurrent thread has already completed the refresh, the Authenticator simply updates the header to the fresh token and returns the request for replay without contacting the auth server.
+  2. Single-Flight Concurrency Lock: If the token is still stale, the thread acquires an exclusive lock (via Kotlin Coroutines Mutex or ReentrantLock).
+  3. Request Queuing: Any other concurrent 401 threads suspend or block on the lock, waiting for the single refresh network call to complete.
+  4. Atomic Storage & Release: Once the fresh tokens are stored in secure storage, the lock is released, and all queued requests replay seamlessly with the new bearer token.
+
+## Practical walkthrough (English)
+
+Thread-safe token manager coordinating single-flight refresh with Mutex:
+```kotlin
+class SafeTokenManager(
+    private val authApi: AuthApiService,
+    private val tokenStorage: EncryptedTokenStorage
+) {
+    private val mutex = Mutex()
+
+    suspend fun getOrRefreshToken(staleHeaderToken: String?): String? = mutex.withLock {
+        val currentToken = tokenStorage.getAccessToken()
+        // Double-checked locking: If another thread already refreshed it, return immediately
+        if (currentToken != null && "Bearer $currentToken" != staleHeaderToken) {
+            return currentToken
+        }
+
+        // Execute single refresh request
+        val refreshToken = tokenStorage.getRefreshToken() ?: return null
+        return try {
+            val response = authApi.refreshTokens(RefreshTokenRequest(refreshToken))
+            tokenStorage.saveTokens(response.accessToken, response.refreshToken)
+            response.accessToken
+        } catch (e: Exception) {
+            tokenStorage.clearSession()
+            null
+        }
+    }
+}
+
+class SynchronizedAuthenticator(
+    private val tokenManager: SafeTokenManager
+) : Authenticator {
+    override fun authenticate(route: Route?, response: Response): Request? {
+        if (responseCount(response) >= 2) return null
+
+        val currentAuth = response.request.header("Authorization")
+        val newToken = runBlocking {
+            tokenManager.getOrRefreshToken(currentAuth)
+        } ?: return null
+
+        return response.request.newBuilder()
+            .header("Authorization", "Bearer $newToken")
+            .build()
+    }
+
+    private fun responseCount(response: Response): Int {
+        var count = 1
+        var prior = response.priorResponse
+        while (prior != null) { count++; prior = prior.priorResponse }
+        return count
+    }
+}
+```
+
 ## Explanation in Arabic
 
 طلبان متزامنان لتجديد التوكن (Refresh Token) أديا معاً إلى إبطال جلسة المستخدم وتسجيل خروجه بالخطأ. كيف تضبط تسلسل التجديد وتمنع هذا الخطأ؟
@@ -127,33 +192,27 @@ A multi-tab banking app coordinates refresh per signed-in account, rechecks toke
 
 ## Interview answer — short
 
-Prevent dual refresh invalidation by strictly serializing refresh calls behind a Mutex or synchronized lock with double-checked token validation. When a thread acquires the lock, it checks if the active token was already updated by a preceding thread. If updated, it replays immediately without calling the refresh endpoint.
+Serializing refresh-token requests requires thread-safe single-flight coordination using a Mutex or ReentrantLock. The authenticator compares the failed request's token against current in-memory credentials: if already refreshed by another thread, it immediately replays with the new token; otherwise, it acquires the lock, executes a single refresh, and unblocks queued requests.
 
 ## Interview answer — structured
 
-Under modern OAuth 2.0 Refresh Token Rotation (RTR), using an expired refresh token triggers backend breach detection, instantly revoking all active client sessions. When two concurrent requests receive 401s, both attempting to refresh using the same stale token inevitably invalidates the session.
-
-To serialize refresh correctly and prevent false logouts.
-
-First, with Lock Funneling, wrap the refresh block inside a thread-safe lock (`synchronized(lock)` in OkHttp Authenticator or a coroutine `Mutex`). Next, with The Double-Check Token Protocol, before making any network call, extract the `failedToken` from the triggering request header and compare it to `sessionStore.getAccessToken()`.
-If `currentToken != failedToken`, another thread already executed the refresh while this thread was waiting on the lock. **Skip the refresh call entirely** and retry the request using `currentToken`. If `currentToken == failedToken`, this thread is the first to arrive. Execute exactly one refresh network request.
-Finally, with Atomic Session Mutation, save both the new access token and the rotated refresh token atomically before releasing the lock.
-
+Preventing concurrent refresh requests from invalidating user sessions requires single-flight synchronization to honor Refresh Token Rotation policies.
+First, understand the failure mode. Modern backends enforce single-use refresh tokens. When parallel network calls return 401 simultaneously, uncoordinated refresh attempts submit identical tokens; the server detects reuse, treats it as a security breach, and terminates the entire session.
+Second, implement double-checked token inspection in OkHttp Authenticator. Before contacting the auth server, compare the failed request's Authorization header with the latest token in memory. If another thread already completed a refresh, immediately replay the request with the fresh token.
+Third, guard actual network renewal behind a synchronization primitive such as a Mutex or ReentrantLock. Only one thread calls the refresh API while concurrent 401s suspend, resuming cleanly once fresh credentials are saved.
 
 ## Interview answer — deep senior
 
-A critical edge case is the **Stale Response Race Across Logout**:
-
-Consider this sequence.
-
-First, thread A fires a token refresh request. Next, while the refresh is in flight on the network, the user explicitly taps 'Log Out'. The app clears credentials from storage.
-Finally, thread A's refresh network request succeeds 1 second later and writes fresh tokens back into storage, accidentally resurrecting a logged-out session!
-
-To prevent this, implement a **Session Generation Counter**.
-
-First, maintain an atomic `sessionGeneration: Long` that increments on every explicit logout or login. Next, capture the generation ID before initiating the refresh.
-Finally, before committing new tokens to storage, verify that `currentGeneration == capturedGeneration`. If mismatched, discard the newly fetched tokens.
-
+In large-scale Android architectures, handling token refresh without robust thread synchronization is a frequent cause of random user logouts in production.
+Enterprise backends implement Refresh Token Rotation to comply with OAuth 2.1 standards: when a refresh token is exchanged, it is immediately invalidated and replaced with a new pair.
+If a screen dispatches five parallel Retrofit calls and all receive HTTP 401 Unauthorized because the access token expired, each thread enters OkHttp's Authenticator concurrently.
+Without coordination, all five threads attempt to invoke the refresh endpoint with the same refresh token.
+The first request succeeds, but the remaining four present an already-invalidated token.
+The auth server detects this as a replay attack, invalidates the entire token family, and rejects all subsequent calls, unexpectedly kicking the user out of the app.
+To eliminate this race condition, we implement a single-flight TokenManager utilizing double-checked locking with a Coroutine Mutex.
+When an Authenticator thread wakes up, it first checks whether the failed request's header matches the active access token in storage.
+If they differ, a sibling thread has already refreshed the session, so the Authenticator returns the new request immediately without network traffic.
+If they match, it enters the Mutex lock, re-verifies the token, issues a single refresh request, persists the new pair into encrypted storage, and releases the lock, allowing queued requests to replay smoothly.
 
 ## How to answer in the interview
 

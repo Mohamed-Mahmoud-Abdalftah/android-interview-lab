@@ -20,6 +20,44 @@ What is callbackFlow? What does awaitClose do?
 
 Adapt multi-shot callback APIs with callbackFlow, awaitClose and channel capacity decisions.
 
+## Concept and technical explanation
+
+The callbackFlow builder bridges legacy, callback-driven asynchronous APIs—such as Android LocationManager, Firebase listeners, broadcast receivers, and sensor hardware—into idiomatic, cold Kotlin Flows.
+Unlike the standard flow { } builder, which operates sequentially and throws an IllegalStateException if emissions occur from external threads, callbackFlow is thread-safe and channel-backed, allowing asynchronous callbacks executed by the OS or thread pools to push emissions safely via trySend or send.
+The awaitClose lambda is mandatory in callbackFlow. It suspends the internal producer coroutine, keeping the channel open while collectors are listening. When downstream collection terminates—whether due to normal completion, explicit cancellation, or lifecycle disposal—awaitClose resumes immediately, executing the specified teardown block to unregister listeners, release hardware handles, and prevent catastrophic memory and battery leaks.
+
+## Practical walkthrough (English)
+
+Wrapping an Android LocationListener into a leak-free callbackFlow:
+```kotlin
+class LocationDataSource(private val locationManager: LocationManager) {
+    fun observeLocationUpdates(): Flow<Location> = callbackFlow {
+        val listener = object : LocationListener {
+            override fun onLocationChanged(location: Location) {
+                // Thread-safe emission from OS callback thread:
+                trySend(location).isSuccess
+            }
+            override fun onProviderDisabled(provider: String) {}
+            override fun onProviderEnabled(provider: String) {}
+        }
+
+        // Register listener with system service on the calling thread:
+        locationManager.requestLocationUpdates(
+            LocationManager.GPS_PROVIDER,
+            1000L,
+            1f,
+            listener
+        )
+
+        // MANDATORY: Keeps flow alive and cleans up when cancelled
+        awaitClose {
+            println("Collector cancelled: Unregistering GPS listener")
+            locationManager.removeUpdates(listener) // Releases hardware!
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 الـ `callbackFlow` هو الأداة القياسية في Kotlin لتحويل الـ Multi-shot Callbacks و الـ Listeners المستمرة إلى Reactive Flow:
@@ -97,27 +135,27 @@ A location repository wraps SDK callbacks, unregisters on screen cancellation, a
 
 ## Interview answer — short
 
-callbackFlow converts multi-event callback APIs into cold Flows using trySend() to emit thread-safely. awaitClose keeps the coroutine active while subscribers exist and executes mandatory cleanup (unregistering listeners) when collection cancels, preventing fatal resource leaks.
+callbackFlow converts multi-shot callback APIs into cold Flows using an internal channel. awaitClose is mandatory: it keeps the producer coroutine suspended while active, and executes cleanup logic to unregister listeners and release hardware resources when the flow is cancelled.
 
 ## Interview answer — structured
 
-`callbackFlow` is the specialized cold flow builder used to bridge legacy, multi-shot callback listeners (like GPS location updates, Bluetooth scanning, or sensor managers) into reactive Kotlin Flows.
+CallbackFlow is the primary bridge for wrapping multi-shot asynchronous callbacks into reactive Kotlin streams.
 
-Inside the block, we register the callback listener and use **`trySend(value)`** to emit values thread-safely into the flow channel.
+Standard flow builders cannot emit across foreign threads. Because Android system callbacks (like GPS updates, WebSocket frames, or Bluetooth beacons) fire asynchronously from arbitrary background threads, callbackFlow provides a thread-safe Channel buffer that accepts trySend invocations across thread boundaries.
 
-The critical component is **`awaitClose { ... }`**, which serves two vital purposes.
+In production, omitting cleanup in callback-based architectures causes devastating memory leaks and battery depletion. When an Activity detaches, the GPS listener must be removed immediately to power down the location hardware.
 
-First, it suspends the coroutine block, keeping the flow channel open as long as collectors are actively observing. Finally, it acts as the mandatory cleanup hook: when the downstream collector cancels its coroutine (e.g., the screen is backgrounded or destroyed), `awaitClose` wakes up and executes its lambda, where you must unregister the listener from the Android system service.
-
-If you omit `awaitClose`, the flow builder executes top-to-bottom and closes immediately, terminating before any callbacks can fire.
+AwaitClose is strictly enforced at runtime. It suspends the producer coroutine, preventing immediate flow completion, and guarantees that when the collecting scope cancels, the registered teardown block unbinds listeners and frees native resources cleanly.
 
 
 ## Interview answer — deep senior
 
-Under the hood, `callbackFlow` is built on top of `channelFlow` with an extra safety invariant: the builder checks that `awaitClose` is explicitly invoked before the block completes. If you attempt to exit a `callbackFlow` without calling `awaitClose`, it throws an `IllegalStateException` at runtime.
-
-Another critical detail is using `trySend()` versus `send()`: `trySend()` is non-suspending and thread-safe. Because Android callbacks often trigger on arbitrary Binder IPC or background threads that cannot call suspending functions, `trySend()` allows posting events without launching extra coroutines. However, if the channel buffer overflows, `trySend().isFailure` will be true. To prevent dropping sensor or location events, we frequently chain `.buffer(Channel.UNLIMITED)` or `.conflate()` onto the `callbackFlow`.
-
+Under the hood in kotlinx.coroutines.flow, callbackFlow extends ChannelFlow, backed by an internal Channel buffer. When collect is invoked, callbackFlow launches a producer coroutine executing within a ProducerScope.
+Because ProducerScope implements SendChannel, emissions execute via trySend(element) or send(element). In callback contexts, trySend is heavily preferred over suspending send, because asynchronous system callbacks (such as LocationListener.onLocationChanged) are synchronous void callbacks that cannot suspend. If trySend fails due to buffer saturation, engineers configure buffer(Channel.CONFLATED) or explicit buffer capacities to prevent dropped events.
+The awaitClose invocation is governed by runtime enforcement: if the builder block completes without invoking awaitClose, callbackFlow throws an IllegalStateException: "awaitClose() should be used at the end of callbackFlow to keep the flow open and clean up resources".
+Internally, awaitClose registers a completion handler on the producer coroutine's Job. When the downstream collector's scope terminates or cancels, the Job enters the cancelling state, un-suspending awaitClose and executing its lambda on the underlying context. This guarantees atomic teardown even during sudden unhandled collector failures or rapid Activity recreations.
+Omitting awaitClose or failing to unregister listeners leaves native hardware interrupts and operating system hooks active, causing severe battery drain and holding application contexts in memory permanently.
+Staff engineers mandate strict pairing: every callback registration inside callbackFlow must have its exact inverse unregistration call inside awaitClose, preventing persistent leaks of Activity contexts and hardware locks.
 
 ## How to answer in the interview
 

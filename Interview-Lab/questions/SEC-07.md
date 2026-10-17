@@ -21,6 +21,43 @@ Compare encryption, hashing, HMAC, and digital signatures.
 - Reversible confidentiality versus one-way digest versus keyed integrity versus asymmetric authenticity.
 - Correct primitive choice for passwords, API messages and signatures.
 
+## Concept and technical explanation
+
+Modern cryptography provides four fundamental mathematical primitives, each addressing distinct security objectives: confidentiality, integrity, authenticity, and non-repudiation. Encryption transforms plaintext into ciphertext using a key, providing confidentiality; it is reversible when the corresponding decryption key is possessed. Encryption is divided into symmetric ciphers (such as AES-GCM, where the same key is used for both operations, making it extremely fast for bulk data) and asymmetric ciphers (such as RSA or ECC, where a public key encrypts and a private key decrypts). Hashing is a one-way mathematical function (such as SHA-256) that maps arbitrary-length inputs to a fixed-size digest, providing integrity verification; it uses no keys and cannot be reversed. HMAC (Hash-based Message Authentication Code) combines a cryptographic hash with a shared secret key, providing both integrity and authenticity; it verifies that the message has not been tampered with and was produced by an entity holding the shared key. Digital signatures combine asymmetric cryptography with hashing; the sender signs a message digest using their private key, and any verifier holding the corresponding public key can verify authenticity, integrity, and non-repudiation.
+
+## Practical walkthrough (English)
+
+Comparing cryptographic primitives implementation in Kotlin:
+```kotlin
+// 1. Symmetric Authenticated Encryption (AES-GCM): Confidentiality + Integrity
+fun encryptAesGcm(plaintext: ByteArray, secretKey: SecretKey): Pair<ByteArray, ByteArray> {
+    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+    cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+    val iv = cipher.iv // 12-byte initialization vector
+    val ciphertext = cipher.doFinal(plaintext)
+    return Pair(iv, ciphertext)
+}
+
+// 2. Cryptographic Hash (SHA-256): One-way Integrity check (No Key)
+fun computeSha256(data: ByteArray): ByteArray =
+    MessageDigest.getInstance("SHA-256").digest(data)
+
+// 3. HMAC (HMAC-SHA256): Symmetric Authenticity + Integrity (Shared Key)
+fun computeHmac(data: ByteArray, sharedKey: SecretKey): ByteArray {
+    val mac = Mac.getInstance("HmacSHA256")
+    mac.init(sharedKey)
+    return mac.doFinal(data)
+}
+
+// 4. Digital Signature (ECDSA): Asymmetric Authenticity + Integrity + Non-repudiation
+fun signPayloadEcdsa(data: ByteArray, privateKey: PrivateKey): ByteArray {
+    val signer = Signature.getInstance("SHA256withECDSA")
+    signer.initSign(privateKey)
+    signer.update(data)
+    return signer.sign()
+}
+```
+
 ## Explanation in Arabic
 
 مقارنة رياضية ومعمارية بين 4 مفاهيم أساسية في أمن المعلومات:
@@ -94,22 +131,33 @@ For each security requirement, document the property needed: secrecy, tamper det
 
 ## Interview answer — short
 
-Encryption provides reversible confidentiality using keys (AES/RSA). Hashing produces an irreversible one-way digest to verify data integrity (SHA-256). HMAC adds a shared secret key to hashing to verify both integrity and authenticity. Digital signatures use asymmetric cryptography (Private/Public key) to provide integrity, authenticity, and non-repudiation.
+We distinguish four cryptographic primitives by their mathematical goals: encryption uses keys to hide data reversibly for confidentiality, hashing creates fixed one-way digests without keys to check integrity, HMAC combines hashing with a shared secret key for symmetric authenticity, and digital signatures use asymmetric private keys to guarantee authenticity, integrity, and non-repudiation.
 
 ## Interview answer — structured
 
-Selecting the correct cryptographic primitive depends on whether the security goal is confidentiality, integrity, authenticity, or non-repudiation.
-
-First, an Encryption (Confidentiality - Reversible) transforms plaintext into ciphertext. Requires a key to decrypt back to plaintext. Symmetric encryption (AES-256 GCM) is fast for local data storage and payload encryption. Asymmetric encryption (RSA/ECC) encrypts data with a public key that only the matching private key can decrypt. Next, a Hashing (Integrity - Irreversible) is a deterministic, one-way mathematical function mapping arbitrary-length inputs to a fixed-length digest (e.g. SHA-256). Changing a single bit completely changes the hash. Used for APK checksum verification and password hashing (with salt and slow KDFs like Argon2).
-Additionally, with HMAC (Keyed Integrity & Authenticity - Symmetric), computes a hash combined with a shared secret key (`HmacSHA256`). Confirms that the message was not modified in transit AND that it was created by an entity possessing the shared secret. Finally, with Digital Signatures (Authenticity & Non-Repudiation - Asymmetric), signs a message hash with a private key; verifiable by anyone using the corresponding public key (e.g. ECDSA, RSA). Guarantees **non-repudiation**: the signer cannot claim they didn't author the message, making it mandatory for financial payment authorizations and APK code signing.
-
+Selecting the correct cryptographic primitive depends strictly on whether the engineering requirement is confidentiality, integrity, authenticity, or non-repudiation.
+Encryption provides confidentiality by rendering data unreadable to anyone lacking the decryption key.
+It exists as symmetric encryption like AES-GCM, which uses a single shared key for rapid bulk data processing, and asymmetric encryption like RSA, which uses mathematically paired public and private keys.
+Hashing provides integrity verification without using any keys.
+A cryptographic hash function like SHA-256 takes input of any length and produces a deterministic, fixed-size digest that cannot be reversed, exhibiting an avalanche effect where changing one bit completely alters the digest.
+HMAC provides message integrity and authenticity by combining a cryptographic hash function with a pre-shared secret key, proving that the sender possessed the key and the payload was not altered.
+Digital signatures provide the highest level of trust by combining asymmetric cryptography with hashing.
+The sender hashes the payload and encrypts the digest with their private key; recipients verify the signature using the sender's public key, proving authenticity, message integrity, and mathematical non-repudiation.
 
 ## Interview answer — deep senior
 
-Cryptographic Failure Modes in Android Applications.
-
-First, with Using Unauthenticated Encryption (AES-CBC without HMAC), susceptible to **Padding Oracle Attacks** and bit-flipping attacks. Always use **Authenticated Encryption with Associated Data (AEAD)**, specifically **AES-GCM (Galois/Counter Mode)**, which generates a cryptographic authentication tag validating both ciphertext integrity and payload confidentiality. Finally, with Hashing Passwords with Fast Hashes, using SHA-256 or MD5 for passwords is an immediate security vulnerability because modern GPUs compute billions of SHA-256 hashes per second via rainbow tables. Password hashing must use slow, memory-hard Key Derivation Functions (PBKDF2 with 100,000+ iterations, bcrypt, or Argon2id).
-
+In enterprise system design, choosing the wrong cryptographic primitive or misunderstanding its mathematical guarantees introduces catastrophic vulnerabilities.
+A classic anti-pattern is storing passwords using raw cryptographic hashes like SHA-256 or MD5.
+Because cryptographic hashes are designed for high throughput, attackers can compute billions of guesses per second using GPUs and rainbow tables; password hashing requires slow, memory-hard key derivation functions like Argon2id or PBKDF2 with unique salts.
+Another frequent mistake is confusing encryption with authentication.
+Using unauthenticated symmetric encryption like AES-CBC without an integrity tag leaves the ciphertext vulnerable to padding oracle attacks and bit-flipping manipulation.
+Modern engineering mandates Authenticated Encryption with Associated Data (AEAD), such as AES-256-GCM, which generates an authentication tag alongside the ciphertext to detect tampering.
+When comparing HMAC to Digital Signatures, the distinction centers on key distribution and non-repudiation.
+HMAC relies on a symmetric shared secret; because both the sender and receiver hold the identical key, either party could mathematically forge the HMAC, meaning HMAC cannot provide legal non-repudiation.
+Digital signatures solve this through asymmetric key pairs.
+In mobile banking, we use hardware-backed ECDSA keys generated inside Android Keystore.
+The client signs a financial transaction digest using its hardware-isolated private key, and the banking server verifies the signature using the registered public key.
+Because the private key can never leave the client's secure hardware, the signature provides indisputable cryptographic non-repudiation.
 
 ## How to answer in the interview
 

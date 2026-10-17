@@ -22,6 +22,36 @@ A shared model change forces recompilation of many modules. How would you shrink
 - Propose stable contracts or smaller ownership boundaries.
 - Measure task graph and preserve semantic correctness.
 
+## Concept and technical explanation
+
+When a monolithic shared data model (such as a generic User or Account entity) changes, it acts as a compilation bottleneck that invalidates compile classpaths and forces cascading recompilations across dozens of dependent feature modules. Shrinking this blast radius requires applying structural decoupling techniques:
+1. Bounded Context Domain Slicing: Decomposing the "God Model" into cohesive, feature-scoped value objects (e.g., splitting a 50-field User into UserIdentity for auth, UserShippingAddress for checkout, and UserFinancialProfile for billing).
+2. Interface Segregation: Exposing focused, read-only interface contracts rather than concrete models, so adding private fields to an implementation does not alter the consumer's ABI.
+3. Anti-Corruption Layers (ACL) & Local Mappers: Feature modules define their own internal UI/Domain representations, mapping the external shared model at their ingestion boundary. Internal feature logic never depends directly on the shared model.
+4. ABI-Safe Default Parameters: In Kotlin, adding fields with default arguments preserves constructor compatibility, preventing downstream source breaking.
+
+## Practical walkthrough (English)
+
+Slicing a bloated shared model and using local mappers to protect compilation boundaries:
+```kotlin
+// ❌ MONOLITHIC SHARED MODEL (:core:model)
+// Changing one field forces recompilation of 30 feature modules!
+// data class User(val id: String, val name: String, val email: String, val creditScore: Int, val address: String, ...)
+
+// ✅ BOUNDED CONTEXT SLICING & LOCAL MAPPING
+// 1. :core:model exports minimal, stable identity contract
+data class UserIdentifier(val id: String, val username: String)
+
+// 2. :feature:checkout defines its OWN local model with only what it needs
+internal data class CheckoutCustomer(val id: String, val shippingAddress: String)
+
+// 3. Local Mapper converts at boundary; changes to financial fields NEVER recompile checkout!
+internal fun UserProfileDto.toCheckoutCustomer() = CheckoutCustomer(
+    id = this.id,
+    shippingAddress = this.defaultAddress
+)
+```
+
 ## Explanation in Arabic
 
 تغيير سطر واحد في نموذج بيانات مشترك (Shared Model) أدى إلى إعادة تجميع عشرات الموديولات في المشروع. كيف تشخص المشكلة وتحد من أثرها الكارثي؟
@@ -89,24 +119,32 @@ Track ABI and public API churn of high-fan-out modules, compare representative i
 
 ## Interview answer — short
 
-A shared model change triggers massive rebuilds due to high fan-out and ABI invalidation. Shrink the impact by decomposing the monolithic model into domain-scoped models (e.g. AuthUser, BillingUser), introducing feature-specific UI models with local mappers, and moving stable primitives into isolated contract modules.
+To shrink the recompilation impact of a shared model change, decompose monolithic data models into focused, bounded-context domain slices. Have features depend on read-only interfaces or define local internal models mapped at the boundary through an Anti-Corruption Layer, isolating feature internals from changes to shared infrastructure models.
 
 ## Interview answer — structured
 
-When modifying a shared data model causes dozens of modules to recompile, the root cause is **Unconstrained Module Fan-Out combined with Public ABI Invalidation**.
-
-First, a Root Cause is a foundational module (like `:core:model`) exports an oversized entity (e.g. `User` with 40 fields) consumed transitively by 30+ feature modules. Adding or modifying a single property alters the compiled bytecode signatures (the ABI digest). Gradle detects the ABI mismatch and invalidates the compile classpath for every downstream module. Next, **Architectural Remediation**.
-Additionally, with Domain Model Segregation, split the monolithic entity into bounded-context models. The payment feature needs `BillingAccount`, the delivery feature needs `DeliveryRecipient`, and the auth feature needs `AuthIdentity`. Each lives in its respective domain module. With Feature-Level UI Models & Adapters, feature modules should map domain models into internal UI state data classes (`CheckoutUiState`). A change in backend metadata does not alter the feature's internal ABI.
-Finally, with Eliminate `inline` Functions on Models, never declare inline utility functions on shared models; inline bytecode embedding guarantees full caller recompilation.
-
+When a widely shared data model changes, it triggers cascading recompilations across the entire multi-module dependency graph.
+To shrink this blast radius, we eliminate monolithic God Models by slicing them into focused, bounded-context entities.
+Instead of a single User class with fifty fields consumed by every module, we create targeted models like UserIdentity for authentication and ShippingAddress for checkout.
+Features only import the lightweight slice relevant to their business domain.
+Furthermore, feature modules should establish an Anti-Corruption Layer by defining internal domain representations.
+The feature maps the incoming shared model into its internal representation at the repository boundary.
+If a field is added, modified, or removed in the shared model, edits are confined to that single boundary mapper.
+The feature's ViewModels, Compose screens, and internal tests remain completely insulated from recompilation.
 
 ## Interview answer — deep senior
 
-To diagnose and monitor fan-out rebuild cascades quantitatively.
-
-First, with Run Gradle with Profiling, execute `./gradlew assembleDebug --profile --scan`. The Gradle Build Scan's 'Timeline' and 'Performance' tabs reveal exactly which task invalidated the cache and triggered the cascade. Next, with Inspect the ABI Diff, compare task inputs using Gradle's verbose log: `./gradlew assembleDebug --info | grep -i "ABI changed"`. This confirms whether a public signature or private method triggered downstream compilation.
-Finally, with Graph Fan-Out Metrics, in CI, track the **Fan-In (afferent coupling)** of core modules. If a single module's fan-in exceeds 50% of the repository's modules, it is an architectural hazard and must be prioritized for decomposition into independent, stable API slices.
-
+The 'God Model' is one of the most insidious architectural anti-patterns in multi-module Android systems.
+When a shared entity like User, Order, or Transaction sits in a foundational core module and accumulates fields from multiple teams, it acts as a massive compilation dependency bottleneck.
+Every time an engineer adds a field to support a profile screen experiment, Gradle's ABI hashing detects a change in the core module's bytecode signatures, invalidating the compile classpath for twenty downstream feature modules.
+We resolve this systematically by applying Domain-Driven Design bounded contexts and interface segregation.
+First, we slice the bloated entity into lean, role-specific value objects.
+A checkout feature has no business knowing a user's credit score or notification preferences; it requires solely a ShippingContact and a PaymentBillingAddress.
+Second, we enforce an Anti-Corruption Layer at feature module boundaries.
+Feature modules maintain their own internal, immutable domain models.
+The feature repository receives data from the shared network or database layer and maps it immediately into internal feature models using extension functions hidden behind internal visibility.
+Consequently, when the shared backend DTO or core model changes, the blast radius is strictly confined to that single mapper function.
+The feature's domain use cases, ViewModels, and UI layouts remain untouched, preserving the Gradle build cache and shielding engineering squads from cross-team recompilation cascades.
 
 ## How to answer in the interview
 

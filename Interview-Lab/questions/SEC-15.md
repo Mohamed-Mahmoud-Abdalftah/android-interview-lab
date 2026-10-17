@@ -21,6 +21,46 @@ How do you prevent token leakage through logs, screenshots, crash reports, and a
 - Multiple data-exfiltration channels beyond persistent storage.
 - Redaction, screenshot policy and observability without token values.
 
+## Concept and technical explanation
+
+Securing authentication credentials and personally identifiable information (PII) on Android requires defending against passive exfiltration channels that bypass encrypted disk storage. These unintended leakage vectors primarily include application logging frameworks, operating system task snapshot previews, third-party crash reporting SDKs, and behavioral analytics pipelines. System logs (Logcat) can be intercepted on older platforms or inspected via debugging tools; production builds must strip debug logs completely using R8 ProGuard rules (-assumenosideeffects) or custom Timber tree filters. Task switcher snapshots and screen recording present a physical and software shoulder-surfing vulnerability, mitigated by setting WindowManager.LayoutParams.FLAG_SECURE on sensitive activity windows. Crash reporting services (such as Firebase Crashlytics or Sentry) frequently record network traces, custom keys, or exception messages containing raw authorization headers unless intercepted by strict redaction filters. Similarly, product analytics SDKs (such as Firebase Analytics or Mixpanel) must enforce automated sanitization rules preventing tokens, passwords, or credit card numbers from entering event parameter bundles.
+
+## Practical walkthrough (English)
+
+Securing window previews, network logging, and crash report data exfiltration:
+```kotlin
+// 1. Prevent screenshots, screen recording, and task switcher previews
+class SensitivePaymentActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Blanks out screen preview in Android Recents overview and blocks screenshots
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        )
+    }
+}
+
+// 2. Redacting sensitive Authorization headers in OkHttp network logging
+val loggingInterceptor = HttpLoggingInterceptor().apply {
+    level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY else HttpLoggingInterceptor.Level.NONE
+    redactHeader("Authorization")
+    redactHeader("Proxy-Authorization")
+    redactHeader("Cookie")
+    redactHeader("Set-Cookie")
+}
+
+// 3. Sanitizing Crashlytics custom crash keys to strip PII and tokens
+fun recordSafeCrashBreadcrumb(key: String, value: String) {
+    val sanitizedValue = if (key.contains("token", ignoreCase = true) || key.contains("auth", ignoreCase = true)) {
+        "[REDACTED]"
+    } else {
+        value
+    }
+    FirebaseCrashlytics.getInstance().setCustomKey(key, sanitizedValue)
+}
+```
+
 ## Explanation in Arabic
 
 كيف تمنع تسريب الـ Tokens والبيانات الحساسة عبر الـ Logs، لقطات الشاشة (Screenshots)، تقارير الأعطال (Crash Reports)، وأدوات الـ Analytics؟
@@ -100,26 +140,31 @@ Use shared redaction at network and analytics boundaries, restrict dashboard acc
 
 ## Interview answer — short
 
-Prevent leaks by masking Authorization headers via OkHttp's redactHeader, stripping Log calls in release builds with R8, setting FLAG_SECURE on sensitive Activities to block screenshots and recents snapshots, and sanitizing Crashlytics breadcrumbs and analytics events to strip PII and tokens before dispatch.
+We prevent token leakage across side-channels by stripping debug logs via R8 in release builds, setting FLAG_SECURE on sensitive windows to block screenshots and task snapshots, redacting Authorization headers in network interceptors, and sanitizing error payloads and analytics events before sending them to third-party crash trackers.
 
 ## Interview answer — structured
 
-Data leakage occurs across four primary observation surfaces, each requiring deliberate architectural defenses.
-
-First, with Logcat & Network Logs, Next, configure OkHttp's `HttpLoggingInterceptor` using `redactHeader("Authorization")` and `redactHeader("Cookie")` to prevent printing tokens.
-In release builds, use R8 rules (`-assumenosideeffects`) to strip `Log.d` and `Log.v` bytecodes entirely. **Screen Capture & App Switcher (Task Snapshots)**.
-When users background an app, Android saves a screenshot to disk for the multitasking overview. Applying `window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)` prevents screenshots, screen recording, and blacks out the task thumbnail in the recent apps switcher. **Crash Reporting (Crashlytics/Sentry)**.
-Scrub custom keys, breadcrumbs, and exception messages using filtering hooks (`beforeSend`). Network exception messages frequently contain full URLs with sensitive query parameters or authorization failure dumps. **Analytics Pipelines**.
-Finally, enforce strict event data schemas. Never forward free-form user inputs, search queries with sensitive data, or complete server URLs to analytics tools.
-
+Eliminating credential leakage requires securing the side-channels through which sensitive data accidentally escapes application boundaries.
+The first vector is system logging; in release configurations, we configure R8 rules to remove Logcat invocations entirely and employ Timber trees that discard debug messages.
+The second vector is screen capture and recent task previews.
+By applying WindowManager FLAG_SECURE to our activity windows, the Android system blocks screenshots, screen recording, and renders a blank preview card in the task switcher, protecting sensitive financial data from shoulder-surfing.
+The third vector is third-party crash reporting and observability SDKs like Crashlytics and Sentry.
+We implement custom exception filters that sanitize stack traces and redacting interceptors in OkHttp that scrub Authorization and Cookie headers before network logs are generated.
+Finally, we enforce strict payload sanitization policies in our analytics tracking layer, ensuring that user tokens and personal identifiers are never attached to event parameters.
 
 ## Interview answer — deep senior
 
-From an operational compliance perspective (e.g. PCI-DSS, GDPR, HIPAA), unintentional token leakage is treated as a major security incident.
-
-First, with Dynamic FLAG_SECURE Management, in modern Jetpack Compose applications, `FLAG_SECURE` can be dynamically toggled using a `DisposableEffect` based on whether the currently visible composable displays sensitive data (e.g., credit card entry or seed phrases), rather than blindly applying it across the entire application which impairs legitimate UX like support screenshots. Next, with Memory Dumps & System Bug Reports, when users trigger an Android bug report (`adb bugreport` or system developer settings), the OS dumps system log buffers and memory summaries. If tokens were printed to Logcat or stored in static string variables, they are bundled into plaintext bug report archives that users often share unencrypted over email or bug trackers.
-Finally, with Automated CI Linting, integrate static analysis linters (e.g., custom Android Lint rules or Semgrep) in CI to fail PR builds if developers log sensitive parameter names (`token`, `password`, `pan`, `cvv`) or attach raw network responses to analytics events.
-
+In high-assurance mobile engineering, side-channel data leakage often exposes sensitive credentials long before an attacker attempts to break cryptographic storage.
+Developers diligently encrypt local databases while inadvertently uploading plaintext bearer tokens to third-party analytics dashboards.
+To establish robust defense-in-depth, we systematically seal each exfiltration vector at the architectural layer.
+For application logging, relying on developer discipline to omit Log.d statements is an antipattern.
+We enforce automated removal by instructing R8 with -assumenosideeffects to strip all android.util.Log calls from the release bytecode during compilation.
+For the user interface layer, the operating system routinely captures screen snapshots when users navigate home, storing unencrypted bitmap images of the application state in system caches.
+Applying WindowManager.LayoutParams.FLAG_SECURE prevents these snapshots from being written to disk and renders the window black in the recent apps overview.
+For observability channels like Crashlytics and network monitoring, we treat third-party servers as untrusted sinks.
+In OkHttp, we configure HttpLoggingInterceptor with explicit redactHeader rules for Authorization and Cookie headers, and disable body logging entirely in release builds.
+In our crash reporting and analytics abstraction layers, we run all breadcrumb metadata and event bundles through a regex-based sanitization pipeline that detects and masks JWT patterns, credit card PAN numbers, and email addresses prior to SDK ingestion.
+This guarantees that an infrastructure compromise at a third-party analytics vendor does not result in a catastrophic credential breach for our customers.
 
 ## How to answer in the interview
 

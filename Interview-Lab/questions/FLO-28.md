@@ -20,6 +20,50 @@ A flow combines cached Room data with remote refresh. Who is source of truth?
 
 Design offline-first cache plus remote refresh with one local source of truth.
 
+## Concept and technical explanation
+
+In modern Android architecture and offline-first system design, the local database (such as Room) must serve as the absolute Single Source of Truth (SSOT), while the remote network API acts solely as a data upstream source that mutates the SSOT.
+Under this architectural contract, the UI layer never observes network responses directly. Instead, the UI layer exclusively observes reactive Flow streams emitted by Room DAOs. When the application requests fresh data from a remote REST or GraphQL endpoint, the repository fetches the remote payload, maps network DTOs to local database entities, and writes them into Room.
+Because Room SQLite queries are observable via Kotlin Flow, any database insertion, update, or deletion automatically triggers a fresh query evaluation, emitting the updated dataset downstream to the UI. This architectural decoupling guarantees offline resilience, eliminates data synchronization inconsistencies, and ensures the UI always renders a consistent, verified state even during transient network drops or server timeouts.
+
+## Practical walkthrough (English)
+
+Architecting an offline-first data stream with Room as the Single Source of Truth:
+```kotlin
+class NewsRepository(
+    private val newsDao: NewsDao,
+    private val newsApi: NewsApiService
+) {
+    // 1. UI observes Room database as the Single Source of Truth:
+    fun observeArticles(): Flow<List<Article>> = newsDao.getArticlesFlow()
+
+    // 2. Network refresh writes strictly to the database, never directly to UI:
+    suspend fun refreshArticles(): Result<Unit> = runCatching {
+        val remoteDtos = newsApi.fetchTopHeadlines()
+        val entities = remoteDtos.map { it.toEntity() }
+        newsDao.upsertArticles(entities) // Room automatically notifies observeArticles()!
+    }
+}
+
+// In ViewModel:
+class NewsViewModel(private val repository: NewsRepository) : ViewModel() {
+    val articles: StateFlow<List<Article>> = repository.observeArticles()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    fun refresh() {
+        viewModelScope.launch {
+            repository.refreshArticles().onFailure { error ->
+                _errorEvents.emit(error.message ?: "Sync failed")
+            }
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 دمج بيانات Room المحلية المخبأة مع التحديث من السيرفر البعيد وسؤال 'من هو المصدر الوحيد للحقيقة (Single Source of Truth)' هو جوهر الـ **Offline-First Architecture**:
@@ -100,24 +144,25 @@ A messaging inbox observes Room and runs a worker to fetch updates. Rows have se
 
 ## Interview answer — short
 
-The local database (Room) is the Single Source of Truth (SSOT). The UI exclusively observes the Flow emitted by Room. Remote network calls write fresh data into Room, and Room automatically emits the updated data to the UI, guaranteeing seamless offline-first operation.
+The local database (Room) is the absolute Single Source of Truth. The UI observes database Flow queries exclusively; the network layer simply fetches remote data and writes it to Room, which automatically emits updated snapshots to the UI while ensuring full offline functionality.
 
 ## Interview answer — structured
 
-In an offline-first Android architecture, the local database (Room) is strictly the **Single Source of Truth (SSOT)**.
+Offline-first applications mandate a strict Single Source of Truth to prevent synchronization conflicts.
 
-The architecture follows a unidirectional reactive pipeline.
+Room is the sole source of truth. Exposing direct network streams to the UI creates fragmented state where offline access is broken and network failures wipe out previously rendered data.
 
-First, **UI Observes Room:** The UI layer never observes raw network responses directly; it exclusively collects a Flow emitted by Room DAO (`articleDao.observeArticles()`). This guarantees that cached data is rendered instantly upon launch with zero network latency. Next, **Network Updates Room:** When a refresh is triggered, the repository makes a network call to the remote API. Upon receiving the payload, the repository persists it directly into the local Room database (`articleDao.upsert(data)`).
-Finally, **Automatic Reactive UI Emission:** Because Room's SQLite database observer tracks table modifications, inserting new data automatically triggers Room to re-query and emit the fresh list through its cold Flow. The UI receives the update automatically without any manual coordination.
+In production, the repository orchestrates this boundary cleanly. The UI subscribes to a reactive Flow emitted by the Room DAO. When a network sync executes, the repository parses the network response, converts DTOs to entities, and persists them into the database using upsert operations.
+As for reactive synchronization, Room invalidation trackers detect SQLite table mutations and automatically re-evaluate the query, pushing the updated list downstream through the Flow. If the network call fails, the UI continues displaying cached database records uninterrupted, handling errors via non-intrusive notification events.
 
 
 ## Interview answer — deep senior
 
-Under the hood, Room achieves this via SQLite transaction hooks and `InvalidationTracker`. When you return `Flow<List<T>>` from a DAO method, Room registers a table observer. Whenever any DAO write transaction commits against that table, `InvalidationTracker` dispatches an invalidation event on Room's query executor, prompting the Flow to re-query SQLite and emit the fresh snapshot.
-
-In enterprise codebases, we guard against stale deletions and conflicts using **Database Synchronization Strategies**: Instead of naive `insertAll()`, we either use `@Upsert` (introduced in Room 2.5) or execute a clean transaction: `withTransaction { dao.deleteStale(); dao.insertAll(fresh) }`. This ensures that items deleted on the backend are removed from local storage without breaking the continuous Flow observation.
-
+Under the hood, Room generates an observable Flow by registering an InvalidationTracker on the queried SQLite tables. When repository write operations invoke insert, update, or upsert, SQLite triggers notify Room's tracker. The tracker flags table modifications and notifies the active FlowCollector, re-querying SQLite on background database threads and emitting fresh entity snapshots downstream.
+This architecture establishes clean separation of concerns. The network layer is completely decoupled from UI rendering cycles. Network latency, retries, and schema mappings happen strictly in background execution pipelines that terminate at the SQLite database boundary.
+A critical senior consideration is transactional consistency and data pagination. When refreshing lists with relationships or nested items, repository writes must execute within a database transaction (@Transaction). This ensures that intermediate or partial updates never leak into the observable Flow, preventing UI rendering flickering or invalid relationship states.
+Furthermore, if network pagination is required, pairing Room with the Jetpack Paging 3 RemoteMediator enforces this exact pattern: RemoteMediator fetches pages from the network and saves them directly to Room, while PagingSource streams cached records from SQLite to the UI.
+Staff engineers enforce this offline-first contract across all enterprise apps: the UI observes local database storage exclusively, treating network endpoints as asynchronous background synchronizers.
 
 ## How to answer in the interview
 

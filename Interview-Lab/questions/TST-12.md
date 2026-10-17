@@ -21,6 +21,69 @@ How do you test HTTP failures with MockWebServer or equivalent?
 - Controlled HTTP errors, latency and disconnects.
 - Distinguishing client mapping from server-side guarantees.
 
+## Concept and technical explanation
+
+Testing network communication resilience against HTTP failures requires intercepting network traffic with high protocol fidelity without relying on volatile external staging servers. OkHttp's MockWebServer provides a local, in-process HTTP/HTTPS server that binds to a loopback socket on localhost. Rather than mocking Retrofit interfaces or OkHttp clients—which bypasses the entire networking serialization pipeline—MockWebServer exercises real network protocol negotiation, HTTP connection pooling, authentication interceptors, and JSON deserialization. Engineers simulate deterministic failure matrices by enqueueing mock responses with HTTP 4xx client errors (such as 401 Unauthorized or 404 Not Found), 5xx server outages (500 Internal Server Error, 503 Service Unavailable), malformed JSON payloads, and network socket timeouts or abrupt connection drops via SocketPolicy.
+
+## Practical walkthrough (English)
+
+Simulating 503 Service Unavailable and socket disconnects with MockWebServer:
+```kotlin
+class UserApiServiceTest {
+    private val mockWebServer = MockWebServer()
+    private lateinit var apiService: UserApiService
+
+    @Before
+    fun startServer() {
+        mockWebServer.start()
+        apiService = Retrofit.Builder()
+            .baseUrl(mockWebServer.url("/"))
+            .addConverterFactory(Json.asConverterFactory("application/json".toMediaType()))
+            .build()
+            .create(UserApiService::class.java)
+    }
+
+    @After
+    fun stopServer() = mockWebServer.shutdown()
+
+    @Test
+    fun fetchUserProfile_server503Error_throwsHttpException() = runTest {
+        // Enqueue an HTTP 503 Service Unavailable response with custom error payload
+        mockWebServer.enqueue(
+            MockResponse()
+                .setResponseCode(503)
+                .setBody("{"error": "Database maintenance", "retry_after": 60}")
+        )
+
+        try {
+            apiService.getUserProfile("user_42")
+            fail("Expected HttpException was not thrown!")
+        } catch (e: HttpException) {
+            assertEquals(503, e.code())
+        }
+
+        // Verify outgoing request headers and path
+        val recordedRequest = mockWebServer.takeRequest()
+        assertEquals("/users/user_42", recordedRequest.path)
+        assertEquals("GET", recordedRequest.method)
+    }
+
+    @Test
+    fun fetchUserProfile_socketDisconnect_throwsIOException() = runTest {
+        // Simulate physical network cable unplug or abrupt TCP reset
+        mockWebServer.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START))
+
+        try {
+            apiService.getUserProfile("user_42")
+            fail("Expected IOException on socket disconnect!")
+        } catch (e: IOException) {
+            // Handled cleanly as a transport-level network exception
+            assertNotNull(e.message)
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تختبر سيناريوهات فشل الشبكة (HTTP Failures, Timeouts, Malformed JSON) باحترافية باستخدام `MockWebServer`؟
@@ -108,26 +171,34 @@ CI covers auth expiry, rate limit, malformed responses, lost body and slow netwo
 
 ## Interview answer — short
 
-Test network failures using Square's MockWebServer by enqueuing MockResponse instances with error codes (401, 500), malformed JSON payloads, or SocketPolicy.NO_RESPONSE. Assert that repositories handle failures gracefully, and verify outgoing headers and payload bodies using takeRequest().
+We test HTTP failures using MockWebServer, a local in-process HTTP server on localhost. Rather than mocking Retrofit interfaces, MockWebServer runs real OkHttp networking and JSON deserialization. We enqueue mock responses simulating 4xx client errors, 5xx server outages, malformed payloads, and transport-level connection cuts using SocketPolicy, while takeRequest asserts that outgoing HTTP headers, query parameters, and auth tokens match specifications.
 
 ## Interview answer — structured
 
-MockWebServer enables hermetic, end-to-end testing of the complete networking stack (OkHttp, Retrofit, interceptors, and serializers) on the local JVM.
-
-First, **Simulating HTTP Error Statuses**. Next, enqueue explicit response codes: `MockResponse().setResponseCode(500).setBody("Internal Server Error")`.
-Enqueue `401 Unauthorized` to test whether token refresh interceptors intercept the failure, refresh credentials, and replay the original request. **Simulating Network Timeouts & Abrupt Drops**.
-Configure low-level socket policies: `MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE)` simulates gateway timeouts, while `SocketPolicy.DISCONNECT_AFTER_REQUEST` tests sudden socket terminations mid-handshake. **Malformed & Incomplete Payloads**.
-Enqueue truncated or malformed JSON (`MockResponse().setBody("{\"id\": 123, ")`) to verify that JSON deserialization errors (`JsonEncodingException`) are caught and mapped into domain network errors rather than unhandled app crashes. **Asserting Outgoing Requests (`takeRequest()`)**.
-Finally, inspect `server.takeRequest()` to assert that outgoing authorization tokens, API keys, User-Agent strings, and JSON request bodies strictly match backend contract expectations.
-
+Verifying application resilience in the face of unpredictable network failures is a primary requirement for production-grade mobile engineering.
+A common architectural mistake is mocking the Retrofit API interface directly using MockK.
+Mocking Retrofit bypasses OkHttp interceptors, authenticator refresh loops, SSL pinning configurations, and JSON serialization converters, leaving the entire networking pipeline untested.
+The industry standard solution is OkHttp's MockWebServer.
+MockWebServer launches a lightweight, real HTTP server on the local device loopback interface.
+Retrofit is configured with the server's local URL, allowing network requests to traverse the complete production networking stack.
+To test failure recovery, engineers enqueue predetermined MockResponse instances onto MockWebServer's queue.
+We simulate 401 Unauthorized responses to verify that OkHttp Authenticator interceptors trigger token refresh workflows and retry the original request.
+We enqueue 500 and 503 server errors to verify that repositories convert HTTP status codes into domain-friendly failure states and schedule exponential backoff retries.
+We inject malformed or incomplete JSON to verify that Kotlinx Serialization exceptions are caught cleanly without crashing the UI.
+Finally, using SocketPolicy.DISCONNECT_AT_START or SocketPolicy.NO_RESPONSE, we test how the application handles abrupt TCP disconnects, packet drops, and read timeouts.
 
 ## Interview answer — deep senior
 
-From an enterprise testing architecture perspective, MockWebServer provides deterministic replay capabilities.
-
-First, with Dispatcher for Multi-Endpoint Scenarios, instead of using sequential `enqueue()`, configure a custom `Dispatcher`. The dispatcher inspects `request.path` and routes responses dynamically (e.g. Returning 200 for `/auth/refresh` while returning 401 for `/v1/orders`), enabling complex multi-request concurrency testing. Next, with Simulating Throttling and Slow Radios, test loading spinners and UI cancellation by simulating slow cellular networks using `MockResponse().throttleBody(1024, 1, TimeUnit.SECONDS)`. This streams 1KB per second, giving tests time to verify progress bars and cancel requests mid-stream.
-Finally, with Port Collisions in Parallel CI, never hardcode port numbers (e.g. `localhost:8080`). Invoke `server.start()` without parameters; MockWebServer automatically binds to an ephemeral open operating system port, preventing port collisions when multiple Gradle test workers run concurrently.
-
+Under the hood, MockWebServer operates by creating a genuine ServerSocket bound to an ephemeral loopback port on 127.0.0.1.
+When Retrofit executes an HTTP network call, OkHttp's RealCall initiates a complete TCP three-way handshake (SYN, SYN-ACK, ACK) with MockWebServer's active listening socket.
+The outbound request traverses OkHttp's full interceptor pipeline: RetryAndFollowUpInterceptor, BridgeInterceptor, CacheInterceptor, ConnectInterceptor, and CallServerInterceptor.
+Every outgoing header, including Authorization Bearer tokens, User-Agent strings, and Gzip compression flags, is serialized into wire-format HTTP/1.1 or HTTP/2 frames.
+MockWebServer reads the incoming byte stream, logs the parsed payload into an in-memory RecordedRequest queue, and matches it against enqueued MockResponse objects.
+When testing socket failures, MockWebServer manipulates the underlying TCP socket channel directly.
+Configuring SocketPolicy.DISCONNECT_AT_START forces MockWebServer to close the TCP socket immediately upon accepting the connection, causing OkHttp's SocketChannel to receive an RST packet and throw a raw java.io.IOException or SocketException.
+Configuring SocketPolicy.NO_RESPONSE leaves the socket open without writing response bytes, verifying that OkHttp's readTimeoutMillis triggers properly and cleans up allocated connection resources.
+Engineers use takeRequest() to assert that request paths, query parameters, custom headers, and JSON mutation bodies strictly adhere to API specifications before test assertions complete.
+This rigorous testing approach provides 100% network stack fidelity without depending on external internet connections or flaky staging servers.
 
 ## How to answer in the interview
 

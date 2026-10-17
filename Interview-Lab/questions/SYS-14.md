@@ -20,6 +20,51 @@ How do you design API boundaries for multiple teams?
 
 Define stable API boundaries and ownership contracts for multiple teams.
 
+## Concept and technical explanation
+
+Scaling mobile engineering across dozens of autonomous product squads requires decoupling codebase dependencies through well-defined API boundaries and architectural contracts. When multiple teams contribute to a monolithic codebase without explicit boundaries, code ownership blurs, merge conflicts escalate, build times balloon, and a breaking change in one domain silently breaks unrelated features. Effective API boundary design splits each domain into a public contract module (:api) and a private implementation module (:impl). The api module exposes pure Kotlin interfaces, domain entities, and navigation contracts with zero platform implementation details. Feature squads depend strictly on external api modules, remaining completely unaware of implementation classes. Dependency injection frameworks like Dagger or Hilt bind interfaces to implementations within the root application module. This architecture enforces clean code ownership, facilitates parallel development, accelerates incremental compilation, and allows teams to refactor internal implementations without impacting peer squads.
+
+## Practical walkthrough (English)
+
+Designing decoupled API contracts and navigation boundaries for multiple feature teams:
+```kotlin
+// In module :feature:checkout:api (Shared public contract owned by Checkout Squad)
+interface CheckoutNavigationApi {
+    fun navigateToCheckout(launcher: ActivityResultLauncher<Intent>, cartId: String)
+}
+
+interface CheckoutStatusProvider {
+    fun observePendingOrdersCount(): Flow<Int>
+}
+
+data class CheckoutSession(
+    val sessionId: String,
+    val cartTotalCents: Long,
+    val isEligibleForOneClick: Boolean
+)
+
+// In module :feature:checkout:impl (Private implementation hidden from peer squads)
+internal class CheckoutNavigationApiImpl @Inject constructor(
+    private val appContext: Context
+) : CheckoutNavigationApi {
+    override fun navigateToCheckout(launcher: ActivityResultLauncher<Intent>, cartId: String) {
+        val intent = Intent(appContext, CheckoutActivity::class.java).apply {
+            putExtra("EXTRA_CART_ID", cartId)
+        }
+        launcher.launch(intent)
+    }
+}
+
+// In module :app (Root composition module binding interfaces to concrete implementations)
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class CheckoutBindingModule {
+    @Binds
+    @Singleton
+    internal abstract fun bindCheckoutNav(impl: CheckoutNavigationApiImpl): CheckoutNavigationApi
+}
+```
+
 ## Explanation in Arabic
 
 كيف تصمم حدود الـ APIs والتعاقدات (API Boundaries and Contracts) لتطبيق كبير تعمل عليه فرق متعددة؟
@@ -105,25 +150,25 @@ A commerce org assigns catalog, checkout and payments team owners, uses stable p
 
 ## Interview answer — short
 
-Design cross-team API boundaries using contract-first schemas like OpenAPI or Protobuf, deploy a Backend-for-Frontend (BFF) layer to aggregate chatty microservices into mobile-optimized payloads, and decouple network DTOs from internal domain entities using explicit mapping boundaries.
+We design API boundaries for multiple teams by splitting each feature into an api contract module and an impl private module. Peer teams depend strictly on public interfaces and domain models, hiding internal implementation details and wiring dependencies at the root application layer using Dagger or Hilt.
 
 ## Interview answer — structured
 
-Establishing clean API boundaries across distributed engineering teams prevents communication bottlenecks and contract drift.
-
-First, **Contract-First Design & Parallel Development**. Next, mobile and backend teams negotiate the API contract (OpenAPI 3.0 or Protocol Buffers) during sprint planning before implementation begins.
-CI generates type-safe client models and stubbed mock servers (e.g. WireMock, Prism), enabling mobile teams to build and verify features against accurate mocks without waiting for backend deployments. **The Backend-for-Frontend (BFF) Pattern**.
-Microservices architectures fragment data across domain services (User, Orders, Inventory, Recommendations). Direct client-to-microservice communication causes cellular radio drain, high latency, and fragile error handling. A mobile-specific BFF aggregates multiple microservices server-side, returning a single tailored response payload matching the client screen layout.
-**Strict Domain Layer Isolation**. Finally, never leak API DTOs directly into UI Composables or ViewModels. Maintain explicit mapping layers (`NetworkDto -> DomainEntity -> UiState`). If the backend team renames a field, only the single mapping function requires modification; UI layers remain unaffected.
-
+Scaling an engineering organization across multiple mobile squads requires decoupling team ownership through strict module contracts.
+I establish a clear separation of concerns by dividing every domain into an api module and an impl module.
+The api module contains only pure interfaces, immutable data models, and navigation contracts, with zero references to internal libraries or Android Views.
+Consuming teams depend exclusively on the api module through Gradle. This prevents peer squads from coupling to internal ViewModels, database entities, or network DTOs.
+Concrete implementation classes inside the impl module are marked with Kotlin internal visibility, preventing external access.
+The root application module acts as the dependency injection assembler, using Dagger or Hilt to bind concrete implementations to public interface contracts.
+This boundary ensures squads can completely refactor their internal database schemas and UI layouts without triggering recompilation or breaking builds across other teams.
 
 ## Interview answer — deep senior
 
-From an organizational scaling perspective, robust API boundaries require automated contract verification.
-
-First, with Consumer-Driven Contract Testing (Pact), implement contract testing where the mobile client publishes its schema expectations to a central Pact broker. Before the backend team deploys an API change, their CI pipeline runs contract tests against the mobile schema to verify that no expected fields were broken or removed. Next, with Tolerant Reader Pattern, mobile JSON parsers (Moshi / Kotlinx Serialization) must ignore unknown properties (`ignoreUnknownKeys = true`). If the backend adds new fields for other platforms, older mobile versions parse the payload without throwing deserialization exceptions.
-Finally, with Deprecation Strategy & Graceful Decommissioning, backends must never alter existing field data types. When deprecating fields, mark them `@Deprecated` in contracts, support them concurrently for at least 12 months, and monitor mobile version usage metrics before hard field removal.
-
+From a staff systems architect perspective, establishing cross-team API boundaries is as much an organizational and governance challenge as it is a technical one.
+A common failure mode in modularized codebases is the leaky abstraction problem, where network DTOs or database entities are exposed directly in public API contracts. When backend teams alter network payloads, multiple feature teams suffer compilation breakages. We mandate strict model mapping boundaries: network models map to internal domain entities, which map to public contract objects at the module edge.
+Navigation between team boundaries presents another architectural hazard. Hardcoded Activity class references create circular module dependencies that break Gradle builds. We solve this by introducing abstract navigation interfaces or URI-based deep link routers registered into a centralized navigation mediator. Feature A requests navigation to Checkout with a payload, and the mediator resolves the destination without Feature A knowing the concrete Activity class.
+To prevent breaking changes across dozens of squads, we establish clear API versioning and deprecation policies. When an API contract must change, the owning squad introduces the new method alongside a Deprecated annotation with an explicit ReplaceWith expression and sunset timeline, giving consuming teams time to migrate asynchronously.
+Finally, we enforce these architectural boundaries automatically using ArchUnit or Gradle dependency analysis plugins in CI, instantly failing pull requests that attempt to establish unauthorized direct dependencies between private implementation modules.
 
 ## How to answer in the interview
 

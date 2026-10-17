@@ -21,6 +21,66 @@ Explain O(1), O(log n), O(n), O(n log n), and O(n²).
 - Interpreting common growth classes quantitatively.
 - Input assumptions and O(n²) UI risk.
 
+## Concept and technical explanation
+
+Asymptotic growth tiers categorize how algorithms scale under expanding input sizes:
+- $O(1)$ — Constant Time:
+  - Execution duration remains invariant regardless of input size $n$.
+  - Android Examples: Array indexing (`list[index]`), accessing a `HashMap` key on average, pushing/popping from an `ArrayDeque`, or reading a primitive variable.
+- $O(\log n)$ — Logarithmic Time:
+  - Execution steps increase logarithmically; the problem search space is halved in each step. Highly efficient and scalable.
+  - Android Examples: Binary search in a sorted array or list (`binarySearch()`), operations on balanced binary search trees (e.g., Red-Black trees in `TreeMap`).
+- $O(n)$ — Linear Time:
+  - Execution duration scales in direct 1:1 proportion to input size $n$.
+  - Android Examples: Iterating through an unindexed list (`for (item in list)`), finding minimum/maximum elements, linear filtering (`list.filter { ... }`), sequential JSON parsing, and standard layout passes measuring children.
+- $O(n \log n)$ — Linearithmic Time:
+  - Standard complexity for comparison-based divide-and-conquer sorting algorithms. Breaks the input into $\log n$ recursive levels and performs $O(n)$ work at each level.
+  - Android Examples: Kotlin standard library sorting (`list.sorted()`, TimSort), MergeSort, and QuickSort average case. Essential for sorting catalog items before display.
+- $O(n^2)$ — Quadratic Time:
+  - Execution duration grows with the square of the input size, typically caused by nested loops over the same dataset.
+  - Android Examples: Naive nested iteration comparing every item against every other item (e.g., duplicate detection without a Set), BubbleSort, and accidental nested iterations within `RecyclerView.Adapter.onBindViewHolder`.
+
+## Practical walkthrough (English)
+
+Kotlin implementations illustrating the five core complexity classes:
+```kotlin
+// 1. O(1) Constant Time: Direct index lookup
+fun getFirstItem(items: List<String>): String? = items.firstOrNull()
+
+// 2. O(log n) Logarithmic Time: Binary search on sorted array
+fun binarySearchPrice(sortedPrices: IntArray, target: Int): Int {
+    var low = 0
+    var high = sortedPrices.size - 1
+    while (low <= high) {
+        val mid = (low + high) ushr 1
+        val midVal = sortedPrices[mid]
+        when {
+            midVal < target -> low = mid + 1
+            midVal > target -> high = mid - 1
+            else -> return mid // Key found
+        }
+    }
+    return -1
+}
+
+// 3. O(n) Linear Time: Single pass filtering
+fun filterActiveUsers(users: List<User>): List<User> = users.filter { it.isActive }
+
+// 4. O(n log n) Linearithmic Time: Sorting list
+fun sortProductsByPrice(products: List<Product>): List<Product> = products.sortedBy { it.price }
+
+// 5. O(n^2) Quadratic Time: Nested loops comparison (Anti-pattern for large lists)
+fun findCommonItemsNaive(listA: List<String>, listB: List<String>): List<String> {
+    val common = mutableListOf<String>()
+    for (a in listA) {
+        for (b in listB) { // Nested iteration creates O(n * m) or O(n^2)
+            if (a == b) common.add(a)
+        }
+    }
+    return common
+}
+```
+
 ## Explanation in Arabic
 
 اشرح بالتفصيل مع أمثلة عملية من أندرويد التعقيدات الزمنية الشائعة: $O(1)$، $O(\log n)$، $O(n)$، $O(n \log n)$، و $O(n^2)$؟
@@ -84,26 +144,23 @@ Use benchmarks and traces to verify hot-path assumptions on low-end devices. Pre
 
 ## Interview answer — short
 
-O(1) executes in constant time regardless of size (HashMap lookup). O(log n) halves the search space each step (binary search). O(n) scales linearly with elements (list iteration). O(n log n) is standard for efficient sorting (TimSort). O(n²) grows quadratically (nested loops or nested list contains checks), causing severe UI lag.
+O(1) executes in constant time regardless of size, O(log n) halves the search space each step like binary search, O(n) inspects every item linearly, O(n log n) represents optimal comparison sorting like TimSort, and O(n^2) grows quadratically via nested loops. Senior engineers select data structures that keep operations at O(1) or O(log n) to prevent UI frame starvation.
 
 ## Interview answer — structured
 
-Big O notations represent fundamental algorithmic growth curves.
-
-First, **$O(1)$ — Constant Time**. Next, execution time is invariant to input size. Examples include direct array indexing (`array[i]`), pushing to a stack, or average-case HashMap lookups.
-**$O(\log n)$ — Logarithmic Time**. The operational problem space is divided by a constant factor (usually 2) at every iteration. Examples include binary search on a sorted collection and `SparseArray` lookups.
-**$O(n)$ — Linear Time**. Operations scale in direct proportion to input size. Examples include iterating through a list, computing a sum, or searching an unsorted array.
-**$O(n \log n)$ — Linearithmic Time**. The mathematical benchmark for optimal comparison-based sorting algorithms (TimSort, MergeSort). Common in Android when sorting UI feeds via `list.sortedBy { ... }`.
-**$O(n^2)$ — Quadratic Time**. Finally, operations scale with the square of the input size. Typically caused by nested loops over collections, or calling `list.contains()` inside a `filter()` block. With 5,000 items, $n^2$ produces 25,000,000 operations, freezing the UI thread.
-
+The core Big O complexity classes define how algorithm performance scales as dataset sizes increase.
+Constant time O(1) represents operations that execute in a fixed number of steps, such as accessing an element by index in an array or average HashMap lookups. Logarithmic time O(log n) represents algorithms that divide the problem space in half with every step, exemplified by binary search in a sorted array, making it exceptionally fast even for millions of records.
+Linear time O(n) means processing time increases proportionally with the input count, seen in single-pass iterations, linear searches, and JSON parsing. Linearithmic time O(n log n) is the benchmark for efficient sorting algorithms like TimSort, used internally by Kotlin collections, which divides the data and merges it linearly.
+Quadratic time O(n^2) indicates algorithms where execution steps multiply quadratically, typically seen in nested loops comparing items against each other. In Android development, avoiding quadratic operations on the main thread is essential to prevent severe visual Jank and keep rendering within 16-millisecond frame budgets.
 
 ## Interview answer — deep senior
 
-In mobile systems engineering, the inflection point where higher-order curves overtake lower-order curves depends on constants and hardware.
-
-First, with Asymptotic Dominance vs. Small $n$, for small datasets ($n < 20$), an $O(n^2)$ insertion sort or linear search through a contiguous array often runs faster than an $O(n \log n)$ mergesort or $O(1)$ HashMap. The high constant overhead of object allocations, hash calculation, and branch mispredictions makes simple algorithms faster for tiny datasets. Next, with The Hidden $O(n^2)$ in UI Diffing, Android's `DiffUtil` runs Eugene Myers' diff algorithm with an average complexity of $O(n + d^2)$ where $d$ is the number of edits. If a dataset of 2,000 items changes drastically without stable IDs, DiffUtil calculation spikes on the CPU. Moving DiffUtil off the main thread to `Dispatchers.Default` (as in `ListAdapter` / `AsyncListDiffer`) prevents frame drops.
-Finally, with Big O Exponential Danger ($O(2^n)$ / $O(n!)$), algorithms with exponential complexity (unmemoized recursive backtracking or naive permission permutations) freeze client devices completely even with $n=30$. Detecting and bounding these paths via dynamic programming is critical.
-
+From a computational complexity and runtime performance engineering perspective, these five complexity classes represent distinct scalability profiles that dictate whether code is viable for production mobile devices.
+In Android systems, O(1) operations are our foundational building blocks. Array index lookups and average-case HashMap lookups provide predictable, sub-microsecond latency. However, senior engineers understand the hidden overheads: while an unboxed array access is pure O(1) with zero allocations, a HashMap get operation involves hash code calculation, bucket indexing, and potential linked-node pointer chasing that incurs CPU cache misses.
+Logarithmic algorithms like binary search offer dramatic scalability advantages. Searching through a sorted catalog of one million items requires approximately twenty comparisons, making it millions of times faster than an O(n) sequential scan. This makes maintaining sorted lists and binary indexing vital when designing local Room queries or in-memory caches.
+Linear algorithms represent the standard expectation for data processing pipelines, such as mapping or filtering network DTOs into domain models. While acceptable for modest datasets, chaining multiple linear operations without Sequences introduces hidden allocations that degrade performance.
+Linearithmic complexity O(n log n) is the mathematical lower bound for comparison sorting. Kotlin standard collections employ TimSort, an adaptive algorithm combining MergeSort and InsertionSort that exploits existing ordered runs, executing in linear time on nearly-sorted data.
+Finally, quadratic complexity O(n^2) is an absolute anti-pattern on UI rendering paths. A classic failure mode in Android occurs when an engineer performs an O(n) search inside a RecyclerView onBindViewHolder callback or a Compose item row. Because the adapter binds n items, the overall screen rendering degrades into an accidental O(n^2) operation, causing dropped frames and severe stutter. Mastering these classifications enables engineers to proactively refactor algorithms before code reaches production devices.
 
 ## How to answer in the interview
 

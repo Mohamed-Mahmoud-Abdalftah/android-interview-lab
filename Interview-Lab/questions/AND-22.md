@@ -22,6 +22,46 @@ A crash occurs only after backgrounding the app for several hours. How would you
 - Reproduce cold restoration and inspect crash evidence, state ownership, and entry intent.
 - Fix missing durable state or invalid lifecycle assumptions and verify the original path.
 
+## Concept and technical explanation
+
+Crashes that occur exclusively after an application has remained in the background for extended periods are almost universally caused by unhandled background process death. When an app is placed in the background, its Linux process transitions to a cached state. Under system memory constraints, the Android Low Memory Killer daemon (lmkd) terminates the process without invoking onDestroy.
+When the user subsequently relaunches the application from the Overview/Recents screen, the Android framework resurrects the process, invokes Application.onCreate(), and directly recreates the top Activity from the backstack, restoring its saved state via the savedInstanceState Bundle. However, all in-memory static variables, singletons, and non-retained caches that were initialized by antecedent screens in the task flow remain completely uninitialized (null). When the restored Activity attempts to access these assumed in-memory objects, it immediately crashes with a NullPointerException. Investigating and remediating this issue requires simulating process death in development environments, verifying state restoration pipelines, and enforcing durable repository architectures.
+
+## Practical walkthrough (English)
+
+Investigating and resolving process death crashes caused by uninitialized static singletons:
+
+```kotlin
+// ❌ Flawed implementation crashing after process death:
+class OrderDetailsActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Crash! AppSession was initialized by LoginActivity, which did not run upon restoration:
+        val userId = AppSession.currentUser.id 
+        loadOrder(userId)
+    }
+}
+
+// ✅ Resilient architecture using SavedStateHandle and durable storage:
+@HiltViewModel
+class OrderDetailsViewModel @Inject constructor(
+    private val savedStateHandle: SavedStateHandle,
+    private val userRepository: UserRepository,
+    private val orderRepository: OrderRepository
+) : ViewModel() {
+
+    // Preserved across process death via SavedStateHandle:
+    private val orderId: String = checkNotNull(savedStateHandle["order_id"])
+
+    val uiState: StateFlow<OrderUiState> = userRepository.getUserIdFlow()
+        .flatMapLatest { userId -> orderRepository.getOrderStream(userId, orderId) }
+        .map { order -> OrderUiState.Success(order) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), OrderUiState.Loading)
+}
+```
+
+Failure scenario: An e-commerce app stores the active user session and cart items in an in-memory singleton during checkout. When the user leaves the app in the background overnight, Android kills the process. Tapping the app the next morning restores CheckoutActivity, which immediately crashes with NullPointerException: AppSession.cart is null.
+
 ## Explanation in Arabic
 
 عطل (Crash) يحدث فقط بعد ترك التطبيق في الخلفية لعدة ساعات: كيف تحقق في هذا العطل وتكتشف علاقته بدورة الحياة والـ Process Restoration؟
@@ -92,28 +132,25 @@ Collect stack trace, breadcrumbs for lifecycle and process start, app/OS version
 
 ## Interview answer — short
 
-This is a classic Process Death crash. After hours in the background, Android killed the app process. Upon return, Android recreates the top Activity while in-memory singletons and static caches are completely null, triggering NullPointerExceptions. Reproduce it instantly via 'adb shell am kill <package>' and fix it using SavedStateHandle and persistent Room/DataStore storage.
+Crashes occurring after hours in the background indicate unhandled process death by the Low Memory Killer. Android recreates the top Activity while all in-memory static singletons and non-retained ViewModels are lost. Reproduce the bug using adb shell am kill, pass stable identifiers through Intent extras and SavedStateHandle, and load data from local databases rather than assuming in-memory state.
 
 ## Interview answer — structured
 
-A crash that manifests only after the app has been backgrounded for several hours is the quintessential signature of **Unmanaged Process Death**.
+Crashes that materialize only after an application has spent hours in the background are classic symptoms of unhandled process death. The Low Memory Killer terminates the cached Linux process to reclaim RAM, and when the user returns, Android attempts to resurrect the top Activity while all in-memory static caches and singletons are re-instantiated as null.
 
-**Why it occurs:**
+We reproduce this failure deterministically using developer tooling. We background the application and execute adb shell am kill with the package name, or enable Don't keep activities in Developer Options to stress state serialization boundaries. Inspecting logcat reveals whether the crash is a NullPointerException stemming from uninitialized memory.
 
-While in the background, Android's Low Memory Killer terminated the process. When the user taps the app in Recents hours later, Android attempts to restore user continuity by restoring the exact top Activity the user was on. However, because the process was killed, all in-memory static variables, singletons, Dagger graphs, and cache objects were wiped. When the restored Activity attempts to dereference `AppCache.selectedUser` or `SessionManager.currentUser`, it crashes immediately with a `NullPointerException`.
+In production, screens must never rely on preceding Activities to populate in-memory singletons. Every screen must be fully autonomous, receiving stable entity identifiers via Intent extras or SavedStateHandle, and retrieving fresh domain data directly from durable Room databases or reactive repositories.
 
-**How I investigate and fix it:**
-
-First, with Instant Reproduction, background the app on an emulator, run `adb shell am kill <package_name>`, and click the app in Recents. This reproduces the multi-hour crash in 5 seconds. Next, with Inspect Navigation & Bundles, verify that the restored Activity/Fragment extracts its required IDs from `SavedStateHandle` or `Intent.extras` rather than relying on global memory caches.
-Finally, with Persistent Auth Fallback, if user authentication is required, retrieve the auth token asynchronously from encrypted DataStore; if expired, gracefully redirect the backstack to the Login screen rather than crashing.
+If a session token or essential user credential has expired during the extended background interval, the app must intercept navigation cleanly, redirecting the user to the authentication gateway rather than allowing an unauthenticated screen to crash.
 
 
 ## Interview answer — deep senior
 
-From a root-cause analysis perspective, inspect the stack trace in Crashlytics: A process death crash almost always shows the Activity's `onCreate(savedInstanceState)` receiving a non-null `Bundle`, while an in-memory utility class threw NPE.
-
-In enterprise codebases, we enforce architectural defenses against process death bugs: 1. **Never use static variables or Singletons as cross-screen data transport.** 2. **Enable 'Don't keep activities' during developer QA.** 3. **Session Interceptor Pattern**: In the base Activity or root Navigation Host, evaluate whether a mandatory user session is valid. If the session was purged by process death, immediately navigate to the Splash/Auth screen with a return intent flag, restoring the session before any deep Activity code runs.
-
+Under the hood, Android's process management is orchestrated by the ActivityManagerService and the Linux kernel's Low Memory Killer daemon (lmkd). When an application is moved to the background, its oom_score_adj is adjusted to cached priority (CACHED_APP, values 900 to 999). When system RAM drops below kernel watermarks, lmkd sends a SIGKILL signal to the process. Crucially, the operating system saves the task hierarchy and the serialized onSaveInstanceState Bundles in the system server process (ActivityTaskManagerService), while the entire heap and all static class variables in ART are wiped out.
+When the user taps the app in Recents, Zygote forks a new process, the runtime calls Application.onCreate(), and ActivityTaskManager restores ONLY the top Activity that was visible, passing the saved Bundle to onCreate(savedInstanceState). Junior architectures often assume a linear navigation pipeline where Splash, Login, Home, and Details always run sequentially. In process restoration, DetailsActivity is created directly without Splash or Home ever executing. Any singleton like UserManager.currentUser that was initialized in an earlier screen will be null, resulting in an immediate crash.
+To diagnose these failures in production, we analyze stack traces in Crashlytics. A key signature of process restoration crashes is a NullPointerException occurring on an internal screen within seconds of cold process initialization without antecedent breadcrumbs.
+The architectural remedy requires three interventions: First, replace static singleton dependencies with Dependency Injection (Hilt) scoped to repositories. Second, store lightweight entity IDs in SavedStateHandle so the ViewModel can reload state independently. Third, establish an application-level session guard: if the app requires an authenticated session and the local token is missing or invalid upon cold restoration, the navigation router intercepts the launch and routes the task back to the Login gateway gracefully.
 
 ## How to answer in the interview
 

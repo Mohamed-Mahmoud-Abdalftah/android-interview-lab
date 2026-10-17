@@ -22,6 +22,34 @@ Design a multi-module structure for a large app.
 - Explain APIs, data implementation, navigation and DI.
 - Specify build/test evidence and avoid module proliferation.
 
+## Concept and technical explanation
+
+Designing an enterprise multi-module architecture requires harmonizing horizontal architectural layers with vertical feature slices into a coherent Directed Acyclic Graph (DAG). An optimal structure establishes three primary tiers:
+1. Root Tier (:app): Pure composition root that configures Hilt dependency injection, builds the application class, and packages release artifacts.
+2. Feature Tier (:features:<name>): Subdivided into :api (public contracts, interfaces, and navigation destinations) and :impl (UI screens, ViewModels, and internal business logic). Cross-feature dependencies are strictly restricted to :api modules, completely preventing inter-feature implementation coupling.
+3. Core Infrastructure Tier (:core:<name>): Highly cohesive, domain-agnostic platform modules including :core:network (Retrofit, OkHttp, cert pinning), :core:database (Room, encryption), :core:designsystem (Compose components, typography, theme), and :core:common (dispatchers, logging abstractions).
+This taxonomy maximizes parallel build lanes, enforces clean code ownership, and prevents dependency spaghetti.
+
+## Practical walkthrough (English)
+
+Scalable enterprise multi-module directory and dependency structure:
+```text
+root/
+├── app/                        (Composition root, builds APK)
+├── core/
+│   ├── designsystem/          (Compose theme, atomic UI components)
+│   ├── network/               (Retrofit, OkHttp engine, token refresh)
+│   ├── database/              (Room database, DAOs, migrations)
+│   └── common/                (Coroutines dispatchers, extensions)
+└── features/
+    ├── checkout/
+    │   ├── api/               (CheckoutNavigator, CheckoutResult contract)
+    │   └── impl/              (CheckoutScreen, CheckoutViewModel, CheckoutRepository)
+    └── catalog/
+        ├── api/               (CatalogRoute contract)
+        └── impl/              (CatalogScreen, depends on :features:checkout:api ONLY)
+```
+
 ## Explanation in Arabic
 
 كيف تصمم هيكل نمطي متكامل (Multi-Module Architecture) لتطبيق Android ضخم الحجم؟
@@ -89,29 +117,32 @@ Write allowed-edge rules, ownership documentation and a module graph check. Trac
 
 ## Interview answer — short
 
-Design a large-scale app using a layered DAG: an assembly :app module, feature modules split into :feature:x:api (contracts) and :feature:x:impl (screens/logic), horizontal :core infrastructure (network, database, designsystem), and centralized build-logic convention plugins with a Version Catalog.
+An enterprise multi-module structure organizes the codebase into a clean DAG: an app composition root at the top, vertical feature modules split into public api contracts and private implementation details, and horizontal core modules underneath covering networking, database, design-system, and platform utilities. Features communicate strictly through api interfaces, preventing direct coupling and maximizing build parallelism.
 
 ## Interview answer — structured
 
-A production-grade multi-module architecture for an enterprise Android app balances compilation speed, encapsulation, and team velocity.
-
-First, **Layered Module Architecture**. Next, with :app, thin composition root. Assembles the final APK, provisions Hilt graph roots, and attaches top-level navigation graphs.
-**`:feature:*:impl`**: Contains UI Composables, ViewModels, and internal presentation logic. Feature implementations never depend directly on sibling feature implementations. **`:feature:*:api`**: Lightweight contract modules containing only navigation routes, shared events, and public interfaces. Features interact exclusively through peer API modules.
-**`:core:*`**: Horizontal foundations (`:core:designsystem`, `:core:network`, `:core:database`, `:core:model`, `:core:analytics`). **Standardized Build Governance**.
-Centralized dependency coordinates via `libs.versions.toml`. Finally, custom Gradle Convention Plugins in `build-logic` (`android.library`, `android.feature`, `android.compose`) to eliminate 95% of boilerplate from individual `build.gradle.kts` files.
-
+Designing a multi-module architecture for a large application requires balancing feature autonomy with centralized infrastructural consistency.
+At the top level, the app module serves as the composition root, initializing application-level dependency injection and assembling features into the final binary without containing business logic.
+Feature modules represent vertical domain slices such as checkout, search, or profile.
+To prevent coupling, each feature is divided into a public api module and a private implementation module.
+When one feature needs to trigger an action in another, it imports only the public api contract, keeping internal screens and ViewModels completely hidden.
+Beneath the feature layer, horizontal core modules provide foundational capabilities.
+These include core:designsystem for reusable UI components, core:network for authenticated HTTP clients, and core:database for local persistence.
+This structure maintains an acyclic dependency graph where compilation tasks run concurrently across available CPU cores.
 
 ## Interview answer — deep senior
 
-A critical pitfall in large-scale modularization is **Uncontrolled Micro-Modularization** (creating 300+ tiny modules for single classes).
-
-Every Gradle module introduces overhead: configuration evaluation time, IDE indexing load, and task scheduling overhead. If modules are too granular, cold build times and Android Studio sync times explode.
-
-To maintain an optimal balance.
-
-First, extract a module only when there is a **real compile boundary** (independent team ownership, distinct release cycle, or high rebuild frequency). Next, use the `:api` / `:impl` split primarily for high-traffic features that multiple teams interact with, rather than dogmatically splitting every trivial screen.
-Finally, implement continuous CI graph validation (enforcing no feature-to-feature direct implementation dependencies) to protect the DAG from accidental erosion.
-
+When architecting a multi-module codebase for an organization with multiple engineering squads, our primary objectives are optimizing build parallelism, isolating blast radiuses, and enforcing team autonomy.
+A flat structure where features import one another degenerates into an unmaintainable web of dependencies.
+Our architecture enforces a strict tripartite topology: the assembly layer, the feature layer, and the core platform layer.
+The feature layer is structured around the API/Implementation pattern.
+For example, :feature:payment contains two distinct Gradle subprojects: :feature:payment:api and :feature:payment:impl.
+The api module contains solely pure interfaces, such as PaymentLauncher, and immutable navigation arguments, compiling in milliseconds because it has zero UI or data dependencies.
+When :feature:cart requires payment functionality, it declares an implementation dependency strictly on :feature:payment:api.
+The private implementation details in :feature:payment:impl—including payment gateways, Room database entities, and Compose payment dialogs—remain completely encapsulated behind Kotlin internal modifiers.
+The root app module imports both implementations and binds them via Hilt at application start.
+Horizontally, core modules are kept strictly domain-agnostic: :core:designsystem holds our visual design tokens, :core:network provides configured Retrofit builders, and :core:common distributes test dispatchers.
+This strict structural governance preserves a pure Directed Acyclic Graph, guarantees predictable remote build caching, and allows multiple product squads to ship features in parallel without stepping on one another.
 
 ## How to answer in the interview
 

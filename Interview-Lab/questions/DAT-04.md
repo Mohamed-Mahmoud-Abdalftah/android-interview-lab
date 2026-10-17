@@ -20,6 +20,49 @@ Compare REST, GraphQL, and WebSockets at a high level.
 
 Compare resource endpoints, flexible queries and persistent bidirectional connections.
 
+## Concept and technical explanation
+
+Mobile applications employ different network communication paradigms depending on interaction semantics, latency, and data topology:
+- REST (Representational State Transfer):
+  * Architectural Style: Stateless, resource-centric over HTTP/1.1 or HTTP/2.
+  * Strengths: Universal standard, leverages battle-tested HTTP caching (ETags, Cache-Control), robust CDN distribution, and simple tooling.
+  * Weaknesses: Prone to over-fetching (receiving unneeded fields) and under-fetching (requiring waterfall requests across multiple endpoints).
+- GraphQL:
+  * Architectural Style: Query-language driven over a single HTTP POST endpoint.
+  * Strengths: Eliminates over-fetching and under-fetching by allowing the client to declare the exact schema shape required. Excellent for complex, deeply nested relational dashboards.
+  * Weaknesses: Breaks standard HTTP-level caching because all requests hit a single URL via POST; shifts query parsing and complexity costs to both server and client (Apollo Android runtime); difficult CDN edge caching.
+- WebSockets:
+  * Architectural Style: Persistent, bidirectional, full-duplex TCP connection established via an HTTP Upgrade handshake.
+  * Strengths: Ultra-low latency framing without HTTP header overhead. Ideal for real-time streaming, chat applications, financial order books, and collaborative whiteboards.
+  * Weaknesses: Demands active connection management, heartbeat ping/pong frames to keep NAT gateways open, complex client reconnection state machines, and higher battery consumption if not managed carefully.
+
+## Practical walkthrough (English)
+
+Architectural matrix and client integration comparison:
+```kotlin
+// 1. REST with Retrofit: Resource-oriented, standard HTTP caching
+interface RestOrderApi {
+    @GET("orders/{id}")
+    suspend fun getOrder(@Path("id") id: String): OrderDto
+}
+
+// 2. GraphQL with Apollo: Declarative field selection
+val response = apolloClient.query(GetOrderSummaryQuery(id = "123")).execute()
+
+// 3. WebSocket with OkHttp: Real-time bidirectional streaming
+val ws = okHttpClient.newWebSocket(
+    Request.Builder().url("wss://stream.example.com/orders").build(),
+    object : WebSocketListener() {
+        override fun onMessage(webSocket: WebSocket, text: String) {
+            liveOrderUpdates.tryEmit(parseOrderUpdate(text))
+        }
+        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            // Reconnection logic
+        }
+    }
+)
+```
+
 ## Explanation in Arabic
 
 مقارنة معمارية رفيعة المستوى بين بروتوكولات الاتصال في Android:
@@ -87,22 +130,26 @@ A chat app reads cached Room messages, syncs versioned pages via HTTPS and uses 
 
 ## Interview answer — short
 
-REST uses standard resource endpoints and excels at HTTP caching for typical CRUD apps. GraphQL uses a single endpoint with client-specified queries, eliminating over-fetching for complex data dashboards. WebSockets provide persistent, bidirectional TCP connections for low-latency real-time apps like chat and live vehicle tracking.
+REST is a resource-oriented stateless standard leveraging HTTP caching and CDNs but susceptible to over-fetching. GraphQL provides precise declarative field querying over a single endpoint at the cost of HTTP caching complexity. WebSockets establish persistent, full-duplex TCP connections for ultra-low latency real-time bidirectional streaming at higher battery cost.
 
 ## Interview answer — structured
 
-Choosing between REST, GraphQL, and WebSockets is driven by data velocity, client flexibility, and caching requirements.
-
-First, with REST (Standard Resource APIs), best for standard CRUD domains, file uploads, and high-cacheability resources. It leverages native HTTP semantics (status codes, ETags, CDN edge caching). Its weakness on mobile is over-fetching (wasting cellular data on unneeded fields) and under-fetching (making chained requests for relational data). Next, with GraphQL (Client-Driven Relational Queries), best for rich, multi-entity consumer dashboards (e.g. An e-commerce feed joining user, cart, promotions, and reviews in a single query). The client asks for exact fields, saving mobile bandwidth. However, because all queries use HTTP `POST`, standard HTTP/CDN caching is lost, requiring specialized normalized caching engines (Apollo Kotlin).
-Finally, with WebSockets (Full-Duplex Real-Time Streams), best for low-latency bidirectional push streams (instant messaging, live bidding, multiplayer games, continuous telemetry). Rather than polling REST endpoints, the server pushes events instantly over an open TCP socket. Mobile implementations must manage heartbeat pings, reconnect state machines, and battery life.
-
+Choosing between REST, GraphQL, and WebSockets depends on data access patterns, caching needs, and latency requirements.
+First, REST is the industry standard for resource-based operations. It excels at leveraging native HTTP caching, ETags, and global CDNs. However, mobile clients frequently suffer from over-fetching unneeded payload data or under-fetching, requiring multiple roundtrips to assemble a screen.
+Second, GraphQL addresses under-fetching by allowing mobile clients to request exact schema fields across relations in a single roundtrip. While powerful for complex views, it bypasses standard HTTP caching and increases client parsing complexity.
+Third, WebSockets enable low-latency, full-duplex communication over a long-lived TCP connection. They are the ideal choice for real-time messaging, financial tickers, and live tracking, though they require sophisticated heartbeat and reconnection logic to preserve battery life.
 
 ## Interview answer — deep senior
 
-When architecting **WebSockets on Android**, mobile operating system constraints dictate strict lifecycle governance.
-
-First, with Doze Mode & Radio State, keeping a raw WebSocket open prevents the cellular radio from dropping from full power (DCH) to low-power idle state, rapidly draining battery. In background states, the OS can terminate TCP sockets without firing `onClosing()`. Robust apps close WebSockets when the app enters `ON_STOP`, falling back to Firebase Cloud Messaging (FCM) high-priority push notifications for background delivery. Finally, with The Reconnection State Machine, cellular handoffs (switching from Wi-Fi to 5G) drop sockets silently. The Android client must implement an active Ping/Pong heartbeat (e.g. `OkHttpClient.Builder().pingInterval(30, TimeUnit.SECONDS)`) and an exponential backoff reconnect policy that reconciles missed events by querying a REST/Room sync cursor upon reconnect.
-
+In large-scale Android system design, picking the correct networking paradigm is a tradeoff between network roundtrip efficiency, battery longevity, and caching infrastructure.
+REST remains our default for standard CRUD and content feeds. Its seamless compatibility with HTTP status codes, Cache-Control headers, and CDN edge caching offloads massive traffic from origin servers, providing instant localized responses for global users.
+GraphQL shines in heterogeneous mobile screens, such as an e-commerce checkout page that requires customer details, inventory statuses, shipping estimates, and payment methods.
+Rather than executing four sequential REST calls that drain radio power, an Apollo GraphQL query fetches the exact composite graph in a single roundtrip.
+However, because GraphQL queries execute as POST requests against a single /graphql endpoint, conventional HTTP caching proxies become ineffective; mobile teams must implement client-side normalized caches like Apollo's Normalized Cache.
+WebSockets solve an entirely different problem: push-based real-time interactivity.
+Instead of battery-draining polling, a single TCP socket delivers sub-millisecond updates for chat or live order dispatch.
+However, keeping a mobile WebSocket alive requires aggressive power management: sending application-level ping/pong heartbeats to prevent cellular carrier NAT timeouts, pausing the socket when the app enters the background, and falling back to push notifications via FCM to prevent OS background execution kills.
+Additionally, we design hybrid offline synchronizers where WebSockets broadcast lightweight entity invalidation notifications, prompting the mobile client to pull incremental Delta updates via optimized REST or GraphQL endpoints to conserve bandwidth.
 
 ## How to answer in the interview
 

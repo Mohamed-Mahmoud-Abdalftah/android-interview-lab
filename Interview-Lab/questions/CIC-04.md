@@ -21,6 +21,49 @@ Compare Git merge, rebase, squash, revert, and reset.
 - History effects of merge, rebase, squash, revert and reset.
 - Shared versus private branch safety.
 
+## Concept and technical explanation
+
+Git operations govern how commit histories are joined, reshaped, or reversed across collaboration workflows:
+- Comparative Behavioral Analysis:
+  1. git merge:
+     - Joins diverged branch histories by creating a 3-way merge commit with two parents.
+     - Preserves full chronological accuracy and branch topology, but creates non-linear graph complexity with merge commit noise.
+  2. git rebase:
+     - Replays commits from the current branch onto the tip of the target base branch one by one.
+     - Produces a pristine linear history. Rewrites commit SHA hashes; strictly prohibited on public shared branches.
+  3. git squash:
+     - Condenses multiple incremental commits into a single atomic commit.
+     - Standard in pull request workflows (Squash and Merge) to hide intermediate exploratory commits and keep mainline history bisect-friendly.
+  4. git revert:
+     - Undoes a previous commit by generating a new forward commit containing the inverse diff.
+     - 100% safe on shared branches because it preserves history immutability without requiring force-pushing.
+  5. git reset:
+     - Moves the current branch HEAD ref backward in time to a previous commit.
+     - Modifies history and discards or unstages commits; destructive if pushed to remotes requiring forced updates.
+
+## Practical walkthrough (English)
+
+Practical Git CLI workflows comparing rebase, squash, revert, and reset:
+```bash
+# 1. Linear history: Rebase feature branch on updated main before PR creation:
+git checkout feature/checkout-flow
+git fetch origin
+git rebase origin/main
+
+# 2. Squash multiple commits interactively:
+git rebase -i HEAD~3
+# Mark commits as 'squash' (or 's') to collapse them into an atomic commit
+
+# 3. Safe undo on shared main branch using revert (creates a new inverse commit):
+git checkout main
+git pull origin main
+git revert 4f8a91b -m 1 # Use -m 1 if reverting a merge commit
+git push origin main    # Safe standard push without --force
+
+# 4. Local cleanup using reset:
+git reset --soft HEAD~1 # Undoes last commit, keeping all changes staged
+```
+
 ## Explanation in Arabic
 
 قارن بين أوامر Git الأساسية: `merge`، و `rebase`، و `squash`، و `revert`، و `reset` من حيث السلوك وتعديل التاريخ وحالات الاستخدام؟
@@ -76,26 +119,23 @@ Branch protection blocks force-pushes to main, requires reviewed PRs and records
 
 ## Interview answer — short
 
-Merge joins branches preserving full history with a merge commit. Rebase replays commits linearly on top of upstream, rewriting hashes. Squash collapses multiple commits into a single atomic commit. Revert creates a new inverse commit to safely undo changes on shared branches, and Reset moves the branch pointer backward, rewriting history.
+Merge joins branches preserving full history with a merge commit. Rebase replays commits linearly on top of upstream, rewriting hashes. Squash collapses multiple commits into a single atomic commit. Revert creates a new inverse commit to safely undo changes on shared branches without rewriting history, and Reset moves the branch pointer backward, altering history.
 
 ## Interview answer — structured
 
-These five Git operations govern how branch histories are combined, rewritten, or corrected.
-
-First, **`git merge`**. Next, integrates diverged branches by creating a 3-way merge commit with two parents. It guarantees complete historical accuracy and context, but creates a non-linear graph with merge commit noise.
-**`git rebase`**. Re-applies local commits one by one on top of the target base branch. Yields a clean, perfectly linear commit history. Because it assigns new commit SHA hashes, it must never be run on public shared branches.
-**`git squash`**. Compresses a series of incremental commits into a single commit. Frequently used in PR merges (Squash and Merge) to condense exploratory development into a single logical, bisect-friendly commit on main.
-**`git revert`**. Safely rolls back changes by creating a new forward commit containing the inverse diff. It preserves history and causes no merge conflicts for teammates on shared branches.
-**`git reset`**. Finally, adjusts the current branch HEAD backward in time. Rewrites branch history and requires forced pushes if already remote, making it suitable only for local unshared work.
-
+These five Git operations govern how branch histories are combined, rewritten, or reversed across engineering workflows.
+Git merge integrates diverged branches by creating a 3-way merge commit with two parents. It guarantees complete historical accuracy and context, but creates a non-linear graph with merge commit clutter.
+Git rebase replays local commits one by one on top of the target base branch, yielding a clean, linear commit history. Because it assigns new commit SHA hashes, it must never be run on public shared branches.
+Git squash compresses a series of incremental commits into a single commit. It is standard in pull request merges to condense exploratory development into a single logical, bisect-friendly commit on main.
+Git revert safely rolls back changes by creating a new forward commit containing the inverse diff. It preserves history immutability and causes no merge conflicts for teammates on shared branches.
+Git reset adjusts the current branch HEAD backward in time. It rewrites branch history and requires forced pushes if already pushed to remotes, making it suitable strictly for local unshared work.
 
 ## Interview answer — deep senior
 
-In team Git architecture and CI governance, choosing between merge, rebase, and squash impacts debugging and bisecting.
-
-First, a Git Bisect Optimization is a linear history generated by `git rebase` or `squash and merge` makes `git bisect` fast and reliable. When messy merge commit graphs exist, automated bisect scripts frequently stumble into broken intermediary states where commits were merged half-baked. Next, with The Squash vs. Rebase Debate in PRs, squash-and-merge is preferred in many Android teams because it reduces PR clutter to a single cohesive feature commit linked to a Jira/Issue ID. However, if a 2,000-line PR contains 10 logical architectural refactors, squashing them destroys the context of each distinct change. A clean interactive rebase (`git rebase -i`) preserving 3 atomic commits is superior in complex refactorings.
-Finally, with Golden Rule of Git Rebase, never rebase a branch that has been published and shared with other engineers. Rebase changes commit SHAs; when peers pull the rebased branch, Git interprets their identical local commits as divergent, creating duplicate commits and painful merge conflicts.
-
+In team Git architecture and continuous integration governance, choosing between merge, rebase, and squash impacts debugging, git bisect operations, and release auditability.
+A linear commit history generated by git rebase or squash-and-merge makes automated regression hunting with git bisect remarkably fast and reliable. When messy merge commit graphs exist, automated bisect scripts frequently stumble into broken intermediary states where commits were merged half-baked. Squash-and-merge is preferred in many mobile teams because it reduces pull request clutter to a single cohesive feature commit linked to an issue tracker identifier. However, if a large pull request contains distinct architectural refactors, squashing them destroys the context of each separate change; an interactive rebase preserving several clean, atomic commits is superior in complex architectural migrations.
+The golden rule of Git rebase is never rebasing a branch that has been published and shared with other engineers. Rebase rewrites commit SHA hashes. When collaborators pull a rebased branch, Git interprets their identical local commits as divergent, creating duplicate commits and painful merge conflicts.
+Finally, when production incidents require rolling back defective merges, git revert is the mandatory tool. Reverting a merge commit with git revert -m 1 creates an inverse commit advancing history forward, allowing standard pushing without dangerous force-pushing. Teams configure branch protection rules in GitHub or GitLab that strictly disallow force pushes on trunk, enforcing non-destructive reverts by operational policy.
 
 ## How to answer in the interview
 

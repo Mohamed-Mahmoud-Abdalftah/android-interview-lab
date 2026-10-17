@@ -20,6 +20,55 @@ You need to swap vendor SDKs with different callbacks. Which patterns and bounda
 
 Use adapters and a stable boundary to switch vendor callbacks without leaking vendor types or result semantics.
 
+## Concept and technical explanation
+
+Swapping vendor SDKs with disparate callback architectures requires establishing a strict Anti-Corruption Layer (ACL) using the Adapter and Facade patterns bounded by clean architectural seams. Third-party vendors invariably expose conflicting callback styles, including single-listener interfaces, multi-callback delegates, broadcast intents, or bespoke event dispatchers. By defining an application-owned, domain-level interface and implementing an Adapter that translates vendor-specific event protocols into standard Kotlin Coroutines and asynchronous Flows, the application isolates vendor volatility completely. Placing this adapter inside an independent Gradle compilation module guarantees that switching vendor providers requires changing only the boundary implementation without modifying domain or presentation code.
+
+## Practical walkthrough (English)
+
+Isolating and adapting incompatible vendor SDKs behind an Anti-Corruption Layer:
+```kotlin
+// 1. DOMAIN BOUNDARY: Application-owned interface (Pure Kotlin, zero vendor types)
+interface LocationTracker {
+    val locationStream: Flow<GeoCoordinates>
+    suspend fun getCurrentLocation(): Result<GeoCoordinates>
+}
+
+// 2. ADAPTER FOR VENDOR A (Push-based listener interface)
+class VendorALocationAdapter @Inject constructor(
+    private val vendorAClient: VendorASdkClient
+) : LocationTracker {
+    override val locationStream: Flow<GeoCoordinates> = callbackFlow {
+        val listener = object : VendorAListener {
+            override fun onNewCoord(lat: Double, lng: Double) { trySend(GeoCoordinates(lat, lng)) }
+            override fun onFailed(err: String) { close(VendorException(err)) }
+        }
+        vendorAClient.startTracking(listener)
+        awaitClose { vendorAClient.stopTracking() }
+    }
+
+    override suspend fun getCurrentLocation(): Result<GeoCoordinates> =
+        locationStream.firstOrNull()?.let { Result.success(it) } ?: Result.failure(TimeoutException())
+}
+
+// 3. ADAPTER FOR VENDOR B (Delegate-based with distinct callbacks)
+class VendorBLocationAdapter @Inject constructor(
+    private val vendorBEngine: VendorBEngine
+) : LocationTracker {
+    override val locationStream: Flow<GeoCoordinates> = callbackFlow {
+        val delegate = VendorBDelegate { event ->
+            if (event.type == VendorBEvent.GPS_FIX) trySend(GeoCoordinates(event.latitude, event.longitude))
+        }
+        vendorBEngine.addDelegate(delegate)
+        awaitClose { vendorBEngine.removeDelegate(delegate) }
+    }
+
+    override suspend fun getCurrentLocation(): Result<GeoCoordinates> = suspendCancellableCoroutine { cont ->
+        vendorBEngine.requestSingleUpdate { fix -> cont.resume(Result.success(GeoCoordinates(fix.lat, fix.lng))) }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 تبديل مكتبات خارجية (Vendor SDKs) ذات أنظمة استدعاءات (Callbacks) مختلفة: ما هي الأنماط والحدود المعمارية المناسبة؟
@@ -97,25 +146,24 @@ A bank app swaps identity SDKs behind a verification boundary with staged rollou
 
 ## Interview answer — short
 
-To swap vendor SDKs with mismatched callbacks without breaking the app, establish a strict Anti-Corruption Layer (ACL). Define a clean domain interface representing your app's required capability. Implement the Adapter pattern to translate vendor-specific callbacks into standard Kotlin suspending functions or Flows via suspendCancellableCoroutine, keeping all vendor dependencies isolated inside a dedicated module.
+To swap vendor SDKs with conflicting callbacks cleanly, establish an Anti-Corruption Layer using the Adapter pattern behind an application-owned domain interface. The Adapter bridges mismatched vendor listeners, delegates, and threading models into standardized Kotlin suspending functions and Flow streams via callbackFlow. Isolating the vendor SDK inside its own Gradle module ensures that swapping vendors touches only the adapter implementation, keeping domain and presentation layers completely decoupled.
 
 ## Interview answer — structured
 
-When swapping third-party SDKs, the fatal mistake is allowing vendor-specific types, exceptions, and callback signatures to bleed into ViewModels and UI logic. If Vendor A uses listeners and Vendor B returns intents, changing vendors causes a ripple effect across the entire codebase.
-
-We solve this using three architectural boundaries.
-
-First, with Domain Contract, we define a clean interface in our domain layer (`DocumentScanner` or `PaymentGateway`) expressing the business need using pure Kotlin types, completely agnostic of any vendor. Next, with Adapter & Anti-Corruption Layer (ACL), each vendor SDK gets an Adapter that implements this domain contract. The adapter bridges the callback mechanism into modern coroutines using `suspendCancellableCoroutine`, handles vendor lifecycle requirements, and maps vendor error codes into typed domain errors.
-Finally, with Physical Module Boundary, we isolate each vendor SDK in its own Gradle module. The main application module depends on the domain interface, not the vendor SDK, guaranteeing at compile time that no vendor classes can leak into the rest of the application.
-
+Swapping vendor SDKs with completely different callback interfaces requires disciplined architectural boundary design to prevent vendor churn from destabilizing the core codebase.
+The primary danger when integrating third-party SDKs is letting foreign types and idiosyncratic callback contracts leak into UseCases, Repositories, and ViewModels. One analytics or location vendor might use a single callback interface with multiple methods, while another uses individual functional delegates, and a third relies on Android BroadcastReceivers. If application code couples to these specific mechanics, migrating from Vendor A to Vendor B requires rewriting hundreds of callsites across the entire application.
+The definitive architectural pattern to solve this is the Adapter pattern operating within an Anti-Corruption Layer.
+First, the engineering team defines an application-owned domain interface that describes the required capability using pure Kotlin types, such as exposing a Flow of domain locations or suspending functions returning Result.
+Second, an Adapter class encapsulates the concrete vendor SDK. The adapter is responsible for structural translation: it maps vendor initialization sequences, registers internal vendor listeners, and routes asynchronous events into standard Kotlin primitives using callbackFlow with awaitClose for streams and suspendCancellableCoroutine for one-shot requests.
+Third, the adapter is isolated within a dedicated Gradle module, ensuring that dependency injection simply swaps the bound adapter implementation without altering any application logic.
 
 ## Interview answer — deep senior
 
-When engineering an Anti-Corruption Layer for vendor SDKs in enterprise Android apps, multiple edge cases must be handled beyond simple signature mapping.
-
-First, with Thread Hopping & Synchronization, vendor callbacks frequently fire on arbitrary background threads or private SDK loopers. The Adapter is responsible for ensuring continuation resumption occurs on appropriate dispatchers (`Dispatchers.Default` for parsing, or handling Android UI thread constraints). Next, with Cancellation & Resource Cleanup, if the calling coroutine cancels (e.g. User navigates back while the scanner is running), `suspendCancellableCoroutine.invokeOnCancellation` must instruct the vendor SDK to stop camera hardware, free native memory, or deregister listeners. Otherwise, you leak camera sensors and background threads.
-Finally, with Unified Error Semantics, vendor A might return HTTP 400 for expired documents, while Vendor B throws an unhandled `SdkInvalidStateException`. The Adapter catches all vendor exceptions, translating them into a unified sealed class hierarchy (`ScanFailure.DocumentExpired`, `ScanFailure.Timeout`, `ScanFailure.SecurityViolation`). The UI only ever responds to domain errors, remaining 100% resilient when swapping vendors.
-
+Under the hood, managing asynchronous callback impedance mismatches requires meticulous handling of cancellation, threading, and backpressure translation.
+Different vendor SDKs employ radically different threading guarantees: some invoke callbacks on the main UI thread, while others spawn unmanaged background daemon threads. Inside the Adapter, senior engineers normalize threading using flowOn(Dispatchers.IO) or Dispatchers.Default, ensuring that downstream consumers receive predictable execution contexts.
+Furthermore, bridging callbacks into Coroutines demands rigorous lifecycle cleanup. When wrapping streaming callbacks inside callbackFlow, the awaitClose block must invoke the vendor's unregistration API. If an unhandled exception or cancellation signal occurs downstream, the Coroutine runtime automatically invokes awaitClose, preventing the vendor SDK from continuing to poll hardware sensors or fire orphaned callbacks.
+For one-shot callbacks wrapped via suspendCancellableCoroutine, developers must check continuation.isActive and attach invokeOnCancellation to signal the vendor SDK to abort inflight network requests.
+By enforcing this boundary at the Gradle module level using implementation dependencies, the vendor SDK bytecode is physically hidden from other modules, making accidental coupling impossible and allowing seamless provider replacement through a single Hilt @Binds declaration. Moreover, senior engineers implement mock and replay adapters to simulate extreme vendor edge cases, such as simulated satellite signal loss or malformed payload responses, enabling thorough offline automated verification before deploying partner SDKs to production.
 
 ## How to answer in the interview
 

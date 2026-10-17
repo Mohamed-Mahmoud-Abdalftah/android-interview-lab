@@ -22,6 +22,34 @@ Compare Gradle api and implementation dependencies.
 - Choose `api` only when public signatures require it.
 - Connect choice to rebuild fan-out and published metadata.
 
+## Concept and technical explanation
+
+In modern Gradle dependency management (via java-library and com.android.library plugins), the implementation and api configurations dictate how dependencies leak across compilation boundaries:
+- implementation: Hides the dependency from the compile classpath of downstream consumers. Types from the dependency are available at runtime and to the declaring module at compile time, but any module that imports the declaring module cannot resolve those types. This establishes an ABI (Application Binary Interface) boundary: changes to implementation dependencies do not trigger recompilation of downstream modules, dramatically improving incremental build times.
+- api: Transitively exports the dependency onto the compile classpath of all downstream consumers. It is required when a module exposes types from the dependency in its own public method signatures, interfaces, or return types. Overusing api destroys compilation isolation, creating cascading recompilations across the entire build graph whenever the dependency changes.
+
+## Practical walkthrough (English)
+
+Demonstrating compilation isolation between implementation and api in Gradle:
+```kotlin
+// module: :core:network/build.gradle.kts
+dependencies {
+    // OkHttp is an internal engine implementation detail
+    implementation(libs.okhttp)
+    // Retrofit interfaces exposed in public API methods require 'api'
+    api(libs.retrofit)
+}
+
+// module: :feature:news/build.gradle.kts
+dependencies {
+    implementation(project(":core:network"))
+}
+
+// Inside :feature:news source code:
+// val service: Retrofit = ... // COMPILES! (Retrofit is exposed via 'api')
+// val client: OkHttpClient = ... // COMPILER ERROR! (OkHttp is hidden via 'implementation')
+```
+
 ## Explanation in Arabic
 
 المقارنة الجوهرية بين `api` و `implementation` في Gradle وكيف تؤثران على وقت البناء والـ ABI:
@@ -85,27 +113,29 @@ Inspect public ABI and dependency insight reports, enforce explicit direct depen
 
 ## Interview answer — short
 
-implementation keeps a dependency private to the module's compile classpath, hiding internal transitive types and preventing downstream recompilations when internals change. api exposes the dependency transitively to all consumers, polluting their classpaths and forcing costly rebuild cascades across all downstream modules.
+The implementation configuration keeps a dependency private to the declaring module, preventing downstream consumers from seeing its types at compile time and shielding them from recompilation when internal code changes. The api configuration exports the dependency transitively to consumers, required only when types appear in public signatures but causing cascading rebuilds when overused.
 
 ## Interview answer — structured
 
-The difference between `api` and `implementation` in Gradle determines whether a dependency leaks into the consumer's compile classpath.
-
-First, implementation` (Default Choice) is the dependency is present on the compile classpath of the current module and on the runtime classpath of consumers, but **hidden from the compile classpath of consumers**. If module `B` uses `implementation(A)`, module `C` depending on `B` cannot reference types from `A`. This enforces strict encapsulation and dramatically accelerates incremental compilation. Finally, with api` (Public ABI Exposure), transitively exposes the dependency to any module that depends on this module. If `B` declares `api(A)`, `C` can import symbols from `A` directly.
-
-The golden architectural rule: use `implementation` by default. Only promote a dependency to `api` if its types appear directly in the module's public function parameters, return types, or inherited interfaces (part of its public Application Binary Interface - ABI).
-
+Understanding the difference between Gradle api and implementation configurations is essential for building performant multi-module architectures.
+The implementation configuration keeps the dependency internal to the declaring module.
+Types from that library are omitted from the compile classpath of any downstream consumer that depends on the module.
+This creates a strict compilation firewall: as long as the module's public ABI remains unchanged, modifications to its implementation dependencies will not trigger recompilations of downstream modules.
+Conversely, the api configuration transitively exposes the dependency to the compile classpath of all downstream modules.
+You should use api only when types from the underlying library are exposed in the module's public method signatures, interface contracts, or public property definitions.
+Defaulting to api is an architectural anti-pattern that tightly couples modules and invalidates the Gradle build cache across the entire project.
 
 ## Interview answer — deep senior
 
-Under the hood, Gradle distinguishes between a module's **Compile Classpath** and its **Runtime Classpath**, optimizing builds via **ABI (Application Binary Interface) hashing**.
-
-When Gradle compiles a module, it generates an ABI hash representing only public and protected method signatures, return types, and fields. Method implementation bodies (private logic inside a function) do not change the ABI hash.
-
-First, when module `B` uses `implementation(A)`, Gradle excludes `A` from `C`'s compile classpath. If a developer changes private code inside `A`, `A` recompiles, but `B`'s ABI remains unchanged, and Gradle completely skips recompiling `C`. Finally, when `B` uses `api(A)`, `A` is part of `B`'s public interface. Any ABI change in `A` invalidates the ABI of `B`, triggering a massive recompile cascade across the entire downstream dependency tree.
-
-Using `implementation` isolates compile boundaries, maximizes Gradle's `UP-TO-DATE` task checks, and keeps developer build loops lightning-fast.
-
+At the compiler level, the distinction between api and implementation hinges on the Application Binary Interface boundary.
+When Gradle analyzes task dependencies for compileKotlin, it evaluates the compile classpath of each subproject.
+By utilizing implementation, a module encapsulates its internal dependencies.
+If module B depends on module A using implementation, and module A refactors an internal library or upgrades an implementation dependency, Gradle determines that module A's ABI has not changed.
+Consequently, module B's compileKotlin task is marked as UP-TO-DATE, bypassing recompilation entirely.
+If module A had declared the dependency using api, Gradle would be forced to assume that module B's compile classpath is dirty, triggering cascading recompilation downstream across dozens of dependent feature modules.
+In enterprise multi-module codebases, our governing rule is: default to implementation everywhere.
+We only promote a dependency to api when an exported type from that library is an inescapable part of our module's public API contract.
+Even then, senior architects prefer wrapping third-party types in internal domain models rather than leaking external library types across module boundaries, preserving complete control over our compilation topology. We enforce this policy through automated static architecture checks in CI, automatically detecting when an implementation dependency is inadvertently exposed and preventing build cache invalidation regressions across downstream feature modules.
 
 ## How to answer in the interview
 

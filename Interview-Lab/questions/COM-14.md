@@ -22,6 +22,47 @@ What are stable keys and content types in LazyColumn?
 - Explain state/scroll preservation on reorder and reuse efficiency.
 - Avoid index keys for moving data and non-saveable keys where restoration matters.
 
+## Concept and technical explanation
+
+In Jetpack Compose Lazy layouts, stable keys and content types are vital optimization mechanisms that govern item identity and composition recycling. A stable key (provided via key = { item.id }) supplies a unique, persistent identifier for each item instead of relying on default list position indices, preserving scroll position and enabling item placement animations during dataset mutations. The contentType parameter (provided via contentType = { item.type }) classifies items by their visual layout structure, allowing the Compose subcomposition pipeline to reuse composition slots and SlotTable layouts between items of identical structure, mirroring legacy RecyclerView view pools.
+
+## Practical walkthrough (English)
+
+Applying stable keys and content types in a heterogeneous LazyColumn:
+```kotlin
+sealed interface FeedItem {
+    val id: String
+    data class Header(override val id: String, val title: String) : FeedItem
+    data class Post(override val id: String, val content: String, val author: String) : FeedItem
+    data class BannerAd(override val id: String, val adUrl: String) : FeedItem
+}
+
+@Composable
+fun FeedList(items: List<FeedItem>, modifier: Modifier = Modifier) {
+    LazyColumn(modifier = modifier) {
+        items(
+            items = items,
+            // 1. STABLE KEY: Preserves scroll state, avoids item recreation on insert/delete
+            key = { item -> item.id },
+            // 2. CONTENT TYPE: Reuses composition slots between identical layout structures!
+            contentType = { item ->
+                when (item) {
+                    is FeedItem.Header -> "HEADER_TYPE"
+                    is FeedItem.Post -> "POST_TYPE"
+                    is FeedItem.BannerAd -> "AD_TYPE"
+                }
+            }
+        ) { item ->
+            when (item) {
+                is FeedItem.Header -> HeaderItemView(item)
+                is FeedItem.Post -> PostItemView(item)
+                is FeedItem.BannerAd -> AdBannerView(item)
+            }
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 أهمية المفاتيح المستقرة (`keys`) وأنواع المحتوى (`contentType`) في قوائم `LazyColumn` و `LazyRow`:
@@ -116,23 +157,30 @@ Define a stable ID contract in the data model, test insert/delete/reorder while 
 
 ## Interview answer — short
 
-In `LazyColumn`, specifying a unique `key` anchors each item to its data ID rather than its index position, preserving item state across insertions/deletions and enabling item placement animations. Providing `contentType` allows Compose to recycle slot table compositions between items with matching layouts, reducing composition overhead.
+Stable keys and content types optimize LazyColumn performance. A stable key provides a unique, persistent identity (like an ID) for each item, preventing scroll jumps, avoiding state loss, and enabling item placement animations when the list changes. The contentType classifies items by their visual structure, allowing Compose to reuse composition slots and nodes between items of the same type, drastically reducing allocation and measurement overhead during fast scrolling.
 
 ## Interview answer — structured
 
-In `LazyColumn` and `LazyRow`, configuring `key` and `contentType` is vital for fluid 120fps scrolling and correct state preservation.
-
-First, with Stable Keys (`key`), by default, Compose uses item index as the implicit key. If an item is prepended at index 0, every existing item shifts down, causing Compose to believe all items mutated and forcing a recomposition of the entire visible viewport. Furthermore, item-level state (like text field inputs or expanded accordions) shifts onto the wrong items! Providing a persistent, unique identifier (`key = { it.id }`) preserves item identity, retains local state correctly across reorderings, and powers smooth animations via `Modifier.animateItem()`. Finally, with Content Types (`contentType`), in heterogeneous lists featuring multiple visual layouts (e.g. Header, Card, VideoPlayer, AdBanner), Compose uses `contentType` to group structurally similar items. This enables Compose to recycle Slot Table structures exclusively among items of the same type, drastically cutting down allocation overhead and layout measurement passes during rapid fling scrolls.
-
+Achieving smooth 60fps scrolling in Jetpack Compose Lazy lists relies directly on configuring stable keys and explicit content types.
+By default, if you omit the key parameter in items(), LazyColumn uses the item's integer position in the list as its identity.
+This default behavior causes severe bugs when the list updates dynamically.
+If an item is prepended at index zero, every existing item's index shifts by one. Compose assumes every item has been replaced, discarding item-level remembered state, losing scroll position, and triggering unnecessary recomposition passes for the entire viewport.
+Providing a stable, unique key (such as item.id) binds item identity to the underlying data model.
+Compose accurately tracks item movement, preserves scroll offsets, and smoothly animates insertions and reorderings using Modifier.animateItem().
+The contentType parameter introduces an additional rendering optimization.
+In heterogeneous lists with multiple view layouts (like headers, post cards, and banner ads), Compose uses contentType to pool and reuse composition slots.
+When an item of a given type scrolls off-screen, Compose reuses its existing layout node structure for a newly entering item of the same contentType, eliminating redundant slot tree construction and layout measurement overhead.
 
 ## Interview answer — deep senior
 
-Under the hood, keys in `LazyLayout` must be parcelable or persistable in Android bundles because Compose uses them to retain `rememberSaveable` state per item in the `LazyLayoutItemContentFactory`. If an invalid non-unique key is used, Compose throws an `IllegalArgumentException` indicating duplicate keys within the composition.
-
-Without `contentType`, when a user scrolls and an AdBanner leaves the screen while a simple PostCard enters, Compose attempts to reuse the slot composition of the AdBanner for the PostCard. Because the composable structures mismatch completely, Compose must discard the slot group and execute a full new composition from scratch. With `contentType`, Compose preserves separate recycling pools for each layout signature, matching the recycling efficiency of `RecyclerView.getItemViewType()`.
-
-In Macrobenchmark scroll tests, adding both `key` and `contentType` to complex feeds typically slashes frame drop rates during rapid scrolls by 40-60%.
-
+Under the hood, LazyColumn relies on SubcomposeLayout to lazily measure and compose only the items visible within the current viewport plus a configurable prefetch distance.
+When key is omitted, the subcomposition mechanism assigns the index integer as the composition key in the SlotTable. When items are inserted, deleted, or reordered, the index mapping fails, causing Compose to dispose of the old SlotTable intervals and allocate completely new ones, discarding any remembered state holders (such as expandable card toggles or inner scroll states) and creating significant garbage collection pressure.
+When a stable key is supplied, Compose stores the key inside its ItemProvider. During list mutations, Compose matches the keys across frames, moving existing SlotTable nodes rather than disposing of them.
+The contentType parameter operates directly on Compose's node reuse algorithm.
+When an item scrolls out of bounds, its SubcomposeSlot is moved to an internal recycling cache.
+Without contentType, Compose has no knowledge of whether the next entering item shares the same composable hierarchy; if the next item has a completely different layout (e.g., recycling a simple Header slot for a complex multi-layered VideoCard), Compose must tear down the entire slot subtree and rebuild it from scratch.
+With contentType, Compose queries the cache for a slot matching that exact content type identifier, reusing the pre-existing node structure and executing only a fast recomposition of modified text and images.
+This mirrors the efficiency of RecyclerView.RecycledViewPool, eliminating frame drops during rapid list flings.
 
 ## How to answer in the interview
 

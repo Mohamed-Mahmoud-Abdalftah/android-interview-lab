@@ -21,6 +21,87 @@ Write tests for a payment retry path guaranteeing no duplicate charge.
 - Lost-response test and distinction between local retry behavior and real server guarantee.
 - Stable idempotency identity, process death and reconciliation.
 
+## Concept and technical explanation
+
+Testing payment retry workflows requires enforcing strict cryptographic idempotency guarantees to ensure that network timeouts or application restarts never trigger duplicate financial charges. When a client initiates a monetary transaction, the architecture must generate a unique, cryptographically stable Idempotency Key (such as a UUIDv4 combined with order identity) and persist the transaction locally to Room SQLite in an INITIALIZED state before dispatching the HTTP network request. If a lost-response failure occurs—where the server successfully processes the charge but the client experiences a read timeout or socket drop—the client retries the transaction using the exact same Idempotency Key. The remote payment gateway recognizes the duplicate submission and returns the original authorization result without re-billing the account. Tests must verify that the same key is transmitted across retries, that process resurrection resumes from local state, and that concurrent retry attempts are debounced.
+
+## Practical walkthrough (English)
+
+Testing idempotent payment retry and duplicate charge prevention:
+```kotlin
+// Payment service enforcing idempotency and local state persistence
+class PaymentRepository(
+    private val paymentApi: PaymentApi,
+    private val paymentDao: PaymentDao
+) {
+    suspend fun processPayment(orderId: String, amount: Double): PaymentResult {
+        // Retrieve existing transaction or create new one with persistent idempotency key
+        val transaction = paymentDao.getTransaction(orderId) ?: PaymentEntity(
+            orderId = orderId,
+            idempotencyKey = UUID.randomUUID().toString(),
+            amount = amount,
+            status = PaymentStatus.PENDING
+        ).also { paymentDao.insert(it) }
+
+        return try {
+            val response = paymentApi.charge(
+                idempotencyKey = transaction.idempotencyKey,
+                request = ChargeRequest(orderId, amount)
+            )
+            paymentDao.updateStatus(orderId, PaymentStatus.SUCCESS)
+            PaymentResult.Success(response.chargeId)
+        } catch (e: IOException) {
+            // Network dropped or timed out; transaction remains PENDING for safe retry
+            PaymentResult.RetryableError("Network timeout. Safe to retry.")
+        }
+    }
+}
+
+// Unit tests validating idempotency key reuse on network failure
+class PaymentRepositoryTest {
+    private val paymentApi = mockk<PaymentApi>()
+    private val paymentDao = FakePaymentDao()
+    private val repository = PaymentRepository(paymentApi, paymentDao)
+
+    @Test
+    fun processPayment_lostResponseTimeout_retriesWithExactSameIdempotencyKey() = runTest {
+        val capturedKeys = mutableListOf<String>()
+
+        // First attempt throws SocketTimeoutException simulating lost response
+        coEvery {
+            paymentApi.charge(capture(capturedKeys), any())
+        } throws SocketTimeoutException("Read timed out") andThen ChargeResponse(chargeId = "ch_9876")
+
+        // First call fails due to timeout
+        val firstResult = repository.processPayment(orderId = "order_101", amount = 99.0)
+        assertTrue(firstResult is PaymentResult.RetryableError)
+
+        // Retry the payment for the same order
+        val retryResult = repository.processPayment(orderId = "order_101", amount = 99.0)
+        assertTrue(retryResult is PaymentResult.Success)
+
+        // Assert that both network attempts used the exact same idempotency key
+        assertEquals(2, capturedKeys.size)
+        assertEquals(capturedKeys[0], capturedKeys[1])
+
+        // Verify database records single transaction in SUCCESS state
+        assertEquals(PaymentStatus.SUCCESS, paymentDao.getTransaction("order_101")?.status)
+    }
+
+    @Test
+    fun processPayment_distinctOrders_generateDifferentIdempotencyKeys() = runTest {
+        val capturedKeys = mutableListOf<String>()
+        coEvery { paymentApi.charge(capture(capturedKeys), any()) } returns ChargeResponse("ch_1")
+
+        repository.processPayment("order_A", 10.0)
+        repository.processPayment("order_B", 20.0)
+
+        // Assert distinct idempotency keys per order
+        assertNotEquals(capturedKeys[0], capturedKeys[1])
+    }
+}
+```
+
 ## Explanation in Arabic
 
 اكتب مجموعة اختبارات وحدة (Unit Tests) لمسار إعادة محاولة الدفع البنكي (Payment Retry Path) تضمن قطعياً عدم حدوث سحب مالي مزدوج (No Duplicate Charge)؟
@@ -149,26 +230,31 @@ CI has unit/client HTTP tests, backend concurrency/idempotency tests, and provid
 
 ## Interview answer — short
 
-Test payment safety by asserting that all retry attempts transmit the identical UUID idempotency key, verifying that socket timeouts trigger read-only reconciliation queries rather than blind charge replays, and strictly asserting that the payment gateway charge method was invoked exactly once.
+We test payment retries by simulating lost network responses and asserting strict idempotency key stability. The client persists an idempotency key into Room before calling the API. When a read timeout occurs after the server processed the charge, the retry logic uses the persisted key. The test captures outgoing HTTP headers to assert that both initial and retry attempts transmit the identical idempotency key, guaranteeing the server never debits the customer twice.
 
 ## Interview answer — structured
 
-Testing payment paths requires mathematical guarantees that duplicate charges are impossible under any failure permutation.
-
-First, **Asserting Idempotency Key Stability**. Next, write a test verifying that when an order is created, an `idempotencyKey = UUID` is persisted locally. Assert that across multiple retry loops, crashes, and app restarts for that order ID, the captured HTTP `Idempotency-Key` header remains identical.
-**Verifying Reconciliation Over Retry**. Simulate a network socket timeout on the initial charge request. Configure the test stub to throw `SocketTimeoutException` while recording that the backend processed the charge.
-Assert that the client payment coordinator catches the timeout and invokes `reconcileStatus(idempotencyKey)` rather than invoking `executeCharge()` a second time. Assert that `executeCharge()` call count strictly equals 1, proving zero duplicate charges were attempted.
-**Rapid Double-Tap Concurrency Protection**. Launch two concurrent payment requests for the same order simultaneously on two parallel coroutine jobs.
-Finally, assert that an internal Mutex drops or rejects the second call, and that only one charge request hits the network.
-
+Testing payment workflows demands extreme rigor because a failure in retry logic can cause catastrophic duplicate billing of customers.
+In distributed systems, the most dangerous failure mode is the lost-response scenario.
+In this case, the payment gateway successfully debits the customer card, but the returning HTTP 200 response is severed by cellular packet loss or a client read timeout.
+To guarantee that retrying does not create a second charge, the client must implement idempotent retries.
+Before dispatching any network request, the repository creates a unique Idempotency Key and commits it to a local Room SQLite database alongside the order identifier in a pending status.
+If the request fails with a network exception, the transaction record remains in the database.
+When the user or a background worker retries the transaction, the repository reloads the existing record and submits the identical idempotency key in the HTTP header.
+The remote payment gateway detects the key, matches it against its authorization ledger, and returns the original transaction receipt without charging the card again.
+Our unit tests verify this contract by capturing all outgoing charge requests, asserting that retry calls reuse the exact same idempotency key, and verifying that the local database transitions to success without duplicate entries.
 
 ## Interview answer — deep senior
 
-From a financial compliance and test harness perspective, payment testing requires exhaustive state space exploration.
-
-First, with Testing Database Transaction Rollbacks, test what happens if the local database crashes immediately before dispatching the network call. Assert that if inserting the local `PENDING` record fails, zero network calls execute, preventing untracked charges. Next, with Simulating Gateway 'Unknown' Statuses, if the reconciliation query itself times out, assert that the coordinator transitions state to `PENDING_MANUAL_VERIFICATION`. Assert that the UI renders a customer-support ticket reference and blocks the user from retrying the payment button until backend resolution confirms the order status.
-Finally, with Idempotency Header Telemetry Assertions, assert via MockWebServer's `takeRequest()` that outgoing charge requests pass standard payment headers: `Idempotency-Key`, `X-Client-Timestamp`, and masked audit metadata.
-
+Under the hood, payment safety depends on a coordinated distributed consensus contract between the mobile client's SQLite database and the backend payment gateway.
+The core vulnerability during payment processing is non-atomic failure across process boundaries.
+If an application generates an idempotency key purely in memory, an Android process death or app crash during a network timeout would cause the resurrection process to generate a new key on retry, triggering a double charge.
+Senior engineers mandate an offline-first transactional sequence: the client begins a SQLite database transaction, writes the order ID and generated UUID idempotency key to disk with write-ahead logging (WAL), and commits before opening the network socket.
+When MockWebServer simulates an HTTP 504 Gateway Timeout or a TCP socket drop via SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY, OkHttp throws a SocketTimeoutException.
+The test asserts that the repository catches this transport exception without clearing the local idempotency key.
+During the subsequent retry invocation, the repository queries the database, extracts the stored key, and transmits it via the Idempotency-Key HTTP header.
+On the backend, payment systems (such as Stripe or custom banking APIs) lock the idempotency key in Redis with a 24-hour TTL; if a second request arrives with that key, the gateway short-circuits execution and echoes the cached charge response.
+Tests also verify process resurrection by simulating an app kill between the network drop and the retry, proving the system is resilient against sudden mobile process death.
 
 ## How to answer in the interview
 

@@ -20,6 +20,58 @@ How should conflicts be resolved when local and server state diverge?
 
 Resolve divergent local/server state using versions, domain merge and conflict UX.
 
+## Concept and technical explanation
+
+Resolving data divergence between local offline storage and remote servers requires structured conflict resolution models:
+- Last-Write-Wins (LWW): Resolves conflicts based on mutation timestamps. Simple to implement, but vulnerable to mobile clock drift, timezone shifts, and network latency anomalies, often silently overwriting newer legitimate user changes.
+- Server-Wins vs Client-Wins: Strict authoritative boundaries. Server-Wins prioritizes enterprise state consistency, discarding local offline edits upon conflicts. Client-Wins prioritizes user autonomy, allowing local device changes to overwrite remote state unconditionally (common in personal note-taking or local settings).
+- Field-Level Three-Way Merging: Compares the base ancestor snapshot, the local mutation, and the server payload. Non-intersecting property edits merge automatically without conflict.
+- Conflict-Free Replicated Data Types (CRDTs): Mathematical data structures (such as Observed-Remove Sets or State-based LWW-Element-Sets) that guarantee deterministic mathematical convergence across concurrent distributed edits without requiring centralized coordination locks.
+- Interactive User Resolution: Presents a conflict resolution modal when critical irreversible collisions occur, empowering the user to inspect differences and select the winning version.
+
+## Practical walkthrough (English)
+
+Offline sync engine with optimistic updates and revision-based conflict handling:
+```kotlin
+data class SyncEntity(
+    val id: String,
+    val title: String,
+    val revision: Long,
+    val isPendingSync: Boolean = false
+)
+
+class SyncRepository(
+    private val dao: SyncDao,
+    private val api: SyncApi
+) {
+    // 1. Optimistic local update
+    suspend fun updateTitleLocally(id: String, newTitle: String) {
+        dao.updateOptimistically(id = id, title = newTitle, isPending = true)
+    }
+
+    // 2. Sync with server revision validation
+    suspend fun syncItem(id: String): Result<Unit> = runCatching {
+        val local = dao.getItem(id) ?: return@runCatching
+        try {
+            val updated = api.pushUpdate(local.id, local.title, local.revision)
+            dao.saveSynced(updated.copy(isPendingSync = false))
+        } catch (e: HttpException) {
+            if (e.code() == 409) {
+                // Conflict detected: fetch remote and perform field-level merge
+                val remote = api.fetchItem(id)
+                val resolved = resolveConflict(base = local, remote = remote)
+                dao.saveSynced(resolved)
+            } else throw e
+        }
+    }
+
+    private fun resolveConflict(base: SyncEntity, remote: SyncEntity): SyncEntity {
+        // Business rule: Keep local edits if marked pending, update revision counter
+        return remote.copy(title = base.title, isPendingSync = true)
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف يتم حل النزاعات وتعارض البيانات (Conflict Resolution) عندما تختلف الحالة المحلية (Local State) عن حالة السيرفر (Server State)؟
@@ -117,25 +169,29 @@ A notes app stores base/local/remote versions and offers merge review when both 
 
 ## Interview answer — short
 
-Resolve conflicts between local and server state using Optimistic Concurrency Control with version numbers or ETags. When divergent states collide (HTTP 409), choose a domain-appropriate strategy: Server-Wins for authoritative data, field-level 3-way merging for non-overlapping attributes, or manual user review for documents and text.
+Resolving conflicts when local and server state diverge depends on data criticalness. Systems employ Last-Write-Wins based on synchronized server timestamps, field-level three-way merging for independent attributes, or Conflict-Free Replicated Data Types for collaborative items. The client uses an outbox queue with optimistic local updates and presents interactive resolution modals for irreversible collisions.
 
 ## Interview answer — structured
 
-When offline edits diverge from remote updates, naive Last-Write-Wins (LWW) based on device timestamps causes silent data loss due to client clock drift. Robust architectures implement **Optimistic Concurrency Control (OCC)**.
-
-First, with Version Tracking / ETags, every entity carries a `version: Long` or an HTTP `ETag` hash. When mutating data, the client submits `{ entityId, payload, baseVersion }`. Next, with Server-Side Compare-and-Set, if the server's current version matches `baseVersion`, the update commits and increments the version. If another client updated the record in the interim, the server rejects the write with **`409 Conflict`** and returns the latest server state.
-**Resolution Strategies by Business Domain**. With Authoritative Data (Inventory, Financial Balance), **Server-Wins**. The client discards local changes and updates Room with server ground truth.
-With Granular Attribute Merging, if the server changed `status` and the client changed `notes`, apply 3-way merging to combine non-overlapping fields. Finally, with Collaborative Text (Notes, Documents), present a visual conflict dialog allowing the user to select the preferred version or fork into two separate documents.
-
+Resolving divergence between local and server state requires establishing clear architectural ownership and deterministic merge rules.
+First, Last-Write-Wins resolves conflicts by comparing update timestamps. While simple, it risks data loss if client device clocks drift, making server-assigned timestamps or monotonic revision counters preferable.
+Second, field-level three-way merging compares the base snapshot, the local mutation, and the remote update. Non-overlapping field edits merge automatically, whereas conflicting changes on identical fields fall back to business rules or user selection modals.
+Third, collaborative data structures leverage Conflict-Free Replicated Data Types to converge concurrently without central synchronization locks.
+In Android offline architectures, we enforce an Outbox pattern where mutations are saved locally with pending sync flags, processed sequentially via WorkManager, and reconciled against server responses.
 
 ## Interview answer — deep senior
 
-In advanced distributed mobile architectures (such as collaborative canvases or offline Google Docs), teams implement **CRDTs (Conflict-free Replicated Data Types)**.
-
-CRDTs (such as State-based or Operation-based PN-Counters, LWW-Element-Sets, or Yjs/Automerge trees) are mathematically proven to converge to the identical state on all nodes without central locking or conflict dialogs, regardless of network arrival order or message duplication.
-
-However, for standard enterprise Android applications, Optimistic Concurrency Control with a conflict resolution table in Room provides 99% of the reliability with a fraction of the algorithmic complexity.
-
+In enterprise offline-first Android systems, conflict resolution cannot be treated as an afterthought; naive approaches like blindly overwriting server data with local state lead to severe data corruption and lost user work.
+When designing sync engines, we classify data into distinct consistency tiers.
+For basic settings or ephemeral preferences, Client-Wins or Last-Write-Wins with server-assigned monotonic sequence numbers is acceptable.
+However, for collaborative documents, shopping carts, or enterprise task lists, Last-Write-Wins silently destroys data because mobile device clocks frequently skew across timezones and hardware differences.
+To solve this, we implement a robust Outbox pattern backed by Room.
+When a user edits an item offline, we immediately apply an optimistic update to the local database to preserve instantaneous UI feedback, while inserting a pending mutation task into our sync queue.
+Each entity carries a revision hash or version vector.
+When connectivity returns, WorkManager dispatches the mutation to the backend.
+If the server's current revision does not match the client's base revision, the server rejects the write with HTTP 409 Conflict and provides the latest remote payload.
+Our repository then initiates a field-level three-way merge: if user A updated the title while user B updated the tags, both changes commit cleanly.
+If both users edited the identical text field, we avoid silent data loss by surfacing an interactive conflict resolution sheet, empowering the user to choose which draft to retain while saving both versions in history.
 
 ## How to answer in the interview
 

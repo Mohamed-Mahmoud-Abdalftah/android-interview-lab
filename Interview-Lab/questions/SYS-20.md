@@ -20,6 +20,61 @@ A payment was authorized but the UI timed out. Design recovery and reconciliatio
 
 Recover an authorized payment after UI timeout by querying ledger and preserving Pending.
 
+## Concept and technical explanation
+
+Handling ambiguous financial transactions where a payment authorization succeeds on the backend but the mobile user interface encounters a network timeout is one of the most critical challenges in mobile architecture. In distributed systems, a network timeout represents an unknown state, not a transaction failure. The payment packet may have been captured and processed by the payment gateway, but the confirmation response was dropped due to cellular tower switching. If the mobile app naively reports a failure and allows the user to re-tap the pay button, double-charging occurs. To prevent financial discrepancies, the transaction must be persisted locally in Room as PENDING alongside a client-generated UUID idempotency key before the network call is dispatched. Upon timeout recovery or screen re-entry, the application executes a reconciliation query using the existing idempotency key. The backend inspects its immutable ledger and returns the authoritative status, allowing the client to transition cleanly to success or failure.
+
+## Practical walkthrough (English)
+
+Implementing robust payment reconciliation using client idempotency keys and ledger verification:
+```kotlin
+// 1. Immutable local transaction record persisted before network transmission
+@Entity(tableName = "payment_transactions")
+data class PaymentRecordEntity(
+    @PrimaryKey val orderId: String,
+    val idempotencyKey: String = UUID.randomUUID().toString(),
+    val amountCents: Long,
+    val currency: String,
+    val status: PaymentStatus = PaymentStatus.PENDING,
+    val createdAtMs: Long = System.currentTimeMillis()
+) {
+    enum class PaymentStatus { PENDING, AUTHORIZED, FAILED }
+}
+
+// 2. Reconciliation coordinator resolving ambiguous transaction outcomes
+class PaymentReconciliationCoordinator @Inject constructor(
+    private val paymentDao: PaymentRecordDao,
+    private val paymentApi: PaymentApiService
+) {
+    suspend fun resolveAmbiguousPayment(orderId: String): PaymentUiOutcome {
+        val record = paymentDao.getByOrderId(orderId)
+            ?: return PaymentUiOutcome.Failure("Transaction not found")
+
+        return try {
+            // Reconcile status against backend ledger using original idempotency key
+            val statusResponse = paymentApi.getPaymentStatusByIdempotency(record.idempotencyKey)
+            when (statusResponse.state) {
+                "AUTHORIZED", "CAPTURED" -> {
+                    paymentDao.updateStatus(orderId, PaymentRecordEntity.PaymentStatus.AUTHORIZED)
+                    PaymentUiOutcome.Success(statusResponse.receiptId)
+                }
+                "FAILED", "REJECTED" -> {
+                    paymentDao.updateStatus(orderId, PaymentRecordEntity.PaymentStatus.FAILED)
+                    PaymentUiOutcome.Failure(statusResponse.failureReason ?: "Payment rejected")
+                }
+                else -> {
+                    // Still processing on gateway; keep UI in pending reconciliation state
+                    PaymentUiOutcome.StillPending
+                }
+            }
+        } catch (e: Exception) {
+            // Network remains unavailable; persist pending state for background WorkManager recovery
+            PaymentUiOutcome.StillPending
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 تم خصم وتفويض عملية دفع بنكية بنجاح، ولكن واجهة التطبيق واجهت انقطاعاً في الشبكة (Timeout) قبل استلام التأكيد. كيف تصمم آلية استعادة ومطابقة (Recovery & Reconciliation) تمنع السحب المزدوج؟
@@ -110,27 +165,24 @@ A ticket app records one checkout ID, submits authorization, shows Pending after
 
 ## Interview answer — short
 
-Never retry timed-out payments blindly. Persist a client-generated UUID idempotency key before dispatching charges. On timeout or app restart, initiate a reconciliation query (GET /payments/reconcile?key=uuid) to verify whether the backend authorized the charge, transitioning to success if captured, or retrying safely with the same key if not found.
+When a payment times out, we mark the transaction as pending in local persistence using a client-generated idempotency key rather than claiming failure. We run a reconciliation query using that key to fetch the authoritative ledger status, preventing double charges and updating the UI accordingly.
 
 ## Interview answer — structured
 
-When a payment request times out, the client cannot distinguish between a failure during request delivery versus a failure during response delivery. Recovering gracefully requires a strict reconciliation workflow.
-
-First, **Pre-Flight Local Persistence**. Next, before dispatching the payment request, insert an atomic transaction record into Room containing the order ID, a client-generated UUID `idempotencyKey`, and status `IN_FLIGHT`.
-**Handling Timeouts Without Blind Retries**. If the network drops or the socket times out, **do not replay the charge mutation**. Re-invoking charge mutations without idempotency guarantees creates duplicate charges.
-Transition local state to `PENDING_RECONCILIATION` and disable immediate retry buttons on the UI. **Idempotent Reconciliation Protocol**.
-Dispatch a read-only reconciliation query (`GET /payments/status?idempotency_key=<key>`). If the backend returns `CAPTURED` or `AUTHORIZED`, update local storage to `SUCCESS` and navigate to the order confirmation screen.
-If the backend returns `TRANSACTION_NOT_FOUND`, the original request never reached the payment gateway. The client can now safely retry the charge using the identical idempotency key. **Startup Reconciliation Hooks**.
-Finally, if the app crashed or was killed during timeout, check for unresolved `PENDING_RECONCILIATION` records on next launch, reconciliate them in the background, and notify the user via a banner.
-
+Handling a payment timeout requires treating network interruption as an ambiguous state rather than an immediate transaction failure.
+Before dispatching any payment request, the client generates a unique UUID idempotency key and writes the transaction to a local Room database with a pending status.
+If the network call times out or the connection drops mid-flight, the UI must never display a generic payment failed screen with an active retry button, as doing so leads directly to double charges.
+Instead, the UI transitions to an order verification state while a reconciliation query polls the backend using the original idempotency key.
+The backend queries its transaction ledger; if the payment was already captured, it returns the confirmed receipt, allowing the client to mark the local record as authorized and display success.
+If the user closes the app during the timeout, a background WorkManager task resumes the reconciliation process automatically upon reconnecting.
 
 ## Interview answer — deep senior
 
-From a distributed systems and fintech compliance perspective, client reconciliation must interface with server webhooks.
-
-First, a Server Webhook Authority is the payment processor (e.g. Stripe/Adyen) notifies your backend asynchronously via cryptographic webhooks (`payment_intent.succeeded`). Even if the mobile device stays offline for hours, the backend marks the order paid and sends a push notification. Next, with Polling Backoff & Timeout Windows, implement a polling state machine with exponential backoff for the reconciliation endpoint (polling at 2s, 4s, 8s intervals, capping at 30s). If reconciliation remains unresolved after 30 seconds, transition the UI to an asynchronous pending screen: 'Your payment is being verified with your bank. We will notify you shortly.'
-Finally, with Customer Support Idempotency Traceability, display the idempotency key or a short human-readable transaction reference on the pending UI screen. If customer support is contacted, agents can query the payment gateway logs instantly using that exact key.
-
+From a staff financial systems perspective, client-side payment recovery requires absolute adherence to transaction idempotency and resilient distributed state machines.
+The fundamental rule of payment UX is never allowing a user to re-execute a transaction without proving the fate of the previous attempt. If the UI displays an ambiguous pending state, we present clear messaging indicating that the payment is being confirmed with the financial institution and that the user's card will not be charged twice.
+If the device loses connectivity entirely or the app process is killed by the Android system, recovery cannot rely on in-memory coroutines. We schedule an expedited WorkManager job backed by the local database. When network connectivity restores, WorkManager reads pending transactions, issues the reconciliation query against the backend status endpoint, and fires a high-priority local notification confirming the purchase or prompting safe recovery.
+Backend payment services must be designed around strict ledger immutability. The idempotency key must be checked inside a distributed Redis lock or database unique constraint. If two identical requests hit the backend simultaneously due to aggressive client retries, the server processes the first and makes the second await the initial transaction outcome.
+Finally, we implement telemetry on transaction resolution times. If the percentage of payments requiring reconciliation spikes, our monitoring triggers an alert to investigate cellular carrier issues or payment gateway webhook degradation.
 
 ## How to answer in the interview
 

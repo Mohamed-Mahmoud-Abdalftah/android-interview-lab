@@ -20,6 +20,45 @@ What happens to a parent and siblings when a child coroutine fails?
 
 Can the candidate predict ordinary child failure, sibling cancellation, parent failure and supervision exceptions?
 
+## Concept and technical explanation
+
+When a child coroutine fails with an uncaught exception, the behavior of its parent and siblings is governed entirely by the parent's Job type within structured concurrency. In a standard Job hierarchy (such as inside coroutineScope or plain launch), an uncaught exception in a child is propagated upward to the parent immediately. The parent cancels all other active sibling coroutines with a CancellationException, terminates itself, and rethrows the original triggering exception to its own parent or caller. This fail-fast mechanism prevents orphaned tasks and state inconsistencies. Conversely, in a supervised hierarchy (such as supervisorScope or a scope backed by a SupervisorJob), upward cancellation is severed: the parent ignores the child's failure and remains active, and surviving siblings continue their execution unaffected. However, in both models, if the failure cause is a CancellationException, it represents normal cooperative cancellation and never cancels the parent or siblings.
+
+## Practical walkthrough (English)
+
+Demonstrating parent and sibling fate in standard versus supervised hierarchies:
+```kotlin
+// 1. Standard Hierarchy: Child failure cancels parent and siblings immediately
+runBlocking {
+    val parentJob = launch {
+        val child1 = launch {
+            delay(500)
+            println("Child 1 completed") // Never executes!
+        }
+        val child2 = launch {
+            delay(50)
+            throw IllegalStateException("Child 2 failed unexpectedly") // Triggers cascade
+        }
+    }
+    parentJob.join() // Parent fails and throws IllegalStateException
+}
+
+// 2. Supervised Hierarchy: Sibling isolation
+runBlocking {
+    supervisorScope {
+        val child1 = launch {
+            delay(200)
+            println("Child 1 survived and completed successfully!") // Prints successfully
+        }
+        val child2 = launch {
+            delay(50)
+            // Error logged by CEH; child1 continues unaffected:
+            throw IllegalStateException("Child 2 failed")
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 سلوك الأب والإخوة عند فشل أحد الأبناء (Child Coroutine Failure) بيعتمد بنسبة 100% على **نوع الـ Parent Job**:
@@ -84,25 +123,25 @@ A checkout screen needs price and tax from one calculation version. Failure of e
 
 ## Interview answer — short
 
-In a standard Job hierarchy, if a child coroutine fails with an uncaught exception, it cancels its parent, which immediately cancels all other siblings (fail-fast). In a SupervisorJob or supervisorScope, the failure is isolated: the parent remains active and siblings continue executing undisturbed.
+In a standard Job hierarchy, an uncaught exception in a child immediately cancels the parent, which cancels all sibling coroutines (fail-fast). In a supervised hierarchy (SupervisorJob or supervisorScope), the parent survives, siblings continue running undisturbed, and only the failing child terminates. CancellationException never cancels parents or siblings in either hierarchy.
 
 ## Interview answer — structured
 
-What happens to the parent and siblings depends entirely on whether the parent is a standard Job or a SupervisorJob.
+Predicting the fate of a parent and sibling coroutines upon child failure is a core structured concurrency requirement.
 
-In a standard Job hierarchy—such as inside a standard `coroutineScope`—the behavior is 'fail-fast'. When a child coroutine encounters an uncaught exception (other than CancellationException), it notifies its parent. The parent cancels itself, and that cancellation cascades downwards to immediately cancel all sibling coroutines. This prevents partial state corruption, ensuring that if one critical step in an operation fails, related parallel tasks are cleaned up.
+The outcome depends strictly on whether the parent node is a standard Job or a SupervisorJob. In a standard Job tree, failure propagation is immediate and bidirectional. An uncaught exception causes the child to invoke cancellation on its parent, which instantly cancels all sibling coroutines with CancellationException before cancelling itself and escalating the error upward. This fail-fast approach guarantees that dependent operations do not waste CPU cycles or produce corrupted partial state.
 
-In contrast, under a `SupervisorJob` or `supervisorScope`, child failure is strictly isolated. The supervisor parent does not cancel itself when a child fails, and active sibling coroutines continue running to completion. The failed child terminates independently, and its exception must be handled locally or by a CoroutineExceptionHandler attached to that child.
+In production, supervised trees decouple sibling fates. Under a SupervisorJob or supervisorScope, the parent intercepts the child's termination without transitioning to a cancelled state, allowing remaining siblings to complete their operations successfully. This isolation is mandatory in user-facing dashboards where independent network calls should not terminate one another.
+
+An essential exception to this rule is CancellationException. When a child coroutine is cancelled via CancellationException, it unbinds cleanly without affecting its parent or siblings under both standard and supervised hierarchies.
 
 
 ## Interview answer — deep senior
 
-At the internal implementation level, when a child throws an unhandled exception, it calls `parent.childCancelled(e)`. A standard `JobSupport` parent returns `true` to acknowledge the cancellation, transitions its state to Cancelling, and iterates through its `NodeList` of child handles, calling `child.cancel(CancellationException(cause))` on every active child.
-
-If another sibling also throws an exception while being cancelled, the parent attaches that second exception as a suppressed exception (`Throwable.addSuppressed()`) to the root cause, ensuring that no diagnostic failure information is lost in stack traces.
-
-In Android architecture, recognizing this distinction determines whether you use `coroutineScope` or `supervisorScope`. If parallel sub-tasks are interdependent (e.g., merging two API responses into a single combined UI entity), use `coroutineScope`. If the sub-tasks are independent UI components (e.g., separate dashboard cards), use `supervisorScope` so one failed widget doesn't blank out the entire screen.
-
+At the internal coroutines runtime level, when a coroutine encounters an uncaught throwable, its completion handler invokes notifyParent with the failure cause. The parent JobSupport evaluates whether the throwable is a CancellationException. If the throwable is an operational failure like IOException or NullPointerException, a standard Job marks itself as Cancelling, constructs a parent-originated CancellationException wrapping the root cause, and traverses its child NodeList to notify all sibling ChildHandles. Each sibling continuation is resumed with this CancellationException, tearing down their respective stack frames cooperatively.
+Once all siblings acknowledge cancellation and finish their active blocks, the parent aggregates any secondary exceptions that occurred during teardown into suppressed exceptions attached to the primary root cause. The parent then completes exceptionally and passes the aggregated exception to its outer continuation or uncaught exception handler.
+Under a SupervisorJob, the childCancelled callback intercepts the notification and returns false. The parent neither transitions into Cancelling nor touches the NodeList of siblings. Because the parent refuses to handle the error, the responsibility for the uncaught exception shifts back to the child coroutine. If the child was created using launch, the exception is dispatched to the thread's CoroutineExceptionHandler. If the child was created with async, the exception is cached inside the Deferred result until await is called.
+Staff engineers design architectures around these mechanics: wrapping parallel async operations in coroutineScope when results are mutually dependent, and using supervisorScope with individual try-catch blocks when partial rendering is acceptable.
 
 ## How to answer in the interview
 

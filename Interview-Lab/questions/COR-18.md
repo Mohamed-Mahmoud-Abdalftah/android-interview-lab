@@ -20,6 +20,38 @@ How do you retry requests with exponential backoff and jitter?
 
 Can the candidate design bounded retries with exponential backoff, jitter, cancellation and idempotency constraints?
 
+## Concept and technical explanation
+
+Retrying failed asynchronous network requests with exponential backoff and randomized jitter is the standard resilience pattern for mitigating transient distributed faults without overloading infrastructure. When client coroutines encounter transient network anomalies like connection drops, socket timeouts, or HTTP 503 Service Unavailable, immediate fixed retries synchronize thousands of clients into a unified retry wave, causing the destructive thundering herd problem. Exponential backoff progressively multiplies delay durations between successive retry attempts (e.g., 1s, 2s, 4s, 8s), capped at a sensible upper bound to avoid indefinite postponement. Adding randomized jitter distributes retry spikes across a uniform window, decorrelating client requests and smoothing server traffic. In Kotlin coroutines, delay is cooperative and cancellable, ensuring that if a user navigates away during an active backoff window, the delay immediately unblocks with a CancellationException. Crucially, retries must strictly filter exceptions: only transient transport and server errors should be retried, whereas permanent 4xx client errors, authentication failures, and CancellationException must never trigger retries. Furthermore, non-idempotent operations must use persistent idempotency keys.
+
+## Practical walkthrough (English)
+
+A robust, production-ready retry implementation with exponential backoff, jitter, and cancellation safety:
+```kotlin
+suspend fun <T> retryWithBackoff(
+    times: Int = 3,
+    initialDelayMs: Long = 1000L,
+    maxDelayMs: Long = 10000L,
+    factor: Double = 2.0,
+    block: suspend () -> T
+): T {
+    var currentDelay = initialDelayMs
+    repeat(times - 1) { attempt ->
+        try {
+            return block()
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e // Never swallow cancellation!
+            if (!isTransientError(e)) throw e // Do not retry 4xx client errors
+        }
+        val jitter = Random.nextLong(0, 500L)
+        delay(minOf(currentDelay + jitter, maxDelayMs))
+        currentDelay = (currentDelay * factor).toLong()
+    }
+    return block() // Final attempt executes without catching
+}
+```
+In an erroneous design, catching generic Throwable or failing to check e is CancellationException will cause delay to catch cancellation and retry even after the enclosing ViewModel has been cleared, keeping leaked network requests running against dying components.
+
 ## Explanation in Arabic
 
 إعادة المحاولة مع التراجع الأسي والعشوائية (Exponential Backoff with Jitter) هي أفضل نمط إنتاجي للتعامل مع أخطاء الشبكة العابرة (Transient Network Errors):
@@ -111,35 +143,22 @@ An offline-first feed refresh retries transient read failures with bounded backo
 
 ## Interview answer — short
 
-Retry with exponential backoff doubles the delay between consecutive failed attempts, while jitter adds a randomized time offset to prevent the 'thundering herd' problem. Crucially, retry loops must never catch CancellationException and must only retry transient server/network failures, never permanent 4xx client errors.
+Exponential backoff doubles retry delays progressively while randomized jitter introduces random variance to prevent synchronized client retry storms. In coroutines, retries use cancellable delay, ensuring prompt termination if the parent scope cancels. Retries must strictly target transient errors (timeouts, 503) while immediately rethrowing client errors (4xx) and CancellationException. Non-idempotent mutations require durable idempotency keys.
 
 ## Interview answer — structured
 
-Exponential backoff with jitter is an essential resilience pattern for handling transient network failures without overwhelming backend services.
+Retrying network requests with exponential backoff and jitter is the standard architectural strategy for recovering from transient network failures. When backend servers face temporary load spikes, multiple mobile clients attempting immediate retries trigger a thundering herd that exacerbates backend collapse.
 
-When a transient error occurs (like an HTTP 503 or socket timeout), retrying immediately or with a fixed delay causes the 'thundering herd' problem: thousands of mobile clients retry in unison, creating synchronized traffic spikes that keep the recovering server down. With exponential backoff, each retry doubles the wait time (e.g., 1s, 2s, 4s, up to a maximum cap).
+Exponential backoff multiplies the wait duration exponentially across successive attempts, while randomized jitter injects a uniform random offset to decorrelate concurrent client spikes.
 
-Adding **jitter** injects a randomized offset (e.g., plus a random 0 to 500ms) into the delay calculation. This desynchronizes retry attempts across thousands of distributed devices, smoothing the load curve on backend systems.
+In production, this is implemented using a bounded retry loop where suspension is handled via standard delay. Because delay is cooperatively cancellable, if the user exits the screen during a backoff period, the coroutine terminates immediately without waiting for the timer to expire.
 
-In coroutines, we implement this as an inline suspending helper. Crucially, the retry loop must rethrow `CancellationException` immediately so coroutines cancel properly, and must only retry transient failures—never retrying permanent 4xx client errors like 401 Unauthorized or 404 Not Found.
+Exception filtering is critical. The retry mechanism must exclusively target transient network faults such as socket timeouts, connection resets, and HTTP 502, 503, or 504 status codes. Permanent client errors like HTTP 400 Bad Request, 401 Unauthorized, and 404 Not Found must fail fast without retry. Above all, CancellationException must be rethrown immediately, preventing retries from becoming zombie processes.
 
 
 ## Interview answer — deep senior
 
-From a distributed systems engineering perspective, full jitter (picking a uniform random value between 0 and the exponential backoff ceiling) provides superior desynchronization compared to equal jitter or no jitter.
-
-When integrating this pattern with reactive streams or Kotlin Flow, the `retryWhen` operator provides the idiomatic abstraction: ```kotlin
-flow.retryWhen { cause, attempt ->
-    if (attempt < 3 && cause is IOException) {
-        val delayTime = minOf(1000L * (1L shl attempt.toInt()) + Random.nextLong(200L), 10_000L)
-        delay(delayTime)
-        true
-    } else false
-}
-```
-
-In unit testing with `runTest`, testing backoff algorithms is straightforward because `delay()` integrates with the test scheduler's virtual clock, advancing time instantaneously with `advanceTimeBy()` without forcing tests to sleep in real time.
-
+At the systems engineering level, naive retries are one of the most common causes of cascading outages in distributed systems. When hundreds of thousands of mobile apps experience a transient micro-outage and retry with a fixed delay, their requests align into coherent pulse waves, repeatedly knocking recovering service clusters offline. Algorithms like Full Jitter or Equal Jitter distribute these requests across the entire interval, ensuring Poisson-like traffic distributions that servers can handle gracefully. When implementing this pattern with Kotlin coroutines, the interaction with structured concurrency demands rigorous scrutiny. The retry loop maintains state (such as the current delay and attempt index) within local stack frames. When delay executes, the coroutine unregisters its active execution thread and registers a delayed continuation in the dispatcher event loop. If the surrounding scope is cancelled—for instance, during a screen rotation or back-press where viewModelScope cancels—the active delay immediately throws a CancellationException. If the catch block intercepts generic Throwable or Exception without filtering, it will catch the CancellationException, trigger the next iteration, and launch another unwanted network request. This is why we strictly enforce checking if (e is CancellationException) throw e as the first line of any retry catch clause. Furthermore, idempotency dictates whether an operation is retry-safe. Idempotent operations like HTTP GET, PUT, and DELETE can safely be retried because executing them multiple times produces identical state mutations. In contrast, non-idempotent operations like HTTP POST for submitting an order or charging a credit card cannot be retried at the transport layer without a persistent, server-validated idempotency key. Without such keys, a dropped acknowledgment on an already-processed charge would result in duplicate billing if retried automatically.
 
 ## How to answer in the interview
 

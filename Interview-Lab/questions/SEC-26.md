@@ -21,6 +21,42 @@ Design secure session storage for a fintech app on a potentially compromised dev
 - Session storage on a hostile endpoint with explicit residual risk.
 - Token scope, refresh races, revocation and high-risk action step-up.
 
+## Concept and technical explanation
+
+Designing session storage under a hostile endpoint threat model requires zero trust in client integrity. The architecture isolates session state into ephemeral in-memory access tokens (valid for 5 to 15 minutes, never flushed to persistent disk) and hardware-bound refresh tokens encrypted via Android Keystore using AES-256-GCM. The refresh token is persisted in DataStore located inside noBackupFilesDir. High-risk financial operations enforce step-up authentication using biometric CryptoObject signing bound to KeyStore keys that require authentication per operation. In addition, token binding mechanisms like Demonstrating Proof-of-Possession (DPoP) tie tokens to an ephemeral client key pair, rendering exfiltrated tokens useless on external servers.
+
+## Practical walkthrough (English)
+
+Hostile-endpoint session storage with in-memory access token and hardware-bound refresh token:
+```kotlin
+class SecureSessionRepository(
+    private val context: Context,
+    private val keyStoreHelper: KeyStoreHelper
+) {
+    // 1. In-memory ephemeral access token; never written to persistent disk
+    private val accessTokenRef = AtomicReference<String?>(null)
+    private val refreshMutex = Mutex()
+
+    fun getActiveAccessToken(): String? = accessTokenRef.get()
+
+    fun updateAccessToken(token: String?) {
+        accessTokenRef.set(token)
+    }
+
+    // 2. Hardware-encrypted refresh token stored strictly in noBackupFilesDir
+    suspend fun saveRefreshToken(rawToken: String) = refreshMutex.withLock {
+        val encryptedData = keyStoreHelper.encryptWithStrongBox(rawToken.toByteArray())
+        val targetFile = File(context.noBackupFilesDir, "secure_session.enc")
+        targetFile.writeBytes(encryptedData)
+    }
+
+    fun clearSession() {
+        accessTokenRef.set(null)
+        File(context.noBackupFilesDir, "secure_session.enc").delete()
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تصمم بنية تخزين الجلسات (Session Storage) لتطبيق بنكي (Fintech) يعمل على جهاز يُفترض أنه مخترق أو خاضع لسيطرة المهاجم؟
@@ -98,23 +134,31 @@ Monitor session anomalies, provide per-device revocation, minimize scopes, and t
 
 ## Interview answer — short
 
-Design secure session storage on hostile devices by keeping short-lived access tokens strictly in RAM, storing refresh tokens encrypted via Android Keystore AES-GCM in noBackupFilesDir, signing requests with hardware-bound asymmetric keys (DPoP), and deterministically zeroing in-memory tokens upon a 2-minute background timeout.
+Designing secure session storage on an untrusted device requires assuming the client is hostile. We keep short-lived access tokens exclusively in memory, never writing them to disk. The long-lived refresh token is encrypted using hardware-backed Android Keystore keys via StrongBox and stored in noBackupFilesDir. Critical transactions require biometric signing step-up, and tokens are bound using proof-of-possession.
 
 ## Interview answer — structured
 
-Designing fintech session storage on potentially compromised devices assumes a zero-trust posture toward the client OS.
-
-First, with In-Memory Short-Lived Access Tokens, retain access tokens exclusively in volatile RAM with brief 5-minute lifetimes. Never persist access tokens to disk. If the process is killed or backgrounded past timeout, the token vanishes naturally. Next, with Hardware-Bound Refresh Token Storage, persist the long-lived refresh token encrypted with a 256-bit AES-GCM key backed by Android Keystore and StrongBox Keymaster. Store the ciphertext inside `context.noBackupFilesDir` to prevent extraction via adb or cloud backups.
-Additionally, with Demonstrating Proof-of-Possession (DPoP), bind the session to an asymmetric EC keypair generated inside Keystore. For critical API calls, the client signs a payload containing the current timestamp, request URI, and server nonce with the hardware-locked private key. Intercepting the bearer token alone is useless to an attacker because they cannot forge the hardware signature. Finally, with Lifecycle-Aware Background Eviction, monitor app foreground/background lifecycle. After 120 seconds in the background, aggressively purge all memory pointers and cached session states, forcing biometric or passcode re-authentication on resume.
-
+Securing session storage on a potentially compromised device begins with a zero-trust model where local disk and memory are assumed accessible to an attacker.
+We separate session credentials into two tiers with distinct lifecycles and storage rules.
+The access token is strictly ephemeral, valid for five to fifteen minutes, and kept solely in volatile application memory as a mutable reference that is zeroed upon logout or app suspension.
+It is never written to SharedPreferences, SQLite, or cache files.
+The refresh token, which is long-lived, is stored in encrypted DataStore inside the noBackupFilesDir directory, protected by an AES-256-GCM key bound to Android Keystore and hardware StrongBox.
+To prevent token exfiltration from granting unlimited access, the backend issues cryptographically bound tokens using Demonstrating Proof-of-Possession.
+High-value financial actions enforce step-up authentication using a biometric CryptoObject, requiring an authenticated hardware key signature per transaction.
+Token refresh logic coordinates through a concurrency mutex to prevent race conditions during network handoffs.
 
 ## Interview answer — deep senior
 
-From an end-to-end security architecture viewpoint, fintech resilience depends on continuous risk telemetry and backend orchestration.
-
-First, a Server-Side Session Invalidation is the server maintains a distributed state table tracking device fingerprint hashes, IP geographic velocity, and integrity verdicts. If a refresh request originates from an anomalous ASN or fails Play Integrity attestation, the server immediately revokes the token family and pushes a silent FCM wake-up to terminate the local session. Next, with Step-Up Authentication Gates, high-value transactions (e.g. Transfers over $1,000) are never authorized solely by existing session tokens. They require just-in-time biometric unlocking using a `CryptoObject`-bound Keystore key paired with a server-issued one-time transaction nonce.
-Finally, an Anti-Screen-Scraping is the host Activity enforces `FLAG_SECURE` to prevent accessibility-based overlays, screen recording, and task preview dumping from capturing session states while the app is transitioning.
-
+In mobile fintech threat modeling, we treat the client device as an untrusted environment where root access, runtime instrumentation like Frida, and offline backup extraction are active probabilities.
+Our session architecture establishes defense in depth across memory, storage, and transport boundaries.
+In memory, the access token resides inside a thread-safe atomic reference, completely bypassing persistent disk writes.
+When the application moves to the background for longer than our security timeout, we wipe this reference deterministically.
+For persistence, the refresh token is encrypted through EncryptedSharedPreferences or Proto DataStore utilizing an Android Keystore master key generated with StrongBox backing.
+The storage location is explicitly isolated within noBackupFilesDir, preventing ADB backups or cloud synchronization from lifting the encrypted payload to unmanaged secondary devices.
+At the cryptographic protocol layer, we bind tokens to an ephemeral device key pair using DPoP, ensuring that even if an attacker extracts the refresh token via a memory dump, replay attempts from another IP or client will fail backend verification.
+Furthermore, routine session tokens cannot authorize sensitive financial operations.
+Any fund transfer requires a stepped-up transaction payload signed by a dedicated EC key requiring BiometricPrompt authorization with zero timeout.
+This ensures that compromised session tokens cannot trigger irreversible fund movements without live biometric confirmation. In addition, we invalidate cached session state immediately upon user logout or network disconnection, wiping sensitive memory buffers completely.
 
 ## How to answer in the interview
 

@@ -24,6 +24,76 @@ Design an offline-first system with a local source of truth.
 - Server idempotency keys and version-based conflict resolution strategies (e.g., ETags, vector clocks, or domain-specific merging).
 - Clear UI state modeling distinguishing between locally saved, syncing, confirmed, and conflicted states.
 
+## Concept and technical explanation
+
+An offline-first mobile architecture treats local persistence (typically a Room SQLite database) as the single source of truth (SSOT) and the remote network as an asynchronous synchronization mechanism. The UI layer never observes network responses directly; instead, it observes reactive database queries via Kotlin Flow or PagingData, ensuring immediate rendering and zero offline latency. When a user creates or modifies content, changes are applied optimistically to local tables alongside an atomic insertion into a durable Outbox table containing mutation payloads and client-generated idempotency keys. Background synchronization engines, implemented with WorkManager and exponential backoff, drain the Outbox table when connectivity is restored, transmitting payloads to the backend and reconciling state seamlessly.
+
+## Practical walkthrough (English)
+
+Implementing an offline-first repository with Room Single Source of Truth and the Outbox Pattern:
+```kotlin
+// 1. Database entities: Main content and durable mutation Outbox
+@Entity(tableName = "notes")
+data class NoteEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val content: String,
+    val syncStatus: SyncStatus,
+    val updatedAtMs: Long
+)
+
+enum class SyncStatus { SYNCED, PENDING_SYNC, FAILED }
+
+@Entity(tableName = "sync_outbox")
+data class OutboxEntity(
+    @PrimaryKey val mutationId: String, // Client-generated UUID idempotency key
+    val entityId: String,
+    val payloadJson: String,
+    val mutationType: String, // INSERT, UPDATE, DELETE
+    val createdAtMs: Long
+)
+
+// 2. Offline-First Repository executing optimistic updates inside an atomic transaction
+class NoteRepositoryImpl @Inject constructor(
+    private val database: AppDatabase,
+    private val noteDao: NoteDao,
+    private val outboxDao: OutboxDao,
+    private val workManager: WorkManager
+) : NoteRepository {
+
+    // Single source of truth streaming from Room to UI
+    override fun getNotesStream(): Flow<List<Note>> =
+        noteDao.getAllNotesFlow().map { list -> list.map { it.toDomain() } }
+
+    override suspend fun updateNote(id: String, newContent: String): Result<Unit> = runCatching {
+        val now = System.currentTimeMillis()
+        val mutationId = UUID.randomUUID().toString()
+
+        database.withTransaction {
+            // Optimistic update of local entity
+            noteDao.updateContent(id = id, content = newContent, status = SyncStatus.PENDING_SYNC, timestamp = now)
+            
+            // Durable record in outbox table
+            outboxDao.insert(
+                OutboxEntity(
+                    mutationId = mutationId,
+                    entityId = id,
+                    payloadJson = "{"content":"$newContent"}",
+                    mutationType = "UPDATE",
+                    createdAtMs = now
+                )
+            )
+        }
+
+        // Trigger WorkManager synchronization with network constraints
+        val syncRequest = OneTimeWorkRequestBuilder<SyncOutboxWorker>()
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .build()
+        workManager.enqueueUniqueWork("SYNC_OUTBOX", ExistingWorkPolicy.KEEP, syncRequest)
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تصمم نظام Offline-First مع مصدر حقيقة محلي (Single Source of Truth) يضمن تجربة مستخدم سلسة بدون فقدان للبيانات؟
@@ -253,26 +323,34 @@ In high-scale production apps (e.g., Salesforce, Notion, or field logistics apps
 
 ## Interview answer — short
 
-Design an offline-first system by treating the local database as the single source of truth that the UI observes reactively. Write user modifications immediately to local storage with pending status flags using an Outbox pattern, and schedule reliable background synchronization via WorkManager with network constraints and explicit conflict resolution rules.
+We build offline-first systems by making a local Room database the single source of truth that UI components observe via reactive Flows. When users create or edit data, we write optimistically to the database and record mutations in a durable Outbox table inside an atomic transaction. WorkManager processes queued outbox records with exponential backoff and network constraints, guaranteeing eventual consistency and complete offline usability.
 
 ## Interview answer — structured
 
-An offline-first mobile architecture treats network connectivity as an intermittent enhancement rather than a prerequisite.
-
-First, **Local Database as Single Source of Truth (SSOT)**. Next, the UI observes Room database tables via reactive Coroutine `Flow`. The UI never awaits remote API responses to render content; it renders immediately from SQLite.
-**Optimistic Mutations & The Outbox Pattern**. When a user performs an action (create, update, delete), the app immediately writes the mutation to the local database flagged with `SYNC_PENDING` and a client-generated UUID.
-The UI reflects the change instantaneously without loading spinners. A corresponding record is added to an internal `outbox_mutations` queue table.
-**Resilient Synchronization via WorkManager**. Background workers trigger when network connectivity meets constraints (`NetworkType.CONNECTED`). The worker drains the outbox queue sequentially, dispatches requests to the server with idempotency keys, and updates local records to `SYNCED` with authoritative server IDs.
-**Conflict Resolution Policy**. Finally, in most business apps, implement **Server-Reconciliation with Version Vectors**: the client submits its last-known version. If the server detects a concurrent edit, it merges non-conflicting fields or returns a 409 Conflict, prompting client-side user reconciliation.
-
+In an offline-first architecture, local persistence is the authoritative source of truth for the presentation layer, while the network functions as an asynchronous data pipeline.
+When the UI loads, it subscribes to reactive database streams using Kotlin Flow.
+All reads come directly from disk, delivering instantaneous screen rendering with zero network latency.
+When a user creates or modifies content offline, we execute an optimistic local update.
+Within a single atomic SQLite transaction, we update the local entity state and insert an entry into a durable Sync Outbox table with a unique idempotency key and pending status.
+This guarantees that user intent is never lost, even if the application process dies immediately.
+A dedicated background synchronization engine managed by WorkManager monitors network connectivity.
+When a connection is established, the sync worker transmits pending outbox payloads in sequence.
+Upon server acknowledgment, the outbox record is purged, and the local entity is marked as synchronized.
+If conflicts arise, version timestamps or server-authoritative reconciliation strategies resolve differences, streaming the merged state directly to the UI.
 
 ## Interview answer — deep senior
 
-From an advanced distributed systems viewpoint, offline-first mobile clients operate as distributed database nodes.
-
-First, **Handling Deleted Items (Tombstones)**. Next, never delete rows directly in offline SQLite when a user deletes an item while offline. If deleted locally, subsequent sync pulls from the server will interpret the missing row as 'new' and re-insert it! Mark rows as deleted using **Tombstones** (`is_deleted = true`). The sync worker notifies the server to delete the entity remotely, and only removes the row locally once confirmed.
-Additionally, with Two-Way Delta Synchronization, avoid downloading entire datasets. Implement delta sync endpoints accepting `last_sync_timestamp` or pagination cursors. The server returns only mutations (`created`, `updated`, `deleted`) that occurred since that timestamp, drastically reducing bandwidth and battery consumption. Finally, with Queue Compaction & Deduplication, if an offline user edits the same note 5 times, compact the outbox mutations locally before transmitting, collapsing intermediate updates into a single final payload.
-
+The engineering complexity of offline-first architectures centers on conflict resolution, mutation ordering, and database transaction boundaries.
+A naive approach performs network calls first and updates the database upon success; under flaky connectivity, this creates dropped mutations and inconsistent UI state.
+By adopting the Outbox pattern with atomic transactions, we decouple user interaction from network availability.
+When persisting local mutations, we generate a client-side UUID and an idempotency token.
+If the device experiences intermittent connectivity or sudden process termination, WorkManager automatically resumes the sync worker with exponential backoff.
+Because the server enforces idempotency via the client token, duplicate deliveries caused by lost HTTP response packets do not create duplicate records on the backend.
+For conflict resolution, we choose between Last-Write-Wins based on synchronized server timestamps, field-level merging, or three-way merge vectors depending on domain criticality.
+In financial or collaborative domains, server-authoritative rejection is handled by rolling back the optimistic entity in Room and surfacing a non-blocking resolution banner to the user.
+Furthermore, Room's InvalidationTracker detects table changes and pushes fresh queries through Flow pipelines to Compose UI without manual refresh logic, achieving seamless consistency across online and offline states.
+Underneath SQLite, we enable Write-Ahead Logging to decouple background outbox writes from foreground UI queries, preventing database lock contention.
+Additionally, we handle device storage limits by catching SQLiteFullException and applying automated pruning to non-essential cached media, ensuring core mutation records always persist.
 
 ## How to answer in the interview
 

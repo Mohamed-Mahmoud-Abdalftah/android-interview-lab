@@ -22,6 +22,68 @@ How do you handle previews, permissions, and navigation?
 - Use Activity Result permission contracts with lifecycle-aware ownership.
 - Navigate with small validated arguments and test denial/restoration paths.
 
+## Concept and technical explanation
+
+Handling previews, runtime permissions, and navigation in Jetpack Compose requires modular decoupling across the UI architecture. Previews are built using stateless Screen composables paired with @PreviewParameter and custom multi-preview annotations for light, dark, and font-scale configurations without mocking heavy framework dependencies. Permissions are managed using the official rememberLauncherForActivityResult API with RequestPermission contracts, presenting user-friendly rationale dialogs before prompting system dialogs. Navigation is isolated by hoisting navigation callbacks as pure lambdas to the top-level NavHost graph, enforcing type-safe routing and keeping leaf UI components completely agnostic of NavController instances.
+
+## Practical walkthrough (English)
+
+Unified demonstration of previews, permissions, and decoupled navigation:
+```kotlin
+// 1. Preview Provider for multi-state design testing
+class UserStateProvider : PreviewParameterProvider<UserUiState> {
+    override val values = sequenceOf(
+        UserUiState(name = "Ahmed", hasCameraAccess = false),
+        UserUiState(name = "Sara", hasCameraAccess = true)
+    )
+}
+
+// 2. Stateless Screen Composable with permission request and hoisted navigation
+@Composable
+fun CameraScreenContent(
+    state: UserUiState,
+    onNavigateBack: () -> Unit,
+    onRequestPermission: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Scaffold(modifier = modifier) { padding ->
+        Column(modifier = Modifier.padding(padding).padding(16.dp)) {
+            Text("User: ${state.name}")
+            if (state.hasCameraAccess) {
+                Text("Camera Active", color = Color.Green)
+            } else {
+                Button(onClick = onRequestPermission) { Text("Grant Camera Permission") }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = onNavigateBack) { Text("Back to Home") }
+        }
+    }
+}
+
+// 3. Preview Annotation
+@Preview(name = "Light Mode", showBackground = true)
+@Preview(name = "Dark Mode", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun CameraScreenPreview(@PreviewParameter(UserStateProvider::class) state: UserUiState) {
+    MaterialTheme { CameraScreenContent(state = state, onNavigateBack = {}, onRequestPermission = {}) }
+}
+
+// 4. Route Composable handling real runtime permission launcher
+@Composable
+fun CameraRoute(onNavigateBack: () -> Unit) {
+    var hasPermission by remember { mutableStateOf(false) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted -> hasPermission = isGranted }
+
+    CameraScreenContent(
+        state = UserUiState(name = "Production User", hasCameraAccess = hasPermission),
+        onNavigateBack = onNavigateBack,
+        onRequestPermission = { permissionLauncher.launch(Manifest.permission.CAMERA) }
+    )
+}
+```
+
 ## Explanation in Arabic
 
 كيفية التعامل الاحترافي مع المعاينات (Previews)، الأذونات (Permissions)، والتنقل (Navigation) في Jetpack Compose:
@@ -120,24 +182,32 @@ Maintain previews for key UI states, run device tests for grant/deny/revoke and 
 
 ## Interview answer — short
 
-Handle Previews using custom Multipreview annotations and `PreviewParameterProvider` for multi-state rendering. Manage runtime permissions cleanly using `rememberLauncherForActivityResult` with rationale handling. Implement navigation using modern Type-Safe Navigation (Navigation 2.8+) via `@Serializable` classes instead of fragile route strings.
+We handle previews by designing stateless screen composables and supplying mock data via PreviewParameterProvider across light and dark multi-previews. Runtime permissions are managed using rememberLauncherForActivityResult with RequestPermission, decoupling permission launchers from presenter composables. Navigation is decoupled by hoisting event lambdas to the NavHost boundary, keeping individual screens pure, previewable, and completely independent of NavController instances.
 
 ## Interview answer — structured
 
-Managing Previews, Permissions, and Navigation cleanly requires adopting modern Jetpack Compose tooling standards.
-
-First, with Compose Previews, rather than writing individual `@Preview` annotations per file, we define custom **Multipreview Annotations** (e.g. `@ThemePreviews`, `@DevicePreviews`) that automatically render composables in Light mode, Dark mode, large accessibility font scales (1.5x), and tablet layouts. For state permutations, we use `@PreviewParameter(UserProvider::class)` to render empty, loaded, and error variants simultaneously. Next, we manage runtime permissions using `rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission())` paired with rationale logic. If denied, we check `ActivityCompat.shouldShowRationale()` to explain the user value before requesting again; if permanently denied, we provide a clean intent redirecting to Android System Settings.
-Finally, with Type-Safe Navigation (Navigation 2.8+), we discard legacy string URLs (`"profile/{userId}"`) in favor of official **Type-Safe Navigation**. Destined routes and arguments are modeled as `@Serializable` data classes and objects. The compiler verifies parameter types at compile time, eliminating URL encoding bugs and null-pointer parsing errors.
-
+Architecting a robust Jetpack Compose application requires clean separation across three major system concerns: visual tooling previews, Android runtime permissions, and navigation dispatching.
+First, for Android Studio Previews, we avoid injecting ViewModels or system contexts into screen composables.
+By keeping the Screen Composable stateless, we can feed it mock domain fixtures using PreviewParameterProvider.
+Creating custom multi-preview meta-annotations enables instant verification across light, dark, and localized font configurations in a single compilation pass.
+Second, for runtime permissions, we leverage the official Activity Result APIs inside Compose.
+Using rememberLauncherForActivityResult with ActivityResultContracts.RequestPermission creates an asynchronous bridge to the platform permission manager.
+We present educational in-app rationale sheets when shouldShowRequestPermissionRationale is true, and provide direct settings deep-links if permissions are permanently denied, ensuring graceful degradation.
+Third, for navigation, we strictly enforce navigation hoisting.
+Screens never accept NavHostController as a parameter.
+Instead, they expose explicit lambda callbacks like onBackClick or onItemSelected.
+The hosting Route composable maps these callbacks directly into type-safe navigation routes, ensuring leaf widgets remain 100% reusable and testable on the JVM.
 
 ## Interview answer — deep senior
 
-Type-Safe Navigation in Navigation 2.8+ transforms route handling under the hood. When navigating to `navController.navigate(ProfileDestination(userId = "123"))`, Navigation serializes the object into an internal route bundle using Kotlinx Serialization. Inside `composable<ProfileDestination> { backStackEntry -> ... }`, accessing arguments is completely type-safe: `val profile = backStackEntry.toRoute<ProfileDestination>()`, with automatic parsing of custom parcelable objects and primitive types.
-
-For permissions, handling configuration changes during an in-flight permission dialog is critical. Because `rememberLauncherForActivityResult` hooks into `ActivityResultRegistry`, recreation during rotation preserves the pending request callback, resolving correctly when the permission dialog dismisses.
-
-In testing, Type-Safe destinations make asserting navigation trivial: in Compose UI tests, we can query `navController.currentBackStackEntry?.toRoute<ProfileDestination>()` to verify that a button click routed to the expected typed destination.
-
+Under the hood, these three mechanisms illustrate Compose's boundary mediation with the underlying Android operating system.
+The @Preview annotation relies on Android Studio's LayoutLib, a specialized headless desktop rendering engine that emulates the Android framework. Because LayoutLib lacks an active Dagger or Hilt dependency graph, passing stateful ViewModels or platform service managers into a composable immediately crashes the preview renderer. Decoupling screens into stateless presenters allows LayoutLib to render composables purely from memory fixtures in the SlotTable.
+The rememberLauncherForActivityResult API interfaces with the host ComponentActivity's ActivityResultRegistry.
+When the composable registers the launcher, Compose generates a unique synthetic key and attaches an observer to the Activity's lifecycle.
+When the platform permission dialog returns a result, the registry routes the boolean callback to the composition thread, safely updating a SnapshotMutableState and triggering recomposition without memory leaks or configuration change losses.
+For navigation, decoupling NavController preserves compiler skipping optimizations.
+Because NavController is an unstable platform object containing deep backstacks, passing it down through parameters forces the Compose compiler to mark the composable as unskippable.
+By converting navigation actions into stable lambda function types (such as () -> Unit), the compiler enables zero-allocation skipping, preventing entire screen trees from recomposing during unrelated parent UI updates.
 
 ## How to answer in the interview
 

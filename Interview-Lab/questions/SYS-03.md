@@ -20,6 +20,89 @@ Design login, session management, and secure token refresh.
 
 Design secure login/session lifecycle and race-safe token refresh.
 
+## Concept and technical explanation
+
+Designing enterprise mobile authentication requires defense-in-depth security coupled with race-safe concurrency controls. Access tokens are short-lived JSON Web Tokens (JWTs) stored securely in hardware-backed storage (EncryptedSharedPreferences backed by Android Keystore), while refresh tokens are longer-lived credentials used exclusively to issue new access tokens. The primary architectural challenge is handling concurrent HTTP requests encountering HTTP 401 Unauthorized errors simultaneously. Without synchronization, multiple threads trigger redundant token refresh network calls, which invalidates the refresh token if the backend implements refresh token rotation. The production solution employs an OkHttp Authenticator combined with a coroutine Mutex to serialize refresh requests, updating the shared session state atomically and retrying queued requests seamlessly with the newly issued token.
+
+## Practical walkthrough (English)
+
+Implementing race-safe token refresh with OkHttp Authenticator, Mutex, and Keystore storage:
+```kotlin
+// 1. Thread-safe Session Manager backed by Android Keystore
+class SessionManager @Inject constructor(
+    private val encryptedPrefs: SharedPreferences
+) {
+    private val mutex = Mutex()
+    private val _authState = MutableStateFlow<AuthStatus>(AuthStatus.Initial)
+    val authState: StateFlow<AuthStatus> = _authState.asStateFlow()
+
+    fun getAccessToken(): String? = encryptedPrefs.getString("KEY_ACCESS_TOKEN", null)
+    fun getRefreshToken(): String? = encryptedPrefs.getString("KEY_REFRESH_TOKEN", null)
+
+    suspend fun updateTokens(accessToken: String, refreshToken: String) {
+        mutex.withLock {
+            encryptedPrefs.edit()
+                .putString("KEY_ACCESS_TOKEN", accessToken)
+                .putString("KEY_REFRESH_TOKEN", refreshToken)
+                .apply()
+            _authState.value = AuthStatus.Authenticated(accessToken)
+        }
+    }
+
+    suspend fun clearSession() {
+        mutex.withLock {
+            encryptedPrefs.edit().clear().apply()
+            _authState.value = AuthStatus.Unauthenticated
+        }
+    }
+}
+
+// 2. OkHttp Authenticator serializing concurrent 401 recovery
+class TokenAuthenticator @Inject constructor(
+    private val sessionManager: SessionManager,
+    private val authApiProvider: Provider<AuthApiService>
+) : Authenticator {
+    private val refreshMutex = Mutex()
+
+    override fun authenticate(route: Route?, response: Response): Request? {
+        val currentToken = sessionManager.getAccessToken() ?: return null
+        
+        // Fast-path: check if another thread already refreshed the token
+        val requestToken = response.request.header("Authorization")?.removePrefix("Bearer ")
+        if (requestToken != currentToken) {
+            return response.request.newBuilder()
+                .header("Authorization", "Bearer $currentToken")
+                .build()
+        }
+
+        return runBlocking {
+            refreshMutex.withLock {
+                val latestToken = sessionManager.getAccessToken()
+                if (latestToken != currentToken && latestToken != null) {
+                    return@withLock response.request.newBuilder()
+                        .header("Authorization", "Bearer $latestToken")
+                        .build()
+                }
+
+                val refreshToken = sessionManager.getRefreshToken() ?: return@withLock null
+                val refreshResult = authApiProvider.get().refreshToken(RefreshTokenRequest(refreshToken))
+
+                if (refreshResult.isSuccessful && refreshResult.body() != null) {
+                    val tokens = refreshResult.body()!!
+                    sessionManager.updateTokens(tokens.accessToken, tokens.refreshToken)
+                    response.request.newBuilder()
+                        .header("Authorization", "Bearer ${tokens.accessToken}")
+                        .build()
+                } else {
+                    sessionManager.clearSession()
+                    null // Abort retries and trigger login navigation
+                }
+            }
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تصمم نظام مصادقة وإدارة جلسات وتجديد آمن للتوكنز (Login, Session Management, and Secure Token Refresh) بمستوى إنتاج ضخم؟
@@ -124,26 +207,32 @@ A finance app uses backend-bound session IDs, TLS, short-lived access token, con
 
 ## Interview answer — short
 
-Design secure authentication using short-lived access tokens and Keystore-encrypted refresh tokens. Intercept 401 responses via OkHttp's Authenticator, coordinate concurrent refresh requests using a mutex to prevent thundering-herd issues, support refresh token rotation, and clear session state deterministically when refresh fails.
+We design session management using short-lived access tokens and longer-lived refresh tokens stored in EncryptedSharedPreferences backed by Android Keystore. For race-safe token refresh, we use an OkHttp Authenticator with a Mutex to serialize concurrent 401 responses. Only the first request triggers the refresh API call; queued requests wait for the new access token and retry seamlessly without duplicate authentication calls or user interruption.
 
 ## Interview answer — structured
 
-A production-grade mobile authentication system must handle transient concurrency, key security, and automatic recovery.
-
-First, **Tiered Token Architecture**. Next, with Access Token (Short-lived, ~5-15 min), passed in standard HTTP `Authorization: Bearer` headers. Kept primarily in volatile memory or encrypted DataStore.
-Additionally, a Refresh Token (Long-lived, ~14-30 days) is stored encrypted using Android Keystore AES-GCM in private storage. **Transparent Refresh via OkHttp Authenticator**.
-Attach an `Authenticator` implementation to the primary `OkHttpClient`. When any endpoint returns `401 Unauthorized`, OkHttp automatically triggers this handler. **Concurrency & Thundering-Herd Synchronization**.
-When multiple parallel requests fail simultaneously with 401, they hit `authenticate()` concurrently. A synchronized `Mutex` serializes execution. The first thread completes the refresh; subsequent threads observe that the current token has already updated and immediately replay with the new token without issuing duplicate refresh calls. **Terminal Failure Handling**.
-Finally, if the refresh token has expired, been revoked, or fails with 401/403, the authenticator returns `null`, wipes local credentials from Keystore and DataStore, and emits an unauthenticated session event to navigate to Login.
-
+A production-grade mobile authentication system must guarantee cryptographic credential security, seamless user experience, and race-safe token refreshing.
+We store sensitive JWT access and refresh tokens in EncryptedSharedPreferences, where encryption keys are managed by the hardware-backed Android Keystore.
+Our networking layer utilizes OkHttp interceptors and an Authenticator.
+When an API call returns HTTP 401 Unauthorized, OkHttp delegates recovery to the Authenticator.
+Because multiple parallel network calls can fail simultaneously, we guard the refresh routine with a coroutine Mutex or synchronized lock.
+The first failing request acquires the lock, verifies whether another thread already refreshed the token, and if not, dispatches a refresh request using the refresh token.
+Once a new token pair arrives, we persist it atomically and release the lock.
+The pending requests resume, updating their Authorization headers with the new token and executing without failure.
+If the refresh token itself is expired or revoked, the Authenticator triggers an unauthenticated session event, clearing local credentials and navigating the user securely to the login screen.
 
 ## Interview answer — deep senior
 
-From an enterprise platform design perspective, session management extends beyond simple HTTP headers.
-
-First, with Refresh Token Rotation (RTR) & Compromise Detection, each refresh cycle issues both a new access token and a new refresh token, immediately invalidating the old refresh token on the server. If an attacker intercepts and attempts to use an already-rotated refresh token, the backend detects replay fraud and terminates all sessions across all devices for that user account. Next, with Cryptographic Token Binding (DPoP), in high-security banking architectures, access tokens are cryptographically bound to a device-generated asymmetric EC keypair in Android Keystore. The client signs an HTTP header containing the target URL and a server nonce, ensuring intercepted tokens cannot be replayed from other clients.
-Finally, with Multi-Process & Global Session State Broadcast, if an app utilizes multiple processes (e.g. Background sync or media playback services), session invalidation must propagate across IPC boundaries using an encrypted ContentProvider or reactive DataStore flows to prevent orphaned background tasks from flooding servers with stale credentials.
-
+Under the hood, token refresh architectures must anticipate refresh token rotation, process termination, and background synchronization failures.
+When backends implement refresh token rotation for enhanced security, issuing a refresh request immediately invalidates the previous refresh token.
+If two concurrent mobile network requests trigger duplicate refresh calls with the old refresh token, the second call will be rejected by the backend as a replay attack, causing an unintended session termination.
+To prevent this, our Authenticator checks if the request's Authorization header already contains an outdated token compared to the current in-memory token.
+If another thread already completed a refresh, the Authenticator retries immediately with the existing fresh token without making another network call.
+If a refresh is required, the Mutex ensures strictly one in-flight refresh request.
+Furthermore, we decouple the authentication state machine into a reactive SessionManager exposing a StateFlow of AuthStatus to the presentation layer.
+When a refresh permanently fails with HTTP 400 or 403, SessionManager wipes cached user data from Room and Keystore, cancels in-flight background sync jobs in WorkManager, and emits an unauthenticated state that routes the UI to authentication.
+For high-assurance banking features, we wrap the access token decryption inside a BiometricPrompt CryptoObject, ensuring that credentials cannot be retrieved from hardware Keystore without physical fingerprint or facial authorization.
+This guarantees total data isolation between user sessions on shared devices.
 
 ## How to answer in the interview
 

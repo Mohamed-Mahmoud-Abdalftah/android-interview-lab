@@ -20,6 +20,39 @@ Why do we use mappers between models?
 
 Explain mapping as boundary validation and change isolation, with costs and avoidance of silent defaults.
 
+## Concept and technical explanation
+
+Mappers serve as architectural boundary translators that preserve the independence, resilience, and encapsulation of each architectural layer. In a multi-tiered Android system, external protocols (network responses, database cursors, platform intents) evolve according to different constraints and lifespans than internal business logic or UI layouts. Mappers act as anti-corruption layers: they absorb external schema modifications, sanitize invalid or null data, resolve primitive types into validated domain value classes, format raw data into localized presentation models, and ensure that framework annotations (@Json, @Entity) never cross layer boundaries. Without mappers, a single contract change in a backend microservice cascades across database schemas, business rules, and UI Composables.
+
+## Practical walkthrough (English)
+
+Implementing pure Kotlin boundary mappers across layers:
+```kotlin
+// 1. Data Layer: Network DTO to Domain Entity Mapper
+fun UserDto.toDomain(): User = User(
+    id = this.userId ?: throw IllegalArgumentException("Missing user ID"),
+    displayName = "${this.firstName.orEmpty()} ${this.lastName.orEmpty()}".trim(),
+    email = this.emailAddress.orEmpty(),
+    isActive = this.status?.equals("active", ignoreCase = true) ?: false
+)
+
+// 2. Data Layer: Database Entity to Domain Entity Mapper
+fun UserEntity.toDomain(): User = User(
+    id = this.id,
+    displayName = this.fullName,
+    email = this.email,
+    isActive = this.isActive
+)
+
+// 3. Presentation Layer: Domain Entity to UI Model Mapper
+fun User.toUiModel(currencyFormatter: (Double) -> String): UserUiModel = UserUiModel(
+    id = this.id,
+    displayTitle = this.displayName.ifEmpty { "Guest User" },
+    initials = this.displayName.split(" ").mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString(""),
+    statusBadgeColor = if (this.isActive) Color.Green else Color.Gray
+)
+```
+
 ## Explanation in Arabic
 
 لماذا نستخدم محولات النماذج (Mappers) بين الطبقات المختلفة؟ وما الفوائد الحقيقية منها؟
@@ -91,24 +124,24 @@ A marketplace app accepts versioned product DTOs, maps prices in minor units to 
 
 ## Interview answer — short
 
-Mappers isolate architectural boundaries so external API or database changes don't break business logic or UI. They sanitize untrusted nullable payloads into validated domain models and transform domain data into pre-formatted, display-ready UI models.
+Mappers decouple architectural layers by transforming data between external representations (DTOs, Room entities), business models, and UI models. This isolates breaking changes, sanitizes nullability, and prevents database or network dependencies from leaking into core logic.
 
 ## Interview answer — structured
 
-Mappers are the gatekeepers of architectural boundaries, ensuring that each layer operates exclusively on data structures tailored to its purpose.
+Mappers serve as boundary translators that preserve the independence and stability of each architectural layer.
 
-First, with Decoupling from External Volatility, APIs and database schemas evolve constantly. Without mappers, renaming a JSON property cascades through the entire codebase, breaking domain logic and UI layouts. Mappers act as shock absorbers, confining external changes strictly to the data layer. Next, with Data Sanitization and Invariant Enforcement, network payloads are untrusted. Mappers sanitize raw inputs: mapping nullable DTO properties to non-nullable domain types with safe fallbacks, parsing raw string codes into type-safe enums or sealed classes, and rejecting corrupt records before they reach core business rules.
-Finally, with Presentation Pre-computation, presentation mappers convert raw domain metrics (e.g. Timestamps, currency in cents) into localized, human-readable strings (`$12.50`) once, keeping composable functions pure and avoiding expensive formatting passes during 120fps scrolling.
+Without mappers, any modification to a backend JSON payload or a database column ripples across the entire codebase, forcing updates to business logic and UI layouts. Mappers absorb these changes at the boundary, ensuring only the conversion function updates.
+
+In production, mappers sanitize incoming data. They convert nullable network fields into safe default values or validated domain types, format raw timestamps into localized date strings, and strip sensitive infrastructure tokens before data reaches the presentation layer.
+As for implementation, mappers are typically authored as pure, static Kotlin extension functions. Because they have no side effects, they execute with zero allocation overhead and are trivial to unit test with complete coverage.
 
 
 ## Interview answer — deep senior
 
-Under the hood, implementing mappers efficiently requires avoiding excessive object allocation churn. In Kotlin, mappers are best written as top-level or internal extension functions (`fun ProductDto.toDomain()`), avoiding unnecessary mapper class instantiations.
-
-When dealing with large lists (e.g. 10,000 items), mapping must be executed off the main thread. Repositories execute DTO-to-Domain mapping within `withContext(Dispatchers.Default)` or `Dispatchers.IO` so that heavy JSON parsing and transformation passes never stutter the Android main looper.
-
-In unit testing, testing mappers is straightforward: developers write pure JVM unit tests passing edge-case DTOs (null fields, malformed strings, boundary values) to verify that the domain model is always constructed in a valid, robust state.
-
+Under the hood, mappers establish formal anti-corruption layers between autonomous subsystems. In distributed enterprise systems, backend APIs evolve according to server-side database schemas and microservice constraints that often clash with mobile client requirements. An API might represent monetary values as integer cents, dates as Unix epochs, and user status as arbitrary string flags.
+Passing raw DTOs into the domain or presentation layers forces ViewModels and Composables to repeatedly perform parsing, null-checks, and defensive formatting. If a backend contract changes or returns unexpected nulls, uncaught exceptions occur directly on the main thread during UI rendering. Mappers act as firewalls: the data layer repository catches invalid inputs and converts primitives into type-safe domain value classes, keeping domain logic pristine.
+Similarly, mapping from domain models to UI models optimizes Jetpack Compose performance. Domain models often contain rich entity relationships and full historical lists that the UI does not need. The UI mapper flattens these structures into immutable UI state models marked with @Immutable or @Stable, ensuring Compose recomposition skips unchanged components efficiently.
+Staff engineers balance manual mapping against automated code generation libraries. While reflection-based mappers introduce runtime overhead and obfuscation risks with R8, idiomatic Kotlin extension functions provide compile-time safety, effortless debugging, and zero reflection penalties. This discipline guarantees robust error boundaries and predictable application performance.
 
 ## How to answer in the interview
 

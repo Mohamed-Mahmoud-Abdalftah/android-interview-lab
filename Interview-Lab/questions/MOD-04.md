@@ -22,6 +22,32 @@ What is high cohesion and low coupling?
 - Apply the terms to module API and ownership rather than slogans.
 - Admit trade-offs when extracting shared code.
 
+## Concept and technical explanation
+
+High cohesion and low coupling are fundamental software engineering principles that dictate the boundary design and health of modular systems:
+- High Cohesion: Elements within a single module are strongly related in purpose, operate on a shared domain model, and change together for a unified business reason (following the Single Responsibility Principle at the module level). A cohesive module has a razor-sharp focus (e.g., :feature:authentication encapsulates only login, registration, and password recovery).
+- Low Coupling: Modules maintain minimal, well-defined, and abstract surface areas with external modules. Changes to internal implementation details inside one module do not ripple into downstream consumers.
+Violating these principles results in either a monolithic core module (low cohesion, high coupling) or fractured micro-modules that require distributed modifications across the codebase (shotgun surgery).
+
+## Practical walkthrough (English)
+
+Demonstrating high cohesion and low coupling via modular contract boundaries:
+```kotlin
+// ❌ LOW COHESION & HIGH COUPLING (:core:common dumps unrelated features)
+// class CommonGodObject { fun formatCurrency(); fun openCamera(); fun parseJwt() }
+
+// ✅ HIGH COHESION (:feature:scanner focuses strictly on barcode capture)
+// feature/scanner/src/main/kotlin/BarcodeScannerManager.kt
+class BarcodeScannerManager(private val cameraProvider: CameraProvider) {
+    fun startScanning(onDetected: (String) -> Unit) { /* ... */ }
+}
+
+// ✅ LOW COUPLING (Consumer interacts via abstract interface, not camera internals)
+interface ScannerContract {
+    fun launchScanner(launcher: ActivityResultLauncher<Intent>)
+}
+```
+
 ## Explanation in Arabic
 
 ما هو التماسك العالي (High Cohesion) والاقتران المنخفض (Low Coupling) في سياق معمارية موديولات Android؟
@@ -87,27 +113,32 @@ Review module change history, API surface and dependency graph. Ask whether one 
 
 ## Interview answer — short
 
-High cohesion means elements inside a module belong together and serve a single, unified purpose. Low coupling means modules maintain minimal dependencies on each other, interacting through stable abstract contracts. Together, they isolate changes, prevent ripple effects across features, and optimize build caching.
+High cohesion means everything inside a module belongs together and serves a single focused purpose, changing for the same business reason. Low coupling means modules maintain minimal dependencies on each other and interact through stable, abstract interfaces. Together, they prevent cascading changes and ensure modules can evolve and compile independently.
 
 ## Interview answer — structured
 
-Cohesion and coupling are the twin pillars of sustainable software architecture, applied directly at the Gradle module level.
-
-First, with High Cohesion (Inside the Module), all components within a module change for the same business reason and serve a tightly focused domain responsibility. For example, `:feature:search` contains only query processing, search results UI, and recent searches storage. If a module contains auth helpers, date formatters, and payment models, it suffers from low cohesion and becomes an unmaintainable junk drawer. Finally, with Low Coupling (Between Modules), modules minimize their knowledge of and dependencies on other modules. Instead of depending on concrete implementations or peer feature modules, they interact across clean boundaries using dependency inversion and API contracts.
-
-Architecturally, high cohesion ensures that when a feature changes, developers only modify files within that single module. Low coupling ensures that changes made inside that module never trigger unexpected regressions or recompilations in other modules.
-
+High cohesion and low coupling represent the dual metrics of architectural quality in a multi-module system.
+Cohesion measures how focused and unified the responsibilities are within a single module.
+In a highly cohesive module, all classes, state models, and utilities work together toward a single business goal, such as user authentication or audio playback.
+When business requirements for that capability change, edits remain localized within that specific module.
+Coupling, on the other hand, measures the degree of interdependence between different modules.
+Low coupling ensures that a module exposes only a minimal, stable public interface while hiding its internal implementation details.
+Consumers depend on abstract contracts rather than concrete implementation classes.
+If high cohesion is ignored, modules become chaotic dumping grounds for unrelated code.
+If low coupling is ignored, a change in one module triggers cascading compilation failures and bugs across the entire application.
 
 ## Interview answer — deep senior
 
-A common architectural trap in Android modularization is **False Cohesion through Over-sharing**.
-
-Teams often create a `:core:common` module containing utility extension functions, custom views, and network DTOs. Developers assume this is 'high reuse'. In reality, `:core:common` exhibits **extremely low cohesion and catastrophic high coupling**—every feature module imports it. When an engineer modifies a string utility in `:core:common`, the ABI change invalidates the build cache for 100% of the downstream feature modules.
-
-To achieve true high cohesion and low coupling.
-
-First, break `:core:common` into hyper-focused modules: `:core:model`, `:core:network`, `:core:ui`. Finally, tolerate minor duplication of trivial helper functions (e.g., 2 lines of string formatting) rather than introducing a global shared dependency that couples otherwise independent features.
-
+In enterprise Android system design, high cohesion and low coupling govern how we partition bounded contexts into Gradle subprojects.
+Cohesion reflects the Single Responsibility Principle elevated to the architectural level: a module should have one, and only one, reason to change.
+A feature module like :feature:checkout exhibits high cohesion when its payment form, cart review, and shipping address flows operate around a coherent checkout domain model.
+Conversely, dumping payment utilities, image loaders, and date formatters into a single :core:common module destroys cohesion, creating a disguised monolith where unrelated feature teams constantly conflict over shared files.
+Coupling dictates the blast radius of change across the dependency graph.
+When modules are tightly coupled, modifying an internal database query or refactoring a ViewModel forces downstream consumers to modify their call sites, breaking the Gradle build cache and triggering full recompilations.
+We enforce low coupling by applying the Dependency Inversion Principle and separating features into public :api and private :impl modules.
+The :api module contains only lightweight interfaces and immutable data transfer objects, while :impl holds internal logic hidden behind Kotlin's internal visibility modifier.
+Downstream features import solely the :api module.
+This design guarantees that implementation refactors remain strictly contained within their private module boundaries, preserving build cache hits and decoupling feature release lifecycles.
 
 ## How to answer in the interview
 

@@ -20,6 +20,53 @@ What are HTTP methods, common status codes, and idempotency?
 
 Explain method semantics, common status classes and why idempotency is a server contract.
 
+## Concept and technical explanation
+
+HTTP request methods and response status codes define the standardized semantic protocol for client-server communication:
+- HTTP Methods & Idempotency: An operation is idempotent if making multiple identical requests leaves the server in the identical state as making a single request.
+  * GET: Retrieves resource representation; safe and idempotent.
+  * PUT: Completely replaces a resource at a known URI; idempotent.
+  * DELETE: Removes a resource; idempotent (subsequent requests still result in the resource being absent, even if returning 404).
+  * POST: Submits data to process, creating new resources; non-idempotent.
+  * PATCH: Applies partial modifications; generally non-idempotent unless designed with strict semantics.
+- Status Code Taxonomy:
+  * 2xx (Success): 200 OK, 201 Created (resource instantiated), 204 No Content (action completed without body).
+  * 3xx (Redirection): 304 Not Modified (conditional caching via ETag/If-None-Match).
+  * 4xx (Client Error): 400 Bad Request, 401 Unauthorized (unauthenticated/token expired), 403 Forbidden (authenticated but lacking permissions), 404 Not Found, 409 Conflict, 429 Too Many Requests (rate limited).
+  * 5xx (Server Error): 500 Internal Error, 502 Bad Gateway, 503 Service Unavailable, 504 Gateway Timeout.
+- Idempotency Keys: Mobile apps must send unique client-generated UUIDs in headers (e.g., X-Idempotency-Key) on POST requests to safely retry network timeouts without duplicating financial transactions.
+
+## Practical walkthrough (English)
+
+Implementing idempotent safe retries and status code parsing in Retrofit/OkHttp:
+```kotlin
+// Interceptor injecting unique Idempotency Keys for state-changing POST requests
+class IdempotencyInterceptor : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val original = chain.request()
+        if (original.method.equals("POST", ignoreCase = true) && original.header("X-Idempotency-Key") == null) {
+            val idempotentRequest = original.newBuilder()
+                .header("X-Idempotency-Key", UUID.randomUUID().toString())
+                .build()
+            return chain.proceed(idempotentRequest)
+        }
+        return chain.proceed(original)
+    }
+}
+
+// Handling HTTP status codes in repository error boundaries
+suspend fun <T> safeApiCall(apiCall: suspend () -> T): Result<T> = try {
+    Result.success(apiCall())
+} catch (e: HttpException) {
+    when (e.code()) {
+        401 -> Result.failure(AuthExpiredException("Session token invalid", e))
+        429 -> Result.failure(RateLimitedException("Rate limit reached, retry later", e))
+        in 500..599 -> Result.failure(ServerUnavailableException("Server outage", e))
+        else -> Result.failure(GenericNetworkException("HTTP error ${e.code()}", e))
+    }
+}
+```
+
 ## Explanation in Arabic
 
 ما هي دوال HTTP (Methods)، وأكواد الحالة الشائعة (Status Codes)، وما هو مبدأ الـ Idempotency الحرج في تطبيقات الهاتف؟
@@ -109,23 +156,25 @@ A payment client persists a stable operation key before POST, marks outcome Pend
 
 ## Interview answer — short
 
-HTTP methods define operation semantics: GET is safe and idempotent, PUT/DELETE are idempotent, POST is non-idempotent. Idempotency guarantees that executing a request multiple times produces the identical server state as executing it once, which is vital on flaky mobile networks to prevent duplicate payments or orders via client-generated Idempotency Keys.
+HTTP methods define semantic actions where GET, PUT, and DELETE are idempotent, whereas POST creates new state and is non-idempotent. Status codes are categorized into 2xx successes, 3xx redirects, 4xx client errors like 401 auth or 429 throttling, and 5xx server outages. For non-idempotent financial actions, unique idempotency keys guarantee safe retry behavior.
 
 ## Interview answer — structured
 
-Understanding HTTP methods and idempotency is essential for designing resilient mobile APIs.
-
-First, **Method Semantics & Idempotency**. Next, an operation is **idempotent** if making $N$ identical requests has the exact same side-effect on the server as making 1 request ($f(f(x)) = f(x)$).
-`GET`, `HEAD`, `OPTIONS` are safe (read-only) and idempotent. `PUT` (full replacement) and `DELETE` (resource removal) are idempotent. Calling `DELETE /users/42` ten times results in user 42 being deleted, regardless of whether subsequent responses return 204 or 404.
-`POST` is **non-idempotent**: calling `POST /orders` five times creates five distinct orders and charges the user five times. Finally, with The Mobile Reality of Flaky Networks, on cellular networks, connection drops frequently occur *after* the server processes a `POST` write but *before* the client receives the `200 OK` response. If the client retries blindly, duplicate operations occur. Production mobile apps prevent this by attaching a deterministic **`Idempotency-Key` UUID** in request headers, allowing the server to recognize duplicate submissions and return cached receipts without re-executing writes.
-
+Understanding HTTP semantics, status codes, and idempotency is fundamental for designing fault-tolerant Android networking.
+First, idempotency means that executing a request multiple times yields the same server state as a single invocation. GET, PUT, and DELETE are idempotent by specification; retrying them after a network timeout is inherently safe. POST is non-idempotent because multiple calls create duplicate records or charges.
+Second, status codes provide clear contractual classifications. 2xx codes indicate success, 304 enables efficient caching, 4xx signals client-side issues like expired credentials on 401 or rate limits on 429, and 5xx reflects server-side infrastructure failures.
+Third, in mobile environments with flaky connections, retrying a failed POST request risks double charges. Senior engineers implement client-generated idempotency keys in request headers, allowing backend services to deduplicate retried operations safely.
 
 ## Interview answer — deep senior
 
-From a protocol perspective, senior engineers handle status codes with explicit architectural responses.
-
-First, 401 Unauthorized` vs. `403 Forbidden is a `401` indicates authentication failure—the OkHttp `Authenticator` should intercept this, pause pending requests, perform a single-flight token refresh, and retry the request. A `403` indicates authorization failure (the user is authenticated, but lacks admin privileges)—**never retry a 403 with a token refresh**, as this triggers an infinite retry loop; navigate to an error state or notify the user. Finally, with 429 Too Many Requests, inspect the `Retry-After` header. If the server says `Retry-After: 30`, suspend coroutine execution for 30 seconds rather than retrying immediately with exponential backoff, respecting server capacity and preventing IP bans.
-
+In production mobile architecture, misunderstanding HTTP semantics and idempotency leads directly to data corruption and duplicate transactions.
+When an Android device loses cellular connectivity right after sending a POST payment request, the client cannot know whether the packet was dropped before reaching the server or whether the server processed the transaction and the response was dropped on the return path.
+Blindly retrying a non-idempotent POST request causes duplicate charges. To solve this, we generate a deterministic UUID idempotency key attached as an X-Idempotency-Key header stored in Room alongside the pending transaction.
+If network failure occurs, WorkManager re-executes the exact same request with the identical key. The backend detects the cached key in Redis and returns the original transaction response without re-executing business logic.
+Furthermore, handling status codes requires precise distinction between retryable and non-retryable errors. A 503 Service Unavailable with a Retry-After header or a 504 Gateway Timeout warrants exponential backoff with jitter.
+Conversely, a 400 Bad Request or 403 Forbidden is fatal and must fail immediately without wasting radio resources.
+Handling 401 Unauthorized triggers our OkHttp Authenticator to refresh JWT tokens, while a 429 Too Many Requests halts automated pollers to prevent IP throttling.
+Additionally, we design custom network interceptors that parse cache headers and synthesize standardized domain error wrappers, ensuring that network timeouts or unexpected payload mutations never propagate unhandled into our presentation state machines.
 
 ## How to answer in the interview
 

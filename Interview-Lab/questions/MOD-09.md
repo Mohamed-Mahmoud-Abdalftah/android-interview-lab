@@ -22,6 +22,47 @@ How should feature modules communicate without direct coupling?
 - Keep ownership and dependency direction explicit.
 - Address result delivery and asynchronous consistency.
 
+## Concept and technical explanation
+
+Direct dependencies between sibling feature modules violate horizontal architectural layering, generate circular dependency traps, and severely impair incremental build performance. To communicate without direct coupling, feature modules must employ decoupled interaction patterns:
+1. API/Impl Separation Pattern: A feature is split into an exposed public :api module containing navigation contracts, interfaces, and minimal public models, and a private :impl module holding UI, ViewModels, and implementations. Feature A depends strictly on :feature:b:api.
+2. Abstract Navigation Interfaces: Feature A declares an abstract navigation contract (e.g., CheckoutLauncher) that Feature B's implementation fulfills, wired together at the root :app level via Hilt dependency injection.
+3. Deep Link Event Routing: Screens are launched via URI contracts (e.g., myapp://checkout?id=123) resolved dynamically by Android's navigation component or intent filters.
+4. Reactive Domain Event Buses: Features communicate state updates asynchronously by emitting and observing shared Kotlin Flow events hosted in core domain contracts.
+
+## Practical walkthrough (English)
+
+Cross-feature communication via API contract interfaces and Hilt multibindings:
+```kotlin
+// 1. In :feature:checkout:api (Lightweight contract, no UI or ViewModels)
+interface CheckoutNavigationContract {
+    fun launchCheckout(context: Context, cartId: String)
+}
+
+// 2. In :feature:cart:impl (Needs to open checkout without importing its internals)
+class CartViewModel @Inject constructor(
+    private val checkoutNav: CheckoutNavigationContract
+) : ViewModel() {
+    fun onCheckoutClicked(context: Context, cartId: String) {
+        checkoutNav.launchCheckout(context, cartId)
+    }
+}
+
+// 3. In :feature:checkout:impl (Implements the contract)
+class CheckoutNavigationImpl @Inject constructor() : CheckoutNavigationContract {
+    override fun launchCheckout(context: Context, cartId: String) {
+        context.startActivity(Intent(context, CheckoutActivity::class.java).putExtra("id", cartId))
+    }
+}
+
+// 4. In :app (Wires interface to implementation via Hilt module)
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class NavigationWiringModule {
+    @Binds abstract fun bindCheckoutNav(impl: CheckoutNavigationImpl): CheckoutNavigationContract
+}
+```
+
 ## Explanation in Arabic
 
 كيف تتواصل موديولات الميزات (Feature Modules) مع بعضها البعض دون وجود اقتران مباشر (Direct Coupling) بينها؟
@@ -90,24 +131,33 @@ Document contracts, event ownership and replay/acknowledgment policy. Test deep 
 
 ## Interview answer — short
 
-Feature modules communicate without direct coupling through three patterns: shared reactive state in lower data/domain layers, API contract modules (:feature:x-api) exposing abstract interfaces, and decoupled navigation using URL deep links or navigation delegates wired centrally in the :app module.
+Feature modules must never depend directly on sibling feature modules. They communicate through decoupled patterns: splitting features into public api contracts and private implementations; invoking abstract navigation interfaces wired by the app module via Hilt; routing destinations through deep link URIs; or observing reactive shared event flows managed in core domain contracts.
 
 ## Interview answer — structured
 
-Enforcing zero direct compile-time coupling between peer feature modules requires three complementary architectural patterns.
-
-First, with Shared Reactive Data Layer, when features need to exchange information (e.g. Adding an item in `:feature:catalog` that updates a badge in `:feature:cart`), they never communicate ViewModel-to-ViewModel. Instead, both depend downward on `:data:cart`. The catalog ViewModel mutates the repository, and the cart badge reacts to the resulting `StateFlow` emitted by the single source of truth. Next, with API/Implementation Module Splitting, when feature `A` must explicitly invoke a capability in feature `B`, split feature `B` into `:feature:b:api` (containing interfaces and models) and `:feature:b:impl`. Feature `A` depends only on `:api`. The concrete implementation is bound via Hilt in `:app`.
-Finally, with Decoupled Navigation, navigation between features is delegated to type-safe route contracts, deep link URIs, or navigation interfaces implemented in `:app`. Feature `A` requests navigation to an abstract route without importing Feature `B`'s Composable or Activity.
-
+Direct coupling between feature modules is an architectural anti-pattern that creates circular dependencies and degrades build times.
+To allow features to interact safely, we rely on decoupled architectural patterns.
+The primary approach is the API and Implementation pattern.
+Each feature is divided into a lightweight public api module that exposes only interfaces and contract models, and a private implementation module containing UI screens, ViewModels, and business logic.
+When Feature A needs to interact with Feature B, it declares an implementation dependency strictly on Feature B's api module, keeping Feature B's implementation details encapsulated.
+For navigation, Feature A invokes an abstract navigator interface.
+The concrete implementation of that navigator is supplied by Feature B and wired together by the root app module using Hilt dependency injection.
+For broadcast notifications, features emit domain events onto shared Kotlin Flow streams, allowing completely decoupled state updates across the app.
 
 ## Interview answer — deep senior
 
-A frequent anti-pattern when communicating between features is **Global In-Memory Event Buses** (e.g. Broadcasting untyped JSON strings or arbitrary event classes across an application-wide SharedFlow).
-
-Event buses create invisible, untraceable data dependencies: if an event payload changes, nothing fails at compile time, leading to silent runtime bugs. Furthermore, event buses fail across Android process recreation—if the app process dies while an event was fired, the listener in another screen will never receive it.
-
-By channeling inter-feature communication through **durable domain repositories backed by Room or DataStore**, data persistence and reactive UI synchronization are guaranteed across process death, background updates, and screen lifecycles.
-
+In enterprise multi-module Android systems, horizontal feature-to-feature dependencies are strictly forbidden by architectural policy.
+When :feature:cart imports :feature:checkout directly, any refactoring inside checkout's UI or ViewModel triggers a full recompilation of cart, invalidating the build cache and risking circular loops.
+Our primary architectural solution is the API/Impl structural pattern.
+Every vertical feature is bifurcated into two discrete Gradle subprojects: :feature:name:api and :feature:name:impl.
+The :api module contains solely pure Kotlin interfaces, navigation routes, and immutable parcelable arguments.
+It has zero dependencies on Android UI frameworks or sibling features, allowing it to compile in a fraction of a second.
+When the cart feature needs to initiate checkout, it imports solely :feature:checkout:api.
+The concrete implementation in :feature:checkout:impl is hidden behind Kotlin's internal visibility modifier.
+The root app module acts as the mediator: it imports both :impl modules and uses Hilt to bind the interface to its concrete implementation.
+At runtime, CartViewModel receives the navigator instance via constructor injection and executes navigation seamlessly.
+For asynchronous state synchronization, such as clearing a shopping cart upon successful logout, we use reactive domain event streams.
+An authentication feature emits a UserLoggedOutEvent onto a shared SharedFlow hosted in a core domain contract module, and independent feature repositories observe the stream without knowing which component initiated the event.
 
 ## How to answer in the interview
 

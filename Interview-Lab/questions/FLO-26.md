@@ -20,6 +20,45 @@ Your UI must display the most recent state after rotation. What stream type do y
 
 Choose a current-state stream for rotation while distinguishing ViewModel retention from process death.
 
+## Concept and technical explanation
+
+In modern Android architecture, retaining and restoring the most recent UI state across configuration changes (such as device rotation) without re-triggering expensive background work mandates StateFlow.
+Device rotation destroys and recreates the visual View hierarchy (Activity or Fragment) while the hosting ViewModel remains preserved in memory. When the recreated UI attaches to data streams in onStart, it requires an immediate state emission representing the latest valid screen data.
+StateFlow satisfies this architectural requirement through three native mechanisms: first, it maintains an explicit replay cache of size 1 (replay = 1), ensuring that newly subscribed UI observers immediately receive the latest snapshot upon collection; second, it provides a synchronous, thread-safe .value property, allowing immediate non-suspending state reads during Compose initial composition or view binding; third, it applies state conflation via structural equality checks (Any.equals), discarding redundant identical emissions to prevent unnecessary UI re-rendering and recomposition cycles.
+
+## Practical walkthrough (English)
+
+Preserving and restoring UI state across configuration changes with StateFlow:
+```kotlin
+class ProductDetailsViewModel(
+    private val repository: ProductRepository,
+    savedStateHandle: SavedStateHandle
+) : ViewModel() {
+    private val productId: String = checkNotNull(savedStateHandle["productId"])
+
+    // Private mutable state backing property:
+    private val _uiState = MutableStateFlow<ProductDetailsUiState>(ProductDetailsUiState.Loading)
+    // Exposed as read-only StateFlow to the UI:
+    val uiState: StateFlow<ProductDetailsUiState> = _uiState.asStateFlow()
+
+    init {
+        loadProduct()
+    }
+
+    private fun loadProduct() {
+        viewModelScope.launch {
+            _uiState.value = ProductDetailsUiState.Loading
+            try {
+                val details = repository.fetchProduct(productId)
+                _uiState.value = ProductDetailsUiState.Success(details)
+            } catch (e: Exception) {
+                _uiState.value = ProductDetailsUiState.Error(e.message ?: "Failed to load")
+            }
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 عرض أحدث حالة للواجهة بعد تدوير الشاشة (Displaying the most recent state after rotation) هو الوظيفة الأساسية التي صُمم من أجلها `StateFlow`:
@@ -95,33 +134,26 @@ A feed ViewModel exposes Room-backed UI state. Rotation resubscribes and gets cu
 
 ## Interview answer — short
 
-Use StateFlow. Because StateFlow is a hot stream that retains its latest value (.value) in memory and replays it immediately to new subscribers, the newly recreated Activity/Composable after rotation receives the exact current UI state instantly without re-fetching from the network or database.
+We use StateFlow because it retains the latest state in a replay cache of size one, delivering it instantly to recreated UI components upon rotation. It supports synchronous value reads and automatically conflates identical updates to eliminate redundant recompositions.
 
 ## Interview answer — structured
 
-To display the most recent UI state immediately after screen rotation, the required stream primitive is **`StateFlow`**.
+Managing screen rotation requires a hot stream that preserves state across Activity destruction and recreation.
 
-When an Android device rotates, the Activity is destroyed and recreated. Because the ViewModel survives configuration changes, any state retained in the ViewModel is preserved in memory.
+StateFlow is designed specifically as a single-source-of-truth state holder. Because ViewModels outlive configuration changes, housing a StateFlow inside the ViewModel guarantees that cached data remains intact while the visual hierarchy rebinds.
 
-StateFlow is tailor-made for this scenario.
-
-First, it is a **hot stream** that holds the most recent state in its `.value` property. Finally, when the newly created Activity or Composable subscribes, StateFlow immediately replays that latest cached state, allowing the UI to render the complete screen instantly on its very first frame.
-
-If you used a plain cold Flow, the new Activity would trigger a fresh execution of the flow, repeating database reads or network calls. If you used a SharedFlow with `replay = 0`, the new Activity would receive nothing and render an empty blank screen.
+In production, cold Flows are unsuitable because each new collector re-triggers upstream database queries or network requests from scratch, causing flickering spinners and wasted bandwidth. Similarly, SharedFlow with default settings discards emissions when collectors detach during rotation.
+As for lifecycle integration, StateFlow emits its current value immediately to the new observer without latency. Paired with collectAsStateWithLifecycle, StateFlow seamlessly restores UI state upon rotation while safely suspending collection when the app moves to the background.
 
 
 ## Interview answer — deep senior
 
-Architecturally, pairing `StateFlow` with `SharingStarted.WhileSubscribed(5000)` in `stateIn()` is what makes this robust: During rotation, the old Activity's `repeatOnLifecycle` or `collectAsStateWithLifecycle` unbinds, dropping `subscriptionCount` to 0. The 5-second buffer prevents the ViewModel from cancelling the upstream repository flow. When the new Activity binds within a few hundred milliseconds, `subscriptionCount` jumps back to 1. StateFlow delivers the cached state immediately without missing a beat.
-
-In Jetpack Compose, the UI consumes it via:
-
-```kotlin
-val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-```
-
-Compose reads the cached value on initial composition, preventing any flash of an empty state or loading spinner.
-
+Under the hood in kotlinx.coroutines.flow, StateFlow is implemented as a specialized SharedFlow variant where replay is locked to 1 and onBufferOverflow is locked to BufferOverflow.DROP_OLDEST. It stores its current state directly in a volatile memory reference, ensuring that reading .value is an atomic, non-suspending, O(1) operation.
+When an Activity rotates, the previous collector scope is cancelled in onStop, decrementing the StateFlow subscriber counter. When the new Activity reaches onStart, collectAsStateWithLifecycle or repeatOnLifecycle resubscribes. The StateFlow immediately routes its cached head element to the new subscriber slot, restoring the complete UI layout before the first frame renders.
+Crucially, StateFlow enforces automatic conflation using structural equality (oldState == newState). If the ViewModel assigns an identical state instance, StateFlow skips emission entirely, preventing wasted Compose recomposition passes and View re-bindings.
+In large-scale production architectures, StateFlow serves as the single source of truth driving Jetpack Compose rendering. Because Compose functions can recompose dozens of times per second, StateFlow's internal equality checks eliminate redundant layout passes, ensuring smooth 120Hz frame rates across all modern high-refresh-rate Android devices.
+Compared to legacy LiveData, StateFlow is pure Kotlin multiplatform-compatible, deterministic, and supports comprehensive reactive transformations (map, combine, filter) without requiring Android main-thread dispatcher constraints during repository updates.
+Staff engineers expose state strictly via read-only interfaces: maintaining a private MutableStateFlow and exposing asStateFlow() guarantees unidirectional data flow integrity across architecture boundaries.
 
 ## How to answer in the interview
 

@@ -21,6 +21,62 @@ Compare fake, mock, stub, spy, and test double.
 - Distinguishing all test-double roles by behavior.
 - When state-based assertions are more robust than interaction assertions.
 
+## Concept and technical explanation
+
+In automated software testing, Test Double is the generic umbrella term coined by Gerard Meszaros for any surrogate object that replaces a production dependency during verification. Within this taxonomy, each double fulfills a specialized architectural role. A Dummy is an inert object passed solely to satisfy method signatures without ever being accessed. A Stub returns hardcoded, canned responses to incoming queries, serving as a passive data fixture without recording invocation history. A Spy wraps a real object or mimics an interface while recording interaction metadata, such as method call counts and received arguments, allowing state and behavioral inspection. A Mock is pre-configured with strict expectations and call verifications, driving interaction-based assertions where success depends on whether exact methods were invoked in sequence. A Fake is a fully functional, stateful implementation using algorithmic shortcuts—such as an in-memory HashMap repository—providing high fidelity without production infrastructure overhead.
+
+## Practical walkthrough (English)
+
+Implementing and contrasting Fakes, Stubs, Mocks, and Spies in Kotlin:
+```kotlin
+// 1. Production Contract
+interface UserRepository {
+    suspend fun getUser(id: String): User?
+    suspend fun saveUser(user: User)
+}
+
+// 2. FAKE: Working in-memory implementation with internal state
+class FakeUserRepository : UserRepository {
+    private val memoryStore = mutableMapOf<String, User>()
+    override suspend fun getUser(id: String): User? = memoryStore[id]
+    override suspend fun saveUser(user: User) { memoryStore[user.id] = user }
+}
+
+// 3. STUB: Canned static responses without state tracking
+class StubUserRepository(private val cannedUser: User) : UserRepository {
+    override suspend fun getUser(id: String): User = cannedUser
+    override suspend fun saveUser(user: User) { /* no-op */ }
+}
+
+// 4. SPY: Tracks invocations and inspects argument history
+class SpyUserRepository(private val realRepo: UserRepository) : UserRepository by realRepo {
+    var saveCallCount = 0
+        private set
+    var lastSavedUser: User? = null
+        private set
+
+    override suspend fun saveUser(user: User) {
+        saveCallCount++
+        lastSavedUser = user
+        realRepo.saveUser(user)
+    }
+}
+
+// 5. MOCK: Declarative expectation and verification using MockK
+class UserUseCaseTest {
+    @Test
+    fun execute_verifiesStrictInteraction() = runTest {
+        val mockRepo = mockk<UserRepository>()
+        coEvery { mockRepo.saveUser(any()) } returns Unit
+
+        val useCase = SaveUserUseCase(mockRepo)
+        useCase(User("42", "Ali"))
+
+        coVerify(exactly = 1) { mockRepo.saveUser(match { it.id == "42" }) }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 قارن بين الـ Dummy، والـ Fake، والـ Stub، والـ Spy، والـ Mock، ومفهوم الـ Test Double العام وفقاً لمعايير مارتن فاولر؟
@@ -87,26 +143,32 @@ Keep doubles local to test modules, specify failure/cancellation behavior, and r
 
 ## Interview answer — short
 
-Test double is the umbrella term. Dummies fill parameter slots without being used. Stubs return canned responses. Spies record interactions for verification. Mocks define pre-programmed expectations verified on assertions. Fakes provide lightweight, working in-memory implementations (like an in-memory list repository).
+Test double is the universal umbrella term for any test substitute. A dummy is an unused placeholder to satisfy parameters. A stub provides canned data without logic. A spy records method calls and arguments for later inspection. A mock defines strict expectations on interactions, failing if expected calls do not occur. Finally, a fake is a working implementation with simplified state, such as an in-memory database, providing the highest fidelity and maintainability without external dependencies.
 
 ## Interview answer — structured
 
-Understanding test doubles follows the classic Martin Fowler taxonomy.
-
-First, **Dummy**. Next, objects passed around simply to satisfy method signatures (e.g. An empty constructor parameter), never actually interrogated or invoked.
-**Stub**. Provides canned responses to method calls during a test (e.g. `every { api.getUser() } returns sampleUser`). Stubs do not verify interaction behavior; they only supply required data state.
-**Spy**. Wraps a real or stubbed instance to record telemetry: capturing argument parameters, invocation counts, and order of calls for post-execution assertions.
-**Mock**. Objects pre-programmed with expected interaction behavior and verified at assertion time (`verify { service.trackEvent("purchase") }`). Mocks focus on behavior verification rather than state verification.
-**Fake**. Finally, objects that have working business logic, but take shortcuts unsuitable for production (e.g., an in-memory `FakeUserRepository` backed by a `ConcurrentHashMap` rather than SQLite).
-
+Mastering Gerard Meszaros' test double taxonomy allows senior developers to author resilient, expressive test suites while avoiding fragile mock traps.
+Test double is the generic umbrella category that encompasses all test stand-ins.
+A dummy is the simplest double; it exists purely to fill mandatory method parameters, such as passing a blank context or empty logger that is never exercised during the test.
+A stub acts as an indirect input provider, returning predetermined, hardcoded results to specific method queries without maintaining internal state or validating how it was called.
+A spy acts as an indirect output observer; it records telemetry about interactions—such as the number of times a method was called and the exact arguments passed—allowing assertions to inspect historical invocations after the execution finishes.
+A mock is configured with pre-programmed behavioral expectations.
+Rather than verifying resulting state, mock tests assert that specific methods were invoked with specific parameters, making the test focus heavily on execution mechanics.
+A fake provides a fully operational, lightweight implementation of the production interface, such as maintaining an in-memory HashMap to simulate a database.
+Senior engineers strongly favor fakes over mocks because fakes simulate real-world state transitions, do not break when internal class details are refactored, and execute without bytecode proxy overhead.
 
 ## Interview answer — deep senior
 
-From a software maintainability and Google engineering practices perspective, Fakes are heavily favored over Mocks.
-
-First, with The Fragility of Over-Mocking, tests relying heavily on MockK/Mockito verify implementation details (which methods were called and how many times) rather than observable behavior and state. When an engineer refactors internal repository code to batch calls or use caching, mocked tests break instantly despite correct user behavior. Next, fakes Enable Realistic Multi-Feature Tests is a well-designed `FakeCartRepository` behaves like the real repository: saving items, updating quantities, and emitting reactive state flows. Multiple ViewModels and tests can share the same fake across integration suites with zero mocking boilerplate.
-Finally, with When Mocks are Justified, use mocks sparingly: primarily for un-fakeable external boundaries where asserting exact side effects is the direct goal (e.g. Asserting that a payment SDK's `initiatePayment()` or analytics tracker was triggered exactly once).
-
+Under the hood, the choice between fakes and mocks dramatically impacts test runtime performance, refactoring safety, and internal compilation mechanics.
+Mocking libraries like MockK and Mockito rely on dynamic bytecode generation.
+On the JVM, they utilize ByteBuddy or Java dynamic proxies to subclass target interfaces and intercept method calls at runtime.
+On Android ART devices, mocking is even more expensive, requiring dexmaker to dynamically patch Dalvik bytecode into the application's executable cache directory.
+Every mock invocation traverses deep reflection interceptor call stacks to evaluate argument matchers and record invocation history.
+Furthermore, mock-heavy testing often results in severe test brittleness; because assertions verify exact method names and call counts, harmless internal refactorings that preserve behavior can cause hundreds of mock tests to fail.
+In contrast, a fake is compiled as standard Kotlin bytecode utilizing ordinary polymorphic dispatch.
+An in-memory fake repository executes millions of operations per second using standard CPU cache lines and HashMap algorithms without reflection, proxy allocations, or dex patching.
+Fakes enable state-based verification: the test exercises business actions and asserts the resulting domain state, leaving the internal collaboration details completely unconstrained.
+Senior engineers maintain shared fake implementations alongside production code in dedicated testing modules, ensuring that contract updates immediately propagate to all unit tests across the engineering organization.
 
 ## How to answer in the interview
 

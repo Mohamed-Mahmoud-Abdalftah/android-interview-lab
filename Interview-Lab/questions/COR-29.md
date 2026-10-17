@@ -20,6 +20,47 @@ A blocking SDK call does not respond to coroutine cancellation. What can you do?
 
 Reason about blocking SDK cancellation, interruption, resource closure and uncertain external effects.
 
+## Concept and technical explanation
+
+Integrating legacy third-party SDKs or native C/C++ libraries that execute blocking I/O calls without coroutine suspension points or cancellation checks poses a severe concurrency hazard in Android. When a coroutine calls a blocking method—such as a legacy synchronous socket read, blocking Bluetooth stream, or heavy JNI computation—the thread remains physically blocked. If the calling coroutine scope cancels, the coroutine cannot cancel cooperatively because no suspension point is reached. To handle unresponsive blocking code, engineers must apply three strategic countermeasures based on the nature of the blocking call. First, if the SDK executes standard Java blocking I/O or sleep calls, wrapping the invocation in runInterruptible(Dispatchers.IO) monitors coroutine cancellation and automatically invokes Thread.interrupt() on the worker thread. Second, if the SDK ignores thread interruption (such as legacy java.net.Socket calls or native JNI code), the application must implement resource closure: registering continuation.invokeOnCancellation to explicitly close the underlying socket, stream, or file descriptor, forcibly triggering an IOException that unblocks the thread. Third, if the blocking call is completely un-interruptible, it must be isolated in a dedicated single-thread dispatcher to prevent starvation of the shared Dispatchers.IO pool.
+
+## Practical walkthrough (English)
+
+Consider handling a legacy blocking Bluetooth socket read that ignores coroutine cancellation:
+```kotlin
+// Erroneous implementation: thread remains permanently blocked on cancellation
+suspend fun readLegacyDataUnsafe(): ByteArray = withContext(Dispatchers.IO) {
+    // If cancelled, the worker thread remains permanently stuck in read()!
+    legacyBluetoothSocket.inputStream.readBytes() 
+}
+
+// Strategy 1: Using runInterruptible for interruptible blocking calls
+suspend fun readInterruptibleData(): String = runInterruptible(Dispatchers.IO) {
+    // If the underlying SDK checks Thread.currentThread().isInterrupted,
+    // cancellation immediately interrupts the worker thread:
+    legacySdk.blockingQuery()
+}
+
+// Strategy 2: Forcible resource closure for non-interruptible sockets
+suspend fun readNonInterruptibleSocket(socket: Socket): ByteArray = suspendCancellableCoroutine { continuation ->
+    val thread = thread {
+        try {
+            val bytes = socket.inputStream.readBytes()
+            continuation.resume(bytes)
+        } catch (e: Exception) {
+            continuation.resumeWithException(e)
+        }
+    }
+    
+    // Forcibly unblock the stuck thread by closing the socket descriptor on cancellation:
+    continuation.invokeOnCancellation {
+        try {
+            socket.close() // Throws SocketException inside readBytes(), unblocking thread!
+        } catch (ignored: IOException) {}
+    }
+}
+```
+
 ## Explanation in Arabic
 
 التعامل مع مكتبة أو SDK خارجي يعمل بطريقة Blocking ولا يستجيب لإلغاء الـ Coroutines هو أحد أصعب التحديات في بيئة Android:
@@ -89,25 +130,22 @@ A document scanner SDK blocks during OCR. The repository runs it off Main, calls
 
 ## Interview answer — short
 
-Wrap the blocking call in 'runInterruptible(Dispatchers.IO)', which issues a thread interrupt (Thread.interrupt()) to the underlying worker thread upon coroutine cancellation. If the SDK ignores thread interruption, close the underlying socket or resource via invokeOnCancellation to forcibly abort the blocking read.
+When a blocking SDK ignores coroutine cancellation, standard suspension cannot unblock it. Use runInterruptible(Dispatchers.IO) if the SDK responds to Thread.interrupt(). For non-interruptible network or file operations, forcibly close the underlying socket or stream via invokeOnCancellation to trigger an IOException that unblocks the thread. If completely uninterruptible, isolate the call in a dedicated custom dispatcher to prevent starving Dispatchers.IO.
 
 ## Interview answer — structured
 
-When integrating a third-party SDK with blocking Java or native calls that do not cooperate with coroutine cancellation, we apply a multi-tier containment strategy:
+Handling legacy third-party SDKs that execute blocking operations without coroutine cancellation awareness is a classic interoperability challenge in Android engineering. When a blocking method is invoked, it locks the physical operating system thread and ignores Job.cancel() signals because it lacks cooperative suspension points.
 
-First, isolate the call onto `Dispatchers.IO` so it never blocks the main thread or compute worker pools.
+Engineers must evaluate whether the blocking operation is interruptible at the JVM thread level. If the underlying code checks thread interruption flags or blocks on interruptible channels, wrapping the call in runInterruptible with Dispatchers.IO ensures that coroutine cancellation immediately invokes Thread.interrupt() on the executing worker thread, aborting the call cleanly.
 
-Second, wrap the execution inside **`runInterruptible(Dispatchers.IO) { ... }`**. When the coroutine is cancelled, `runInterruptible` issues a standard Java `Thread.interrupt()` to the executing worker thread. If the legacy SDK is blocked on standard Java I/O or sleep, it immediately throws an `InterruptedException` or closes the channel, cleanly aborting execution.
+In production, involving non-interruptible blocking calls—such as legacy java.net.Socket reads or native JNI calls—thread interruption is completely ignored. In these situations, the only effective countermeasure is resource closure.
 
-Third, if the SDK uses uninterruptible I/O (like legacy blocking sockets or native C++ loops), we close the underlying resource from the outside: register an `invokeOnCancellation { socket.close() }` hook. Closing the socket or file descriptor forcibly breaks the blocking read and releases the thread.
+We register an invokeOnCancellation callback that forcibly closes the underlying socket or input stream, causing the blocking read to throw a SocketException or IOException that immediately frees the thread. If the library provides zero closure hooks, we isolate the call within a dedicated, bounded single-thread dispatcher to quarantine the thread and protect the shared Dispatchers.IO pool from resource exhaustion.
 
 
 ## Interview answer — deep senior
 
-Under the hood, `runInterruptible` tracks the executing JVM `Thread` reference. When cancellation occurs, it calls `thread.interrupt()`. However, developers must understand that some blocking operations are completely uninterruptible at the OS level (e.g., waiting on un-interruptible locks or native JNI system calls that do not check POSIX signals).
-
-If an external C++ or legacy Java library is completely unresponsive to both interruption and resource closing, that worker thread is effectively 'zombie-locked' until the operation completes or times out. In this worst-case scenario: 1. We run the operation on a dedicated, isolated thread pool created via `Executors.newSingleThreadExecutor().asCoroutineDispatcher()`, preventing it from polluting and exhausting the shared `Dispatchers.IO` pool. 2. We use `withTimeoutOrNull` around the caller continuation to allow our application to proceed and ignore the leaked thread until it eventually terminates.
-
+Under the hood, coroutine cancellation relies strictly on cooperative suspension points. When a coroutine invokes a blocking JNI function or a legacy synchronous method, the thread counter executes native or JVM opcodes continuously; the Kotlin coroutine runtime has zero mechanism to forcibly preempt that thread without external operating system signals. The Kotlin standard library provides runInterruptible to bridge this gap. Inside runInterruptible, a completion handler is registered on the coroutine's Job. If cancellation occurs while the blocking block is running, the handler retrieves the physical Java Thread reference executing the block and invokes Thread.interrupt(). This works reliably for any Java API that responds to InterruptedException or implements InterruptibleChannel (like java.nio.channels.FileChannel). However, classic blocking sockets (java.net.Socket) and native C++ shared libraries (.so files loaded via JNI) are completely immune to Thread.interrupt(); they block inside Linux kernel read() syscalls. In this scenario, invoking Thread.interrupt() simply sets the interrupt status flag without waking the thread from the kernel sleep state. To solve this in staff-level Android architectures, we employ the Asynchronous Close pattern. Using suspendCancellableCoroutine, we expose a cancellation boundary: when the coroutine cancels, invokeOnCancellation executes socket.close() or closes the native file descriptor (/dev/null or file handle). The Linux kernel intercepts the closed descriptor and immediately wakes the blocked thread with an EBADF or ECONNRESET error, which translates to a Java SocketException, unwinding the call stack cleanly. Finally, in extreme legacy situations where an SDK neither supports interruption nor exposes its underlying resources, the thread is effectively leaked until the external operation times out. To prevent this leaked thread from starving the global Dispatchers.IO pool (which has a default limit of 64 threads), we isolate such toxic calls in a dedicated, bounded dispatcher created via Executors.newSingleThreadExecutor().asCoroutineDispatcher(), ensuring that main application traffic remains fully isolated and performant.
 
 ## How to answer in the interview
 

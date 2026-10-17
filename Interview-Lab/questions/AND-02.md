@@ -22,6 +22,35 @@ Explain the Activity and Fragment lifecycles.
 - Use the Fragment view lifecycle for view-bound observers and release references at the right time.
 - Account for configuration recreation and process death without relying on `onDestroy()` for persistence.
 
+## Concept and technical explanation
+
+The Activity and Fragment lifecycles form the core mechanism through which the Android operating system manages device memory, window visibility, and user interaction states.
+
+1. Activity Lifecycle:
+   - `onCreate()`: Invoked when the Activity instance is first created in memory. Dependencies are injected, ViewModels acquired, and layout hierarchies initialized via `setContentView()` or Jetpack Compose `setContent()`.
+   - `onStart()`: The window becomes visible to the user, but may not yet possess interactive touch focus. This callback is the entry point for starting UI-bound data observers.
+   - `onResume()`: The Activity transitions into the foreground and gains full interactive focus. This state is appropriate for initiating exclusive hardware resources, such as camera previews or fine-grained location sensors.
+   - `onPause()`: The Activity loses interactive focus due to partial occlusion, such as when a system dialog, permission request, or multi-window divider appears. Exclusive hardware access should pause here.
+   - `onStop()`: The window is completely hidden from view because the user transitioned to another task or returned home. Heavy rendering, location polling, and background UI updates must stop.
+   - `onDestroy()`: Called before the Activity instance is cleared from memory, either because the user explicitly finished the screen (`finish()`) or because the OS initiated a configuration change recreation.
+   - `onRestart()`: Dispatched when an Activity transitions from a stopped state back toward visibility, immediately preceding `onStart()`.
+
+2. Fragment Lifecycle:
+   - Fragments live within a host Activity and follow its lifecycle constraints, but introduce an essential separation between the Fragment class instance and its view hierarchy.
+   - The Fragment instance lifecycle spans from initialization to final detachment. In contrast, the view lifecycle, accessed through `viewLifecycleOwner`, spans strictly between `onCreateView()` and `onDestroyView()`.
+
+## Practical walkthrough (English)
+
+State transitions under realistic runtime scenarios:
+- Normal in-app Dialog:
+  The Activity remains in the `RESUMED` state because standard dialogs belong to the same window hierarchy as the host Activity.
+- OS Permission Dialog:
+  The Activity moves to `onPause()` because a separate system-owned window captures interactive focus. Upon dismissal, the Activity transitions back to `onResume()`.
+- Screen Rotation:
+  The Activity executes: `onPause()` -> `onStop()` -> `onSaveInstanceState()` -> `onDestroy()`. It is then reconstructed in the new orientation through: `onCreate()` -> `onStart()` -> `onResume()`.
+- Multi-Window Split Screen:
+  Both adjacent activities are in the `STARTED` state and fully visible. Only the specific window the user is actively touching is in `RESUMED`.
+
 ## Explanation in Arabic
 
 دورة حياة الـ Activity والـ Fragment هي صميم عمل نظام أندرويد لإدارة الذاكرة والـ UI:
@@ -95,28 +124,26 @@ On a live order screen, a repository owns the order stream, a ViewModel maps it 
 
 ## Interview answer — short
 
-Activity transitions through onCreate() (initialization), onStart() (visible), onResume() (interactive), onPause() (partially visible/lost focus), onStop() (hidden), and onDestroy() (destroyed). Fragments mirror these states but possess an independent view lifecycle via viewLifecycleOwner.
+The Activity lifecycle manages screen visibility and focus across six core callbacks: onCreate for setup, onStart and onStop for visibility boundaries, onResume and onPause for interactive focus, and onDestroy for final teardown. Fragments mirror these transitions under their host Activity, but introduce a separate view lifecycle where the view tree can be destroyed and recreated while the Fragment instance remains retained in memory.
 
 ## Interview answer — structured
 
-The Android lifecycle represents the operating system's mechanism for managing memory constraints, window visibility, and user interaction states:
+The Android lifecycle is fundamentally a state machine that governs memory reclamation, window visibility, and user interaction. The framework organizes Activity execution into three nested lifetime loops. The entire lifespan runs between onCreate and onDestroy, where we bind dependencies and tear down process-level references.
 
-The six core Activity callbacks form matched pairs.
+The visible lifespan runs between onStart and onStop. When the screen becomes visible, we prepare the UI to render data, and when it is hidden, we stop active animations, location updates, and heavy UI rendering.
 
-First, onCreate()` / `onDestroy() represents the entire lifespan of the Activity instance in memory. In `onCreate`, we initialize dependencies, ViewModels, and UI layouts. Next, onStart()` / `onStop() represents the visible lifespan. In `onStart`, the UI is visible to the user. In `onStop`, the Activity is completely hidden from view (e.g., app backgrounded). This is where heavy rendering and sensor listeners should pause.
-Finally, onResume()` / `onPause() represents the foreground, interactive lifespan. In `onResume`, the window has full touch focus. In `onPause`, the window has lost focus (e.g., covered by a multi-window app or a system permission dialog).
+The foreground interactive lifespan is defined by onResume and onPause. When an Activity enters onResume, it gains exclusive touch focus, whereas onPause signals partial occlusion, such as when a system dialog or multi-window divider appears.
 
-Fragments mirror these states, but critically decouple the Fragment object lifecycle from the view lifecycle (`viewLifecycleOwner`), which can be destroyed and recreated independently when placed on the Fragment backstack.
+In production, Fragments introduce a critical architectural caveat because a Fragment instance frequently outlives its view hierarchy on the backstack. Consequently, modern Android development delegates all UI observation to viewLifecycleOwner and repeatOnLifecycle, preventing background processing and memory leaks when the screen is obscured.
 
 
 ## Interview answer — deep senior
 
-From an architectural standpoint, modern Android applications avoid placing business logic or direct resource registration inside these callbacks. Instead, we use `DefaultLifecycleObserver` and `repeatOnLifecycle`.
+At the OS runtime and Linux kernel boundary, lifecycle callbacks represent the primary heuristic for the Low Memory Killer daemon, or lmkd, to determine process priority. The ActivityManagerService dynamically updates the out-of-memory adjustment score, oom_adj, of each Linux process based on its top component state. A foreground Activity in onResume is assigned TOP_APP priority with an oom_adj score of zero, granting it maximum immunity against process reclamation. As the Activity transitions to onStop, its process priority drops to the CACHED_APP tier, where the kernel can terminate it via SIGKILL under memory pressure without executing onDestroy.
 
-Consider state preservation across the transition to `onStop()`: Between `onPause()` and `onStop()`, the OS invokes `onSaveInstanceState(Bundle)`. Once `onStop()` is called, the app process enters the 'killable' pool: if system RAM runs low, the OS kernel can terminate the entire Linux process without ever calling `onDestroy()`.
+From an execution and threading perspective, all six lifecycle callbacks are posted as individual messages to the Main Thread Looper via ActivityThread and the ClientTransactionHandler. Because of this, blocking operations inside any callback will immediately delay message queue processing and trigger an Application Not Responding condition if dispatch exceeds five seconds.
 
-In modern Jetpack architecture, `androidx.lifecycle.Lifecycle` abstracts these callbacks into states (`INITIALIZED`, `CREATED`, `STARTED`, `RESUMED`, `DESTROYED`) and events. Coroutines observe these states via `repeatOnLifecycle(Lifecycle.State.STARTED)`, which automatically cancels background collectors in `onStop()` and restarts them in `onStart()`.
-
+At a staff architecture level, we strictly treat lifecycle callbacks as integration ports rather than repositories for business logic. In modern Jetpack architectures, state persistence is decoupled across three tiers: ephemeral UI state survives configuration changes via ViewModelStore, transient navigation state is serialized to the system server process via SavedStateHandle during onSaveInstanceState, and durable truth is committed asynchronously to a local database. Furthermore, by observing state with repeatOnLifecycle scoped to Lifecycle.State.STARTED, we leverage coroutine cancellation mechanics under the hood to ensure that cold StateFlow collectors automatically suspend execution upon onStop, eliminating resource contention and background thread leaks across complex multi-window or picture-in-picture transitions.
 
 ## How to answer in the interview
 

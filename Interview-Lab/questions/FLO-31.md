@@ -20,6 +20,42 @@ How do you choose SharingStarted for battery, correctness, and subscription beha
 
 Choose SharingStarted using battery cost, freshness and subscriber transitions.
 
+## Concept and technical explanation
+
+Converting cold upstream Flows into hot StateFlows or SharedFlows via stateIn or shareIn requires selecting a SharingStarted strategy that balances battery efficiency, resource cleanup, and configuration change resilience.
+SharingStarted controls the activation and cancellation lifecycle of the upstream flow producer coroutine based on downstream subscriber counts.
+The Kotlin coroutines library provides three primary strategies: SharingStarted.Eagerly starts upstream production immediately upon invocation and never terminates, maintaining active connections regardless of subscriber presence; SharingStarted.Lazily starts upstream production only after the first subscriber attaches and persists indefinitely thereafter; and SharingStarted.WhileSubscribed(stopTimeoutMillis) activates upstream production upon the first subscriber and gracefully cancels upstream work when subscriber count drops to zero after a configurable timeout.
+Configuring WhileSubscribed(5000) provides the Android standard: the 5-second grace period accommodates transient UI recreations (device rotation) without re-executing upstream queries, while reliably tearing down network sockets, hardware sensors, and Room database observers when the app moves to the background.
+
+## Practical walkthrough (English)
+
+Balancing battery efficiency and configuration change survival using SharingStarted:
+```kotlin
+class LiveFeedViewModel(
+    private val locationRepository: LocationRepository,
+    private val configRepository: ConfigRepository
+) : ViewModel() {
+    // 1. Production Standard for UI State: WhileSubscribed(5000)
+    // Cancels GPS hardware in background, survives screen rotation!
+    val locationState: StateFlow<LocationUiState> = locationRepository.observeGps()
+        .map { LocationUiState.Success(it) }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5000),
+            initialValue = LocationUiState.Loading
+        )
+
+    // 2. Application-wide configuration: Lazily
+    // Fetches once when first screen opens, cached forever in ViewModel:
+    val appConfig: StateFlow<AppConfig> = configRepository.observeConfig()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Lazily,
+            initialValue = AppConfig.Default
+        )
+}
+```
+
 ## Explanation in Arabic
 
 اختيار استراتيجية `SharingStarted` المناسبة لتحقيق التوازن بين استهلاك البطارية والصحة البرمجية وسلوك الاشتراكات:
@@ -96,22 +132,25 @@ A live exercise screen uses WhileSubscribed and a 5-second grace to avoid Blueto
 
 ## Interview answer — short
 
-Choose WhileSubscribed(5000) for ViewModel UI states to conserve battery in the background while surviving configuration changes; choose Lazily for shared application-scoped caches that should initialize on first access and stay cached; choose Eagerly for critical process-wide monitoring that must start immediately upon creation.
+WhileSubscribed(5000) is the Android production standard, cancelling upstream sources when the app enters the background while surviving 5-second rotation pauses. Eagerly starts immediately and never stops; Lazily starts on first subscription and never stops, suited for global configs.
 
 ## Interview answer — structured
 
-Choosing the right `SharingStarted` strategy is an exercise in balancing battery conservation, memory retention, and UI latency across three architectural tiers.
+Choosing a SharingStarted strategy governs when upstream data producers start and stop executing.
 
-First, **`WhileSubscribed(5000)` for ViewModel UI State:** This is the default standard for feature screens. It activates upstream collection only when UI collectors are active. When the user backgrounds the app, it cancels upstream after a 5-second grace period to save battery, but survives screen rotation without re-fetching. It is essential for offline-first Room or network observation flows. Next, **`Lazily` for In-Memory Shared Caches:** In singleton repositories or domain services, `Lazily` delays expensive upstream initialization until the very first consumer requests the data. Once started, it remains active in memory, caching emissions for all subsequent app features without redundant restarts.
-Finally, **`Eagerly` for Mission-Critical Infrastructure:** For application-wide monitors that must begin capturing state immediately upon app launch—such as monitoring network connectivity flags or device security posture—`Eagerly` ensures the flow is immediately active before any UI subscribes.
+SharingStarted.Eagerly launches upstream collection immediately upon instantiation and runs indefinitely. This wastes battery and memory by maintaining database cursors and network connections even before any UI screen subscribes.
+
+In production, SharingStarted.Lazily waits for the first subscriber before launching, remaining active for the remainder of the CoroutineScope. It is ideal for one-time initialization data or app-wide configurations that should never re-trigger.
+As for UI state pipelines, SharingStarted.WhileSubscribed(stopTimeoutMillis = 5000) is the industry standard. When the UI enters the background and collectors cancel via repeatOnLifecycle, the subscriber count drops to zero. WhileSubscribed waits 5 seconds: if the Activity was simply rotating, resubscription happens within milliseconds without restarting upstream work; if the app was backgrounded, it cancels upstream collection, powering down GPS radios and network sockets.
 
 
 ## Interview answer — deep senior
 
-The battery implications of these choices are profound in production Android vitals. If an engineer naively defaults to `SharingStarted.Eagerly` in a ViewModel, and that ViewModel observes an upstream location flow or a continuous Room database query, that query will run indefinitely in the background whenever that screen is in the backstack! Over hundreds of thousands of users, this results in significant battery drain and elevated uninstallation rates.
-
-By implementing `WhileSubscribed(5000)`: The 5-second timer is specifically calibrated to Android OS lifecycle timings. An Activity recreation during rotation typically takes between 100ms and 500ms. A 5,000ms timeout provides a 10x safety margin, guaranteeing zero flow thrashing during rotation while reliably shutting down within 5 seconds when the user navigates away or presses the home button.
-
+Under the hood in SharingStarted.kt, WhileSubscribed is implemented as a Flow operator observing the StateFlow's subscriptionCount. When subscriptionCount transitions from 0 to 1, WhileSubscribed emits SharingCommand.START to the sharing coroutine. When subscriptionCount drops back to 0, WhileSubscribed emits a delayed SharingCommand.STOP after the configured stopTimeoutMillis delay, followed optionally by SharingCommand.RESET_BUFFER if replayExpirationMillis elapses.
+This 5000ms delay solves the fundamental Android configuration change dilemma. When an Activity rotates, onStop cancels the old collector, dropping subscriptionCount to zero. Approximately 100 to 300 milliseconds later, the new Activity reaches onStart and attaches a new collector, incrementing subscriptionCount back to 1. Because this transition occurs well within the 5000ms grace period, the stop timeout timer is cancelled, and upstream database or network connections continue running smoothly without re-executing.
+Conversely, if the user presses the Home button, the app remains in the background past 5 seconds. The timer expires, triggering SharingCommand.STOP. This cancels the upstream coroutine, allowing Room database query observers and LocationManager listeners to tear down cleanly and enter low-power sleep mode.
+In complex feature modules with multiple interdependent streams, WhileSubscribed coordinates lifecycle states cleanly, avoiding memory retention and preventing zombie coroutine background execution across all application layers.
+Staff engineers ban Eagerly for screen-level ViewModels, mandating WhileSubscribed(5000) to ensure compliance with Google Play battery consumption vitals.
 
 ## How to answer in the interview
 

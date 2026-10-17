@@ -20,6 +20,44 @@ Explain Liskov Substitution Principle with an Android example.
 
 Test behavioral substitutability, including preconditions, postconditions and failure semantics.
 
+## Concept and technical explanation
+
+The Liskov Substitution Principle (LSP), formulated by Barbara Liskov, asserts that subtypes must be completely substitutable for their base types without altering the correctness, invariants, or expected behaviors of the host program. Formally, behavioral subtyping mandates that preconditions cannot be strengthened in a subtype, postconditions cannot be weakened, and history constraints must be preserved. In Android engineering, LSP violations frequently manifest when subclasses throw UnsupportedOperationException, return arbitrary nulls to bypass inherited contracts, or silently no-op inherited lifecycle methods in bloated base classes (such as BaseFragment or BaseAdapter).
+
+## Practical walkthrough (English)
+
+Contrasting an LSP violation with behavioral subtyping in an Android Repository:
+```kotlin
+// BAD ANTI-PATTERN: Violates LSP (Subtype breaks base contract by throwing UnsupportedOperationException)
+interface CacheableRepository<T> {
+    suspend fun get(): T
+    suspend fun save(item: T) // Base contract implies all implementations can save!
+}
+
+class ReadOnlyRemoteRepository : CacheableRepository<UserConfig> {
+    override suspend fun get(): UserConfig = fetchFromRemote()
+    override suspend fun save(item: UserConfig) {
+        // Blatant LSP Violation! Calling code expecting CacheableRepository crashes at runtime!
+        throw UnsupportedOperationException("Read-only repository cannot save data")
+    }
+}
+
+// ARCHITECTURAL BEST PRACTICE: Segregated contracts adhering to Liskov Substitution
+interface ReadableDataSource<T> { suspend fun get(): T }
+interface WritableDataSource<T> { suspend fun save(item: T) }
+
+// Fully substitutable readable repository
+class ReadOnlyRemoteConfig(private val api: ConfigApi) : ReadableDataSource<UserConfig> {
+    override suspend fun get(): UserConfig = api.fetchConfig()
+}
+
+// Fully substitutable read-write repository
+class LocalDiskCache(private val dao: ConfigDao) : ReadableDataSource<UserConfig>, WritableDataSource<UserConfig> {
+    override suspend fun get(): UserConfig = dao.getConfig()
+    override suspend fun save(item: UserConfig) = dao.insertConfig(item)
+}
+```
+
 ## Explanation in Arabic
 
 شرح مبدأ استبدال لسكوف (Liskov Substitution Principle - LSP) مع مثال عملي واقعي في Android:
@@ -89,31 +127,23 @@ An SDK adapter contract defines success, failure, cancellation and timeout behav
 
 ## Interview answer — short
 
-Liskov Substitution Principle states that subclasses must be substitutable for their base classes without breaking program correctness. In Android, violating LSP manifests as throwing `UnsupportedOperationException` in subclasses (e.g. `BaseFragment.setupToolbar()`). We solve this by favoring composition or fine-grained interfaces over fat base classes.
+The Liskov Substitution Principle asserts that any subtype must be completely substitutable for its parent type without breaking application correctness. In Android, violating LSP commonly occurs when a subclass throws UnsupportedOperationException or returns unexpected nulls to avoid executing an inherited method. We adhere to LSP by keeping base interfaces focused, honoring all inherited behavioral contracts, and preferring fine-grained composition over deep inheritance hierarchies.
 
 ## Interview answer — structured
 
-The Liskov Substitution Principle (LSP), formulated by Barbara Liskov, requires that **subtypes must be completely substitutable for their base types without altering program correctness**.
-
-A subclass must adhere strictly to the behavioral contract established by its superclass. Specifically.
-
-First, a Preconditions cannot be strengthened is a subclass cannot demand stricter validation inputs than its parent. Next, a Postconditions cannot be weakened is a subclass cannot return less or fail to fulfill state guarantees made by the parent.
-Finally, with Invariants must be preserved, any rules that hold true for the superclass must hold true for all subclasses.
-
-In Android, the most pervasive LSP violation is the bloated **`BaseFragment` / `BaseActivity` anti-pattern**. A `BaseFragment` declares abstract methods like `setupToolbar()`, `enableSwipeToRefresh()`, and `getBottomNavIndex()`.
-When a developer creates a fullscreen modal or onboarding slide that lacks a toolbar, they either override the method with an empty no-op or throw `UnsupportedOperationException("Not supported")`. Calling code expecting a valid toolbar crashes or behaves unpredictably.
-
+The Liskov Substitution Principle ensures that inheritance hierarchies represent genuine behavioral compatibility rather than superficial code reuse.
+LSP goes beyond syntactic type matching to enforce behavioral contracts. If class B extends class A, any component designed to operate on an instance of A must function correctly when given an instance of B, without requiring runtime type inspections like instanceof or is checks.
+In Android development, LSP is routinely violated in data persistence and base UI hierarchies. A notorious example is defining a general-purpose repository interface with both read and write methods, and then implementing a read-only variant that throws UnsupportedOperationException inside the write method. When background sync workers or UseCases invoke the write method expecting normal execution, the application crashes with an unexpected runtime exception.
+Another frequent violation occurs in UI code with bloated BaseFragment or BaseActivity classes that mandate methods like setupToolbar() or enableSwipeRefresh(). When a child screen without a toolbar overrides the method with an empty body, it breaks caller invariants and creates subtle rendering bugs.
+To uphold LSP, engineers replace monolithic inheritance hierarchies with fine-grained interfaces. By splitting contracts into distinct Readable and Writable interfaces, every implementing class satisfies its entire contract unconditionally.
 
 ## Interview answer — deep senior
 
-The architectural remedy for LSP violations in Android is **Composition over Inheritance**.
-
-Instead of forcing every screen to inherit from an arbitrary 800-line `BaseFragment`, we extract modular capabilities into dedicated lifecycle-aware delegates.
-
-First, a `ToolbarDelegate` that attaches to screens that explicitly implement `ToolbarConfigurable`. Finally, a `NetworkStateDelegate` that observes connectivity.
-
-In Jetpack Compose, LSP violations are naturally minimized because Compose entirely abandons inheritance hierarchies. A composable screen does not inherit from `BaseScreen`; instead, screens compose reusable composable decorators (`Scaffold`, `TopAppBar`, `PullToRefreshBox`) purely through function composition.
-
+Under the hood, the Liskov Substitution Principle is formalized through Design by Contract: a subtype may weaken preconditions (demand less) and strengthen postconditions (guarantee more), but never the reverse.
+In Android runtime execution, violating LSP introduces insidious failure modes that evade compile-time detection. When a subclass strengthens a precondition by requiring non-null arguments where the base contract permitted nullable parameters, or when a subclass weakens postconditions by returning an uninitialized state machine, callers relying on polymorphism execute incorrect branch paths.
+A classic Android framework violation occurred in Java collections, where Collections.unmodifiableList() implemented java.util.List but threw UnsupportedOperationException on add(). If an Android engineer passes an unmodifiable list to an adapter expecting a mutable list, crashes occur at runtime.
+Staff engineers eliminate these risks in modern Kotlin through type-system design and immutable data modeling. Kotlin explicitly separates List (read-only interface) from MutableList (read-write interface), baking LSP compliance directly into the language standard library.
+Furthermore, in modern Jetpack Compose architectures, LSP violations are systematically eradicated because Compose completely abandons deep class inheritance in favor of pure function composition, immutable state data classes, and Modifier chaining, rendering classical inheritance substitute bugs obsolete across all UI presentation layers. By enforcing contract invariants through explicit interfaces, runtime regressions are caught at compile time rather than crashing user devices in production.
 
 ## How to answer in the interview
 

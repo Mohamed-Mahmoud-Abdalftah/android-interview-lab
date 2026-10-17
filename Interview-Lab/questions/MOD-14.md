@@ -22,6 +22,31 @@ How do you avoid circular dependencies and giant core/common modules?
 - Recognize common-module fan-out and unrelated code accumulation.
 - Describe governance and graph checks.
 
+## Concept and technical explanation
+
+Scalable multi-module architectures actively prevent two widespread architectural anti-patterns:
+- Circular Dependencies: Where two or more modules depend on each other directly or transitively (A -> B -> C -> A), breaking Gradle's topological sort and halting builds. Prevention requires strictly unidirectional dependency flow, extracting shared API contracts into independent submodules, applying dependency inversion via Hilt, and enforcing architectural linters.
+- Giant Core/Common Module: Where teams treat :core:common as an undisciplined dumping ground for unrelated utilities (auth, analytics, string formatters, image loaders). Because nearly all feature modules import common, any change invalidates the build cache project-wide, creating a disguised monolith. Prevention requires decomposing :core into highly cohesive, single-responsibility leaf modules (e.g., :core:dispatchers, :core:crypto, :core:designsystem) and strictly localizing feature-specific helpers within their respective domains.
+
+## Practical walkthrough (English)
+
+Decomposing a bloated core module and breaking circular loops via contract extraction:
+```text
+// ❌ ANTI-PATTERN: Giant core module that breaks build cache for all features
+:core:common (contains: DateUtils, AuthTokenManager, PaymentModels, BarcodeScanner)
+
+// ✅ PRODUCTION TOPOLOGY: Decomposed into single-responsibility leaf modules
+:core/
+  ├── dispatchers/       (CoroutineDispatchers, test dispatchers)
+  ├── crypto/            (Keystore wrappers, encryption engines)
+  ├── formatting/        (Currency and date formatters)
+  └── designsystem/      (Compose theme, atomic UI components)
+
+// Breaking a circular loop between :feature:profile and :feature:auth:
+// :feature:profile depends on :feature:auth:api ONLY (Unidirectional flow)
+// Neither module imports the other's internal implementation!
+```
+
 ## Explanation in Arabic
 
 كيف تتجنب التبعيات الدائرية (Circular Dependencies) وتمنع تضخم الموديولات العامة العملاقة (`:core:common` / `:core:base`)؟
@@ -82,44 +107,28 @@ Automate graph and allowed-edge checks, track core public API churn and incremen
 
 ## Interview answer — short
 
-Avoid giant common modules by decomposing them into highly focused, single-responsibility modules (:core:model, :core:network, :core:ui). Prefer benign duplication of trivial 2-line helpers over introducing heavy shared dependencies. Enforce acyclic graphs using CI architecture lint rules and API contract extractions.
+To avoid circular dependencies, enforce strictly unidirectional dependency flows and decouple cross-feature interactions using independent api contract modules and Hilt. To prevent giant core:common modules, dismantle monolithic utilities into focused, single-responsibility leaf modules like core:crypto and core:dispatchers, keeping feature-specific helpers strictly inside their owning domains.
 
 ## Interview answer — structured
 
-The emergence of a giant `:core:common` module and circular dependency loops are the two primary symptoms of an unmaintained multi-module architecture.
-
-First, **Eradicating the `:core:common` God Module**. Next, a monolithic common module has near-infinite fan-out; every feature imports it, meaning any single edit invalidates the build cache for the entire application.
-Dismantle it into focused, cohesive modules based on stability and responsibility: `:core:model` (pure data entities), `:core:designsystem` (UI tokens), `:core:network` (networking), and `:core:analytics`. Tolerate **benign duplication**: It is far better to duplicate a 3-line string formatting extension across two feature modules than to create a shared build dependency between them.
-**Eliminating Circular Dependencies**. Cycles (`A -> B -> A`) occur when feature boundaries are blurred. Resolve them by extracting the shared data models or route contracts into an independent `:feature:x:api` module that both modules depend on downward.
-Finally, enforce unidirectional graph rules in CI using Gradle architecture validation plugins.
-
+Preventing circular dependencies and monolithic core modules requires deliberate architectural boundaries and automated governance.
+Circular dependencies occur when modules import each other either directly or transitively, creating an impossible loop that halts Gradle compilation.
+We resolve cycles by extracting shared models and interfaces into an independent, leaf-level api module, allowing both original modules to depend downward without cyclic coupling.
+The giant core:common module is another common architectural pitfall where unrelated utilities are aggregated together.
+Because every feature depends on common, a minor edit triggers application-wide recompilation and invalidates the remote build cache.
+To eliminate this problem, we enforce a strict single-responsibility rule, decomposing common into focused leaf modules such as core:dispatchers, core:network, and core:designsystem.
+Utilities that are not genuinely domain-agnostic are rejected from core and localized within their respective feature modules.
 
 ## Interview answer — deep senior
 
-In large engineering organizations, preventing architectural entropy requires **Automated Guardrails rather than developer vigilance**.
-
-Teams implement **Gradle Module Graph Rules** via custom Gradle tasks or plugins like `dependency-guard` or `ArchUnit`:
-
-```kotlin
-// Example Gradle constraint verification in build-logic:
-tasks.register("assertModularizationRules") {
-    doLast {
-        project.subprojects.forEach { subproject ->
-            if (subproject.path.startsWith(":core")) {
-                subproject.configurations.all { config ->
-                    config.dependencies.forEach { dep ->
-                        if (dep.name.startsWith("feature")) {
-                            throw GradleException("ILLEGAL DEPENDENCY: Core module ${subproject.path} cannot depend on feature ${dep.name}!")
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-```
-Running this verification on pull request CI guarantees that forbidden edges (Core depending on Feature, or Feature-to-Feature direct implementation coupling) fail the build automatically.
-
+In enterprise Android development, unmonitored modular architectures naturally decay into circular loops and giant shared garbage modules unless actively governed.
+The giant core:common anti-pattern is particularly destructive because it recreates monolith bottlenecks under the illusion of modularity.
+When a single module holds database helpers, authentication tokens, image loading bindings, and string extensions, it sits at the foundation of the dependency tree.
+Any trivial update to a string formatter invalidates the Gradle build cache for every downstream feature, destroying build performance across the company.
+Our architectural policy decomposes shared infrastructure into highly cohesive, domain-agnostic leaf subprojects: :core:dispatchers, :core:database, :core:crypto, and :core:designsystem.
+If a utility does not qualify as platform-level infrastructure—such as a formatOrderReference function—it is strictly confined inside its owning feature module.
+To eradicate circular dependencies, we enforce unidirectional dependency layering: presentation depends on domain, data implements domain, and features communicate solely through isolated :api contracts wired via Hilt at the app level.
+We enforce these structural invariants in our CI pipeline using automated Konsist tests that scan imports across all modules, immediately failing pull requests that attempt to introduce reverse dependency edges or instantiate monolithic shared modules. We also generate automated architectural diagrams during pull request builds, giving code reviewers instant visual feedback on any suspicious dependency edge additions before merging.
 
 ## How to answer in the interview
 

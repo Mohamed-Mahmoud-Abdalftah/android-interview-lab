@@ -21,6 +21,40 @@ What are encryption at rest and encryption in transit?
 - Scope of confidentiality for stored bytes and network transport.
 - Key handling, TLS endpoint validation, and plaintext at use time.
 
+## Concept and technical explanation
+
+Encryption at rest and encryption in transit are the two complementary pillars of end-to-end data confidentiality on Android, protecting sensitive information across distinct operational states. Encryption at rest secures persistent data stored on non-volatile physical flash storage against offline extraction, device theft, and unauthorized access. Modern Android implements this at the system level via File-Based Encryption (FBE), partitioning storage into Credential Encrypted (CE) storage (accessible only after the user unlocks the device with their PIN or biometrics) and Device Encrypted (DE) storage (accessible during Direct Boot before unlock for critical services like alarms). At the application level, developers layer additional cryptographic security using the Jetpack Security library (EncryptedSharedPreferences and EncryptedFile) or SQLCipher for encrypted Room databases, binding encryption keys to the Android Keystore. Encryption in transit protects data moving across volatile public and private networks between the mobile client and remote backend services against eavesdropping, interception, and man-in-the-middle (MITM) tampering. It relies on Transport Layer Security (TLS 1.3), robust cipher suites, and Android Network Security Configuration.
+
+## Practical walkthrough (English)
+
+Implementing layered encryption at rest and encryption in transit in Android:
+```kotlin
+// 1. Encryption at rest: EncryptedSharedPreferences backed by hardware Keystore
+val masterKey = MasterKey.Builder(context)
+    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+    .build()
+
+val securePreferences = EncryptedSharedPreferences.create(
+    context,
+    "user_pii_vault",
+    masterKey,
+    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+)
+
+// 2. Encryption in transit: Strict TLS 1.3 enforcement via OkHttpClient
+val secureHttpClient = OkHttpClient.Builder()
+    .connectionSpecs(listOf(
+        ConnectionSpec.MODERN_TLS // Enforces TLS 1.2 and TLS 1.3 with secure cipher suites
+    ))
+    .certificatePinner(
+        CertificatePinner.Builder()
+            .add("api.bank.com", "sha256/k2oTQLj4nsdKmSOGKEUbhwEYfEuDYV5R6g28AzERdOk=")
+            .build()
+    )
+    .build()
+```
+
 ## Explanation in Arabic
 
 ما هو التشفير في حالة السكون (Encryption at Rest) والتشفير في حالة النقل (Encryption in Transit) في Android؟
@@ -87,28 +121,28 @@ Production reviews trace each sensitive field from collection through storage, t
 
 ## Interview answer — short
 
-Encryption at rest protects stored data on disk (via File-Based Encryption, SQLCipher, and Keystore). Encryption in transit protects network payloads traveling over the wire (via TLS 1.3, Network Security Config, and Certificate Pinning). Both protect data outside of active use, but plaintext inevitably resides in RAM while being processed.
+Encryption at rest secures data stored on the device's physical disk using File-Based Encryption, EncryptedSharedPreferences, or SQLCipher so stolen or dumped storage remains unreadable. Encryption in transit protects data travelling over the network using TLS 1.3 and certificate pinning, preventing eavesdropping and man-in-the-middle tampering during transmission.
 
 ## Interview answer — structured
 
-A comprehensive defense-in-depth architecture secures data across both rest and transit states.
-
-First, **Encryption in Transit (Over the Wire)**. Next, guarantees confidentiality and integrity across public cellular and Wi-Fi networks.
-Enforced via **TLS 1.2 / TLS 1.3** exclusively. Configured in Android via `res/xml/network_security_config.xml` with `cleartextTrafficPermitted="false"` to prevent accidental HTTP fallback. Hardened with **Certificate Pinning** in OkHttp to defeat Man-in-the-Middle (MITM) interception from rogue CAs.
-**Encryption at Rest (On Flash Storage)**. With OS Level, modern Android uses **File-Based Encryption (FBE)**. User data is partitioned into Credential Encrypted (CE) storage, unlocked only after the user enters their lockscreen PIN/pattern.
-With App Level, sensitive local databases are encrypted with **SQLCipher (AES-256)**, while tokens and keys are encrypted with **AES-GCM** using keys managed by `AndroidKeyStore`. If an attacker copies the SQLite file via ADB backup or file extraction, the file is unreadable binary ciphertext. Finally, with Plaintext in Use, plaintext exists in application heap memory while being actively processed by the CPU, demanding careful buffer management and redaction in logging.
-
+Comprehensive mobile confidentiality demands securing data both when it resides persistently on device hardware and while it traverses network pathways.
+Encryption at rest protects stored bytes against offline extraction, forensic dumping, and device theft.
+At the operating system level, Android employs File-Based Encryption with two cryptographic zones: Device Encrypted storage available during Direct Boot before user unlock, and Credential Encrypted storage unlocked only when the user enters their lockscreen credentials.
+Within the application, developers protect sensitive records using EncryptedSharedPreferences for key-value pairs and SQLCipher for Room databases, anchoring symmetric encryption keys directly in the hardware-backed Android Keystore.
+Encryption in transit protects data packets moving over public cellular and Wi-Fi networks against interception, tampering, and eavesdropping.
+This is implemented using modern Transport Layer Security protocols, specifically TLS 1.2 and TLS 1.3, which negotiate authenticated key exchange and symmetric payload ciphers.
+To harden transit security against compromised certificate authorities and rogue corporate proxies, applications configure Android Network Security Configuration to disallow cleartext traffic and implement public key certificate pinning.
 
 ## Interview answer — deep senior
 
-Differentiating Device-Encrypted (DE) vs. Credential-Encrypted (CE) Storage in FBE:
-
-Starting in Android 7.0 (API 24), Android replaced Full-Disk Encryption (FDE) with File-Based Encryption (FBE).
-
-First, cE Storage (`context.createCredentialProtectedStorageContext()`) is the default storage for applications. Encrypted with a key derived from the user's lockscreen PIN and hardware Keystore. Unavailable after device reboot until the user enters their PIN for the first time (Direct Boot mode). Finally, with DE Storage (`context.createDeviceProtectedStorageContext()`), encrypted with a key tied to the device hardware, available **before** the user unlocks the screen. Reserved strictly for components that must operate immediately after reboot before user unlock (alarm clocks, incoming call receivers, accessibility services).
-
-Fintech and banking apps must never store financial records or auth tokens in DE storage; always retain credentials strictly in CE storage.
-
+When analyzing threat models for enterprise and financial applications, understanding the precise boundary where encryption at rest ends and encryption in transit begins is essential for operational security.
+A common failure mode is assuming that because Android provides platform-level File-Based Encryption, application-level encryption is unnecessary.
+While FBE protects physical flash partitions if a powered-off device is stolen, once the user unlocks their phone, the Credential Encrypted partition is mounted and decrypted in the Linux kernel.
+If an attacker exploits a local vulnerability or gains privileged execution in an adjacent process, raw files in the application sandbox become accessible unless protected by an application-level layer such as Jetpack Security or SQLCipher backed by Keystore master keys.
+Conversely, encryption in transit guarantees that packets flowing between the client socket and the cloud load balancer remain confidential and tamper-proof.
+However, transport encryption terminates at the network endpoint.
+If an application transmits sensitive payloads over HTTPS without certificate pinning, a user on a managed enterprise network with an installed root CA certificate or an attacker using a rogue cellular base station can execute a Man-in-the-Middle attack.
+Therefore, a defense-in-depth architecture enforces TLS 1.3 with Certificate Pinning for transit, uses EncryptedSharedPreferences backed by hardware Keystore keys for local data at rest, and rigorously zeroes out sensitive memory buffers so credentials are protected even while resident in RAM.
 
 ## How to answer in the interview
 

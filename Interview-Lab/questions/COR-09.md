@@ -20,6 +20,31 @@ What is withContext? When do you use it?
 
 Whether the candidate sees `withContext` as a suspending context boundary, with structured return and exception behavior.
 
+## Concept and technical explanation
+
+In Kotlin coroutines, withContext is a built-in suspending function that switches the execution context of the calling coroutine inline without launching a new coroutine or creating a separate Job. It takes a CoroutineContext parameter, suspends the current execution, transfers the remaining computation to the specified dispatcher, and resumes the caller with the returned result once completed. Because withContext is a suspending function rather than a coroutine builder, it executes sequentially and returns its computed value directly, avoiding the need for await or join calls. In modern Android architecture, withContext is the primary technical mechanism used to enforce the Main-Safety principle: repository, data source, and use case methods use withContext(Dispatchers.IO) or withContext(Dispatchers.Default) internally to offload disk, network, and CPU operations away from the main thread, allowing callers on the UI thread to invoke them safely and transparently without thread management boilerplate.
+
+## Practical walkthrough (English)
+
+Consider a database repository that loads user preferences from local storage and maps them into domain entities.
+
+Demonstrating proper withContext usage:
+```kotlin
+class UserRepository(
+    private val localDao: UserDao,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) {
+    // Main-safe: Callers can safely invoke this on Dispatchers.Main
+    suspend fun getUserProfile(userId: String): UserProfile = withContext(ioDispatcher) {
+        // 1. Executes on Dispatchers.IO worker thread
+        val rawEntity = localDao.queryUserById(userId)
+        // 2. Maps to domain entity
+        UserProfile.fromEntity(rawEntity)
+    } // 3. Automatically resumes the caller on their original dispatcher (e.g., Main)
+}
+```
+A ViewModel calls this function seamlessly: val profile = userRepository.getUserProfile(id), updating UI state immediately without manually managing threads or background callbacks.
+
 ## Explanation in Arabic
 
 دالة `withContext` هي الأداة القياسية في Kotlin لتغيير سياق الـ Coroutine (`CoroutineContext`) بشكل معلق وآمن:
@@ -87,25 +112,28 @@ A local file repository exposes a main-safe `loadBytes` contract, switches only 
 
 ## Interview answer — short
 
-withContext is a suspending function that temporarily switches the coroutine's context (such as its dispatcher) for a block of code, suspends until completion, and returns the result. It is the idiomatic way to achieve Main-Safety without allocating extra coroutines like async/await would.
+withContext is a suspending function that switches coroutine context inline without launching a new coroutine, returning the block result directly to the caller upon resumption. It is the standard mechanism for achieving Main-Safety in repository and domain layers by offloading heavy I/O or CPU tasks to appropriate dispatchers.
 
 ## Interview answer — structured
 
-I use `withContext` to switch execution context—most commonly to move work onto a different dispatcher and return a result to the caller synchronously from the coroutine's perspective.
+WithContext is a core suspending function designed to switch execution contexts within an existing coroutine in a sequential, non-blocking manner.
 
-Its primary architectural role is enforcing **Main-Safety**. In clean architecture, repository and use-case suspend functions should be safe to call from Dispatchers.Main. By wrapping disk I/O or heavy computations in `withContext(Dispatchers.IO)` or `withContext(Dispatchers.Default)`, the function encapsulates its own threading requirements. The caller on the UI thread simply calls the suspend function without worrying about freezing the UI.
+WithContext does not spawn a new coroutine or create an independent Job. Instead, it temporarily shifts execution to the specified CoroutineDispatcher, suspends the caller, and returns the computed value directly upon resumption.
 
-A key senior distinction: never use `async { ... }.await()` to switch dispatchers for a single task. `withContext` is purpose-built for sequential context switching. It avoids creating a child coroutine and Deferred heap object, and it optimizes thread transitions under the hood.
+In production, we use withContext to implement the Main-Safety contract. Repositories and data sources wrap blocking database queries or network parsers in withContext(Dispatchers.IO) or withContext(Dispatchers.Default), allowing ViewModels to consume suspending functions directly from Dispatchers.Main.
+
+Passing a new Job instance into withContext is an anti-pattern because it severs structured concurrency and prevents parent cancellation from propagating into the switched block.
 
 
 ## Interview answer — deep senior
 
-Under the hood, `withContext` optimizes context switching using the `DispatchedCoroutine` fast path. If the target dispatcher matches the current coroutine's dispatcher, `withContext` skips dispatching altogether and executes the lambda synchronously in the current call frame, eliminating any scheduling overhead.
+Under the hood, withContext is implemented via the internal DispatchedCoroutine or UndispatchedCoroutine classes. When withContext(newContext) is invoked, the runtime merges the current coroutine context with newContext. If the target dispatcher matches the current dispatcher, the runtime optimizes execution via an undispatched fast path, running the block immediately in the current thread frame without queueing.
 
-If the dispatcher is different, it suspends the caller continuation, dispatches the block onto the new dispatcher, and upon completion, uses a specialized continuation wrapper to dispatch the return value back to the original caller dispatcher.
+When the target dispatcher differs from the current one, the runtime creates a DispatchedCoroutine, suspends the caller's continuation, and dispatches the execution of the block onto the new dispatcher. The calling coroutine remains suspended until the code block completes. When the block finishes, the DispatchedCoroutine captures the return value or exception and calls continuation.resumeWith, dispatching resumption back to the original caller dispatcher.
 
-In enterprise codebases, we mandate injecting dispatchers via dependency injection (e.g., `@IoDispatcher val dispatcher: CoroutineDispatcher`). Hardcoding `withContext(Dispatchers.IO)` in class bodies makes deterministic unit testing impossible because tests cannot control or advance virtual time without replacing the dispatcher with `StandardTestDispatcher`.
+A critical nuance in structured concurrency is how Job elements behave inside withContext. If a developer accidentally writes withContext(Dispatchers.IO + Job()), the explicit Job parameter breaks the parent-child hierarchy. The code inside the withContext block is no longer a child of the outer coroutine's Job. If the outer ViewModel scope is cancelled, the inner block will not receive the cancellation signal and will continue executing as an orphaned task.
 
+Additionally, withContext supports cancellation checks. When a coroutine is cancelled while suspended inside withContext, it throws a CancellationException back to the caller upon resumption, ensuring clean cancellation propagation across dispatcher boundaries without leaking resources.
 
 ## How to answer in the interview
 

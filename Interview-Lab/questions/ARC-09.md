@@ -20,6 +20,56 @@ How does UI state differ from business/domain state?
 
 Separate durable business facts from screen-specific rendering and interaction state.
 
+## Concept and technical explanation
+
+Differentiating UI state from business/domain state is a foundational architectural boundary that prevents transient presentation mechanics from contaminating core enterprise data models. Domain state represents the persistent, authoritative business truth of an application—such as an authenticated user profile, bank account balance, or items in a shopping cart. It is governed by enterprise invariants, maintained in repositories, persisted in databases or remote backends, and survives screen transitions. UI state represents the transient, presentation-specific configuration of what is currently rendered on screen—such as loading progress indicators, accordion expand/collapse toggles, text field focus, selected tabs, or localized validation error banners. UI state is derived from domain streams, owned by ViewModels, scoped strictly to screen lifecycles, and discarded upon screen completion.
+
+## Practical walkthrough (English)
+
+Contrasting persistent domain state with transient UI state in a banking dashboard:
+```kotlin
+// 1. DOMAIN STATE: Persistent, authoritative, business truth
+data class AccountBalance(
+    val accountId: String,
+    val availableBalance: BigDecimal,
+    val currency: Currency,
+    val isFrozen: Boolean
+)
+
+// 2. UI STATE: Transient, display-specific projection
+data class AccountDashboardUiState(
+    val isLoading: Boolean = false,
+    val formattedBalance: String = "",       // e.g. "$12,450.00"
+    val isBalanceVisible: Boolean = true,     // Toggle eye icon (UI only)
+    val isTransferButtonEnabled: Boolean = false,
+    val userErrorMessage: String? = null
+)
+
+// 3. ViewModel derives UI state by combining domain stream with UI toggle flow
+class AccountDashboardViewModel(
+    private val accountRepository: AccountRepository
+) : ViewModel() {
+    private val isBalanceVisibleFlow = MutableStateFlow(true)
+
+    val uiState: StateFlow<AccountDashboardUiState> = combine(
+        accountRepository.observeBalance(),
+        isBalanceVisibleFlow
+    ) { balance, isVisible ->
+        AccountDashboardUiState(
+            isLoading = false,
+            formattedBalance = if (isVisible) "$${balance.availableBalance}" else "••••••",
+            isBalanceVisible = isVisible,
+            isTransferButtonEnabled = !balance.isFrozen && balance.availableBalance > BigDecimal.ZERO,
+            userErrorMessage = if (balance.isFrozen) "Account is temporarily locked" else null
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AccountDashboardUiState(isLoading = true))
+
+    fun toggleBalanceVisibility() {
+        isBalanceVisibleFlow.update { !it } // Modifies transient UI state only!
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تختلف حالة الواجهة (UI State) عن حالة الأعمال/النطاق (Business / Domain State)؟
@@ -92,28 +142,24 @@ An order details screen observes Room-backed order status and composes locale-sp
 
 ## Interview answer — short
 
-Business/domain state represents persistent, presentation-independent business facts (e.g. account balance, cart items in DB). UI state represents transient, presentation-specific rendering requirements (e.g. loading spinners, active tab indexes, formatted strings, and error banners).
+Business or domain state represents persistent, core enterprise truth independent of screens, such as account balances or user roles. UI state is transient and screen-specific, defining what is visually rendered at any moment, including loading spinners, input validation errors, and selected tabs.
 
 ## Interview answer — structured
 
-Distinguishing between UI state and Business/Domain state is a cornerstone of clean separation of concerns.
+Distinguishing UI state from domain state prevents presentation concerns from corrupting enterprise business models.
 
-First, **Business / Domain State**. Next, represents core domain truth and invariants independently of how or whether data is displayed.
-Examples: A user's remaining credit balance, an authentication token, or an order's fulfillment status. Maintained in data/domain layers, often backed by local databases (Room) or remote servers. It survives Activity destructions and app process restarts.
-**UI State (Presentation State)**. Represents the visual rendering of the screen at a specific instant.
-Examples: Whether a loading indicator is spinning, active text field inputs, whether an accordion item is expanded, or localized error strings. Finally, scoped to the UI lifecycle (ViewModel or Composable) and ephemeral in nature.
+Domain state represents the persistent, authoritative truth of the application. It includes user credentials, shopping cart contents, and transaction histories managed by repositories and databases, existing independently of whether any screen is actively visible.
 
-The ViewModel acts as the transformer: it observes long-lived domain state, applies presentation logic, and projects it into formatted, immutable `UiState` snapshots.
+In production, UI state is a transient, presentation-focused projection of that domain data combined with screen-specific UI conditions. It models what the user sees at a particular moment, encompassing loading indicators, accordion expansion states, selected tabs, and localized input error messages.
+As for lifecycle and derivation, domain state survives navigation and process death, whereas UI state is owned by a ViewModel and scoped to a specific user journey, continuously derived from underlying domain streams and discarded when the screen finishes.
 
 
 ## Interview answer — deep senior
 
-A frequent architectural defect is leaking UI state down into domain repositories or databases. For example, adding `var isSelected: Boolean` or `var isExpanded: Boolean` directly onto a database entity or domain model corrupts pure business definitions with transient UI concerns. If that entity is reused across a notification service, widget, or background sync worker, those UI properties are completely meaningless and cause data corruption bugs.
-
-Conversely, storing domain business rules inside UI state creates duplicate logic across screens. For instance, checking if an account is eligible for a loan must be evaluated in a domain Use Case, not computed ad-hoc within a composable's `UiState` mapping lambda.
-
-In testing, domain state is tested via assertions on repository updates, whereas UI state is tested by asserting that domain events produce expected visual states in `StateFlow`.
-
+Under the hood, conflating UI state with domain state introduces major architectural bugs, memory leaks, and synchronization failures. Domain state is governed by business rules and backend invariants; it changes only when explicit business transactions occur, such as finalizing a purchase or receiving a WebSocket price update. It is typically modeled as immutable domain entities stored in local databases like Room or encrypted secure storage.
+UI state, conversely, is ephemeral and dynamic. In Jetpack Compose, UI state must be modeled as a single, immutable data class or sealed hierarchy exposed via StateFlow. It contains presentation-only properties that have zero meaning to the enterprise domain—such as isSwipeRefreshing, searchQueryInputText, scaffoldSnackbarMessage, or isBiometricPromptVisible.
+When designing reactive pipelines, senior engineers treat UI state as a derived projection. The ViewModel combines multiple domain repository flows alongside local UI event flows using operators like combine or map, producing a unified screen state. If the user navigates away, the UI state vanishes from memory, while the underlying domain state remains intact in the data layer.
+Staff engineers maintain strict architectural hygiene: domain entities must never hold UI-specific primitives like Android string resource IDs or format strings, while UI state classes should flatten complex domain graphs into simple, primitive-backed display models that guarantee fast Compose recomposition without unnecessary object allocations. This separation ensures rock-solid state management across process recreation and deep-link navigation.
 
 ## How to answer in the interview
 

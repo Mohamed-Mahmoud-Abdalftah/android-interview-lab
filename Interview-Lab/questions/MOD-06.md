@@ -22,6 +22,41 @@ What are Dynamic Feature Modules / Play Feature Delivery?
 - Address download failure, offline need and runtime entry points.
 - Distinguish dynamic delivery from ordinary modularization.
 
+## Concept and technical explanation
+
+Dynamic Feature Modules (DFMs) and Google Play Feature Delivery allow Android applications to separate features into isolated modules that can be downloaded conditionally, deferred in the background, or retrieved on demand at runtime via the Google Play Core library (SplitInstallManager). Unlike standard library modules where the base application module depends on the feature, DFMs invert the Gradle dependency direction: the dynamic feature module declares a dependency on the base :app module (via implementation(project(":app"))), while the :app module declares dynamicFeatures = [":feature:ondemand"]. This structural inversion means the base APK cannot directly reference dynamic feature classes at compile time. Cross-boundary navigation requires reflection, dynamic service locator registries, or deep link URIs. DFMs reduce the initial app download size dramatically, but introduce operational complexity: network latency during downloads, offline error handling, and Play Core testing requirements.
+
+## Practical walkthrough (English)
+
+Configuring dynamic delivery and loading a feature on-demand using SplitInstallManager:
+```kotlin
+// feature/scanner/build.gradle.kts
+plugins {
+    alias(libs.plugins.android.dynamic.feature)
+}
+dependencies {
+    implementation(project(":app"))
+}
+
+// Requesting on-demand download at runtime in the base app:
+fun downloadAndLaunchScanner(context: Context) {
+    val splitInstallManager = SplitInstallManagerFactory.create(context)
+    val request = SplitInstallRequest.newBuilder()
+        .addModule("scanner")
+        .build()
+
+    splitInstallManager.startInstall(request)
+        .addOnSuccessListener { sessionId ->
+            // Module downloaded! Launch via explicit component reflection or deep link
+            val intent = Intent().setClassName(context, "com.example.scanner.ScannerActivity")
+            context.startActivity(intent)
+        }
+        .addOnFailureListener { exception ->
+            // Handle network failure, insufficient disk space, or offline state
+        }
+}
+```
+
 ## Explanation in Arabic
 
 ما هي موديولات الميزات الديناميكية (Dynamic Feature Modules - DFMs) و Play Feature Delivery في Android؟
@@ -94,27 +129,31 @@ Measure feature usage, package size and install success/latency. Test Play deliv
 
 ## Interview answer — short
 
-Dynamic Feature Modules enable modular delivery via Android App Bundles, downloading non-critical features on-demand after initial app install. They reduce initial APK download size, support conditional delivery by country or hardware, but introduce inverted dependencies, runtime download failure handling, and classloader complexity.
+Dynamic Feature Modules enable Play Feature Delivery, allowing apps to download features on-demand, conditionally by device spec, or deferred in the background. They invert the standard Gradle dependency direction because the dynamic module depends on the app module. This slashes initial install size but requires handling runtime network download latency, offline failures, and reflection-based navigation.
 
 ## Interview answer — structured
 
-Dynamic Feature Modules (DFMs) leverage Google Play Feature Delivery to modularize app distribution rather than just code compilation.
-
-Key mechanisms.
-
-First, with Delivery Modes, modules can be configured as **Install-time** (packaged as separate splits), **On-demand** (downloaded in the background only when the user triggers that specific flow), or **Conditional** (installed based on user country, minimum SDK, or hardware device features like camera sensors). Finally, with Initial Download Reduction, heavy, infrequently used features—such as KYC facial scanning, AR viewers, or complex PDF report generators—are removed from the base APK, significantly boosting Play Store install conversion rates by reducing initial download size.
-
-However, DFMs introduce serious engineering complexity: Gradle dependencies are inverted (`:dfm` depends on `:app`), feature access requires asynchronous download UI states via `SplitInstallManager`, and features cannot be accessed offline if they haven't been downloaded yet.
-
+Dynamic Feature Modules provide an advanced packaging mechanism through Google Play Feature Delivery to optimize application install size.
+Standard Android modules are compiled directly into the base APK, forcing all users to download every feature upon initial install.
+With dynamic features, secondary or specialized capabilities like augmented reality viewers, heavy document scanners, or onboarding wizards are isolated into separate delivery units.
+These units can be downloaded on-demand when the user opens the feature, conditionally based on device hardware like camera features or country, or deferred silently in the background.
+Architecturally, dynamic modules invert the Gradle dependency graph: the dynamic feature module depends on the base app module, while the base app specifies the dynamic module in its build configuration.
+Because the base app cannot see dynamic classes at compile time, navigation must be decoupled through deep links, reflection, or dynamic dependency injection.
+Teams must build robust UI states to handle download progress, network disconnections, and storage errors.
 
 ## Interview answer — deep senior
 
-Under the hood, dynamic delivery relies on **Android APK Splits and SplitCompat**.
-
-When Google Play installs a base APK on Android 5.0+ (API 21+), the OS mounts additional split APKs directly into the application process. However, when a split is installed dynamically while the app process is **already running**, Android cannot automatically update the running app's classloader and asset path. Developers must call `SplitCompat.installActivity(context)` inside the Activity's `attachBaseContext()` to merge the newly downloaded split's Dex files and native `.so` libraries into the live ClassLoader.
-
-Furthermore, navigation to DFMs cannot use direct Kotlin class references (`Intent(this, DfmActivity::class.java)`), because `:app` does not have compile-time visibility of `:dfm`. Instead, you must navigate via explicit class reflection, string deep links, or Android Jetpack Navigation dynamic feature artifacts.
-
+From an engineering and product perspective, Dynamic Feature Modules represent a trade-off between initial user acquisition conversion rates and runtime operational complexity.
+Google Play data shows that for every six megabytes added to initial APK download size, install conversion rates drop by roughly one percent.
+By offloading niche or heavy features into dynamic modules, we keep our initial download size well below cellular network warning thresholds.
+However, the architectural cost of dynamic delivery is profound due to Gradle dependency inversion.
+In conventional builds, :app imports features.
+In dynamic delivery, the dynamic module applies com.android.dynamic-feature and imports :app as an implementation dependency, while :app lists the module inside dynamicFeatures.
+This inversion breaks direct compile-time code references from the base APK.
+To open a dynamic feature screen, we cannot invoke a standard Intent referencing the Activity class literal.
+We must either navigate via deep link URIs, register interface providers in a dynamic service registry upon split loading, or invoke classes reflectively after SplitInstallManager signals successful installation.
+Furthermore, dynamic features require SplitCompat.install(context) initialization in Application and Activity contexts to resolve resources correctly.
+Production engineering demands designing comprehensive fallback user flows: displaying progress indicators during download, handling network failures gracefully without stranding the user, and mocking SplitInstallManager during local automated testing using FakeSplitInstallManager.
 
 ## How to answer in the interview
 

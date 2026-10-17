@@ -21,6 +21,71 @@ How do you design a reversal queue that survives a battery removal?
 - Reversal queue durability through process death and battery removal.
 - Stable identity, at-least-once delivery and reconciliation.
 
+## Concept and technical explanation
+
+Designing a hardware-resilient payment reversal queue requires persistent queuing, boot-time reconciliation, and transactional gatekeeping:
+- The Hardware Threat Model:
+  - POS terminals operate in hostile physical environments where cashiers or drops cause instantaneous battery detachment, immediately halting the CPU without OS shutdown hooks.
+  - In-flight memory queues, coroutine channels, or standard SharedPreferences are instantly lost or corrupted.
+- Core Architectural Pillars:
+  1. Durable Storage with Strict Synchronization:
+     - The queue lives in SQLite using Room, configured with Write-Ahead Logging (WAL) and `PRAGMA synchronous = FULL` to ensure that every committed reversal record is physically synced to non-volatile NAND flash memory.
+  2. Boot-Time and Network Recovery Workers:
+     - A BroadcastReceiver listening for `android.intent.action.BOOT_COMPLETED` and `android.net.conn.CONNECTIVITY_CHANGE` initializes a dedicated persistent `CoroutineWorker` via WorkManager using `ExistingWorkPolicy.KEEP`.
+  3. Gatekeeping the Transaction Terminal (Stop-the-World Rule):
+     - In banking standards (APACS / ISO 8583 / EMVCo), a terminal that possesses an unresolved reversal in its persistent queue must block all subsequent sales until the reversal is either acknowledged by the acquirer or resolved via status inquiry.
+  4. Exponential Backoff with Jitter:
+     - Retry logic employs exponential backoff capped at 60 seconds with full randomized jitter to avoid thundering-herd spikes on bank switches after network outages.
+
+## Practical walkthrough (English)
+
+Implementing a persistent, crash-proof reversal worker and repository in Kotlin:
+```kotlin
+@Entity(tableName = "pending_reversals")
+data class PendingReversalEntity(
+    @PrimaryKey val transactionId: String,
+    val correlationId: String,
+    val stan: String,
+    val rrn: String?,
+    val amountCents: Long,
+    val attempts: Int = 0,
+    val lastAttemptEpoch: Long = 0L
+)
+
+class ReversalWorker(
+    appContext: Context,
+    workerParams: WorkerParameters,
+    private val reversalDao: PendingReversalDao,
+    private val paymentSwitchApi: PaymentSwitchApi
+) : CoroutineWorker(appContext, workerParams) {
+
+    override suspend fun doWork(): Result {
+        val pending = reversalDao.getAllPending()
+        if (pending.isEmpty()) return Result.success()
+
+        for (reversal in pending) {
+            try {
+                // Dispatch ISO 8583 0400 Reversal Message
+                val ack = paymentSwitchApi.sendReversal(
+                    stan = reversal.stan,
+                    amount = reversal.amountCents,
+                    correlationId = reversal.correlationId
+                )
+                if (ack.isSuccess) {
+                    reversalDao.delete(reversal.transactionId)
+                } else {
+                    reversalDao.incrementAttempts(reversal.transactionId, System.currentTimeMillis())
+                }
+            } catch (e: IOException) {
+                // Transient network failure: retry on next scheduled interval
+                return Result.retry()
+            }
+        }
+        return Result.success()
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تصمم طابوراً لمعالجة طلبات العكس (Reversal Queue) يصمد أمام نزع البطارية المفاجئ (Battery Pull Survival) في أجهزة الـ POS؟
@@ -115,25 +180,22 @@ Alert on queue age and repeated failures, run startup reconciliation and test fo
 
 ## Interview answer — short
 
-Design a battery-pull-resilient reversal queue by persisting pre-computed reversal payloads into SQLite using synchronous transactions, binding dispatch execution to Jetpack WorkManager with BOOT_COMPLETED triggers, and enforcing a mandatory pre-flight gate that blocks new transactions until all pending reversals clear.
+Design a battery-proof reversal queue using SQLite Room with Write-Ahead Logging and synchronous FULL flash syncing. Schedule dispatch via WorkManager triggered on boot and network reconnection with exponential backoff. Crucially, enforce terminal gatekeeping, blocking subsequent retail transactions until any pending reversal is acknowledged by the bank switch.
 
 ## Interview answer — structured
 
-Engineering a reversal engine capable of surviving sudden physical battery removal requires a three-tiered architecture.
-
-First, **Durable Storage with Synchronous Flash Flush**. Next, reversals must be committed to a dedicated SQLite `reversal_queue` table before any UI timeout resolution. Enforce `PRAGMA synchronous = NORMAL` or `FULL` to ensure kernel page buffers flush to physical flash memory before control flow returns.
-**Resilient Execution via Jetpack WorkManager**. Enqueue reversal dispatches via `WorkManager.enqueueUniqueWork()` using an `ExistingWorkPolicy.APPEND_OR_REPLACE` policy with `Constraints(NetworkType.CONNECTED)`.
-WorkManager registers system broadcast receivers (`ACTION_BOOT_COMPLETED`, `ACTION_MY_PACKAGE_REPLACED`). When the battery is re-inserted and Android boots up, WorkManager automatically resurrects the worker without user intervention. **The Pre-Flight Terminal Lockout Gate**.
-Finally, financial certification (EMV/PCI) mandates that a terminal must clear historical reversals before accepting new card insertions. On app cold start or before launching a new transaction flow, the system queries the reversal queue. If entries exist, it halts new sales and flushes the queue first.
-
+Building a payment reversal queue that survives instantaneous battery removal requires hardware-aware data persistence and strict terminal operational rules.
+The queue is backed by an SQLite Room table rather than in-memory queues. We configure SQLite with Write-Ahead Logging and synchronous FULL mode to guarantee that transactions are flushed directly to non-volatile flash memory before execution continues.
+To handle recovery, an Android BroadcastReceiver detects device boot and schedules a reliable WorkManager task. When connectivity restores, the worker reads the queue and dispatches ISO 8583 reversal messages to the bank switch using exponential backoff with randomized jitter.
+The essential financial safeguard is terminal gatekeeping. Under certified payment standards, a POS device with an unresolved reversal in its queue must refuse to process new sales until the reversal is cleared. This prevents the terminal from accumulating un-reconciled transactions and forces immediate resolution of ambiguous ledger states.
 
 ## Interview answer — deep senior
 
-From an EMV L2 payment kernel and regulatory certification perspective, reversal queues follow strict protocol rules.
-
-First, with Reversal Retry Limits and Poison Pill Mitigation, if a reversal request is rejected by the issuer host with a definitive non-retryable response (e.g. `ISO 8583 Response Code 12: Invalid Transaction` or `Code 94: Duplicate Transmission`), retrying forever locks the POS terminal indefinitely. The reversal worker must inspect response codes: definitive rejections transition the record to an `AUDIT_ALERT_FAILED` state, unblocking the terminal while alerting engineering telemetry. Next, with FIFO Queue Ordering, reversals must be dispatched in strict First-In-First-Out order. Discarding ordering risks reversing a subsequent authorization instead of the intended original transaction.
-Finally, with Hardware Keystore Signature Durability, reversal payloads often contain encrypted EMV card cryptograms (ARQC / AAC) generated during the physical chip read. Because the physical chip is gone upon battery restart, this exact cryptogram must be safely encrypted in the persistent reversal queue record using the Android Keystore.
-
+From an embedded POS certification and EMVCo level 2/3 terminal engineering standpoint, building a battery-proof reversal engine requires designing for catastrophic power interruption as a normal operational condition.
+Handheld payment terminals in supermarkets and delivery logistics are subjected to constant physical trauma. A battery pack can detach mid-swipe, abruptly depriving the processor of voltage without allowing Android to run clean-up callbacks or execute onTrimMemory routines.
+Under these physical constraints, data integrity rests on the storage driver. We configure Room over SQLite with PRAGMA synchronous set to FULL or EXTRA. This forces the underlying Linux storage driver to issue hardware flush commands, ensuring that the reversal row is burned into NAND flash sectors before the thread unblocks.
+When the terminal reboots after a battery replacement, a BOOT_COMPLETED receiver schedules a persistent WorkManager job configured with NetworkType.CONNECTED.
+More importantly, the payment UI layer incorporates a hardware gatekeeper rule. Before the cashier can enter a new sale amount, the application checks whether any rows exist in the pending_reversals table. If an unresolved reversal is present, the app locks the transaction screen and displays a Reversal In Progress banner. The terminal executes the 0400 reversal message or queries the switch status endpoint. Only upon receiving a signed cryptographic acknowledgement from the acquirer does the terminal purge the record and unlock the sale interface. This strict architectural invariant guarantees that the merchant never operates with unbalanced local ledgers.
 
 ## How to answer in the interview
 

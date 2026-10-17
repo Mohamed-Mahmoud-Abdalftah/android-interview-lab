@@ -43,7 +43,7 @@ COR_01_06 = [
             "Under the hood, the Kotlin compiler transforms every suspending function into a state machine implementing the `Continuation<T>` interface, passing a continuation parameter under the continuation-passing style (CPS) transformation. "
             "When a suspension point is reached, the function stores its local frame state onto the heap and returns a special marker value `COROUTINE_SUSPENDED`. The underlying thread is immediately released back to its thread pool executor.\n\n"
             "In contrast to preemptive multithreading where the OS scheduler forcibly interrupts threads at arbitrary time slices, coroutines are cooperative: a coroutine runs until it explicitly yields or reaches a suspension point. "
-            "In Android architecture, this distinction is vital for UI fluidity. Blocking the main thread with a 500ms network call triggers an ANR dialog. Suspending on the main thread simply returns control to the Android Choreographer loop, keeping UI touch events and 120Hz frame rendering completely smooth."
+            "In Android architecture, this distinction is vital for UI fluidity. Blocking the main thread with a synchronous call freezes the Looper message queue, dropping frames below the 16.6ms or 8.3ms threshold and triggering an ANR dialog if blocked for 5 seconds under user input. Suspending on the main thread simply returns control to the Android Choreographer loop, keeping UI touch events and 120Hz frame rendering completely smooth."
         ),
         "follow_ups": [
             {

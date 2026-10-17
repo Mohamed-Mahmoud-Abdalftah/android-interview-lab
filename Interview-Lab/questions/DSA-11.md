@@ -21,6 +21,72 @@ Explain BFS versus DFS and their typical applications.
 - BFS queue versus DFS stack/recursion and complexity.
 - Shortest unweighted path, memory and Android use cases.
 
+## Concept and technical explanation
+
+Breadth-First Search (BFS) and Depth-First Search (DFS) represent the foundational graph and tree traversal paradigms with contrasting traversal mechanics and memory profiles:
+- Breadth-First Search (BFS):
+  - Traversal Strategy: Explores the graph level by level, visiting all immediate neighbors of the current vertex before advancing to the next depth tier.
+  - Core Data Structure: FIFO Queue (`ArrayDeque`).
+  - Complexity: $O(V + E)$ Time, $O(V)$ Auxiliary Space (governed by maximum graph breadth or leaf layer width).
+  - Android Applications: Finding the shortest path in unweighted graphs (e.g., shortest navigation hops in a subway map), finding the nearest matching UI node, breadth-first traversal of a `ViewGroup` hierarchy (`ViewGroup.getChildAt()`), and peer-to-peer device discovery in nearby mesh networks.
+- Depth-First Search (DFS):
+  - Traversal Strategy: Plunges along each branch to its deepest leaf before backtracking.
+  - Core Data Structure: LIFO Stack (explicit `ArrayDeque` or implicit recursion call stack).
+  - Complexity: $O(V + E)$ Time, $O(H)$ Space for trees of height $H$, or $O(V)$ for degenerate graphs.
+  - Android Applications: Topological sorting for dependency resolution (Dagger/Hilt component graph compilation, Gradle task dependency execution), detecting cycles in navigation backstacks or circular dependencies, and Abstract Syntax Tree (AST) inspection in custom Android Lint rules.
+- Mobile Stack Safety Invariant:
+  - Recursive DFS on deep trees risks triggering `StackOverflowError` if recursion depth exceeds the JVM/ART thread stack size limit (typically 1MB). Production Android systems mandate iterative DFS using an explicit heap-allocated `ArrayDeque` to guarantee crash-free traversal.
+
+## Practical walkthrough (English)
+
+Kotlin implementations comparing iterative BFS and stack-safe iterative DFS:
+```kotlin
+// Graph node representation
+class GraphNode(val id: String, val neighbors: MutableList<GraphNode> = mutableListOf())
+
+// 1. Breadth-First Search (BFS): Level-by-level traversal using FIFO Queue
+fun traverseBfs(root: GraphNode, targetId: String): GraphNode? {
+    val queue = ArrayDeque<GraphNode>()
+    val visited = HashSet<String>()
+
+    queue.addLast(root)
+    visited.add(root.id)
+
+    while (queue.isNotEmpty()) {
+        val current = queue.removeFirst() // Dequeue
+        if (current.id == targetId) return current // Shortest path guarantee in unweighted graph
+
+        for (neighbor in current.neighbors) {
+            if (visited.add(neighbor.id)) {
+                queue.addLast(neighbor)
+            }
+        }
+    }
+    return null
+}
+
+// 2. Depth-First Search (DFS): Stack-safe iterative traversal using LIFO Stack
+fun traverseDfsIterative(root: GraphNode, targetId: String): GraphNode? {
+    val stack = ArrayDeque<GraphNode>()
+    val visited = HashSet<String>()
+
+    stack.addFirst(root) // Push
+    visited.add(root.id)
+
+    while (stack.isNotEmpty()) {
+        val current = stack.removeFirst() // Pop
+        if (current.id == targetId) return current
+
+        for (neighbor in current.neighbors) {
+            if (visited.add(neighbor.id)) {
+                stack.addFirst(neighbor) // Push neighbor
+            }
+        }
+    }
+    return null
+}
+```
+
 ## Explanation in Arabic
 
 اشرح الفرق الجوهري بين خوارزميتي BFS و DFS، وما هي تطبيقاتهما العملية الشائعة في هندسة تطبيقات أندرويد؟
@@ -126,25 +192,21 @@ In production, expose graph traversal as pure Kotlin logic and test with synthet
 
 ## Interview answer — short
 
-BFS traverses nodes level-by-level using a FIFO Queue, making it ideal for finding the shortest path in unweighted graphs. DFS explores branches deeply using a LIFO Stack or recursion, making it ideal for cycle detection, topological sorting of dependency graphs, and exhaustive tree traversal. Both run in O(V + E) time.
+BFS explores graphs level-by-level using a FIFO queue, delivering shortest-path guarantees in unweighted graphs like UI view-tree scans. DFS explores deeply down branches using a stack or recursion, ideal for topological sorting, cycle detection, and AST linting. In Android, production DFS uses an explicit heap-allocated ArrayDeque to prevent StackOverflowError crashes.
 
 ## Interview answer — structured
 
-BFS and DFS are fundamental graph and tree traversal algorithms with distinct structural properties.
-
-First, **Breadth-First Search (BFS)**. Next, with Mechanism, explores all neighbors at the current depth level before progressing to deeper tiers, driven by an explicit FIFO queue (`ArrayDeque`).
-Additionally, with Complexity, $O(V + E)$ time; $O(W)$ auxiliary space where $W$ is the maximum graph width. With Primary Use Cases, shortest-path discovery in unweighted graphs (e.g. Shortest navigation hops between app screens), shallow UI tree inspections, and peer-to-peer network discovery.
-**Depth-First Search (DFS)**. With Mechanism, plunges along each branch to leaf terminations before backtracking, driven by call-stack recursion or an explicit LIFO stack.
-With Complexity, $O(V + E)$ time; $O(H)$ auxiliary space where $H$ is the maximum graph depth. Finally, with Primary Use Cases, cycle detection in dependency injection graphs (Dagger), topological sorting of Gradle module compilation dependencies, and deep syntax tree evaluations.
-
+Breadth-First Search and Depth-First Search represent the two fundamental strategies for traversing trees and graphs.
+Breadth-First Search explores outward layer by layer, visiting all immediate neighbors before penetrating deeper into the graph. It uses a FIFO queue, typically implemented with ArrayDeque, and runs in O of V plus E time. In Android development, BFS is the algorithm of choice for finding the shortest path in unweighted networks and for level-order scans of ViewGroup hierarchies.
+Depth-First Search explores as deep as possible along each branch before backtracking, utilizing a LIFO stack. It operates in O of V plus E time with memory proportional to tree height. DFS powers critical architectural processes such as topological sorting in Dagger dependency injection graphs, cycle detection in navigation backstacks, and AST parsing in custom Lint rules.
+To ensure safety on mobile devices, production Android code avoids recursive DFS on arbitrary user-generated structures. Because thread call stacks are limited to approximately one megabyte, recursive calls risk StackOverflowError. We mandate iterative DFS using a heap-allocated ArrayDeque.
 
 ## Interview answer — deep senior
 
-From an Android systems engineering angle, stack safety and tree bounds dictate choices.
-
-First, with Call Stack Overflow Risks with Recursive DFS, in deep Android View trees or complex JSON object graphs, recursive DFS can exceed the thread's stack limit, throwing a fatal `StackOverflowError`. Recursive DFS must either be transformed into an iterative DFS utilizing an explicit heap-allocated `ArrayDeque`, or guarded with depth bounds. Next, with Compose Semantic Node Trees, jetpack Compose test assertions (`onNodeWithText`, `printToLog`) use BFS traversal under the hood to find matching semantic layout nodes closest to the tree root, prioritizing shallow surface nodes over deeply nested implementation composables.
-Finally, with Graph Cycle Detection in Build Tooling, gradle and Hilt use Tarjan's or Kosaraju's DFS-based algorithms to detect Strongly Connected Components (cycles) during annotation processing. If module A depends on B and B depends on A, DFS back-edge detection halts compilation with a circular dependency error.
-
+From an algorithmic theory and platform engineering perspective, BFS and DFS embody distinct trade-offs between search optimality, traversal order, and memory topology.
+BFS operates with a FIFO queue to guarantee shortest path discovery in unweighted graphs. Because it expands monotonically outward, the first time BFS encounters a target node, it is mathematically proven to have arrived via the minimum number of edges. However, its memory footprint is dictated by the maximum width of the graph. When traversing a wide, shallow tree—such as a complex Android UI hierarchy with dozens of siblings per ViewGroup—the queue expands to hold the entire breadth, consuming O of V memory on the heap.
+DFS operates with LIFO stack semantics, prioritizing path depth over breadth. In balanced trees, DFS consumes only O of H memory, proportional to tree height, making it far more memory-frugal than BFS for deep, narrow structures. This property makes DFS the ideal engine for topological sorting and cycle detection. In Android build toolchains and dependency injection frameworks like Dagger, DFS performs post-order traversal to resolve dependency graphs, compiling leaf modules before their consumers.
+However, in mobile runtimes, the implementation pattern is a critical reliability concern. Writing DFS recursively relies on the execution call stack. On Android, thread stacks are constrained by ART to small memory boundaries. If recursive DFS encounters a degenerate linked structure or deeply nested JSON tree, the runtime exhausts stack frames and crashes the process with an uncatchable StackOverflowError. Senior Android engineers mandate iterative DFS using an explicit heap-allocated ArrayDeque, converting dangerous call-stack allocations into safe, managed heap memory.
 
 ## How to answer in the interview
 

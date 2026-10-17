@@ -22,6 +22,51 @@ How do multi-window, rotation, and background/foreground transitions affect stat
 - Put transient UI state, retained presentation state, and durable data in appropriate owners.
 - Avoid assumptions that `onPause` implies invisibility or that `ViewModel` survives process death.
 
+## Concept and technical explanation
+
+State preservation in Android is driven by three distinct system-level triggers: configuration changes, multi-window visibility transitions, and background process death.
+During configuration changes (such as screen rotation, folding/unfolding foldable displays, or system locale updates), the operating system destroys and completely recreates the Activity instance to reload optimized resources. In contrast, multi-window mode (introduced in Android 7.0 and refined with multi-resume in Android 10) decouples window visibility from window focus. In multi-window or picture-in-picture mode, an Activity may remain visible in the STARTED state while another window holds user focus, meaning background transitions must not immediately halt rendering or media playback. Finally, when an application is moved to the background, it transitions through onPause to onStop. Under severe memory pressure, the Linux Low Memory Killer terminates the cached process without warning. Preserving application continuity requires a multi-tiered state management architecture: ephemeral UI state stored in SavedStateHandle, presentation logic retained across configuration changes in a ViewModel, and durable business state persisted immediately in a local Room database.
+
+## Practical walkthrough (English)
+
+A video player implementation must adapt its playback lifecycle to multi-window mode, continuing playback while visible in onStart rather than pausing prematurely in onPause:
+
+```kotlin
+class VideoPlayerActivity : AppCompatActivity() {
+    private var player: ExoPlayer? = null
+
+    override fun onStart() {
+        super.onStart()
+        // Initialize player when visible in multi-window mode:
+        initializePlayer()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Resume full interactive controls
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Do not release player here in multi-window mode!
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Release hardware decoding resources when completely hidden:
+        releasePlayer()
+    }
+
+    private fun initializePlayer() { /* ExoPlayer setup */ }
+    private fun releasePlayer() {
+        player?.release()
+        player = null
+    }
+}
+```
+
+Failure scenario: A banking transfer screen retains the transfer amount only inside a ViewModel. When the user backgrounds the app to copy a verification code, the operating system kills the process. When the user returns, the system recreates the Activity, but the ViewModel is re-instantiated with default null values, wiping out the uncommitted form data and causing severe user frustration.
+
 ## Explanation in Arabic
 
 تأثير الـ Multi-Window (تقسيم الشاشة)، التدوير (Rotation)، والانتقال بين الخلفية والمقدمة (Background/Foreground) على حالة التطبيق:
@@ -83,22 +128,25 @@ For a delivery checkout, save the address draft and idempotency key durably befo
 
 ## Interview answer — short
 
-In multi-window, the app can be visible (onStart) without having input focus (onPause), so media playback and rendering must be controlled in onStart/onStop, not onResume/onPause. Rotation triggers full Activity recreation with ViewModel preservation, and backgrounding moves the app to onStop where it becomes killable by the OS.
+Manage state across three distinct layers: use ViewModel for transient configuration changes like rotation; use SavedStateHandle and onSaveInstanceState for lightweight navigation state surviving background process death; and persist durable business data immediately in Room or DataStore. In multi-window mode, handle visibility in onStart and onStop rather than onResume and onPause.
 
 ## Interview answer — structured
 
-These three transitions impact Android lifecycle states and resource management differently.
+Handling state transitions requires separating configuration recreation from background process termination. Rotation destroys and recreates the Activity window to reload layout resources, whereas moving an app to the background transitions the process to a cached state where the Linux kernel can kill it silently at any moment.
 
-First, a Multi-Window / Foldable Resizing is the app shares screen real estate with another process. The app is fully visible, but may not have user touch focus. Prior to Android 10, an app without focus was kept in `onPause()`. In Android 10+ with **Multi-Resume**, all visible apps in multi-window remain in `RESUMED`. Therefore, video playback, map rendering, and animations must be bound to **`onStart()` and `onStop()`**; stopping them in `onPause()` causes frozen video playback in split-screen mode. Next, with Screen Rotation, triggers a full Configuration Change: `onPause -> onStop -> onDestroy` followed by recreation. The UI hierarchy and view bindings are destroyed, while the ViewModel and SavedStateHandle survive in memory.
-Finally, with Background/Foreground Transitions, navigating away invokes `onPause()` followed by `onStop()`. The OS calls `onSaveInstanceState()` to serialize state. Once in `onStop()`, the app's process is marked killable by the Low Memory Killer if RAM is constrained.
+We structure state management into three resilient tiers. The ViewModel retains complex presentation state across configuration changes like rotation and screen folding. For surviving background process death, lightweight UI parameters and navigation IDs are preserved in SavedStateHandle via onSaveInstanceState.
+
+In production, involving multi-window and picture-in-picture modes on tablets and foldables, visibility is decoupled from touch focus. An Activity in split-screen remains visible even when unfocused, so continuous operations like video playback must be bound to onStart and onStop rather than prematurely suspended in onPause.
+
+Critical user actions and financial transactions must be persisted immediately to local durable storage like Room or DataStore rather than relying on late lifecycle callbacks.
 
 
 ## Interview answer — deep senior
 
-On modern **Foldable devices** (e.g., Samsung Galaxy Fold, Google Pixel Fold), unfolding the device transitions the app from a compact external display to a large unfolded inner display. This triggers dynamic configuration changes where screen size, aspect ratio, and smallest screen width (`sw600dp`) change on the fly.
-
-To support foldables seamlessly in modern architecture: 1. Use **Jetpack WindowManager** (`WindowInfoTracker.getOrCreate(context).windowLayoutInfo(activity)`) to observe folding postures (Flat, Half-Opened / Tabletop mode, and display hinge folding features). 2. Adopt adaptive UI layouts with Compose (`calculateWindowSizeClass()`), switching dynamically between single-pane, list-detail, and supporting pane layouts without manual Activity recreation hacks.
-
+Under the hood, configuration changes cause the ActivityThread to execute handleRelaunchActivity, invoking onSaveInstanceState, destroying the current Activity instance via onDestroy, and instantiating a fresh one. The existing ViewModelStore is preserved across this destruction by the NonConfigurationInstances holder maintained by the Android framework. However, during background process death, the entire Linux process is terminated by the Low Memory Killer daemon (lmkd) via a SIGKILL signal. The ViewModelStore and all in-memory static singletons are entirely obliterated.
+When the user subsequently restores the task from the Overview screen, the system launches a brand-new process, executes Application.onCreate(), and passes the parcelized savedInstanceState Bundle back to Activity.onCreate(). If an application relies solely on ViewModel properties or static caches without saving state in SavedStateHandle, it will throw a NullPointerException or reset to a broken initial state upon restoration.
+Regarding multi-window mechanics, Android 7.0 introduced multi-window where only the top focused app was in RESUMED, while visible side-by-side apps were kept in PAUSED. Android 10 introduced multi-resume, allowing all visible activities in split-screen or multi-display environments to remain in RESUMED if their manifests permit. Stopping video playback or location updates in onPause breaks the user experience in multi-window scenarios; resources tied to visual rendering must remain active throughout the STARTED state and only shut down when transitioning to STOPPED.
+Furthermore, developers must respect the 1MB IPC transaction limit when writing to onSaveInstanceState. The saved instance state bundle is marshaled across Binder to the system server process (ActivityTaskManagerService). Exceeding this buffer by attempting to store large bitmaps or extensive JSON lists triggers a TransactionTooLargeException, crashing the process during state preservation.
 
 ## How to answer in the interview
 

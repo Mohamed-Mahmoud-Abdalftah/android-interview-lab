@@ -21,6 +21,49 @@ Where should access and refresh tokens be stored and how are they revoked?
 - Access/refresh token scope and storage minimization.
 - Server revocation, rotation races and logout across process death.
 
+## Concept and technical explanation
+
+Secure token storage and revocation architecture represents the core of identity management in modern mobile applications. Access tokens are short-lived bearer credentials (typically lasting 15 to 60 minutes) used in HTTP Authorization headers. Because of their ephemeral nature, access tokens can reside in volatile in-memory repositories or securely in encrypted storage. Refresh tokens are long-lived, high-privilege credentials whose sole purpose is to exchange for new access tokens; they must be persisted securely on disk using Jetpack DataStore or EncryptedSharedPreferences backed by hardware-rooted Android Keystore master keys. Token revocation operates on two planes: client-side lifecycle and server-side invalidation. A client-side logout must cancel running background network tasks, wipe in-memory token singletons, and purge persisted ciphertext from disk. However, local deletion alone does not invalidate a bearer token across distributed systems. The client must dispatch an explicit logout request to the authorization server's OAuth 2.0 Token Revocation endpoint (RFC 7009), allowing the backend to invalidate the refresh token in Redis and trigger Refresh Token Rotation (RTR).
+
+## Practical walkthrough (English)
+
+Implementing secure token storage and RFC 7009 compliant token revocation:
+```kotlin
+class AuthenticationRepository(
+    private val secureStorage: EncryptedDataStore,
+    private val authApi: OAuthService,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) {
+    // 1. In-memory volatile access token cache for high-throughput OkHttp interceptors
+    @Volatile private var cachedAccessToken: String? = null
+
+    suspend fun getAccessToken(): String? = cachedAccessToken ?: withContext(ioDispatcher) {
+        secureStorage.readAccessToken().also { cachedAccessToken = it }
+    }
+
+    // 2. Comprehensive Logout: Server-side RFC 7009 revocation + Local purge
+    suspend fun executeCompleteLogout(): Result<Unit> = withContext(ioDispatcher) {
+        try {
+            val currentRefreshToken = secureStorage.readRefreshToken()
+            if (!currentRefreshToken.isNullOrBlank()) {
+                // Inform backend authorization server to invalidate the token in Redis
+                authApi.revokeToken(
+                    token = currentRefreshToken,
+                    tokenTypeHint = "refresh_token"
+                )
+            }
+        } catch (e: Exception) {
+            // Even if network fails, proceed to clean local state
+        } finally {
+            // Guarantee local credentials are eradicated
+            cachedAccessToken = null
+            secureStorage.clearAllTokens()
+        }
+        Result.success(Unit)
+    }
+}
+```
+
 ## Explanation in Arabic
 
 أين وكيف يجب تخزين الـ Access Tokens والـ Refresh Tokens، وكيف يتم إلغاؤها (Revocation) من جهة السيرفر والتطبيق؟
@@ -114,25 +157,31 @@ Production logout coordinates local clearing, cancellation of pending authentica
 
 ## Interview answer — short
 
-Store short-lived access tokens in memory or encrypted storage, and long-lived refresh tokens strictly in Keystore-backed encrypted DataStore. Revocation must occur server-side by blacklisting session IDs in Redis. Use OkHttp's Authenticator with a Mutex to seamlessly refresh tokens upon 401 responses and handle token rotation.
+We store short-lived access tokens in volatile memory or encrypted storage, while long-lived refresh tokens are securely encrypted on disk using Keystore-backed DataStore. Revocation requires a dual approach: wiping in-memory singletons and encrypted disk storage on the client, and calling the server's OAuth revocation endpoint so the refresh token is immediately blacklisted in backend caches.
 
 ## Interview answer — structured
 
-Token architecture follows a tiered security approach balancing user experience against attack windows.
-
-First, **Storage Topology**. Next, with Access Token, short validity (5–15 minutes). Can reside in an in-memory repository during active process lifecycle, supplemented with Keystore-backed encrypted persistence to survive process death without forced re-logins.
-Additionally, with Refresh Token, longer validity (7–30 days). Must never be stored in plain SharedPreferences. It must be encrypted using Android Keystore AES-GCM and stored in Jetpack DataStore. **Server-Side Revocation**.
-Mobile logout must invoke a backend `/logout` or `/revoke` endpoint. The server marks the session/refresh token family revoked in a distributed cache (e.g. Redis). Client-side token deletion alone is insufficient because a compromised token remains valid on the server until expiry.
-**Refresh Token Rotation (RTR)**. Finally, every refresh request invalidates the previous refresh token and issues a new pair. If an invalidated refresh token is ever reused, the server detects token compromise and immediately revokes all tokens issued to that user session.
-
+Effective mobile token management separates storage requirements by token lifetime while enforcing robust revocation protocols.
+Access tokens are short-lived bearer credentials that expire in minutes, which we maintain in volatile memory or encrypted local storage to satisfy frequent network calls with low latency.
+Refresh tokens represent permanent account access; they must be encrypted on disk using Jetpack DataStore or EncryptedSharedPreferences anchored to an Android Keystore master key.
+Revocation requires a coordinated effort between client state and backend infrastructure.
+Simply clearing local app storage upon logout is insufficient because an exfiltrated refresh token remains valid on the authorization server until its natural expiration.
+A production logout workflow first sends an authenticated request to the server's OAuth 2.0 revocation endpoint, instructing the backend to blacklist the token family in its Redis cache.
+The client then cancels all running coroutines, clears in-memory token singletons, and purges the encrypted disk storage.
+Additionally, the backend enforces Refresh Token Rotation, issuing a new refresh token on every exchange and invalidating the entire family if an already-consumed token is replayed.
 
 ## Interview answer — deep senior
 
-In high-traffic distributed mobile apps, token refreshing introduces significant concurrency and failure handling challenges.
-
-First, with Handling Thundering Herds on 401, when multiple parallel API calls fail simultaneously with `401 Unauthorized`, an uncoordinated authenticator triggers parallel refresh calls. The first call succeeds and rotates the refresh token; the subsequent calls submit an already-invalidated refresh token, causing the backend to falsely assume token theft and revoke the session! We prevent this by serializing refresh execution using a Coroutines `Mutex` inside `okhttp3.Authenticator`. Next, with Re-entrant 401 Loop Protection, `Authenticator.authenticate()` must track `response.priorResponse` count. If the refresh request itself fails or if three consecutive retries return 401, return `null` to terminate the loop, wipe stored tokens, and dispatch an unauthenticated session event to navigate to the Login screen.
-Finally, with Token Binding & Attestation, in high-assurance fintech apps, refresh tokens are cryptographically bound to a client-generated Keystore EC keypair (DPoP - Demonstrating Proof-of-Possession). Even if an attacker intercepts the refresh token via TLS proxy, they cannot replay it without signing the request using the device's non-exportable private key.
-
+From an adversarial perspective, the security of an OAuth 2.0 mobile client rests entirely on the protection of its refresh token and the resilience of its revocation pathways.
+If an attacker intercepts an access token, the exposure window is strictly bounded by its brief time-to-live.
+However, a compromised refresh token allows persistent access to account resources.
+Therefore, storing refresh tokens in plain SharedPreferences or unencrypted Room tables is a catastrophic vulnerability.
+We persist refresh tokens exclusively in storage encrypted via AES-256-GCM using hardware-backed Keystore keys, while caching the access token in volatile memory to prevent repeated disk decryption overhead on every API call.
+For revocation, we must design for both user-initiated logouts and automated threat mitigation.
+In a user logout, deleting local records while offline is a dangerous half-measure; if the network is available, the client must notify the server's RFC 7009 revocation endpoint so distributed API gateways reject subsequent requests using that token.
+More importantly, modern systems implement Refresh Token Rotation with Automatic Reuse Detection.
+Every time the mobile app requests a new access token, the authorization server invalidates the current refresh token and issues a replacement pair.
+If an attacker attempts to use a previously consumed refresh token, the server detects the token replay attack, recognizes that a breach has occurred, and immediately revokes all active tokens associated with that user session, neutralizing the threat automatically.
 
 ## How to answer in the interview
 

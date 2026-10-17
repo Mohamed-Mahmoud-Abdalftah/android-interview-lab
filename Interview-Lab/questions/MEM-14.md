@@ -22,6 +22,35 @@ How do you analyze a heap dump and use LeakCanary?
 - Interpret retained objects and paths to GC roots, not just shallow size.
 - Understand LeakCanary's automated watch/dump/report flow and verify a fix.
 
+## Concept and technical explanation
+
+Memory leaks occur when an object that is no longer needed by application logic remains reachable through a chain of strong references originating from a Garbage Collection Root (GC Root). In Android, the most damaging memory leaks involve Context, Activity, and View hierarchies because retaining a single Activity retains its entire view hierarchy, loaded bitmaps, and window-bound allocations. A heap dump is a binary snapshot of all objects, reference pointers, and primitive fields residing in the Java/Kotlin runtime heap at an exact moment in time, formatted according to the HPROF specification. Analyzing a heap dump entails reconstructing the directed object graph, distinguishing shallow size (the memory footprint of the instance itself) from retained size (the aggregate memory reclaimed if this instance and its exclusively owned subtree are collected), and computing the dominator tree. LeakCanary is an automated memory leak detection library tailored for Android debug builds. It operates by observing the destruction lifecycle of Activities, Fragments, and ViewModels. When an Android component reaches its terminal lifecycle state (`onDestroy`), LeakCanary wraps the target instance in a `KeyedWeakReference` tied to a `ReferenceQueue`. If the weak reference is not enqueued within a 5-second watch threshold, LeakCanary triggers a GC cycle. If the object remains retained, LeakCanary triggers a background heap dump using `Debug.dumpHprofData()` and parses the snapshot using Shark, its headless Kotlin-based HPROF analyzer, to identify the shortest strongly reachable path from a GC Root to the leaking instance.
+
+## Practical walkthrough (English)
+
+LeakCanary integration and leak trace interpretation:
+```kotlin
+// 1. Add LeakCanary dependency in build.gradle.kts (runs automatically in debug builds only):
+dependencies {
+    debugImplementation("com.squareup.leakcanary:leakcanary-android:2.14")
+}
+
+// 2. Typical LeakCanary leak trace report:
+/*
+┬───
+│ GC Root: System class / Static field
+│
+├─ com.example.app.UserManager class
+│    Leaking: NO (Static class is never leaking)
+│    ↓ static UserManager.currentContext
+├─ com.example.app.DetailActivity instance
+│    Leaking: YES (Activity has been destroyed: onDestroy() called)
+│    Retaining: 24.3 MB across 1,420 objects
+╰→ com.example.app.DetailActivity
+*/
+```
+When examining the leak trace, developers look at the boundary where `Leaking: NO` changes to `Leaking: YES`. That exact edge highlights the developer defect: a static field retaining an Activity Context. The remediation requires either clearing the reference inside `onDestroy()`, or decoupling the dependency by passing `applicationContext` instead of the Activity instance.
+
 ## Explanation in Arabic
 
 كيفية تحليل الـ Heap Dump واستخدام أداة LeakCanary لاكتشاف تسريبات الذاكرة في بيئة الإنتاج والتطوير:
@@ -87,28 +116,25 @@ Reproduce a field report on a representative device, capture a heap only in an a
 
 ## Interview answer — short
 
-LeakCanary detects leaks automatically in debug builds by tracking destroyed Activities/Fragments via `WeakReference`, prompting a heap dump, and parsing the HPROF file with Shark. Analyzing a heap dump in Android Studio Profiler or LeakCanary involves identifying the GC Root, following the retained reference chain, and determining which reference prevented legitimate garbage collection.
+Analyzing a heap dump requires inspecting the shortest path of strong references from a GC Root to an instance that has outlived its logical lifecycle. In development, LeakCanary automates this by wrapping destroyed Activities, Fragments, and ViewModels in weak references, waiting five seconds, triggering garbage collection, dumping the HPROF heap, and computing the retained reference chain with its Shark analyzer.
 
 ## Interview answer — structured
 
-Analyzing memory leaks requires capturing a heap dump (.hprof file) and finding the shortest strong reference path from a GC Root to a destroyed object.
+Memory leak diagnosis centers on isolating objects that survive their terminal lifecycle events due to unintentional retention by a Garbage Collection Root.
 
-In development, **LeakCanary** automates this entire workflow.
+LeakCanary streamlines this discovery process in debug builds by hooking into application lifecycle callbacks. When an Activity or Fragment invokes its destruction callback, LeakCanary registers the instance inside an ObjectWatcher using a KeyedWeakReference bound to a ReferenceQueue. If the instance is not reclaimed after a five-second grace period, LeakCanary requests runtime garbage collection. Upon confirming retention, it generates an HPROF heap dump and utilizes the Shark engine to compute the shortest strong reference path.
 
-First, it hooks into lifecycle callbacks (`ActivityLifecycleCallbacks`, `FragmentManager`). Next, when `onDestroy()` occurs, it passes the instance to an `ObjectWatcher` wrapped in a `KeyedWeakReference` with an associated reference queue.
-If the reference is not cleared after 5 seconds, LeakCanary triggers a GC. If the object persists, it is flagged as *retained*. Finally, once a threshold is reached, it dumps the heap and invokes **Shark** (Square's high-speed Kotlin HPROF parser) on a background thread to compute the leak trace.
+In production, we inspect the resulting leak trace by locating the transition point where an upstream node is marked Leaking NO while the downstream node is marked Leaking YES. That exact reference edge pinpoints the defect, such as an uncancelled coroutine job, a dangling static reference, or an uncleared listener.
 
-When analyzing the leak trace, we focus on the transition from `Leaking: NO` to `Leaking: YES`. That exact boundary points to the field or closure holding the rogue reference, allowing us to nullify the reference or unbind the lifecycle observer.
+Once the culprit reference is nullified or tied to a proper lifecycle scope, we verify the resolution by repeating the user navigation sequence and validating zero retained instances.
 
 
 ## Interview answer — deep senior
 
-In complex production scenarios where LeakCanary is impractical due to heap dump overhead (dumping the heap pauses the process for hundreds of milliseconds), we analyze heap dumps offline using Android Studio Profiler or Eclipse Memory Analyzer Tool (MAT).
-
-In MAT, we run the **Dominator Tree** and **Leak Suspects** report. The Dominator Tree groups objects such that object A dominates object B if every path from a GC Root to B must pass through A. Looking at the **Retained Size** (the total memory that would be freed if an object were collected) immediately reveals culprit classes holding dozens of megabytes.
-
-To monitor leaks in production, we can use LeakCanary's Shark library paired with WorkManager to upload stripped, deduplicated leak signatures without transmitting sensitive user PII from the full memory dump.
-
+At the Android Runtime level, ART manages object reclamation through generational concurrent copying and concurrent mark-sweep garbage collection algorithms. When an instance is allocated, it is tracked in the managed heap; once unreachable, weak references linked to reference queues are enqueued during finalization. LeakCanary leverages this exact low-level runtime contract. It wraps target objects in KeyedWeakReference instances. When ART performs garbage collection, instances lacking strong paths are moved to the queue. If an object remains unenqueued after five seconds and an explicit runtime GC request, LeakCanary confirms a true leak.
+Dumping the heap invokes Debug.dumpHprofData, which pauses application threads via a brief stop-the-world synchronization phase while ART writes the memory snapshot to disk. In production systems, taking full HPROF dumps is forbidden because the pause duration degrades user experience, frequently tripping the system Watchdog and provoking an ANR. Furthermore, raw HPROF dumps expose sensitive user data, including security tokens and personal credentials resident in memory buffers.
+To profile memory without client-side pauses, staff engineers rely on Android Studio Profiler, Eclipse Memory Analyzer Tool, or headless Shark analyzers running on secondary processes. Within MAT, we analyze the Dominator Tree, where an object dominates another if all reference paths to the child must pass through the parent. By sorting by Retained Heap rather than Shallow Heap, we immediately expose root owners holding tens of megabytes of nested view hierarchies.
+When tracking production memory regressions across large fleets, we collect stripped leak signatures and aggregated telemetry through WorkManager workers. We monitor native memory growth, graphics allocations, and process RSS via proc status and dumpsys meminfo, ensuring that regressions are flagged before triggering low-memory killer terminations.
 
 ## How to answer in the interview
 

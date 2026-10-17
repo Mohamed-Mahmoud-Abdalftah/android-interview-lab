@@ -22,6 +22,36 @@ A Singleton needs a Context. How do you choose the correct lifecycle and prevent
 - Match a process-lifetime dependency with Application Context, not a screen Activity.
 - Consider configuration-sensitive resources and cleanup of registered callbacks.
 
+## Concept and technical explanation
+
+In modern Android architecture, classes with a Singleton lifecycle exist in the Java/ART heap for the entire duration of the hosting Linux process. If a Singleton retains a direct or indirect reference to an Activity context, a severe memory leak occurs. When the Activity is destroyed due to screen rotation, configuration changes, or back navigation, the garbage collector cannot reclaim it because the Singleton's strong reference keeps the entire Activity reachable from a Garbage Collection (GC) Root. This retains the Activity, its complete View hierarchy, Drawables, Bitmaps, and window references, consuming tens or hundreds of megabytes of heap memory.
+Preventing memory leaks while providing system capabilities to singletons requires strict adherence to context hierarchies. First, evaluate whether the singleton genuinely needs a Context instance at all, or whether it requires a more granular, non-contextual dependency such as a storage directory (File) or a specific system service (NotificationManagerCompat). Second, if a context is genuinely required (for instance, to register application-wide receivers or access database files), the singleton must exclusively hold the ApplicationContext via context.applicationContext. Because the Application object's lifecycle is identical to the process lifetime, retaining it within a singleton introduces zero leakage risk.
+
+## Practical walkthrough (English)
+
+Designing leak-proof singletons with Hilt and Kotlin:
+
+```kotlin
+// ❌ Catastrophic design: Leaks the Activity forever if an Activity context is passed:
+class BadAnalyticsTracker(private val context: Context) {
+    companion object {
+        var instance: BadAnalyticsTracker? = null
+    }
+}
+
+// ✅ 100% Leak-proof design using Application Context and Hilt:
+@Singleton
+class SafeAnalyticsTracker @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
+    // Alternatively, inject the specific narrower capability:
+    private val appVersion: String = context.packageManager
+        .getPackageInfo(context.packageName, 0).versionName
+}
+```
+
+Failure scenario: A networking singleton retains an Activity context passed during initialization in MainActivity.onCreate(). The user rotates their phone ten times. Each rotation destroys the previous Activity and creates a new one, but all ten destroyed Activity instances remain pinned in memory by the singleton, rapidly causing an OutOfMemoryError crash.
+
 ## Explanation in Arabic
 
 عندما يحتاج كائن كلاس Singleton إلى كائن `Context`: كيف تختار دورة الحياة الصحيحة وتمنع تسريب الذاكرة (Memory Leak)؟
@@ -87,34 +117,25 @@ For analytics, keep an application-scoped client with an injected transport and 
 
 ## Interview answer — short
 
-A Singleton must strictly retain the Application Context (context.applicationContext), never an Activity Context. Storing an Activity Context inside a process-lived Singleton creates a catastrophic memory leak by preventing destroyed Activities and their view trees from being garbage collected.
+A singleton lives as long as the process, so it must never hold an Activity context, which would leak the entire View hierarchy and window resources upon recreation. Always provide the Application Context using context.applicationContext or Hilt's @ApplicationContext. Better yet, challenge the requirement and inject only the specific dependency needed, like a File directory or a system service.
 
 ## Interview answer — structured
 
-When a Singleton requires a `Context`, it must strictly and exclusively hold the **`Application Context`**.
+A Singleton persists in memory for the entire lifetime of the application process. Passing an Activity context to a singleton creates an immediate memory leak, because when the Activity is destroyed during screen rotation or navigation, the singleton's strong reference prevents the garbage collector from reclaiming the Activity and its view hierarchy.
 
-The lifecycle principle is: **Never retain a shorter-lived context inside a longer-lived component**.
+Whenever a singleton genuinely requires framework access, it must exclusively retain the ApplicationContext. Because the Application object shares the exact same lifecycle as the hosting process, retaining it introduces zero memory leak overhead.
 
-A Singleton lives for the entire duration of the Linux app process. An Activity Context is transient, destroyed whenever the user presses Back or rotates the screen. If a Singleton retains a reference to an Activity Context, that Activity and its entire attached View hierarchy, drawables, and window managers can never be reclaimed by the garbage collector, causing severe memory leaks and eventual `OutOfMemoryError` crashes.
+In production, utilizing dependency injection frameworks like Hilt or Dagger, we enforce this boundary using @ApplicationContext. This guarantees at compile-time that no short-lived visual context is injected into process-scoped components, safeguarding against accidental regressions by team members.
 
-To enforce safety.
-
-First, in plain Kotlin constructors, always call `context.applicationContext` defensively. Finally, in Dagger/Hilt, inject `@ApplicationContext context: Context`.
-
-The Application Context is safe to retain because it already shares the same lifespan as the application process.
+The cleanest architectural approach is often to avoid injecting Context altogether. By decomposing requirements into narrower abstractions—such as injecting a cache directory File, a DataStore instance, or a specific system service like ConnectivityManager—we eliminate unnecessary framework coupling and simplify unit testing on the JVM.
 
 
 ## Interview answer — deep senior
 
-At the memory profiling level, LeakCanary flags this defect under the pattern: `Leaking instance of MainActivity held by Singleton.instance.context`.
-
-However, you must be aware of what `ApplicationContext` **cannot** do inside a Singleton.
-
-First, it cannot display Dialogs (throws `BadTokenException`). Next, it cannot resolve Activity theme styles and attributes.
-Finally, it cannot launch activities without `FLAG_ACTIVITY_NEW_TASK`.
-
-If your Singleton needs to trigger UI operations (like showing a dialog), it must not do so directly. Instead, the Singleton should expose a `StateFlow` or `Channel` of UI events, and let the active, foreground Activity collect those events and display the UI using its own legitimate Activity Context.
-
+Under the hood, memory leaks in the Android Runtime (ART) are traced through the GC Root reference graph. A Singleton is typically held by a static field on a class loaded by the PathClassLoader. Static references are treated as permanent GC Roots. When an Activity context is passed into a singleton's constructor and stored in an instance field, a reference chain is established: GC Root -> Class -> Singleton -> Activity.
+When the user rotates the device or finishes the Activity, ActivityManagerService instructs ActivityThread to invoke onDestroy. However, the Garbage Collector cannot collect the Activity because it remains strongly reachable from the static GC Root. Even worse, an Activity instance maintains an internal mWindow reference to PhoneWindow, which holds the DecorView, which in turn retains the entire hierarchical tree of View and ViewGroup objects, along with hardware bitmapped canvases and native allocations. In an app with rich layouts, leaking two or three Activity instances can waste 80 to 150 megabytes of heap memory, triggering frequent concurrent GC pauses and ultimately causing an OutOfMemoryError.
+To diagnose and verify context hygiene, we integrate LeakCanary in debug builds and utilize Android Studio's Memory Profiler. In heap dumps, an Activity leak appears with a shortest path to GC Root pointing directly to the Singleton's backing field.
+However, developers must also understand the functional limitations of ApplicationContext. While safe for singletons, ApplicationContext is not a visual context: it lacks a WindowToken and is not attached to theme attributes. Attempting to use ApplicationContext to inflate themed views, display an AlertDialog, or launch activities without FLAG_ACTIVITY_NEW_TASK will result in visual glitches or a fatal BadTokenException. Therefore, architectural boundaries must be explicit: use ApplicationContext for process-scoped data managers and singletons, and use ActivityContext strictly for scoped UI rendering.
 
 ## How to answer in the interview
 

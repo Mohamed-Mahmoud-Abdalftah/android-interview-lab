@@ -20,6 +20,14 @@ What is JNI, and why might an Android project use C++?
 
 Define JNI bridge, realistic NDK reasons, cross-boundary costs and native failure/security limits.
 
+## Concept and technical explanation
+
+The Java Native Interface (JNI) and Android Native Development Kit (NDK) provide the interoperability bridge allowing managed Kotlin and Java code executing on the Android Runtime (ART) to call, and be called by, native applications and libraries written in C and C++. In Android engineering, JNI is predominantly used for computationally intensive or low-latency domains: real-time digital audio processing via Oboe or AAudio, computer vision and image processing using OpenCV, high-performance game rendering via Vulkan, machine learning inference engines like TensorFlow Lite or ONNX Runtime, and reusing mature cross-platform C/C++ core engines. However, JNI is not an automatic performance booster. Crossing the JNI boundary incurs substantial CPU call overhead due to thread state transitions, stack frame adjustments, and argument marshaling. Additionally, NDK code increases APK size across CPU architectures (ABIs), complicates debugging with fatal SIGSEGV signals that bypass JVM exception handlers, and introduces native memory leak risks outside the garbage collector.
+
+## Practical walkthrough (English)
+
+Consider a real-time camera filter application processing 4K video frames at 60 frames per second. A catastrophic anti-pattern is calling JNI per-pixel in a nested loop: `for (y in 0 until height) for (x in 0 until width) applyNativeFilter(pixel[x][y])`. The JNI call overhead and boundary transitions executed millions of times per frame will freeze the application and drop frames completely. The high-performance architecture utilizes Direct Buffers: Kotlin allocates a single direct byte buffer outside the garbage-collected heap: `val directBuffer = ByteBuffer.allocateDirect(frameSize)`, and passes it to native code once per frame: `nativeProcessFrame(directBuffer, width, height)`. In C++, the native implementation obtains the direct raw memory pointer using `env->GetDirectBufferAddress(directBuffer)` and leverages ARM NEON SIMD vector instructions to process sixteen pixels per CPU clock cycle with zero data copying and zero GC allocation.
+
 ## Explanation in Arabic
 
 الـ JNI (Java Native Interface) والـ Android NDK (Native Development Kit) هما الجسر اللي بيربط كود Kotlin/Java في الـ JVM بكود C و C++ الأصلي المترجم لـ Machine Code للـ CPU:
@@ -77,25 +85,22 @@ An audio editor reuses a mature C++ DSP engine. Kotlin owns UI and lifecycle; a 
 
 ## Interview answer — short
 
-JNI connects Kotlin/JVM code with native C/C++ libraries compiled with the Android NDK. It is used for CPU-intensive tasks like low-latency audio, computer vision, game engines, and reusing existing C++ libraries. However, crossing the JNI boundary has call overhead, increases APK size across ABIs, and introduces native memory leak risks.
+JNI connects managed Kotlin/JVM code with native C/C++ libraries compiled with the Android NDK. It is justified for CPU-intensive computing like low-latency audio, computer vision, game engines, and reusing existing C++ libraries. However, crossing the JNI boundary has measurable call overhead, increases APK size across ABIs, and introduces native memory leak risks.
 
 ## Interview answer — structured
 
-JNI, or Java Native Interface, is the bridging mechanism that allows Android's managed runtime (ART) to call into compiled native C/C++ code, and vice versa. Using the Android NDK, teams compile native shared libraries (.so files) for target CPU architectures.
+The Java Native Interface, or JNI, is the bridging mechanism that connects managed Kotlin code on the Android Runtime with compiled native C and C++ libraries. Using the Android NDK, teams compile native shared libraries tailored for target device CPU architectures.
 
-We use C++ in Android primarily for four scenarios: 1) low-latency, real-time audio using libraries like Oboe; 2) heavy image and video signal processing with OpenCV or custom shaders; 3) running machine learning inference runtimes like ONNX or TensorFlow Lite; and 4) cross-platform shared domain cores written in C++.
+An Android project adopts C++ primarily for low-latency digital signal processing like real-time audio, heavy image manipulation, machine learning inference engines, or reusing mature cross-platform core libraries.
 
-However, JNI is not a silver bullet. Crossing the JNI boundary incurs noticeable CPU overhead due to argument marshaling, memory boundary synchronization, and ART JNI transition frames. If you make high-frequency native calls in a loop, it will actually perform worse than pure Kotlin. To use JNI effectively, you batch data using Direct ByteBuffers, minimizing crossings.
+In production, however, JNI is never a silver bullet for general app performance. Crossing the JNI boundary incurs noticeable CPU overhead due to thread state synchronization, argument marshaling, and ART transition frames.
+
+High-frequency granular native calls in loops perform significantly worse than pure Kotlin, which is why senior engineers batch data using direct byte buffers to minimize crossings.
 
 
 ## Interview answer — deep senior
 
-At the systems level, ART manages native interactions through JNIEnv pointers. Calling a native method requires ART to transition thread states from Runnable to Native. During this time, the garbage collector cannot relocate objects referenced by native pointers unless they are properly registered as JNI Global, Local, or Weak references. Passing Java arrays across JNI often forces the runtime to either pin the array memory or allocate a duplicate native buffer via `GetPrimitiveArrayCritical`, risking severe memory fragmentation or thread stalls.
-
-To achieve peak performance with JNI: 1) Allocate off-heap native memory using `ByteBuffer.allocateDirect()`, which lets C++ access the memory pointer via `GetDirectBufferAddress()` with zero copies; 2) Leverage CPU-specific vectorization like ARM NEON instructions in C++; 3) Keep the API surface coarse-grained—send one heavy buffer per frame rather than hundreds of granular calls.
-
-Finally, native crashes (SIGSEGV, SIGBUS) do not trigger standard Java crash handlers; they terminate the process instantly unless hooked via a native crash reporting library like Google Breakpad or Firebase Crashlytics NDK.
-
+Under the hood on ART, crossing the JNI boundary requires a formal runtime transition between managed and native thread execution states. When a thread invokes a `native` function, ART must transition the thread from `Runnable` to `Native` state, push a JNI transition frame onto the call stack, register local reference tables, and synchronize CPU registers. This transition boundary prevents the ART JIT and AOT compilers from inlining the native call into calling Kotlin bytecode. Memory management across the boundary presents severe hazards. Every Java object passed into native code creates a local reference in JNIEnv's Local Reference Table, which has a default capacity of 512 entries. Looping over objects in native code without calling `DeleteLocalRef` will overflow this table and crash the process with a fatal JNI error. Furthermore, passing primitive arrays with functions like `GetPrimitiveArrayCritical` pins memory in the ART heap or creates a full memory copy, stalling the garbage collector. To achieve true zero-copy performance in high-throughput workloads, architects mandate `ByteBuffer.allocateDirect()`, which allocates native memory on the POSIX heap that C++ can access directly via raw pointers. Finally, crashes in native code—such as buffer overflows or null pointer dereferences—manifest as uncatchable Linux kernel signals like SIGSEGV or SIGBUS, terminating the Android process instantly without generating a standard JVM crash trace.
 
 ## How to answer in the interview
 

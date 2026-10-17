@@ -22,6 +22,42 @@ When must you use an Activity Context rather than Application Context?
 - Avoid blanket claims that every UI-related API or `startActivity` categorically requires Activity Context.
 - Handle Activity lifetime safely rather than storing the Context in process-scoped objects.
 
+## Concept and technical explanation
+
+An Activity Context is strictly mandatory whenever an operation directly interfaces with the operating system's window management, display configuration, or UI theming pipeline.
+
+1. Mandatory Scenarios for Activity Context:
+   - **Displaying Dialogs and Popups (`AlertDialog`, `BottomSheetDialog`, `PopupWindow`):**
+     * Requires an active **IBinder Window Token** registered with Android's `WindowManagerService`. Passing an Application Context results in an immediate fatal crash: `WindowManager.BadTokenException`.
+   - **Layout Inflation and Themed View Creation:**
+     * `LayoutInflater` depends on an Activity Context to resolve theme styling, attributes (`?attr/colorPrimary`), styles declared in the manifest, and dynamic Material You palettes. Using an Application Context causes views to be inflated with raw system defaults, ignoring custom app themes.
+   - **In-Task Activity Navigation:**
+     * Transitioning between screens using an Activity Context preserves the natural backstack within the existing task. Using an Application Context requires `FLAG_ACTIVITY_NEW_TASK`, creating disjointed tasks.
+   - **Multi-Window and Foldable Display Adaptations:**
+     * An Activity Context reflects window-specific bounds, display density, and per-app language settings, whereas Application Context reflects global device settings.
+
+2. The Architecture Rule:
+   - Any operation that performs window attachment, pixel rendering, or theme attribute resolution strictly demands an Activity Context.
+
+## Practical walkthrough (English)
+
+Runtime contrast between valid and invalid Context usage:
+```kotlin
+// Will crash with BadTokenException:
+fun showConfirmationBad(appContext: Context) {
+    AlertDialog.Builder(appContext) // BadTokenException!
+        .setTitle("Confirm")
+        .show()
+}
+
+// Mandatory Activity Context for Dialogs:
+fun showConfirmationGood(activityContext: Context) {
+    AlertDialog.Builder(activityContext)
+        .setTitle("Confirm")
+        .show() // Succeeds because activityContext carries an active Window Token
+}
+```
+
 ## Explanation in Arabic
 
 متى يجب عليك استخدام `Activity Context` تحديداً ولا يمكن استبداله بـ `Application Context` إطلاقاً؟
@@ -78,22 +114,26 @@ A checkout confirmation belongs to the visible checkout Activity or its DialogFr
 
 ## Interview answer — short
 
-An Activity Context is strictly mandatory when showing Dialogs (which require an active Window Token to prevent BadTokenException), inflating themed UI layouts via LayoutInflater, and starting Activities within the same existing task stack without forcing FLAG_ACTIVITY_NEW_TASK.
+An Activity Context is strictly mandatory when displaying windowed UI such as AlertDialogs and BottomSheetDialogs, which require a valid Window Token to prevent BadTokenException. It is also required when inflating views via LayoutInflater to accurately resolve Activity theme attributes and dynamic styling, and when navigating between screens to preserve the natural task backstack without forcing FLAG_ACTIVITY_NEW_TASK.
 
 ## Interview answer — structured
 
-An Activity Context is strictly mandatory for any operation that interacts with the Android Window Manager, requires a Window Token, or depends on theme styling.
+An Activity Context is strictly mandatory whenever an operation directly interfaces with the operating system's window management, display configuration, or UI theming pipeline.
 
-First, **Showing Dialogs and Popups:** Showing an `AlertDialog`, `BottomSheetDialog`, or `PopupWindow` requires a valid **Window Token** provided exclusively by an active Activity window. Attempting to show a dialog using `ApplicationContext` crashes instantly with `WindowManager.BadTokenException`. Next, **Layout Inflation and View Creation:** Views created programmatically or inflated via `LayoutInflater` require an Activity Context to resolve theme attributes (`?attr/colorPrimary`, custom styles, and dynamic colors). Using Application Context falls back to raw system defaults, ignoring your app's custom Activity theme.
-Finally, **In-Task Navigation:** Starting an Activity using an Activity Context preserves the natural backstack within the current task. Using Application Context forces `FLAG_ACTIVITY_NEW_TASK`, creating fragmented task stacks.
+The most prominent requirement is displaying dialogs and popups. Presenting an AlertDialog, BottomSheetDialog, or PopupWindow requires an active IBinder Window Token registered with the system WindowManagerService. Because only an active Activity window holds this token, passing an Application Context causes the system server to reject the window addition and throw an immediate BadTokenException.
+
+Layout inflation and programmatic View instantiation strictly rely on an Activity Context to resolve theme styling. An Activity Context inherits from ContextThemeWrapper, allowing the LayoutInflater to resolve theme attributes, night mode overrides, and Material You dynamic colors. Using an Application Context causes views to be inflated against default platform themes, producing visual inconsistencies.
+
+In production, we also depend on Activity Context for in-task navigation. Launching a new screen with an Activity Context places it smoothly on the existing task backstack, whereas using an Application Context forces the addition of FLAG_ACTIVITY_NEW_TASK, creating disjointed navigation stacks for the user.
 
 
 ## Interview answer — deep senior
 
-At the Android OS system level, the distinction lies in the **IBinder Window Token** registered with `WindowManagerService` (WMS). When an Activity transitions to `onResume()`, WMS assigns a unique surface token to its window hierarchy. When a Dialog attempts to display, it queries its context's `WindowManager.addView()`. WMS verifies whether the token attached to the context is an active, valid window token. Since `ApplicationContext` is owned by the app process rather than a surface window, its token is null, prompting the fatal `BadTokenException`.
+At the Android operating system and WindowManagerService level, every visible window surface is secured by an IBinder window token generated by the system server during Activity launch. When an Activity enters the resumed state, ViewRootImpl attaches this token to the Activity's WindowManagerImpl. When a developer attempts to display a dialog, Dialog.show invokes WindowManager.addView, which performs an IPC transaction across Binder to WindowManagerService. The system server inspects the layout parameters and verifies whether the token corresponds to an existing, non-destroyed window session. Because an Application Context possesses a null window token, the system server immediately rejects the transaction and the local process crashes with WindowManager.BadTokenException.
 
-Furthermore, with the introduction of **Android 12/13 per-app language preferences and Dynamic Theming (Material You)**, theme attributes and configuration overrides (like configuration night mode or font scaling) are tied to specific Activity configurations. An Application Context does not receive Activity-level configuration overrides, leading to visual bugs and broken dark/light theme rendering.
+Furthermore, in modern multi-window, picture-in-picture, and foldable display architectures, an Android device frequently runs multiple Activities with completely different Configuration objects. One window may be in dark mode with a narrow split-screen width, while another operates in light mode. An Activity Context carries a Display and Configuration tailored specifically to its partitioned window bounds. In contrast, Application Context evaluates resources against global device metrics. Inflating layouts with an Application Context on a foldable device yields incorrect dimension calculations, broken responsive breakpoints, and unstyled widgets.
 
+In enterprise production architectures, we maintain strict lifecycle contracts. For user interactions like confirmation dialogs or payment bottom sheets, we host UI exclusively within DialogFragment instances bound to the screen's viewLifecycleOwner. If an external SDK requires an Activity reference to launch a web checkout or biometric prompt, we pass the current Activity as a transient method parameter or leverage the Activity Result API, strictly avoiding storing Activity references in long-lived services or singleton classes.
 
 ## How to answer in the interview
 

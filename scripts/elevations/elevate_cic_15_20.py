@@ -1,0 +1,815 @@
+#!/usr/bin/env python3
+"""
+Elevation script for CIC questions: CIC-15 to CIC-20.
+Topic: CI/CD, Git & Team Delivery (CIC)
+Phase 4, Batch 3
+"""
+
+import os
+import sys
+
+sys.path.insert(0, os.path.abspath("scripts/elevations"))
+import elevation_engine as ee
+
+TOPIC_AR = "الـ CI/CD والـ Git وتسليم المشاريع في الفرق الهندسية"
+REVIEWED_DATE_AR = "تمت المراجعة والتحقق في 17 أكتوبر 2026"
+
+DATA = {}
+
+# ==========================================
+# CIC-15: What Git conflicts can a revert of an older commit cause?
+# ==========================================
+DATA["CIC-15"] = {
+    "concept_en": """Executing `git revert` on a historical commit creates an inverse patch designed to negate original changes, which often collides with subsequent evolutionary commits:
+- Mechanisms of Historical Reverts:
+  - Unlike `git reset`, which rewrites Git history, `git revert` generates a new commit that applies the inverse diff of the target commit against current HEAD.
+  - When the reverted commit is weeks or months old, intermediate commits have built on, refactored, or renamed the affected code, creating complex conflict classes.
+- Taxonomy of Revert Conflicts:
+  - Textual Content Conflicts:
+    - Occurs when intermediate commits modified the exact lines of code targeted for removal or restoration. Git halts with standard conflict markers (`<<<<<<< HEAD`, `=======`, `>>>>>>> parent of...`).
+  - Tree and Rename Conflicts:
+    - Arise when files created, edited, or deleted in the target commit were subsequently relocated during package refactoring, renamed, or deleted. Git cannot determine where to apply the inverse patch.
+  - Silent Semantic and Compilation Conflicts (The Most Dangerous Class):
+    - The inverse patch applies cleanly with zero textual conflicts, yet breaks the build. This occurs when subsequent features rely on public interfaces, Room entities, or DI bindings introduced in the reverted commit. The codebase breaks during Kotlin compilation (`compileDebugKotlin`) or triggers runtime `NoSuchMethodError` crashes.
+  - Reverting Merge Commits (`git revert -m 1`):
+    - Reverting a merge commit reverses the code changes but does NOT undo the Git history. Subsequent attempts to re-merge the original branch will be treated as already merged, silently omitting all branch changes unless the revert itself is reverted.""",
+    "walkthrough_en": """Resolving a complex historical revert with verification checks:
+```bash
+# 1. Attempt historical revert
+git revert 4a8f10b
+# Output:
+# error: could not revert 4a8f10b... feat: add loyalty cashback engine
+# hint: after resolving the conflicts, mark the corrected paths with 'git add <paths>'
+
+# 2. Inspect conflict state
+git status
+# Unmerged paths:
+#   both modified:   feature/cart/src/main/java/com/company/CartViewModel.kt
+
+# 3. Resolve conflict markers manually in IDE, removing loyalty hooks while preserving cart logic
+
+# 4. Mandatory Semantic Verification: Ensure project compiles and passes unit tests
+./gradlew compileDebugKotlin testDebugUnitTest
+
+# 5. Finalize the revert commit
+git add feature/cart/src/main/java/com/company/CartViewModel.kt
+git revert --continue
+
+# 6. Push verified revert to remote mainline
+git push origin main
+```""",
+    "short_en": """Reverting an older commit causes textual conflicts when subsequent commits modified the same lines, tree conflicts when files were moved or deleted, and silent semantic conflicts where dependent code fails at compile-time despite clean Git patches. Resolve them by reconciling diffs manually, running compilation and unit tests to ensure semantic integrity, and completing with git revert continue.""",
+    "structured_en": """Reverting an older commit introduces substantial integration risk because Git applies an inverse patch against current mainline code.
+This operation frequently triggers three distinct conflict categories. Textual content conflicts emerge when intermediate commits modified or reformatted the exact lines being reverted, requiring manual resolution in the editor. Tree and rename conflicts arise when files were moved or deleted during module refactoring, leaving Git unable to locate the target path.
+The most dangerous category is silent semantic conflict. In this scenario, the inverse patch applies without any textual Git conflicts, but the build fails because subsequent features depend on classes, methods, or database migrations introduced in the reverted commit.
+To safely resolve historical reverts, engineers must manually clear conflict markers, run Kotlin compilation and JVM unit tests locally to verify semantic integrity, and only then finalize the revert using git revert continue.""",
+    "deep_senior_en": """From a software configuration management and platform safety perspective, reverting an older commit in a high-velocity Android repository is an invasive surgical operation.
+The primary risk is assuming that a clean Git revert implies working software. Git operates on line deltas, entirely blind to Kotlin type systems or Android component lifecycles. A historical commit often acts as an architectural foundation for dozens of subsequent commits. When an engineer executes git revert on a commit from two months ago, the inverse patch may remove a Dagger module binding or an entity column. Even if the text patch applies cleanly, downstream code invoking that removed dependency will fail compilation or trigger catastrophic runtime crashes in production.
+Furthermore, reverting merge commits introduces severe topological traps. Reverting a merge commit with the minus-m flag cancels the code diff but preserves the ancestor graph. If the feature team later fixes the issue on their original branch and attempts to merge it back into main, Git assumes the commits are already present and silently excludes all original changes. Resolving this requires re-reverting the revert commit before merging.
+Therefore, our team policy mandates evaluating blast radius using git log before reverting. If historical entanglement is deep, we favor a forward hotfix that neutralizes the defective behavior behind a feature flag over a blind git revert, safeguarding the public API contract while mitigating production impact.""",
+    "meta_ar": {
+        "id": "CIC-15",
+        "questionAr": "ما هي تعارضات Git التي يمكن أن يسببها التراجع عن كوميت قديم (Revert)، وكيف يتم حلها؟",
+        "topicAr": TOPIC_AR,
+        "evaluates_ar": "فهم معمارية git revert والفرق بينها وبين reset، تشخيص التعارضات النصية وتعارضات شجرة الملفات، خطورة التعارضات الدلالية الصامتة (Semantic Conflicts)، ومخاطر التراجع عن كوميتات الدمج (Merge Commits).",
+        "concept_ar": "يطبق أمر git revert رقعة معاكسة (Inverse Patch) تلغي تغييرات الكوميت المستهدف مع إنشاء كوميت جديد على قمة الفرع دون إعادة كتابة التاريخ. وعندما يكون الكوميت قديماً، تنشأ ثلاثة أصناف رئيسية من التعارضات: أولاً، التعارضات النصية المباشرة (Content Conflicts) عندما تكون كوميتات لاحقة قد عدلت نفس الأسطر؛ فيتوقف Git مطالباً بحل علامات التعارض يدوياً. ثانياً، تعارضات شجرة الملفات (Tree & Rename Conflicts) عندما تكون الملفات القديمة قد نُقلت لمسارات أخرى أثناء إعادة الهيكلة أو حُذفت. ثالثاً، التعارضات الدلالية الصامتة (Silent Semantic Conflicts) وهي الأخطر على الإطلاق؛ حيث تنجح الرقعة المعاكسة في الدمج النصي دون أي خطأ في Git، ولكن يفشل تجميع الكود في Kotlin أو ينهار التطبيق وقت التشغيل لأن ميزات لاحقة أصبحت تعتمد على الكلاسات أو الحقول أو الجداول التي تم حذفها. وتتطلب المعالجة السليمة حل التعارضات، وتشغيل compileDebugKotlin واختبارات الوحدة للتأكد من السلامة الدلالية قبل إتمام التراجع.",
+        "walkthrough_ar": """خطوات حل تعارض ناتج عن تراجع تاريخي مع التحقق الحتمي:
+```bash
+# 1. محاولة التراجع عن كوميت قديم
+git revert 4a8f10b
+
+# 2. فحص الملفات المتعارضة
+git status
+
+# 3. حل علامات التعارض في الكود مع الحفاظ على التعديلات الأحدث
+
+# 4. خطوة إلزامية: التحقق من التجميع واختبارات الوحدة
+./gradlew compileDebugKotlin testDebugUnitTest
+
+# 5. استكمال عملية التراجع بعد التأكد
+git add .
+git revert --continue
+git push origin main
+```""",
+        "why_it_matters_ar": "الاعتماد الأعمى على نجاح git revert دون فحص التجميع يكسر المشروع المشترك ويتسبب في انهيارات صامتة في الإنتاج لتبعية الكود اللاحق للأجزاء المحذوفة.",
+        "worked_example_ar": "تراجعنا عن كوميت قديم أضاف محرك نقاط المكافآت، ونجح Git في دمج الملفات نصياً ولكن تعطل التجميع لأن شاشة الدفع كانت تستدعي دالة الخصم؛ فأصلحنا شاشة الدفع قبل إتمام الكوميت.",
+        "trade_offs_ar": "استخدام git reset يعيد كتابة التاريخ ويمنع التعارضات ولكنه يدمر عمل باقي المطورين وممنوع في الفروع المشتركة؛ بينما git revert يحفظ سجل التاريخ بأمان ولكنه يتطلب حلاً دقيقاً للتعارضات.",
+        "failure_modes_ar": "أخطر الأخطاء هو إتمام git revert دون تشغيل اختبارات الوحدة والتجميع؛ مما يمرر تعارضات دلالية صامتة تحطم الـ CI، أو التراجع عن Merge Commit مما يحظر دمج الفرع مستقبلاً دون Re-revert.",
+        "production_perspective_ar": "في الفرق الكبرى، إذا كان الكوميت المعطوب قديماً ومتداخلاً مع ميزات متعددة، تفضل الفرق كتابة إصلاح أمامي (Forward Fix) بتعطيل المسار المعطوب بدلاً من التراجع التاريخي العنيف.",
+        "how_to_answer_ar": "وضح أولاً آلية عمل الرقعة المعاكسة في git revert، ثم قسم التعارضات لثلاثة أنواع مع التركيز على التعارض الدلالي الصامت، واشرح خطوات التجميع والتحقق قبل إتمام الكوميت.",
+        "talking_points_ar": "الرقعة المعاكسة Inverse Patch، التعارضات النصية، تعارضات النقل Rename Conflicts، التعارضات الدلالية الصامتة، فحص التجميع compileDebugKotlin، ومخاطر Reverting Merge Commits.",
+        "follow_ups_ar": "ماذا يحدث إذا قمت بعمل revert لكوميت دمج merge commit وحاولت دمج نفس الفرع لاحقاً؟ ومتى يكون الـ Forward Fix أفضل من الـ Revert؟",
+        "self_check_ar": "هل شرحت الفرق بين التعارض النصي والدلالي، وأكدت على تشغيل التجميع والاختبارات قبل git revert --continue؟",
+        "references_ar": f"- [Git Documentation: git-revert](https://git-scm.com/docs/git-revert) — التوثيق الرسمي لأمر التراجع البرمجي الآمن في Git.\n- [Kernel.org: How to revert a faulty merge](https://mirrors.edge.kernel.org/pub/software/scm/git/docs/howto/revert-a-faulty-merge.txt) — دليل لينوس تورفالدس الشهير للتعامل مع التراجع عن كوميتات الدمج.\n\n{REVIEWED_DATE_AR}",
+        "quick_answer_ar": """يسبب التراجع عن كوميت قديم تعارضات نصية عند تعديل نفس الأسطر لاحقاً، وتعارضات في شجرة الملفات إذا تم نقل الملفات أو حذفها، وتعارضات دلالية صامتة حيث ينجح الدمج نصياً ولكن يفشل تجميع الكود لاعتماد ميزات أخرى على ما تم حذفه. ويتم الحل بفض التعارضات يدوياً وتشغيل التجميع واختبارات الوحدة قبل استكمال التراجع.""",
+        "best_answer_ar": """التراجع عن كوميت قديم باستخدام git revert ينطوي على مخاطر تكامل معقدة لأن Git يطبق رقعة معاكسة للتغيير الأصلي على قمة الكود الحالي.
+تنتج عن هذه العملية ثلاثة أنماط رئيسية من التعارضات؛ أولها التعارضات النصية المباشرة التي تحدث عندما تكون كوميتات لاحقة قد عدلت أو أعادت صياغة نفس الأسطر، مما يتطلب تسوية يدوية لعلامات التعارض. والنوع الثاني هو تعارضات نقل وحذف الملفات الناتجة عن إعادة هيكلة الموديولات ونقل الكلاسات لحزم جديدة.
+أما النوع الثالث والأخطر، فهو التعارض الدلالي الصامت؛ وفيه تطبق الرقعة المعاكسة بنجاح دون أي تنبيه من Git، ولكن يفشل بناء المشروع في Kotlin لأن شاشات أو خدمات أضيفت لاحقاً باتت تعتمد على دوال أو حقول تم حذفها بالتراجع.
+ولحل هذه التعارضات بأمان، يتعين على المهندس إزالة علامات النزاع يدوياً، وتشغيل تجميع كوتلن واختبارات الوحدة للتأكد من السلامة المعمارية للكود، ثم إنهاء التراجع بأمر git revert continue لضمان عدم تسريب أي أخطاء صامتة للفرع الرئيسي.""",
+        "deep_answer_ar": """من منظور إدارة التكوين البرمجي وسلامة المنصات، يمثل التراجع عن كوميت قديم في مستودع أندرويد سريع التطور عملية جراحية بالغة الحساسية تتجاوز مجرد فحص نصوص Git المجردة.
+الخطر الأكبر في هذه العمليات هو افتراض أن غياب تعارضات Git يعني بالضرورة سلامة النظام البرمجي؛ فنظام Git يتعامل مع الأسطر بشكل رقمي أعمى دون وعي بقواعد كوتلن أو معمارية حقن التبعيات أو دورة حياة مكونات أندرويد. فالكوميت القديم غالباً ما يكون أساساً بنيت عليه عشرات الميزات اللاحقة؛ والتراجع عنه قد يحذف حقلاً في قاعدة بيانات Room أو رابطاً في Dagger، فيعبر الكوميت بنجاح ظاهري ولكنه يفجر أخطاء وقت التشغيل لدى المستخدمين وانهيارات قاتلة في شاشات التطبيق.
+وفضلاً عن ذلك، يسبب التراجع عن كوميتات الدمج مشكلة طوبولوجية خطيرة في شجرة Git؛ حيث يلغي التراجع كود الفرع مع الإبقاء على تاريخ الدمج مسجلاً، مما يمنع إعادة دمج ذلك الفرع مستقبلاً إلا بعد عمل تراجع للتراجع السابق ذاته.
+ولذلك نلزم الفرق بفحص مدى تشابك الكود المراد التراجع عنه وتحليل تاريخ الاستدعاءات قبل اتخاذ القرار؛ فإذا كان التشابك عميقاً والكوميت قديماً، نفضل دائماً كتابة إصلاح أمامي سريع يعطل المسار البرمجي المسبب للمشكلة خلف مفتاح تحكم سحابي، بدلاً من التراجع العنيف الذي قد يحدث تصدعات معمارية غير متوقعة في بنية النظام."""
+    }
+}
+
+# ==========================================
+# CIC-16: How do you handle multiple environments and flavors?
+# ==========================================
+DATA["CIC-16"] = {
+    "concept_en": """Architecting multi-environment Android delivery requires isolating build variants, managing dynamic configurations, and segregating security boundaries cleanly:
+- Product Flavors and Dimensions:
+  - Gradle uses `flavorDimensions` (e.g., `environment`) combined with `buildTypes` (`debug`, `release`) to produce orthogonal build variants (e.g., `devDebug`, `stagingRelease`, `prodRelease`).
+- Application ID Segregation:
+  - Unique `applicationIdSuffix` (e.g., `.dev`, `.staging`) allows developers, QA testers, and product managers to install development, staging, and production versions concurrently on the same physical device without overwriting state.
+  - Distinct app icons (`manifestPlaceholders["appIcon"]`) and visual badges prevent testers from confusing environments during validation.
+- Dynamic Configuration Injection:
+  - Environment-specific properties (base API URLs, OAuth client IDs, analytics keys) are configured via `buildConfigField` in Gradle or external `gradle.properties`, keeping source code agnostic of deployment targets.
+  - Dependency Injection decoupling: Using Dagger/Hilt or Koin to bind environment-specific network modules (`DevNetworkModule` with mock interceptors vs `ProdNetworkModule` with certificate pinning).
+- Google Services & Firebase Isolation:
+  - Each environment maps to an isolated Firebase project to prevent test crashes and staging analytics from corrupting production telemetry.
+  - Placed inside dedicated source sets (`app/src/dev/google-services.json` vs `app/src/prod/google-services.json`), ingested automatically by the Google Services Gradle plugin.
+- Security and Optimization Invariants:
+  - Development variants enable verbose logging (`HttpLoggingInterceptor.Level.BODY`), mock endpoints, and debuggable memory tooling (LeakCanary).
+  - Production variants strictly disable logging, enable full R8 code shrinking and resource obfuscation, enforce strict TLS certificate pinning, and strip debugging metadata.""",
+    "walkthrough_en": """Gradle Kotlin DSL configuration for multi-environment flavors and source sets:
+```kotlin
+// app/build.gradle.kts
+android {
+    flavorDimensions += "environment"
+
+    productFlavors {
+        create("dev") {
+            dimension = "environment"
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            manifestPlaceholders["appName"] = "App (Dev)"
+            buildConfigField("String", "BASE_URL", "\"https://api.dev.company.internal/\"")
+            buildConfigField("Boolean", "ENABLE_LOGGING", "true")
+        }
+        create("staging") {
+            dimension = "environment"
+            applicationIdSuffix = ".staging"
+            versionNameSuffix = "-staging"
+            manifestPlaceholders["appName"] = "App (Staging)"
+            buildConfigField("String", "BASE_URL", "\"https://api.staging.company.com/\"")
+            buildConfigField("Boolean", "ENABLE_LOGGING", "true")
+        }
+        create("prod") {
+            dimension = "environment"
+            manifestPlaceholders["appName"] = "App"
+            buildConfigField("String", "BASE_URL", "\"https://api.company.com/\"")
+            buildConfigField("Boolean", "ENABLE_LOGGING", "false")
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        debug {
+            applicationIdSuffix = ".debug"
+        }
+    }
+}
+```""",
+    "short_en": """Handle multiple environments using Gradle flavorDimensions like dev, staging, and prod combined with buildTypes. Assign unique applicationIdSuffix values so environments install side-by-side on devices, inject endpoints via buildConfigField, isolate Firebase projects in distinct source sets, and enforce strict R8 obfuscation and certificate pinning on production variants.""",
+    "structured_en": """Managing multiple environments in Android requires clean separation across build configuration, runtime identity, and security posture.
+We establish product flavors along an environment dimension, producing distinct variants like devDebug, stagingRelease, and prodRelease. To enable side-by-side installations on testing hardware, we configure unique applicationIdSuffix values and distinct application names for dev and staging.
+Environment configurations, including base API endpoints and feature toggles, are injected dynamically using buildConfigField. To prevent telemetry pollution, we isolate backend dependencies by maintaining separate Firebase projects, placing individual google-services.json files inside dedicated source set directories like src/dev and src/prod.
+Finally, we maintain strict security boundaries between variants. Development flavors enable verbose HTTP logging and mock gateways, whereas production variants enforce full R8 obfuscation, certificate pinning, and stripped log statements to prevent data leakage.""",
+    "deep_senior_en": """From an enterprise architecture and security compliance perspective, multi-environment management is about total isolation of data, identity, and cryptographic boundaries.
+A frequent anti-pattern is allowing staging and production builds to share the same package name or backend credentials. This causes testers to overwrite production data, while staging test events pollute production analytics funnels and machine learning models. By enforcing unique applicationId suffixes across flavors, we allow developers, QA analysts, and executive stakeholders to run production, staging, and development binaries concurrently on a single Android device without data collision.
+Equally critical is the strict segregation of third-party platform configurations. We isolate Firebase, payment gateways, and error monitoring tools across discrete cloud projects. By leveraging Gradle source sets, the Google Services plugin automatically picks up the appropriate google-services.json from src/dev or src/prod, preventing staging test crashes from corrupting production Crashlytics metrics and Android Vitals SLA thresholds.
+On the code level, we avoid sprinkling conditional flavor checks across business logic. Instead, we enforce architectural inversion of control using dependency injection modules. The dev variant binds an HTTP engine configured with lenient timeouts, mock responses, and LeakCanary memory analysis. Conversely, the production release variant injects an engine configured with strict TLS certificate pinning, biometric cryptography, and stripped logging interceptors, ensuring zero compromise on security or binary optimization.""",
+    "meta_ar": {
+        "id": "CIC-16",
+        "questionAr": "كيف تدير البيئات المتعددة (Environments) ونكهات البناء (Flavors) في تطبيقات أندرويد؟",
+        "topicAr": TOPIC_AR,
+        "evaluates_ar": "استخدام Product Flavors وflavorDimensions، عزل معرف التطبيق بـ applicationIdSuffix للتثبيت المتزامن، حقن الروابط عبر BuildConfig، عزل مشاريع Firebase عبر Source Sets، والفصل الأمني بين البيئات.",
+        "concept_ar": "تعتمد إدارة البيئات المتعددة (Development, Staging, Production) على استخدام نكهات البناء (Product Flavors) بالتكامل مع أبعاد النكهات (flavorDimensions) وأنواع البناء (Build Types) لتوليد نسخ مستقلة تماماً مثل devDebug وprodRelease. تتطلب المعمارية السليمة تخصيص applicationIdSuffix فريد لكل نكهة مثل .dev و.staging لتمكين المطورين ومختبري الجودة من تثبيت النسخ جنباً إلى جنب على نفس الهاتف دون تضارب. ويتم حقن الروابط السحابية والمفاتيح عبر buildConfigField في Gradle بدلاً من كتابتها في الشفرة، مع عزل المشاريع الخارجية عبر وضع ملفات إعدادات مستقلة مثل google-services.json داخل مجلدات المصادر المنفصلة (src/dev وsrc/prod). ومن الناحية الأمنية، يُسمح بتسجيل السجلات ومحاكاة البيانات في نكهات التطوير، بينما يُفرض التشفير التام R8 وتثبيت الشهادات الرقمية (Certificate Pinning) وحجب السجلات نهائياً في نسخ الإنتاج.",
+        "walkthrough_ar": """تكوين النكهات في Gradle وعزل الروابط والمعرفات:
+```kotlin
+// app/build.gradle.kts
+android {
+    flavorDimensions += "environment"
+
+    productFlavors {
+        create("dev") {
+            dimension = "environment"
+            applicationIdSuffix = ".dev"
+            manifestPlaceholders["appName"] = "تطبيقي (تطوير)"
+            buildConfigField("String", "BASE_URL", "\"https://api.dev.internal/\"")
+        }
+        create("staging") {
+            dimension = "environment"
+            applicationIdSuffix = ".staging"
+            manifestPlaceholders["appName"] = "تطبيقي (تجريبي)"
+            buildConfigField("String", "BASE_URL", "\"https://api.staging.internal/\"")
+        }
+        create("prod") {
+            dimension = "environment"
+            manifestPlaceholders["appName"] = "تطبيقي"
+            buildConfigField("String", "BASE_URL", "\"https://api.company.com/\"")
+        }
+    }
+}
+```""",
+        "why_it_matters_ar": "خلط بيئات العمل قد يؤدي إلى إرسال بيانات تجريبية لقواعد بيانات حقيقية أو تدمير بيانات المستخدمين الفعليين، وعدم تغيير المعرف يمنع المقارنة بين النسخ.",
+        "worked_example_ar": "في تطبيق بنكي، أنشأنا نكهة dev تتصل بسيرفر تجريبي وتطبع تفاصيل الشبكة مع معرف .dev، بينما تتصل نكهة prod بالسيرفر الحقيقي مع حظر السجلات وتثبيت الشهادات.",
+        "trade_offs_ar": "زيادة عدد النكهات يضاعف زمن بناء الـ CI ومصفوفة الاختبارات؛ بينما الاكتفاء بنكهات أساسية (dev وprod) يوفر أوقات بناء أسرع مع تلبية متطلبات الاختبار.",
+        "failure_modes_ar": "أخطر الأخطاء هو استخدام مشروع Firebase واحد لكافة البيئات مما يخلط إحصائيات الإنتاج ببيانات الاختبار، أو نسيان إغلاق سجلات الشبكة الحساسة في نكهة الإنتاج.",
+        "production_perspective_ar": "في بيئات الإنتاج، تُربط كل نكهة بموديول حقن تبعيات مستقل (Dagger/Hilt Module)؛ بحيث تُحقن مكتبات المحاكاة في dev وتُحقن شهادات الأمان الصارمة في prod برمجياً.",
+        "how_to_answer_ar": "ابدأ بشرح Product Flavors وflavorDimensions، ثم بين أهمية applicationIdSuffix لتثبيت النسخ معاً، واشرح حقن الروابط وعزل Firebase، واختم بالفروق الأمنية بين البيئات.",
+        "talking_points_ar": "أبعاد النكهات flavorDimensions، ميزة applicationIdSuffix، حقول BuildConfig الديناميكية، عزل مجلدات src/dev وsrc/prod، وتأمين R8 وتثبيت الشهادات في الإنتاج.",
+        "follow_ups_ar": "كيف تدير مفاتيح الـ API السرية لكل نكهة دون حفظها في Git؟ وكيف تستخدم مجلدات Source Sets لاستبدال كود كامل بين النكهات؟",
+        "self_check_ar": "هل شرحت أبعاد النكهات وتثبيت النسخ معاً وعزل ملفات google-services.json بين البيئات؟",
+        "references_ar": f"- [Android Developers: Configure build variants](https://developer.android.com/build/build-variants) — الدليل الرسمي لإعداد نكهات البناء وبيئات العمل في أندرويد.\n- [Firebase: Multiple projects per app flavor](https://firebase.google.com/docs/projects/multiprojects) — التوثيق الرسمي لعزل مشاريع فايربيس لكل بيئة برمجية.\n\n{REVIEWED_DATE_AR}",
+        "quick_answer_ar": """ندير البيئات المتعددة باستخدام نكهات البناء Product Flavors وأبعاد النكهات في Gradle مثل dev وstaging وprod. ونمنح كل نكهة لاحقة applicationIdSuffix لتمكين تثبيتها معاً على نفس الجهاز، ونحقن روابط الخوادم عبر BuildConfig، مع عزل مشاريع Firebase في مجلدات مصادر مستقلة وتفعيل حظر السجلات وتشفير R8 الصارم في الإنتاج.""",
+        "best_answer_ar": """إدارة البيئات المتعددة في أندرويد تتطلب فصلاً محكماً بين هوية التطبيق والإعدادات البرمجية والحدود الأمنية.
+نبدأ بتعريف نكهات البناء عبر بعد موحد في Gradle لإنتاج نسخ مستقلة مثل devDebug وstagingRelease وprodRelease. ونحرص على إضافة لاحقة خاصة لمعرف التطبيق مثل .dev و.staging مع تغيير اسم التطبيق والأيقونة؛ مما يتيح لفريق الجودة والمطورين تثبيت النسخ التجريبية والإنتاجية جنباً إلى جنب على نفس الهاتف دون تداخل في البيانات.
+أما بالنسبة للإعدادات المتغيرة كروابط الخوادم ومفاتيح الخدمات، فنقوم بحقنها ديناميكياً باستخدام حقول buildConfigField. ونعزل المشاريع السحابية تماماً؛ بحيث يمتلك كل بيئة مشروع Firebase مستقل يوضع ملف google-services.json الخاص به داخل مجلد المصادر المخصص مثل src/dev وsrc/prod لمنع تلويث إحصائيات الإنتاج.
+وأخيراً، نلتزم بالضوابط الأمنية الصارمة؛ حيث تفعل نكهة التطوير سجلات الشبكة الموسعة ومحاكاة الاستجابات، بينما تطبق نكهة الإنتاج تشفير R8 الكامل وتثبيت الشهادات الرقمية وحجب كافة السجلات البرمجية الحساسة.""",
+        "deep_answer_ar": """من منظور المعمارية المؤسسية والامتثال الأمني وحوكمة البيانات، تهدف إدارة البيئات المتعددة إلى تحقيق العزل التام للبيانات والهويات البرمجية وحدود التشفير بين بيئات التطوير والإنتاج.
+أحد أخطر الأخطاء الشائعة هو مشاركة نفس معرف الحزمة أو مفاتيح الخدمات بين بيئة التطوير والإنتاج؛ مما يتسبب في مسح بيانات المستخدمين عند تثبيت نسخة تجريبية، أو تلويث مسارات التحليل وإحصائيات الأعطال في Crashlytics ببيانات وهمية واختبارات ناقصة تؤثر سلباً على قرارات العمل. ولذلك فإن عزل applicationIdSuffix يضمن استقلالاً تاماً للملفات وقواعد بيانات Room على عتاد الاختبار، ويتيح مقارنة النسخ لحظياً جنباً إلى جنب على أجهزة الفريق دون أي خوف من تداخل الجلسات.
+وعلى مستوى الاعتماديات الخارجية، نعتمد على استقلال مشاريع السحابة بالكامل؛ حيث يتعامل كل تطبيق مع خوادم وقواعد بيانات متباعدة، ويلتقط مكون Gradle المجلد المناسب تلقائياً من مجلدات المصادر الخاصة بكل نكهة دون أي خلط برمجي.
+وعلى الصعيد البرمجي، نتجنب وضع شروط برمجية متفرقة في الكود لفحص البيئة الحالية؛ بل نعتمد على حقن التبعيات لعزل المنطق؛ فتحقن نكهة التطوير محركات شبكة متساهلة تدعم أدوات كشف تسريب الذاكرة ومحاكاة الأخطاء، بينما تحقن نكهة الإنتاج محركات محصنة بتثبيت الشهادات المشفرة وإلغاء رسائل السجلات بالكامل، مما يضمن أقصى درجات الأمان والأداء للمستخدم النهائي."""
+    }
+}
+
+# ==========================================
+# CIC-17: A production hotfix is needed while feature branches have diverged. Explain your Git strategy.
+# ==========================================
+DATA["CIC-17"] = {
+    "concept_en": """Resolving a critical production incident when the main trunk has diverged with unreleased, in-flight feature code requires an isolated hotfix branching strategy and dual-merge synchronization:
+- The Divergence Dilemma:
+  - Production is running version `v2.4.0` (commit `abc1234`).
+  - The `main` branch has progressed 40 commits ahead with unvalidated features slated for `v2.5.0`.
+  - Creating a release directly from `main` would accidentally ship unverified code, introducing severe regression risks and destabilizing production.
+- Production Hotfix Branching Protocol:
+  1. Base Branching from Tagged Release:
+     - Branch directly off the immutable production release tag: `git checkout -b hotfix/2.4.1 v2.4.0`.
+     - Guarantees the baseline codebase contains strictly identical bytecode to what is currently deployed on user devices.
+  2. Surgical Remediation:
+     - Apply the minimal, isolated bug fix on the hotfix branch. Avoid opportunistic refactoring or tangential dependency upgrades.
+  3. Verification & Monotonic Versioning:
+     - Execute targeted unit tests, regression suites, and automated smoke tests.
+     - Increment `versionName` to `2.4.1` and increment `versionCode` monotonically so Google Play accepts the update.
+  4. Expedited Release Tagging & Dispatch:
+     - Tag the release (`v2.4.1`) and trigger the dedicated hotfix CI pipeline to compile, sign, and publish the AAB to production/staged rollout tracks.
+  5. Upstream Backport Synchronization (Dual-Merge / Cherry-Pick):
+     - Merge the hotfix branch back into `main` (or cherry-pick the fix commit onto `main`).
+     - Resolve any merge conflicts between the hotfix and the new `v2.5.0` code immediately to prevent the bug from resurrecting in future standard releases.""",
+    "walkthrough_en": """Terminal commands executing a production hotfix and upstream backport:
+```bash
+# 1. Checkout a dedicated hotfix branch directly from the production release tag
+git checkout -b hotfix/v2.4.1 v2.4.0
+
+# 2. Apply surgical bug fix and verify with targeted unit tests
+./gradlew testReleaseUnitTest
+
+# 3. Commit the fix and update version properties
+git commit -am "fix(payment): resolve null pointer exception during 3DS callback"
+
+# 4. Create annotated release tag
+git tag -a v2.4.1 -m "Production Hotfix Release v2.4.1"
+
+# 5. Push hotfix branch and tag to trigger automated hotfix release CI
+git push origin hotfix/v2.4.1 --tags
+
+# 6. Critical Step: Backport fix to mainline to prevent future regression
+git checkout main
+git pull origin main
+git merge --no-ff hotfix/v2.4.1
+# Alternatively: git cherry-pick <hotfix-commit-sha>
+
+# 7. Push mainline with backported fix
+./gradlew testDebugUnitTest
+git push origin main
+```""",
+    "short_en": """When mainline has diverged with unreleased features, branch an isolated hotfix directly off the production release tag rather than main. Apply the minimal surgical fix, increment versionCode and patch versionName, tag the release, and deploy via CI. Finally, merge or cherry-pick the hotfix back into main to prevent regression in future releases.""",
+    "structured_en": """Executing a production hotfix when mainline has diverged requires strict isolation to prevent shipping unverified feature code.
+We never branch hotfixes from the tip of main because it contains unreleased features that would destabilize production. Instead, we create an isolated hotfix branch directly from the immutable production Git tag, such as v2.4.0.
+On this isolated branch, we apply the minimal surgical fix required to resolve the issue, strictly avoiding refactoring. We increment the patch version name to 2.4.1 and advance the integer versionCode monotonically. After verifying with automated unit tests, we tag the commit and trigger our automated release pipeline to publish the hotfix bundle to Google Play.
+The crucial final step is backporting the fix to our active development branch. We merge or cherry-pick the hotfix commit into the main branch, resolving any conflicts immediately. This guarantees that the defect does not resurrect in the upcoming major release.""",
+    "deep_senior_en": """From a release governance and site reliability engineering perspective, emergency hotfixes represent high-stakes operations where procedural discipline prevents compounding a production crisis.
+When an incident strikes production, branching from trunk is an immediate failure mode. The mainline trunk in active development contains incomplete features, experimental dependency upgrades, and unverified architecture refactors. Shipping trunk would expose end users to massive regression blast radiuses. The correct engineering response is branching directly from the immutable release tag corresponding to the currently deployed production artifact. This ensures that the hotfix candidate is byte-for-byte identical to the live build, aside from the surgical correction.
+On the hotfix branch, our engineering standards enforce strict minimalism. We mandate that the diff contains exclusively the defect remediation and corresponding regression tests. We increment the semantic patch version and monotonically bump versionCode to satisfy Android Package Manager installation requirements. Once continuous integration validates the build, the release pipeline signs and dispatches the hotfix to Google Play for expedited review.
+Finally, closing the loop requires institutional memory through Git synchronization. Too often, engineering teams ship a hotfix from a detached branch and forget to backport it to mainline. Weeks later, when the next scheduled version ships, the bug reappears because trunk never ingested the fix. We mandate an immediate backport merge or cherry-pick into main, supported by an end-to-end regression test that runs against mainline to guarantee the issue remains permanently eradicated.""",
+    "meta_ar": {
+        "id": "CIC-17",
+        "questionAr": "مطلوب إصلاح عاجل للإنتاج (Hotfix) بينما تفرعت فروع الميزات وابتعدت عن النسخة الحية. اشرح استراتيجيتك في Git.",
+        "topicAr": TOPIC_AR,
+        "evaluates_ar": "إدارة حوادث الإنتاج (Incident Management)، التفرع من وسم الإصدار المباشر (Release Tag)، تفادي نشر ميزات غير مكتملة من Main، وتطبيق استراتيجية الدمج المزدوج (Dual-Merge / Backport) لمنع عودة المشكلة.",
+        "concept_ar": "عند حدوث عطل حرج في الإنتاج بينما يحتوي الفرع الرئيسي (Main) على عشرات الكوميتات غير المختبرة المجهزة للإصدار القادم، يُحظر تماماً التفرع من قمة Main لأن ذلك سيتسبب في نشر ميزات غير مكتملة للمستخدمين وتوسيع رقعة الكارثة. وتعتمد الاستراتيجية الهندسية الصحيحة على إنشاء فرع إصلاح عاجل متفرع مباشرة من وسم الإنتاج الحي (Git Release Tag مثل v2.4.0)؛ مما يضمن أن كود الفرع مطابق تماماً للنسخة المثبتة على هواتف المستخدمين. يطبق الفريق الإصلاح الجراحي الأدنى المطلوب دون أي تعديلات جانبية، وتُجرى اختبارات الوحدة السريعة مع زيادة رقم versionName إلى 2.4.1 وزيادة versionCode بشكل تصاعدي حتمي. يُطلق الإصدار من خلال خط الـ CI المخصص للـ Hotfix، وتأتي الخطوة الحاسمة بإعادة دمج هذا الإصلاح العاجل داخل فرع Main (عبر Merge أو Cherry-Pick) لضمان عدم عودة العطل في الإصدارات المستقبلية.",
+        "walkthrough_ar": """أوامر Git لإجراء إصلاح عاجل وإعادة دمجه في الفرع الرئيسي:
+```bash
+# 1. التفرع مباشرة من وسم نسخة الإنتاج الحية
+git checkout -b hotfix/v2.4.1 v2.4.0
+
+# 2. تطبيق الإصلاح الجراحي واختباره
+./gradlew testReleaseUnitTest
+
+# 3. توثيق الكوميت وزيادة أرقام النسخة
+git commit -am "fix(checkout): resolve crash during payment callback"
+git tag -a v2.4.1 -m "Production Hotfix Release v2.4.1"
+
+# 4. رفع الفرع والوسم لتشغيل خط النشر التلقائي
+git push origin hotfix/v2.4.1 --tags
+
+# 5. خطوة إلزامية: دمج الإصلاح في Main لمنع تكرار العطل مستقبلاً
+git checkout main
+git pull origin main
+git merge --no-ff hotfix/v2.4.1
+git push origin main
+```""",
+        "why_it_matters_ar": "التفرع الخاطئ من Main أثناء الطوارئ ينشر ميزات غير جاهزة ويفاقم الكارثة، ونسيان دمج الإصلاح في Main يعيد نفس العطل في التحديث التالي.",
+        "worked_example_ar": "عندما تعطلت بوابة الدفع في الإصدار 2.4.0، تفرعنا من وسم v2.4.0 وأصلحنا دالة الدفع ورفعنا الإصدار 2.4.1 للمتجر، ثم قمنا بعمل cherry-pick لنفس الكوميت على Main.",
+        "trade_offs_ar": "الانتظار حتى اكتمال الإصدار القادم يعطل مستخدمي الإنتاج لساعات أو أيام؛ بينما فرع الـ Hotfix المستقل يوفر حلاً جراحياً ينقذ المستخدمين خلال ساعة واحدة دون المساس بجدول التطوير.",
+        "failure_modes_ar": "أخطر الأخطاء هو التفرع من Main ونشر ميزات قيد التطوير تحتوي على أعطال أخرى، أو إطلاق الـ Hotfix للمتجر دون دمجه في Main مما يسبب انتكاسة في الإصدار اللاحق.",
+        "production_perspective_ar": "في كبرى الشركات، تمنع سياسات الـ CI دمج أي تعديل لا يحتوي على اختبار تراجع (Regression Test)، ويُطلب تدقيق الكود عبر مراجعة سريعة من مهندس قيادي قبل النشر.",
+        "how_to_answer_ar": "ابدأ برفض التفرع من Main قطعياً ووضح السبب، ثم اشرح التفرع من Release Tag، وتطبيق الإصلاح الأدنى، وزيادة أرقام النسخ، واختم بالخطوة الحاسمة وهي إعادة الدمج في Main.",
+        "talking_points_ar": "خطورة التفرع من Main، التفرع من Git Tag، الإصلاح الجراحي الأدنى، زيادة versionCode تصاعدياً، تشغيل خط الـ Hotfix، ودمج التعديل في Main (Backport).",
+        "follow_ups_ar": "كيف تتعامل مع وجود تعارضات حادة عند دمج فرع الـ Hotfix داخل Main؟ وما دور مفاتيح الميزات في تجنب الحاجة للـ Hotfix أصلاً؟",
+        "self_check_ar": "هل أكدت على التفرع من وسم الإنتاج، الإصلاح الجراحي، وزيادة النسخة وإعادة الدمج في Main؟",
+        "references_ar": f"- [Atlassian Git: Gitflow Workflow and Hotfix Branches](https://www.atlassian.com/git/tutorials/comparing-workflows/gitflow-workflow) — الدليل المعماري لإدارة فروع الإصلاحات العاجلة في Git.\n- [Google Play: Release management during production incidents](https://support.google.com/googleplay/android-developer/answer/9842756) — أفضل الممارسات لإدارة الإصدارات الطارئة في جوجل بلاي.\n\n{REVIEWED_DATE_AR}",
+        "quick_answer_ar": """عند تفرع الفرع الرئيسي، نتفرع بالإصلاح العاجل مباشرة من وسم الإنتاج الحي في Git وليس من Main لمنع نشر ميزات غير جاهزة. نطبق الإصلاح الجراحي الأدنى ونرفع أرقام الإصدارات ونطلق النسخة للمتجر عبر الـ CI، ثم نقوم بدمج الإصلاح العاجل أو عمل cherry-pick له داخل Main لمنع عودة المشكلة في الإصدارات التالية.""",
+        "best_answer_ar": """إدارة الإصلاحات العاجلة للإنتاج في ظل تفرع الكود تتطلب انضباطاً صارماً لحماية بيئة المستخدمين من الأكواد غير المكتملة.
+نرفض تماماً التفرع من قمة الفرع الرئيسي لأن Main يحتوي في العادة على تعديلات قيد التطوير وميزات غير مختبرة شحنها سيفاقم الأزمة ويوسع نطاق الأعطال. وبدلاً من ذلك، ننشئ فرعاً مستقلاً يتفرع مباشرة من وسم الإصدار المنشور في الإنتاج مثل v2.4.0.
+على هذا الفرع المنعزل، نطبق التعديل البرمجي الجراحي الأدنى الكافي لإصلاح الخلل فقط دون الانجرار لتعديلات جانبية. ونقوم بزيادة رقم النسخة إلى 2.4.1 وزيادة رقم versionCode بصورة تصاعدية لتلبية شروط المتجر، مع تشغيل الاختبارات المؤتمتة وتوليد حزمة التحديث ونشرها عبر مسار الطوارئ في الـ CI.
+والخطوة الختامية التي لا غنى عنها هي إعادة دمج فرع الإصلاح العاجل أو تطبيق الكوميت باستخدام cherry-pick داخل الفرع الرئيسي مع حل أي تعارضات فوراً؛ لضمان عدم عودة الخلل ذاته عند إطلاق الإصدار الكبير القادم.""" ,
+        "deep_answer_ar": """من منظور حوكمة الإصدارات وهندسة موثوقية النظم، تمثل الإصلاحات العاجلة اختباراً حقيقياً لمدى انضباط الفريق الهندسي في أوقات الأزمات وحماية بيئة الإنتاج من التدهور.
+الخطأ الفادح الشائع هو الاندفاع نحو الفرع الرئيسي وأخذ نسخة منه للنشر السريع؛ فالمطورون يعملون باستمرار على ميزات مستقبلية قد تكون غير مستقرة، وشحنها للمستخدمين في لحظة طوارئ يضاعف حجم الكارثة ويدمر ثقة المستخدمين في استقرار المنصة. الاستجابة الهندسية المعتمدة هي الانطلاق حصراً من الوسم المرجعي للإصدار الحي؛ مما يضمن أن الحزمة المصححة مطابقة تماماً لما هو مثبت على هواتف المستخدمين في كافة الملفات والاعتماديات باستثناء التعديل الجراحي المحدد بدقة.
+ونلزم الفريق على فرع الطوارئ بالاقتصار الصارم على حل المشكلة وتضمين اختبار تراجع يمنع حدوثها ثانية. ونرفع أرقام النسخ بما يتوافق مع سياسات الترقيم الدلالي وتصاعد الأرقام الفنية لـ Android Package Manager لتفادي رفض متجر جوجل بلاي للتحديث، ثم نطلق الحزمة نحو قنوات المتجر لمراجعة سريعة وطرح تدريجي.
+وأخيراً، نقفل دائرة العمل بالمزامنة العكسية مع الفرع الرئيسي؛ فالكثير من الفرق تطلق التحديث الطارئ وتنسى إعادة دمجه في شجرة التطوير، فتفاجأ بعودة العطل في الإصدار التالي بعد أسابيع. ولذلك نلزم خطوط العمل بدمج كوميت الإصلاح في الفرع الرئيسي فوراً والتحقق من اجتيازه لكافة الاختبارات الشاملة، مما يمحو الخلل نهائياً من تاريخ المستودع ويمنع تكراره."""
+    }
+}
+
+# ==========================================
+# CIC-18: A malicious pull request tries to access signing secrets. How do you prevent leakage?
+# ==========================================
+DATA["CIC-18"] = {
+    "concept_en": """Mitigating secret exfiltration and remote code execution attacks from untrusted pull requests requires strict runner sandboxing, trigger hygiene, and least-privilege infrastructure:
+- Attack Vectors in Mobile CI Pipelines:
+  - An attacker submits a pull request containing modified Gradle tasks, dependencies, or GitHub Action steps designed to dump environment variables, print base64 keystores, or transmit credentials to an external endpoint.
+- The Danger of `pull_request_target`:
+  - The standard `pull_request` event executes workflows in the context of the fork, strictly withholding repository secrets and write permissions.
+  - Using `pull_request_target` grants workflows access to secrets and write tokens while running against the base repository. If the workflow checks out the untrusted head commit (`ref: github.event.pull_request.head.sha`), it allows arbitrary untrusted code to execute with full access to production signing credentials.
+- Multi-Layered Defense Architecture:
+  1. Complete Fork Secret Isolation:
+     - Workflows triggered by external pull requests must never be exposed to signing keystores, service account JSON files, or deployment credentials.
+  2. GitHub Environments & Manual Approvals:
+     - Production secrets must be bound to a protected GitHub Environment.
+     - Deployments and signing jobs require manual gate approval from designated code owners, preventing automated execution on arbitrary branches.
+  3. Ephemeral Secrets & Workload Identity Federation (OIDC):
+     - Replace long-lived static service account keys with OpenID Connect (OIDC) tokens federated with Google Cloud IAM. Credentials expire within an hour and cannot be reused outside the specific workflow scope.
+  4. Secret Masking and Runner Log Hygiene:
+     - CI platforms automatically mask registered secret values, printing `***` in build logs.
+     - Ephemeral runner directories are scrubbed immediately in post-execution hooks (`if: always()`).
+  5. Scoped Access Permissions:
+     - Enforce minimum permissions on CI bot tokens (`permissions: contents: read`). Restrict write and secret-access permissions exclusively to protected mainline deployment jobs.""",
+    "walkthrough_en": """Hardened GitHub Actions workflow mitigating malicious PR credential exfiltration:
+```yaml
+# .github/workflows/pr_verification.yml
+name: PR Untrusted Verification
+
+# Safe event: Does not expose production secrets to forks
+on:
+  pull_request:
+    branches: [ main ]
+
+# Minimal default permissions for the GITHUB_TOKEN
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v3
+
+      # Executes checks strictly WITHOUT any production secrets or signing materials
+      - name: Run Build and Unit Tests
+        run: ./gradlew testDebugUnitTest lintDebug
+
+# Note: Release signing is isolated in a separate workflow:
+# Triggered ONLY on push to protected mainline, NEVER on pull_request!
+```""",
+    "short_en": """Prevent signing secret leakage by running PR checks under the standard pull_request event which strictly isolates secrets from forks. Never use pull_request_target with untrusted checkouts. Protect production secrets inside GitHub Environments requiring manual approvals, isolate release signing exclusively to protected mainline pushes, and adopt OIDC short-lived tokens.""",
+    "structured_en": """Preventing credential leakage from malicious pull requests requires strict isolation between untrusted code execution and repository secrets.
+The primary attack vector occurs when a malicious pull request injects code into build scripts to print or exfiltrate environment variables. To neutralize this, we use the standard pull_request workflow trigger, which inherently restricts runner permissions and withholds all production secrets from untrusted forks. We strictly avoid using pull_request_target with untrusted head commits, as doing so permits remote code execution within a privileged environment.
+Furthermore, we restrict signing materials and Google Play service account keys to protected GitHub Environments. These environments enforce mandatory manual approval gates by senior release engineers before jobs can acquire secret access.
+By isolating release signing pipelines exclusively to merges onto protected mainline branches and migrating toward short-lived OIDC tokens, we ensure that untrusted contributors have zero access to production cryptographic materials.""",
+    "deep_senior_en": """From an application security engineering and platform governance standpoint, CI/CD pipelines are prime targets for software supply chain compromises. If an adversary can coax a CI runner into executing arbitrary Gradle code with access to production secrets, your application signing keys and distribution channels are compromised.
+The most frequent architectural blunder in GitHub Actions is misconfiguring pull_request_target. Teams often adopt it to allow external pull requests to run linters or post status comments, but then naively checkout the pull request's untrusted head SHA. Because pull_request_target runs in the security context of the base branch, it grants the runner full access to repository secrets. A malicious actor can simply add a line to build.gradle.kts that curls the environment variables to a remote command-and-control server. We strictly prohibit pull_request_target in favor of standard pull_request events with read-only token permissions.
+To achieve zero-trust CI security, we physically decouple presubmit validation from release signing. Pull request workflows only compile debug variants and execute JVM unit tests without needing any signing material. Production keystores and deployment service accounts are sequestered inside protected deployment environments. These environments enforce required reviewers, meaning an authorized release engineer must manually approve execution before secrets are decrypted.
+Finally, we replace static, long-lived service account JSON keys with OpenID Connect federated authentication against Google Cloud IAM. CI runners request short-lived, single-use identity tokens that automatically expire within minutes and are strictly scoped to upload AABs to specific Play Store tracks, neutralizing credential exfiltration risks completely.""",
+    "meta_ar": {
+        "id": "CIC-18",
+        "questionAr": "طلب دمج (PR) خبيث يحاول الوصول لمفاتيح التوقيع والأسرار في الـ CI. كيف تمنع تسريبها؟",
+        "topicAr": TOPIC_AR,
+        "evaluates_ar": "فهم متجهات الهجوم في الـ CI/CD، مخاطر حدث pull_request_target، عزل أسرار الفروع الخارجية (Fork Isolation)، استخدام بيئات GitHub المحمية، والاعتماد على شهادات OIDC المؤقتة.",
+        "concept_ar": "تعتمد حماية أسرار الـ CI ومفاتيح التوقيع من طلبات الدمج الخبيثة على عزل بيئة تنفيذ الكود غير الموثوق عن خزائن الأسرار المشفرة: ينطلق التهديد عندما يرسل مهاجم PR يحتوي على كود خبيث في build.gradle.kts أو مهام Gradle لطباعة متغيرات البيئة وإرسالها لسيرفر خارجي. ولمنع ذلك، نعتمد دائماً على مشغل pull_request القياسي الذي يحجب الأسرار تلقائياً عن الفروع الخارجية (Forks) ويمنح الـ GITHUB_TOKEN صلاحية القراءة فقط. ونحظر تماماً استخدام مشغل pull_request_target مع فحص كود الـ PR؛ لأن هذا المشغل يعمل بصلاحيات المستودع الرئيسي ويتيح للكود الخبيث الوصول للأسرار. بالإضافة إلى ذلك، تُعزل أسرار التوقيع وحسابات Google Play داخل بيئات محمية (Protected Environments) تتطلب موافقة يدوية من مهندس أمان معتمد، مع قصر مهام التوقيع على الكود المدمج في الفرع الرئيسي فقط، واستبدال المفاتيح الثابتة برموز OIDC المؤقتة التي تنتهي صلاحيتها خلال دقائق معدودة.",
+        "walkthrough_ar": """تكوين مشغل آمن بصلاحيات قراءة دنيا وحظر الأسرار:
+```yaml
+# .github/workflows/pr_safe.yml
+name: PR Safe Verification
+on:
+  pull_request: # مشغل آمن يحجب الأسرار عن الـ Forks
+    branches: [ main ]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v3
+      # تشغيل الاختبارات دون تمرير أي أسرار أو مفاتيح توقيع إطلاقاً
+      - run: ./gradlew testDebugUnitTest lintDebug
+```""",
+        "why_it_matters_ar": "تسريب مفاتيح التوقيع عبر PR خبيث يتيح للمهاجمين بناء نسخ مخترقة ونشرها لملايين المستخدمين أو السيطرة على خوادم السحابة التابعة للشركة.",
+        "worked_example_ar": "قام حساب مجهول بإنشاء PR خارجي يعدل مهمة Gradle لتطبع كافة أسرار البيئة؛ ولأن الخط يعمل بمشغل pull_request القياسي، كانت قائمة الأسرار فارغة تماماً وفشل الهجوم.",
+        "trade_offs_ar": "السماح للـ PRs بالوصول للأسرار قد يسهل اختبار النشر ولكنه يمثل خطراً أمنياً كارثياً؛ بينما الحظر التام للأسرار عن الـ PRs يوفر أماناً مطلقاً مع قصر النشر على الفرع الرئيسي المدمج.",
+        "failure_modes_ar": "أخطر الأخطاء هو استخدام مشغل pull_request_target مع عمل checkout لكود الـ PR الخارجي؛ مما يمنح المهاجم حق تنفيذ كود عشوائي مع وصول كامل لكافة أسرار المستودع.",
+        "production_perspective_ar": "في بيئات الإنتاج، يُستغنى عن ملفات مفاتيح Google Play الثابتة لصالح Google Cloud Workload Identity Federation (OIDC)؛ فتمنح السيرفرات رموز توثيق مؤقتة تنتهي في دقائق.",
+        "how_to_answer_ar": "ابدأ بتوضيح آلية الهجوم عبر Gradle، ثم بين خطورة pull_request_target وأهمية مشغل pull_request الآمن، واشرح عزل الأسرار في بيئات محمية بموافقة يدوية واستخدام رموز OIDC.",
+        "talking_points_ar": "هجمات سلاسل التوريد، عزل الفروع الخارجية Fork Isolation، خطورة pull_request_target، بيئات GitHub المحمية، صلاحيات GITHUB_TOKEN الدنيا، والتوثيق المؤقت عبر OIDC.",
+        "follow_ups_ar": "ما الفارق الأمني بين pull_request وpull_request_target؟ وكيف تستخدم Workload Identity Federation لإلغاء ملفات JSON في الـ CI؟",
+        "self_check_ar": "هل حذرت من سوء استخدام pull_request_target، وشرحت حجب الأسرار عن الـ Forks وعزل مهام التوقيع في البيئات المحمية؟",
+        "references_ar": f"- [GitHub Security Lab: Keeping your GitHub Actions and secrets safe](https://securitylab.github.com/research/github-actions-preventing-pwn-requests/) — الدليل الأمني الأشهر للوقاية من ثغرات pull_request_target.\n- [Google Cloud: Workload Identity Federation with GitHub Actions](https://cloud.google.com/iam/docs/workload-identity-federation-with-other-providers) — التوثيق الرسمي لاستخدام رموز OIDC المؤقتة دون مفاتيح ثابتة.\n\n{REVIEWED_DATE_AR}",
+        "quick_answer_ar": """نمنع تسريب الأسرار بتشغيل فحص طلبات الدمج بمشغل pull_request القياسي الذي يحجب الأسرار تماماً عن الـ Forks، ونحظر استخدام pull_request_target مع فحص أكواد غير موثوقة. كما نعزل أسرار التوقيع والنشر داخل بيئات محمية تتطلب موافقة يدوية، ونقصر مهام التوقيع على الفرع الرئيسي بعد الدمج، مع استبدال المفاتيح الثابتة برموز OIDC المؤقتة.""",
+        "best_answer_ar": """منع تسريب مفاتيح التوقيع والأسرار عبر طلبات الدمج الخبيثة يعتمد على العزل الصارم بين تنفيذ الأكواد غير الموثوقة وخزائن الأسرار المشفرة.
+التهديد الأساسي يحدث عندما يدس مهاجم كوداً في ملفات Gradle لطباعة متغيرات البيئة وإرسالها إلى خوادم خارجية. ولإحباط هذا الهجوم، نستخدم مشغل pull_request القياسي في GitHub Actions، والذي يعزل سيرفر التنفيذ ويحجب كافة أسرار المستودع عن فروع المطورين الخارجية تلقائياً، مع ضبط صلاحيات التوكن الافتراضية على القراءة فقط.
+ونحظر تماماً استخدام مشغل pull_request_target لفحص أكواد الـ PR؛ لأن هذا المشغل يمنح كود المهاجم صلاحيات المستودع الرئيسي والأسرار، مما يفتح ثغرة خطيرة لتنفيذ الأوامر عن بعد.
+بالإضافة إلى ذلك، نعزل مفاتيح التوقيع وأسرار Google Play داخل بيئات محمية بضوابط صارمة تتطلب موافقة يدوية من مهندس إصدارات معتمد، ونقصر مهام التوقيع الحساسة على عمليات الدمج المعتمدة في الفرع الرئيسي فقط، مع التحول لاستخدام رموز OIDC المؤقتة التي تلغي الحاجة للمفاتيح الثابتة نهائياً.""",
+        "deep_answer_ar": """من منظور أمن التطبيقات وحوكمة سلاسل التوريد البرمجية، تمثل خطوط الـ CI والـ CD الهدف الأبرز للهجمات الخبيثة؛ فإذا تمكن المهاجم من تشغيل مهمة Gradle واحدة تحت بيئة تمتلك وصولاً للمفاتيح، فإنه يستطيع تسريب شهادات التوقيع والسيطرة على قنوات التوزيع.
+الفخ المعماري الأكثر انتشاراً هو سوء استخدام مشغل pull_request_target؛ حيث تلجأ بعض الفرق إليه لتشغيل مهام الفحص على المساهمات الخارجية، وتقوم بجلب الكود التابع للـ PR المجهول. ولأن هذا المشغل يعمل بسياق أمني يمتلك صلاحيات الوصول لأسرار المستودع، فإن إضافة سطر واحد في build.gradle.kts كافٍ لسحب كافة الأسرار وإرسالها لسيرفر خارجي. نحن نفرض حظراً قاطعاً على هذا النمط، ونلزم كافة طلبات الدمج بالعمل تحت مشغل pull_request المعزول الذي تنعدم فيه رؤية الأسرار تماماً.
+ولتحقيق أمان انعدام الثقة، نفصل فحص الكود عن عمليات النشر والتوقيع؛ فطلبات الدمج تقتصر على بناء نسخ التصحيح واختبارات الوحدة دون أي أسرار، بينما تعزل مفاتيح الإنتاج في بيئات مستقلة تتطلب موافقة مسبقة من مهندس أمان.
+وأخيراً، نتخلص من المفاتيح الثابتة كملفات JSON ونستبدلها ببروتوكول OpenID Connect مع Google Cloud IAM؛ حيث يطلب السيرفر رمز توثيق مؤقت تنتهي صلاحيته في دقائق ومقيد حصراً برفع الحزمة للمتجر، مما يضمن استحالة استغلال أي تسريب حتى لو حدث افتراضياً."""
+    }
+}
+
+# ==========================================
+# CIC-19: The app release pipeline deploys the wrong flavor. How do you prevent recurrence?
+# ==========================================
+DATA["CIC-19"] = {
+    "concept_en": """Accidentally deploying an incorrect build flavor (such as staging or internal dogfood) to the production Google Play track is a critical release failure that exposes pre-production endpoints, test credentials, and unvetted features to real users:
+- Root Cause Analysis (RCA) of Flavor Deployment Failures:
+  - Ambiguous Gradle Invocations: Running `./gradlew bundleRelease` when multiple flavors exist (e.g., `stagingRelease` and `prodRelease`). Gradle compiles both, and a subsequent script step picks up the first file found via wildcards (`build/outputs/bundle/*/*.aab`).
+  - Loose CI Path Globbing: Using wildcard paths like `**/*.aab` in upload actions that inadvertently match staging artifacts.
+  - Shared Pipeline Anti-Pattern: A single parameter-driven CI workflow where an engineer manually selects a dropdown (e.g., "staging" vs "production"), leading to human operator error.
+- Comprehensive Prevention Architecture:
+  1. Strictly-Typed, Explicit Gradle Targets:
+     - Disallow generic bundle tasks. Require exact, fully-qualified flavor tasks: `./gradlew bundleProdRelease`.
+  2. Automated Pre-Publish Sanity Inspection (AAPT2 Gate):
+     - Before uploading to Google Play, the pipeline extracts and inspects the compiled AAB using `aapt2` or `bundletool`.
+     - Strictly asserts:
+       - Package name equals `com.company.app` (rejecting any `.staging` or `.dev` suffixes).
+       - The `android:debuggable` manifest flag is strictly `false`.
+       - Obfuscation and resource shrinking were successfully applied.
+  3. Backend Target Verification:
+     - The pipeline inspects bytecode or generated `BuildConfig` fields to guarantee that `BASE_URL` matches the production domain (`https://api.company.com/`) and contains zero staging URLs.
+  4. Physically Decoupled Pipelines & Protected Environments:
+     - The production deployment workflow is maintained in an isolated, immutable workflow file triggered exclusively by signed release tags on protected branches.
+     - Production upload credentials reside in an isolated GitHub Environment requiring manual two-person sign-off, completely inaccessible to staging jobs.""",
+    "walkthrough_en": """Pre-publish sanity gate script and explicit production deployment workflow:
+```yaml
+# .github/workflows/deploy_production.yml
+name: Deploy Production Track
+on:
+  push:
+    tags: [ 'v*.*.*' ] # Triggered strictly by production version tags
+
+jobs:
+  publish_prod:
+    runs-on: ubuntu-latest
+    environment: production-store # Protected environment with mandatory review
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v3
+
+      # 1. Compile strictly the prodRelease variant
+      - name: Build Production AAB
+        run: ./gradlew :app:bundleProdRelease
+
+      # 2. Pre-Publish Sanity Gate: Inspect AAB metadata using aapt2
+      - name: Verify Artifact Sanity
+        run: |
+          AAB_FILE="app/build/outputs/bundle/prodRelease/app-prod-release.aab"
+          [ -f "$AAB_FILE" ] || { echo "ERROR: Production AAB not found!"; exit 1; }
+
+          # Unpack base manifest and assert package identity
+          unzip -p "$AAB_FILE" base/manifest/AndroidManifest.xml > manifest_dump.bin
+          
+          # Assert package name does NOT contain .staging or .dev
+          if unzip -l "$AAB_FILE" | grep -qi "staging"; then
+            echo "CRITICAL: Artifact contains staging artifacts! Aborting."
+            exit 1
+          fi
+          echo "Sanity Verification Passed: Confirmed Production Artifact."
+
+      # 3. Publish with explicit path (Zero wildcards)
+      - name: Publish to Google Play Production
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_PRODUCTION_JSON_KEY }}
+          packageName: com.company.app
+          releaseFiles: app/build/outputs/bundle/prodRelease/app-prod-release.aab
+          track: internal # Promoted to production track following dogfooding
+```""",
+    "short_en": """Prevent deploying the wrong flavor by eliminating generic Gradle bundle tasks in favor of explicit tasks like bundleProdRelease, avoiding wildcard artifact paths, and implementing an automated pre-publish sanity gate. This gate inspects the compiled AAB using aapt2 to assert the exact package name, non-debuggable flag, and production API endpoints before allowing upload.""",
+    "structured_en": """Deploying an incorrect flavor to Google Play is a catastrophic release failure usually caused by ambiguous tasks, loose file globbing, or manual pipeline selection.
+To prevent recurrence, we overhaul the release pipeline across three architectural layers. First, we mandate fully-qualified, explicit Gradle task targets such as bundleProdRelease, strictly forbidding generic bundle tasks or wildcard path matching in deployment actions.
+Second, we implement an automated pre-publish sanity gate directly in the CI workflow. Before invoking the Google Play API, the pipeline inspects the compiled AAB using tools like aapt2 or bundletool to assert that the package name is strictly com.company.app without any staging suffixes, and that the debuggable flag is false.
+Third, we decouple workflows physically. Production release pipelines are isolated in dedicated workflow files triggered exclusively by annotated release tags on protected branches, bound to a production GitHub Environment requiring two-person authorization. This makes accidental flavor cross-deployment structurally impossible.""",
+    "deep_senior_en": """From a release engineering and site reliability standpoint, publishing a staging or dev binary to the Google Play production track is a severe incident that compromises user security, exposes non-production databases, and violates compliance standards.
+When conducting a Root Cause Analysis on flavor deployment anomalies, the culprit is almost invariably ambiguous Gradle commands coupled with directory globbing. When a build script runs gradlew bundle, Gradle compiles every configured flavor into the outputs directory. If a deployment script uses a loose wildcard like app-star-release.aab, it nondeterministically grabs whichever artifact the filesystem returns first, silently uploading a staging bundle to production users.
+Our remediation enforces structural prevention. We eliminate wildcards entirely; deployment actions must point to exact, deterministic file paths generated by explicit targets like bundleProdRelease. Furthermore, we establish an automated pre-flight sanity gate. Before any binary touches the Google Play Developer API, an automated shell step inspects the AAB using aapt2. It programmatically validates the package name, asserts that android:debuggable is false, and parses BuildConfig bytecode to verify that the API base URL points exclusively to production domains. If any assertion fails, the pipeline aborts immediately.
+Finally, we separate pipeline privileges. Staging builds are deployed continuously from development branches to Firebase App Distribution. Production builds exist in a distinct, locked workflow triggered only by signed Git tags on mainline, protected by environment approval gates. By replacing manual parameters with cryptographically validated triggers and automated artifact assertions, we permanently engineer away human and automation errors.""",
+    "meta_ar": {
+        "id": "CIC-19",
+        "questionAr": "خط النشر في الـ CI قام بنشر نكهة خاطئة (Flavor) للإنتاج. كيف تمنع تكرار هذه الكارثة؟",
+        "topicAr": TOPIC_AR,
+        "evaluates_ar": "تحليل الأسباب الجذرية (RCA) لأخطاء النشر، إلغاء مهام Gradle المبهمة، فرض بوابات فحص الحزمة الآلية (Sanity Checks) عبر aapt2، وعزل خطوط النشر وبيئات الأسرار.",
+        "concept_ar": "يعد نشر نكهة تجريبية (Staging) أو تطويرية (Dev) إلى مسار الإنتاج في Google Play حادثاً برمجياً كارثياً يكشف خوادم الاختبار ويعرض بيانات المستخدمين للاختراق. تعود المشكلة في العادة إلى استخدام مهام Gradle عامة مثل ./gradlew bundle أو استخدام مسارات غير محددة (Wildcards مثل *.aab) تلتقط أول حزمة في المجلد عشوائياً. ولمنع تكرار هذه الكارثة نهائياً، نطبق معمارية وقائية متعددة الطبقات: أولاً، حظر المهام العامة وإلزام خط النشر بتشغيل مهمة صريحة ومحددة حصراً مثل bundleProdRelease دون أي مسارات مبهمة. ثانياً، وضع بوابة تحقق رقمية حتمية (Sanity Check Gate) قبل الرفع؛ حيث يقوم الـ CI بفحص ملف AndroidManifest.xml داخل حزمة الـ AAB باستخدام aapt2 للتأكد بنسبة مئة بالمئة من أن اسم الحزمة هو com.company.app دون أي لاحقة، وأن خاصية debuggable غير مفعلة، وأن روابط الخوادم في BuildConfig تشير لخوادم الإنتاج فقط. ثالثاً، عزل ملفات الـ CI؛ بحيث يمتلك مسار الإنتاج ملف عمل مستقل ومحمي بكلمات مرور وبيئات معتمدة تتطلب موافقة مهندسين اثنين قبل النشر.",
+        "walkthrough_ar": """بوابة فحص الحزمة قبل النشر وفصل مهام الإنتاج الصريحة:
+```yaml
+# .github/workflows/deploy_prod.yml
+jobs:
+  deploy_production:
+    runs-on: ubuntu-latest
+    environment: production # يتطلب موافقة يدوية
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Explicit Production Variant
+        run: ./gradlew :app:bundleProdRelease
+
+      # بوابة التحقق الإلزامية قبل الرفع لمتجر جوجل بلاي
+      - name: Assert Production Artifact Sanity
+        run: |
+          AAB="app/build/outputs/bundle/prodRelease/app-prod-release.aab"
+          [ -f "$AAB" ] || { echo "Error: Production AAB missing!"; exit 1; }
+          
+          # التأكد من خلو الحزمة من أي مخرجات أو كلمات staging
+          if unzip -l "$AAB" | grep -qi "staging"; then
+            echo "FATAL: Found staging code in production bundle!"; exit 1;
+          fi
+          echo "Sanity Check Passed: Safe Production Binary."
+
+      # رفع الملف بمسار صريح محدد دون أي رموز عامة (*)
+      - name: Upload to Play Store
+        uses: r0adkll/upload-google-play@v1
+        with:
+          packageName: com.company.app
+          releaseFiles: app/build/outputs/bundle/prodRelease/app-prod-release.aab
+          track: internal
+```""",
+        "why_it_matters_ar": "نشر النكهة الخاطئة يوجه مستخدمي التطبيق الحقيقيين لسيرفرات تجريبية غير محمية أو بوابات دفع وهمية مما يسبب خسائر مالية فادحة وضربة لسمعة الشركة.",
+        "worked_example_ar": "في إحدى الشركات، تسبب أمر gradlew bundle في رفع نسخة staging للمتجر؛ فعالجنا الكارثة بوضع فحص آلي في الـ CI يقرأ package name من الـ AAB ويرفض الرفع إذا وجد لاحقة .staging.",
+        "trade_offs_ar": "الاعتماد على خط موحد متعدد المعاملات (Parameterized Pipeline) يقلل عدد ملفات الـ CI ولكنه يزيد خطر الخطأ البشري؛ بينما فصل ملفات النشر كلياً يضمن الأمان التام مع متطلبات صيانة بسيطة.",
+        "failure_modes_ar": "أخطر الأخطاء هو استخدام الأقنعة العامة مثل *.aab في خط الرفع مما يرفع أول ملف يجده السيرفر، أو الاعتماد على اختيار المطور لنكهة البناء يدوياً من قائمة منسدلة في الـ CI.",
+        "production_perspective_ar": "في كبرى المؤسسات، يُبرمج خط الـ CI ليرفض الرفع تلقائياً إذا تطابقت أي شهادة أو رابط داخل الـ AAB مع النطاقات الداخلية غير الإنتاجية (Internal Staging Domains).",
+        "how_to_answer_ar": "ابدأ بتحليل السبب الجذري مثل المهام المبهمة والـ Wildcards، ثم اشرح الحلول الثلاثة: المهام الصريحة المحددة، بوابة التحقق الرقمية عبر aapt2، وفصل خطوط وبيئات النشر بصلاحيات معزولة.",
+        "talking_points_ar": "تحليل السبب الجذري RCA، مخاطر الـ Wildcards، مهمة bundleProdRelease الصريحة، فحص aapt2 المسبق، التحقق من BuildConfig، وعزل بيئات الإنتاج بموافقة مهندسين اثنين.",
+        "follow_ups_ar": "كيف تستخدم أداة bundletool لفحص صلاحيات وأذونات الحزمة برمجياً؟ وما خطة الطوارئ اللحظية إذا وصلت النسخة الخاطئة لـ 1% من المستخدمين؟",
+        "self_check_ar": "هل وضحت خطورة الأقنعة العامة، وشرحت بوابة فحص الـ AAB، وعزل خطوط الإنتاج والمهام الصريحة؟",
+        "references_ar": f"- [Android Developers: Test your app bundle with bundletool](https://developer.android.com/tools/bundletool) — الدليل الرسمي لفحص واستخراج بيانات حزم AAB قبل النشر.\n- [Google Play: Manage releases and tracks](https://support.google.com/googleplay/android-developer/answer/9842756) — أفضل الممارسات لعزل مسارات ونكهات النشر في جوجل بلاي.\n\n{REVIEWED_DATE_AR}",
+        "quick_answer_ar": """نمنع تكرار نشر النكهة الخاطئة بإلغاء مهام Gradle العامة وتحديد مهمة صريحة مثل bundleProdRelease دون أي أقنعة مسارات مبهمة، مع إضافة بوابة فحص مسبقة تقرأ الحزمة بـ aapt2 وتتأكد من مطابقة اسم الحزمة وخلوها من .staging وتوجيه الروابط للإنتاج. كما نعزل خط الإنتاج في ملف مستقل وبيئة مشروطة بموافقة يدوية.""",
+        "best_answer_ar": """نشر النكهة الخاطئة في متجر الإنتاج يعد حادثاً برمجياً جسيماً ينتج عادة عن استخدام مهام بناء عامة أو أقنعة مسارات غير محددة أو الاعتماد على اختيارات يدوية في الـ CI.
+ولمنع تكرار هذه المشكلة نهائياً، نعيد هيكلة خط النشر على ثلاثة محاور رئيسية؛ أولها إلغاء المهام العامة وتحديد مهمة البناء بدقة تامة مثل bundleProdRelease مع كتابة المسار الدقيق لملف الـ AAB دون أي رموز نجمية مبهمة.
+المحور الثاني هو بناء بوابة تحقق آلية حتمية تسبق عملية الرفع؛ حيث يفحص الـ CI الحزمة المجمعة باستخدام aapt2 أو bundletool للتحقق من أن اسم الحزمة هو com.company.app دون أي لاحقة تجريبية، والتأكد من إغلاق وضع التصحيح وتوجيه روابط الـ API نحو خوادم الإنتاج الرسمية حصراً.
+أما المحور الثالث فهو العزل التام لخطوط العمل؛ حيث تخصص للإنتاج خطوط عمل مستقلة لا تعمل إلا من خلال وسوم إصدار معتمدة على الفرع الرئيسي، ومحمية ببيئات تتطلب موافقة يدوية من مهندسين معتمدين؛ مما يجعل تسرب نكهة خاطئة أمراً مستحيلاً معمارياً.""",
+        "deep_answer_ar": """من منظور هندسة الإصدارات وضمان موثوقية النظم، يمثل نشر نسخة تجريبية لجمهور الإنتاج اختراقاً جسيماً لمعايير الأمان والامتثال؛ حيث يعرض خوادم التطوير لضغط هائل ويكشف بيانات وبيئات غير مؤمنة للمستخدمين العاديين.
+عند إجراء تحليل الأسباب الجذرية لهذه الحوادث، نجد أن الخلل يكمن دوماً في الاعتماد على مهام غامضة مثل gradlew bundle؛ حيث يجمع Gradle كافة النكهات في نفس المجلد، ثم تأتي خطوة الرفع بأقنعة عامة تلتقط أول حزمة يصادفها نظام التشغيل عشوائياً. ولذلك فإن الخطوة الأولى هي المنع القاطع للمسارات المبهمة وفرض مسارات محددة تنتجها مهام مخصصة مثل bundleProdRelease حصراً دون استخدام أي رموز عامة.
+ولضمان عدم الاعتماد على النوايا الحسنة، نضع بوابة تفتيش رقمية حتمية قبل استدعاء واجهات متجر جوجل؛ حيث يحلل أمر برمجي ملف الحزمة ويتأكد من حظر أي كود أو مسار يحتوي على كلمة staging، ويتحقق من سلامة الشهادات والروابط المشفرة في شفرة البايتكود وعدم تفعيل أي خصائص تصحيح.
+وفضلاً عن ذلك، نعزل بيئات الإنتاج في مستودعات ومسارات عمل منفصلة تماماً؛ فالنسخ التجريبية تُشحن تلقائياً عبر فروع التطوير نحو منصات التوزيع الداخلي، بينما يتطلب مسار الإنتاج وسوماً رقمية مشفرة ومصادقة مزدوجة من كبار مهندسي الإصدارات. هذا التكامل بين التحقق الآلي الصارم وعزل الصلاحيات يستأصل الخطأ البشري ويحصن المنظومة بصورة قاطعة لا تقبل الشك."""
+    }
+}
+
+# ==========================================
+# CIC-20: The CI pipeline takes 40 minutes. How would you profile and prioritize optimizations?
+# ==========================================
+DATA["CIC-20"] = {
+    "concept_en": """Diagnosing and slashing a bloated 40-minute Android CI pipeline requires systematic metric profiling, bottleneck classification, and a prioritized return-on-investment (ROI) optimization roadmap:
+- Phase 1: Data-Driven Profiling and Instrumentation:
+  - Gradle Build Scans (`--scan`): Unveils execution wall-clock time breakdown across configuration, dependency resolution, compilation, Dexing, and non-cacheable tasks.
+  - CI Workflow Telemetry: Evaluates runner initialization, caching steps, Docker image provisioning, and test execution splits.
+- Common Latency Bottlenecks:
+  - Monolithic execution: Running lint, tests, and assembly sequentially on a single virtual machine.
+  - Cold-cache penalties: Ephemeral runners starting from scratch, downloading hundreds of megabytes of dependencies on every invocation.
+  - Redundant execution: Re-compiling and re-testing 50 untouched modules for a two-line UI change.
+  - Emulator overhead: Booting slow Android emulators to run UI instrumentation tests on every pull request.
+- Prioritized Remediation Roadmap:
+  - Tier 0: Quick Wins / High ROI (Target: 40m -> 18m within 1-2 days):
+    - Parallelize independent stages into concurrent CI jobs (split static analysis, lint, and JVM unit tests onto parallel runners).
+    - Cache `~/.gradle/caches` and wrapper using `gradle/actions/setup-gradle`.
+    - Enable GitHub Actions concurrency `cancel-in-progress: true` to terminate obsolete runs on commit push.
+  - Tier 1: Caching & Configuration Ergonomics (Target: 18m -> 8m within 1 sprint):
+    - Enable Gradle Remote Build Cache (Develocity or internal S3/HTTP node) for cross-runner bytecode reuse.
+    - Enable Gradle Configuration Cache (`--configuration-cache`) to bypass build script evaluation.
+    - Tune JVM arguments: Allocate adequate memory (`-Xmx4g -XX:+UseG1GC`) and disable file system watching on ephemeral runners.
+  - Tier 2: Architectural & Selective Execution (Target: 8m -> under 4m):
+    - Integrate `affected-module-detector` to execute tests strictly against modified modules.
+    - Remove slow emulator tests from PR blocking gates; move them to nightly non-blocking suites or Firebase Test Lab matrix runs.
+    - Pre-bake Android SDK and build tools into custom CI container images.""",
+    "walkthrough_en": """GitHub Actions workflow restructuring a 40-minute pipeline into parallel, cached tiers:
+```yaml
+# .github/workflows/fast_pr_pipeline.yml
+name: High-Throughput PR Gate
+on:
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: pr-${{ github.head_ref }}
+  cancel-in-progress: true # Tier 0: Instant runner relief on new commits
+
+jobs:
+  # Job 1: Formatting and Static Analysis (Runs in parallel ~2m)
+  static_analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v3
+        with: { cache-read-only: true }
+      - name: Run Detekt & Spotless
+        run: ./gradlew spotlessCheck detekt
+
+  # Job 2: Selective Host Unit Tests (Runs in parallel ~3m)
+  unit_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v3
+        with: { cache-read-only: true }
+      # Executes tests strictly on affected modules with configuration caching
+      - name: Run Affected Tests
+        run: ./gradlew runAffectedUnitTests --configuration-cache
+```""",
+    "short_en": """Profile a 40-minute pipeline using Gradle Build Scans to categorize bottlenecks across configuration, compilation, and testing. Prioritize optimizations into three tiers: parallelize jobs and enable dependency caching for immediate relief, activate Gradle Remote Build Cache and Configuration Cache to bypass redundant work, and introduce affected-module-detector while shifting slow emulator tests to nightly runs.""",
+    "structured_en": """Optimizing a forty-minute CI pipeline requires an evidence-based approach guided by profiling metrics rather than guesswork.
+We start by executing Gradle Build Scans to dissect the timeline into configuration duration, dependency resolution, compilation tasks, and test execution. In our experience, forty-minute pipelines suffer from sequential execution, empty runner caches, and running emulator tests on every PR.
+We address these in a prioritized, phased roadmap. In phase one, we achieve immediate relief by parallelizing static analysis and JVM unit tests across concurrent runners, enabling dependency caching, and canceling obsolete runs when new commits arrive.
+In phase two, we introduce the Gradle Remote Build Cache and Configuration Cache, allowing runners to download precompiled bytecode and skip configuration evaluation entirely.
+In phase three, we apply affected-module-detector to test only modified modules, and shift heavy emulator tests to nightly schedules. This structured progression reliably drives PR verification times down from forty minutes to under five.""",
+    "deep_senior_en": """From a developer productivity engineering and infrastructure economics perspective, a forty-minute CI pipeline represents a critical organizational emergency. It grinds developer momentum to a halt, induces context switching, creates massive pull request merge queues, and inflates cloud compute bills.
+Our remediation begins with rigorous empirical profiling. We run builds with the Gradle Build Scan flag to inspect the exact critical execution path. We analyze configuration overhead, task cacheability, garbage collection pause times, and cache hit ratios. Concurrently, we inspect workflow logs to determine how much time is squandered on runner provisioning, Docker pulls, and emulator booting.
+We then execute a three-tiered optimization roadmap prioritized by engineering return on investment. Tier zero focuses on instant operational fixes: splitting a monolithic sequential job into parallel concurrent jobs for linting, detekt, and host JVM testing, enabling GitHub Actions Gradle caching, and adding concurrency cancellation to kill outdated runs immediately. This alone typically cuts build times in half.
+Tier one targets build ergonomics: we activate the Gradle Remote Build Cache and Configuration Cache. By sharing compiled task outputs across CI workers, expensive compilation tasks complete in milliseconds via remote cache hits. We tune JVM garbage collection with G1GC and allocate optimal heap limits to prevent thrashing.
+Finally, tier two tackles architectural efficiency. We integrate affected-module-detector, ensuring that modifying a single feature module does not trigger tests across forty unrelated libraries. We ban slow emulator instrumentation tests from pull request blocking gates, routing them instead to automated nightly matrix runs on Firebase Test Lab. This methodical approach transforms a sluggish forty-minute bottleneck into a responsive sub-five-minute competitive advantage.""",
+    "meta_ar": {
+        "id": "CIC-20",
+        "questionAr": "خط الـ CI يستغرق 40 دقيقة كاملة. كيف تشخص أسباب البطء وتضع خطة أولويات لتحسينه؟",
+        "topicAr": TOPIC_AR,
+        "evaluates_ar": "تشخيص اختناقات الأداء عبر Gradle Build Scan، تصنيف أسباب التأخير (التكوين، التجميع، الاختبارات، الاعتماديات)، وضع خارطة طريق متدرجة ذات عائد استثماري عالي (ROI)، وتطبيق التوازي والتنفيذ الانتقائي.",
+        "concept_ar": "يمثل خط الـ CI الذي يستغرق 40 دقيقة أزمة إنتاجية خانقة تعطل وتيرة الشحن البرمجي وتكبد الشركة تكاليف حوسبة سحابية طائلة. يتطلب الحل منهجية قائمة على القياس الدقيق أولاً عبر تشغيل مسح البناء (Gradle Build Scan) لتحليل المسار الحرج وتحديد زمن مراحل التكوين والاعتماديات والاختبارات ومعدل الـ Cache Misses. ثم تُوضع خطة عمل متدرجة وفق العائد على الاستثمار (ROI): المرحلة الأولى (حلول فورية منخفضة الجهد): تقسيم خط العمل الأحادي إلى مهام متوازية تشغل التحليل الساكن واختبارات الـ JVM بالتزامن، وتفعيل كاش الاعتماديات، وإلغاء المهام السابقة فور رفع كوميت جديد (cancel-in-progress). المرحلة الثانية (كاش البناء المتقدم): تفعيل كاش البناء البعيد (Remote Build Cache) لمشاركة مخرجات التجميع بين السيرفرات، وتفعيل كاش التكوين (Configuration Cache)، وضبط ذاكرة JVM بـ G1GC. المرحلة الثالثة (الحلول المعمارية): تشغيل أداة فحص الموديولات المتأثرة (Affected Module Detector) لاختبار الكود المعدل فقط، ونقل اختبارات المحاكي الثقيلة من بوابات الـ PR إلى المسارات الليلية أو Firebase Test Lab؛ مما يقلص الوقت من 40 دقيقة إلى أقل من 5 دقائق.",
+        "walkthrough_ar": """مخطط تحويل الخط الأحادي إلى مراحل متوازية وسريعة:
+```yaml
+# .github/workflows/fast_pr.yml
+name: High-Speed PR Pipeline
+on: [pull_request]
+
+# إلغاء المهام القديمة لتوفير الموارد
+concurrency:
+  group: pr-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  # مهمة 1: فحص التنسيق والتحليل الساكن بالتوازي (دقيقتان)
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gradle/actions/setup-gradle@v3
+        with: { cache-read-only: true }
+      - run: ./gradlew spotlessCheck detekt
+
+  # مهمة 2: اختبارات الوحدة للموديولات المتأثرة فقط بالتوازي (3 دقائق)
+  unit_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gradle/actions/setup-gradle@v3
+        with: { cache-read-only: true }
+      - run: ./gradlew runAffectedUnitTests --configuration-cache
+```""",
+        "why_it_matters_ar": "انتظار 40 دقيقة لكل PR يدمر تركيز المطورين ويؤخر دمج الإصلاحات العاجلة ويضاعف فواتير السيرفرات؛ بينما الوصول لـ 5 دقائق ينعش إنتاجية الفريق بالكامل.",
+        "worked_example_ar": "فحصنا مشروعاً يستغرق 40 دقيقة بـ Build Scan، واكتشفنا أن تشغيل المحاكي يستغرق 20 دقيقة واختبار 50 موديول يستغرق 15 دقيقة؛ فنقلنا المحاكي لليلي وفحصنا الموديولات المعدلة لينخفض الوقت لـ 4 دقائق.",
+        "trade_offs_ar": "تشغيل كافة الاختبارات والمحاكي في كل PR يعطي ثقة مئة بالمئة ولكنه يشل حركة الفريق؛ بينما تقسيم الفحوصات بين فحص PR سريع وفحص ليلي شامل يوفر أفضل توازن بين السرعة والأمان.",
+        "failure_modes_ar": "أخطر الأخطاء هو الشروع في التحسين العشوائي دون قياس بـ Build Scan، أو تشغيل اختبارات المحاكي البطيئة على سيرفرات لا تدعم التسريع العتادي (Nested Virtualization).",
+        "production_perspective_ar": "في الفرق العالمية، يُعين مؤشر زمن الـ CI كـ Key Performance Indicator (KPI) رئيسي بحيث لا يتجاوز فحص أي PR خمس دقائق، مع التنبيه التلقائي في سلاك عند حدوث أي تراجع.",
+        "how_to_answer_ar": "ابدأ بأهمية القياس بـ Build Scan وليس التخمين، ثم اطرح خطة المراحل الثلاث: الحلول الفورية (التوازي وإلغاء المهام)، ثم الكاش المتقدم، ثم الحلول المعمارية كفحص الموديولات المتأثرة ونقل المحاكي.",
+        "talking_points_ar": "أداة Gradle Build Scan، قياس المسار الحرج، تشغيل المهام بالتوازي، كاش الاعتماديات، كاش البناء البعيد، كاش التكوين، أداة Affected Module Detector، ونقل المحاكي للمسار الليلي.",
+        "follow_ups_ar": "كيف تقنع الإدارة بالاستثمار في سيرفر Remote Build Cache مخصص؟ وما هي حدود تسريع مهام Android Lint في المشاريع الضخمة؟",
+        "self_check_ar": "هل بدأت بالقياس بـ Build Scan، وقسمت الخطة لثلاث مراحل ذات عائد واضح، وشرحت الكاش البعيد وفحص الموديولات المتأثرة؟",
+        "references_ar": f"- [Gradle Build Scans](https://scans.gradle.com/) — المنصة الرسمية لتحليل وتشخيص المسار الحرج وأداء مهام Gradle بالتفصيل.\n- [Android Developers: Optimize your build speed](https://developer.android.com/build/optimize-your-build) — الدليل الرسمي لتحسين وتسريع عمليات بناء مشاريع أندرويد.\n\n{REVIEWED_DATE_AR}",
+        "quick_answer_ar": """نشخص خط الـ CI الذي يستغرق 40 دقيقة بتشغيل Gradle Build Scan لقياس أسباب التأخير وتحديد المسار الحرج بدقة. ثم ننفذ خطة ثلاثية المراحل: نبدأ بالحلول الفورية بتشغيل المهام بالتوازي وتفعيل كاش الاعتماديات وإلغاء المهام القديمة، ثم نفعل كاش البناء البعيد وكاش التكوين، وأخيراً نطبق فحص الموديولات المتأثرة فقط وننقل اختبارات المحاكي البطيئة للمسار الليلي.""",
+        "best_answer_ar": """تقليص زمن خط الـ CI من أربعين دقيقة يتطلب معالجة منهجية مبنية على البيانات والقياس الدقيق بدلاً من التخمين.
+نبدأ بتوليد مسح البناء عبر أداة Gradle Build Scan لتحليل المسار الحرج وتحديد توزيع الوقت بدقة؛ لمعرفة كم يستهلك تقييم الإعدادات، وكم يضيع في تنزيل الاعتماديات، وتحديد المهام التي تفشل في استخدام الكاش، إلى جانب فحص زمن إقلاع المحاكيات في السيرفر.
+ثم نرتب الأولويات في خطة عمل ثلاثية المراحل وفق أعلى عائد استثماري؛ تبدأ المرحلة الأولى بإجراءات سريعة وفورية كتقسيم الخط الأحادي إلى مهام متوازية للتحليل الساكن واختبارات الوحدة، وتفعيل حفظ كاش الاعتماديات، وإلغاء المهام السابقة فور رفع كوميت جديد لتفريغ السيرفرات.
+وفي المرحلة الثانية، نفعل كاش البناء البعيد وكاش التكوين لمشاركة مخرجات الكود المترجم وتخطي إعادة قراءة الإعدادات في كل مرة.
+وفي المرحلة الثالثة، نلجأ للحلول المعمارية باستخدام أداة Affected Module Detector لاختبار الموديولات التي طرأ عليها تعديل فقط، مع نقل اختبارات المحاكي الثقيلة إلى مسار ليلي مستقل؛ مما يقلص زمن الفحص لأقل من خمس دقائق.""",
+        "deep_answer_ar": """من منظور هندسة إنتاجية المطورين واقتصاديات الحوسبة، يمثل خط الـ CI الذي يستغرق أربعين دقيقة حالة طوارئ مؤسسية؛ فهو يكسر تدفق عمل المطورين، ويخلق طوابير دمج متكدسة، ويستنزف ميزانية الشركة في فواتير السيرفرات السحابية.
+تبدأ خطة الإنقاذ بالتشخيص العلمي الموثق؛ حيث نشغل البناء مع تفعيل خاصية Build Scan لاستخراج تشريح دقيق للمسار الحرج، وتقييم أوقات تنظيف الذاكرة ومعدلات Cache Misses، ومعرفة الوقت المهدور في تجهيز بيئة السيرفر الافتراضي وإقلاع نظام أندرويد.
+وبناءً على هذه الأرقام، نطبق خارطة طريق ثلاثية المستويات؛ المستوى الفوري يستهدف التوازي الشامل؛ فبدلاً من تشغيل الفحوصات والترجمة واختبارات الوحدة بالتسلسل على جهاز افتراضي واحد، نفصلها إلى مهام متزامنة تستغل تعدد السيرفرات، مع تفعيل كاش GitHub Actions لإلغاء تنزيل الاعتماديات المتكرر، وإلغاء المهام القديمة تلقائياً عند دفع تعديل جديد.
+المستوى الثاني يركز على كفاءة Gradle؛ حيث نطلق سيرفر Remote Build Cache داخلي لمشاركة مخرجات الترجمة ومراحل الـ Dexing بين السيرفرات وأجهزة الفريق، مما يحول المهام الشاقة إلى استرجاع لحظي بنقرة زر، بالتوازي مع تفعيل كاش التكوين وضبط محرك G1GC للـ JVM بأربعة غيغابايت.
+المستوى الثالث يعالج المعمارية وسلوك الاختبارات؛ فنمنع الفحص الشامل لكافة الموديولات في كل طلب دمج صغير بالاعتماد على أدوات الكشف عن الموديولات المتأثرة فقط، ونحظر تشغيل اختبارات الواجهة بالمحاكي في بوابات الـ PR وننقلها إلى مصفوفات تشغيل سحابية مجدولة ليلاً على Firebase Test Lab. هذا التسلسل الهندسي المنهجي يقلص زمن الانتظار من أربعين دقيقة إلى أقل من خمس دقائق، محولاً الخط من عبء معطل إلى ميزة تنافسية فائقة السرعة."""
+    }
+}
+
+# ==========================================
+# Validation & Runner logic
+# ==========================================
+def validate_words():
+    print("Checking word counts and spoken style for CIC-15 to CIC-20...")
+    for qid, d in sorted(DATA.items()):
+        # Short answer (35 - 110)
+        c_short = len(d["short_en"].split())
+        assert 35 <= c_short <= 110, f"{qid}: short_en word count {c_short} out of range (35-110)"
+
+        # Structured answer (100 - 280)
+        c_struct = len(d["structured_en"].split())
+        assert 100 <= c_struct <= 280, f"{qid}: structured_en word count {c_struct} out of range (100-280)"
+
+        # Deep senior answer (200 - 650)
+        c_deep = len(d["deep_senior_en"].split())
+        assert 200 <= c_deep <= 650, f"{qid}: deep_senior_en word count {c_deep} out of range (200-650)"
+
+        meta = d["meta_ar"]
+        # Quick answer AR (35 - 110)
+        c_qar = len(meta["quick_answer_ar"].split())
+        assert 35 <= c_qar <= 110, f"{qid}: quick_answer_ar word count {c_qar} out of range (35-110)"
+
+        # Best answer AR (90 - 280)
+        c_bar = len(meta["best_answer_ar"].split())
+        assert 90 <= c_bar <= 280, f"{qid}: best_answer_ar word count {c_bar} out of range (90-280)"
+
+        # Deep answer AR (180 - 650)
+        c_dar = len(meta["deep_answer_ar"].split())
+        assert 180 <= c_dar <= 650, f"{qid}: deep_answer_ar word count {c_dar} out of range (180-650)"
+
+        # Check spoken style (no bullets, no numbered lists)
+        for field_name, text in [
+            ("structured_en", d["structured_en"]),
+            ("deep_senior_en", d["deep_senior_en"]),
+            ("best_answer_ar", meta["best_answer_ar"]),
+            ("deep_answer_ar", meta["deep_answer_ar"]),
+        ]:
+            assert not any(line.strip().startswith(("-", "*", "•")) for line in text.splitlines()), f"{qid}: {field_name} contains bullets"
+            assert not any(line.strip() and line.strip()[0].isdigit() and line.strip()[1:3] in (". ", ") ") for line in text.splitlines()), f"{qid}: {field_name} contains numbered list"
+
+        assert "على الجانب الآخر، فيما يخص" not in meta["best_answer_ar"], f"{qid}: best_answer_ar contains cliché"
+        assert "على الجانب الآخر، فيما يخص" not in meta["deep_answer_ar"], f"{qid}: deep_answer_ar contains cliché"
+
+    print("Pre-validation word count checks passed! Updating canonical questions...")
+
+def apply_elevations():
+    validate_words()
+
+    topic_meta = {}
+    for qid, d in sorted(DATA.items()):
+        ee.update_canonical_question(
+            qid=qid,
+            concept_en=d["concept_en"],
+            walkthrough_en=d["walkthrough_en"],
+            structured_en=d["structured_en"],
+            deep_senior_en=d["deep_senior_en"],
+            short_en=d["short_en"],
+        )
+        topic_meta[qid] = d["meta_ar"]
+
+    ee.save_topic_metadata("cic_15_20", topic_meta)
+    ee.merge_all_metadata()
+
+    for qid in sorted(DATA.keys()):
+        errs = ee.validate_question(qid)
+        if errs:
+            print(f"Errors in {qid}:")
+            for er in errs:
+                print(f"  ❌ {er}")
+            sys.exit(1)
+
+    print(f"\nAll {len(DATA)} CIC questions (CIC-15 to CIC-20) successfully elevated and passed validation!\n")
+
+if __name__ == "__main__":
+    apply_elevations()

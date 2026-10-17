@@ -20,6 +20,45 @@ What is the Repository pattern? What is a UseCase?
 
 Define repository as data abstraction/source coordination and use case as business action, without mandatory pass-through classes.
 
+## Concept and technical explanation
+
+The Repository pattern and Use Cases (Interactors) represent two complementary architectural abstractions with clearly separated concerns. A Repository belongs to the Data layer and acts as an in-memory collection of domain entities, abstracting underlying data sources (remote network, local database, in-memory caches, datastores) behind clean interfaces. Its responsibility is data access, data synchronization, offline caching policies, and mapping raw storage payloads into domain models. A Use Case resides in the Domain layer and encapsulates a single, granular, reusable unit of business logic or orchestration across repositories. Representing a specific user or system action, a Use Case enforces domain validation rules, coordinates multi-step transactions, and executes domain algorithms without knowledge of UI lifecycles or transport protocols.
+
+## Practical walkthrough (English)
+
+Contrasting a Repository and an orchestrating Use Case in Kotlin:
+```kotlin
+// 1. Repository: Manages data access, caching, and synchronization
+interface CartRepository {
+    fun observeCart(): Flow<Cart>
+    suspend fun clearCart()
+}
+
+interface PaymentRepository {
+    suspend fun processPayment(orderId: String, amount: Double): Result<TransactionReceipt>
+}
+
+// 2. Use Case: Coordinates business workflow across both repositories
+class CheckoutUseCase(
+    private val cartRepository: CartRepository,
+    private val paymentRepository: PaymentRepository
+) {
+    suspend operator fun invoke(orderId: String): Result<TransactionReceipt> {
+        val currentCart = cartRepository.observeCart().first()
+        if (currentCart.items.isEmpty()) {
+            return Result.failure(IllegalStateException("Cannot checkout with an empty cart"))
+        }
+        val totalAmount = currentCart.calculateTotalWithTax()
+        val paymentResult = paymentRepository.processPayment(orderId, totalAmount)
+
+        if (paymentResult.isSuccess) {
+            cartRepository.clearCart() // State transition upon successful business transaction
+        }
+        return paymentResult
+    }
+}
+```
+
 ## Explanation in Arabic
 
 ما هو نمط الـ Repository وما هو الـ UseCase؟ وما هي الفروق الجوهرية بينهما؟
@@ -136,24 +175,23 @@ An offline-first feed repository exposes database-backed Flow and refreshes from
 
 ## Interview answer — short
 
-A Repository mediates between multiple data sources (Network, Room, Cache), abstracting data access behind a collection-like interface and managing caching. A Use Case (Interactor) encapsulates a single business operation, enforcing domain rules and orchestrating multiple repositories.
+A Repository abstracts data sources and caching, presenting a unified collection of domain entities to the application. A UseCase encapsulates a single, focused piece of business logic or orchestration across repositories, representing an actionable user intent.
 
 ## Interview answer — structured
 
-The Repository and Use Case patterns serve complementary but distinct architectural purposes.
+Repositories and UseCases serve distinct responsibilities within Clean Architecture, separating data management from business execution.
 
-First, with The Repository Pattern, acts as a mediator between domain/business layers and diverse raw data sources (Remote API, Room DB, in-memory cache). Its responsibilities are. Next, presenting a clean, domain-centric collection interface (`Flow<User>`, `suspend fun save()`).
-Encapsulating storage details, offline-first policies, and data synchronization logic. Mapping DTOs/Entities into clean Domain Models.
-A The Use Case (Interactor) encapsulates a **single granular business operation**. It represents an action the user or system wants to perform (e.g. `CheckoutCartUseCase`, `AuthenticateWithBiometricsUseCase`). Its responsibilities are. Enforcing core business rules and validation logic.
-Orchestrating interactions across multiple repositories. Finally, exposing a single entry point—conventionally implemented using Kotlin's `operator fun invoke()`.
+The Repository pattern mediates between domain logic and disparate data sources like network endpoints, local databases, and memory caches. It exposes clean domain models, implements caching strategies, and acts as the application's single source of truth without exposing SQL queries or HTTP endpoints.
+
+In production, a UseCase—often called an Interactor—encapsulates a single business task or transaction, such as transferring funds, validating a promo code, or syncing offline edits. It typically exposes an operator invoke function, orchestrating one or more repositories while executing pure business rules.
+As for ownership, UseCases prevent ViewModels from becoming bloated coordination centers, allowing critical business workflows to be reused consistently across multiple screens, background workers, or app shortcuts without duplicating validation logic.
 
 
 ## Interview answer — deep senior
 
-A frequent architectural smell is creating 1-to-1 **Passthrough Use Cases** that merely wrap a repository method: `class GetUserUseCase(repo) { invoke(id) = repo.getUser(id) }`. If a business action involves zero validation, zero coordination, and zero transformation, creating a use case solely for dogma introduces meaningless boilerplate. Google's official architecture guidance explicitly recommends treating the Domain layer as optional: ViewModels can directly consume Repositories when business logic is absent.
-
-However, Use Cases become indispensable when business rules must be shared across multiple entry points. For example, if an `AddToCartUseCase` is executed by a standard product screen, a search screen, and a deep-link notification handler, placing the validation and limit checks inside a UseCase prevents duplicating business logic across three ViewModels.
-
+Under the hood, the combination of Repositories and UseCases creates a robust separation between data orchestration and business decision-making. A well-designed Repository manages data synchronization mechanics: it decides whether to emit cached records from Room immediately while triggering a background Retrofit fetch, handles token refreshes, and resolves optimistic write conflicts. By exposing reactive streams via Flow, it keeps the rest of the application synchronized with data mutations.
+UseCases, on the other hand, sit above Repositories and should never contain data-caching or transport logic. A UseCase receives domain parameters, validates business constraints, coordinates calls to multiple repositories, and applies domain calculations. For instance, a CheckoutUseCase might call CartRepository to retrieve items, PaymentRepository to execute a transaction, and AnalyticsRepository to record telemetry, wrapping the entire multi-step operation in a transactional domain Result.
+Staff engineers adhere to strict naming conventions and architectural discipline: UseCases are named as verbs in present tense and contain a single public operator invoke function. If a UseCase merely forwards a call to a repository without applying business logic, formatting, or coordination, it is an architectural anti-pattern known as a pass-through UseCase. In such scenarios, senior engineers allow ViewModels to observe the Repository directly to eliminate pointless indirection while maintaining complete testability. This pragmatic approach preserves productivity without compromising architectural cleanlines.
 
 ## How to answer in the interview
 

@@ -20,6 +20,44 @@ Explain replay, extraBufferCapacity, and BufferOverflow in SharedFlow.
 
 Explain replay, per-subscriber buffer capacity and overflow behavior including absent subscribers.
 
+## Concept and technical explanation
+
+Configuring MutableSharedFlow relies on three interrelated buffering parameters: replay, extraBufferCapacity, and onBufferOverflow, which govern backpressure mitigation, subscriber catch-up, and memory allocation.
+replay designates the size of the replay cache—the exact number of previously emitted elements retained in memory and instantly delivered to newly attached subscribers.
+extraBufferCapacity designates additional reserved buffer slots beyond the replay cache, providing temporary shock absorption when upstream producers generate emissions faster than downstream subscribers can consume them.
+onBufferOverflow defines the precise eviction strategy executed when the total buffer capacity (the sum of replay plus extraBufferCapacity) is fully saturated. It supports three distinct strategies: BufferOverflow.SUSPEND (suspends the emitter until buffer space frees up), BufferOverflow.DROP_OLDEST (evicts the oldest buffered element to accommodate the incoming item without suspending), and BufferOverflow.DROP_LATEST (discards the newly arriving emission immediately, preserving existing buffer contents).
+
+## Practical walkthrough (English)
+
+Tuning SharedFlow buffer parameters for production workloads:
+```kotlin
+class LiveEventBus {
+    // 1. Lossless event bus: Suspends emitter, guarantees zero event drops
+    private val _criticalEvents = MutableSharedFlow<PaymentEvent>(
+        replay = 0,
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.SUSPEND
+    )
+    val criticalEvents = _criticalEvents.asSharedFlow()
+
+    // 2. High-throughput sensor ticker: Never suspends, drops oldest ticks
+    private val _sensorTicks = MutableSharedFlow<Float>(
+        replay = 1, // Latest tick delivered to new screens
+        extraBufferCapacity = 16,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST // Drops stale ticks under load
+    )
+    val sensorTicks = _sensorTicks.asSharedFlow()
+
+    suspend fun postPayment(event: PaymentEvent) {
+        _criticalEvents.emit(event) // Suspends if buffer fills up
+    }
+
+    fun postTick(value: Float) {
+        _sensorTicks.tryEmit(value) // Always returns true with DROP_OLDEST
+    }
+}
+```
+
 ## Explanation in Arabic
 
 المعاملات الثلاثة لـ `MutableSharedFlow` (`replay`, `extraBufferCapacity`, `onBufferOverflow`) بتحدد سلوك الذاكرة وتوزيع الأحداث بدقة بالغة:
@@ -94,25 +132,26 @@ A dashboard uses SharedFlow for best-effort snackbars where loss is acceptable. 
 
 ## Interview answer — short
 
-replay sets how many historical items are cached and re-emitted to new subscribers; extraBufferCapacity adds buffer space beyond replay to absorb bursts; and onBufferOverflow dictates behavior when the buffer fills: SUSPEND (pauses emitter), DROP_OLDEST (drops oldest item), or DROP_LATEST (drops new item).
+replay sets how many past items are replayed to new subscribers; extraBufferCapacity adds buffer headroom beyond replay; and onBufferOverflow decides what happens when the buffer fills up: SUSPEND pauses the emitter, DROP_OLDEST evicts the oldest item, and DROP_LATEST drops the incoming item.
 
 ## Interview answer — structured
 
-These three parameters configure the buffer mechanics and backpressure semantics of `MutableSharedFlow`:
+Configuring MutableSharedFlow requires balancing memory consumption against backpressure and subscriber guarantees.
 
-**`replay`** defines the size of the replay cache. When a new collector subscribes, it immediately receives up to `replay` cached historical emissions. If set to 0, late subscribers receive nothing from the past. `StateFlow` is conceptually a SharedFlow with `replay = 1`.
+Replay controls historical catch-up for newly attached observers. Setting replay = 1 mirrors StateFlow behavior, whereas replay = 0 ensures subscribers receive strictly future emissions, preventing stale event replays.
 
-**`extraBufferCapacity`** provides additional queue capacity beyond the replay cache. The total buffer size is `replay + extraBufferCapacity`. It allows fast producers to continue emitting without suspension when downstream collectors are busy.
+In production, extraBufferCapacity decouples producer velocity from consumer processing latency. When background tasks produce bursts of events, this extra cushion prevents immediate emitter suspension, smoothing out processing spikes.
 
-**`onBufferOverflow`** configures backpressure behavior when the combined buffer is full. `BufferOverflow.SUSPEND` suspends `emit()` until downstream collectors catch up. `BufferOverflow.DROP_OLDEST` evicts the oldest buffered element to make room for the new one, enabling non-suspending `tryEmit()` to always succeed. `BufferOverflow.DROP_LATEST` discards the incoming item, preserving the existing buffer.
+OnBufferOverflow governs the saturation policy when total buffer capacity is exceeded. Using BufferOverflow.SUSPEND ensures zero data loss for transactional workloads like audit logs. In contrast, BufferOverflow.DROP_OLDEST is mandatory when using tryEmit from non-suspending contexts, guaranteeing that freshest sensor updates override stale pending data without blocking threads.
 
 
 ## Interview answer — deep senior
 
-At the internal implementation level, `SharedFlowImpl` allocates a continuous array of slots representing the buffer. A critical engineering requirement involves `tryEmit()`. `tryEmit()` is a non-suspending method to post events. If `onBufferOverflow` is set to `BufferOverflow.SUSPEND` (the default) and there are slow collectors or the buffer is saturated, **`tryEmit()` will return `false` and drop the event silently**!
-
-Therefore, in Android architecture, if you intend to dispatch events from synchronous callbacks using `tryEmit()` (such as view click listeners without launching a coroutine), you must configure `extraBufferCapacity >= 1` and `onBufferOverflow = BufferOverflow.DROP_OLDEST`. This guarantees that `tryEmit()` never fails and never drops events unexpectedly.
-
+Under the hood in SharedFlow.kt, emissions are managed across an internal circular buffer array whose capacity equals replay + extraBufferCapacity. Each active subscriber is tracked via a SharedFlowSlot holding an index pointer into this circular array.
+When an emitter invokes emit(value), the implementation checks whether any active subscriber is lagging behind. If the distance between the newest element index and a lagging subscriber's index exceeds the allocated total buffer capacity, a buffer overflow condition occurs.
+If onBufferOverflow is configured as SUSPEND, the emitter creates a CancellableContinuation and enters a suspended state, enqueueing itself until the lagging subscriber advances its index pointer and frees buffer space. However, if onBufferOverflow is configured as DROP_OLDEST, the buffer simply advances the head pointer, dropping the oldest element and immediately resuming without suspending. This enables tryEmit(value) to succeed synchronously without suspending the caller. Conversely, DROP_LATEST drops the incoming item, leaving the buffer unaltered.
+A critical architectural pitfall occurs when configuring replay = 0, extraBufferCapacity = 0, and default SUSPEND. Under this configuration, tryEmit always returns false if there are no active subscribers, dropping the event completely.
+Staff engineers enforce clear rules: high-frequency real-time telemetry uses DROP_OLDEST to ensure tryEmit never blocks, while critical business commands use extraBufferCapacity with SUSPEND to guarantee lossless delivery.
 
 ## How to answer in the interview
 

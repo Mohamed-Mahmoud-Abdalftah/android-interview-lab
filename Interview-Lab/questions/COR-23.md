@@ -20,6 +20,49 @@ How do you safely adapt a callback API to suspending code?
 
 Explain one-shot callback adaptation with prompt cancellation and exact-once continuation completion.
 
+## Concept and technical explanation
+
+Adapting legacy asynchronous callback-based APIs into idiomatic Kotlin suspending functions is a core responsibility when modernizing Android codebases. The standard, robust foundation for this transformation is suspendCancellableCoroutine. Unlike the lower-level and discouraged suspendCoroutine, suspendCancellableCoroutine provides active cancellation integration through its CancellableContinuation handle. When adapting a callback API, staff engineers must satisfy three non-negotiable correctness guarantees. First, the continuation must be resumed exactly once—either via resume(value) for successful outcomes or resumeWithException(throwable) for terminal failures. Calling resume multiple times crashes the runtime with an IllegalStateException: Already resumed. Second, the adapter must register an invokeOnCancellation handler to cleanly unregister the underlying SDK listener, close hardware handles, or abort the external call when the calling coroutine scope is cancelled. Third, race conditions between callback completion and cancellation must be handled safely, ensuring that late callbacks delivered after cancellation are ignored gracefully without throwing uncaught exceptions.
+
+## Practical walkthrough (English)
+
+Consider adapting a legacy third-party location SDK that delivers a single GPS fix through a listener:
+```kotlin
+// Erroneous implementation: leaks listener and ignores coroutine cancellation
+suspend fun fetchLocationUnsafe(): Location = suspendCoroutine { continuation ->
+    val listener = object : LegacyLocationListener {
+        override fun onLocation(loc: Location) = continuation.resume(loc)
+        override fun onError(e: Exception) = continuation.resumeWithException(e)
+    }
+    // BUG: Never unregisters listener if coroutine is cancelled!
+    locationClient.requestLocation(listener) 
+}
+
+// Production-grade implementation using suspendCancellableCoroutine:
+suspend fun fetchLocationSafe(): Location = suspendCancellableCoroutine { continuation ->
+    val listener = object : LegacyLocationListener {
+        override fun onLocation(loc: Location) {
+            // Guard against resume races if cancelled:
+            if (continuation.isActive) {
+                continuation.resume(loc)
+            }
+        }
+        override fun onError(e: Exception) {
+            if (continuation.isActive) {
+                continuation.resumeWithException(e)
+            }
+        }
+    }
+    locationClient.requestLocation(listener)
+    
+    // Automatically unregisters listener if coroutine cancels:
+    continuation.invokeOnCancellation {
+        locationClient.removeLocationListener(listener)
+    }
+}
+```
+If the caller's scope is cancelled while waiting for GPS satellite acquisition, invokeOnCancellation unregisters the listener immediately, shutting down the hardware GPS radio and preventing battery drain.
+
 ## Explanation in Arabic
 
 تحويل الـ Callback APIs القديمة في Android إلى Suspending Functions هو أحد أهم الاختبارات العملية في المقابلات:
@@ -106,35 +149,22 @@ A location SDK adapter unregisters its one-time listener on ViewModel cancellati
 
 ## Interview answer — short
 
-Use suspendCancellableCoroutine to convert callbacks into suspending functions. Resume with continuation.resume() on success, continuation.resumeWithException() on error, and crucially register continuation.invokeOnCancellation to unregister listeners and abort external tasks when cancelled.
+suspendCancellableCoroutine bridges callback APIs to suspending functions with full cancellation support. It provides a CancellableContinuation that must be resumed exactly once via resume or resumeWithException. It allows registering invokeOnCancellation to unregister SDK listeners or close hardware resources when cancelled. Unlike suspendCoroutine, it prevents memory leaks and guarantees prompt cancellation.
 
 ## Interview answer — structured
 
-To adapt asynchronous callback APIs into idiomatic suspending functions, I always use `suspendCancellableCoroutine`.
+Adapting asynchronous callback interfaces into suspending functions is the standard approach for integrating legacy SDKs into modern Kotlin coroutine architectures. The primary API for this task is suspendCancellableCoroutine, which suspends the calling coroutine and exposes a CancellableContinuation handle.
 
-It suspends the coroutine and provides a `CancellableContinuation<T>` handle. Inside the callback listener: on success, I call `continuation.resume(data)`; on failure, I call `continuation.resumeWithException(throwable)`.
+The implementation must guarantee exact-once completion. The callback must invoke either continuation.resume or continuation.resumeWithException precisely once, because calling resume multiple times violates runtime invariants and throws an IllegalStateException.
 
-The critical architectural step that separates senior engineers from juniors is handling cancellation: you must invoke `continuation.invokeOnCancellation { ... }` to detach the callback listener or signal cancellation to the underlying SDK. Without this, if the calling coroutine is cancelled, the underlying third-party listener remains registered, leaking memory and leaving network or location hardware active.
+In production, cancellation management is paramount. By invoking continuation.invokeOnCancellation, we install a teardown hook that unregisters the callback listener, cancels the underlying SDK request, or releases system hardware when the calling scope is cancelled.
 
-Never use the older `suspendCoroutine` builder because it cannot respond to coroutine cancellation.
+Engineers must avoid legacy suspendCoroutine, which lacks cancellation awareness. If a coroutine wrapping suspendCoroutine is cancelled, it hangs in the background awaiting the callback, leaking listeners, Context references, and device battery.
 
 
 ## Interview answer — deep senior
 
-Under the hood, `suspendCancellableCoroutine` provides strict safety guarantees regarding resume calls. A continuation can only be resumed once. If a third-party SDK accidentally triggers both a success and an error callback, or triggers a callback after cancellation, `CancellableContinuation` guards against illegal multi-resumes by ignoring or throwing an IllegalStateException.
-
-For streaming callback APIs that deliver multiple events over time (such as GPS location updates or WebSocket messages), adapting them to a single suspending function is an anti-pattern. Instead, stream APIs must be adapted to Kotlin Flow using `callbackFlow { }`:
-
-```kotlin
-fun observeLocation(): Flow<Location> = callbackFlow {
-    val listener = LocationListener { location -> trySend(location) }
-    client.register(listener)
-    awaitClose { client.unregister(listener) }
-}
-```
-
-`callbackFlow` uses `awaitClose` to guarantee listener cleanup when flow collection halts.
-
+At the compiler and runtime execution level, suspendCancellableCoroutine instantiates a CancellableContinuationImpl, transitioning its state into Suspended and intercepting parent job cancellation signals. When the parent scope cancels, the continuation transitions atomically to the Cancelled state and immediately dispatches its invokeOnCancellation handlers. A subtle concurrency bug in naive callback adapters is the completion-cancellation race. Because the external callback might fire on an arbitrary binder or SDK worker thread at the exact moment the coroutine scope is cancelled on the Main thread, calling continuation.resume directly can result in an IllegalStateException if the continuation has already transitioned to Cancelled. To handle this reliably, check continuation.isActive before resuming, or wrap the callback in an atomic one-shot flag (AtomicBoolean) to guarantee that resumption logic runs exactly once. Furthermore, if the legacy callback yields multiple continuous values over time (such as continuous location streams, sensor events, or WebSocket messages) rather than a single terminal value, adapting it as a suspend function is an architectural mistake. Single-shot results belong in suspendCancellableCoroutine, whereas multi-shot streaming callbacks must be adapted into a cold Flow using callbackFlow. In callbackFlow, awaitClose serves as the teardown boundary, ensuring that channel consumers receive stream values safely while guaranteeing that listeners are unregistered when the Flow collection terminates.
 
 ## How to answer in the interview
 

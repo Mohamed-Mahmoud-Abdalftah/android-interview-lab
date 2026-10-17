@@ -22,6 +22,44 @@ How would you support predictable navigation after notification taps and process
 - Make pending intent identity and mutability explicit, and validate its untrusted input.
 - Restore screen state from stable identifiers when the process and session have changed.
 
+## Concept and technical explanation
+
+When a user taps a local or push notification, they expect to land directly on the relevant detail screen (such as an order delivery status, a chat message, or a breaking news article). However, if the notification launches the destination Activity in isolation while the application process was not previously running, pressing the system Back button or performing a back gesture often causes the app to exit immediately to the Android launcher. This jarring behavior breaks the user's mental model of app navigation.
+Providing a predictable and intuitive user experience requires constructing a synthetic back stack. Using TaskStackBuilder in traditional View architectures or deep link destination arguments in Jetpack Navigation, the application ensures that entering a deeply nested destination automatically synthesizes its logical parent hierarchy (such as Home -> Orders -> OrderDetails). Furthermore, because process recreation can occur if system memory was reclaimed while the user was interacting with the notification, the notification's PendingIntent must contain immutable flags (FLAG_IMMUTABLE), specify unique request codes, pass only stable entity identifiers rather than volatile objects, and enable the destination ViewModel to reconstitute its state independently from durable storage.
+
+## Practical walkthrough (English)
+
+Constructing a synthetic back stack for notifications using Android's TaskStackBuilder:
+
+```kotlin
+fun createOrderNotification(context: Context, orderId: String): Notification {
+    // 1. Target destination intent:
+    val detailsIntent = Intent(context, OrderDetailsActivity::class.java).apply {
+        putExtra("order_id", orderId)
+    }
+
+    // 2. Build synthetic back stack ensuring Back button navigates to Home:
+    val pendingIntent: PendingIntent = TaskStackBuilder.create(context).run {
+        // Automatically reads android:parentActivityName from Manifest:
+        addNextIntentWithParentStack(detailsIntent)
+        getPendingIntent(
+            orderId.hashCode(),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    return NotificationCompat.Builder(context, "orders_channel")
+        .setSmallIcon(R.drawable.ic_shipping)
+        .setContentTitle("Order Shipped")
+        .setContentText("Tap to track your delivery")
+        .setContentIntent(pendingIntent)
+        .setAutoCancel(true)
+        .build()
+}
+```
+
+Failure scenario: A notification opens an order details screen directly with a basic Intent. The user taps Back expecting to view their order list, but the application abruptly terminates to the home screen because no antecedent activities exist in the back stack.
+
 ## Explanation in Arabic
 
 دعم التنقل القابل للتنبؤ (Predictable Navigation) بعد النقر على الإشعارات وإعادة إنشاء العمليات (Process Recreation):
@@ -112,34 +150,25 @@ Create a notification routing contract with explicit destination type and stable
 
 ## Interview answer — short
 
-Support predictable notification navigation using TaskStackBuilder (or NavDeepLinkBuilder in Compose). This creates a synthetic backstack based on parentActivityName declarations, ensuring that pressing Back from a notification-opened detail screen navigates up to the logical parent screen rather than exiting the application.
+Construct a synthetic back stack using TaskStackBuilder with android:parentActivityName in the manifest, or declare explicit deep links in Jetpack Navigation. This ensures pressing Back navigates up through the logical app hierarchy rather than exiting to the launcher. Configure the PendingIntent with FLAG_IMMUTABLE and FLAG_UPDATE_CURRENT, passing stable entity IDs to reconstruct state from local storage.
 
 ## Interview answer — structured
 
-To support predictable navigation when users tap notifications—even after process death—we construct a **Synthetic Backstack** using **`TaskStackBuilder`** or **`NavDeepLinkBuilder`**.
+When a notification is tapped while the app process is dead, launching an Activity directly creates an isolated task with a single-entry back stack. Pressing the system Back button abruptly terminates the application to the launcher, breaking user navigation expectations.
 
-If you launch a detail screen directly via a plain Intent from a notification, that Activity becomes the sole task root. When the user taps Back, the application exits immediately to the OS launcher, violating user expectations of hierarchical navigation.
+We solve this by constructing a synthetic back stack using TaskStackBuilder. By declaring android:parentActivityName in the manifest or leveraging Jetpack Navigation's deep link builder, the system automatically synthesizes the parent Activity hierarchy beneath the target screen during cold launches.
 
-`TaskStackBuilder` resolves this.
+In production, we configure the notification's PendingIntent using FLAG_IMMUTABLE for security and FLAG_UPDATE_CURRENT to ensure updated extras are delivered. We assign unique request codes to distinct notifications, preventing the operating system from overwriting pending intents for different entities like separate chat messages or order updates.
 
-First, in `AndroidManifest.xml`, we declare hierarchical parent relationships using `android:parentActivityName=".MainActivity"`. Next, when building the notification's PendingIntent, we use `TaskStackBuilder.create(context).addNextIntentWithParentStack(detailIntent).getPendingIntent(...)`.
-Finally, the OS constructs a synthetic task stack: when the notification is tapped, Android launches the detail screen, but synthesizes the parent Activity below it on the backstack. Pressing Back smoothly navigates the user up to the parent list or home screen.
+Notification intents must never carry serialized domain objects. We pass only stable primitive identifiers like an orderId, allowing the resurrected destination ViewModel to reload fresh, verified state directly from durable Room storage upon process restoration.
 
 
 ## Interview answer — deep senior
 
-In modern Jetpack Navigation and Compose, this is streamlined via `NavDeepLinkBuilder`:
-
-```kotlin
-val pendingIntent = NavDeepLinkBuilder(context)
-    .setGraph(R.navigation.nav_graph)
-    .setDestination(R.id.orderDetailsFragment)
-    .setArguments(bundleOf("order_id" to orderId))
-    .createPendingIntent()
-```
-
-Under the hood, `NavDeepLinkBuilder` inspects the navigation graph hierarchy and pushes all antecedent destinations onto the synthetic `NavController` backstack. Even if the process was completely dead when the notification was clicked, Android starts the single Activity and initializes the full navigation stack, allowing fluid Back and Up navigation across the entire application.
-
+Under the hood, notification navigation is mediated by the ActivityTaskManagerService and the system NotificationManagerService. When a notification is posted, the application hands a PendingIntent token to the system server. If the application process is later killed by the Low Memory Killer, the system server retains this token. When the user taps the notification, the system server invokes the token with the application's identity, launching a new task and process via Zygote.
+If the developer supplies a bare Intent targeted at OrderDetailsActivity, the activity is launched at the root of a new TaskRecord. When the user triggers back navigation, the ActivityRecord is popped, the task becomes empty, and the framework closes the task, dropping the user onto the home screen. By contrast, when using TaskStackBuilder.create(context).addNextIntentWithParentStack(detailsIntent), the framework inspects android:parentActivityName in the merged manifest and constructs an array of Intents: [MainActivity, OrdersListActivity, OrderDetailsActivity]. The ActivityTaskManagerService instantiates all three activities in a single task, placing OrderDetailsActivity at the top. When the user presses Back, OrderDetailsActivity finishes, smoothly revealing OrdersListActivity exactly as if the user had navigated there manually.
+In modern Jetpack Compose Navigation, a similar mechanism is handled via NavDeepLinkBuilder. When creating a PendingIntent for a Composable destination, NavDeepLinkBuilder analyzes the declared graph hierarchy and automatically synthesizes the NavBackStackEntry chain, populating all parent routes in the in-memory back stack.
+From a concurrency and state restoration standpoint, developers must handle onNewIntent when the Activity is already running in the foreground with singleTop launchMode. In this scenario, onCreate does not re-execute; the new intent arrives via onNewIntent(intent), where setIntent(intent) must be invoked so subsequent state restorations and SavedStateHandle instances reflect the updated payload. Finally, passing only stable primitive IDs ensures that even if local cache was cleared or server state mutated during background suspension, the destination loads authoritative truth from the repository upon resumption.
 
 ## How to answer in the interview
 

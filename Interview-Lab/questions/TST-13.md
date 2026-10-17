@@ -21,6 +21,63 @@ How do you test DI substitutions and scoped dependencies?
 - DI replacement scope and leak between tests.
 - Production graph parity, Hilt test bindings and lifecycle.
 
+## Concept and technical explanation
+
+Testing dependency injection substitutions and scoped dependencies ensures that production component graphs can be reconfigured cleanly for automated verification without state leaks or architecture violations. In pure JVM unit testing, dependency substitution is achieved seamlessly through constructor injection by supplying test doubles directly. In Hilt on-device or Robolectric testing, substitution operates at the Dagger dependency graph level using @HiltAndroidTest. Developers override production Dagger modules using @UninstallModules and provide test replacements via nested @TestInstallIn modules or @BindValue fields. Testing scoped dependencies (such as @Singleton, @ActivityRetainedScoped, or @ViewModelScoped) requires verifying that instances are reused within their active lifecycle scope and destroyed deterministically when the hosting scope terminates.
+
+## Practical walkthrough (English)
+
+Substituting Hilt modules and testing scoped dependencies using @TestInstallIn:
+```kotlin
+// 1. Production Module bound to SingletonComponent
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class AnalyticsModule {
+    @Binds
+    @Singleton
+    abstract fun bindAnalytics(impl: FirebaseAnalyticsTracker): AnalyticsTracker
+}
+
+// 2. Test Module replacing production module across all tests in the test suite
+@Module
+@TestInstallIn(
+    components = [SingletonComponent::class],
+    replaces = [AnalyticsModule::class]
+)
+abstract class FakeAnalyticsModule {
+    @Binds
+    @Singleton
+    abstract fun bindFakeAnalytics(fake: FakeAnalyticsTracker): AnalyticsTracker
+}
+
+// 3. Instrumented Hilt Test verifying scoped dependency substitution
+@HiltAndroidTest
+@RunWith(AndroidJUnit4::class)
+class CheckoutActivityTest {
+    @get:Rule(order = 0)
+    val hiltRule = HiltAndroidRule(this)
+
+    @Inject
+    lateinit var analyticsTracker: AnalyticsTracker
+
+    @Before
+    fun setup() {
+        hiltRule.inject() // Injects FakeAnalyticsTracker!
+    }
+
+    @Test
+    fun checkout_logsPurchaseEvent_onFakeInstance() {
+        val fake = analyticsTracker as FakeAnalyticsTracker
+        assertEquals(0, fake.loggedEvents.size)
+
+        launchActivity<CheckoutActivity>().use {
+            onView(withId(R.id.btn_buy)).perform(click())
+            assertEquals("purchase_completed", fake.loggedEvents.first())
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تختبر استبدال التبعيات في الـ Dependency Injection (DI Substitutions) والتبعيات المربوطة بنطاقات (Scoped Dependencies)؟
@@ -94,26 +151,30 @@ CI verifies unit behavior, instrumentation graph injection and each shipped flav
 
 ## Interview answer — short
 
-In local unit tests, substitute dependencies via direct constructor injection without DI frameworks. In Hilt instrumentation tests, use @HiltAndroidTest with @UninstallModules to remove production bindings, replacing them surgically with @BindValue or custom test modules to inject fakes into the active dependency graph.
+We test DI substitutions differently across testing tiers. In JVM unit tests, we bypass DI frameworks entirely using constructor injection to pass test doubles directly. In Hilt instrumented or Robolectric tests, we use @HiltAndroidTest, replacing production modules with test doubles via @TestInstallIn or @UninstallModules and @BindValue. For scoped dependencies, we verify that instances remain identical within their lifecycle scope and recreate across process recreation.
 
 ## Interview answer — structured
 
-Managing dependency injection substitutions in test suites requires separating fast JVM unit tests from full container integration tests.
-
-First, **Local JVM Testing (Pure Constructor Injection)**. Next, bypassing Dagger/Hilt entirely in `src/test/` is an industry best practice. When classes follow constructor injection, tests simply pass instantiated Fakes (`MyViewModel(FakeUserRepository())`). This avoids annotation processing overhead and runs in milliseconds.
-**Hilt Integration Testing (`@HiltAndroidTest`)**. When testing full Activity or Fragment flows requiring real dependency graphs.
-Decorate test classes with `@HiltAndroidTest` and attach `HiltAndroidRule(this)`. Use `@UninstallModules(ProductionDataModule::class)` to decouple real network/storage bindings.
-Use `@BindValue` on a field to automatically bind a Fake instance into the dependency container for that specific test run. **Verifying Scoped Lifecycles**.
-Finally, verify that `@ActivityScoped` bindings produce distinct instances when transitioning between activities, while `@Singleton` bindings persist within the test process.
-
+Architecting dependency injection with testing in mind is one of the greatest advantages of using Hilt and Dagger in enterprise Android engineering.
+At the local JVM unit testing tier, the most effective strategy is to avoid running the DI framework altogether.
+Because classes rely on constructor injection, unit tests instantiate the class directly with standard Kotlin constructors, passing in lightweight fakes or mocks without Dagger reflection or annotation processing overhead.
+At the instrumented and integration testing tiers, tests must execute against real or emulated dependency graphs.
+Hilt provides first-class support for this via the @HiltAndroidTest annotation and HiltAndroidRule.
+To substitute an external production service—such as swapping a live payment gateway or Firebase analytics with an in-memory fake—we annotate a test module with @TestInstallIn, explicitly declaring which production module it replaces across the SingletonComponent.
+For localized single-test substitutions, developers use @UninstallModules alongside @BindValue, injecting an inline mock directly into the test class.
+When validating scoped dependencies, tests assert instance equality (assertSame) across multiple injections within the same Activity or ViewModel lifecycle, and verify that rotating the screen or recreating the component cleans up the scoped instance, preventing cross-test state pollution.
 
 ## Interview answer — deep senior
 
-From an architectural systems perspective, managing test DI containers requires preventing cross-test state pollution.
-
-First, with Singleton State Leaks Across Tests, if a Fake bound as a `@Singleton` maintains in-memory state (e.g. `FakeDatabase` holding user records), that state persists across consecutive `@Test` methods unless explicitly wiped in `@After` teardown hooks. Build explicit `clear()` methods on all stateful test fakes. Next, with Custom Test Application in Instrumentation, Hilt generates `HiltTestApplication` for instrumented tests. Ensure your `app/build.gradle.kts` sets `testInstrumentationRunner = "com.example.HiltTestRunner"`, which subclasses `AndroidJUnitRunner` and boots `HiltTestApplication` as the root application context.
-Finally, with Dynamic Test Components, for feature-modular codebases, avoid a single monolithic test module. Create isolated test modules per feature (`:feature:checkout:testing`) exporting modular fakes, allowing feature tests to compose test graphs independently.
-
+Under the hood, Hilt dependency substitution orchestrates compile-time bytecode rewriting, custom annotation processing, and specialized test application class loading.
+Standard production Hilt applications extend a generated Hilt_MyApplication that initializes the root SingletonComponent during onCreate().
+When @HiltAndroidTest is executed, the Android test runner (such as HiltTestRunner) substitutes the application instance with HiltTestApplication before component binding starts.
+Hilt's annotation processor scans the test classpath for all @TestInstallIn declarations and constructs a bespoke Dagger component graph specifically for the test suite execution.
+Any module listed in replaces = [...] is stripped out of the generated Dagger component definition, ensuring that production bindings are never instantiated.
+When @BindValue is used, Hilt generates a subcomponent binding that intercepts the injection graph at compile time, passing the exact instance initialized in the test class register.
+Regarding scope lifecycles, Hilt scopes correspond to memoization entries stored in a thread-safe ScopeMap inside the generated Dagger subcomponent.
+For example, @ActivityRetainedScoped instances are stored in an ActivityRetainedComponent holder that survives configuration changes by attaching to an internal headless ViewModelStore.
+Testing these scopes requires simulating configuration changes using ActivityScenario.recreate() and asserting that the injected dependency retains its exact identity hash code, whereas calling ActivityScenario.close() disposes of the component and evicts all scoped references from memory, preventing memory leaks between test executions.
 
 ## How to answer in the interview
 

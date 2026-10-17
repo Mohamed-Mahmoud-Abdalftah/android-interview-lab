@@ -20,6 +20,59 @@ Design a robust payment transaction lifecycle.
 
 Design payment lifecycle with idempotent backend, pending state and reconciliation.
 
+## Concept and technical explanation
+
+Designing a robust mobile payment transaction lifecycle requires treating the mobile client as an untrusted, highly volatile coordinator. Mobile devices face abrupt network drops, socket timeouts, low-memory process termination, and unpredictable user abandonment during critical payment steps. Under no circumstances should the mobile client be the final authority on payment success or failure, nor should an ambiguous network timeout ever be interpreted as a failed transaction. A resilient architecture relies on client-generated idempotency keys, an explicit payment state machine (Draft, Processing, Pending Verification, Authorized, Settled, and Failed), durable transaction records in local persistence, and background reconciliation loops combining push notifications with exponential backoff polling to verify actual transaction state before permitting retries.
+
+## Practical walkthrough (English)
+
+Implementing a resilient payment state machine and reconciliation flow:
+```kotlin
+// 1. Explicit payment state machine representing all lifecycle stages
+sealed interface PaymentTransactionState {
+    data object Idle : PaymentTransactionState
+    data class Processing(val idempotencyKey: String) : PaymentTransactionState
+    data class PendingVerification(val idempotencyKey: String, val orderId: String) : PaymentTransactionState
+    data class Succeeded(val transactionId: String, val orderId: String) : PaymentTransactionState
+    data class Failed(val reason: String, val canRetrySafely: Boolean) : PaymentTransactionState
+}
+
+// 2. Payment repository orchestrating idempotency and status reconciliation
+class PaymentRepositoryImpl @Inject constructor(
+    private val paymentApi: PaymentApiService,
+    private val paymentDao: PaymentDao
+) : PaymentRepository {
+
+    override suspend fun executePayment(orderId: String, amountCents: Long): PaymentTransactionState {
+        val idempotencyKey = UUID.randomUUID().toString()
+
+        // 1. Persist intent locally before initiating network request
+        paymentDao.insert(
+            PaymentEntity(orderId = orderId, idempotencyKey = idempotencyKey, state = "PROCESSING")
+        )
+
+        return try {
+            val response = paymentApi.charge(
+                idempotencyKey = idempotencyKey,
+                request = ChargeRequest(orderId = orderId, amountCents = amountCents)
+            )
+
+            if (response.isSuccessful && response.body()?.status == "AUTHORIZED") {
+                paymentDao.updateState(orderId, "SUCCEEDED")
+                PaymentTransactionState.Succeeded(response.body()!!.transactionId, orderId)
+            } else {
+                paymentDao.updateState(orderId, "FAILED")
+                PaymentTransactionState.Failed(response.errorBody()?.string() ?: "Declined", canRetrySafely = true)
+            }
+        } catch (e: IOException) {
+            // CRITICAL: Network timeout is NOT a failure. Must reconcile to prevent double charge!
+            paymentDao.updateState(orderId, "PENDING_VERIFICATION")
+            PaymentTransactionState.PendingVerification(idempotencyKey, orderId)
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تصمم دورة حياة معاملات دفع قوية ومرنة (Robust Payment Transaction Lifecycle) تمنع السحب المزدوج وتتحمل انقطاع الشبكة؟
@@ -115,26 +168,31 @@ A checkout persists operation ID/amount, submits through backend, shows Pending 
 
 ## Interview answer — short
 
-Design a robust payment lifecycle by attaching a client-generated UUID idempotency key to each transaction, enforcing an explicit state machine, and never blindly retrying failed charges. If a network drop occurs in-flight, query the backend payment status using the idempotency key to reconcile transaction state without double-charging.
+We design payment lifecycles around idempotency and explicit state machines where the backend remains the ultimate authority. Every payment intent receives a client-generated UUID idempotency key. If a network timeout occurs during authorization, the client transitions into a pending verification state rather than failing. We poll the backend or await push notifications to reconcile the actual payment status before allowing any retry, preventing double charging.
 
 ## Interview answer — structured
 
-Payment flows require zero-tolerance for duplicate charges and resilient handling of network failures.
-
-First, **Client-Generated Idempotency Keys**. Next, before dispatching a charge request, generate a cryptographically unique `idempotencyKey = UUID()` and persist it locally in Room associated with the order ID.
-Transmit this key in the HTTP header (`Idempotency-Key: <uuid>`). If network drops occur and the request is retried, payment gateways (e.g. Stripe, Adyen) recognize the key and return the original transaction receipt without re-executing charges. **State Machine Modeling**.
-Model the lifecycle with explicit states: `Created -> PaymentMethodAttached -> ActionRequired (3DS) -> Processing -> Succeeded / Failed`. **In-Flight Network Disconnection Recovery (Reconciliation)**.
-When an HTTP timeout occurs, the client does not know whether the charge succeeded on the gateway. **Never retry the charge mutation directly**. Instead, trigger a reconciliation query (`GET /payments/reconcile?key=<idempotencyKey>`) to retrieve the authoritative state. **Server-to-Server Webhook Authority**.
-Finally, the backend must not consider orders finalized solely because the mobile client returned success. Final order fulfillment is unlocked exclusively via authenticated server-side webhooks from the payment provider.
-
+Designing a robust payment transaction lifecycle requires handling network drops, process death, and payment gateway redirects without risking double charging.
+The architecture centers on an explicit payment state machine with states like Draft, Processing, Pending Verification, Authorized, and Failed.
+When a user taps to pay, we generate a unique idempotency key on the device and submit it with the payment intent.
+The backend uses this key to ensure that duplicate HTTP submissions execute exactly once.
+If the network drops or the HTTP socket times out while awaiting the gateway response, we strictly avoid marking the payment as failed.
+Instead, we persist the transaction locally as Pending Verification and inform the user that payment confirmation is in progress.
+The mobile client initiates exponential backoff polling against a dedicated transaction status endpoint, while also listening for Firebase Cloud Messaging push webhooks triggered by backend-to-gateway callbacks.
+Only when the backend confirms final settlement does the state transition to Completed.
+This eliminates duplicate charges and maintains financial integrity under worst-case mobile connectivity.
 
 ## Interview answer — deep senior
 
-From a staff architecture perspective, payment systems require handling edge cases in client-side lifecycle and user interaction.
-
-First, with UI Double-Tap & Concurrency Guards, prevent duplicate button clicks by disabling the UI immediately and using reactive StateFlow debounce mechanisms. The `executePayment()` method must be bounded by an in-memory Mutex to block concurrent triggers for the same order. Next, with 3D Secure / Biometric Process Death, when navigating to a 3DS webview or external banking app, the host Android OS may kill the main application under memory pressure. The app must persist order state and idempotency keys in persistent Room storage so that upon returning via Deep Link (`myapp://payment-return`), the activity reconstructs state and polls the backend for final status.
-Finally, with Telemetry & PCI Auditing, mask PAN numbers (showing only first 6/last 4) in all UI logs, and completely eliminate CVV/CVC persistence from memory and storage post-tokenization.
-
+From a staff-level systems perspective, the most critical vulnerability in mobile payment design is the ambiguous network timeout.
+When an HTTP POST request to execute a payment times out, the client cannot know whether the packet was lost on the outbound journey, processed successfully by the payment provider with a lost response, or rejected mid-flight.
+Treating a timeout as a failure invites the user to tap pay again, causing an immediate double debit and severe customer dissatisfaction.
+To solve this, our payment architecture decouples payment execution from payment reconciliation.
+The initial submission creates a durable transaction record in local storage containing the idempotency key, amount, and order ID, locking the checkout UI against further interaction.
+If the response drops, our background sync layer and UI polling mechanism query the backend using the same idempotency key to inspect the server's ledger.
+If the backend has not received the transaction, it safely cancels the intent or permits a guarded retry.
+If the payment succeeded at the gateway, the backend returns the settled order, and the client transitions seamlessly to the success confirmation screen.
+Furthermore, we log comprehensive audit trail events across every lifecycle transition, enabling operational support teams to trace discrepancies between mobile telemetry, payment gateway logs, and core banking ledgers.
 
 ## How to answer in the interview
 

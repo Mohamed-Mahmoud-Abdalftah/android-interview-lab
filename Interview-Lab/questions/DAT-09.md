@@ -20,6 +20,62 @@ How do you implement authentication interceptors and refresh-token logic safely?
 
 Design token attachment and refresh handling without loops, leakage or racing requests.
 
+## Concept and technical explanation
+
+Safe implementation of authentication and token refresh in OkHttp requires separating token injection from 401 error recovery:
+- Application Auth Interceptor: Intercepts outgoing requests to attach the current access token to the HTTP Authorization header (e.g., Bearer <token>). It identifies public, unauthenticated endpoints (such as login or registration) via custom OkHttp Request Tags and permits them to proceed without authorization headers.
+- OkHttp Authenticator Interface: Specifically designed to handle HTTP 401 Unauthorized responses. Unlike a standard interceptor, Authenticator is invoked exclusively upon authentication failure. It handles token renewal synchronously or delegates to a thread-safe token manager, rebuilds the original request with the fresh credential, and returns it to OkHttp for automatic transparent replay.
+- Infinite 401 Loop Prevention: If credentials are fundamentally invalid or the refresh token is revoked, a poorly designed Authenticator can recursively loop forever. Robust implementations inspect the response chain (responseCount(response) >= 2) or verify whether the failed request already carried the newest token. If so, it returns null to abort the call, clears local session storage, and broadcasts a global logout event to navigate the user to the login screen.
+
+## Practical walkthrough (English)
+
+Production-grade token refresh implementation using OkHttp Authenticator:
+```kotlin
+// 1. Interceptor attaching current access token
+class AuthHeaderInterceptor(
+    private val tokenStorage: TokenStorage
+) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val original = chain.request()
+        val token = tokenStorage.getAccessToken()
+        return if (token != null && original.header("Authorization") == null) {
+            val authenticated = original.newBuilder()
+                .header("Authorization", "Bearer $token")
+                .build()
+            chain.proceed(authenticated)
+        } else {
+            chain.proceed(original)
+        }
+    }
+}
+
+// 2. Authenticator handling 401 and token renewal
+class TokenAuthenticator(
+    private val tokenManager: TokenManager
+) : Authenticator {
+    override fun authenticate(route: Route?, response: Response): Request? {
+        // Prevent infinite loops: abort if we already retried this request twice
+        if (responseCount(response) >= 2) return null
+
+        // Coordinate thread-safe single-flight refresh
+        val freshToken = tokenManager.refreshTokenSynchronously(response.request.header("Authorization"))
+            ?: return null // Refresh failed or session revoked; abort and trigger logout
+
+        // Replay original request with the new access token
+        return response.request.newBuilder()
+            .header("Authorization", "Bearer $freshToken")
+            .build()
+    }
+
+    private fun responseCount(response: Response): Int {
+        var count = 1
+        var prior = response.priorResponse
+        while (prior != null) { count++; prior = prior.priorResponse }
+        return count
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تنفذ معترِضات المصادقة (Authentication Interceptors) ومنطق تجديد التوكن (Refresh-Token Logic) بأمان في OkHttp؟
@@ -137,25 +193,27 @@ A banking app has a session repository with atomic token replacement and one ref
 
 ## Interview answer — short
 
-Use an OkHttp Interceptor to attach access tokens to outgoing requests, and an Authenticator to handle 401 Unauthorized responses by fetching a new token and retrying the request. Protect against infinite retry loops by checking response count, synchronize refreshes to prevent race conditions, and use a dedicated clean OkHttpClient for refresh calls.
+Authentication is implemented by combining an application interceptor that injects access tokens into outgoing requests with an OkHttp Authenticator that intercepts 401 responses to refresh tokens. Loop counters prevent infinite retries, and thread-safe managers serialize refresh calls while broadcasting logout events upon revocation.
 
 ## Interview answer — structured
 
-Implementing resilient JWT authentication in OkHttp requires separating proactive header injection from reactive 401 recovery.
-
-First, proactive Injection (`Interceptor`) is an Application Interceptor reads the cached access token from secure storage and injects `Authorization: Bearer <token>` into outgoing requests. Public endpoints (login, register) are excluded. Next, with Reactive 401 Recovery (`Authenticator`), when the server returns `401 Unauthorized`, OkHttp triggers `Authenticator.authenticate()`. This method executes a synchronous token refresh, updates persistent storage, and builds a new request with the updated token, which OkHttp automatically retries.
-**Guardrails against Common Failures**. With Loop Prevention, inspect `response.priorResponse` chain. If attempts exceed 2, return `null` to abort and prompt user re-login.
-A Deadlock Isolation is the refresh network call must execute on an isolated OkHttp client that has **no Authenticator attached**; using the primary client causes recursive lock deadlocks. Finally, with Double-Check Lock, check whether another concurrent thread already refreshed the token while this thread was waiting on the lock.
-
+Implementing token authentication and refresh logic safely requires separating token attachment from 401 failure handling.
+First, an application-level Interceptor inspects outgoing requests and attaches the active JWT access token in the Authorization header. It bypasses public endpoints that do not require credentials.
+Second, token renewal is delegated to OkHttp's Authenticator interface rather than a generic interceptor. The Authenticator triggers only when the server responds with HTTP 401 Unauthorized, automatically executing token renewal and returning a new request to be replayed transparently.
+Third, we guard against infinite retry loops by checking response.priorResponse. If a request has already failed authentication twice, or if the refresh token itself has expired, the authenticator returns null to cancel the request, purges local session storage, and dispatches a navigation event to the login screen.
 
 ## Interview answer — deep senior
 
-A critical edge case is **Refresh Token Rotation (RTR)**.
-
-Modern OAuth 2.0 backends rotate the refresh token on *every* refresh request (issuing both a new access token and a new single-use refresh token, immediately invalidating the previous refresh token). If client synchronization fails and two concurrent requests make separate refresh calls using the old refresh token, the server detects token reuse, treats it as a security breach, and invalidates all user sessions globally!
-
-To solve this, the refresh operation must be strictly serialized behind a **Single-Flight Lock (or Mutex)** with token double-checking: the thread entering the lock first executes the refresh, while subsequent threads detect that `currentToken != requestToken` and immediately replay with the new token without hitting the refresh API.
-
+Designing enterprise authentication pipelines requires understanding OkHttp's internal execution architecture and handling edge-case failure modes.
+Developers frequently attempt to handle token refresh inside a standard Interceptor.
+This is an anti-pattern: interceptors execute for every request and require manual recursive chain calls, complicating error recovery and risking thread starvation.
+In contrast, OkHttp's Authenticator interface was specifically engineered for reactive credential challenges.
+When a 401 Unauthorized occurs, OkHttp routes execution to Authenticator.authenticate().
+Our implementation first checks responseCount(): if prior responses exist and the Authorization header already matches the newly refreshed token, we know the account was revoked or lacked permissions, so we immediately return null to halt the loop.
+Under the hood, our TokenManager encapsulates a ReentrantLock to serialize concurrent refresh calls across threads.
+When refresh succeeds, we persist the new access and refresh tokens into EncryptedSharedPreferences backed by Android Keystore.
+If the auth server rejects the refresh token with a 400 or 401, we treat the session as permanently compromised: we clear local Room user tables, wipe secure storage, and post a SessionExpiredEvent to our UI navigation coordinator to redirect the user to authentication.
+Furthermore, we implement an in-flight request buffer to queue concurrent network calls while the refresh transaction executes, preventing duplicate 401 storms and ensuring all paused requests replay seamlessly with the new bearer token.
 
 ## How to answer in the interview
 

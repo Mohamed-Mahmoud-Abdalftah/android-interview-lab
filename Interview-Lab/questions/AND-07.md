@@ -22,6 +22,39 @@ What is process death? How is it different from configuration change?
 - Explain how Android can later recreate a previously stopped screen without having called its old `onDestroy()`.
 - Recover UI state and external operations from durable identity instead of replaying side effects blindly.
 
+## Concept and technical explanation
+
+Process death occurs when the Android operating system kernel, through the Low Memory Killer Daemon (LMKD), forcibly terminates an application's hosting Linux process while it is in the background to reclaim physical RAM for higher-priority foreground applications. Unlike explicit user termination via task swiping, process death happens silently and asynchronously without executing application-level lifecycle teardown methods like onDestroy() or ViewModel onCleared().
+
+The fundamental architectural difference between a configuration change and process death lies at the memory boundary. During a configuration change, such as a device rotation, the Linux process remains alive. The JVM heap, static variables, dependency injection singletons, background coroutines, and retained ViewModelStore instances survive intact in RAM. In contrast, process death completely wipes the application process and its entire virtual memory space, including all ViewModel instances, singletons, and in-memory caches.
+
+When the user navigates back to a killed application from the Recent Apps screen, the operating system spawns an entirely new Linux process and creates a fresh Activity instance. The sole bridge of continuity between the terminated process and the new process is the saved instance state Bundle, which the framework serialized across inter-process communication into system_server prior to termination. Modern Android architectures leverage SavedStateHandle within ViewModels to consume this restored Bundle, enabling automatic recovery of navigational identifiers and draft user input while re-fetching authoritative domain state from durable local databases or remote network APIs.
+
+## Practical walkthrough (English)
+
+Testing process death and diagnosing restoration bugs in development:
+1. Reproducing process death reliably via adb:
+Navigate to the order details screen in the application. Press the device Home button to move the application into the background state. In a terminal session, execute:
+adb shell am kill com.example.myapp
+Alternatively, use the Stop Process action in Android Studio Logcat.
+2. Returning to the application:
+Relaunch the app from the Recent Apps screen. The Android system creates a new process and restores the previous backstack destination.
+3. Common production failure scenario:
+If the screen relies on an in-memory repository cache or an unpersisted orderId passed to the ViewModel constructor, the recreated ViewModel initializes with null or empty state, resulting in a fatal NullPointerException or an empty error screen.
+4. Robust architectural remediation:
+Inject SavedStateHandle into OrderDetailsViewModel:
+```kotlin
+class OrderDetailsViewModel(
+    private val savedStateHandle: SavedStateHandle,
+    private val repository: OrderRepository
+) : ViewModel() {
+    val orderId: String = checkNotNull(savedStateHandle["order_id"])
+    val uiState: StateFlow<OrderUiState> = repository.getOrderStream(orderId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), OrderUiState.Loading)
+}
+```
+Because the system server caches navigation arguments in the saved state Bundle, orderId is automatically restored, allowing the repository to hydrate the screen seamlessly.
+
 ## Explanation in Arabic
 
 الفرق بين الـ Process Death وتغيير الإعدادات (Configuration Change) هو أحد أدق الأسئلة التي تميز الـ Senior Engineer الحقيقي عن غيره:
@@ -73,27 +106,28 @@ An offline note editor persists drafts incrementally, saves only the note ID and
 
 ## Interview answer — short
 
-In configuration change, the Activity is recreated but the Linux process and ViewModel survive in memory. In process death, the OS kernel kills the entire process due to low RAM, destroying all ViewModels and singletons; only state serialized into the SavedStateHandle Bundle survives in the OS system server.
+Process death occurs when Android terminates an idle background process to reclaim physical RAM. Unlike a configuration change where the process and ViewModel survive in memory, process death obliterates all heap memory and singletons. Only state serialized into the SavedStateHandle Bundle via the system server survives, allowing the newly spawned process to reconstruct UI destinations and reload durable data.
 
 ## Interview answer — structured
 
-The distinction between configuration change and process death lies at the operating system memory boundary:
+Process death occurs when the Android operating system terminates an app's background Linux process to reclaim RAM for foreground tasks. The essential architectural contrast is that a configuration change preserves the hosting process and its JVM heap, allowing ViewModels, dependency graphs, and memory caches to survive untouched.
 
-**Configuration Change** (e.g., screen rotation) is a cosmetic runtime change. The Activity instance is recreated, but the underlying Linux process remains alive. The `ViewModelStore` preserves all ViewModels, `viewModelScope` coroutines, in-memory singletons, and cache trees in RAM without data loss.
+Process death erases the entire virtual address space. When the Linux kernel executes a kill, all in-memory singletons, background jobs, and ViewModel instances vanish immediately. The framework does not execute onDestroy or onCleared callbacks during this reclamation.
 
-**Process Death** occurs when the app is in the background and the Android Low Memory Killer (LMK) terminates the entire Linux process to reclaim RAM for foreground apps. Everything residing in memory—all ViewModels, Dagger/Hilt instances, and static variables—is permanently erased.
+State recovery depends entirely on the saved instance state Bundle. When an application enters the background, Android serializes transient UI state across Binder IPC to the system server. When the user returns, the OS spawns a fresh process and injects this preserved Bundle back into the Activity and SavedStateHandle.
 
-When the user returns to the app, the OS creates a brand-new process. The only bridge connecting the dead process to the new one is the **Saved Instance State Bundle**, which the OS system server serialized before killing the process. We access this restored state in modern architecture via `SavedStateHandle`.
+In production, we distinguish between transient navigation keys and persistent domain data. We store compact entity identifiers and user draft inputs in SavedStateHandle, while persisting full business records into Room databases, ensuring resilient restoration without risking transaction buffer overflow.
 
 
 ## Interview answer — deep senior
 
-At the kernel level, Android assigns an Out-Of-Memory Adjacency score (`oom_adj`) to every process. Foreground apps have low scores (never killed), while background apps have high scores. When native RAM runs low, LMKD sends `SIGKILL` directly to background processes. This means no Java cleanup methods, `onCleared()`, or `onDestroy()` hooks run during process death.
+At the Linux kernel and platform runtime layer, process death is mediated by the low memory killer daemon, lmkd, interacting with Linux memory control groups and the Out-Of-Memory score adjustment mechanism. The framework ActivityManagerService assigns dynamic oom_adj scores based on component states. An active, focused Activity maintains an oom_adj score of zero in the foreground bucket, while an Activity moved to onStop drops into the cached process bucket with scores scaling up to 900 or higher. When physical system memory breaches configured low watermarks, lmkd issues a direct SIGKILL kernel signal to the highest-scoring background process.
 
-Before killing the process, the OS invokes `Activity.onSaveInstanceState(Bundle)`. The serialized Bundle is transferred across Binder IPC to `system_server`. Because Binder transactions have a strict 1MB transaction buffer limit across the entire system, saving large bitmaps or heavy lists in `SavedStateHandle` causes a `TransactionTooLargeException`.
+Because SIGKILL terminates the process abruptly at the kernel scheduler level, no userspace signal handlers or Java finalizers can execute. The Android Runtime does not call onDestroy() on Activities nor onCleared() on ViewModels. If an application defers database writes or critical transaction receipts to onDestroy(), that state is permanently lost upon process death.
 
-Therefore, the golden rule of state preservation is: store large data in Room or local disk storage; store only lightweight IDs (e.g., `userId: String`) and draft inputs in `SavedStateHandle`.
+Before the process becomes eligible for termination, Android invokes Activity.onSaveInstanceState() between onPause() and onStop(). The serialized Bundle is transmitted across Binder IPC to ActivityTaskManagerService inside the system_server process. This IPC boundary is constrained by a global 1MB per-process Binder transaction buffer. Attempting to serialize large lists, network payloads, or Bitmap objects into SavedStateHandle triggers a fatal TransactionTooLargeException during backgrounding.
 
+Consequently, Staff-level mobile system design mandates a clear three-tier state hierarchy: volatile UI state lives in ViewModel memory across rotation; compact reconstruction tokens, pagination indices, and form draft keys live in SavedStateHandle across process death; and domain business entities are persisted immediately to local SQLite or Room databases. When the user returns from a kill, the application uses the restored identity tokens to query local cache or reconcile pending operations against server idempotency keys.
 
 ## How to answer in the interview
 

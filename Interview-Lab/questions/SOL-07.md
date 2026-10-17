@@ -20,6 +20,40 @@ Compare DIP and Dependency Injection (DI).
 
 Separate a design principle from object construction/wiring, with a counterexample using Hilt.
 
+## Concept and technical explanation
+
+The Dependency Inversion Principle (DIP) and Dependency Injection (DI) represent distinct software engineering concepts operating at different levels of abstraction. DIP is a high-level architectural principle belonging to the SOLID suite, dictating that high-level modules must depend on abstractions rather than concrete low-level details. In contrast, Dependency Injection is a concrete creational and structural design pattern (implementing Inversion of Control) that supplies an object's collaborators externally, typically via constructor parameters. While DI is the most common tactical mechanism used to fulfill DIP, an engineer can employ DI without adhering to DIP by injecting concrete classes directly, missing the architectural benefits of decoupled abstractions.
+
+## Practical walkthrough (English)
+
+Contrasting DI without DIP against DI with DIP:
+```kotlin
+// SCENARIO 1: Dependency Injection WITHOUT Dependency Inversion (Tightly coupled to concrete Room DAO!)
+class BadUserViewModel @Inject constructor(
+    private val userDao: UserDaoImpl // DI used (constructor injection), but DIP VIOLATED (concrete class!)
+) : ViewModel() {
+    // Cannot mock or fake on JVM without concrete Room dependencies!
+}
+
+// SCENARIO 2: Dependency Injection WITH Dependency Inversion (Decoupled architectural bliss)
+// 1. High-level Domain Abstraction (Fulfills DIP)
+interface UserRepository {
+    suspend fun getUserProfile(): Result<UserProfile>
+}
+
+// 2. Concrete Data Implementation
+class UserRepositoryImpl @Inject constructor(private val localDao: UserDao) : UserRepository {
+    override suspend fun getUserProfile() = runCatching { localDao.getUser().toDomain() }
+}
+
+// 3. Presentation Consumer (Fulfills BOTH DIP and DI)
+class CleanUserViewModel @Inject constructor(
+    private val repository: UserRepository // DI delivers the dependency; DIP guarantees it's an abstraction!
+) : ViewModel() {
+    // 100% testable on standard JVM using lightweight fakes
+}
+```
+
 ## Explanation in Arabic
 
 المقارنة الجوهرية بين مبدأ عكس التبعية (DIP) وحقن التبعيات (Dependency Injection - DI):
@@ -91,28 +125,23 @@ A marketplace uses Hilt to bind a pricing repository contract to an API-backed a
 
 ## Interview answer — short
 
-DIP is an architectural principle stating that high-level modules should depend on abstractions rather than low-level details. DI is a creational pattern/technique of supplying dependencies from the outside (via constructor injection or Hilt). You can use DI without DIP by injecting concrete classes directly.
+DIP is an architectural principle stating that high-level policies must depend on abstractions rather than concrete details. Dependency Injection is a creational pattern that passes dependencies into an object from the outside, typically through its constructor. You can use DI without DIP by injecting concrete classes directly. True architectural decoupling occurs when DI is used to inject abstract interfaces that satisfy DIP.
 
 ## Interview answer — structured
 
-While frequently conflated, Dependency Inversion Principle (DIP) and Dependency Injection (DI) operate at fundamentally different architectural levels.
-
-First, **DIP (The Architectural Principle)**. Next, formulated as the 'D' in SOLID.
-Dictates **coupling direction**: high-level business policies must depend on abstractions (interfaces), and low-level detail implementations must depend on those same abstractions. It answers: *'How should my software layers be decoupled structurally?'*
-**DI (The Creational Technique / Pattern)**. A concrete implementation pattern (typically powered by frameworks like Hilt, Dagger, or Koin).
-Dictates **how dependencies are instantiated**: instead of a class instantiating its collaborators (`val repo = UserRepository()`), they are passed into its constructor from an external assembler. Finally, it answers: *'How does a class obtain references to its collaborators at runtime?'*
-
-Crucially, **using DI does not automatically satisfy DIP**. Injecting a concrete `RetrofitApi` into a `ViewModel` uses Dependency Injection, but severely violates the Dependency Inversion Principle because the high-level ViewModel remains tightly coupled to low-level networking details.
-
+Understanding the relationship between the Dependency Inversion Principle and Dependency Injection requires distinguishing architectural rules from implementation mechanics.
+The Dependency Inversion Principle (DIP) is an architectural mandate. It dictates the direction of source code dependencies across module boundaries, asserting that high-level domain rules must remain pure and depend exclusively on abstract contracts, while low-level infrastructure details implement those contracts.
+Dependency Injection (DI) is a tactical creational pattern that implements Inversion of Control. Instead of an object constructing its own dependencies using new or static lookups, an external assembler supplies those dependencies, typically via constructor injection.
+The two concepts are frequently conflated because DI is the primary tool used to implement DIP. However, using DI does not guarantee DIP compliance. If a ViewModel uses Hilt constructor injection to inject a concrete RoomUserDaoImpl, Dependency Injection is actively practiced, but Dependency Inversion is completely violated. The ViewModel remains tightly coupled to an SQLite implementation detail.
+Optimal architecture combines both: DIP establishes the abstract interface boundaries, and DI wires the concrete instances behind those boundaries seamlessly.
 
 ## Interview answer — deep senior
 
-Under the hood, DI acts as the practical enabler of DIP. When you apply DIP, a class depends on an abstract interface (`UserRepository`). However, at runtime, a concrete instance (`UserRepositoryImpl`) must actually be created and passed to that class. Without DI, the class or its caller would have to manually call `UserRepositoryImpl()`, resurrecting the compile-time coupling DIP was designed to eliminate.
-
-Dagger/Hilt resolves this using **`@Binds`**: it maintains a compile-time dependency graph that maps the Domain abstraction `UserRepository` to the Data implementation `UserRepositoryImpl`, injecting it seamlessly.
-
-In unit testing, DI allows passing an in-memory `FakeUserRepository` without any DI framework, making tests fast and deterministic.
-
+Under the hood, conflating DIP with DI leads to architectural decay in enterprise multi-module Android codebases.
+When developers rely on Dagger or Hilt without understanding DIP, they inject concrete implementations across Gradle module boundaries. For example, if a :feature:profile module directly injects an OkHttpNetworkService from :core:network, the feature module's Gradle script must declare an implementation dependency on the network module. This couples UI feature compilation directly to network serialization libraries and third-party HTTP drivers, inflating incremental build times and eliminating parallel compilation across build agents.
+When DIP is correctly applied, the :feature module declares an abstract contract in its domain interface, and the DI container binds the implementation at the root :app assembly layer using Dagger's @Binds. The feature module never compiles against the network module, preserving strict physical decoupling.
+Furthermore, this distinction impacts testing architectures. Injecting concrete classes with DI still forces unit tests to utilize heavy mocking frameworks like Mockk or bytecode manipulation agents to override final methods on Android classes.
+When DI supplies abstractions complying with DIP, unit tests pass simple, zero-reflection Kotlin fake implementations into constructors, executing at maximum JVM speed without memory overhead or runtime proxy generation, keeping developer feedback loops practically instantaneous. Ultimately, DIP provides the architectural decoupling, while DI provides the operational mechanism to instantiate and wire dependencies cleanly.
 
 ## How to answer in the interview
 

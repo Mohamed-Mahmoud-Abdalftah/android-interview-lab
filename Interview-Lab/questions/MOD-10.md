@@ -22,6 +22,44 @@ How do navigation contracts work across modules?
 - Explain app registration, deep links, arguments and versioning.
 - Preserve module dependency direction and restoration.
 
+## Concept and technical explanation
+
+In a decoupled multi-module architecture, Feature A cannot instantiate or reference screens in Feature B at compile time because direct dependencies are forbidden. A navigation contract establishes a decoupled communication protocol separating the route destination request from its visual rendering:
+- Contract Definition: Feature B's public :api module (or a shared navigation module) defines an abstract navigation interface (e.g., interface ProfileNavigator) or a serializable destination route object (e.g., @Serializable data class ProfileRoute(val userId: String)).
+- Contract Implementation: Feature B's private :impl module implements the destination, configuring the Composable screen, ViewModel injection, and argument unpacking.
+- Composition Wiring: The root :app module (or a global NavHost coordinator) aggregates navigation graphs using Hilt multibindings (@IntoSet) or Compose navigation destinations, allowing seamless transitions without compile-time coupling.
+
+## Practical walkthrough (English)
+
+Type-safe cross-module navigation using Compose Navigation routes and contract interfaces:
+```kotlin
+// 1. In :feature:detail:api (Lightweight contract module)
+@Serializable
+data class DetailRoute(val itemId: String)
+
+interface DetailEntry {
+    fun registerGraph(navGraphBuilder: NavGraphBuilder, navController: NavHostController)
+}
+
+// 2. In :feature:detail:impl (Renders the Composable screen)
+class DetailEntryImpl @Inject constructor() : DetailEntry {
+    override fun registerGraph(navGraphBuilder: NavGraphBuilder, navController: NavHostController) {
+        navGraphBuilder.composable<DetailRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<DetailRoute>()
+            DetailScreen(itemId = route.itemId, onBack = { navController.popBackStack() })
+        }
+    }
+}
+
+// 3. In :feature:feed:impl (Navigates using only the public route contract)
+@Composable
+fun FeedItem(item: FeedItem, navController: NavHostController) {
+    Button(onClick = { navController.navigate(DetailRoute(item.id)) }) {
+        Text("View Details")
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تعمل عقود التنقل (Navigation Contracts) عبر موديولات أندرويد المتعددة؟
@@ -96,24 +134,32 @@ Version and test public routes, deep links, argument parsing, app graph assembly
 
 ## Interview answer — short
 
-Navigation contracts decouple screen transitions in multi-module apps. Route destinations are placed in lightweight :api modules using Kotlin Serialization types, allowing callers to navigate with full type-safety. The :app module hosts the NavHost, registering destinations and linking screen composables from feature implementation modules.
+Navigation contracts allow screens in one module to open destinations in another without direct compile-time coupling. The destination exposes a public interface contract or type-safe route object in an api module, while its implementation module provides the UI screen. The app module binds the graph together using Hilt multibindings or centralized NavHost registration.
 
 ## Interview answer — structured
 
-In multi-module applications, features cannot reference peer screen classes directly. Navigation contracts solve this by decoupling the destination definition from the screen implementation.
-
-First, **Contract in `:feature:*:api`**: We define the navigation target as a serializable route type (`@Serializable data class UserProfileRoute(val id: String)`) inside a lightweight API module. Any feature needing to navigate to the profile imports only this tiny API contract. Next, **Implementation in `:feature:*:impl`**: The feature implementation module exposes an extension function on `NavGraphBuilder` (e.g. `fun NavGraphBuilder.userProfileScreen(...)`) registering the composable entry.
-Finally, assembly in `:app is the `:app` module imports both modules and configures the top-level `NavHost`. When feature `A` triggers navigation, it passes the typed contract from `feature-b-api` to the controller. The destination matches without feature `A` ever knowing how the destination screen is implemented or tested.
-
+Cross-module navigation requires navigating between screens whose modules cannot see each other at compile time.
+A navigation contract solves this problem by separating the navigation request from the destination's implementation.
+The destination feature creates a public api module that exposes either a navigation interface or a type-safe Compose route object.
+Feature modules that need to trigger navigation depend strictly on this lightweight api module.
+To navigate, the caller simply triggers the contract with required arguments, such as an item identifier.
+Inside the destination feature's private implementation module, the Composable destination is registered with the NavGraphBuilder, handling argument extraction and ViewModel setup.
+The root app module acts as the central coordinator, collecting navigation destination registrations using Hilt multibindings into a set and attaching them to the root NavHost.
+This architecture preserves full type safety and modular isolation.
 
 ## Interview answer — deep senior
 
-With modern **Type-Safe Compose Navigation (Navigation 2.8+)**, navigation contracts achieve compile-time safety without raw string URLs.
-
-Under the hood, routes are typed Kotlin classes serialized via `kotlinx.serialization`. However, when architecting navigation contracts across modules, two runtime constraints must be respected.
-
-First, with Serializable Model Independence, never include complex domain models inside navigation route arguments (e.g. `data class CheckoutRoute(val cart: CartDomainModel)`). Large objects violate Android's `Bundle` size limits (risking `TransactionTooLargeException`) and violate encapsulation. Route arguments must strictly be lightweight primitives (IDs, keys, or query tokens). The destination screen fetches full data from its own repository. Finally, with State Restoration Across Process Death, type-safe navigation routes automatically serialize into the `SavedStateHandle`. When Android OS terminates the process in the background and restores it, Compose Navigation deserializes the route arguments flawlessly without manual bundle parsing.
-
+Designing cross-module navigation in modern Android with Jetpack Compose requires bridging the tension between modular encapsulation and type-safe routing.
+Historically, teams relied on URI-based deep links or reflection to open activities across modules, but these approaches lacked compile-time verification, leading to runtime crashes when argument keys changed.
+Our modern production architecture leverages Compose Navigation with Kotlin serialization and contract multibindings.
+When we build :feature:checkout, we split the feature into :api and :impl subprojects.
+The :feature:checkout:api module contains a type-safe route declaration, such as @Serializable data class CheckoutRoute(val cartId: String), alongside an abstract interface NavigationEntry.
+Because this contract resides in an independent, leaf-level API module, :feature:cart can import :feature:checkout:api and invoke navController.navigate(CheckoutRoute(cartId)) with total type safety, autocompletion, and zero compile-time awareness of CheckoutScreen or its ViewModels.
+Inside :feature:checkout:impl, a concrete NavigationEntry implementation maps CheckoutRoute to its Composable screen, injects the ViewModel, and handles backstack pop actions.
+To aggregate all destinations into the root NavHost without hardcoding feature classes in :app, we utilize Hilt multibindings.
+Each implementation module contributes its NavigationEntry into a Set<NavigationEntry> via @IntoSet.
+The root application iterates over this injected set to build the complete graph dynamically.
+This design guarantees compile-time safety, completely prevents horizontal coupling, and scales gracefully across dozens of autonomous engineering squads.
 
 ## How to answer in the interview
 

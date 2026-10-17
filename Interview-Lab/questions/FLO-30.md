@@ -20,6 +20,44 @@ A SharedFlow event has no active subscribers. What guarantees do replay and buff
 
 State precise absent-subscriber SharedFlow replay/buffer guarantees.
 
+## Concept and technical explanation
+
+Understanding delivery guarantees and message persistence in MutableSharedFlow when zero active subscribers exist requires examining the interplay between replay cache, extraBufferCapacity, and buffer overflow policies.
+SharedFlow is fundamentally a hot broadcast stream. Unlike cold Flows, which defer execution until a collector invokes collect, a hot SharedFlow executes and processes emissions independently of subscriber presence.
+When an event is emitted into a MutableSharedFlow with zero active collectors: if the replay parameter is greater than zero (replay > 0), the emission is stored in the replay cache array up to the replay capacity and is instantly delivered to future subscribers upon attachment; if replay is zero (replay = 0), the emission bypasses subscriber dispatch. In this case, whether extraBufferCapacity can retain the event depends strictly on whether downstream collectors previously existed or buffer overflow rules apply; however, for new future subscribers, elements outside the replay cache are completely invisible and dropped permanently into the void.
+
+## Practical walkthrough (English)
+
+Demonstrating SharedFlow emission behavior and delivery guarantees with zero subscribers:
+```kotlin
+class SharedFlowGuaranteesDemo {
+    // Scenario 1: Zero subscribers with default configuration
+    // replay = 0, extraBufferCapacity = 0, onBufferOverflow = SUSPEND
+    val defaultSharedFlow = MutableSharedFlow<String>()
+
+    // Scenario 2: Replay cache configured
+    // Retains last 2 emissions for ANY future subscriber
+    val replaySharedFlow = MutableSharedFlow<String>(
+        replay = 2,
+        extraBufferCapacity = 0
+    )
+
+    suspend fun demonstrate() {
+        // With 0 active subscribers:
+        defaultSharedFlow.emit("Event 1") // Emitted, but NOT retained! Dropped!
+        val tryEmitSuccess = defaultSharedFlow.tryEmit("Event 2") // Returns false!
+
+        replaySharedFlow.emit("Replayed 1")
+        replaySharedFlow.emit("Replayed 2")
+        // Both saved in replay cache!
+
+        // When a new subscriber attaches 5 seconds later:
+        // defaultSharedFlow -> Receives NOTHING.
+        // replaySharedFlow  -> Immediately receives "Replayed 1" and "Replayed 2".
+    }
+}
+```
+
 ## Explanation in Arabic
 
 ما هي الضمانات الحقيقية التي يقدمها `replay` و `buffering` في `SharedFlow` عند عدم وجود أي مستمع نشط (No active subscribers)؟
@@ -88,23 +126,25 @@ A payment status update is written to local database; UI observes StateFlow deri
 
 ## Interview answer — short
 
-replay is guaranteed to retain up to N latest items in memory for future subscribers even when subscriber count is 0; however, extraBufferCapacity only buffers for active subscribers. With 0 subscribers, emissions exceeding the replay capacity are dropped immediately and cannot be queued in extra buffer space.
+With zero active subscribers, only the replay cache guarantees retention for future collectors. If replay is zero, emitted events are permanently dropped for future subscribers regardless of extra buffer capacity, and synchronous tryEmit on default SharedFlow fails and returns false immediately.
 
 ## Interview answer — structured
 
-This is one of the most critical and frequently misunderstood memory guarantees in Kotlin Coroutines.
+SharedFlow is a hot broadcast stream that does not wait for collectors to start emitting.
 
-First, **`replay` guarantees retention:** The replay cache is permanent and memory-resident. If `replay = 2`, `SharedFlow` retains the last 2 emitted items in memory indefinitely, even if there are zero active subscribers. When a new collector subscribes in the future, it is guaranteed to receive those 2 replayed items immediately. Finally, **`extraBufferCapacity` provides ZERO retention with 0 subscribers:** A common misconception is that an extra buffer of 10 will hold 10 items while waiting for subscribers. It does not. The extra buffer capacity exists solely to absorb backpressure for *active, currently connected* slow subscribers. If `subscriptionCount == 0`, emissions beyond the `replay` count are dropped immediately and permanently, regardless of how large `extraBufferCapacity` is configured.
+Buffer guarantees differ drastically between replay cache and extraBufferCapacity when subscribers equal zero. The replay cache exists specifically to hold historical items for future subscribers. If replay = 1, the newest emitted item is guaranteed to be stored and delivered to subsequent subscribers.
 
-If your architecture requires guaranteed delivery of queued events to future subscribers, you must use a buffered **Channel** (`Channel(Channel.BUFFERED)`), not a SharedFlow.
+In production, extraBufferCapacity is designed solely to cushion active, lagging subscribers. If replay = 0 and subscriber count is zero, extraBufferCapacity does not retain items for future observers; any emission without replay vanishes permanently into the void.
+As for non-suspending emission, calling tryEmit on a default MutableSharedFlow with zero subscribers and zero buffer capacity fails immediately, returning false. To guarantee one-off delivery without subscribers, developers must utilize buffered Channels instead of SharedFlow.
 
 
 ## Interview answer — deep senior
 
-Under the hood, in `SharedFlowImpl`, the internal buffer consists of a `head` and `tail` pointer array representing replay slots and extra buffer slots. When `emit()` or `tryEmit()` is called, the implementation checks `if (nSubscribers == 0)`. If true, the code path strictly executes `updateReplayCache(value)` and returns immediately. It completely skips queuing items into the extra buffer indices.
-
-This behavior is by design: `SharedFlow` models broadcast pub-sub, not a persistent task queue. If a SharedFlow preserved unconsumed items without subscribers, a ViewModel that emits analytics or telemetry while unobserved would grow memory without bound until a subscriber attached. For guaranteed queueing semantics across lifecycles, `Channel.send()` is the appropriate concurrency primitive.
-
+Under the hood in SharedFlow.kt, emissions are tracked across an internal circular buffer array whose allocation size equals replay + extraBufferCapacity. Each active subscriber is tracked via a SharedFlowSlot. The runtime property nCollectors tracks active subscribers atomically.
+When emit(value) is called, the implementation checks nCollectors. If nCollectors == 0, the method inspects replay. If replay > 0, the element is placed into the head of the replay buffer, updating the replay index. Any future subscriber that attaches will initialize its slot index to head minus replay, immediately reading the cached items upon subscription.
+However, if replay == 0 and nCollectors == 0, the emitted item has nowhere to go. Because extraBufferCapacity is designed strictly to buffer elements between active subscribers and slow emitters, it is not an offline persistent queue. The emission evaluates as complete and is discarded from memory.
+This creates a lethal production trap with tryEmit(). If a developer instantiates MutableSharedFlow() with default arguments (replay = 0, extraBufferCapacity = 0, SUSPEND), calling tryEmit() with zero active collectors returns false because the buffer cannot accept the item without suspending.
+Staff engineers enforce clear architectural rules: never use SharedFlow with replay = 0 for one-off transactional events that must survive periods of subscriber absence; use buffered Channels for guaranteed single-consumer delivery.
 
 ## How to answer in the interview
 

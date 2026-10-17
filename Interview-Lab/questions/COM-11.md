@@ -22,6 +22,38 @@ Compare LaunchedEffect(Unit) and LaunchedEffect(key).
 - Identify stale capture and unnecessary restarts.
 - Choose ViewModel ownership when work should outlive composition.
 
+## Concept and technical explanation
+
+LaunchedEffect is a composable effect handler that launches a coroutine scoped to the composition lifecycle. The crucial distinction lies in the key argument passed to it: LaunchedEffect(Unit) or LaunchedEffect(true) uses a constant key, guaranteeing that the coroutine runs exactly once when entering the composition and remains active until the composable leaves the composition tree. In contrast, LaunchedEffect(key) binds the coroutine lifecycle to a dynamic state variable. Whenever key evaluates to a new value via structural equality, Compose immediately cancels the currently executing coroutine job and launches a fresh coroutine with the updated key, ensuring the asynchronous operation stays synchronized with changing parameters.
+
+## Practical walkthrough (English)
+
+Contrasting static LaunchedEffect(Unit) with dynamic LaunchedEffect(key) in a search screen:
+```kotlin
+// ❌ ANTI-PATTERN: LaunchedEffect(Unit) misses dynamic query updates!
+@Composable
+fun StaleSearchScreen(query: String, viewModel: SearchViewModel) {
+    // Runs ONLY ONCE when first entering composition!
+    // When the user types a new query, this coroutine DOES NOT RESTART!
+    LaunchedEffect(Unit) {
+        viewModel.performSearch(query) // Captures stale initial query!
+    }
+}
+
+// ✅ BEST PRACTICE: LaunchedEffect(key) cancels and restarts when parameter changes
+@Composable
+fun ReactiveSearchScreen(query: String, viewModel: SearchViewModel) {
+    // Whenever 'query' changes, Compose cancels the previous search coroutine
+    // and launches a new one with the updated query!
+    LaunchedEffect(query) {
+        if (query.isNotBlank()) {
+            delay(300) // Built-in debounce mechanism!
+            viewModel.performSearch(query)
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 المقارنة بين `LaunchedEffect(Unit)` و `LaunchedEffect(key)` وكيف يؤثر اختيار الـ Key على الأداء والصحة:
@@ -107,23 +139,28 @@ Document each effect's identity and cancellation semantics. Test navigation betw
 
 ## Interview answer — short
 
-`LaunchedEffect(Unit)` executes its coroutine once upon entering composition and cancels it only when leaving composition. `LaunchedEffect(key)` executes on entry and automatically cancels and restarts its coroutine whenever `key` changes (via `equals()`). Choosing the wrong key leads to either stale data or thrashing restarts.
+LaunchedEffect(Unit) executes its suspending block once when entering composition and only cancels when the composable leaves the composition entirely. In contrast, LaunchedEffect(key) binds coroutine execution to dynamic state. Whenever the key changes, Compose cancels the existing coroutine and restarts a new one with the latest value. Using Unit for dynamic parameters produces stale state bugs, while using a rapidly changing key causes continuous cancellation thrashing.
 
 ## Interview answer — structured
 
-The difference between `LaunchedEffect(Unit)` and `LaunchedEffect(key)` lies in restart semantics based on key equality.
-
-First, with LaunchedEffect(Unit), because `Unit` is a constant singleton, its key never changes. The coroutine launches when the composable initially enters the composition and remains running until the composable leaves the composition tree. It is ideal for fire-and-forget one-off operations that are independent of changing inputs, such as playing a screen-entry sound or showing an introductory prompt. Finally, with LaunchedEffect(key), takes one or more dynamic keys (e.g. `query`, `filterId`). On every recomposition pass, Compose compares current keys against their previous instances using `equals()`. If any key has changed, Compose automatically cancels the running coroutine job cooperatively and launches a new one with the updated values. This is essential for operations like dynamic querying, pagination, or debouncing input.
-
+Mastering the key semantics of LaunchedEffect is essential for preventing coroutine lifecycle leaks and stale asynchronous operations in Jetpack Compose.
+When you pass a constant like Unit or true to LaunchedEffect, you instruct the Compose runtime that the side-effect has no external dynamic dependencies. The runtime allocates the coroutine scope when the composable enters the composition tree and maintains that scope untouched across subsequent recompositions. It only cancels the job when the composable unmounts. This makes LaunchedEffect(Unit) ideal for one-time initialization tasks, such as triggering an initial analytics screen-view beacon or requesting runtime Bluetooth permissions upon screen opening.
+However, passing Unit when the coroutine reads a changing parameter is a hazardous anti-pattern that creates stale closures.
+If a screen accepts an itemId and you launch your network fetch inside LaunchedEffect(Unit), changing the itemId will never trigger a reload because the key never changes.
+Passing LaunchedEffect(itemId) solves this cleanly.
+Whenever itemId updates, Compose cancels the running coroutine and starts a new one with the fresh identifier.
+If a network call was in flight, its cancellation signal cascades upstream, terminating the active HTTP connection and conserving mobile data.
 
 ## Interview answer — deep senior
 
-A dangerous production bug occurs when developers use `LaunchedEffect(Unit)` while capturing changing parameters inside its lambda closure. Because the coroutine never restarts, the captured closure holds **stale references** to variables from the initial composition pass. If those variables must not restart the effect, developers should use `rememberUpdatedState` to read the freshest value without restarting the coroutine.
-
-Conversely, passing unstable or constantly changing keys (like `currentTimeMillis()` or non-memoized objects) triggers **restart thrashing**: canceling and spawning hundreds of coroutines per second, pegging the CPU and dropping frames.
-
-If an effect depends on multiple inputs, Compose supports vararg keys: `LaunchedEffect(key1, key2)`. The effect restarts if either key changes.
-
+Under the hood, LaunchedEffect delegates to the Composer's internal effect management APIs and integrates directly with Kotlin Coroutines cancellation machinery.
+When the Compose compiler processes LaunchedEffect, it stores a LaunchedEffectImpl object inside the SlotTable. This object retains the previous key argument and the running Job reference.
+During each recomposition pass, the Composer executes an equality comparison between the current key argument and the key stored in the slot using standard structural equality (equals).
+If the keys are equal, the Composer skips the effect entirely, allowing the running coroutine job to proceed undisturbed.
+If the key has changed, the Composer executes Job.cancel() on the existing coroutine job. This throws a CancellationException inside the coroutine, cleanly canceling any suspending network calls, delay timers, or database transactions.
+Once cancellation completes, the Composer launches a brand-new coroutine on the composition's Apply-dispatcher, passing the latest lambda block.
+Senior engineers must be cautious with key selection. Passing an unstable object or an object that generates new instances on every recomposition triggers cancellation thrashing, where the coroutine is cancelled and relaunched on every single frame before finishing its work.
+Conversely, if an effect reads multiple changing state values, developers should pass multiple keys or a consolidated data holder to ensure complete synchronization.
 
 ## How to answer in the interview
 

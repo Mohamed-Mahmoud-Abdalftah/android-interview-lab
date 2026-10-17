@@ -20,6 +20,47 @@ How does Hilt support dependency wiring without automatically guaranteeing DIP?
 
 Separate Hilt construction from dependency inversion and inspect actual injected types.
 
+## Concept and technical explanation
+
+Hilt acts as a dependency injection framework that automates object graph creation and lifecycle scoping, but using Hilt does not inherently guarantee compliance with the Dependency Inversion Principle (DIP). DIP is an architectural principle mandating that high-level modules must depend on abstract contracts rather than concrete details. If an engineer uses Hilt's @Inject constructor to inject a concrete Room database entity or Retrofit API class directly into a ViewModel, Dependency Injection is operational, but Dependency Inversion is completely broken because the high-level presentation layer remains tightly coupled to infrastructure details.
+
+## Practical walkthrough (English)
+
+Contrasting Hilt wiring that violates DIP against Hilt wiring that fulfills DIP:
+```kotlin
+// SCENARIO 1: Hilt used, but Dependency Inversion Principle VIOLATED!
+// ViewModel depends directly on concrete Room implementation detail
+class BadUserViewModel @Inject constructor(
+    private val localRoomDao: UserDaoImpl // Direct concrete class coupling! Violates DIP!
+) : ViewModel()
+
+// SCENARIO 2: Hilt used, and Dependency Inversion Principle FULFILLED!
+// 1. High-level Domain module defines pure Kotlin contract
+interface UserRepository {
+    suspend fun fetchUserProfile(): Result<UserProfile>
+}
+
+// 2. Low-level Data module implements the contract
+class UserRepositoryImpl @Inject constructor(
+    private val localRoomDao: UserDaoImpl
+) : UserRepository {
+    override suspend fun fetchUserProfile() = runCatching { localRoomDao.getUser().toDomain() }
+}
+
+// 3. Hilt module binds the abstraction to implementation using @Binds
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class UserDomainModule {
+    @Binds
+    abstract fun bindUserRepository(impl: UserRepositoryImpl): UserRepository
+}
+
+// 4. ViewModel depends strictly on the Domain abstraction! Fulfills DIP!
+class CleanUserViewModel @Inject constructor(
+    private val repository: UserRepository // Abstract interface dependency
+) : ViewModel()
+```
+
 ## Explanation in Arabic
 
 كيف يدعم Hilt ربط التبعيات (Dependency Wiring) دون أن يضمن تلقائياً تطبيق مبدأ عكس التبعية (DIP)؟
@@ -88,35 +129,27 @@ A lending app uses Hilt to wire an eligibility rule to a repository abstraction.
 
 ## Interview answer — short
 
-Hilt is a Dependency Injection tool that automates object creation and graph wiring, but it does not enforce architectural direction. If a developer injects concrete classes like `RetrofitApi` or `RoomDao` directly into a ViewModel, Hilt successfully wires dependencies while completely violating the Dependency Inversion Principle (DIP).
+Hilt provides the plumbing for dependency injection by instantiating and passing dependencies via constructors, but it does not dictate architectural rules. If you use Hilt to inject concrete classes like RoomUserDao or OkHttpClient directly into a ViewModel, you are practicing dependency injection while completely violating the Dependency Inversion Principle. Fulfilling DIP requires defining abstract domain interfaces and using Hilt's @Binds or @Provides to deliver concrete implementations behind those abstractions.
 
 ## Interview answer — structured
 
-Hilt is a creational wiring mechanism, not an architectural governor. It automates Dependency Injection (DI), but **DI is agnostic to the Dependency Inversion Principle (DIP)**.
-
-A developer can build a 100% functional Hilt dependency graph that aggressively violates DIP:
-```kotlin
-@HiltViewModel
-class CheckoutViewModel @Inject constructor(
- val retrofit: RetrofitOrderService, // Concrete detail
- val roomDao: OrderDao // Concrete detail
-) : ViewModel()
-```
-Hilt compiles cleanly, injects instances, and resolves scopes. Yet, the high-level presentation layer is directly coupled to low-level network and database infrastructure details, destroying JVM unit testability and violating DIP.
-
-To guarantee DIP within Hilt.
-
-First, high-level consumers must declare dependencies as **abstract interfaces** (`OrderRepository`). Finally, Hilt Modules must use **`@Binds`** to map the abstract interface to its concrete data layer implementation (`OrderRepositoryImpl`).
-
+Distinguishing Hilt's operational mechanics from the architectural goals of Dependency Inversion is a fundamental senior engineering skill.
+Hilt is an automated tool implementing Inversion of Control. It eliminates manual object instantiation by generating factory boilerplate, managing component lifecycles, and injecting dependencies via @Inject constructors. However, Hilt is completely agnostic about whether the injected dependency is an interface or a concrete class.
+When an engineer uses Hilt to inject a concrete Room database or Retrofit service directly into a ViewModel or UseCase, the system practices Dependency Injection, but it flatly violates the Dependency Inversion Principle.
+In this flawed setup, high-level business logic is directly coupled to low-level SQLite annotations and HTTP networking drivers. Upgrading or swapping the database forces rewrites across the UI and presentation layer.
+To achieve true DIP with Hilt, the dependency direction must be inverted.
+The high-level Domain layer declares pure Kotlin repository interfaces.
+The low-level Data layer implements those interfaces.
+Finally, a Hilt @Module uses @Binds to map the interface to the concrete implementation. Hilt delivers the object, but the architecture satisfies DIP.
 
 ## Interview answer — deep senior
 
-Under the hood, Hilt generates factory classes (`CheckoutViewModel_Factory.java`) based strictly on what is declared in constructor signatures. Hilt has no built-in lint rules preventing ViewModels from injecting Retrofit services or SQLite databases.
-
-To prevent Hilt from facilitating DIP violations in large enterprise teams, we enforce architectural constraints using **Gradle Module boundaries** and **Konsist tests**.
-
-First, feature modules (`:feature:checkout`) do not have a Gradle dependency on network or database modules, making it impossible for Hilt constructors to reference `RetrofitOrderService`. Finally, konsist tests assert that all constructor parameters in `@HiltViewModel` classes are either interfaces or Use Cases residing in domain modules.
-
+Under the hood, failing to enforce DIP while using Hilt dismantles the compilation firewalls of multi-module Android architectures.
+In a multi-module enterprise project, Gradle modules should enforce architectural layers: :feature depends on :domain, and :data depends on :domain. The :domain module remains pure Kotlin with zero Android framework or database dependencies.
+When engineers bypass DIP and inject concrete classes via Hilt, the :feature module must declare a direct Gradle dependency on the :data module (implementation(project(":data"))). This exposes Room database DAOs, SQLite drivers, and Retrofit network response DTOs directly to the UI presentation layer.
+Any internal change to a database column or an OkHttp interceptor invalidates Gradle's build cache for the :data module, triggering an unnecessary recompilation cascade across all dependent :feature modules and inflating build times.
+When DIP is enforced, Hilt bindings are declared in the root :app assembly module or dedicated binding submodules. The :feature module compiles solely against the abstract interfaces in :domain, allowing Gradle's Compilation Avoidance to completely skip feature recompilation during data layer changes.
+Furthermore, testing harnesses benefit enormously. Testing a ViewModel that injects a DIP-compliant interface requires zero reflection, zero Hilt test runners, and zero Mockk agents; a 5-line pure Kotlin fake repository provides deterministic, millisecond-fast JVM test execution.
 
 ## How to answer in the interview
 

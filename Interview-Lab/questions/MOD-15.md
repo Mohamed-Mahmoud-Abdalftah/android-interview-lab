@@ -22,6 +22,37 @@ How do api/implementation influence compilation boundaries and rebuilds?
 - Explain incremental rebuild effects without absolute guarantees.
 - Diagnose a concrete high-fan-out dependency change.
 
+## Concept and technical explanation
+
+The distinction between Gradle api and implementation configurations governs compilation avoidance and task up-to-date checking at the bytecode level:
+- implementation: Hides transitive dependency types from the downstream consumer's compile classpath, placing them exclusively on the runtime classpath. When internal code within an implementation dependency changes without modifying public method signatures, interfaces, or visible fields, Gradle detects that the declaring module's Application Binary Interface (ABI) remains identical. Downstream consumers are marked UP-TO-DATE, completely bypassing recompilation and preserving build cache performance.
+- api: Exposes transitive dependency types onto the compile classpath of every downstream consumer. Any modification to an api dependency—even a minor private method change—forces Gradle to invalidate the compile classpath of all dependent modules, triggering cascading recompilation across the entire build graph. Senior architects enforce implementation by default to maintain resilient compilation firewalls.
+
+## Practical walkthrough (English)
+
+Comparing ABI compilation boundaries between implementation and api:
+```kotlin
+// In :core:network/build.gradle.kts
+dependencies {
+    // 1. Implementation keeps OkHttp private to :core:network
+    implementation(libs.okhttp)
+    // 2. Api exposes Retrofit to all consumers of :core:network
+    api(libs.retrofit)
+}
+
+// In :feature:checkout/build.gradle.kts
+dependencies {
+    implementation(project(":core:network"))
+}
+
+// Compilation result:
+// If OkHttp upgrades from 4.11 to 4.12:
+// - :core:network recompiles.
+// - :feature:checkout ABI is UNCHANGED; its compileKotlin task is UP-TO-DATE!
+// If Retrofit interfaces change:
+// - :feature:checkout compile classpath is dirty, forcing full recompilation.
+```
+
 ## Explanation in Arabic
 
 كيف يؤثر اختيار `api` مقابل `implementation` في Gradle على حدود التجميع (Compilation Boundaries) وإعادة البناء التزايدي (Incremental Rebuilds)؟
@@ -88,27 +119,32 @@ Track ABI changes and affected compile tasks for high-fan-out modules, inspect d
 
 ## Interview answer — short
 
-implementation hides dependencies from the consumer's compile classpath, allowing Gradle to skip downstream recompilations if the dependency's public ABI hasn't changed. api leaks dependencies into downstream classpaths, invalidating ABI caches and triggering expensive rebuild cascades across all transitive consumers whenever any upstream change occurs.
+The implementation configuration creates a strict ABI compilation firewall, keeping dependencies off downstream compile classpaths and shielding consumers from recompilation when internal implementations change. The api configuration transitively exposes dependencies to consumers, causing cascading recompilations across the entire build graph whenever the dependency is modified.
 
 ## Interview answer — structured
 
-The difference between `api` and `implementation` directly dictates how Gradle performs incremental compilation and task avoidance.
-
-First, compilation Boundaries (`implementation`) is a dependency declared with `implementation` is available to the declaring module's compiler, but is strictly stripped from the compile classpath of downstream consumers. If module `A` changes an internal implementation detail, Gradle recompiles `A`, verifies its public ABI hash is intact, and skips compiling downstream modules (`UP-TO-DATE`). Finally, with ABI Leakage (`api`), declaring a dependency with `api` publishes it onto the compile classpath of every transitive consumer. Any change to the upstream dependency invalidates the ABI hash of intermediate modules, causing a massive rebuild cascade that recompiles the entire downstream subtree.
-
-To maximize build speeds in large modularized codebases, enforce `implementation` universally. Reserve `api` exclusively for types that are formally part of the module's public function signatures or return types.
-
+Understanding how api and implementation influence compilation boundaries is the key to mastering Gradle build performance.
+When a module declares a dependency using implementation, Gradle places that library on the module's compile classpath, but hides it from downstream consumers.
+This establishes an Application Binary Interface firewall.
+When an engineer refactors internal code or upgrades an internal library, Gradle analyzes the generated class signatures.
+Because the module's public ABI has not changed, Gradle marks downstream compilation tasks as UP-TO-DATE, skipping compilation entirely.
+Conversely, declaring a dependency with api forces Gradle to place that library on the compile classpath of all downstream modules.
+Any change to that library marks the compile classpath dirty for every consumer, triggering cascading rebuilds across dozens of modules.
+Defaulting to implementation preserves the remote build cache and keeps incremental compilation fast.
 
 ## Interview answer — deep senior
 
-Under the hood, Gradle's Kotlin compile task (`compileKotlin`) computes an **ABI (Application Binary Interface) digest** based on public classes, method signatures, return types, and annotations.
-
-When module `A` compiles, Gradle compares its new ABI digest against the cached digest from the previous run.
-
-First, if the digest matches (meaning only private method bodies, local variables, or comments changed), Gradle halts recompilation for all modules connected via `implementation`. Finally, however, if `B` exposes `A` via `api`, Gradle cannot guarantee that `C` didn't transitively rely on inline functions, constants, or bytecode metadata from `A`. It is forced to re-evaluate and recompile `C`.
-
-In modern Android architectures, using `implementation` alongside the **Gradle Build Cache** and **Configuration Avoidance APIs** transforms what would be a 40-second build into a sub-second cached fetch.
-
+At the compiler level, Gradle's compilation avoidance mechanism relies on ABI hashing to determine whether downstream tasks can be safely bypassed.
+When a module compiles, Gradle computes a cryptographic hash of its public ABI, which includes public and protected method signatures, parameter types, return types, and class hierarchies, while ignoring private methods and method body bytecode.
+When we use implementation, the dependency is excluded from our consumers' compile classpath.
+If we refactor internal algorithms or modify private helper functions inside our module, our public ABI hash remains identical.
+When Gradle evaluates downstream modules, it compares their compile classpath hashes against previous build snapshots.
+Finding no change, Gradle skips compileKotlin and marks the task UP-TO-DATE.
+If we had used api, the dependency would form part of the consumer's compile classpath.
+Any change to that dependency, including updating internal transitive dependencies, invalidates the consumer's compile classpath hash, triggering a cascading rebuild that sweeps across the dependency graph.
+In enterprise architectures, we treat api declarations as structural debt.
+We enforce implementation across all build scripts, promoting to api only when an external type is an unavoidable component of our module's public contract.
+We also configure automated linter rules to flag any PR that introduces domain-specific entity names or endpoint paths inside infrastructure modules, preserving platform purity.
 
 ## How to answer in the interview
 

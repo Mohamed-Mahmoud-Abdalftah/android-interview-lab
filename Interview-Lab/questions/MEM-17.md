@@ -22,6 +22,35 @@ What is UI jank? Explain frame timing, recompositions, and excessive work on Mai
 - Distinguish recomposition count from actual costly composition, layout, draw, and main-thread blocking.
 - Use traces and frame metrics to find a specific bottleneck before optimizing.
 
+## Concept and technical explanation
+
+UI jank is the perceived visual stutter, frame drop, or irregularity that occurs when an application fails to deliver a rendered frame within the refresh interval dictated by the display hardware. On standard 60Hz displays, the rendering pipeline must complete within 16.6 milliseconds; on high-refresh-rate 90Hz or 120Hz displays, this window tightens to 11.1ms and 8.33ms respectively. The Android rendering pipeline operates in synchronized phases driven by hardware VSYNC pulses dispatched through the Choreographer. During a frame interval, the Main Thread processes input events, evaluates animations, executes view tree traversals (measure, layout, draw), or executes Jetpack Compose recomposition and layout passes. Once the display list or drawing commands are compiled, they are synchronized to the RenderThread, which submits draw commands to the GPU command buffer. Jank occurs when either the Main Thread or RenderThread overruns the VSYNC deadline. In classic View hierarchies, excessive view depth, nested layouts, and expensive background draws cause jank. In Jetpack Compose, jank is frequently provoked by recomposition storms: when composable functions repeatedly recompose due to unstable parameters, reading rapidly changing observable state during the composition phase rather than deferring it to the layout or draw phases, or allocating heavy objects inside composable bodies.
+
+## Practical walkthrough (English)
+
+Contrasting state reading in Composition vs deferred reading in Layout/Draw:
+```kotlin
+// ❌ Anti-pattern: Reading scrollState directly in composition causes recomposition on every pixel scroll:
+@Composable
+fun BadScrollHeader(scrollState: ScrollState) {
+    // Recomposition runs on every scroll update, creating massive CPU churn and UI jank:
+    val offset = scrollState.value * 0.5f
+    Box(modifier = Modifier.offset(y = offset.dp)) {
+        HeaderContent()
+    }
+}
+
+// ✅ Optimal pattern: Deferring state reading to the layout phase via a lambda modifier:
+@Composable
+fun GoodScrollHeader(scrollState: ScrollState) {
+    // Modifier.offset(lambda) skips composition entirely and reads state during the layout/measurement phase:
+    Box(modifier = Modifier.offset { IntOffset(x = 0, y = (scrollState.value * 0.5f).roundToInt()) }) {
+        HeaderContent()
+    }
+}
+```
+In this scenario, `BadScrollHeader` reads `scrollState.value` during the composition phase. Because `scrollState.value` changes with every single touch pixel during scrolling, the entire composable function and its sub-tree are repeatedly recomposed, allocating new modifiers and flooding the Main Looper with frame work that exceeds 16.6ms. By contrast, `GoodScrollHeader` uses `Modifier.offset { ... }`. The lambda delays reading the state until the Layout phase, entirely skipping the Composition phase. The UI tree remains unchanged, recomposition count drops to zero, and the frame renders comfortably under 8ms.
+
 ## Explanation in Arabic
 
 ما هو الـ UI Jank؟ وشرح توقيت الفريمات (Frame Timing)، وإعادة التركيب المفرطة في Compose (Excessive Recompositions)، وثقل العمل على الـ Main Thread:
@@ -87,27 +116,25 @@ Define scroll and interaction journeys, measure slow/frozen frame metrics by dev
 
 ## Interview answer — short
 
-UI jank occurs when a frame fails to render within the hardware VSYNC window (16.6ms for 60Hz, 8.3ms for 120Hz), causing dropped frames. Causes include heavy work on the main thread, layout thrashing, frequent GC pauses, and excessive recompositions in Compose caused by unstable types or reading states during the composition phase instead of layout/draw phases.
+UI jank occurs when a frame fails to render within the hardware display deadline (16.6ms at 60Hz or 8.33ms at 120Hz). It is caused by excessive execution on the Main Thread, GC allocation churn, or inefficient UI rendering. In Jetpack Compose, reading observable state during composition instead of deferring to layout or draw causes continuous recomposition storms and severe frame drops.
 
 ## Interview answer — structured
 
-UI jank is the visual stutter experienced by users when the application fails to produce a frame in time for the display's VSYNC signal.
+UI jank represents dropped or delayed visual frames caused by an application missing the display hardware VSYNC refresh deadline.
 
-Displays refresh at fixed intervals: 60Hz displays require rendering within **16.6ms**, while modern 120Hz panels allow just **8.3ms**. A frame pipeline consists of three sequential phases: Application Main Thread (handling input, animating, measuring, and recording draw commands), RenderThread (uploading GPU commands), and SurfaceFlinger (compositing onto the hardware frame buffer).
+The frame rendering pipeline requires strict coordination between the Main Thread, the RenderThread, and the GPU. On a 60Hz display, the system has a budget of 16.6 milliseconds per frame, while a 120Hz display reduces this budget to roughly 8.3 milliseconds. When the Main Thread is encumbered by synchronous computation, large database queries, or excessive view measurement passes, it fails to submit drawing commands to the RenderThread in time.
 
-If any phase exceeds its budget, the system misses the VSYNC deadline and repeats the previous frame. In legacy Views, jank stems from nested layout passes, costly `onDraw()` operations, and GC pauses from allocation churn.
+In production, involving Jetpack Compose, the predominant root cause of jank is uncontrolled recomposition. When unstable parameters or observable state changes force extensive sub-trees to re-execute, the Main Thread spends its entire frame budget executing Kotlin code instead of rendering. A classic failure mode is reading animated scroll state directly during the composition phase rather than deferring the read to the layout or draw phase using lambda modifiers.
 
-In Jetpack Compose, the most common jank source is **excessive recompositions** during scrolling. Passing unstable parameters triggers unnecessary recompositions of large composable subtrees. Furthermore, reading rapidly changing state (like scroll position) during the *Composition* phase rather than deferring it to the *Layout* or *Draw* phase via lambda modifiers forces full tree recomposition on every pixel movement.
+Resolving jank requires isolating heavy computation off the Main Thread, marking data classes as Immutable or Stable, utilizing derivedStateOf to throttle emissions, and verifying frame delivery with Macrobenchmark frame timing metrics.
 
 
 ## Interview answer — deep senior
 
-To deeply diagnose jank, we examine the Choreographer logs and Perfetto traces. The `Choreographer` class coordinates timing, scheduling callbacks for Input, Animation, Traversal, and Commit. When logs report `Skipped 30 frames! The application may be doing too much work on its main thread`, Choreographer detected that multiple VSYNC ticks elapsed before the message queue returned to idle.
-
-In Compose, we profile recomposition counts using the **Layout Inspector** and Compose Compiler Metrics (`reportsDestination`). Marking data classes with `@Immutable` or wrapping unstable collections with Kotlinx Immutable Collections (`ImmutableList`) enables the compiler to mark composables as `skippable`.
-
-Another critical lever is using `derivedStateOf { ... }`. When a state changes continuously (e.g. `scrollState.firstVisibleItemIndex`), using `derivedStateOf` ensures observers only recompose when a calculated boolean or threshold actually changes.
-
+At the low-level rendering architecture, frame production is governed by the Android Choreographer and SurfaceFlinger. The Choreographer coordinates frame dispatching via VSYNC signals received from the hardware composer. When a VSYNC-app pulse arrives, the Choreographer executes callbacks in strict sequence: input handling, animations, traversals (Measure, Layout, Draw), and commit. Once complete, syncFrameState transfers the display list to the RenderThread, which converts primitives into OpenGL ES or Vulkan commands and queues them into the SurfaceFlinger BufferQueue.
+When the Main Thread takes 20ms to process a frame, it skips the next VSYNC-sf presentation pulse, causing SurfaceFlinger to re-display the previous buffer. This is classified as a dropped frame. If a frame takes longer than 700ms, Android Vitals registers a frozen frame, severely penalizing the application in Google Play store metrics.
+In modern Jetpack Compose architectures, the Compose runtime relies on a Gap Buffer data structure called the Slot Table. During composition, changes in observable state invalidate snapshot scopes, prompting the composer to traverse the slot table and emit UI tree mutations. If an engineer reads a rapidly changing State object (such as scroll offset or touch gestures) in the composition phase, the runtime is forced to execute recomposition on every pixel. By leveraging lambda-based modifiers such as Modifier.offset { ... } or Modifier.drawWithContent { ... }, state reading is postponed to the layout or draw phases, entirely bypassing slot table diffing and composition overhead.
+To profile and eliminate jank systematically, senior engineers use Android Studio System Trace and the Compose Compiler metrics report (compilerMetrics and reportsDestination) to audit composable functions for skippability and stability. In CI, we assert on Macrobenchmark FrameTimingMetric across 90th and 99th percentiles, ensuring that scrolling journeys maintain steady 120 FPS rendering across device tiers.
 
 ## How to answer in the interview
 

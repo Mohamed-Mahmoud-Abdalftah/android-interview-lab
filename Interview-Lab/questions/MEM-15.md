@@ -22,6 +22,30 @@ How do you use Android Studio Memory/CPU Profilers?
 - Reproduce a representative workload and compare before/after, including overhead caveats.
 - Correlate allocations, heap paths, CPU samples, main-thread work, and device context.
 
+## Concept and technical explanation
+
+Android Studio Profilers provide low-overhead instrumentation and sampling capabilities to diagnose runtime performance bottlenecks. The CPU Profiler captures thread activity, function invocation stacks, and CPU core utilization across three primary capture configurations: System Trace (Perfetto/systrace recording kernel scheduling, VSYNC pulses, and framework Choreographer events), Callstack Sample (frequent sampling of the Java/Kotlin thread stack to identify CPU-intensive loops with minimal runtime intrusion), and Java/Kotlin Method Trace (bytecode instrumentation that measures exact execution counts and duration at the cost of execution overhead). The Memory Profiler tracks managed Java/Kotlin heap allocations, native memory allocations, graphics buffer consumption, and thread stack overhead. It supports recording live allocations, capturing instant HPROF heap snapshots, and inspecting object hierarchies in real time. Profiling should ideally be performed on release-like builds configured with `<profileable android:shell="true"/>` on devices running Android 10 (API level 29) or higher. This guarantees that compiler optimizations (R8 shrinking, inlining, Baseline Profile AOT compilation) remain active while enabling ADB shell and Android Studio to attach profiler daemons without the skewed timing and unoptimized JIT behavior inherent in `debuggable=true` builds.
+
+## Practical walkthrough (English)
+
+Profiling CPU execution with custom tracing and inspecting flame charts:
+```kotlin
+// Use custom trace markers to isolate critical code in System Trace / Perfetto:
+import androidx.tracing.trace
+
+fun processFeedData(rawItems: List<RawFeedItem>) {
+    // Creates an explicit "FeedProcessing" trace slice visible in CPU Profiler:
+    trace("FeedProcessing") {
+        val processed = rawItems.map { item ->
+            // If this method appears wide in the Flame Chart, optimize or offload to Dispatchers.Default:
+            formatItemDetails(item)
+        }
+        updateUi(processed)
+    }
+}
+```
+When profiling a frame rate drop during list scrolling, attach the Android Studio CPU Profiler to a profileable build, select System Trace, and scroll through the feed. Inspect the Main Thread row to identify elongated frame timelines that exceed 16.6 milliseconds. Zoom into the "FeedProcessing" slice to observe whether the delay stems from synchronous JSON parsing, database lock contention, or repetitive string formatting. In the Memory Profiler, record allocations during the scroll to identify GC churn caused by allocating temporary objects inside `onBindViewHolder` or Composable item bodies.
+
 ## Explanation in Arabic
 
 كيفية استخدام أدوات مراقبة الذاكرة والمعالج (Android Studio Memory and CPU Profilers) لحل مشكلات الأداء:
@@ -83,31 +107,25 @@ Define a repeatable scenario, app build, device/API, dataset, and success metric
 
 ## Interview answer — short
 
-Android Studio Profiler provides real-time diagnostics: the Memory Profiler visualizes Java/Native/Graphics heap usage and captures heap dumps to identify retained sizes and leaks. The CPU Profiler records Method and System Traces to inspect thread activity via Flame Charts, pinpointing CPU bottlenecks, lock contention, and main-thread blocking operations.
+Android Studio CPU and Memory Profilers isolate frame drops and memory leaks by capturing runtime telemetry. The CPU Profiler uses System Trace to align thread slices with Choreographer VSYNC pulses and Callstack Sampling to reveal CPU hotspots. The Memory Profiler tracks managed and native allocations, identifying heap spikes and GC churn without modifying production logic.
 
 ## Interview answer — structured
 
-The Android Studio Profiler is our primary first-party suite for diagnosing runtime regressions.
+Effective performance analysis requires profiling user journeys on non-debuggable builds configured with profileable flags to capture true production execution characteristics.
 
-In the **Memory Profiler**.
+The Android Studio CPU Profiler offers distinct capture modes tailored to specific diagnostic goals. System Trace is the primary mechanism for diagnosing frame drops because it visualizes kernel scheduling, Choreographer render passes, and Main Thread message queues alongside custom trace markers. When investigating sustained computation hotspots, Callstack Sampling provides call tree and flame chart breakdowns without the intrusive instrumentation overhead that distorts real-world timings.
 
-First, we observe real-time allocation timelines. A saw-tooth pattern indicates heavy allocation churn and frequent GC sweeps. Next, we capture Heap Dumps to inspect object instances, filtering by package name. We sort by **Retained Size** to locate heavyweight objects and inspect the **Reference Tree** to see which field holds the strong reference preventing collection.
-Finally, we use Live Allocation Tracking during scrolling to identify unexpected temporary allocations inside adapters or rendering passes.
+In production, the Memory Profiler complements CPU diagnostics by visualizing memory composition across Java, native, graphics, and stack categories. By recording live allocations during user interactions, we identify rapid short-lived allocations that provoke frequent garbage collection cycles and frame stutter. Capturing a heap dump allows us to inspect retained instance graphs and locate leaking view hierarchies.
 
-In the **CPU Profiler**.
-
-First, we run **System Trace** to observe thread scheduling against 16.6ms frame boundaries (`Choreographer.doFrame`). Next, we inspect the **Flame Chart** to identify wide blocks, representing long-running functions stalling the UI thread.
-Finally, we switch to **Bottom-Up View** to find methods with the highest self-time, isolating CPU-bound bottlenecks for asynchronous dispatching.
+Once profiling pinpointed a blocking operation or memory surge, we offload heavy computation to background worker dispatchers and verify the resolution by comparing baseline trace timelines.
 
 
 ## Interview answer — deep senior
 
-When profiling memory for low-end devices, analyzing the **Native** heap segment is vital. Since Android 8.0, Bitmaps, WebViews, and audio decoders allocate on the native heap. Standard Java heap dumps do not inspect C++ allocations, so we run the **Native Memory Profiler** (using `heapprofd`) to capture allocation call stacks inside `libhwui.so` and `libskia.so`.
-
-For CPU analysis, **Flame Charts** invert traditional call stacks: the X-axis represents execution time while the Y-axis shows call depth. A wide flame chart bar that remains unchanged across multiple frame intervals immediately pinpoints code blocking the Choreographer.
-
-In CI/CD automation, we run headless Android Studio profiling via Macrobenchmark, capturing trace files programmatically to ensure pull requests don't exceed frame timing or memory allocation thresholds.
-
+At the platform runtime layer, profiling accuracy hinges on the execution mode of the Android Runtime. Profiling a debuggable build yields misleading conclusions because the runtime disables method inlining, suppresses loop unrolling, and limits Ahead-of-Time compilation, causing code to run significantly slower under the JIT interpreter. Since Android 10, setting profileable in the AndroidManifest allows the runtime to maintain full R8 optimizations and AOT compiled machine code while permitting the simpleperf and perfetto daemons to collect sampling data.
+When diagnosing UI jank using the CPU Profiler, staff engineers correlate the Choreographer frame pulses with the Main Looper message processing. In a healthy 60 frames per second pipeline, each frame must complete within 16.6 milliseconds, or 8.3 milliseconds for 120Hz panels. When inspecting a System Trace, we monitor the Choreographer.doFrame slice, which orchestrates input handling, animation evaluation, view traversal (measure, layout, draw), and RenderThread handoff. If the Main Thread slice extends beyond the VSYNC deadline, the RenderThread misses its buffer presentation window, resulting in a dropped frame and SurfaceFlinger backpressure.
+In the Memory Profiler, we examine the Native and Graphics allocation categories alongside the Java heap. Since Android 8.0, decoded bitmap pixel buffers reside in native memory managed via NativeAllocationRegistry. Consequently, an app may display a modest Java heap while consuming hundreds of megabytes of native memory, steering the process toward Low Memory Killer termination. By recording native allocations, we track heap allocations originating from native shared libraries and image decoding pipelines.
+For automated regressions, we replicate profiler observations using Macrobenchmark runs integrated into continuous delivery pipelines. By asserting on FrameTimingMetric and StartupTimingMetric, we catch CPU and memory regressions before release candidates reach the Play Store.
 
 ## How to answer in the interview
 

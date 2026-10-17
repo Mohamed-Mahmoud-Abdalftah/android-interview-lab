@@ -22,6 +22,48 @@ How do you test and publish a reusable Android library/SDK module?
 - Cover unit, instrumented, consumer-app and compatibility tests.
 - Describe reproducible publishing and release artifacts.
 
+## Concept and technical explanation
+
+Testing and publishing an enterprise-grade Android library or SDK module requires balancing API stability, packaging standards, and consumer developer experience:
+- Maven Publishing: Configuring the maven-publish Gradle plugin to export release AAR artifacts, POM dependencies, and sources JARs (via publishing { singleVariant("release") { withSourcesJar() } }).
+- Consumer ProGuard Rules: Declaring consumerProguardFiles("consumer-rules.pro") so consuming applications automatically inherit necessary keep rules for public API symbols and serialization models without manual consumer configuration.
+- Binary Compatibility Validation: Enforcing strict backward compatibility using JetBrains' Binary Compatibility Validator (BCV) plugin, which tracks public API dumps in Git and fails CI if a breaking signature change is introduced.
+- Multi-Tiered Testing: Executing local JVM unit tests, headless Compose screenshot tests (using Paparazzi or Roborazzi), and instrumented integration tests against an isolated :sample application module.
+
+## Practical walkthrough (English)
+
+Configuring Maven publishing, consumer rules, and binary validation for an SDK:
+```kotlin
+// In :library:payment-sdk/build.gradle.kts
+plugins {
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    id("maven-publish")
+    alias(libs.plugins.binary.compatibility.validator)
+}
+
+android {
+    namespace = "com.company.paymentsdk"
+    defaultConfig {
+        consumerProguardFiles("consumer-rules.pro")
+    }
+    publishing {
+        singleVariant("release") { withSourcesJar() }
+    }
+}
+
+publishing {
+    publications {
+        register<MavenPublication>("release") {
+            afterEvaluate { from(components["release"]) }
+            groupId = "com.company.sdk"
+            artifactId = "payment"
+            version = "1.4.0"
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تختبر وتنشر مكتبة أو SDK أندرويد قابلة لإعادة الاستخدام (Reusable Android Library/SDK Module)؟
@@ -101,26 +143,30 @@ Automate API diff checks, dependency metadata inspection, sample-app debug/relea
 
 ## Interview answer — short
 
-To build and publish a reusable Android SDK, enforce strict semantic versioning and binary compatibility via JetBrains Binary Compatibility Validator. Bundle consumer ProGuard rules via consumer-rules.pro, test against a sample consumer app in the repo, and publish release AARs with POM metadata and sources via the maven-publish Gradle plugin.
+Publishing an Android library requires configuring the maven-publish plugin to generate AAR and sources artifacts, embedding consumerProguardFiles to protect public API symbols automatically in consuming apps, and using the Binary Compatibility Validator to prevent breaking changes. Testing combines JVM unit tests, screenshot tests, and sample app integration suites.
 
 ## Interview answer — structured
 
-Building an enterprise-grade reusable Android SDK requires treating the library as a self-contained product with strict stability contracts.
-
-First, with Consumer ProGuard Rules (`consumer-rules.pro`), libraries must ship ProGuard rules that are automatically applied to consuming applications. This ensures that the SDK's public interfaces, JNI native bindings, and serialization models are not stripped or mangled when client apps run R8. Next, with Binary Compatibility Governance, use JetBrains' **Binary Compatibility Validator (BCV)** plugin in CI. It maintains an API dump file (`.api`) in Git. If a pull request modifies a public method signature or removes an overload, BCV fails the build unless the change is explicitly approved and versioned under SemVer rules.
-Additionally, with Testing Pyramid, comprehensive JVM unit tests, instrumented tests on Firebase Test Lab, and an included **Sample App** module that consumes the library exactly like a third-party developer. Finally, with Publishing Pipeline, configure the `maven-publish` plugin to emit release AARs, Javadoc JARs, Sources JARs, and Gradle Module Metadata (`.module`) to a secure Maven repository (Nexus/Artifactory/MavenCentral).
-
+Building and publishing a reusable Android library module requires distinct engineering practices compared to building an application.
+First, we configure the maven-publish Gradle plugin inside the library module, specifying Maven coordinates, POM metadata, and publishing singleVariant release with attached sources JARs.
+Second, we define consumer ProGuard rules using consumerProguardFiles.
+These rules are automatically bundled inside the exported AAR, instructing the consumer's R8 shrinker to preserve our public API signatures without requiring developers to write custom rules.
+Third, we enforce binary compatibility using JetBrains' Binary Compatibility Validator plugin.
+This tool dumps public API signatures into a tracked text file in Git, failing CI builds if an engineer accidentally alters or removes a public method signature without a major version bump.
+Finally, testing combines JVM unit tests, Paparazzi screenshot tests for UI components, and an isolated sample application that validates real-world integration.
 
 ## Interview answer — deep senior
 
-When engineering production SDKs, the greatest technical pitfall is **Transitive Dependency Pollution**.
-
-If your SDK depends on `OkHttp 4.9.0` and a host application depends on `OkHttp 5.0.0-alpha`, Gradle's conflict resolution selects the higher version, which may contain breaking binary changes that crash your SDK. Conversely, if your SDK bundles an internal library via `implementation`, the host app might experience duplicate class conflicts.
-
-To safeguard a commercial SDK.
-
-First, minimize external dependencies; prefer pure Kotlin standard library and platform Android APIs wherever possible. Finally, if heavy third-party libraries (like Protocol Buffers or JSON parsers) are mandatory, use **Bytecode Shading / Relocation (via Shadow plugin or Jarjar)** to rename packages (e.g. `com.google.protobuf` -> `com.company.sdk.internal.protobuf`), insulating your SDK from host app version conflicts.
-
+Engineering an internal or commercial Android SDK demands treating your public API surface as an immutable contract.
+Unlike an application where refactoring is internal, breaking an SDK's Application Binary Interface breaks builds for external partner teams.
+Our publishing architecture centers on three robust pillars: deterministic packaging, automated consumer protection, and strict ABI governance.
+In build configuration, we utilize the modern android.publishing DSL with singleVariant release and withSourcesJar, exporting release components via maven-publish to our internal Nexus or Artifactory repository.
+We embed consumer-rules.pro using consumerProguardFiles.
+This ensures that when consumer apps run R8, our public entry points, reflective serializers, and native JNI bindings are preserved automatically, preventing catastrophic ClassNotFoundException crashes in production client apps.
+To enforce semantic versioning programmatically, we integrate JetBrains' Binary Compatibility Validator plugin into our CI pipeline.
+The tool maintains an api/payment-sdk.api dump in version control.
+If a pull request deletes a public parameter, changes a return type, or alters nullability without an explicit API dump update, the build fails immediately.
+Our verification pipeline runs JVM unit tests for business logic, Roborazzi screenshot verification for custom UI widgets, and automated instrumented tests running inside a companion :sample app module, guaranteeing that every published AAR is production-tested prior to release.
 
 ## How to answer in the interview
 

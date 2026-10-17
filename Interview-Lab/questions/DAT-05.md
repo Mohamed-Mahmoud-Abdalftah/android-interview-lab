@@ -20,6 +20,53 @@ Compare Room, DataStore, and SharedPreferences.
 
 Choose structured relational storage versus small preferences, including migration and atomicity.
 
+## Concept and technical explanation
+
+Android local persistence spans three distinct Jetpack architectural tiers based on data complexity, threading models, and consistency guarantees:
+- SharedPreferences (Legacy Key-Value):
+  * Mechanism: Stores primitive key-value pairs in a single flat XML file.
+  * Flaws: Synchronous disk writes (commit) block the calling thread, risking UI stutters and ANRs. Asynchronous writes (apply) buffer disk I/O on an internal single-threaded queue without failure callbacks. Loading parses the entire XML file synchronously on first access into memory. Lacks type safety, transactional atomicity, and coroutine support.
+- Preferences DataStore & Proto DataStore (Modern Key-Value & Typed Objects):
+  * Mechanism: Modern Jetpack replacement built from the ground up on Kotlin Coroutines and Flow.
+  * Strengths: Executes all disk I/O asynchronously off the main thread on Dispatchers.IO. Crash-safe transactional file updates using AtomicFile (writes to temporary file and atomically renames). Preferences DataStore manages key-value pairs safely, while Proto DataStore uses Protocol Buffers to enforce predefined, strongly-typed schemas with zero reflection.
+- Room (Relational Database Abstraction):
+  * Mechanism: Full Object-Relational Mapping (ORM) abstraction over SQLite.
+  * Strengths: Compile-time SQL query validation via KSP, complex relational modeling with foreign keys and indices, ACID transactions, automatic reactive queries via Flow and Paging 3, and structured migrations.
+
+## Practical walkthrough (English)
+
+Architectural implementation patterns for DataStore vs Room:
+```kotlin
+// 1. Preferences DataStore: Thread-safe, reactive key-value storage
+val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "user_settings")
+
+class SettingsRepository(private val dataStore: DataStore<Preferences>) {
+    private val DARK_MODE_KEY = booleanPreferencesKey("dark_mode")
+
+    val isDarkMode: Flow<Boolean> = dataStore.data
+        .catch { exception -> if (exception is IOException) emit(emptyPreferences()) else throw exception }
+        .map { preferences -> preferences[DARK_MODE_KEY] ?: false }
+
+    suspend fun setDarkMode(enabled: Boolean) {
+        dataStore.edit { preferences -> preferences[DARK_MODE_KEY] = enabled }
+    }
+}
+
+// 2. Room Database: Complex relational entities and ACID transactions
+@Entity(tableName = "orders")
+data class OrderEntity(
+    @PrimaryKey val orderId: String,
+    val totalAmount: Double,
+    val status: String
+)
+
+@Dao
+interface OrderDao {
+    @Query("SELECT * FROM orders WHERE status = :status ORDER BY totalAmount DESC")
+    fun observeOrders(status: String): Flow<List<OrderEntity>>
+}
+```
+
 ## Explanation in Arabic
 
 المقارنة المعمارية الدقيقة بين خيارات تخزين البيانات المحلية في Android:
@@ -112,22 +159,29 @@ An offline news app stores articles and remote keys in Room, theme preference in
 
 ## Interview answer — short
 
-SharedPreferences is legacy synchronous storage prone to UI thread blocking and ANRs. DataStore is modern asynchronous storage built on Coroutines and Flow, ideal for app settings and user preferences. Room is an SQLite abstraction with compile-time query verification, transactions, and relational queries, designed for structured offline-first domain data.
+SharedPreferences is a legacy, synchronous XML storage prone to UI blocking and ANRs. DataStore is its modern, asynchronous, coroutine-based replacement providing transactional safety and reactive Flow streams. Room is a robust relational ORM over SQLite with compile-time query verification, ACID transactions, and reactive relational queries.
 
 ## Interview answer — structured
 
-Modern Android applications eliminate SharedPreferences entirely, choosing between DataStore and Room based on data structure complexity.
-
-First, with SharedPreferences (Legacy / Deprecated Practice), reads entire XML files into memory synchronously on the UI thread, causing frames drops and ANRs. Write calls (`commit` blocks the main thread; `apply` blocks `onStop` in the Activity lifecycle). It lacks transactional safety, type safety, and reactive observation. Next, with DataStore (Modern Preferences), built on Kotlin Coroutines and Flow. It operates strictly off the main thread (`Dispatchers.IO`), provides atomic transactional updates via ACID file snapshots, handles disk IO corruption gracefully, and offers compile-time type safety via Proto DataStore. It is ideal for user settings, feature flags, and auth tokens.
-Finally, a Room (Structured Relational Storage) is an enterprise SQLite abstraction. Provides compile-time SQL query validation, multi-table joins, relational indexing, schema migrations, and reactive `Flow` emissions triggered by database invalidation. It is the mandatory engine for complex offline-first data, feeds, and shopping carts.
-
+Choosing the right local persistence solution in Android requires evaluating data complexity, safety guarantees, and threading models.
+First, SharedPreferences is considered legacy. It parses XML files synchronously on the main thread and lacks transactional safety; calling commit() blocks the UI thread and can trigger ANRs, while apply() offers no error feedback.
+Second, Jetpack DataStore replaces SharedPreferences. Built on Kotlin Coroutines and Flow, it guarantees that all disk operations execute safely off the main thread. It prevents data corruption through atomic file writes and provides both key-value (Preferences) and strongly-typed (Proto) implementations.
+Third, Room is the industry standard for relational structured data. It provides compile-time verification of SQL statements, supports foreign keys, indices, and ACID transactions, and natively exposes reactive Flow queries to power offline-first architectures.
 
 ## Interview answer — deep senior
 
-Neither Room nor DataStore encrypt data on disk by default.
-
-First, sharedPreferences and Preferences DataStore store plain text on disk under `/data/data/com.example/`. On rooted devices or via ADB backup, sensitive data can be read trivially. Finally, for **Sensitive Credentials (Auth Tokens, Cryptographic Keys)**, neither standard DataStore nor standard Room is sufficient. Secure architectures utilize **EncryptedSharedPreferences / Jetpack Security**, or store Master Keys in the **Android Keystore System** to encrypt DataStore payloads via Proto DataStore serialization, or configure **SQLCipher** for Room.
-
+From a platform reliability perspective, persisting state correctly is critical for eliminating UI jank and preventing disk corruption.
+SharedPreferences remains a pervasive source of production ANRs.
+When an application invokes apply(), SharedPreferences registers an in-memory disk-write runnable.
+During Activity pause or Service stop lifecycles, Android's ActivityThread forces QueuedWork.waitToFinish(), synchronously draining all pending SharedPreferences writes on the main UI thread.
+If disk I/O stalls, the app crashes with an ANR.
+Jetpack DataStore systematically eliminates this flaw.
+Operated via Kotlin Coroutines and Mutex locks, DataStore executes strictly on Dispatchers.IO.
+It reads data reactively via cold Flow streams and enforces atomic write operations: updates are staged into an interim file before being committed via an atomic filesystem rename, ensuring zero partial-write corruption even if the process dies midway.
+When application requirements expand beyond simple settings to relational domains with indexes, multi-table joins, and complex filtering, Room is the mandatory choice.
+Room leverages SQLite with KSP compile-time query validation, catching malformed table names or missing column selections during build time rather than at runtime.
+Its deep integration with Flow and Paging 3 enables seamless reactive UI rendering where Room automatically dispatches updated query snapshots whenever database invalidation tracker tables detect underlying mutations.
+Furthermore, for sensitive credentials like authentication tokens, we combine DataStore with Android Keystore encryption or hardware-backed Tink primitives, providing tamper-resistant persistence that withstands rooted devices and backup extraction vulnerabilities.
 
 ## How to answer in the interview
 

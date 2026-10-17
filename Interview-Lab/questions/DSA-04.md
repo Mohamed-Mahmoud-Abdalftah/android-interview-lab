@@ -21,6 +21,60 @@ Does Big O necessarily describe the worst case? Explain upper bounds versus case
 - Formal upper bound versus average/worst case.
 - Example where O(n) is true but loose.
 
+## Concept and technical explanation
+
+A foundational misconception in computer science is conflating asymptotic mathematical bounds ($O, \Omega, \Theta$) with algorithmic scenario cases (Best, Average, Worst):
+- Asymptotic Bounds (Mathematical Formulations):
+  - Big O ($O$): Represents an asymptotic upper bound. $f(n) = O(g(n))$ states that growth rate is bounded from above by $c \cdot g(n)$ for all sufficiently large $n$. It defines a mathematical growth ceiling.
+  - Big Omega ($\Omega$): Represents an asymptotic lower bound. It defines a mathematical growth floor.
+  - Big Theta ($\Theta$): Represents an asymptotically tight bound. Holds when an algorithm is simultaneously $O(g(n))$ and $\Omega(g(n))$.
+- Algorithmic Cases (Execution Scenarios):
+  - Best-Case: Scenario where input data structure requires minimal work (e.g., searching for an element located at index 0).
+  - Average-Case: Expected computational work across all randomized input permutations.
+  - Worst-Case: Adversarial or pathological input permutation requiring maximum work (e.g., searching for an element not present in the list).
+- Big O Describes ANY Case:
+  - Big O is not synonymous with the worst case; one can formulate the Big O upper bound of any scenario case:
+    - Linear Search: Best-case is $O(1)$, worst-case is $O(n)$, average-case is $O(n)$.
+    - InsertionSort: Best-case (pre-sorted input) is $O(n)$, worst-case (reverse-sorted) is $O(n^2)$.
+    - QuickSort: Best-case is $O(n \log n)$, average-case is $O(n \log n)$, worst-case (degenerate pivot selection) is $O(n^2)$.
+- Mobile Systems Engineering Reality:
+  - While average-case determines battery and CPU thermal throttling, mobile engineers must architect against worst-case Big O bounds on the UI thread to guarantee that degenerate inputs never induce frame drops or ANR freezes.
+
+## Practical walkthrough (English)
+
+Kotlin examples illustrating distinct case complexities and their Big O bounds:
+```kotlin
+// Demonstrating Best, Average, and Worst case complexities with Big O bounds
+class SearchService {
+
+    // Linear Search:
+    // - Best-case scenario (target at index 0): O(1)
+    // - Worst-case scenario (target missing or at end): O(n)
+    // - Average-case scenario: O(n)
+    fun findUserIndex(users: List<String>, target: String): Int {
+        for (i in users.indices) {
+            if (users[i] == target) return i // Best-case early return
+        }
+        return -1 // Worst-case full traversal
+    }
+
+    // Insertion Sort:
+    // - Best-case scenario (already sorted): O(n) operations
+    // - Worst-case scenario (reverse sorted): O(n^2) operations
+    fun insertionSort(arr: IntArray) {
+        for (i in 1 until arr.size) {
+            val key = arr[i]
+            var j = i - 1
+            while (j >= 0 && arr[j] > key) {
+                arr[j + 1] = arr[j]
+                j--
+            }
+            arr[j + 1] = key
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 هل يصف رمز Big O الحالة الأسوأ (Worst Case) بالضرورة؟ اشرح الفرق بين الحدود العليا (Upper Bounds) وحالات التنفيذ (Best, Average, Worst)؟
@@ -80,26 +134,21 @@ For a real-time POS UI, consider tail latency and worst-case spikes, not only ex
 
 ## Interview answer — short
 
-No, Big O does not inherently mean worst case. Big O is a mathematical upper bound that can describe best, average, or worst cases. For example, QuickSort has a best-case upper bound of O(n log n) and a worst-case upper bound of O(n²).
+Big O does not inherently mean worst case; it is a mathematical upper bound that can describe any execution scenario. Algorithms have best, average, and worst-case scenarios, and each scenario has its own Big O bound. For example, linear search has an O(1) best-case and an O(n) worst-case. In Android, engineers design against worst-case bounds on the UI thread to guarantee frame rate stability.
 
 ## Interview answer — structured
 
-Disentangling asymptotic bounds from execution cases is a core computer science distinction.
-
-First, **Asymptotic Bounds vs. Algorithmic Cases**. Next, with Cases (Inputs), best, Average, and Worst describe the nature of input distribution (e.g., already sorted vs. Completely inverted inputs).
-Additionally, with Bounds (Mathematical Limits), big O ($O$) is an asymptotic upper bound, Big Omega ($\Omega$) is a lower bound, and Big Theta ($\Theta$) is a tight bound. **Applying Big O to Different Cases**.
-One can analyze the Big O upper bound of any input case. Linear Search: Best Case is $O(1)$ (target at index 0); Worst Case is $O(n)$ (target absent).
-QuickSort: Average Case is $O(n \log n)$; Worst Case (pathological pivot choice) is $O(n^2)$. Insertion Sort: Best Case (pre-sorted input) is $O(n)$; Worst Case is $O(n^2)$.
-**Industry Colloquialism**. Finally, in everyday engineering interviews, 'Big O' is frequently used as shorthand for 'the tightest upper bound of the worst-case scenario', but senior engineers recognize that Big O mathematically characterizes bounds across all execution cases.
-
+Big O notation is frequently misunderstood as synonymous with worst-case performance, but it is actually a mathematical tool describing an asymptotic upper bound.
+In algorithmic analysis, there are two orthogonal dimensions: asymptotic bounds and scenario cases. The bounds are Big O for upper bounds, Big Omega for lower bounds, and Big Theta for tight bounds. The scenario cases describe real-world inputs: best case, average case, and worst case.
+Big O can be applied to any of these cases. For instance, in linear search, the best case occurs when the target is at index zero, which has a Big O bound of O(1). The worst case occurs when the target is missing, which has a Big O bound of O(n).
+In Android mobile development, understanding this distinction is crucial. While average-case complexity predicts typical battery and CPU thermal efficiency, engineers must architect for worst-case Big O bounds on the main thread to ensure pathological user inputs never freeze rendering or trigger Application Not Responding crashes.
 
 ## Interview answer — deep senior
 
-From an engineering reliability and SLA standpoint, relying solely on average-case analysis can be fatal in production.
-
-First, a The Hash Collision DoS Attack (Worst-Case Exploitation) is a standard `HashMap` lookup has an average case of $O(1)$. However, its worst case is $O(n)$ if all keys hash to the same bucket. Malicious actors can exploit this by crafting thousands of distinct keys with identical hash codes (hash collision attacks), forcing an Android backend parser or client cache to degrade into an $O(n^2)$ linked list traversal, causing Denial of Service. Next, with Java 8+ Treeification Defense, to defend against worst-case $O(n)$ hash collisions, the JVM HashMap implementation automatically transforms collision buckets exceeding 8 nodes into balanced Red-Black Trees (`TreeNode`), capping the worst-case lookup at $O(\log n)$ rather than $O(n)$.
-Finally, with Designing for Real-Time Mobile Systems, in UI rendering and audio synthesis threads, guarantees must be made against the **worst case**. If an algorithm runs in $O(1)$ average time but occasionally hits an $O(n)$ stop-the-world worst case, the user will experience audible pops or visual animation freezes.
-
+From a formal computer science and mobile systems reliability perspective, conflating Big O with worst-case analysis represents an imprecise understanding of algorithmic modeling.
+Big O notation is purely a mathematical ceiling function. Stating that a function is O of g of n means that past a certain threshold, the function never exceeds a constant multiple of g of n. Big Omega provides the corresponding mathematical floor, while Big Theta denotes that the upper and lower bounds meet, establishing an exact asymptotic rate of growth.
+Orthogonal to these mathematical notations are algorithmic execution cases. An algorithm encounters different operational paths depending on input arrangement. In QuickSort, the best and average cases partition data evenly, running in O of n log n time. However, if pivot selection degenerates on an already sorted array, QuickSort encounters its worst-case scenario, running in O of n squared time. Here, O of n squared is the upper bound of the worst-case, while O of n log n is the upper bound of the average-case.
+In Android production systems, this distinction directly dictates threading and safety architectures. A common engineering defect is relying on average-case guarantees on the main thread. A HashMap provides O of one average lookups, but in the pathological worst-case of hash collisions, lookups degrade to linear or logarithmic scans. If an algorithm running inside a scroll handler relies on optimistic average cases, an adversarial or degenerate input triggers worst-case behavior, causing dropped frames and UI lockups. Senior engineers evaluate worst-case Big O ceilings for UI-bound code while utilizing average-case models for background synchronization pipelines.
 
 ## How to answer in the interview
 

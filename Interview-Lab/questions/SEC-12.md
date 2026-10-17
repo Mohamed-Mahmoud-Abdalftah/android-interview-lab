@@ -22,6 +22,47 @@ What should you know about the deprecated EncryptedSharedPreferences API?
 - Separation of app storage format, Keystore key protection, and server-side authority.
 - Migration and recovery thinking: existing ciphertext, invalidated keys, backups, and logout.
 
+## Concept and technical explanation
+
+The EncryptedSharedPreferences API (part of the androidx.security:security-crypto Jetpack library) was originally introduced to provide seamless, drop-in encrypted key-value storage backed by the Google Tink cryptographic library and Android Keystore master keys. In recent library revisions, EncryptedSharedPreferences has been formally deprecated by Google. The deprecation stems from severe underlying architectural deficiencies and edge-case reliability failures across the heterogeneous Android device ecosystem. The implementation relied on XML file parsing wrapped with cryptographic streaming ciphers, causing significant main-thread I/O latency, Application Not Responding (ANR) spikes, and deadlocks in multi-threaded environments. Furthermore, low-tier devices and specific OEM hardware variants (notably older Samsung and Huawei devices) suffered from catastrophic KeyStore corruption, throwing unrecoverable KeyStoreException, NullPointerException, or corrupted master key states that permanently locked users out of their encrypted data. The modern migration path involves adopting Jetpack DataStore (Preferences or Proto DataStore) combined with Google Tink directly, or building isolated Keystore AES-GCM serializers that decouple disk I/O from cryptographic operations.
+
+## Practical walkthrough (English)
+
+Safe migration pattern from deprecated EncryptedSharedPreferences to Jetpack DataStore:
+```kotlin
+// 1. Handling legacy EncryptedSharedPreferences corruption gracefully
+class LegacyMigrationHelper(private val context: Context) {
+    fun extractLegacyTokenOrNull(): String? {
+        return try {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            val legacyPrefs = EncryptedSharedPreferences.create(
+                context,
+                "secure_prefs",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+            legacyPrefs.getString("auth_token", null)
+        } catch (e: Exception) {
+            // Catches Keystore corruption, OEM crypto bugs, or broken master keys
+            null
+        }
+    }
+
+    fun wipeCorruptedLegacyPrefs() {
+        try {
+            context.getSharedPreferences("secure_prefs", Context.MODE_PRIVATE)
+                .edit().clear().commit()
+        } catch (ignored: Exception) {}
+    }
+}
+
+// 2. Modern recommendation: Jetpack DataStore with direct Tink / Keystore encryption
+// DataStore provides non-blocking coroutine-based async I/O on Dispatchers.IO
+```
+
 ## Explanation in Arabic
 
 ما هي حقيقة مكتبة `EncryptedSharedPreferences` ومكتبة `security-crypto`، ولماذا تم إيقافها (Deprecated) وما هي البدائل الحديثة؟
@@ -121,26 +162,30 @@ A banking app upgrades local token storage. It does not silently discard live se
 
 ## Interview answer — short
 
-EncryptedSharedPreferences was deprecated due to high production crash rates caused by Keystore state corruption, DeadObjectExceptions across OEM updates, and Tink keyset deserialization failures. Modern production systems replace it with Jetpack DataStore combined with raw Android Keystore AES-GCM encryption, or SQLCipher for structured datasets.
+Google deprecated EncryptedSharedPreferences due to serious architectural flaws, including main-thread I/O performance bottlenecks, multi-threading deadlocks, and frequent Keystore corruption crashes on OEM devices. Production applications are migrating to Jetpack DataStore combined with Google Tink or custom Keystore AES-GCM wrappers, executing asynchronous encrypted persistence safely off the main thread.
 
 ## Interview answer — structured
 
-`EncryptedSharedPreferences` (part of Jetpack `androidx.security:security-crypto`) provided out-of-the-box key and value encryption wrapping Google Tink and Android Keystore. However, it proved unreliable in production.
-
-First, **Root Causes of Deprecation**. Next, with Keyset Corruption & Crashes, tink stored an encrypted keyset in private XML files. Across OEM Android updates, backup restores, or Keystore daemon crashes, the hardware master key would become unrecoverable, throwing unrecoverable `SecurityException`, `DeadObjectException`, or `CleartextKeysetException` during app startup.
-Additionally, with Main-Thread Blocking, initializing `EncryptedSharedPreferences` performed blocking Keystore IPC and keyset decryption, triggering frame drops and ANRs. With Unmaintained Status, google ceased active development, leaving reported bugs unresolved.
-**Modern Production Alternatives**. With Jetpack DataStore + Custom Keystore Encryption, persist encrypted byte buffers or Base64 payloads into Jetpack DataStore asynchronously using Coroutines, backed by a clean, self-contained raw Keystore AES-GCM implementation.
-Finally, with SQLCipher / Room, for structured relational data requiring at-rest encryption.
-
+While EncryptedSharedPreferences offered an easy API for securing key-value storage, Google formally deprecated it due to widespread production reliability issues.
+The library wrapped traditional SharedPreferences XML files with Google Tink encryption keys anchored to an Android Keystore master key.
+In production, this design created severe performance problems because SharedPreferences operations are synchronous, causing disk I/O and cryptographic computation to block the main thread and trigger ANR spikes.
+More critically, the library suffered from catastrophic hardware-keystore failures on specific OEM hardware, particularly when devices rebooted or updated firmware.
+Applications frequently encountered fatal crashes like KeyStoreException or broken master keys where encrypted preferences became permanently unreadable, stranding users in corrupted states.
+Modern Android development replaces this deprecated class with Jetpack DataStore.
+DataStore uses Kotlin Coroutines and Flow to guarantee asynchronous, thread-safe disk operations on Dispatchers.IO, separating storage mechanics from encryption and allowing teams to layer Google Tink or Keystore AES-GCM cleanly without risking main-thread freezes.
 
 ## Interview answer — deep senior
 
-Senior engineers evaluating Android storage security avoid black-box abstraction libraries that hide Keystore lifecycle hazards.
-
-First, with State Inconsistency Post-Reboot/Restore, when a user restores from Google Auto Backup or when OEM Keystore daemons desynchronize after a major OS update, the keyset file remains on disk while the hardware Keystore alias has vanished. `EncryptedSharedPreferences` crashes permanently because it cannot decrypt the keyset and lacks an automatic reset fallback. Next, with Resilient Replacement Architecture, in our production stack, we decouple persistence from encryption.
-We maintain a dedicated `CryptoEngine` executing on `Dispatchers.Default` using raw `AndroidKeyStore`. When decryption fails due to key invalidation or hardware faults, we catch the cryptographic error, proactively wipe the corrupted storage entry, and fire a re-authentication event to navigate the user to login.
-Finally, this graceful degradation guarantees that security failures never cascade into unrecoverable app startup crashes.
-
+The deprecation of EncryptedSharedPreferences represents a case study in why simply wrapping legacy, synchronous I/O abstractions with heavy cryptographic operations inevitably fails at scale.
+SharedPreferences was architected in the earliest days of Android with the assumption that reading small XML files in memory is fast enough for the main thread.
+When Jetpack Security layered two-level authenticated encryption over preference keys via AES-256-SIV and preference values via AES-256-GCM, every read and write operation became a cryptographic transaction.
+On mid-tier and budget Android devices, hardware cryptographic accelerators in the TEE have limited throughput; invoking Keystore operations synchronously during UI rendering resulted in severe jank and measurable ANR regressions.
+Beyond latency, the ecosystem encountered fatal edge-case failures.
+OEM implementations of Keymaster frequently failed during concurrent multi-process writes or Direct Boot transitions, corrupting the Keystore keyset or throwing internal Keystore errors with cryptic vendor codes.
+Once the master keyset was corrupted, the XML file could neither be read nor recovered, causing endless startup crashes unless the app caught the exception and wiped all local user data.
+To resolve this in modern architectures, we migrate away from EncryptedSharedPreferences toward Jetpack DataStore.
+DataStore operates entirely off the main thread via Kotlin coroutines, provides transactional data consistency, and allows developers to serialize encrypted protocol buffers or use Google Tink directly on Dispatchers.IO.
+When performing migrations, we implement resilient try-catch fallbacks: if reading legacy EncryptedSharedPreferences fails due to Keystore corruption, we wipe the corrupt file, force a clean token re-authentication, and persist the new session safely into DataStore.
 
 ## How to answer in the interview
 

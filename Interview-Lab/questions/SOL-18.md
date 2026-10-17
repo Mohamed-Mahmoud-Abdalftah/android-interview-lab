@@ -20,6 +20,49 @@ A new payment provider requires editing 10 existing classes. Which principles wo
 
 Use OCP/DIP/SRP/ISP/LSP together for a provider change that touches too much code.
 
+## Concept and technical explanation
+
+When integrating a single new payment provider forces changes across ten existing classes, the codebase is suffering from the 'Shotgun Surgery' architectural code smell, directly violating the Open/Closed Principle (OCP), the Single Responsibility Principle (SRP), and the Dependency Inversion Principle (DIP). In well-architected systems, adding a variant capability should be an additive change requiring zero edits to existing, tested orchestration code. By encapsulating payment execution behind a polymorphic PaymentStrategy interface, centralizing payment routing, and inverting dependencies, new payment rails can be introduced simply by writing a new strategy class.
+
+## Practical walkthrough (English)
+
+Refactoring Shotgun Surgery into an OCP/DIP-compliant strategy architecture:
+```kotlin
+// BAD ANTI-PATTERN: Shotgun Surgery (Adding ApplePay forces modifying 10 ViewModels, Services, and DAOs)
+class CheckoutViewModel {
+    fun pay(type: String) {
+        when(type) {
+            "Stripe" -> stripeService.pay()
+            "PayPal" -> payPalService.pay()
+            // Modified here, modified in Analytics, modified in ReceiptGenerator, modified in DB...
+        }
+    }
+}
+
+// ARCHITECTURAL BEST PRACTICE: Closed to modification, open to extension via Strategy and DIP
+interface PaymentGateway {
+    fun handles(type: PaymentMethod): Boolean
+    suspend fun executePayment(amount: Long): Result<PaymentReceipt>
+}
+
+// New provider added as a standalone class: ZERO edits to existing classes!
+class ApplePayGateway @Inject constructor(private val applePayClient: ApplePayClient) : PaymentGateway {
+    override fun handles(type: PaymentMethod) = type is PaymentMethod.ApplePay
+    override suspend fun executePayment(amount: Long) = runCatching { applePayClient.charge(amount) }
+}
+
+// Central PaymentProcessor is 100% CLOSED to modification
+class PaymentProcessor @Inject constructor(
+    private val gateways: Set<@JvmSuppressWildcards PaymentGateway>
+) {
+    suspend fun process(method: PaymentMethod, amount: Long): Result<PaymentReceipt> {
+        val gateway = gateways.firstOrNull { it.handles(method) }
+            ?: return Result.failure(IllegalStateException("No gateway for $method"))
+        return gateway.executePayment(amount)
+    }
+}
+```
+
 ## Explanation in Arabic
 
 عندما يتطلب إضافة مزود دفع جديد (New Payment Provider) تعديل 10 كلاسات موجودة مسبقاً في التطبيق: ما هي المبادئ الهندسية التي تعالج ذلك؟
@@ -89,27 +132,27 @@ A commerce app adds wallet provider by writing an adapter, binding it, and testi
 
 ## Interview answer — short
 
-The primary principle to apply is Open/Closed Principle (OCP) using the Strategy Pattern and Polymorphism, supported by Single Responsibility Principle (SRP) to stop spreading payment logic across disparate classes, and Dependency Inversion Principle (DIP) to decouple orchestrators from concrete provider SDKs.
+The principles that resolve this issue are the Open/Closed Principle (OCP), Single Responsibility Principle (SRP), and Dependency Inversion Principle (DIP). Modifying ten classes to add one payment rail is the classic Shotgun Surgery code smell, caused by hardcoded conditional logic and leaking provider details across layers. By encapsulating payment logic inside a polymorphic PaymentStrategy interface and inverting dependencies, adding a new provider becomes a purely additive operation involving only a new class.
 
 ## Interview answer — structured
 
-If integrating a single new payment provider requires editing 10 existing classes across your application, the codebase is suffering from severe **shotgun surgery** caused by violating core SOLID principles.
-
-First, **Open/Closed Principle (OCP) - The Primary Cure**. Next, the 10 classes are littered with type checks (`when (paymentType)` or `if (type == "STRIPE")`).
-Additionally, with The Fix, abstract provider behavior behind a cohesive `PaymentGateway` interface (The Strategy Pattern). The payment orchestrator dynamically delegates to an injected collection (`Set<PaymentGateway>`), closing existing classes to modification. **Single Responsibility Principle (SRP)**.
-Payment details (validation, fee calculation, API invocation, receipt rendering) are smeared across 10 unrelated classes (Activities, ViewModels, Analytics, Storage). With The Fix, encapsulate all provider-specific behaviors inside the concrete `PaymentGateway` implementation. A new provider now requires authoring **exactly one new class**.
-**Dependency Inversion Principle (DIP)**. Consumers depend directly on concrete third-party payment SDKs (Stripe SDK, PayPal SDK) rather than an internal domain abstraction.
-Finally, a The Fix is the domain layer defines the payment abstraction, and adapters in the data layer isolate third-party SDK dependencies.
-
+Having to modify ten existing classes to support a single new payment provider is the hallmark symptom of Shotgun Surgery, caused by violations across the SOLID spectrum.
+This anti-pattern occurs when payment handling logic is fragmented across the application: ViewModels check string flags in when blocks, network repositories format provider-specific payloads, and analytics classes maintain hardcoded vendor mappings. When a new provider like Apple Pay is added, the developer must open and modify every single one of those files.
+Three core SOLID principles resolve this architectural flaw.
+First, the Open/Closed Principle (OCP) mandates that the system should be open for extension but closed for modification. We achieve this using the Strategy pattern, where all payment providers adhere to a unified PaymentGateway interface.
+Second, the Single Responsibility Principle (SRP) isolates payment orchestration into a dedicated processor, removing payment branching from ViewModels and UI layers.
+Third, the Dependency Inversion Principle (DIP) ensures that high-level checkout flows depend only on the abstract PaymentGateway contract.
+By combining these principles with Dagger Multibindings, adding a new payment rail requires writing exactly one new class and registering it in the dependency graph, leaving all ten existing classes completely untouched.
 
 ## Interview answer — deep senior
 
-In software metrics, this code smell is called **Shotgun Surgery** (a single conceptual change requires making lots of little edits to many different classes), which is the exact polar opposite of **Divergent Change** (one class is commonly changed in different ways for different reasons).
-
-Shotgun surgery introduces high regression risk: if an engineer forgets to update class #9 or #10, the bug only surfaces in production under specific edge cases.
-
-By encapsulating the provider behind a Strategy interface and leveraging Dagger Multibindings (`@IntoSet`), adding a new provider becomes an **additive-only change**: create `GooglePayGateway.kt`, bind it in Hilt, and create its dedicated unit test. Zero existing classes are touched, zero merge conflicts occur, and existing payment flows remain completely safe.
-
+Under the hood, Shotgun Surgery represents the inverse problem of the Divergent Change code smell, and its presence indicates severe architectural erosion across Gradle module boundaries.
+When adding a payment provider touches ten classes, it proves that low-level infrastructure details have leaked upward into high-level presentation and domain state machines. In a multi-module enterprise Android application, this leak creates extensive build invalidation cascades. If ten classes across :feature:checkout, :core:analytics, and :data:repository contain explicit references to payment provider implementations, changing or adding a provider invalidates the Gradle build cache across all three modules, triggering massive recompilations.
+By restructuring the system around OCP and DIP, the payment domain boundary becomes fortified. The :domain module defines the abstract PaymentGateway interface and PaymentMethod sealed class.
+Each payment vendor lives inside its own isolated Gradle feature module (such as :payment:stripe and :payment:applepay).
+These modules bind their gateway implementations into Dagger's dependency injection container using @Binds @IntoSet.
+The orchestrating PaymentProcessor in the checkout module injects the Set<PaymentGateway>, routing transactions polymorphically at runtime.
+Adding a new payment vendor touches zero existing files, generates zero merge conflicts in Git, and causes zero recompilation of existing modules, preserving long-term developer velocity and architectural purity. This decoupling ensures that enterprise applications scale frictionlessly without destabilizing previously certified core features.
 
 ## How to answer in the interview
 

@@ -20,6 +20,48 @@ Explain Presentation, Domain, and Data layers.
 
 Assign responsibilities to UI, optional domain, and data without confusing policy with rendering.
 
+## Concept and technical explanation
+
+Google's recommended Android app architecture divides applications into three primary functional layers: Presentation, Domain, and Data. The Presentation layer contains UI elements (Composables, Activities, Fragments) and state holders (ViewModels) that render data and translate user input into unidirectional events. The Domain layer is an optional mediator encapsulating complex, reusable business logic and coordinating multi-repository interactions through single-purpose Use Cases; it operates purely on Kotlin primitives without Android SDK imports. The Data layer encapsulates business data access and caching policies, serving as the single source of truth for the application. It consists of repository interfaces and data source implementations (network clients, local databases, data stores) that expose reactive data streams and domain entities to higher architectural layers.
+
+## Practical walkthrough (English)
+
+Orchestrating the three architectural layers in a modern Android news feed:
+```kotlin
+// 1. Data Layer: Repository coordinates Room and Retrofit, exposes Domain models
+class NewsRepositoryImpl(
+    private val api: NewsApi,
+    private val dao: NewsDao
+) : NewsRepository {
+    override fun getArticles(): Flow<List<Article>> =
+        dao.observeArticles().map { entities -> entities.map { it.toDomain() } }
+
+    override suspend fun syncArticles() {
+        val remoteArticles = api.fetchTopHeadlines()
+        dao.upsertArticles(remoteArticles.map { it.toEntity() })
+    }
+}
+
+// 2. Domain Layer: Encapsulates filtering business rule
+class GetBookmarkedArticlesUseCase(private val repository: NewsRepository) {
+    operator fun invoke(): Flow<List<Article>> =
+        repository.getArticles().map { list -> list.filter { it.isBookmarked } }
+}
+
+// 3. Presentation Layer: State holder binds domain streams to UI State
+class BookmarksViewModel(
+    private val getBookmarkedArticles: GetBookmarkedArticlesUseCase
+) : ViewModel() {
+    val uiState: StateFlow<BookmarksUiState> = getBookmarkedArticles()
+        .map { articles -> BookmarksUiState.Success(articles.map { it.toUiModel() }) }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = BookmarksUiState.Loading
+        )
+}
+```
+
 ## Explanation in Arabic
 
 شرح طبقات Clean Architecture الثلاث: العرض (Presentation)، النطاق (Domain)، والبيانات (Data):
@@ -96,25 +138,24 @@ An offline account screen observes repository data backed by Room; domain comput
 
 ## Interview answer — short
 
-Presentation displays UI and translates user gestures into state streams via ViewModels. Domain contains pure business rules, entities, use cases, and repository interfaces without Android framework dependencies. Data implements domain repository interfaces, coordinating network APIs and local databases via mappers.
+Presentation renders UI and translates user intents into state via ViewModels and Compose. Domain encapsulates isolated, reusable business logic through pure Kotlin UseCases. Data serves as the single source of truth, managing local databases, remote network clients, and caching policies behind clean repository interfaces.
 
 ## Interview answer — structured
 
-Modern Android Clean Architecture partitions responsibilities into three distinct architectural layers.
+Modern Android architecture partitions responsibilities into Presentation, Domain, and Data layers to ensure scalability and strict boundary isolation.
 
-First, a Domain Layer (The Business Core) represents the innermost layer and contains pure business logic. It has zero dependencies on Android frameworks, network libraries, or databases. It contains. Next, with Entities, business models encapsulating core data structures and invariant validation.
-Additionally, with Use Cases (Interactors), single-purpose orchestrators executing specific business scenarios (e.g. `CalculateCartTotalUseCase`). With Repository Interfaces, abstract contracts specifying what data operations the business requires, completely divorced from storage mechanisms.
-A Data Layer (The Source Coordinators) implements domain repository interfaces. It manages raw data sources (Retrofit REST APIs, Room SQLite DAOs, SharedPreferences/DataStore), handles caching strategies, and maps external DTOs into domain entities. Finally, with Presentation Layer (The UI), consists of ViewModels and Composable screens. The ViewModel calls Use Cases, reacts to state updates, and projects data into immutable `StateFlow<UiState>` streams, while capturing user UI events.
+The Presentation layer consumes state and dispatches user actions. It contains Composables or Fragments observing immutable UI State exposed by ViewModels, ensuring the UI remains passive and declarative without business decision logic.
+
+In production, the Domain layer is an optional mediator containing single-purpose UseCases. It operates entirely without Android framework imports, encapsulating enterprise business rules, mathematical validations, and multi-repository coordination that multiple ViewModels can share.
+As for the Data layer, it acts as the application's single source of truth. Repositories coordinate remote REST or GraphQL APIs with local Room databases, resolving synchronization conflicts, offline caching, and data mapping. This ensures that upstream consumers interact strictly with stable domain entities rather than volatile network payloads or database entities.
 
 
 ## Interview answer — deep senior
 
-A critical design aspect of this division is the **Inversion of Control (IoC)** achieved through the Dependency Inversion Principle. Because the Domain layer defines the `Repository` interface and the Data layer implements it, compile-time source code dependencies point inward (`Data -> Domain` and `UI -> Domain`), while runtime execution flows outward.
-
-This division maximizes testability. Because the Domain layer is pure Kotlin without Android dependencies, its entire test suite runs as lightning-fast JVM unit tests executing in milliseconds without Robolectric or emulator bootstrapping.
-
-In enterprise Android modularization, these layers are often represented as separate Gradle modules: `:feature:cart:ui`, `:feature:cart:domain`, and `:feature:cart:data`, enforcing boundary discipline at the compiler level.
-
+Under the hood, dividing an Android codebase into Presentation, Domain, and Data creates clear boundaries for reactive data flow and compilation modularity. In Google's recommended architecture, data flows unidirectionally: user actions originate in Composables, travel up through ViewModel events to UseCases and Repositories, while updated state streams downward from the Data layer through Domain flows into UI State holders.
+The Data layer hides storage mechanics. Whether data originates from in-memory caches, encrypted Room databases, or remote microservices, the repository exposes a unified stream of domain entities. It handles offline-first policies, optimistic writes, and network retry backoffs so upper layers remain oblivious to transport details.
+The Domain layer exists specifically to prevent logic duplication. When business algorithms—such as calculating tax rebates or enforcing credit card fraud rules—are needed across both a mobile checkout screen and a background sync worker, extracting that logic into a UseCase guarantees consistency and instant JVM testing.
+Staff engineers avoid dogmatic application of all three layers across every screen. The Android team explicitly considers the Domain layer optional; when a feature merely reads and renders data without transformations, routing through a pass-through UseCase that just delegates to a repository method introduces pointless boilerplate and navigation fatigue. In mature codebases, teams enforce modular Gradle boundaries where core domain has zero dependencies on database or network modules, preserving structural integrity while allowing pragmatic direct repository access for simple screens.
 
 ## How to answer in the interview
 

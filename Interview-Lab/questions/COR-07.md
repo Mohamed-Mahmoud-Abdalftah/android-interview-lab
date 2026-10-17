@@ -20,6 +20,38 @@ What do Dispatchers.Main, IO, Default, and Unconfined do?
 
 Whether the candidate maps dispatchers to execution resources while rejecting `suspend` as automatic backgrounding.
 
+## Concept and technical explanation
+
+In Kotlin coroutines, CoroutineDispatchers determine the execution thread or thread pool allocated to a coroutine's continuation. The standard library provides four primary dispatchers tailored for distinct runtime characteristics: Dispatchers.Main, Dispatchers.IO, Dispatchers.Default, and Dispatchers.Unconfined. Dispatchers.Main is confined to the Android main UI thread via the platform Looper; it is dedicated to manipulating UI components, rendering Jetpack Compose state, and processing touch input. Dispatchers.Default is backed by a shared pool of worker threads sized to the number of available CPU cores (minimum 2), specifically optimized for computation-heavy tasks such as JSON parsing, mathematical calculations, and complex sorting. Dispatchers.IO is designed for blocking I/O operations such as disk reads and synchronous network requests; it utilizes an elastic thread pool capable of expanding up to 64 threads or the core count to prevent I/O blocking from starving the system. Dispatchers.Unconfined begins execution in the caller's thread and resumes in whatever thread resumed the suspending call, lacking thread confinement and making it unsuitable for standard Android application logic.
+
+## Practical walkthrough (English)
+
+Consider an analytical report generation feature that aggregates thousands of transactions, calculates tax metrics, writes a PDF document to disk, and updates the screen progress.
+
+Proper separation of concerns across dispatchers:
+```kotlin
+fun exportFinancialReport() {
+    // 1. Dispatchers.Main: Update UI loading state on the main thread
+    viewModelScope.launch(Dispatchers.Main) {
+        _uiState.value = ExportUiState.Loading
+
+        // 2. Dispatchers.Default: Heavy CPU calculations and summaries
+        val summary = withContext(Dispatchers.Default) {
+            calculateFinancialMetrics(rawTransactions)
+        }
+
+        // 3. Dispatchers.IO: Blocking disk write operation
+        val pdfFile = withContext(Dispatchers.IO) {
+            writePdfToDisk(summary)
+        }
+
+        // 4. Return to Dispatchers.Main automatically to display the success dialog
+        _uiState.value = ExportUiState.Success(pdfFile)
+    }
+}
+```
+By segmenting the pipeline, heavy mathematical computations do not block UI frame rendering, and blocking disk operations do not saturate the CPU-bound thread pool.
+
 ## Explanation in Arabic
 
 الـ `CoroutineDispatcher` هو المسؤول عن تحديد **أي Thread أو Thread Pool** سينفذ الـ Coroutine. فهم الفروق بينهم ضروري جداً لتجنب تجميد الشاشة أو إهدار موارد الجهاز:
@@ -101,29 +133,28 @@ A photo repository reads bytes from a legacy file API on IO, decodes thumbnail d
 
 ## Interview answer — short
 
-Dispatchers.Main runs on Android's UI thread for view updates; Dispatchers.IO manages an elastic pool of up to 64 threads for blocking disk and network I/O; Dispatchers.Default uses a thread pool sized to CPU core count for compute-heavy tasks; and Dispatchers.Unconfined starts in the caller thread and resumes in whatever thread resumed the suspension.
+Dispatchers.Main executes on the Android UI thread for user interface updates. Dispatchers.Default is sized to CPU cores for intensive computations like JSON parsing. Dispatchers.IO uses an elastic pool of up to 64 threads for blocking disk and network I/O. Dispatchers.Unconfined executes without thread confinement, rarely used in production.
 
 ## Interview answer — structured
 
-Dispatchers govern thread assignment for coroutines, each tailored for a specific workload characteristics:
+CoroutineDispatchers allocate coroutine execution across available operating system threads based on the nature of the computational workload.
 
-**Dispatchers.Main** is bound to the Android Main Looper thread. It is strictly reserved for UI rendering, handling touch events, and mutating Compose or LiveData UI state. Heavy work here causes frame drops and ANRs.
+Dispatchers.Main is confined to the Android UI thread via the main Looper. It handles user interactions, Compose state changes, and View manipulations, requiring that long-running operations never execute directly upon it.
 
-**Dispatchers.IO** is optimized for blocking input/output operations, such as Room database operations, reading local files, or legacy blocking HTTP calls. It uses an elastic thread pool that scales up to 64 threads (or the number of CPU cores if higher), ensuring blocking I/O does not starve other tasks.
+In production, we distinguish between CPU-bound and I/O-bound workloads. Dispatchers.Default is backed by a thread pool sized to available CPU cores, making it optimal for heavy data parsing, crypto, and list sorting. Dispatchers.IO is an elastic thread pool scaling up to 64 threads, designed specifically for blocking disk and network I/O calls where threads spend time waiting on kernel syscalls.
 
-**Dispatchers.Default** is reserved for CPU-intensive calculations like JSON parsing, bitmap transformations, cryptographic operations, or sorting large collections. Its thread pool is capped strictly at the number of available CPU cores (minimum 2), preventing unnecessary thread context-switching overhead.
-
-**Dispatchers.Unconfined** does not confine execution to any specific thread. It begins in the caller's thread and resumes in whichever thread resumed the continuation. Because it leads to non-deterministic thread transitions, we avoid it in production Android code.
+Dispatchers.Unconfined does not restrict execution to any designated thread, resuming wherever the continuation completes. Due to its unpredictable thread hops, it is strictly avoided in production Android code.
 
 
 ## Interview answer — deep senior
 
-Behind the scenes, `Dispatchers.Default` and `Dispatchers.IO` share the same underlying JVM thread pool implementation (`ExperimentalCoroutineDispatcher`). When you switch between `Default` and `IO` using `withContext`, the coroutine scheduler can often shift the task between pool sub-queues without an expensive OS thread context switch if worker threads are available.
+Under the hood, both Dispatchers.Default and Dispatchers.IO share the exact same underlying thread scheduler: the internal CoroutineScheduler in kotlinx.coroutines. This shared scheduler implements a high-performance work-stealing algorithm with local and global task queues, designed to minimize operating system context switches and memory footprint.
 
-In Android development, `Dispatchers.Main.immediate` deserves special mention: standard `Dispatchers.Main` schedules execution via `Handler.post()`, introducing an asynchronous dispatch delay even if you are already on the Main thread. `Dispatchers.Main.immediate` executes synchronously if the caller is already on the UI thread, preventing momentary UI flicker.
+Dispatchers.Default operates with a target parallelism equal to Runtime.getRuntime().availableProcessors(), clamped to a minimum of two. Each worker thread runs continuously processing CPU tasks. If more CPU-bound coroutines are launched than available cores, they queue in work-stealing deques, preventing excessive kernel thread context switching that would thrash CPU instruction caches.
 
-Furthermore, for fine-grained resource limits, Kotlin 1.6+ introduced `limitedParallelism(n)`. On `Dispatchers.IO`, you can create a dedicated dispatcher with a strict concurrency ceiling (e.g., `Dispatchers.IO.limitedParallelism(4)`) to avoid overwhelming local SQLite database connection pools with dozens of concurrent threads.
+In contrast, Dispatchers.IO is implemented as a LimitingDispatcher wrapped around the shared CoroutineScheduler. When a coroutine executing on Dispatchers.IO makes a blocking file or socket syscall, the scheduler detects that the thread is in a blocking state and spawns additional worker threads on demand, up to a maximum limit configured by kotlinx.coroutines.io.parallelism (defaulting to 64 or the core count). Because Default and IO share the same worker pool, switching between Dispatchers.Default and Dispatchers.IO via withContext often avoids an OS thread context switch entirely if a shared worker thread is already available.
 
+Dispatchers.Main is implemented in the kotlinx-coroutines-android artifact via HandlerContext, wrapping a standard android.os.Handler initialized with Looper.getMainLooper(). Dispatchers.Main.immediate provides an essential optimization by checking if Thread.currentThread() is already the main Looper thread, executing the runnable inline and avoiding an unnecessary Choreographer frame delay.
 
 ## How to answer in the interview
 

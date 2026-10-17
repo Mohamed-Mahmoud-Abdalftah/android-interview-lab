@@ -21,6 +21,56 @@ What are authorization, reversal, void, refund, and reconciliation?
 - Distinct meanings of authorization, reversal, void, refund and reconciliation.
 - Provider/network-specific timing and state.
 
+## Concept and technical explanation
+
+The card payment lifecycle consists of distinct financial, cryptographic, and accounting operations governing how funds move between cardholders, merchants, and acquiring banks:
+- 1. Authorization:
+  - Definition: The cardholder's issuing bank verifies credentials (CVV, 3D Secure, PIN) and places an administrative hold (pre-authorization) on the requested amount.
+  - Financial Impact: Funds are reserved in the cardholder's credit limit, but no actual money transfers between bank accounts yet.
+- 2. Reversal (Auto-Reversal):
+  - Definition: Immediate cancellation of an in-flight or in-doubt authorization (ISO 8583 0400/0420 transaction).
+  - Condition: Executed when a terminal crashes, times out, or detects a local printing/hardware failure right after transmitting authorization.
+  - Financial Impact: Releases the hold immediately. Zero merchant fees incurred because clearing never began.
+- 3. Void:
+  - Definition: Cancellation of an approved transaction on the same calendar day *before* the merchant's end-of-day batch settlement cut-off.
+  - Condition: Customer immediately cancels purchase at the checkout counter before the register closes.
+  - Financial Impact: Erases the transaction from the pending batch. Funds hold drops off within hours; no interchange fees charged.
+- 4. Refund:
+  - Definition: Transfer of money back to the cardholder *after* batch settlement and funds clearance have completed.
+  - Condition: Customer returns physical merchandise days after the original purchase.
+  - Financial Impact: Requires a separate financial settlement cycle (3-5 business days) and incurs non-refundable merchant interchange processing fees.
+- 5. Reconciliation (Settlement Balancing):
+  - Definition: The end-of-day accounting audit (Z-Report) comparing the mobile/POS terminal's local durable transaction journal against the acquirer/switch ledger.
+  - Outcome: Detects missing transactions, out-of-balance batches, or orphaned authorizations, ensuring complete ledger parity.
+
+## Practical walkthrough (English)
+
+State mapping and lifecycle semantics in Kotlin domain models:
+```kotlin
+enum class FinancialOperationType {
+    AUTHORIZE,  // Reserves funds (Hold on cardholder account)
+    REVERSAL,   // Immediate release of in-doubt hold prior to batch close
+    VOID,       // Cancellation of approved charge before end-of-day settlement
+    REFUND,     // Credit transfer back to cardholder post-settlement
+    RECONCILE   // Batch matching local terminal records vs bank switch
+}
+
+data class TransactionRecord(
+    val transactionId: String,
+    val rrn: String?,          // Retrieval Reference Number
+    val authCode: String?,
+    val amountCents: Long,
+    val state: OperationState,
+    val settledAtBatchId: String? // Null if unsettled (eligible for Void)
+) {
+    val canBeVoided: Boolean
+        get() = settledAtBatchId == null && state == OperationState.APPROVED
+
+    val requiresRefund: Boolean
+        get() = settledAtBatchId != null && state == OperationState.APPROVED
+}
+```
+
 ## Explanation in Arabic
 
 ما هي الفروق الجوهرية بين العمليات المالية الأساسية: التفويض (Authorization)، والعكس (Reversal)، والإلغاء (Void)، والاسترداد (Refund)، والمطابقة (Reconciliation)؟
@@ -95,26 +145,24 @@ Document provider mapping and settlement cutoffs with payments specialists. Reco
 
 ## Interview answer — short
 
-Authorization holds funds on the card. Reversal immediately cancels an in-flight authorization due to technical failure before completion. Void cancels an approved transaction on the same day before batch settlement with no interchange fees. Refund transfers settled funds back days later incurring fees. Reconciliation audits terminal records against bank ledgers.
+Authorization places a hold on cardholder funds without moving money. Reversal cancels an in-doubt authorization immediately due to terminal errors with zero fees. Void cancels an approved transaction before daily batch settlement. Refund returns settled money days later incurring processing fees. Reconciliation audits local terminal journals against bank switch ledgers to resolve financial discrepancies.
 
 ## Interview answer — structured
 
-Understanding financial lifecycle operations is essential for architects building transactional mobile systems.
-
-First, **Authorization (Auth)**. Next, verifies card authenticity and places a temporary hold on the customer's credit line. Does not transfer money; funds are transferred only upon subsequent 'Capture' or batch settlement.
-**Reversal (Auto-Reversal / 0400 Message)**. An automated, immediate technical rollback executed by terminal firmware or client code when a transaction succeeds at the bank but fails locally (e.g. Printer paper jam, EMV chip reader failure, or client timeout). Releases the hold within seconds.
-**Void**. A merchant-initiated cancellation of an approved transaction executed **prior to end-of-day batch settlement**. The transaction is dropped from the clearing batch; no interchange fees are incurred, and the hold drops off.
-**Refund**. Executed **post-settlement** when funds have already migrated into the merchant's acquiring bank. It initiates an inverse funds transfer, incurring interchange transaction processing fees and taking 3–7 business days.
-**Reconciliation**. Finally, the operational auditing process matching local terminal transaction storage records against payment gateway settlement logs, isolating discrepancies and stranded balances.
-
+The card payment lifecycle consists of five distinct accounting and settlement operations.
+Authorization verifies card validity and places a temporary hold on the customer's funds. Money does not change hands until final capture.
+Reversal is an automated emergency operation executed immediately when a terminal experiences a communication timeout or crash while awaiting authorization. It signals the bank to cancel the hold right away, incurring zero merchant fees.
+Void cancels an approved transaction within the same business day before the merchant closes and settles the daily batch. The transaction is removed from the settlement file, sparing both parties processing fees.
+Refund occurs after batch settlement has finalized and money has moved to the merchant's bank account. Returning funds requires a new transaction that takes several days to clear and incurs processing fees.
+Reconciliation is the end-of-day balancing process where the terminal transmits its local transaction journal to the bank switch to detect and reconcile any missing or mismatched records.
 
 ## Interview answer — deep senior
 
-From an EMV L2 kernel and payment network compliance perspective, subtle operational nuances exist.
-
-First, with The 'Void vs. Reversal' Architecture Nuance, developers often confuse Voids and Reversals. A Reversal undoes an authorization that never successfully finished its complete terminal protocol handshake. A Void cancels a transaction that was 100% completed, printed, and approved, but the merchant manually voids it before midnight settlement. Next, with Partial Reversals in Split Tenders, in multi-tender checkouts (e.g. Paying $50 with Gift Card and $50 with Visa), if the Visa authorization succeeds but the Gift Card fails, the client engine must trigger a Partial Reversal strictly against the Visa transaction while restoring the cart state.
-Finally, with Reconciliation Batch Balancing, in Smart POS Android devices (Pax, Poynt, Sunmi), closing the business batch sends an ISO 8583 0500 Batch Upload message summarizing total counts and debit volumes. If terminal and host totals mismatch by even 1 cent, the host halts settlement and forces a manual transaction-by-transaction reconciliation audit.
-
+From a payment operations and financial settlement architecture standpoint, distinguishing between these five operations is vital for ledger integrity and merchant fee minimization.
+Authorization is purely an administrative hold on the cardholder's credit limit. Under EMV and ISO 8583 standards, an authorization code confirms that funds exist and are locked, but actual interbank clearing occurs during nightly batch processing.
+The critical distinction between Reversal and Void lies in timing and certainty. A Reversal is an automated, real-time message dispatched when the terminal detects an ambiguous failure, such as a printer paper jam or a socket disconnect after sending an authorization request. Reversals release held funds instantaneously and protect the merchant from chargebacks. A Void, conversely, is an intentional business action taken when a customer returns goods before batch cut-off. Because the transaction has not settled, voiding erases the transaction without interchange fees.
+Refunds, on the other hand, occur post-settlement. Once the merchant's daily batch is submitted and funds are wired through the clearing house, the original transaction cannot be voided. A refund must be initiated as a separate credit transaction, which takes three to five business days and permanently forfeits merchant processing fees.
+Finally, Reconciliation is the audit mechanism that guarantees ledger truth. Every certified POS terminal maintains a local tamper-evident journal. At end-of-day, the terminal executes a settlement handshake, transmitting transaction counts and sums. If discrepancies appear, automated exception reports trigger dispute workflows, ensuring full accounting alignment across banks and merchants.
 
 ## How to answer in the interview
 

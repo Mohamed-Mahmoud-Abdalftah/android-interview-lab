@@ -20,6 +20,44 @@ What is the danger of using runCatching around cancellable flow/coroutine work?
 
 Explain runCatching swallowing cancellation and how to preserve structured shutdown.
 
+## Concept and technical explanation
+
+Using Kotlin's standard library runCatching { } block around suspending coroutine invocations or flow operations represents a catastrophic anti-pattern that sabotages structured concurrency and leaks background processes.
+Under structured concurrency, coroutine cancellation operates cooperatively by throwing a specialized CancellationException through the coroutine hierarchy. When a coroutine scope (such as viewModelScope or lifecycleScope) is cancelled, all child jobs receive cancellation signals via this exception.
+The standard runCatching function catches Throwable—the root of the exception hierarchy—which unconditionally intercepts and swallows CancellationException. Consequently, the exception is encapsulated inside a Result.failure instead of propagating upward to the coroutine dispatcher.
+Swallowing CancellationException prevents the coroutine runtime from transitioning the Job into the CANCELLED state, causing background loops to continue executing undead, leaking CPU threads, network sockets, and hardware sensors, and causing subtle state corruption bugs.
+
+## Practical walkthrough (English)
+
+Mitigating runCatching cancellation swallowing with runCatchingCancellable:
+```kotlin
+// ❌ CATASTROPHIC ANTI-PATTERN: Swallowing CancellationException
+suspend fun fetchUserDataCatastrophic(): Result<UserData> = runCatching {
+    // If the screen closes, delay or api throws CancellationException:
+    delay(2000L) // Or networkApi.getUser()
+    networkApi.getUser()
+    // runCatching catches CancellationException! The coroutine never cancels!
+}
+
+// ✅ SAFE PRODUCTION PATTERN: Explicitly rethrowing CancellationException
+suspend fun fetchUserDataSafe(): Result<UserData> = runCatching {
+    networkApi.getUser()
+}.onFailure { throwable ->
+    if (throwable is CancellationException) throw throwable // Propagate cancellation!
+}
+
+// ✅ IDIOMATIC EXTENSION: Custom runCatchingCancellable
+inline fun <R> runCatchingCancellable(block: () -> R): Result<R> {
+    return try {
+        Result.success(block())
+    } catch (e: CancellationException) {
+        throw e // Re-throw to honor structured concurrency!
+    } catch (e: Throwable) {
+        Result.failure(e)
+    }
+}
+```
+
 ## Explanation in Arabic
 
 خطر استخدام `runCatching` حول كود الـ Coroutines والـ Flows هو أحد أكثر الأخطاء الخفية والمكلفة في Kotlin:
@@ -94,39 +132,24 @@ A search ViewModel cancels stale requests via flatMapLatest. Repository wrapper 
 
 ## Interview answer — short
 
-runCatching catches all Throwables including CancellationException. This swallows coroutines' cooperative cancellation signals, converting cancellations into regular failures, breaking structured concurrency, leaking background tasks, and causing operators like withTimeout and flatMapLatest to malfunction.
+runCatching catches all Throwables including CancellationException, swallowing cancellation signals and breaking structured concurrency. This prevents cancelled coroutines from terminating, keeping undead background work, network calls, and hardware sensors running indefinitely while leaking memory and system resources.
 
 ## Interview answer — structured
 
-Using `kotlin.runCatching` around cancellable coroutine or flow work is a well-documented antipattern because it fundamentally breaks structured concurrency.
+RunCatching is a dangerous utility when applied to coroutines because it blindly swallows cancellation signals.
 
-`runCatching` is implemented with an indiscriminate `catch (e: Throwable)`. In Kotlin Coroutines, cooperative cancellation is driven by throwing `CancellationException`. Because `CancellationException` inherits from `Throwable`, `runCatching` intercepts the cancellation signal and encapsulates it as a `Result.failure(cancellationException)`.
+Kotlin coroutine cancellation relies on throwing CancellationException up the job hierarchy. When an Activity closes or a ViewModel clears, its CoroutineScope cancels child jobs cooperatively via this specific exception type.
 
-This causes catastrophic side effects.
-
-First, the coroutine refuses to terminate, continuing to execute subsequent statements when it was supposed to stop. Finally, operators that rely on cancellation—such as `withTimeout`, `collectLatest`, and `debounce`—fail to work properly.
-
-In production, we strictly forbid `runCatching` on suspend functions, replacing it with a custom `runSuspendCatching` helper or standard `try-catch` blocks that explicitly rethrow `CancellationException`.
+In production, runCatching catches java.lang.Throwable. Because CancellationException is a subclass of Throwable, runCatching intercepts it and wraps it inside a Result.failure, treating normal cooperative cancellation as an ordinary business failure.
+As for runtime consequences, the coroutine fails to recognize that it was cancelled, continuing to execute subsequent statements or infinite background loops. To maintain structured concurrency, developers must either rethrow CancellationException explicitly, use declarative Flow catch operators, or implement a custom runCatchingCancellable helper that preserves cancellation mechanics.
 
 
 ## Interview answer — deep senior
 
-Under the hood, why was `runCatching` designed this way in the Kotlin standard library?
-
-Because `kotlin.Result` was introduced as a general JVM feature, independent of the coroutines library. When coroutines adopted `CancellationException` as a control-flow unwinding mechanism, the two APIs came into conflict.
-
-Consider what happens inside a Flow pipeline:
-
-```kotlin
-flow.map {
-    runCatching { api.call(it) } // CATCHES CANCELLATION!
-}
-```
-
-If the collector cancels, `api.call(it)` throws `CancellationException`. `runCatching` catches it, treats it as an error, and downstream receives `Result.failure`. The downstream collector then attempts to process this 'failure', triggering secondary bugs like showing an error snackbar for a screen that the user voluntarily closed!
-
-In enterprise codebases, we enforce a Detekt static analysis rule: flagging any invocation of `kotlin.runCatching` containing a suspending call.
-
+Under the hood in kotlinx.coroutines, cancellation is cooperative and driven by the CancellationException class, which extends java.lang.IllegalStateException (and ultimately Throwable). When a coroutine suspends at a suspension point—such as delay(), withContext(), or FlowCollector.emit()—and its parent Job has been cancelled, the suspension machinery un-suspends the continuation abnormally by throwing a CancellationException.
+If this suspension point is wrapped inside runCatching { ... }, the try-catch block inside runCatching catches the CancellationException and wraps it in a Result.failure(exception). The coroutine continues running past the block instead of unwinding its call stack and terminating. If this happens inside a while(isActive) or while(true) loop, the coroutine transforms into an undead zombie process that permanently consumes CPU cycles, ignores scope disposal, and prevents the enclosing class from being garbage collected.
+Furthermore, flow operators like catch { } explicitly check for CancellationException and rethrow it immediately: if (e is CancellationException) throw e. This is why standard Flow operators honor structured concurrency natively, whereas standard library runCatching destroys it.
+Staff engineers create custom extension utilities like runCatchingCancellable or enforce custom Lint rules that forbid standard runCatching across all suspending functions and repository classes. By strictly isolating business error handling from coroutine infrastructure cancellation, applications guarantee that lifecycle events—such as Fragment destruction or user back-press navigation—instantly and deterministically terminate active background I/O operations.
 
 ## How to answer in the interview
 

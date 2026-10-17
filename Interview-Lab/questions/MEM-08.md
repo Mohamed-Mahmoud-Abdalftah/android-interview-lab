@@ -22,6 +22,38 @@ Why can a Singleton holding Activity Context leak memory?
 - Choose application context only for operations that do not require Activity capabilities or theme.
 - Correct ownership instead of reflexively replacing every Context reference.
 
+## Concept and technical explanation
+
+The memory leak caused by a Singleton holding an Activity Context stems from a fundamental lifecycle mismatch. A Singleton has process-level lifetime; its instance is anchored to a static variable or an application-scoped dependency injection container (such as Hilt @Singleton), persisting in memory for the entire lifespan of the Linux OS process. An Activity, in contrast, is an ephemeral UI component with a transient lifecycle tied to user navigation and configuration changes such as screen rotation. An Activity instance is never a lightweight object; it retains a substantial transitively reachable object graph, including its PhoneWindow, DecorView, inflated view trees, drawables, localized resources, and input dispatchers. When a long-lived Singleton retains an Activity reference, that reference acts as an unbroken path from a GC Root to the Activity. Consequently, when the user rotates the device or finishes the screen, the destroyed Activity cannot be reclaimed by the Garbage Collector, permanently wasting tens of megabytes of heap memory.
+
+## Practical walkthrough (English)
+
+Comparing leaky Singleton context retention with safe application context extraction:
+```kotlin
+// Leaky Singleton: Holding Activity Context:
+object LocationTracker {
+    private var context: Context? = null
+    fun init(activityContext: Context) {
+        this.context = activityContext // Retains Activity forever; leaks on rotation!
+    }
+}
+
+// Safe Singleton: Extracting Application Context:
+class SafeLocationTracker private constructor(context: Context) {
+    // applicationContext has process-level lifetime, matching the Singleton:
+    private val appContext = context.applicationContext
+
+    companion object {
+        @Volatile private var instance: SafeLocationTracker? = null
+        fun getInstance(context: Context): SafeLocationTracker =
+            instance ?: synchronized(this) {
+                instance ?: SafeLocationTracker(context).also { instance = it }
+            }
+    }
+}
+```
+By invoking context.applicationContext, the singleton safely anchors to the process-level context, allowing destroyed Activity instances and their associated view hierarchies to be garbage collected immediately upon screen teardown.
+
 ## Explanation in Arabic
 
 تسريب الذاكرة الناتج عن احتفاظ كائن أحادي (Singleton) بسياق النشاط (Activity Context):
@@ -107,25 +139,24 @@ For an image cache, inject only an application-scope directory or Context, set a
 
 ## Interview answer — short
 
-A Singleton lives for the entire application process lifetime via a static reference. If it retains an Activity Context, the Garbage Collector cannot reclaim the Activity after `onDestroy()`, retaining its entire View hierarchy and Bitmaps on the heap. Singletons should only reference `applicationContext` or avoid holding Context entirely.
+A Singleton has process-level lifetime anchored to static memory, whereas an Activity has a transient lifecycle destroyed on screen exit or rotation. If a Singleton holds an Activity Context, that Activity cannot be collected by the GC, leaking its entire view tree, bitmaps, and resources. Singletons should only hold applicationContext or use dependency injection with proper lifecycle scoping.
 
 ## Interview answer — structured
 
-A Singleton has a process-level lifecycle because it is anchored to a static reference in memory. An Activity, on the other hand, is transient and frequently destroyed and recreated, such as during configuration changes or screen navigation.
+Memory leaks caused by singletons holding Context are among the most prevalent architectural flaws in Android development. The root cause is a lifecycle mismatch: a Singleton instance lives in static memory for the entire duration of the application process, whereas an Activity is an ephemeral UI component designed to be destroyed and recreated across configuration changes and navigation.
 
-When a Singleton holds a strong reference to an Activity Context, that Activity cannot be collected by the Garbage Collector after `onDestroy()` is called. Because an Activity holds references to its entire `Window`, `DecorView`, View hierarchy, resource managers, and loaded Bitmaps, this single reference retains megabytes of dead memory on the heap. If the user rotates the device ten times, ten dead Activity instances remain pinned in memory, quickly leading to an `OutOfMemoryError`.
+An Activity context does not exist in isolation; it holds direct references to the PhoneWindow, the DecorView, inflated view hierarchies, drawables, and localized resource caches. When a Singleton retains an Activity reference, it forms an unbreakable path from a GC Root to that Activity. Consequently, when the user navigates away or rotates the device, the destroyed Activity cannot be reclaimed.
 
-The standard production fix is ensuring Singletons only ever take `context.applicationContext`. The Application context shares the process lifecycle, making it leak-free for long-lived components. Alternatively, we use dependency injection frameworks like Hilt with `@Singleton` scoped classes that inject `@ApplicationContext` directly.
+In production, rotating a screen five times retains five complete Activity trees, multiplying memory consumption and triggering out-of-memory crashes.
+
+Singletons must either extract context.applicationContext or leverage dependency injection frameworks like Hilt to bind dependencies strictly to ActivityRetainedScoped or Singleton containers with clean boundaries.
 
 
 ## Interview answer — deep senior
 
-It is also critical to understand when `applicationContext` is *not* a drop-in replacement. The Application context does not have a themed UI scope or a Window token. If you attempt to inflate themed views or display a Dialog (`AlertDialog.Builder(applicationContext)`), the app will crash with an `IllegalStateException` or render without the appropriate theme attributes.
+In deep memory profiling, an Activity leak caused by a static singleton presents a distinct signature in HPROF heap dumps. In Android Studio Profiler or Eclipse Memory Analyzer Tool, inspecting the Dominator Tree reveals that the retained heap of the leaked Activity often exceeds 20 to 50 megabytes. This bloated footprint is not caused by the Activity class fields alone, but by its retained transitively held dependencies: the mWindow reference points to PhoneWindow, which anchors the DecorView, holding every inflated ViewGroup, TextView, and hardware-backed Bitmap loaded into memory.
 
-When analyzing a memory dump in LeakCanary or Memory Profiler, this pattern manifests as a clear shortest path to GC Root: `com.example.Singleton.context` -> `MainActivity`. The retained size will equal the entire Activity graph.
-
-If a component truly needs short-term access to an Activity (for example, a global UI navigator or lifecycle observer), it should either accept the Activity as a method parameter rather than storing it as a property, or wrap it in a `WeakReference<Activity>` and verify nullability before invoking UI operations.
-
+When analyzing the leak path in LeakCanary, the engine computes the Shortest Path to GC Roots, highlighting a static field such as com.example.Manager.Companion.instance holding a reference to mActivity. To resolve this at a platform architecture level, staff engineers enforce strict context policies. If a service requires UI capabilities—such as inflating layouts with custom themes or showing alert dialogs—that service must be scoped to the Activity lifecycle and unregistered in onDestroy(). If a singleton only requires system services, shared preferences, or database access, it must strictly reference context.applicationContext or inject ApplicationContext via Hilt. Furthermore, static analysis tools like Android Lint with the StaticFieldLeak rule and automated LeakCanary assertions in Espresso integration tests should be configured on CI pipelines to catch static context leaks before pull requests are merged.
 
 ## How to answer in the interview
 

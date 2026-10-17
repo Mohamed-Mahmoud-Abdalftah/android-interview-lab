@@ -20,6 +20,59 @@ What is a Room Entity, DAO, transaction, migration, and Flow query?
 
 Explain Room schema/access components, all-or-nothing transaction, migration and invalidation Flow.
 
+## Concept and technical explanation
+
+The architecture of Jetpack Room rests on five interconnected structural components:
+- Entity (@Entity): Represents a table within the SQLite database. Kotlin data classes annotated with @Entity define column properties, primary keys, indices for fast lookups, and foreign key constraints governing cascading updates or deletions.
+- DAO (@Dao - Data Access Object): The primary software contract for database interactions. It defines type-safe abstract methods for CRUD operations, mapping Kotlin function calls to validated SQL queries using @Insert, @Update, @Delete, and @Query annotations.
+- Transaction (@Transaction): Enforces ACID atomicity across multi-step database writes. When a DAO method is annotated with @Transaction, Room wraps the execution in a SQLite transaction block (beginTransaction / setTransactionSuccessful / endTransaction). If any individual operation fails or throws an exception, all preceding writes are cleanly rolled back, preventing partial state corruption.
+- Migration (Migration): Governs incremental schema evolution across app updates. A Migration(startVersion, endVersion) defines the raw SQL DDL statements (such as ALTER TABLE or CREATE TABLE) required to transition an installed database to a newer schema while strictly preserving user data.
+- Flow Query: Room natively supports reactive observable queries. When a DAO query returns Flow<T>, Room registers an observer with its SQLite InvalidationTracker. Whenever an insert, update, or delete mutates any observed table, Room automatically queries the new snapshot and emits it to the collector.
+
+## Practical walkthrough (English)
+
+Comprehensive Room implementation featuring Entity, DAO, Transaction, Migration, and Flow:
+```kotlin
+// 1. Entity with indices and primary key
+@Entity(
+    tableName = "cart_items",
+    indices = [Index(value = ["productId"], unique = true)]
+)
+data class CartItemEntity(
+    @PrimaryKey val id: String,
+    val productId: String,
+    val quantity: Int,
+    val unitPrice: Double
+)
+
+// 2. DAO with reactive Flow query and atomic Transaction
+@Dao
+interface CartDao {
+    @Query("SELECT * FROM cart_items ORDER BY id ASC")
+    fun observeCart(): Flow<List<CartItemEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertItem(item: CartItemEntity)
+
+    @Query("DELETE FROM cart_items")
+    suspend fun clearCart()
+
+    // 3. Transaction guarantees all-or-nothing execution
+    @Transaction
+    suspend fun replaceCart(newItems: List<CartItemEntity>) {
+        clearCart()
+        newItems.forEach { insertItem(it) }
+    }
+}
+
+// 4. Schema Migration preserving user data
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE cart_items ADD COLUMN notes TEXT DEFAULT '' NOT NULL")
+    }
+}
+```
+
 ## Explanation in Arabic
 
 ما هي مكونات مكتبة Room الأساسية:
@@ -114,26 +167,31 @@ An offline order repository stores header/items atomically, exposes DAO Flow to 
 
 ## Interview answer — short
 
-Room translates @Entity to SQLite tables, and DAO interfaces to type-safe SQL operations verified at compile time. @Transaction guarantees all-or-nothing atomicity for multi-step writes. Migration alters schemas between versions preserving user data. Flow queries automatically emit fresh query results whenever InvalidationTracker detects table mutations.
+An Entity defines the database table schema, while a DAO defines type-safe CRUD operations. A Transaction guarantees atomic all-or-nothing writes to prevent state corruption. A Migration executes SQL DDL to update database schemas between versions without data loss, and a Flow query reactively emits updated data snapshots whenever observed tables change.
 
 ## Interview answer — structured
 
-Room structures SQLite database interactions through five core architectural constructs.
-
-First, with @Entity, models a SQLite table. Defines primary keys, auto-generation rules, foreign key constraints, and column indexes. Next, dAO` (Data Access Object) declares data interactions. The Room compiler verifies SQL query syntax and column mappings at compile time against Entity properties, preventing runtime SQL crashes.
-Additionally, @Transaction wraps multiple DAO operations within a single SQLite transaction (`BEGIN TRANSACTION ... COMMIT`). If any statement throws an exception, the entire sequence rolls back, preventing inconsistent database states. Explicit migration definitions (`Migration(1, 2)`) executing raw SQL `ALTER TABLE` statements when bumping the database version, preserving existing user data.
-Finally, with Flow Query, reactive streams returning `Flow<List<T>>`. Powered by Room's internal `InvalidationTracker`, any insert, update, or delete on the queried table triggers a re-query on a background dispatcher, automatically emitting the new dataset to collectors.
-
+Jetpack Room is composed of five foundational building blocks that ensure safe and reactive persistence.
+First, an Entity maps a Kotlin data class directly to a SQLite table schema, defining primary keys, indices, and foreign key relationships.
+Second, a DAO acts as the clean interface for database interactions, binding Kotlin methods to compile-time verified SQL queries.
+Third, Transactions wrap multiple database modifications in an atomic block. If an operation fails midway, Room rolls back the entire transaction, ensuring that database integrity is never compromised.
+Fourth, Migrations manage database schema evolution. When updating the database version, a developer writes explicit migration scripts to alter tables, ensuring existing user records are never wiped.
+Fifth, Flow queries enable reactive UI architectures. Room observes database tables and automatically dispatches new data emissions whenever an update occurs.
 
 ## Interview answer — deep senior
 
-Under the hood, understanding **Room InvalidationTracker Mechanics** is vital for senior engineers:
-
-Room does **NOT** observe individual rows; it observes **entire tables**.
-When Room initializes, it sets SQLite triggers on observed tables. When a write occurs, SQLite increments an internal invalidation counter in `room_master_table` or an in-memory bitset. The `InvalidationTracker` polls or receives trigger notifications on `Dispatchers.IO`, and dispatches an invalidation signal. The active Flow query re-runs the entire SQL query from scratch and emits the fresh result.
-
-Crucial Performance Consequence: If you query a 5,000-row table and update just 1 unrelated row in that table, Room re-executes the entire 5,000-row query! To prevent UI jank in high-frequency update tables, use targeted queries (`WHERE id = :id`), index foreign keys, and split rapidly changing columns into separate tables.
-
+Under the hood, Room translates high-level Kotlin abstractions into optimized SQLite C-library interactions with compile-time safety.
+During compilation, Room's KSP processor parses every @Dao and @Query, compiling SQL statements against a virtual SQLite driver to validate table names, column mappings, and parameter types before runtime.
+When multiple database writes occur concurrently, isolating them inside a @Transaction is essential.
+Room delegates this to SQLite's WAL (Write-Ahead Logging) mode, executing beginTransactionNonExclusive().
+This ensures that writes do not block concurrent read queries, maintaining silky-smooth 120Hz UI scrolling even during heavy database synchronization.
+In production, database migrations represent the highest risk for silent catastrophic crashes.
+If an application bumps its database version without providing a corresponding Migration object, Room throws an IllegalStateException and crashes immediately.
+Relying on fallbackToDestructiveMigration() in production is strictly forbidden because it purges all user data.
+We validate migrations programmatically using Room's MigrationTestHelper, which runs instrumented tests that instantiate old schema versions, execute migrations, and verify table constraints.
+Finally, Room's reactive Flow queries rely on the InvalidationTracker.
+The tracker registers triggers on SQLite master tables; when any observed table experiences an insert or update, a background task re-executes the query and emits the latest immutable list to our ViewModel StateFlow pipeline.
+Additionally, we configure Room openHelperFactory to utilize SQLCipher for full-database encryption at rest, satisfying enterprise financial compliance without sacrificing reactive Flow query performance or compile-time schema validation capabilities.
 
 ## How to answer in the interview
 

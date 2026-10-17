@@ -20,6 +20,87 @@ Design a notification system with deep links.
 
 Design notification delivery with server authority, deep links and security validation.
 
+## Concept and technical explanation
+
+Designing a mobile push notification and deep-link routing system requires orchestrating multiple ingress pathways: Firebase Cloud Messaging (FCM) data/notification payloads, verified Android App Links (HTTPS), custom URI schemes, and local alarms. The architecture must accommodate all application lifecycle phases: cold start from process death, warm start from background state, and active foreground execution. Core technical requirements include: decoupling sensitive data from push payloads (passing lightweight IDs and fetching details from authenticated APIs), centralizing URI parsing and permission validation within a dedicated DeepLinkRouter, constructing logical synthetic back-stacks via TaskStackBuilder so pressing the back button navigates up to parent screens rather than exiting the application, and ensuring full compliance with Android 12+ trampoline restrictions and Android 13+ POST_NOTIFICATIONS runtime permissions.
+
+## Practical walkthrough (English)
+
+Implementing a secure notification dispatcher and synthetic back-stack routing:
+```kotlin
+// 1. Firebase Messaging Service receiving payloads and dispatching notifications
+class AppFirebaseMessagingService : FirebaseMessagingService() {
+
+    override fun onMessageReceived(remoteMessage: RemoteMessage) {
+        val data = remoteMessage.data
+        val targetUri = data["deep_link_uri"] ?: return
+        val title = data["title"] ?: "New Notification"
+        val message = data["message"] ?: ""
+
+        sendNotification(title, message, Uri.parse(targetUri))
+    }
+
+    private fun sendNotification(title: String, message: String, deepLink: Uri) {
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "critical_updates_channel"
+
+        // Construct synthetic back-stack targeting DeepLinkDispatchActivity
+        val intent = Intent(this, MainActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            this.data = deepLink
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+
+        val pendingIntent = TaskStackBuilder.create(this).run {
+            addNextIntentWithParentStack(intent)
+            getPendingIntent(
+                deepLink.hashCode(),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+
+        notificationManager.notify(deepLink.hashCode(), notification)
+    }
+}
+
+// 2. Centralized Deep Link Router validating routes and user authorization
+object DeepLinkRouter {
+    fun route(context: Context, uri: Uri, isAuthenticated: Boolean): NavigationCommand {
+        val path = uri.path ?: return NavigationCommand.ToHome
+
+        // Route validation and auth gatekeeper
+        return when {
+            path.startsWith("/orders/") -> {
+                val orderId = uri.lastPathSegment ?: ""
+                if (isAuthenticated) {
+                    NavigationCommand.ToOrderDetail(orderId)
+                } else {
+                    NavigationCommand.ToLogin(redirectUri = uri)
+                }
+            }
+            path.startsWith("/promo/") -> NavigationCommand.ToPromo(uri.getQueryParameter("code") ?: "")
+            else -> NavigationCommand.ToHome
+        }
+    }
+}
+
+sealed interface NavigationCommand {
+    data object ToHome : NavigationCommand
+    data class ToOrderDetail(val orderId: String) : NavigationCommand
+    data class ToLogin(val redirectUri: Uri) : NavigationCommand
+    data class ToPromo(val code: String) : NavigationCommand
+}
+```
+
 ## Explanation in Arabic
 
 كيف تصمم نظام إشعارات (Push Notifications) مع روابط عميقة (Deep Links) يتعامل مع كل حالات فتح التطبيق (Cold, Warm, Background)؟
@@ -103,24 +184,30 @@ A messaging app stores messages on backend, sends push with opaque event ID, ded
 
 ## Interview answer — short
 
-Design notifications using FCM data-payload messages for deterministic client processing. Construct synthetic back stacks using TaskStackBuilder so pressing Back navigates to parent screens rather than exiting the app. Intercept routing through an AuthGuard to handle expired sessions before resuming deep link navigation.
+We design notification and deep-link systems using Firebase Cloud Messaging, a centralized DeepLinkRouter, and TaskStackBuilder. Push payloads contain only metadata and target URIs rather than raw sensitive data. When tapped, the router parses and validates the deep link, constructs a proper synthetic back-stack so pressing back returns to the parent screen, and handles user authentication status before routing to the destination.
 
 ## Interview answer — structured
 
-Designing a reliable push notification and deep linking system requires coordinating across background delivery, synthetic navigation hierarchies, and session states.
-
-First, **FCM Payload Strategy**. Next, prefer FCM **Data Messages** over standard Notification messages. Data messages invoke `onMessageReceived()` deterministically regardless of whether the app is in foreground, background, or killed, allowing client decryption, local database caching, and custom notification rendering.
-**Synthetic Back Stack (TaskStackBuilder)**. Direct navigation to a deep link destination creates a broken back stack where pressing the system Back button terminates the application. Use `TaskStackBuilder.create(context).addNextIntentWithParentStack(targetIntent)` to synthesize a natural navigation path (e.g., Home -> Orders -> OrderDetail).
-**Authentication & Session Interception (AuthGuard)**. Finally, when an unauthenticated or logged-out user clicks a sensitive push notification, the deep link router must store the pending destination in memory/DataStore, redirect the user through the Login/MFA flow, and resume navigation to the original deep link target upon successful authentication.
-
+A robust push notification and deep linking architecture guarantees secure delivery, seamless routing, and proper back-stack reconstruction across all application lifecycle states.
+In the data layer, our FirebaseMessagingService receives push payloads containing lightweight metadata and action URIs, never sensitive personal data.
+If the app is in the background or killed, the system tray notification carries a PendingIntent targeting our centralized DeepLinkRouter.
+When the user taps the notification, the router intercepts the URI, verifies user authentication state, and validates target parameters against an authorized routing registry to prevent malicious link injection.
+To maintain an intuitive user experience, we use Android's TaskStackBuilder to construct a synthetic back-stack.
+For example, deep linking directly into an order details screen synthesizes the order history and home screens beneath it, ensuring that pressing the back button navigates logically upward instead of abruptly exiting to the Android home screen.
+If the destination requires authentication and the user is logged out, the router caches the pending deep link and resumes navigation after successful login.
 
 ## Interview answer — deep senior
 
-From a staff-level systems perspective, deep link architectures must support single-activity Compose routing and cold-boot resilience.
-
-First, with Single-Activity Jetpack Compose Routing, in modern Single-Activity apps, route deep links to a single `MainActivity` with `launchMode="singleTask"`. Override `onNewIntent(intent: Intent?)` to capture incoming notifications when the app is already running, updating a reactive `NavigationEvents` channel consumed by the top-level Compose `NavHost`. Next, with Cold Start Race Conditions, during a cold launch triggered by a notification tap, the app must initialize dependency graphs, load remote feature flags, and restore session credentials before executing the navigation transition. Queue the pending deep link event in an application-scoped state machine until baseline startup initialization signals readiness.
-Finally, with Deep Link Security & Parameter Sanitization, treat all intent parameters as untrusted external input. Validate UUID formats, sanitize URIs, and prevent open redirects where malicious URLs could instruct the app to launch arbitrary internal activities or WebViews.
-
+From a systems architecture standpoint, handling deep links reliably requires accommodating cold starts, process death, and platform version discrepancies.
+On Android 12 and above, the operating system enforces strict trampoline restrictions, blocking broadcast receivers and background services from starting activities directly.
+Consequently, all notification PendingIntents must launch an Activity directly or dispatch through an immutable PendingIntent with the FLAG_IMMUTABLE flag.
+In cold-start scenarios, the target screen often depends on essential asynchronous initialization, such as session validation, remote config fetching, or database decryption.
+If the deep link routes immediately before these dependencies are ready, the app risks crashing or leaking unauthenticated screens.
+Our architecture uses an application-level NavigationCoordinator that checks the startup readiness state.
+If initialization is pending, the coordinator enqueues the deep-link command until authentication and configuration resolve.
+Furthermore, we implement Android App Links with verified digital asset links on the web server, ensuring that verified HTTPS URLs open our app directly without displaying the ambiguous Android disambiguation dialog.
+Finally, we sanitize all incoming URI query parameters against path traversal and SQL injection vectors before passing arguments to ViewModels, safeguarding internal application boundaries.
+We also configure notification channels with clear user-facing importance levels and manage dynamic badge counts through OEM-compatible badge APIs, ensuring consistent visual affordance across varied device manufacturers.
 
 ## How to answer in the interview
 

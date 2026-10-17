@@ -22,6 +22,57 @@ What is NavHost, and how is state restored after process death?
 - Separate saved navigation/UI state from ViewModel and durable data.
 - Test deep link and process recreation without overclaiming restoration.
 
+## Concept and technical explanation
+
+NavHost is the foundational container composable in Jetpack Compose Navigation that hosts a self-contained navigation graph and swaps screen destinations based on NavHostController state. State restoration across Android process death operates on two architectural levels: UI presentation state and business domain state. UI widget state (such as scroll positions and uncommitted text input) is preserved using rememberSaveable backed by SaveableStateRegistry, which serializes data into the platform saved instance state Bundle. Business state inside architecture ViewModels is restored via SavedStateHandle, which automatically retains navigation arguments and query states across process recreation.
+
+## Practical walkthrough (English)
+
+Restoring UI and ViewModel state after process death in a Compose NavHost:
+```kotlin
+// 1. Business state surviving process death via ViewModel SavedStateHandle
+@HiltViewModel
+class SearchViewModel @Inject constructor(
+    private val savedStateHandle: SavedStateHandle
+) : ViewModel() {
+    // Survives process termination and system RAM reclamation!
+    var query: String
+        get() = savedStateHandle["search_query"] ?: ""
+        set(value) { savedStateHandle["search_query"] = value }
+}
+
+// 2. UI presentation state surviving process death via rememberSaveable
+@Composable
+fun FilterableSearchScreen(viewModel: SearchViewModel) {
+    // Survives process death and config changes via Bundle serialization!
+    var isFilterExpanded by rememberSaveable { mutableStateOf(false) }
+
+    Column(modifier = Modifier.padding(16.dp)) {
+        TextField(
+            value = viewModel.query,
+            onValueChange = { viewModel.query = it },
+            placeholder = { Text("Search...") }
+        )
+        FilterToggle(
+            isExpanded = isFilterExpanded,
+            onToggle = { isFilterExpanded = !isFilterExpanded }
+        )
+    }
+}
+
+// 3. NavHost container managing destinations and backstack state
+@Composable
+fun AppNavHost(navController: NavHostController) {
+    NavHost(navController = navController, startDestination = "home") {
+        composable("home") { HomeScreen(onOpenSearch = { navController.navigate("search") }) }
+        composable("search") {
+            val searchVm: SearchViewModel = hiltViewModel()
+            FilterableSearchScreen(viewModel = searchVm)
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف يعمل الـ `NavHost` وكيف يتم استعادة حالة التطبيق بعد موت العملية (Process Death) في Jetpack Compose:
@@ -112,25 +163,34 @@ Test rotation, background system process death, deep links, and missing/stale ID
 
 ## Interview answer — short
 
-`NavHost` coordinates navigation by rendering composables bound to a backstack of `NavBackStackEntry` instances, each possessing its own Lifecycle, ViewModelStore, and SavedStateRegistry. Following process death, `NavHost` restores the full backstack hierarchy from the Activity's saved instance state bundle, while ViewModels recover state via `SavedStateHandle`.
+NavHost is the container composable that links a NavHostController to a navigation graph, displaying destinations based on backstack state. State restoration after system process death occurs at two levels. Local UI state like toggles or draft text uses rememberSaveable, which serializes into the Activity saved instance Bundle via SaveableStateHolder. Business state and arguments are restored inside ViewModels using SavedStateHandle, ensuring seamless recovery when the operating system kills the background process.
 
 ## Interview answer — structured
 
-The `NavHost` manages the presentation of destinations defined in a navigation graph, mapping navigation backstack entries to active composables.
-
-First, with BackStack Architecture, under the hood, the `NavHost` orchestrates a stack of `NavBackStackEntry` objects. Each entry is an isolated architectural scope with three distinct responsibilities. Next, its own **Lifecycle**: Transitions to `RESUMED` when on top, and `CREATED` when pushed into the backstack.
-Its own **ViewModelStore**: Scoping destination-specific ViewModels that survive configuration changes and clear only when popped off the backstack. Its own **SavedStateRegistry**: Providing slot isolation for `rememberSaveable` calls.
-Finally, with Process Death Restoration, when the OS terminates an application in the background, Android invokes Activity `onSaveInstanceState()`. The `NavController` serializes the destination backstack and typed route arguments into this Bundle.
-
-Upon relaunch, `NavHost` rebuilds the backstack structure. Screen composables restore local UI state through `rememberSaveable`, while ViewModels restore saved inputs and queries via **`SavedStateHandle`**, making process recovery seamless to the user.
-
+Managing screen destinations and surviving system-initiated process death is a critical benchmark for enterprise-grade Android applications.
+NavHost serves as the primary composition viewport for Jetpack Navigation.
+It observes the destination backstack emitted by NavHostController, mapping route strings or type-safe serializable destinations to their corresponding composable contents.
+When Android reclaims application memory in the background due to RAM pressure, the operating system executes process death.
+Restoring application state upon return requires two coordinated mechanisms.
+For presentation state within the composable tree, developers replace remember with rememberSaveable.
+While remember only survives recomposition, rememberSaveable serializes data into the Android platform saved instance state Bundle using built-in Savers for primitives or custom Savers for complex objects.
+For business state inside ViewModels, we rely on SavedStateHandle.
+Hilt automatically injects SavedStateHandle into ViewModels, providing a persistent key-value store that survives process destruction.
+Furthermore, NavHost internally wraps backstack entries with SaveableStateHolder, guaranteeing that each destination's scroll offset and input state are saved and restored automatically when popping and pushing backstack destinations.
 
 ## Interview answer — deep senior
 
-Testing process death restoration is mandatory for enterprise applications. We verify this via ADB: putting the app in the background (`pressHome()`) and executing `adb shell am kill <package_name>`, then relaunching the app from the recent apps switcher. If a screen crashes or resets to a blank state, it exposes un-hoisted memory state that wasn't backed by `SavedStateHandle` or `rememberSaveable`.
-
-Inside `NavHost`, transitions between destinations are animated using Compose animations (`enterTransition`, `exitTransition`). When navigating forward, `SaveableStateHolder` saves the composition state of the leaving composable and unbinds its Slot Table nodes from memory to preserve RAM. When popping the backstack, `SaveableStateHolder` restores the saved composition state, instantly recovering scroll positions and local text fields without re-instantiating the screen.
-
+Under the hood, NavHost and process death state restoration rely on SaveableStateHolder and the AndroidX SavedStateRegistryOwner pipeline.
+When NavHost navigates between composables, it utilizes SaveableStateHolder.SaveableStateProvider.
+This component assigns a unique key to each backstack entry.
+When a destination is covered by a new screen or temporarily unmounted, SaveableStateHolder invokes its internal saveState() logic, serializing that subcomposition's rememberSaveable slot values into a detached bundle dictionary rather than discarding them.
+When the user pops the backstack to return, the runtime matches the entry key and restores the exact SlotTable interval values.
+During system process death, the host Activity's onSaveInstanceState(outState: Bundle) triggers the root SaveableStateRegistry.
+The registry serializes all active SaveableStateHolder dictionaries and ViewModel SavedStateHandles into the system-managed persistent Parcelable Bundle.
+Upon process resurrection, the operating system launches a new Linux process, re-creates the Activity, and passes the saved Bundle into onCreate().
+Compose's root RecomposeScope reads the registry, and SavedStateHandle restores its key-value map.
+Because the operating system imposes a strict transaction buffer limit of roughly one megabyte across Binder IPC transactions, senior engineers ensure that only primitive identifiers, scroll indices, and query tokens are serialized, completely avoiding heavy domain payloads to prevent fatal TransactionTooLargeException crashes during process recreation.
+Senior engineers test this resilience by enabling 'Don't keep activities' in Developer Options or executing 'adb shell am kill <package>' to verify that screens rehydrate flawlessly without throwing NullPointerExceptions or dropping user form drafts.
 
 ## How to answer in the interview
 

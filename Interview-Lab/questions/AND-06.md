@@ -22,6 +22,24 @@ What are configuration changes, and what survives them?
 - Place transient screen state, small restorable state, and durable data in the right owners.
 - Test rotation, resizing, locale changes, and night mode without assuming a particular callback order is a persistence contract.
 
+## Concept and technical explanation
+
+Configuration changes represent environmental, hardware, or system-level setting modifications that occur while an Android application is running, forcing the operating system to recalculate its active resource configuration. Common triggers include screen orientation changes between portrait and landscape, system language or locale switching, toggling between light and dark display modes, multi-window mode entry and split-screen resizing, device folding or unfolding on foldable hardware, and dynamic font scale or display density adjustments.
+
+When a configuration change occurs, Android's default architectural behavior is to destroy the active Activity instance through its teardown lifecycle callbacks from onPause through onStop to onDestroy, and immediately recreate a fresh Activity instance from onCreate through onStart to onResume. This destructive recreation cycle is deliberate: it allows the framework to automatically reload resources matching the updated configuration qualifiers from the application package, such as layout-land, values-night, or values-ar.
+
+Understanding what survives this recreation is fundamental to building reliable mobile software. First, Jetpack ViewModels survive intact in process memory because they are retained by the ViewModelStoreOwner across the configuration boundary, preserving ongoing business logic and viewModelScope coroutines. Second, lightweight UI state survives via the SavedStateHandle or onSaveInstanceState Bundle, which serializes key-value pairs across the recreation boundary. Third, application-level singletons, static fields, in-memory caches, and dependency injection graphs remain untouched in the Android Runtime heap because the underlying Linux operating system process is never terminated. Conversely, the old Activity instance, its View hierarchy, Fragments, dialogs, and any coroutines launched inside the unmanaged lifecycleScope are completely destroyed and garbage collected.
+
+## Practical walkthrough (English)
+
+In a production ecommerce checkout screen, consider what happens when a customer rotates their tablet while completing a payment form:
+1. What is destroyed and lost:
+The active Activity instance, inflated ViewBinding hierarchies, and Dialogs are destroyed immediately. Any asynchronous tasks launched inside lifecycleScope are canceled as the lifecycle transitions to DESTROYED. Local Activity instance variables, such as temporary boolean flags or unsaved input text not backed by persistent IDs, are dropped from memory.
+2. What survives and persists:
+The CheckoutViewModel and its StateFlow subscriptions remain uninterrupted in heap memory via the ViewModelStore. Ongoing payment processing coroutines running inside viewModelScope continue execution without interruption. If input fields possess unique android:id attributes, their entered text is automatically serialized into the instance state Bundle and restored into the newly inflated layout.
+3. Failure scenario:
+If an engineer stores an order submission state in an Activity member variable or launches the payment network request in lifecycleScope, screen rotation cancels the request mid-flight while leaving the user on a blank form. If the user taps submit again upon recreation, duplicate charges or conflicting database records occur. The architectural safeguard is to execute all transactions within viewModelScope, track operation identifiers through SavedStateHandle, and query backend payment status before retrying.
+
 ## Explanation in Arabic
 
 الـ Configuration Changes وما الذي ينجو منها (What survives them) هو أساس فهم استقرار التطبيقات أثناء التدوير وتغيير إعدادات الجهاز:
@@ -101,34 +119,28 @@ For a checkout screen, persist the server operation ID and user-entered draft se
 
 ## Interview answer — short
 
-Configuration changes (screen rotation, dark mode, locale, multi-window) cause Android to completely destroy and recreate the Activity to reload resources. The ViewModel survives in memory via ViewModelStore, the saved instance state Bundle survives for UI state, and the app process remains intact.
+A configuration change occurs when runtime environment settings change, such as screen rotation, dark mode switching, or locale adjustments. By default, Android completely destroys and recreates the Activity to reload qualifier-matching resources. The ViewModel survives in memory via ViewModelStore, the saved instance state Bundle preserves transient UI keys, and the Linux process remains alive.
 
 ## Interview answer — structured
 
-A configuration change occurs when device hardware or system settings change at runtime, altering the active resource configuration.
+A configuration change occurs when runtime environment variables change, such as device rotation, system language switching, dark mode toggling, or multi-window resizing. Android handles this by destroying the current Activity instance through its lifecycle callbacks and instantiating a fresh one to re-resolve qualifier-specific resources from the APK asset table.
 
-Common configuration changes include.
+The system cleanly separates what is destroyed from what survives. The previous Activity instance, its View tree, and any jobs scoped strictly to the UI lifecycle are destroyed. However, the ViewModel survives continuously in process memory because it is retained by the ViewModelStoreOwner, ensuring that viewModelScope coroutines and business state remain uninterrupted.
 
-First, screen orientation changes (portrait vs landscape). Next, system dark mode toggles (day vs night theme).
-Locale/language changes. Multi-window resizing and folding/unfolding of foldable devices.
-Finally, font scaling and display density modifications.
+Transient UI properties like scroll offsets and form inputs survive via SavedStateHandle or the onSaveInstanceState Bundle. Meanwhile, application-level singletons, network clients, and database handles stay alive because the underlying Linux process is never terminated during an ordinary configuration change.
 
-By default, Android destroys and recreates the entire Activity (`onPause -> onStop -> onDestroy` followed by `onCreate -> onStart -> onResume`) so the app can load new resources (e.g., `layout-land` or `values-night`).
-
-**What survives:**
-
-First, a ViewModel is retained in memory by the `ViewModelStore`, preserving ongoing business logic and `viewModelScope` coroutines. Next, saved Instance State (`onSaveInstanceState` / `SavedStateHandle`) serializes small UI states across recreation.
-Finally, with Process Memory, singletons, Hilt graph, and memory caches remain intact because the Linux process never died.
+In production, we avoid using android:configChanges to bypass recreation. Instead, we embrace the recreation cycle, delegate business operations to ViewModelScope, and persist critical transaction identifiers into durable storage, guaranteeing flawless state continuity.
 
 
 ## Interview answer — deep senior
 
-Under the hood, why does Android destroy the Activity rather than just swapping Views?
+At the operating system and Android Runtime level, configuration changes are orchestrated by the ActivityTaskManagerService in the system_server process. When a hardware sensor triggers a display rotation or the user toggles dark mode, the system server evaluates the delta between the device's current Configuration and the Activity's override configuration.
 
-Because swapping themes and layouts dynamically on an existing Activity would require manually traversing every drawable, style attribute, dimension, and string resource across the entire view tree. Recreating the Activity provides a clean slate where all resources are cleanly rebound from APK asset tables.
+Rather than attempting an in-place mutation of the entire view hierarchy, Android intentionally destroys the Activity. Mutating an existing view tree in-place would require traversing every view, drawable cache, dynamic layout parameter, and dimension resource, which is historically error-prone and invites subtle layout corruption. By invoking performDestroy() followed by performCreate(), the ActivityThread binds a newly configured ResourcesImpl instance to the fresh Activity context, ensuring all layout and drawable inflations pull the exact qualifiers for the new environment.
 
-While developers can declare `android:configChanges="orientation|screenSize"` in the Manifest to prevent recreation, Google strongly discourages this. It forces you to manually override `onConfigurationChanged()` and update every layout, font, and padding by hand, almost always leading to visual bugs and broken accessibility.
+The survival of the ViewModel across this destruction is managed by the NonConfigurationInstances record. Before the old Activity is destroyed, the framework invokes retainNonConfigurationInstances(), caching the ViewModelStore inside a platform holder in the ActivityClientRecord. When the ActivityThread constructs the new Activity instance, it supplies this cached record back via attach(), allowing the ViewModelProvider to retrieve the identical ViewModel instances from the existing store without executing their onCleared() callback.
 
+Crucially, Staff engineers distinguish between configuration changes and process death. A configuration change preserves the entire JVM heap, including static variables, Dagger or Hilt singleton component graphs, and active background threads. Process death, triggered by the Linux kernel Low Memory Killer daemon, obliterates the process address space entirely. Attempting to bypass configuration recreation by declaring android:configChanges in the manifest transfers the entire burden of manual resource updates onto the developer via onConfigurationChanged(), which frequently breaks accessibility scaling, locale switching, and foldable posture transitions.
 
 ## How to answer in the interview
 

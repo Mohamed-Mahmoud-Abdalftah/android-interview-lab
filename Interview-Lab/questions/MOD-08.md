@@ -22,6 +22,39 @@ What belongs in :core:network, :core:database, :core:ui, and feature modules?
 - Prevent giant core modules and domain leakage.
 - Specify ownership of migrations, API clients and reusable UI.
 
+## Concept and technical explanation
+
+A clean multi-module architecture draws strict boundaries between reusable, domain-agnostic infrastructure and domain-specific feature logic:
+- :core:network: Contains foundational transport plumbing including configured OkHttpClient instances, Retrofit builders, token refresh authenticators, certificate pinning configs, and network connectivity observers. It strictly excludes business DTOs, endpoint interfaces, and feature-specific models.
+- :core:database: Provides the underlying Room database engine, base DAOs, database encryption wrappers (SQLCipher), migration runners, and common type converters. Feature entities belong in feature data modules.
+- :core:ui: Holds reusable Compose widgets, layout primitives, image loader bindings, and accessibility wrappers. Pure visual styling tokens, colors, and themes reside in :core:designsystem.
+- Feature modules (:feature:<name>): Encapsulate domain use cases, ViewModels, Compose screens, UI state definitions, feature-specific repository implementations, and private API service interfaces.
+
+## Practical walkthrough (English)
+
+Separation of concerns between infrastructure core and feature modules:
+```kotlin
+// 1. :core:network provides configured Retrofit factory
+class NetworkClientFactory @Inject constructor(private val okHttpClient: OkHttpClient) {
+    fun createRetrofit(baseUrl: String): Retrofit = Retrofit.Builder()
+        .baseUrl(baseUrl)
+        .client(okHttpClient)
+        .addConverterFactory(Json.asConverterFactory("application/json".toMediaType()))
+        .build()
+}
+
+// 2. :feature:orders defines its OWN private API interface and DTOs
+interface OrdersApiService {
+    @GET("/v1/orders")
+    suspend fun getOrders(): List<OrderDto>
+}
+
+// 3. DI in :feature:orders binds service via :core:network factory
+@Provides
+fun provideOrdersApi(factory: NetworkClientFactory): OrdersApiService =
+    factory.createRetrofit("https://api.store.com").create()
+```
+
 ## Explanation in Arabic
 
 ما هي المسؤوليات الدقيقة التي تنتمي لكل من: `:core:network`، و `:core:database`، و `:core:ui`، و `:feature`؟ وكيف تمنع تسرب المنطق؟
@@ -98,26 +131,29 @@ Publish module responsibilities and codeowners, track public API churn and affec
 
 ## Interview answer — short
 
-:core:network owns network infrastructure (OkHttp, SSL, Retrofit engine, auth interceptors). :core:database owns the Room database container and migrations. :core:ui owns stateless design tokens and generic widgets. Feature modules own user-facing screens, ViewModels, and presentation state, ensuring zero business domain models leak into core foundations.
+Core modules provide domain-agnostic infrastructure: core:network handles HTTP transport and token refresh; core:database manages the Room engine and encryption; and core:ui supplies reusable layout widgets and atomic controls. Feature modules house all business logic, containing domain use cases, ViewModels, Compose screens, feature repositories, and specific API endpoints.
 
 ## Interview answer — structured
 
-Clear architectural separation between infrastructure core modules and domain feature modules prevents the core from degrading into an unmaintainable monolith.
-
-First, with :core:network, houses HTTP client engines (`OkHttpClient`), token refresh interceptors, SSL pinning configurations, and connectivity observers. It must **not** host feature-specific API endpoints (like `OrderApiService`); feature APIs belong in their respective `:data:*` modules. Next, :core:database manages the underlying database engine (`RoomDatabase`), encryption keys, and schema migration coordinators. Feature-specific DAOs and entities should be provided by data modules and aggregated by the database.
-Additionally, with :core:ui` (Design System), contains design tokens (theme colors, typography, elevations) and generic, stateless UI primitives (`AppButton`, `EmptyStateView`, `AppDialog`). It must remain strictly agnostic of business models, accepting only primitive parameters. Finally, **`:feature:*`**: Contains end-to-end presentation logic for a user journey: composable screens, ViewModels, UI state machines, and local navigation routes.
-
+Designing a scalable modular architecture requires drawing clear boundaries between infrastructural platform modules and user-facing feature modules.
+In the infrastructure tier, core:network provides preconfigured HTTP engines, certificate pinning, and authentication interceptors without containing feature API endpoints or business models.
+Similarly, core:database manages the foundational Room database instance, encryption wrappers, and migration runners without defining specific feature tables.
+The core:ui module supplies generic Compose modifiers, accessibility helpers, and custom layouts, while visual design tokens reside in core:designsystem.
+Feature modules sit above this infrastructure tier.
+Each feature module owns its entire business domain slice, including domain use cases, ViewModels, Compose screens, repository implementations, and private Retrofit service interfaces.
+This separation ensures core modules remain stable, leaf-oriented dependencies that never require recompilation when product features change.
 
 ## Interview answer — deep senior
 
-A critical design challenge in multi-module database architecture is **Room Database Aggregation**.
-
-Room requires its `@Database(entities = [...], version = ...)` annotation to enumerate all entity classes at compile time. If entities live inside feature modules, having `:core:database` declare the database directly creates an illegal circular dependency (core depending on features).
-
-Senior engineers resolve this in one of two ways.
-
-First, with Entity Delegation in `:core:database, entities live in `:core:model` or dedicated `:data:*:model` modules that `:core:database` imports, keeping DAOs internal to their data modules. Finally, single Database in `:app is the concrete `@Database` class is declared inside the `:app` module (where all feature data modules are already aggregated), while `:core:database` provides only the database builder infrastructure and migrations.
-
+The defining hallmark of mature Android systems architecture is the ruthless exclusion of business knowledge from infrastructural core modules.
+A frequent architectural failure occurs when teams place feature-specific endpoints or business models into :core:network, turning it into a bottleneck that forces full recompilation whenever a single API endpoint changes.
+In our production standard, :core:network provides only transport-level mechanics.
+It exports configured Retrofit builders, OkHttp interceptors for OAuth token renewal, certificate pinning definitions, and JSON serialization converters, but zero endpoint interfaces.
+Each feature module declares its own private Retrofit interfaces and network DTOs within its internal data layer.
+The same strict rule applies to :core:database: it exports the Room database builder, SQLCipher passphrase providers, and migration orchestrators, while individual feature entities and DAOs are registered modularly.
+At the UI layer, :core:ui provides technical interaction wrappers such as keyboard insets listeners, pull-to-refresh containers, and image loading coil bindings, whereas :core:designsystem houses atomic tokens and buttons.
+Feature modules encapsulate everything related to user flows, maintaining private domain models and state machines.
+This strict structural hygiene ensures that core infrastructure changes infrequently, maximizing remote build cache hit rates across distributed development teams. We also configure automated linter rules to flag any PR that introduces domain-specific entity names or endpoint paths inside infrastructure modules, preserving platform purity.
 
 ## How to answer in the interview
 

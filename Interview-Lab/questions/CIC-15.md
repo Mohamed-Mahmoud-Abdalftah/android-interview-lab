@@ -21,6 +21,50 @@ What Git conflicts can a revert of an older commit cause?
 - Textual and semantic conflicts when reverting an old commit.
 - Merge revert and deployed-state risks.
 
+## Concept and technical explanation
+
+Executing `git revert` on a historical commit creates an inverse patch designed to negate original changes, which often collides with subsequent evolutionary commits:
+- Mechanisms of Historical Reverts:
+  - Unlike `git reset`, which rewrites Git history, `git revert` generates a new commit that applies the inverse diff of the target commit against current HEAD.
+  - When the reverted commit is weeks or months old, intermediate commits have built on, refactored, or renamed the affected code, creating complex conflict classes.
+- Taxonomy of Revert Conflicts:
+  - Textual Content Conflicts:
+    - Occurs when intermediate commits modified the exact lines of code targeted for removal or restoration. Git halts with standard conflict markers (`<<<<<<< HEAD`, `=======`, `>>>>>>> parent of...`).
+  - Tree and Rename Conflicts:
+    - Arise when files created, edited, or deleted in the target commit were subsequently relocated during package refactoring, renamed, or deleted. Git cannot determine where to apply the inverse patch.
+  - Silent Semantic and Compilation Conflicts (The Most Dangerous Class):
+    - The inverse patch applies cleanly with zero textual conflicts, yet breaks the build. This occurs when subsequent features rely on public interfaces, Room entities, or DI bindings introduced in the reverted commit. The codebase breaks during Kotlin compilation (`compileDebugKotlin`) or triggers runtime `NoSuchMethodError` crashes.
+  - Reverting Merge Commits (`git revert -m 1`):
+    - Reverting a merge commit reverses the code changes but does NOT undo the Git history. Subsequent attempts to re-merge the original branch will be treated as already merged, silently omitting all branch changes unless the revert itself is reverted.
+
+## Practical walkthrough (English)
+
+Resolving a complex historical revert with verification checks:
+```bash
+# 1. Attempt historical revert
+git revert 4a8f10b
+# Output:
+# error: could not revert 4a8f10b... feat: add loyalty cashback engine
+# hint: after resolving the conflicts, mark the corrected paths with 'git add <paths>'
+
+# 2. Inspect conflict state
+git status
+# Unmerged paths:
+#   both modified:   feature/cart/src/main/java/com/company/CartViewModel.kt
+
+# 3. Resolve conflict markers manually in IDE, removing loyalty hooks while preserving cart logic
+
+# 4. Mandatory Semantic Verification: Ensure project compiles and passes unit tests
+./gradlew compileDebugKotlin testDebugUnitTest
+
+# 5. Finalize the revert commit
+git add feature/cart/src/main/java/com/company/CartViewModel.kt
+git revert --continue
+
+# 6. Push verified revert to remote mainline
+git push origin main
+```
+
 ## Explanation in Arabic
 
 ما هي تعارضات Git (Conflicts) التي يمكن أن يسببها التراجع عن كوميت قديم (`git revert`)، وكيف يتم حلها؟
@@ -85,26 +129,21 @@ Hotfix PR includes conflict rationale, affected tests, data migration plan and r
 
 ## Interview answer — short
 
-Reverting an older commit causes content conflicts when subsequent commits modified the same lines, tree conflicts if files were moved or deleted, and silent semantic conflicts where dependent code breaks at compile-time. Resolve them by manually reconciling diffs, running full compilation and unit tests, and finalizing with git revert --continue.
+Reverting an older commit causes textual conflicts when subsequent commits modified the same lines, tree conflicts when files were moved or deleted, and silent semantic conflicts where dependent code fails at compile-time despite clean Git patches. Resolve them by reconciling diffs manually, running compilation and unit tests to ensure semantic integrity, and completing with git revert continue.
 
 ## Interview answer — structured
 
-When executing `git revert` on an older commit, Git applies an inverse patch against current HEAD. This produces three distinct conflict categories.
-
-First, **Content Conflicts (Direct Textual Invalidation)**. Next, occurs when intermediate commits modified, refactored, or formatted the exact lines that the inverse patch attempts to delete or restore. Git halts with standard conflict markers (`<<<<<<< HEAD` vs `>>>>>>> parent of...`).
-**Tree / Rename Conflicts**. Arise when files created or modified by the old commit were subsequently renamed, moved to new packages during architectural modularization, or deleted entirely.
-**Silent Semantic / Compilation Conflicts**. Finally, the most insidious category: the inverse patch applies cleanly with zero textual conflicts, but subsequent commits introduced dependencies on classes, fields, or database schemas defined in the reverted commit. The codebase breaks during Kotlin compilation or triggers runtime exceptions.
-
-Resolving an old revert mandates manually clearing conflict markers, followed by running `./gradlew compileDebugKotlin` and unit tests to verify semantic integrity before executing `git revert --continue`.
-
+Reverting an older commit introduces substantial integration risk because Git applies an inverse patch against current mainline code.
+This operation frequently triggers three distinct conflict categories. Textual content conflicts emerge when intermediate commits modified or reformatted the exact lines being reverted, requiring manual resolution in the editor. Tree and rename conflicts arise when files were moved or deleted during module refactoring, leaving Git unable to locate the target path.
+The most dangerous category is silent semantic conflict. In this scenario, the inverse patch applies without any textual Git conflicts, but the build fails because subsequent features depend on classes, methods, or database migrations introduced in the reverted commit.
+To safely resolve historical reverts, engineers must manually clear conflict markers, run Kotlin compilation and JVM unit tests locally to verify semantic integrity, and only then finalize the revert using git revert continue.
 
 ## Interview answer — deep senior
 
-In large scale engineering teams, managing complex historical reverts requires operational discipline.
-
-First, with The Revert Blast Radius Assessment, never blindly revert a 2-month-old commit in a production repo. Use `git log -S "SymbolName"` to identify every commit that touched or referenced the affected symbol since the target commit. If 15 subsequent features depend on it, an inverse patch will cause cascading fractures. Next, with Surgical Forward-Fix vs. Revert, if an old commit introduced a bug but has deep architectural entanglement with current production code, executing `git revert` is often more dangerous than writing a targeted forward hotfix that neutralizes the buggy code path while preserving the surrounding public API contracts.
-Finally, with Reverting a Long Chain, if a feature comprised multiple commits, use range revert: `git revert OLDER_COMMIT..NEWER_COMMIT`. Git reverts them in reverse chronological order, minimizing intermediate dependency conflicts.
-
+From a software configuration management and platform safety perspective, reverting an older commit in a high-velocity Android repository is an invasive surgical operation.
+The primary risk is assuming that a clean Git revert implies working software. Git operates on line deltas, entirely blind to Kotlin type systems or Android component lifecycles. A historical commit often acts as an architectural foundation for dozens of subsequent commits. When an engineer executes git revert on a commit from two months ago, the inverse patch may remove a Dagger module binding or an entity column. Even if the text patch applies cleanly, downstream code invoking that removed dependency will fail compilation or trigger catastrophic runtime crashes in production.
+Furthermore, reverting merge commits introduces severe topological traps. Reverting a merge commit with the minus-m flag cancels the code diff but preserves the ancestor graph. If the feature team later fixes the issue on their original branch and attempts to merge it back into main, Git assumes the commits are already present and silently excludes all original changes. Resolving this requires re-reverting the revert commit before merging.
+Therefore, our team policy mandates evaluating blast radius using git log before reverting. If historical entanglement is deep, we favor a forward hotfix that neutralizes the defective behavior behind a feature flag over a blind git revert, safeguarding the public API contract while mitigating production impact.
 
 ## How to answer in the interview
 

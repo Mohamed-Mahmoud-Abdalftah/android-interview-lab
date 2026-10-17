@@ -21,6 +21,61 @@ What is binary search, and what precondition does it require?
 - Sorted random-access precondition and loop invariant.
 - Overflow-safe midpoint and duplicate handling.
 
+## Concept and technical explanation
+
+Binary search is an optimal divide-and-conquer search algorithm that executes in logarithmic time by repeatedly partitioning the search space:
+- Algorithmic Mechanics:
+  - Compares the target value against the middle element of a candidate range.
+  - If target equals the midpoint, the search terminates immediately.
+  - If target is smaller, the search range is restricted to the lower half; if larger, to the upper half.
+  - Halves the candidate search space in each iteration, yielding an $O(\log n)$ time complexity and $O(1)$ auxiliary space for iterative implementations.
+- Mandatory Preconditions:
+  - Strict Ordering (Monotonicity): The collection must be pre-sorted in ascending or descending order according to the search comparator.
+  - Fast Random Access ($O(1)$ Indexing): The data structure must support constant-time element retrieval by index (such as `Array`, `IntArray`, or `ArrayList`). If attempted on a `LinkedList`, navigating to the midpoint requires $O(n)$ pointer traversal, degrading overall binary search performance to a sluggish $O(n)$ while adding logarithmic overhead.
+- Critical Implementation Traps:
+  - Integer Overflow Bug: Computing `val mid = (low + high) / 2` causes 32-bit signed integer overflow when `low + high > Int.MAX_VALUE` (2,147,483,647), yielding a negative index and triggering `ArrayIndexOutOfBoundsException`. The safe implementation uses `low + (high - low) / 2` or unsigned bit shift `(low + high) ushr 1`.
+  - Infinite Loops on Boundary Updates: Updating bounds with `low = mid` or `high = mid` can cause infinite loops when candidate range length is two. Boundaries must advance strictly with `low = mid + 1` and `high = mid - 1`.
+- Kotlin Standard Library Integration:
+  - `Collections.binarySearch()` returns the non-negative index if the key is found. If missing, it returns `(-insertion_point - 1)`, providing callers the exact index where the element should be inserted to maintain sorted order.
+
+## Practical walkthrough (English)
+
+Safe Kotlin implementation of binary search and standard library integration:
+```kotlin
+// Robust binary search implementation preventing integer overflow
+fun <T : Comparable<T>> binarySearchSafe(list: List<T>, target: T): Int {
+    var low = 0
+    var high = list.size - 1
+
+    while (low <= high) {
+        // Safe midpoint calculation using unsigned right bit shift
+        val mid = (low + high) ushr 1
+        val midVal = list[mid]
+        val cmp = midVal.compareTo(target)
+
+        when {
+            cmp < 0 -> low = mid + 1
+            cmp > 0 -> high = mid - 1
+            else -> return mid // Key found
+        }
+    }
+    // Key not found; returns inverted insertion point
+    return -(low + 1)
+}
+
+// Utilizing Kotlin standard library binary search
+fun findProductPosition(sortedIds: List<Long>, targetId: Long): Int {
+    val index = sortedIds.binarySearch(targetId)
+    if (index >= 0) {
+        println("Found product at index: $index")
+    } else {
+        val insertionPoint = -index - 1
+        println("Missing product should be inserted at index: $insertionPoint")
+    }
+    return index
+}
+```
+
 ## Explanation in Arabic
 
 ما هو البحث الثنائي (Binary Search)، وما هو الشرط الأساسي لتطبيقه، وكيف يعمل برمجياً؟
@@ -120,25 +175,22 @@ Keep sortedness as a type/data-layer invariant where feasible; use standard libr
 
 ## Interview answer — short
 
-Binary search is an O(log n) search algorithm that repeatedly halves the search interval by comparing the target with the middle element. Its strict precondition is that the underlying collection must be pre-sorted and support O(1) random indexed access, such as an array.
+Binary search is a divide-and-conquer algorithm operating in O(log n) time by halving the search space each step. Its mandatory preconditions are that the collection must be pre-sorted and support O(1) random access by index. Midpoints must be computed safely using unsigned bit shifts to prevent integer overflow, and boundary updates must advance past mid to avoid infinite loops.
 
 ## Interview answer — structured
 
-Binary search is the quintessential logarithmic search algorithm.
-
-First, **Core Mechanism**. Next, at each iteration, the algorithm inspects the middle element of the active range. If the target matches, the search concludes. If the target is smaller, the upper boundary moves to `mid - 1`; if larger, the lower boundary moves to `mid + 1`. This reduces the remaining problem space by $50\%$ at every step, yielding an $O(\log n)$ time complexity.
-**Strict Preconditions**. An Ordered Data is the elements must be sorted according to a defined Comparator.
-A Constant-Time Random Access is the data structure must support $O(1)$ random indexing (`Array`, `ArrayList`, `IntArray`). Executing binary search on a `LinkedList` degrades performance to $O(n)$ because locating the midpoint requires linear traversal. **Implementation Rigor**.
-Finally, in production implementations, avoid `(low + high) / 2` due to integer overflow risks when `low + high > Int.MAX_VALUE`. Use `low + (high - low) / 2` or unsigned bit-shift `(low + high) ushr 1`.
-
+Binary search is an exceptionally efficient search algorithm designed to find elements in logarithmic time.
+The algorithm operates on the divide-and-conquer principle, comparing the search target against the middle element of a candidate range and discarding half the remaining elements in each pass. This delivers an O(log n) time complexity, requiring only twenty comparisons to locate a record among one million items.
+However, binary search imposes two mandatory preconditions. First, the collection must be sorted according to the comparison key. Second, the underlying data structure must support constant-time O(1) random access, such as an Array or ArrayList. Running binary search over a LinkedList fails to achieve logarithmic performance because finding the middle node requires an O(n) sequential traversal.
+A classic pitfall is computing the midpoint as low plus high divided by two, which overflows thirty-two-bit integers for large datasets. Safe implementations compute mid using an unsigned right bit shift, advancing boundaries strictly past the midpoint to prevent infinite loops.
 
 ## Interview answer — deep senior
 
-From an Android architectural perspective, binary search underpins core framework optimizations.
-
-First, with Android Framework SparseArray, Android's `SparseArray<E>` and `LongSparseArray<E>` store primitive keys in a tightly packed `int[]` or `long[]`. Every `get(key)` invocation performs a binary search via `ContainerHelpers.binarySearch(mKeys, mSize, key)`. It sacrifices $O(1)$ hash table lookups for $O(\log n)$ searches to achieve zero heap object allocations. Next, with Kotlin Built-in `binarySearch` Contract, Kotlin's `collections.binarySearch()` returns the index if found. If not found, it returns `-(insertionPoint + 1)`. This negative return value allows callers to locate the exact position where the missing element should be inserted while maintaining sorted order, enabling efficient sorted insertions.
-Finally, with Binary Search on Answer Space, beyond searching static arrays, senior engineers apply binary search to find optimal configuration thresholds: e.g. Finding the maximum readable font size in a custom Canvas view that fits bounded dimensions without line wrapping.
-
+From an algorithmic verification and low-level runtime perspective, binary search exemplifies how mathematical elegance collides with physical hardware limits.
+The theoretical foundation of binary search relies on monotonicity. By inspecting the midpoint element, the algorithm eliminates half of the search interval in every comparison step. For a list of one million elements, binary search terminates in at most twenty steps, compared to one million steps for a linear scan.
+However, achieving this O of log n guarantee requires strict adherence to architectural preconditions. The most overlooked requirement is constant-time indexing. On a contiguous array or ArrayList, accessing list of mid is an instantaneous O of one memory read. If an engineer naively invokes binary search on a LinkedList, traversing to the middle node requires pointer chasing that takes O of n time at every recursive step, degrading the algorithm into a clumsy O of n log n process that runs slower than a simple linear scan.
+Furthermore, writing a bug-free binary search is notoriously difficult due to edge-case mechanics. For decades, standard implementations contained an integer overflow bug: computing low plus high divided by two overflows signed thirty-two-bit integer limits when array sizes exceed one billion, producing negative indices that crash the process. The correct implementation calculates mid as low plus high minus low divided by two, or utilizes the unsigned right shift operator ushr one.
+Finally, Kotlin standard library integration provides powerful semantic guarantees. When binarySearch fails to find an item, it returns negative insertion point minus one. In an Android UI displaying sorted chat messages or transaction ledgers, this return value allows developers to insert new entries at their exact sorted position in O of n time without triggering an expensive full-collection re-sort.
 
 ## How to answer in the interview
 

@@ -1,0 +1,612 @@
+#!/usr/bin/env python3
+"""Elevate FLO-25 through FLO-32 with bilingual content parity and conversational spoken answers."""
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import elevation_engine as ee
+
+TOPIC_AR = "الـ Flow و StateFlow و SharedFlow والـ Channels"
+REVIEWED_DATE_AR = "تمت المراجعة الفنية استناداً إلى الوثائق الرسمية في 2026-10-13."
+
+DATA = {}
+
+# ==========================================
+# FLO-25: Search box debouncing & cancellation
+# ==========================================
+DATA["FLO-25"] = {
+    "concept_en": """Designing a reactive search input pipeline in Android requires combining user text stream observations with rate limiting, input deduplication, and eager cancellation of obsolete in-flight network requests.
+When a user types into a query field, characters arrive in rapid succession. Querying remote search endpoints on every keystroke overwhelms the network layer, triggers HTTP 429 rate limits, and causes out-of-order response rendering (race conditions) where a slower response for a previous single character overwrites the results for the completed word.
+The foundational architecture leverages Kotlin Flow operators: debounce introduces a temporal delay (typically 300ms) to ensure queries dispatch only after typing pauses; distinctUntilChanged filters redundant identical submissions; and flatMapLatest (or collectLatest) automatically cancels in-flight network jobs when a newer query arrives, ensuring only the freshest search result mutates UI state.""",
+    "walkthrough_en": """Implementing a resilient search box with debounce and flatMapLatest:
+```kotlin
+class SearchViewModel(private val searchRepository: SearchRepository) : ViewModel() {
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
+    val searchResults: StateFlow<SearchUiState> = _searchQuery
+        .debounce(300L) // Pauses 300ms after last keystroke
+        .map { it.trim() }
+        .distinctUntilChanged() // Ignores duplicate queries
+        .flatMapLatest { query ->
+            flow {
+                if (query.isBlank()) {
+                    emit(SearchUiState.Empty)
+                } else {
+                    emit(SearchUiState.Loading)
+                    try {
+                        val results = searchRepository.search(query)
+                        emit(SearchUiState.Success(results))
+                    } catch (e: CancellationException) {
+                        throw e // Respect cancellation!
+                    } catch (e: Exception) {
+                        emit(SearchUiState.Error(e.localizedMessage ?: "Unknown error"))
+                    }
+                }
+            }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = SearchUiState.Empty
+        )
+
+    fun onQueryChanged(newQuery: String) {
+        _searchQuery.value = newQuery
+    }
+}
+```""",
+    "short_en": """We observe search input via StateFlow, applying debounce(300L) to throttle keystrokes and distinctUntilChanged to discard identical inputs. We then chain flatMapLatest to cancel in-flight network requests immediately when newer input arrives, converting results into UI state via stateIn.""",
+    "structured_en": """To begin with, designing a robust search box requires managing input frequency, query sanitization, and request concurrency.
+From an architectural standpoint, emitting network requests on every keystroke creates severe race conditions and exhausts bandwidth. We buffer raw text emissions inside a MutableStateFlow and route them through debounce with a 300-millisecond threshold, preventing premature dispatches while the user types.
+In production scenarios, we sanitize the stream by trimming whitespace and chaining distinctUntilChanged, preventing redundant network roundtrips if the user types and immediately deletes a trailing space.
+As for concurrency management, flatMapLatest represents the pivotal operator. When a new sanitized query passes the debounce threshold, flatMapLatest automatically cancels the coroutine executing the previous in-flight HTTP request before launching the new query, ensuring out-of-order network responses never corrupt current UI search results.""",
+    "deep_senior_en": """Under the hood in kotlinx.coroutines.flow, flatMapLatest is an alias for transformLatest, implemented via ChannelFlow. When an upstream query arrives, transformLatest immediately cancels the previous downstream child coroutine by throwing a CancellationException through the coroutine hierarchy.
+This eager cancellation relies on cooperative cancellation within the underlying networking client. For OkHttp and Retrofit, coroutine cancellation automatically invokes Call.cancel(), cleanly terminating the underlying TCP socket write and socket read loops. This prevents backend server saturation and halts unnecessary payload decoding.
+A critical architectural consideration is managing empty and short queries. If a user clears the search field, emitting an empty string into flatMapLatest must immediately yield an Empty UI state without invoking the network repository. Furthermore, exceptions inside the search flow must be trapped within the flatMapLatest inner flow rather than upstream; catching errors upstream would terminate the entire search stream permanently, rendering the search box unresponsive to subsequent keystrokes.
+In enterprise multi-module applications, senior engineers encapsulate this search pipeline inside a dedicated domain UseCase or repository query stream. By separating raw UI text binding from asynchronous query transformations, the search pipeline becomes fully unit-testable using TestScope and Turbine without coupling to Android framework classes.
+Staff engineers enforce state preservation and lifecycle safety: wrapping the pipeline in stateIn with SharingStarted.WhileSubscribed(5000) guarantees that active searches survive screen orientation changes while pausing background network polling when the user switches apps.""",
+    "meta_ar": {
+        "id": "FLO-25",
+        "questionAr": "كيف تصمم مربع بحث يتعامل مع debounce ويلغي نداءات الـ API القديمة؟",
+        "topicAr": TOPIC_AR,
+        "evaluates_ar": "- تصميم مسار بحث تفاعلي متكامل باستخدام Kotlin Flow.\n- فهم دور debounce في تهدئة نداءات الشبكة ودور distinctUntilChanged في منع التكرار.\n- استيعاب كيفية إلغاء الطلبات القديمة تلقائياً باستخدام flatMapLatest ومنع الـ Race Conditions.",
+        "why_it_matters_ar": "إرسال طلب شبكة مع كل حرف يكتبه المستخدم يستهلك باقة الإنترنت ويخنق السيرفر وقد يسبب حظر الـ IP بسبب الـ Rate Limits، كما أن عودة استجابة قديمة متأخرة بعد اكتمال الكلمة يعرض بيانات خاطئة في الواجهة.",
+        "worked_example_ar": "بناء مسار بحث تفاعلي مع إلغاء الطلبات القديمة:\n```kotlin\nval searchResults = searchQuery\n    .debounce(300L) // انتظار 300 ملي ثانية بعد آخر حرف\n    .map { it.trim() }\n    .distinctUntilChanged() // تجاهل النصوص المكررة\n    .flatMapLatest { query ->\n        flow {\n            if (query.isEmpty()) emit(SearchState.Empty)\n            else {\n                emit(SearchState.Loading)\n                emit(SearchState.Success(api.search(query)))\n            }\n        }\n    }\n    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SearchState.Empty)\n```",
+        "trade_offs_ar": "`debounce(300L)` يقلل الضغط على الشبكة بنسبة 90% ولكنه يضيف تأخيراً طفيفاً مقصوداً. `flatMapLatest` يلغي الاتصالات السابقة فوراً ولكنه يتطلب مكتبات شبكة تدعم الإلغاء التعاوني.",
+        "failure_modes_ar": "وضع مشغل `catch` خارج `flatMapLatest` مما يؤدي لإغلاق تدفق البحث بالكامل عند أول خطأ شبكة. خطأ آخر هو نسيان `distinctUntilChanged` مما يرسل نفس الطلب مرتين لو ضغط المستخدم مسافة ومسحها.",
+        "production_perspective_ar": "في المشروعات الضخمة، نغلف نداءات البحث بـ `flatMapLatest` مع معالجة داخلية للأخطاء بـ `try-catch` داخل الـ Flow الفرعي، لضمان استمرار عمل مربع البحث حتى لو فشل طلب معين بسبب انقطاع لحظي في الشبكة.",
+        "how_to_answer_ar": "- **debounce(300L):** تأخير زمني يمنع إرسال أي طلب حتى يتوقف المستخدم عن الكتابة لمدة 300 ملي ثانية.\n- **distinctUntilChanged:** يتأكد أن النص المكتوب اختلف فعلياً عن آخر استعلام ناجح.\n- **flatMapLatest:** يلغي الكوروتين الخاصة بطلب الشبكة السابق فور وصول نص جديد، ويمنع الـ Race Conditions.\n- **معالجة النصوص الفارغة:** فحص النص قبل نداء السيرفر وعرض حالة Empty فوراً.\n- **حماية التدفق من الموت:** وضع try-catch داخل flatMapLatest وليس خارجها حتى لا يموت الـ Flow الرئيسي عند حدوث خطأ شبكة.",
+        "talking_points_ar": "ناقش دور transformLatest وكيف يتكامل إلغاء الكوروتينات مع Call.cancel في OkHttp، ولماذا يجب تجنب وضع catch في المسار العلوي.",
+        "follow_ups_ar": "- **المحاور:** \"ماذا يحدث لو وضعت مشغل catch خارج flatMapLatest وحصل خطأ 500 من السيرفر؟\"\n  **المرشح:** \"مشغل catch هيمسك الخطأ ويقفل الـ Flow الرئيسي تماماً (Terminal State). بعدها لو المستخدم كتب أي كلمة تانية في مربع البحث، الـ Flow مش هيستجيب ومفيش أي نداء هيخرج للسيرفر! الصح إننا نمسك الخطأ جوه الـ Flow الداخلي بتاع flatMapLatest علشان التدفق الرئيسي يفضل حي.\"\n\n- **المحاور:** \"كيف يلغي flatMapLatest نداء الشبكة الفعلي في Retrofit؟\"\n  **المرشح:** \"لما استعلام جديد بيوصل، flatMapLatest بيلغي الكوروتين القديمة بـ `CancellationException`، وRetrofit المدمج مع الكوروتينات بيترجم الإلغاء ده فوراً لاستدعاء `Call.cancel()` في مكتبة OkHttp، فمقبس الـ TCP بيقفل فوراً ويتوقف استقبال الداتا.\"",
+        "self_check_ar": "هل وضحت وظيفة debounce و distinctUntilChanged؟ هل بينت سر استخدام flatMapLatest في منع الـ Race Conditions؟ وهل حذرت من قتل الـ Flow بمشغل catch الخارجي؟",
+        "references_ar": f"- [Kotlin Flow flatMapLatest documentation](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/flat-map-latest.html) — توثيق كوتلن الرسمي لـ flatMapLatest.\n- [Android search query best practices](https://developer.android.com/kotlin/flow) — إرشادات أندرويد الرسمية لبناء شاشات البحث.\n\n{REVIEWED_DATE_AR}",
+        "quick_answer_ar": "بنربط حقل البحث بـ StateFlow وبنطبق مشغل `debounce(300L)` لتهدئة الكتابة مع `distinctUntilChanged()` لمنع التكرار، وبنستخدم `flatMapLatest` علشان يلغي طلب الشبكة القديم تلقائياً أول ما المستخدم يكتب حرف جديد، وبنحول النتيجة لـ StateFlow مع WhileSubscribed لضمان سلاسة الشاشة وتوفير باقة النت والبطارية.",
+        "best_answer_ar": "تصميم مربع بحث احترافي بيتطلب حل مشكلتين رئيسيتين: منع إغراق السيرفر مع كل ضغطة زر، وإلغاء الطلبات القديمة علشان نتائجها متغطيش على الكلمة الأحدث.\n\nبنبدأ بربط حقل البحث بـ `MutableStateFlow`، وبنمرر التدفق على مشغل `debounce(300L)`؛ وده بيستنى 300 ملي ثانية بعد آخر حرف المستخدم كتبه قبل ما يبعت أي حاجة للسيرفر. بعدها بننادي `distinctUntilChanged()` علشان لو المستخدم مسح حرف وكتبه تاني بسرعة منكررش نفس الطلب على الفاضي.\n\nالسر كله بيكمن في استخدام مشغل `flatMapLatest`؛ المشغل ده ميزته العبقرية إنه بيلغي الكوروتين بتاعة نداء الشبكة القديم اللي شغال في الخلفية فوراً أول ما يوصل استعلام جديد، وده بيحمينا من مشكلة الـ Race Conditions؛ يعني مستحيل نتيجة حرفين قدام ترجع متأخر وتغطي على نتيجة كلمة كاملة لسه مخلصة.\n\nوفي الـ ViewModel، بنحول التدفق ده لـ StateFlow باستخدام `stateIn` مع استراتيجية `WhileSubscribed(5000)` علشان نحافظ على آخر نتيجة مع تدوير الشاشة ونقفل الاتصالات لو التطبيق نزل في الخلفية.",
+        "deep_answer_ar": "تحت الكابوت في كوتلن، مشغل `flatMapLatest` شغال بنظام الـ Cooperative Cancellation عبر كلاس `ChannelFlowTransformLatest`. أول ما قيمة جديدة تعدي من فلتر الـ `debounce`، المشغل بينادي `cancel()` على الـ Job بتاع الكوروتين الفرعية السابقة، وبيرمي جواها `CancellationException`.\n\nوهنا بتظهر قوة التكامل مع مكتبات الشبكات زي Retrofit و OkHttp؛ لما الكوروتين بتتكنسل، اتصال السوكيت الفعلي بيتقفل فوراً (`call.cancel()`)، وده بيوفر باقة الإنترنت للمستخدم ويخفف الحمل على خوادم الشركة.\n\nمن الناحية المعمارية، فيه غلطة شائعة جداً بيقع فيها المطورون وهي معالجة الأخطاء في التدفق الخارجي؛ لو حطيت `catch` بره الـ `flatMapLatest`، أي خطأ شبكة زي فقدان الاتصال هيقفل تدفق البحث بالكامل ومش هيستقبل أي حروف تانية للأبد! علشان كده الصح هو وضع `try-catch` جوه الـ Flow الداخلي التابع لـ flatMapLatest وبث حالة `SearchUiState.Error` بدون إغلاق المصدر العلوي.\n\nكمان بنتعامل مع النصوص الفاضية بذكاء؛ لو المستخدم مسح الكلمة بالكامل، بنعمل `emit(SearchUiState.Empty)` فوراً بدون استدعاء الـ Repository. وفي الأنظمة الضخمة بنفصل استعلامات الكاش المحلي عن السيرفر لضمان سرعة الاستجابة.\n\nوده مع استخدام `SharingStarted.WhileSubscribed(5000)` بيضمن إن نتائج البحث تنجو من إعادة إنشاء الشاشة أثناء الـ Configuration Changes، وتوفر البطارية وتوقف استهلاك المعالج لما المستخدم يخرج من التطبيق."
+    }
+}
+
+# ==========================================
+# FLO-26: StateFlow after screen rotation
+# ==========================================
+DATA["FLO-26"] = {
+    "concept_en": """In modern Android architecture, retaining and restoring the most recent UI state across configuration changes (such as device rotation) without re-triggering expensive background work mandates StateFlow.
+Device rotation destroys and recreates the visual View hierarchy (Activity or Fragment) while the hosting ViewModel remains preserved in memory. When the recreated UI attaches to data streams in onStart, it requires an immediate state emission representing the latest valid screen data.
+StateFlow satisfies this architectural requirement through three native mechanisms: first, it maintains an explicit replay cache of size 1 (replay = 1), ensuring that newly subscribed UI observers immediately receive the latest snapshot upon collection; second, it provides a synchronous, thread-safe .value property, allowing immediate non-suspending state reads during Compose initial composition or view binding; third, it applies state conflation via structural equality checks (Any.equals), discarding redundant identical emissions to prevent unnecessary UI re-rendering and recomposition cycles.""",
+    "walkthrough_en": """Preserving and restoring UI state across configuration changes with StateFlow:
+```kotlin
+class ProductDetailsViewModel(
+    private val repository: ProductRepository,
+    savedStateHandle: SavedStateHandle
+) : ViewModel() {
+    private val productId: String = checkNotNull(savedStateHandle["productId"])
+
+    // Private mutable state backing property:
+    private val _uiState = MutableStateFlow<ProductDetailsUiState>(ProductDetailsUiState.Loading)
+    // Exposed as read-only StateFlow to the UI:
+    val uiState: StateFlow<ProductDetailsUiState> = _uiState.asStateFlow()
+
+    init {
+        loadProduct()
+    }
+
+    private fun loadProduct() {
+        viewModelScope.launch {
+            _uiState.value = ProductDetailsUiState.Loading
+            try {
+                val details = repository.fetchProduct(productId)
+                _uiState.value = ProductDetailsUiState.Success(details)
+            } catch (e: Exception) {
+                _uiState.value = ProductDetailsUiState.Error(e.message ?: "Failed to load")
+            }
+        }
+    }
+}
+```""",
+    "short_en": """We use StateFlow because it retains the latest state in a replay cache of size one, delivering it instantly to recreated UI components upon rotation. It supports synchronous value reads and automatically conflates identical updates to eliminate redundant recompositions.""",
+    "structured_en": """To begin with, managing screen rotation requires a hot stream that preserves state across Activity destruction and recreation.
+From an architectural standpoint, StateFlow is designed specifically as a single-source-of-truth state holder. Because ViewModels outlive configuration changes, housing a StateFlow inside the ViewModel guarantees that cached data remains intact while the visual hierarchy rebinds.
+In production scenarios, cold Flows are unsuitable because each new collector re-triggers upstream database queries or network requests from scratch, causing flickering spinners and wasted bandwidth. Similarly, SharedFlow with default settings discards emissions when collectors detach during rotation.
+As for lifecycle integration, StateFlow emits its current value immediately to the new observer without latency. Paired with collectAsStateWithLifecycle, StateFlow seamlessly restores UI state upon rotation while safely suspending collection when the app moves to the background.""",
+    "deep_senior_en": """Under the hood in kotlinx.coroutines.flow, StateFlow is implemented as a specialized SharedFlow variant where replay is locked to 1 and onBufferOverflow is locked to BufferOverflow.DROP_OLDEST. It stores its current state directly in a volatile memory reference, ensuring that reading .value is an atomic, non-suspending, O(1) operation.
+When an Activity rotates, the previous collector scope is cancelled in onStop, decrementing the StateFlow subscriber counter. When the new Activity reaches onStart, collectAsStateWithLifecycle or repeatOnLifecycle resubscribes. The StateFlow immediately routes its cached head element to the new subscriber slot, restoring the complete UI layout before the first frame renders.
+Crucially, StateFlow enforces automatic conflation using structural equality (oldState == newState). If the ViewModel assigns an identical state instance, StateFlow skips emission entirely, preventing wasted Compose recomposition passes and View re-bindings.
+In large-scale production architectures, StateFlow serves as the single source of truth driving Jetpack Compose rendering. Because Compose functions can recompose dozens of times per second, StateFlow's internal equality checks eliminate redundant layout passes, ensuring smooth 120Hz frame rates across all modern high-refresh-rate Android devices.
+Compared to legacy LiveData, StateFlow is pure Kotlin multiplatform-compatible, deterministic, and supports comprehensive reactive transformations (map, combine, filter) without requiring Android main-thread dispatcher constraints during repository updates.
+Staff engineers expose state strictly via read-only interfaces: maintaining a private MutableStateFlow and exposing asStateFlow() guarantees unidirectional data flow integrity across architecture boundaries.""",
+    "meta_ar": {
+        "id": "FLO-26",
+        "questionAr": "شاشتك تحتاج لعرض أحدث حالة بعد تدوير الجهاز. أي نوع تدفق تستخدم ولماذا؟",
+        "topicAr": TOPIC_AR,
+        "evaluates_ar": "- معرفة كيفية الحفاظ على حالة الشاشة بعد دوران الجهاز (Configuration Changes).\n- فهم الفروق الجوهرية بين StateFlow و Cold Flow و SharedFlow في سياق الـ ViewModel.\n- استيعاب ميزة الـ Replay وسرعة الوصول عبر خاصية value المتزامنة وميزة الـ Conflation.",
+        "why_it_matters_ar": "استخدام نوع تدفق خاطئ يعيد تحميل البيانات من الشبكة مع كل تدوير للشاشة، مما يهدر باقة المستخدم ويسبب وميضاً مزعجاً في الواجهة، بينما يضمن StateFlow استعادة الحالة فوراً من الذاكرة.",
+        "worked_example_ar": "الحفاظ على حالة الشاشة وتوفيرها فوراً بعد التدوير:\n```kotlin\nclass ProfileViewModel(private val repo: ProfileRepository) : ViewModel() {\n    private val _uiState = MutableStateFlow<ProfileUiState>(ProfileUiState.Loading)\n    val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()\n\n    init { loadProfile() }\n\n    private fun loadProfile() = viewModelScope.launch {\n        _uiState.value = ProfileUiState.Success(repo.getProfile())\n    }\n}\n```",
+        "trade_offs_ar": "`StateFlow` يتطلب قيمة ابتدائية إجبارية (Initial Value) ويقوم بعمل Conflation للقيم المتطابقة، مما يجعله مثالياً للحالة (State) ولكنه غير مناسب للأحداث الفردية (Events).",
+        "failure_modes_ar": "استخدام Cold Flow مباشر في الواجهة مما يعيد تشغيل نداءات الشبكة مع كل دوران للشاشة. خطأ آخر هو كشف `MutableStateFlow` مباشرة للواجهة مما يسمح للشاشات بتعديل الحالة وكسر مبدأ UDF.",
+        "production_perspective_ar": "في المشروعات الاحترافية، كل شاشة تمتلك `StateFlow<UiState>` موحد داخل الـ ViewModel، يتم كشفه كـ Read-only عبر `asStateFlow()` وتجميعه في الواجهة عبر `collectAsStateWithLifecycle()` لتوفير تجربة مستخدم سلسة وفورية.",
+        "how_to_answer_ar": "- **النوع المختار:** `StateFlow` هو الخيار القياسي لتمثيل حالات الشاشة.\n- **السبب الأول (Replay Cache):** يحتفظ دائماً بآخر قيمة انبعثت (`replay = 1`) ويسلمها فوراً للـ Activity الجديدة بعد دوران الجهاز.\n- **السبب الثاني (Main-safety & Synchronous Value):** يتيح قراءة `uiState.value` المتزامنة في أي وقت.\n- **السبب الثالث (Conflation):** لا يبعث حالات متطابقة، مما يوفر عمليات إعادة الرسم (Recomposition) في Compose.\n- **مقارنة مع البدائل:** Cold Flow يعيد تحميل الداتا، و SharedFlow(0) يسقط القيمة لو مفيش مشترك.",
+        "talking_points_ar": "ناقش دور كلاس SharedFlowSlot في تسليم القيمة فوراً، ومقارنة StateFlow بـ LiveData، ومفهوم Unidirectional Data Flow.",
+        "follow_ups_ar": "- **المحاور:** \"لماذا لا نستخدم Cold Flow عادي ونجمعه في onViewCreated؟\"\n  **المرشح:** \"لأن Cold Flow معندوش ذاكرة (Stateless)؛ كل ما الشاشة تتدمر وتفتح من جديد بعد التدوير، التجميع هيبدأ من الصفر ويعيد نداء الـ API أو الداتابيز، وده هيخلي اليوزر يشوف شاشة تحميل متكررة ويستهلك باقة النت. أما StateFlow فهو Hot وViewModelScope ماسكه في الذاكرة.\"\n\n- **المحاور:** \"ما الفرق بين StateFlow و LiveData في هذا السيناريو؟\"\n  **المرشح:** \"الاتنين بيحتفظوا بآخر قيمة، لكن StateFlow متوافق تماماً مع Kotlin Multiplatform ومرن مع كل مشغلات Flow، وبيشتغل مع الـ Dispatchers المختلفة بدون قيود postValue اللي ممكن تسقط قيم وسطية لو اتبعتت بسرعة.\"",
+        "self_check_ar": "هل حددت StateFlow بوضوح؟ هل بينت دور replay=1 في التدوير؟ وهل ذكرت ميزة Conflation وقراءة value؟",
+        "references_ar": f"- [StateFlow official documentation](https://developer.android.com/kotlin/flow/stateflow-and-sharedflow) — دليل أندرويد الرسمي لـ StateFlow.\n- [Migrating from LiveData to StateFlow](https://medium.com/androiddevelopers/migrating-from-livedata-to-stateflow-c0e7f3d56414) — مقال فريق أندرويد الرسمي للتحول لـ StateFlow.\n\n{REVIEWED_DATE_AR}",
+        "quick_answer_ar": "بنستخدم `StateFlow` لأنه كاش ساخن بيحتفظ بآخر قيمة في الذاكرة (`replay = 1`) وبيسلمها فوراً للواجهة أول ما يعاد إنشاؤها بعد التدوير. وميزته الإضافية إنه بيعمل دمج للحالات المتطابقة (`Conflation`) وبيتيح قراءة فورية متزامنة للحالة عبر خاصية `value`.",
+        "best_answer_ar": "الخيار المعماري القياسي والموصى به من جوجل هو `StateFlow`؛ والسبب إنه متصمم خصيصاً لتمثيل حالات الواجهة والاحتفاظ بها.\n\nلما المستخدم بيدور شاشة الموبايل، الـ Activity بتتدمر ويعاد بناؤها من الصفر، لكن كائن الـ ViewModel بيفضل عايش في الذاكرة. لو استخدمنا Cold Flow عادي، كل ما الشاشة تفتح هتعيد تنفيذ استعلام الداتابيز أو نداء الشبكة من البداية، وده هيعمل وميض (Flicker) وتجربة مستخدم سيئة.\n\n`StateFlow` بيحل المشكلة دي لأنه بيحتفظ دائماً بآخر حالة صدرت في كاش حجمه عنصر واحد (`replay = 1`). فأول ما الشاشة الجديدة تشترك في `onStart`، بتستلم أحدث حالة فوراً في نفس اللحظة بدون أي انتظار.\n\nوفوق كده، `StateFlow` بيتميز بخاصيتين جوهريتين: الأولى خاصية الـ `value` المتزامنة اللي بتسمح بقراءة الحالة فوراً بدون دوال معلقة، والتانية إنه بيعمل `Conflation`؛ يعني لو القيمة الجديدة مطابقة للقديمة مبيبعتش تحديث للواجهة، وده بيمنع عمليات إعادة الرسم (Recomposition) غير الضرورية في Jetpack Compose.",
+        "deep_answer_ar": "تحت الكابوت في كوتلن، `StateFlow` هو تطبيق متخصص من `SharedFlow`؛ مضبوط برمجياً بحيث يكون حجم الـ `replay = 1` وسعة الـ Buffer الإضافية صفر وسياسة الطفح `DROP_OLDEST`. هو بيخزن الحالة الحالية في متغير من نوع `volatile`، وده اللي بيخلي قراءة `stateFlow.value` سريعة جداً وذات تعقيد زمني O(1) وآمنة خيطياً بدون أي تعليق للكوروتين.\n\nأثناء تدوير الشاشة، المشترك القديم بيلغي اشتراكه في `onStop`. ولما الشاشة الجديدة تلف وتوصل لـ `onStart`، المراقب بيشترك من جديد عبر `collectAsStateWithLifecycle`. في اللحظة دي، الـ `StateFlow` بيبعت أحدث عنصر متخزن فوراً للـ Slot الجديد، فالشاشة بترسم البيانات الصحيحة قبل رسم الفريم الأول.\n\nالميزة التقنية الفاصلة لـ StateFlow مقارنة بـ LiveData القديمة هي الاستقلالية الكاملة عن كلاسات أندرويد (Kotlin Multiplatform Ready)، وإمكانية دمجه مع باقي المشغلات التفاعلية زي `combine` و `filter` بسلاسة، بالإضافة لإمكانية تحديث قيمته من أي خيط في الخلفية بدون قيود `postValue` التي قد تسقط حالات وسطية.\n\nكمان الفحص الداخلي بـ `Any.equals` بيضمن Conflation حقيقي؛ فلو حدث خطأ وأعدت إرسال نفس كائن الـ State، مفيش أي انبعاث هيحصل ومش هيضيع وقت المعالج في Recomposition.\n\nعلشان كده في بيئات الإنتاج، بنحتفظ بـ `MutableStateFlow` كخاصية خاصة (Private) ونكشفها للواجهة كـ `asStateFlow()` غير قابلة للتعديل لضمان الـ Unidirectional Data Flow."
+    }
+}
+
+# ==========================================
+# FLO-27: Navigation event fires twice after rotation
+# ==========================================
+DATA["FLO-27"] = {
+    "concept_en": """A navigation event firing repeatedly following device orientation changes represents the classic Android "Event Replay" anti-pattern, caused by mismodeling transient one-off side effects as persistent UI state.
+When navigation destinations, snackbars, or toast messages are stored inside StateFlow or SharedFlow with positive replay cache (replay >= 1), the flow retains the navigation payload in memory. When device rotation triggers Activity destruction and recreation, the newly attached observer collects the flow and immediately receives the retained navigation event from the replay cache, re-triggering the navigation intent.
+Investigating and resolving this failure mode involves evaluating event lifecycle ownership: transient side effects must not rely on sticky state caches or anti-patterns like EventWrapper / SingleLiveEvent. Senior Android engineering standards resolve this either by modeling navigation actions via single-consumer buffered Channels exposed as Flows, or by modeling events as explicit, state-driven UI models where the UI explicitly notifies the ViewModel upon consumption to acknowledge and clear the event.""",
+    "walkthrough_en": """Investigating and fixing navigation event replay via state-driven consumption acknowledgement:
+```kotlin
+// 1. Model navigation as a nullable property within the UI State:
+data class CheckoutUiState(
+    val isLoading: Boolean = false,
+    val navigationEvent: CheckoutNavigation? = null // Transient event
+)
+
+sealed interface CheckoutNavigation {
+    data class NavigateToReceipt(val orderId: String) : CheckoutNavigation
+}
+
+class CheckoutViewModel : ViewModel() {
+    private val _uiState = MutableStateFlow(CheckoutUiState())
+    val uiState: StateFlow<CheckoutUiState> = _uiState.asStateFlow()
+
+    fun onPaymentSuccess(orderId: String) {
+        _uiState.update { it.copy(navigationEvent = CheckoutNavigation.NavigateToReceipt(orderId)) }
+    }
+
+    // Crucial: UI explicitly acknowledges consumption, clearing sticky state!
+    fun onNavigationHandled() {
+        _uiState.update { it.copy(navigationEvent = null) }
+    }
+}
+
+// 2. In Jetpack Compose screen:
+val state by viewModel.uiState.collectAsStateWithLifecycle()
+LaunchedEffect(state.navigationEvent) {
+    state.navigationEvent?.let { nav ->
+        navController.navigate("receipt/${nav.orderId}")
+        viewModel.onNavigationHandled() // Acknowledged! Rotation won't re-trigger!
+    }
+}
+```""",
+    "short_en": """Navigation fires twice because the event was stored in a sticky stream like StateFlow or SharedFlow with replay, replaying upon screen rotation. We fix this by modeling navigation as part of UI state with explicit consumption acknowledgement, or using a single-consumer buffered Channel.""",
+    "structured_en": """To begin with, duplicate navigation upon screen rotation indicates that transient events were modeled using sticky state primitives.
+From an architectural standpoint, StateFlow and SharedFlow with replay retain their latest emission in memory. When the Activity recreates upon rotation, the new UI collector subscribes and immediately receives the historical navigation payload, executing navigation a second time.
+In production scenarios, legacy workarounds like EventWrapper or SingleLiveEvent introduced race conditions and anti-pattern flags that violated unidirectional data flow.
+As for modern resolution, Google officially recommends modeling events directly inside the UI state class. The navigation payload resides as a nullable field within the state data class; as soon as the UI executes the navigation transition, it sends a consumption intent back to the ViewModel, which clears the event to null. Alternatively, a single-consumer buffered Channel guarantees exactly-once delivery without retention.""",
+    "deep_senior_en": """Under the hood, investigating duplicate emissions starts by inspecting the stream declaration inside the ViewModel. If the stream is declared as MutableStateFlow or MutableSharedFlow(replay = 1), the replay cache is the root cause. Upon recreation, repeatOnLifecycle enters STARTED and attaches a new subscriber slot. The hot flow traverses its circular buffer and immediately dispatches the cached item to the fresh subscriber before any user interaction occurs.
+To eliminate this defect, two architectural patterns exist. The first pattern is the Single-Consumer Buffered Channel: Channel<NavEvent>(Channel.BUFFERED) exposed via receiveAsFlow(). A Channel enforces queue semantics where elements are consumed destructively; once the UI dequeues the navigation intent, it is permanently removed from memory, preventing replay across rotations.
+The second pattern—recommended in modern Jetpack Compose architecture—is State-Driven Modeling with Explicit Consumption Acknowledgement. The UI state holds a nullable event object. In the Composable, a LaunchedEffect keyed to event executes the navigation command and immediately invokes viewModel.onEventConsumed(). The ViewModel atomically resets the state property to null via MutableStateFlow.update.
+This pattern aligns with modern Unidirectional Data Flow guidelines: the UI never manages independent event state, but instead reflects the current state snapshot and dispatches user actions back to the ViewModel, eliminating navigation inconsistencies during configuration changes.
+Staff engineers ban hacky solutions like reading and manually toggling boolean hasBeenHandled flags across multiple threads, enforcing deterministic state management across all navigation flows.""",
+    "meta_ar": {
+        "id": "FLO-27",
+        "questionAr": "حدث التنقل يتكرر مرتين بعد تدوير الشاشة. كيف تحقق في نمذجة واستهلاك الأحداث؟",
+        "topicAr": TOPIC_AR,
+        "evaluates_ar": "- تشخيص سبب تكرار الأحداث الفردية (Event Replay) بعد تدوير الشاشة.\n- فهم خطورة حفظ أحداث الـ Navigation داخل StateFlow أو SharedFlow(replay=1).\n- معرفة الحلول المعمارية المعتمدة: Channel أحادي المستهلك أو نمذجة الحدث داخل الـ State مع تأكيد الاستهلاك (Event Consumption).",
+        "why_it_matters_ar": "تكرار حدث التنقل يفتح شاشة الدفع أو تفاصيل الطلب مرتين فوق بعضها، مما يربك المستخدم وقد يسبب سحب مبالغ مالية مكررة أو كراش في مكدس الشاشات (Backstack).",
+        "worked_example_ar": "النمذجة الآمنة لحدث التنقل مع تأكيد الاستهلاك:\n```kotlin\ndata class OrderUiState(\n    val isProcessing: Boolean = false,\n    val navigationEvent: OrderNavTarget? = null // يقبل null\n)\n\n// في الواجهة:\nLaunchedEffect(uiState.navigationEvent) {\n    uiState.navigationEvent?.let { target ->\n        navController.navigate(target.route)\n        viewModel.onNavigationHandled() // تصفير الحدث فوراً لمنع تكراره عند التدوير\n    }\n}\n```",
+        "trade_offs_ar": "نمذجة الحدث داخل الـ State تتطلب دالة إضافية لتصفير القيمة (`onHandled`)، ولكنها تحافظ على الـ Unidirectional Data Flow وتسمح باختبار كامل وموثوق في الـ Unit Tests.",
+        "failure_modes_ar": "استخدام كلاس `Event<T>` القديم مع متغير `hasBeenHandled`، حيث يفشل في بيئات متعددة الخيوط. خطأ آخر هو استخدام `SharedFlow(replay=0)` الذي يسقط الحدث تماماً لو وقع أثناء تدوير الشاشة.",
+        "production_perspective_ar": "في تطبيقات Compose الحديثة، نلزم المطورين بنمذجة الأحداث الفردية داخل كلاس الـ UiState نفسه كحقول Nullable مع استدعاء دالة `onEventConsumed()` فور إتمام الحركة، لمنع إعادة تشغيل الأحداث نهائياً.",
+        "how_to_answer_ar": "- **سبب المشكلة:** حدث التنقل محفوظ في تدفق يحتفظ بالكاش زي `StateFlow` أو `SharedFlow(replay=1)`؛ فعند دوران الشاشة المشترك الجديد يستلم آخر قيمة كاش فوراً.\n- **الحل المعماري الأول (State-driven):** وضع الحدث كـ Nullable property داخل كلاس الـ State واستدعاء دالة في الـ ViewModel لتصفيره لـ null فور التنقل.\n- **الحل المعماري الثاني (Channel):** استخدام `Channel(Channel.BUFFERED)` وكشفها كـ `receiveAsFlow()`؛ لأن القناة طابور يستهلك العنصر ويمسحه فوراً.\n- **عيوب الحلول القديمة:** التحذير من `SingleLiveEvent` و `EventWrapper` لمخالفتها معايير كوتلن الحديثة.",
+        "talking_points_ar": "ناقش دور مؤشر SharedFlowSlot، وتكامل LaunchedEffect مع مفاتيح الأحداث، وكيف يقضي تصفير الحالة الذري على الـ Race Conditions.",
+        "follow_ups_ar": "- **المحاور:** \"لماذا يعتبر استخدام SingleLiveEvent أو EventWrapper حلاً قديماً غير مفضل؟\"\n  **المرشح:** \"لأن كلاسات الـ EventWrapper بتعتمد على فحص متغير داخلي بولياني `hasBeenHandled`، وده بيعتمد على الآثار الجانبية (Side Effects) وبيكسر نقاء الـ State في Jetpack Compose وبيتسبب في Race Conditions لو تم استهلاكه من كذا ثريد. نمذجة الحدث كحالة صريحة تقبل الـ null هو الحل الأصفى معمارياً.\"\n\n- **المحاور:** \"لو استخدمت Channel لأحداث التنقل، ما هو التحذير الأهم؟\"\n  **المرشح:** \"التحذير الجوهري هو التأكد إن فيه مستهلك واحد فقط (Single Collector) بيجمع الـ Channel؛ لأن لو شاشتين عملوا collect للـ receiveAsFlow، القناة هتقسم أحداث التنقل بينهم بنظام التنافس، وده هيعمل انقسام في سير الشاشات.\"",
+        "self_check_ar": "هل شخصت سبب تكرار الحدث (Replay Cache)؟ هل شرحت نمط تأكيد الاستهلاك في الـ State؟ وهل ذكرت بديل الـ Channel مع التحذير من تنافس المستهلكين؟",
+        "references_ar": f"- [Android UI events and state modeling guide](https://developer.android.com/topic/architecture/ui-layer/events) — دليل جوجل الرسمي لنمذجة أحداث الواجهة.\n- [Consuming events in Jetpack Compose](https://medium.com/androiddevelopers/viewmodel-one-off-event-antipatterns-16a02b329b19) — مقال فريق أندرويد حول أنماط ومخاطر أحداث الـ ViewModel.\n\n{REVIEWED_DATE_AR}",
+        "quick_answer_ar": "الحدث بيتكرر لأن تم تخزينه في تدفق ساخن بيحتفظ بالقيمة زي `StateFlow` أو `SharedFlow(replay = 1)`، فيعاد بثه للشاشة الجديدة بعد التدوير. والحل المعماري هو نمذجة الحدث كحقل يقبل الـ null داخل كلاس الـ State وإرسال تأكيد استهلاك من الواجهة للـ ViewModel لتصفيره فوراً.",
+        "best_answer_ar": "تكرار حدث التنقل (Navigation Event) بعد تدوير الشاشة هو أشهر خطأ معماري ناتج عن الخلط بين حالة الواجهة (State) والأحداث الفردية (One-off Events).\n\nسبب المشكلة هو إن المطور خزن حدث التنقل في `StateFlow` أو في `SharedFlow` بقيمة `replay >= 1`؛ فلما الشاشة بتلف ويعاد إنشاؤها، المشترك الجديد بيفتح في `onStart`، والتدفق الساخن بيعتبره ضيف جديد ويسلمه آخر قيمة متخزنة في الكاش فوراً، فتتكرر عملية الانتقال للشاشة التانية رغماً عن المستخدم.\n\nعلشان نحل الكارثة دي بأسلوب هندسي نظيف، بنتبع الحل الرسمي المعتمد من فريق أندرويد: نمذجة الحدث داخل كلاس الـ UI State كحقل اختياري (Nullable)، زي `navigationTarget: Destination?`.\n\nأول ما الواجهة تلاحظ إن الحقل ده مش null، بتنفذ عملية التنقل عبر `NavController`، وفي نفس السطر بتستدعي دالة في الـ ViewModel زي `onNavigationHandled()` علشان ترجع الحقل لـ `null`. وبكده لو المستخدم دور الشاشة في أي لحظة، الواجهة الجديدة هتلاقي الحقل فاضي ومستحيل الحدث يتكرر.",
+        "deep_answer_ar": "التحقيق الهندسي في المشكلة دي بيبدأ من مراجعة تعريف التدفق في الـ ViewModel؛ لو لقيته `MutableStateFlow` أو `MutableSharedFlow(replay = 1)`، يبقى ده مصدر الـ Replay المباشر. كلاس `SharedFlowSlot` الخاص بالمشترك الجديد أول ما بيسجل في الكوروتين بيقرأ الـ Circular Buffer الداخلي ويبعت آخر عنصر فوراً قبل ما المستخدم يلمس الشاشة.\n\nتاريخياً، المطورون كانوا بيستخدموا حلول ترقيعية زي كلاس `Event<T>` أو `SingleLiveEvent` مع متغير بولياني `hasBeenHandled`، لكن الحلول دي بتعمل Race Conditions وبتكسر مبدأ الـ Unidirectional Data Flow.\n\nفي المعمارية الحديثة، عندنا حلين معتمدين:\nالحل الأول هو الـ State-Driven Event مع تأكيد الاستهلاك (Consumption Acknowledgement)؛ بنعرف الحدث ككائن جوه الـ State، والواجهة بتنفذه جوه `LaunchedEffect` وتبعت فوراً نداء `viewModel.clearNavigationEvent()` اللي بيعمل `_uiState.update { it.copy(navEvent = null) }` بشكل ذري.\n\nالحل التاني هو استخدام `Channel<NavEvent>(Channel.BUFFERED)` وكشفه للواجهة عبر `receiveAsFlow()`. القناة شغالة بنظام الطابور الفردي (Queue FIFO)؛ أول ما الواجهة تسحب الحدث بيتفرغ من الذاكرة تماماً، فلو الشاشة لفت بعد ثانية، القناة بتكون فاضية ومفيش أي كاش هيتسرب للشاشة الجديدة.\n\nوفي بيئات الإنتاج، بنفضل الحل الأول في Jetpack Compose لتوافقه التام مع فحص الحالة، وبنمنع استخدام أي Flow ساخن بأحداث حركية بدون تصفير فوري لمنع تكرار الشاشات."
+    }
+}
+
+# ==========================================
+# FLO-28: Single Source of Truth (Room + Remote)
+# ==========================================
+DATA["FLO-28"] = {
+    "concept_en": """In modern Android architecture and offline-first system design, the local database (such as Room) must serve as the absolute Single Source of Truth (SSOT), while the remote network API acts solely as a data upstream source that mutates the SSOT.
+Under this architectural contract, the UI layer never observes network responses directly. Instead, the UI layer exclusively observes reactive Flow streams emitted by Room DAOs. When the application requests fresh data from a remote REST or GraphQL endpoint, the repository fetches the remote payload, maps network DTOs to local database entities, and writes them into Room.
+Because Room SQLite queries are observable via Kotlin Flow, any database insertion, update, or deletion automatically triggers a fresh query evaluation, emitting the updated dataset downstream to the UI. This architectural decoupling guarantees offline resilience, eliminates data synchronization inconsistencies, and ensures the UI always renders a consistent, verified state even during transient network drops or server timeouts.""",
+    "walkthrough_en": """Architecting an offline-first data stream with Room as the Single Source of Truth:
+```kotlin
+class NewsRepository(
+    private val newsDao: NewsDao,
+    private val newsApi: NewsApiService
+) {
+    // 1. UI observes Room database as the Single Source of Truth:
+    fun observeArticles(): Flow<List<Article>> = newsDao.getArticlesFlow()
+
+    // 2. Network refresh writes strictly to the database, never directly to UI:
+    suspend fun refreshArticles(): Result<Unit> = runCatching {
+        val remoteDtos = newsApi.fetchTopHeadlines()
+        val entities = remoteDtos.map { it.toEntity() }
+        newsDao.upsertArticles(entities) // Room automatically notifies observeArticles()!
+    }
+}
+
+// In ViewModel:
+class NewsViewModel(private val repository: NewsRepository) : ViewModel() {
+    val articles: StateFlow<List<Article>> = repository.observeArticles()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    fun refresh() {
+        viewModelScope.launch {
+            repository.refreshArticles().onFailure { error ->
+                _errorEvents.emit(error.message ?: "Sync failed")
+            }
+        }
+    }
+}
+```""",
+    "short_en": """The local database (Room) is the absolute Single Source of Truth. The UI observes database Flow queries exclusively; the network layer simply fetches remote data and writes it to Room, which automatically emits updated snapshots to the UI while ensuring full offline functionality.""",
+    "structured_en": """To begin with, offline-first applications mandate a strict Single Source of Truth to prevent synchronization conflicts.
+From an architectural standpoint, Room is the sole source of truth. Exposing direct network streams to the UI creates fragmented state where offline access is broken and network failures wipe out previously rendered data.
+In production scenarios, the repository orchestrates this boundary cleanly. The UI subscribes to a reactive Flow emitted by the Room DAO. When a network sync executes, the repository parses the network response, converts DTOs to entities, and persists them into the database using upsert operations.
+As for reactive synchronization, Room invalidation trackers detect SQLite table mutations and automatically re-evaluate the query, pushing the updated list downstream through the Flow. If the network call fails, the UI continues displaying cached database records uninterrupted, handling errors via non-intrusive notification events.""",
+    "deep_senior_en": """Under the hood, Room generates an observable Flow by registering an InvalidationTracker on the queried SQLite tables. When repository write operations invoke insert, update, or upsert, SQLite triggers notify Room's tracker. The tracker flags table modifications and notifies the active FlowCollector, re-querying SQLite on background database threads and emitting fresh entity snapshots downstream.
+This architecture establishes clean separation of concerns. The network layer is completely decoupled from UI rendering cycles. Network latency, retries, and schema mappings happen strictly in background execution pipelines that terminate at the SQLite database boundary.
+A critical senior consideration is transactional consistency and data pagination. When refreshing lists with relationships or nested items, repository writes must execute within a database transaction (@Transaction). This ensures that intermediate or partial updates never leak into the observable Flow, preventing UI rendering flickering or invalid relationship states.
+Furthermore, if network pagination is required, pairing Room with the Jetpack Paging 3 RemoteMediator enforces this exact pattern: RemoteMediator fetches pages from the network and saves them directly to Room, while PagingSource streams cached records from SQLite to the UI.
+Staff engineers enforce this offline-first contract across all enterprise apps: the UI observes local database storage exclusively, treating network endpoints as asynchronous background synchronizers.""",
+    "meta_ar": {
+        "id": "FLO-28",
+        "questionAr": "تدفق يدمج بين كاش Room وتحديث الشبكة. من هو مصدر الحقيقة (Source of Truth)؟",
+        "topicAr": TOPIC_AR,
+        "evaluates_ar": "- الفهم المعماري لمفهوم مصدر الحقيقة الأوحد (Single Source of Truth - SSOT).\n- إدراك دور قاعدة بيانات Room كمصدر وحيد تقرأ منه الواجهة في التطبيقات الداعمة للعمل بدون إنترنت (Offline-first).\n- استيعاب آلية تحديث قاعدة البيانات من الشبكة وانبعاث البيانات التفاعلي عبر InvalidationTracker.",
+        "why_it_matters_ar": "قراءة البيانات مباشرة من الشبكة وتخزينها جانباً يسبب تضارباً في البيانات (Data Inconsistency)، ويجعل التطبيق عاجزاً عن العمل في وضع الأوفلاين، بينما يضمن الـ SSOT عرض أحدث البيانات المتاحة دائماً وبث التحديثات بسلاسة.",
+        "worked_example_ar": "تطبيق نمط Offline-first مع Room كمصدر وحيد للحقيقة:\n```kotlin\nclass ArticleRepository(private val dao: ArticleDao, private val api: NewsApi) {\n    // الواجهة تقرأ فقط من قاعدة البيانات:\n    fun getArticles(): Flow<List<Article>> = dao.observeArticles()\n\n    // تحديث الشبكة يكتب في الداتابيز فقط:\n    suspend fun sync() {\n        val networkData = api.fetchLatest()\n        dao.upsertAll(networkData.map { it.toEntity() }) // Room يبث التحديث آلياً\n    }\n}\n```",
+        "trade_offs_ar": "الكتابة أولاً في قاعدة البيانات ثم القراءة منها يضيف طبقة وسيطة طفيفة في الـ Disk I/O، ولكنه يمنح التطبيق ثباتاً معمارياً تاماً ودعماً تلقائياً للأوفلاين بدون أي تعقيد في الواجهة.",
+        "failure_modes_ar": "دمج استجابة الشبكة وقاعدة البيانات بمشغلات زي `combine` أو `zip` وعرضها معاً في الواجهة، مما يخلق تكرارات وتضارباً في الترتيب. خطأ آخر هو نسيان `@Transaction` عند حفظ بيانات مرتبطة مما يبث بيانات غير مكتملة.",
+        "production_perspective_ar": "في المشروعات الاحترافية، القاعدة غير قابلة للتفاوض: الـ UI يراقب Room دائماً. نداءات الـ Refresh وظيفتها فقط جلب الـ DTOs وحفظها في الداتابيز، ولا تعيد أي بيانات للـ ViewModel سوى نتيجة نجاح أو فشل المزامنة (Result<Unit>).",
+        "how_to_answer_ar": "- **مصدر الحقيقة الوحيد:** قاعدة البيانات المحلية (Room) هي الـ Single Source of Truth المطلق.\n- **دور الشبكة:** الشبكة مجرد وسيلة تحديث (Mutator/Synchronizer) وليست مصدر قراءة للواجهة.\n- **مسار البيانات:** الشبكة تكتب في Room -> جدول SQLite يتحدث -> InvalidationTracker يكتشف التغيير -> Room Flow يبعث البيانات الجديدة للواجهة.\n- **فوائد المعمارية:** عمل التطبيق بدون إنترنت (Offline-first)، استقرار البيانات، وعدم اختفاء البيانات القديمة لو فشل النت.\n- **معالجة الأخطاء:** لو فشلت الشبكة، تعرض الواجهة رسالة تنبيه ولكن تظل البيانات السابقة معروضة من Room بسلام.",
+        "talking_points_ar": "ناقش دور InvalidationTracker الداخلي في Room، والتعامل مع RemoteMediator في Paging 3، وأهمية @Transaction في منع تسريب التحديثات الجزئية.",
+        "follow_ups_ar": "- **المحاور:** \"ماذا يحدث لو فشل نداء الشبكة بسبب انقطاع الاتصال؟ كيف تتصرف الواجهة؟\"\n  **المرشح:** \"الواجهة هتفضل عارضة آخر بيانات متخزنة في Room بدون أي وميض أو شاشة بيضاء؛ لأن الـ Flow المستمر مربوط بالداتابيز. الـ Repository هيرجع فشل في دالة الـ `refreshArticles`، والـ ViewModel يقدر يبعث Snackbar بسيط يبلغ المستخدم بوجود مشكلة في المزامنة بدون تعطيل قراءة البيانات القديمة.\"\n\n- **المحاور:** \"كيف نطبق هذا المبدأ مع القوائم الضخمة والـ Pagination؟\"\n  **المرشح:** \"باستخدام `RemoteMediator` من مكتبة Jetpack Paging 3؛ الـ Mediator بيحمل الصفحات من السيرفر ويكتبها في Room، والواجهة بتراقب `PagingSource` خارج حصرياً من استعلام الـ DAO في Room، وده بيطبق نفس مبدأ الـ SSOT بامتياز.\"",
+        "self_check_ar": "هل أكدت بوضوح أن Room هي مصدر الحقيقة الوحيد؟ هل بينت أن الشبكة تكتب فقط ولا تقرأ منها الواجهة؟ وهل شرحت دور InvalidationTracker؟",
+        "references_ar": f"- [Android architecture guide: Single source of truth](https://developer.android.com/topic/architecture/data-layer#single-source-of-truth) — دليل جوجل الرسمي لمعمارية طبقة البيانات ومصدر الحقيقة.\n- [Room with Kotlin Flow](https://developer.android.com/training/data-storage/room/async-queries#kotlin) — توثيق استعلامات Room التفاعلية مع Flow.\n\n{REVIEWED_DATE_AR}",
+        "quick_answer_ar": "قاعدة البيانات المحلية (Room) هي مصدر الحقيقة الوحيد (Single Source of Truth) بلا منازع. الواجهة بتراقب داتا الـ Room عبر Flow فقط، واستجابة الشبكة وظيفتها حصرية في تحديث قاعدة البيانات، وقاعدة البيانات هي اللي بتبعت التحديث الجديد تلقائياً للواجهة لدعم العمل بدون إنترنت.",
+        "best_answer_ar": "في المعمارية الحديثة وتصميم الأنظمة التي تدعم العمل بدون إنترنت (Offline-first Architecture)، قاعدة البيانات المحلية (Room) هي مصدر الحقيقة المطلق والوحيد (Single Source of Truth).\n\nلو سمحت للواجهة إنها تقرأ من الشبكة تارة ومن الداتابيز تارة، هيحصل تضارب في البيانات، وأول ما النت يفصل التطبيق هيعرض شاشة بيضاء أو يضرب كراش. المعمارية السليمة بتفرض إن الواجهة تشترك حصرياً في `Flow` صادر من استعلامات الـ DAO في Room.\n\nطب نداء الشبكة دوره إيه؟ دوره بيقتصر على إنه مزامنة في الخلفية (Background Synchronizer)؛ الـ Repository بينادي الـ API، يستلم البيانات، ويخزنها مباشرة في قاعدة البيانات عبر عمليات `upsert`.\n\nوأول ما البيانات تتكتب في جداول الـ SQLite، نظام التتبع الداخلي في Room بيكتشف التغيير تلقائياً ويعيد تشغيل الاستعلام ويبث القوائم المحدثة للواجهة عبر الـ Flow. بكده نضمن إن التطبيق شغال 100% بدون إنترنت، ولو الشبكة قطعت المستخدم بيفضل شايف بيانات الكاش بدون أي مشاكل.",
+        "deep_answer_ar": "تحت الكابوت، مكتبة Room بتنشئ الـ Flow عن طريق تسجيل كائن اسمه `InvalidationTracker` على الجداول المشار إليها في استعلام الـ SQL. أول ما الـ Repository بينفذ عملية كتابة (`Insert` أو `Update`)، الـ InvalidationTracker بيلقط التعديل وبيعيد تنفيذ الاستعلام على خيط خلفي ويبعت النتيجة للـ Collector المشترك.\n\nالمعمارية دي بتحقق مبدأ الفصل التام للمسؤوليات (Decoupling)؛ طبقة الـ UI معندهاش أي فكرة عن الـ Endpoints أو الـ JSON DTOs، هي بتراقب فقط كيانات الـ Domain/Entities المستقرة في قاعدة البيانات.\n\nوهنا بتظهر نقطة هندسية دقيقة جداً: الاتساق المعاملاتي (Transactional Consistency)؛ لما الـ Repository بيعمل مزامنة لبيانات معقدة أو علاقات (Parent-Child Relations)، لازم عملية الكتابة في Room تتم جوه `@Transaction` واحدة؛ علشان نمنع الـ InvalidationTracker من إنه يبعت تحديث ناقص في نص العملية ويسبب وميض أو أخطاء بصرية في الواجهة.\n\nوفي حالات الـ Pagination، نفس المبدأ بيطبق عبر كلاس `RemoteMediator` في مكتبة Jetpack Paging 3؛ الـ Mediator بينزل الداتا من السيرفر ويكتبها في الـ Room، والـ `PagingSource` بيسحب الداتا حصرياً من الـ Room للواجهة.\n\nعلشان كده في الأنظمة البنكية والمشاريع الكبيرة، بنلزم الفرق بإن Room هي المصدر الأوحد، والشبكة مجرد وسيلة تغذية غير متزامنة."
+    }
+}
+
+# ==========================================
+# FLO-29: Backpressure strategy for rapid upstream
+# ==========================================
+DATA["FLO-29"] = {
+    "concept_en": """When an upstream Flow emits data at a rate exceeding the downstream consumer's processing or rendering capacity, it creates a backpressure mismatch that leads to frame drops, memory spikes, and UI freezes.
+In Kotlin Flow, the default backpressure mechanism is cooperative suspension: upstream emit calls suspend until the downstream collector finishes its work. However, when upstream producers represent un-suspendable hardware sources (like high-frequency motion sensors, touch event streams, or high-throughput WebSocket price feeds) and downstream rendering cannot keep pace with 120Hz/60Hz frame budgets, cooperative suspension causes buffer inflation or processing delays.
+Selecting the appropriate backpressure operator depends on data delivery semantics: conflate drops intermediate values and preserves only the latest snapshot; buffer introduces memory queues to absorb transient spikes without slowing the producer; debounce pauses execution until a quiet period occurs; sample periodically samples emissions at fixed time windows; and collectLatest automatically cancels ongoing processing whenever a new emission arrives.""",
+    "walkthrough_en": """Mitigating high-frequency sensor streams using conflate and sample:
+```kotlin
+class SensorViewModel(private val sensorRepository: SensorRepository) : ViewModel() {
+    // 1. High-frequency sensor stream (e.g., 200Hz gyroscope events)
+    // Dropping intermediate coordinates: UI only cares about the absolute latest position:
+    val gyroscopeUiState: StateFlow<Coordinates> = sensorRepository.observeGyroscope()
+        .conflate() // Skips stale intermediate readings while UI renders
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = Coordinates(0f, 0f, 0f)
+        )
+
+    // 2. High-throughput stock price feed:
+    // Periodically sampling every 500ms to avoid overwhelming chart calculations:
+    @OptIn(FlowPreview::class)
+    val stockTicker: StateFlow<StockPrice> = sensorRepository.observeStockFeed()
+        .sample(500L) // Emits latest price tick every half second
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = StockPrice.Empty
+        )
+}
+```""",
+    "short_en": """For UI rendering bottlenecks caused by rapid upstream emissions, conflate() is the premier strategy, discarding stale intermediate items to ensure the UI renders only the newest state. Alternatively, sample() or debounce() throttle throughput, and collectLatest() cancels slow ongoing computations.""",
+    "structured_en": """To begin with, backpressure occurs when an upstream producer's emission rate overwhelms a downstream collector's processing velocity.
+From an architectural standpoint, Kotlin Flow naturally applies suspension-based backpressure. However, when the consumer is an Android UI thread constrained by 16ms or 8ms frame budgets, delaying production or buffering infinite items causes severe UI jank and memory pressure.
+In production scenarios, we select backpressure operators according to business requirements. When rendering high-frequency sensor updates or live coordinate plots, intermediate states are obsolete; chaining conflate() drops unrendered data points, delivering only the newest snapshot.
+As for time-windowed throttling, sample() emits the most recent item at fixed intervals, ideal for smoothing high-speed stock tickers. When computations must execute per item, collectLatest() cancels the active processing coroutine immediately upon receiving a newer emission, guaranteeing optimal rendering responsiveness.""",
+    "deep_senior_en": """Under the hood in kotlinx.coroutines.flow, conflate() is implemented as a specialized buffer operator: buffer(capacity = Channel.CONFLATED, onBufferOverflow = BufferOverflow.DROP_OLDEST). It allocates an internal single-slot buffer. When the upstream producer emits an item while the downstream collector is actively processing, the new element overwrites the single slot without suspending the producer.
+This contrasts sharply with buffer(capacity), which creates an internal ArrayChannel (defaulting to 64 slots). A standard buffer decouples thread execution speeds, allowing the producer to race ahead up to buffer capacity, but if the downstream consumer is permanently slower than the producer, the buffer saturates and upstream suspension resumes.
+For rate-limiting user actions, debounce(timeout) enforces quiet periods, whereas sample(period) runs a background ticker coroutine that periodically extracts the latest cached item.
+In UI rendering pipelines, collectLatest provides a reactive execution strategy. Unlike conflate—which affects the queue buffer—collectLatest cancels the collector's action block coroutine mid-execution via CancellationException whenever a new element arrives. This is essential when updating complex UI state or launching animations where in-flight calculations become immediately irrelevant upon new state arrival.
+When architecting real-time streaming features—such as live trading charts or Bluetooth medical telemetry—conflate prevents unbounded memory allocation, allowing garbage collection cycles to remain minimal and deterministic.
+Staff engineers select conflate for state visualization and sample for telemetry to maintain locked 60/120 FPS rendering pipelines.""",
+    "meta_ar": {
+        "id": "FLO-29",
+        "questionAr": "تدفق يبعث بيانات بسرعة عالية ويبطئ رسم الواجهة. أي استراتيجية ضغط عكسي (Backpressure) تناسبه؟",
+        "topicAr": TOPIC_AR,
+        "evaluates_ar": "- الفهم العميق لمشكلة الضغط العكسي (Backpressure) في التدفقات سريعة الانبعاث.\n- معرفة متى نستخدم conflate لإسقاط القيم الوسيطة والحفاظ على أحدث قيمة للواجهة.\n- التمييز بين مشغلات التعامل مع السرعة: buffer و conflate و sample و debounce و collectLatest.",
+        "why_it_matters_ar": "عندما يبعث التدفق بيانات بمعدل 100 أو 200 انبعاث في الثانية، يعجز خيط الواجهة (Main Thread) عن معالجتها ضمن ميزانية الفريم (16ms)، مما يسبب سقوط الفريمات (Jank)، وتجمد الشاشة، وامتلاء الذاكرة بكائنات معلقة.",
+        "worked_example_ar": "التعامل مع انبعاثات الحساسات السريعة عبر conflate و sample:\n```kotlin\n// لحساسات الحركة: إسقاط القراءات الوسيطة وعرض أحدث إحداثيات فقط:\nval coordinatesFlow = sensorRepo.getGyroscopeStream()\n    .conflate()\n\n// لأسعار البورصة السريعة: أخذ عينة كل 500 ملي ثانية لتهدئة الرسوم البيانية:\nval tickerFlow = stockRepo.getLiveFeed()\n    .sample(500L)\n```",
+        "trade_offs_ar": "`conflate()` تضمن سلاسة الواجهة بنسبة 100% ولكنها تضحي بالبيانات الوسيطة. لو كانت كل رسالة تمثل معاملة بنكية يجب معالجتها، يجب استخدام `buffer(capacity)` مع معالجة غير متزامنة بدلاً من الإسقاط.",
+        "failure_modes_ar": "استخدام الـ Flow الافتراضي بدون أي مشغل لإدارة الضغط العكسي مع حساسات سريعة، مما يعلق خيط المعالجة ويسقط فريمات الشاشة. خطأ آخر هو استخدام `buffer()` بسعة غير محدودة مما يسبب OutOfMemoryError.",
+        "production_perspective_ar": "في تطبيقات الرسوم البيانية والحساسات، نعتمد `conflate()` لعرض الحالة المرئية لضمان بقاء التطبيق عند 60/120 إطاراً في الثانية، ونستخدم `sample()` لتقليل عمليات الـ Recomposition في Jetpack Compose.",
+        "how_to_answer_ar": "- **تحديد المشكلة:** سرعة المنتج أعلى من سرعة المستهلك مما يخنق خيط الواجهة ويسقط الفريمات.\n- **الحل الأفضل للواجهة (conflate):** يسقط كل القيم الوسيطة غير المعروضة ويحتفظ فقط بآخر قيمة أحدث (Drop Oldest).\n- **بديل التهدئة الزمنية (sample):** أخذ عينة دورية كل مدة معينة (مثل 500ms) لتحديث الشاشة بمعدل مريح.\n- **بديل الإلغاء (collectLatest):** إلغاء معالجة العنصر القديم فور وصول عنصر جديد.\n- **الـ Buffer العادي:** مفيد فقط لو كان بطء المستهلك مؤقتاً ومطلوب عدم فقدان أي عنصر (Transactional).",
+        "talking_points_ar": "ناقش كلاس Channel.CONFLATED وسعته المكونة من خانة واحدة، والفرق المعماري بين conflate وإلغاء الكوروتينات في collectLatest، وميزانية الـ 16ms لكل فريم.",
+        "follow_ups_ar": "- **المحاور:** \"ما الفرق بين conflate() و collectLatest { } في معالجة الضغط العكسي؟\"\n  **المرشح:** \"مشغل `conflate()` بيتعامل مع طابور الـ Buffer؛ بيسقط العناصر الوسيطة قبل ما تخرج من القناة، بينما `collectLatest` بيتعامل مع كود المعالجة نفسه؛ يعني لو الكوروتين بدأت تنفذ عملية على عنصر قديم ووصل عنصر جديد، المشغل بيلغي الكوروتين الشغالة ويبدأ في الجديد فوراً.\"\n\n- **المحاور:** \"متى يحظر استخدام conflate()؟\"\n  **المرشح:** \"يحظر استخدام `conflate` تماماً لو كانت البيانات حتمية وممنوع ضياع أي عنصر منها؛ زي طابور العمليات المصرفية، أو سطور ملفات التتبع (Audit Logs)، أو أوامر الـ Chat؛ لأن conflate بيسقط الداتا القديمة عمداً.\"",
+        "self_check_ar": "هل رشحت conflate كحل أساسي لتحديث الواجهة؟ هل شرحت أثر الضغط العكسي على فريمات الشاشة؟ وهل قارنتها مع sample و collectLatest؟",
+        "references_ar": f"- [Kotlin Flow backpressure guide](https://kotlinlang.org/docs/flow.html#buffering) — توثيق كوتلن الرسمي للـ Buffering والضغط العكسي.\n- [Optimizing Compose rendering with flows](https://developer.android.com/jetpack/compose/performance) — تحسين أداء رسم الشاشات في أندرويد.\n\n{REVIEWED_DATE_AR}",
+        "quick_answer_ar": "الاستراتيجية المثالية للواجهة هي `conflate()` لأنها بتسقط كل القيم الوسيطة القديمة وبتحتفظ فقط بأحدث قيمة للشاشة. ولو البيانات أسعار أو إحصائيات بنستخدم `sample(ms)` لأخذ عينات زمنية دورية، أو `collectLatest` لإلغاء معالجة العنصر القديم فور وصول عنصر أحدث.",
+        "best_answer_ar": "لما التدفق العلوي بيبعت بيانات بمعدل أسرع من قدرة الواجهة على المعالجة والرسم (زي قراءات حساسات بتبعت 200 مرة في الثانية)، بيحصل عنق زجاجة واختناق في الذاكرة وتجميد للفريمات (UI Jank).\n\nالحل المعماري بيعتمد على طبيعة البيانات اللي بنعرضها:\nلو بنعرض حالة شاشة أو حركة حساسات، المستخدم ميهمهوش يشوف الـ 199 قراءة الوسيطة اللي عدت؛ هو يهمه فقط يشوف أحدث وضع للموبايل الآن. هنا مشغل `conflate()` هو البطل؛ لأنه بيسقط فوراً كل القيم اللي الواجهة ملحقتش ترسمها ويحتفظ فقط بآخر قيمة متوفرة.\n\nأما لو البيانات عبارة عن أسعار بورصة سريعة جداً، فبنستخدم `sample(500L)`؛ المشغل ده بياخد عينة دورية كل نصف ثانية ويبعتها للشاشة، وده بيثبت معدل التحديث عند رقم مريح للعين وللمعالج.\n\nوفي حالات المعالجات الثقيلة لكل عنصر، بنستخدم `collectLatest`؛ ميزته إنه بيلغي معالجة العنصر القديم أول ما يوصل عنصر جديد، وده بيحمي معالج الجهاز من إهدار وقته على بيانات أصبحت قديمة.",
+        "deep_answer_ar": "تحت الكابوت في مكتبة كوتلن، مشغل `conflate()` هو اختصار مباشر لـ `buffer(capacity = Channel.CONFLATED, onBufferOverflow = BufferOverflow.DROP_OLDEST)`. هو بينشئ قناة وسيطة بسعة عنصر واحد فقط؛ لو المنتج بعت قيمة جديدة وخيط الواجهة لسه مشغول في معالجة القيمة السابقة، العنصر الجديد بيدخل ويمسح العنصر القديم بدون ما يعلق كود المنتج إطلاقاً.\n\nالفارق الجوهري بين `conflate()` واستخدام `buffer(64)` العادي هو إن الـ Buffer العادي وسادة أمان مؤقتة؛ بتنفع لو فيه طفرة سرعة مفاجئة لكن لو المستهلك بطيء بشكل دائم، الـ 64 عنصر هيتملوا ويرجع المنتج يتعلق تاني وتفضل الشاشة بطيئة.\n\nأما `sample(period)` فبيشغل كوروتين مؤقتة (Ticker) بتسحب أحدث عنصر استقر في الـ Buffer كل فترة زمنية محددة، وده ممتاز للرسوم البيانية (Charts) علشان متعملش Re-layout مستمر.\n\nوعلى مستوى كود التجميع، دالة `collectLatest` بتختلف جذرياً عن conflate؛ لأن conflate بيتعامل مع طابور استقبال البيانات، بينما `collectLatest` بتتعامل مع كود التنفيذ نفسه؛ فلو الـ Block بياخد 100ms عشان يعمل فك تشفير صورة، ووصلت صورة جديدة بعد 20ms، المشغل بيلغي الكوروتين القديمة بـ `CancellationException` فوراً ويبدأ في الصورة الجديدة.\n\nعلشان كده في بيئات الإنتاج، بنستخدم `conflate()` لتحديثات الـ State و `sample()` للبث الحي و `collectLatest` للعمليات المعقدة لضمان بقاء الشاشة عند 60 أو 120 فريم في الثانية."
+    }
+}
+
+# ==========================================
+# FLO-30: SharedFlow event guarantees with 0 subscribers
+# ==========================================
+DATA["FLO-30"] = {
+    "concept_en": """Understanding delivery guarantees and message persistence in MutableSharedFlow when zero active subscribers exist requires examining the interplay between replay cache, extraBufferCapacity, and buffer overflow policies.
+SharedFlow is fundamentally a hot broadcast stream. Unlike cold Flows, which defer execution until a collector invokes collect, a hot SharedFlow executes and processes emissions independently of subscriber presence.
+When an event is emitted into a MutableSharedFlow with zero active collectors: if the replay parameter is greater than zero (replay > 0), the emission is stored in the replay cache array up to the replay capacity and is instantly delivered to future subscribers upon attachment; if replay is zero (replay = 0), the emission bypasses subscriber dispatch. In this case, whether extraBufferCapacity can retain the event depends strictly on whether downstream collectors previously existed or buffer overflow rules apply; however, for new future subscribers, elements outside the replay cache are completely invisible and dropped permanently into the void.""",
+    "walkthrough_en": """Demonstrating SharedFlow emission behavior and delivery guarantees with zero subscribers:
+```kotlin
+class SharedFlowGuaranteesDemo {
+    // Scenario 1: Zero subscribers with default configuration
+    // replay = 0, extraBufferCapacity = 0, onBufferOverflow = SUSPEND
+    val defaultSharedFlow = MutableSharedFlow<String>()
+
+    // Scenario 2: Replay cache configured
+    // Retains last 2 emissions for ANY future subscriber
+    val replaySharedFlow = MutableSharedFlow<String>(
+        replay = 2,
+        extraBufferCapacity = 0
+    )
+
+    suspend fun demonstrate() {
+        // With 0 active subscribers:
+        defaultSharedFlow.emit("Event 1") // Emitted, but NOT retained! Dropped!
+        val tryEmitSuccess = defaultSharedFlow.tryEmit("Event 2") // Returns false!
+
+        replaySharedFlow.emit("Replayed 1")
+        replaySharedFlow.emit("Replayed 2")
+        // Both saved in replay cache!
+
+        // When a new subscriber attaches 5 seconds later:
+        // defaultSharedFlow -> Receives NOTHING.
+        // replaySharedFlow  -> Immediately receives "Replayed 1" and "Replayed 2".
+    }
+}
+```""",
+    "short_en": """With zero active subscribers, only the replay cache guarantees retention for future collectors. If replay is zero, emitted events are permanently dropped for future subscribers regardless of extra buffer capacity, and synchronous tryEmit on default SharedFlow fails and returns false immediately.""",
+    "structured_en": """To begin with, SharedFlow is a hot broadcast stream that does not wait for collectors to start emitting.
+From an architectural standpoint, buffer guarantees differ drastically between replay cache and extraBufferCapacity when subscribers equal zero. The replay cache exists specifically to hold historical items for future subscribers. If replay = 1, the newest emitted item is guaranteed to be stored and delivered to subsequent subscribers.
+In production scenarios, extraBufferCapacity is designed solely to cushion active, lagging subscribers. If replay = 0 and subscriber count is zero, extraBufferCapacity does not retain items for future observers; any emission without replay vanishes permanently into the void.
+As for non-suspending emission, calling tryEmit on a default MutableSharedFlow with zero subscribers and zero buffer capacity fails immediately, returning false. To guarantee one-off delivery without subscribers, developers must utilize buffered Channels instead of SharedFlow.""",
+    "deep_senior_en": """Under the hood in SharedFlow.kt, emissions are tracked across an internal circular buffer array whose allocation size equals replay + extraBufferCapacity. Each active subscriber is tracked via a SharedFlowSlot. The runtime property nCollectors tracks active subscribers atomically.
+When emit(value) is called, the implementation checks nCollectors. If nCollectors == 0, the method inspects replay. If replay > 0, the element is placed into the head of the replay buffer, updating the replay index. Any future subscriber that attaches will initialize its slot index to head minus replay, immediately reading the cached items upon subscription.
+However, if replay == 0 and nCollectors == 0, the emitted item has nowhere to go. Because extraBufferCapacity is designed strictly to buffer elements between active subscribers and slow emitters, it is not an offline persistent queue. The emission evaluates as complete and is discarded from memory.
+This creates a lethal production trap with tryEmit(). If a developer instantiates MutableSharedFlow() with default arguments (replay = 0, extraBufferCapacity = 0, SUSPEND), calling tryEmit() with zero active collectors returns false because the buffer cannot accept the item without suspending.
+Staff engineers enforce clear architectural rules: never use SharedFlow with replay = 0 for one-off transactional events that must survive periods of subscriber absence; use buffered Channels for guaranteed single-consumer delivery.""",
+    "meta_ar": {
+        "id": "FLO-30",
+        "questionAr": "حدث في SharedFlow وليس له مشتركون نشطون. ما الضمانات التي يقدمها replay والـ buffer فعلياً؟",
+        "topicAr": TOPIC_AR,
+        "evaluates_ar": "- الفهم العميق لسلوك SharedFlow في غياب المشتركين النشطين.\n- التمييز الصارم بين دور كاش الإعادة (replay) وسعة التخزين الإضافية (extraBufferCapacity).\n- إدراك سبب فشل tryEmit التام مع SharedFlow بالقيم الافتراضية في غياب المشتركين.",
+        "why_it_matters_ar": "اعتقاد المطور أن الـ buffer سيحفظ الرسائل للشاشات المغلقة يؤدي لفقدان أحداث تنقل وعمليات بنكية حساسة إذا انبعثت أثناء وجود الشاشة في الخلفية، وفهم هذه الضمانات يمنع أخطاء فقدان البيانات الصامتة.",
+        "worked_example_ar": "توضيح مصير الأحداث عند انعدام المشتركين النشطين:\n```kotlin\n// تدفق بدون replay: الأحداث تتبخر تماماً لو مفيش مشتركين:\nval transientEvents = MutableSharedFlow<String>(replay = 0)\ntransientEvents.emit('Action 1') // ضاعت في الهواء للأبد!\n\n// تدفق مع replay: يحتفظ بآخر حدثين لأي شاشة تفتح مستقبلاً:\nval persistentEvents = MutableSharedFlow<String>(replay = 2)\npersistentEvents.emit('State 1') // محفوظة في الكاش للمشتركين القادمين\n```",
+        "trade_offs_ar": "`replay > 0` يضمن استلام المشتركين الجدد للبيانات السابقة ولكنه قد يعيد أحداثاً غير مرغوبة بعد دوران الشاشة. ضبط `replay = 0` يمنع التكرار ولكنه يسقط الأحداث تماماً في غياب المشتركين.",
+        "failure_modes_ar": "استدعاء `tryEmit()` على `MutableSharedFlow()` بالقيم الافتراضية في غياب المشتركين، حيث تفشل الدالة وترجع `false` وتضيع الرسالة بصمت بدون أي تنبيه في اللوج.",
+        "production_perspective_ar": "في المشروعات الإنتاجية، نمنع استخدام `SharedFlow(replay = 0)` للأحداث الفردية الحتمية التي تتطلب ضمان وصول، ونعتمد بدلاً منها على `Channel(Channel.BUFFERED)` لأنها طابور حقيقي لا يسقط الرسائل أبداً.",
+        "how_to_answer_ar": "- **الضمان الحقيقي للمستقبل:** `replay` فقط هو الذي يضمن حفظ البيانات للمشتركين المستقبليين (Future Subscribers).\n- **دور extraBufferCapacity:** معمول فقط لامتصاص بطء المشتركين النشطين حالياً، ومبيحفظش أي حاجة للمشتركين الجدد لو replay=0.\n- **مصير الحدث عند صفر مشتركين:** لو replay=0، دالة `emit` بتنتهي فوراً والحدث بيتبخر في الهواء تماماً.\n- **سلوك tryEmit الافتراضي:** ترجع `false` فوراً وتفشل لأن الـ buffer صفر والسياسة SUSPEND.\n- **التوجيه المعماري:** للأحداث التي يجب ألا تضيع، استخدم Channel وليس SharedFlow.",
+        "talking_points_ar": "ناقش مصفوفة SharedFlow الداخلية، ودور عداد nCollectors الذري، ومقارنة سلوك القناة بالبث العام.",
+        "follow_ups_ar": "- **المحاور:** \"إذا كان extraBufferCapacity = 64 و replay = 0، وانبعث حدث بدون أي مشتركين، هل يستلمه المشترك الذي ينضم بعد ثانية؟\"\n  **المرشح:** \"لا، لن يستلمه إطلاقاً! لأن extraBufferCapacity معمول للمشتركين الموجودين بالفعل ومسجلين في مصفوفة الـ Slots لكنهم بطيئين. المشترك الجديد بيبدأ قراءته من خانة الـ replay فقط، وبما إن replay=0 فالـ extra buffer لا ينقل له أي داتا سابقة نهائياً.\"\n\n- **المحاور:** \"لماذا يفشل tryEmit في هذه الحالة ويرجع false؟\"\n  **المرشح:** \"لأن الإعدادات الافتراضية سعتها صفر والسياسة SUSPEND، فبما إن مفيش مساحة في الذاكرة ومفيش جامع معلق يستلم وممنوع التعليق، فالدالة بتفشل وترجع false فوراً.\"",
+        "self_check_ar": "هل وضحت أن replay فقط هو الذي يحفظ للمشتركين المستقبليين؟ هل بينت أن extraBufferCapacity لا ينفع الجدد؟ وهل شرحت سبب فشل tryEmit؟",
+        "references_ar": f"- [SharedFlow buffering parameters documentation](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/shared-flow.html) — توثيق كوتلن الرسمي لـ SharedFlow.\n- [Things to know about Flow buffering](https://medium.com/androiddevelopers/a-safer-way-to-collect-gestures-and-events-in-android-4a34b2230a10) — مقال فريق أندرويد الرسمي حول الـ Buffering.\n\n{REVIEWED_DATE_AR}",
+        "quick_answer_ar": "في حالة غياب أي مشتركين نشطين، الضمان الوحيد للاحتفاظ بالحدث للمشتركين المستقبليين هو معامل `replay` فقط. لو `replay = 0`، الحدث بيتبخر تماماً ويضيع في الهواء ومش هيوصل لأي شاشة تفتح بعدين، ودالة `tryEmit` الافتراضية هتفشل وترجع `false`.",
+        "best_answer_ar": "الـ `SharedFlow` هو تدفق ساخن (Hot Stream)؛ يعني مبيستناش حد يشترك فيه علشان يبدأ يبعت، وعشان كده سلوكه في حالة عدم وجود مشتركين بيخدع مطورين كتير.\n\nالقاعدة المعمارية الصارمة هي:\nلو مفيش أي مشترك نشط (`subscribers = 0`)، الضمان الوحيد للاحتفاظ بالبيانات لأي مشترك هيجي في المستقبل هو معامل `replay` فقط لا غير! لو حددت `replay = 2`، التدفق هيحتفظ بآخر عنصرين في الذاكرة، وأول ما شاشة تشترك بعد ساعة هتستلم العنصرين فوراً.\n\nأما معامل `extraBufferCapacity`، فده وسادة هوائية معموله لامتصاص فرق السرعة بين المشتركين النشطين حالياً؛ يعني لو `replay = 0` ومفيش مشتركين، الـ extra buffer ملوش أي قيمة للمشتركين المستقبليين، والحدث هيضيع في الهواء تماماً ولن يراه أحد.\n\nوفوق كده، لو استخدمت `MutableSharedFlow()` بالقيم الافتراضية وحاولت تستدعي `tryEmit()` ومفيش مشتركين، الدالة هترجع `false` فوراً وهيرفض وضع الحدث في الذاكرة. علشان كده لأحداث الملاحة والعمليات الحساسة، بنعتمد على الـ Channel مش SharedFlow.",
+        "deep_answer_ar": "تحت الكابوت في `SharedFlow.kt`، التدفق بيدير مصفوفة دائرية حجمها بيساوي `replay + extraBufferCapacity`، وبيمتلك متغير ذري اسمه `nCollectors` بيعد المشتركين النشطين لحظياً.\n\nلما كودك بيستدعي `emit(value)`، الكود بيفحص قيمة `nCollectors`. لو كانت صفر، المشغل بيبص حصراً على الـ `replay`. لو الـ replay أكبر من صفر، العنصر بيتكتب في خانة الكاش ويتم تحريك مؤشر الرأس (Head Pointer). ولما يجي أي مشترك جديد ينادي `collect` بعدين، الـ `SharedFlowSlot` بتاعه بيبدأ القراءة من خانة الـ replay ويستلم العناصر دي فوراً.\n\nلكن الكارثة بتحصل لو كان `replay = 0`؛ الكود بيعتبر إنه مفيش أي حد محتاج الداتا دي حالياً ولا مستقبلاً، فالعنصر مبيتحطش في مصفوفة الانتظار وبيتبخر من الـ Heap في نفس اللحظة بدون أي أثر.\n\nالمصيدة الإنتاجية الأخطر هي مع دالة `tryEmit` المتزامنة؛ في الإعدادات الافتراضية (`replay = 0, extraBufferCapacity = 0, onBufferOverflow = SUSPEND`)، استدعاء `tryEmit` في غياب المشتركين هيرجع `false` حتماً؛ لأن مفيش طابور وسيط يستوعب الحدث والدالة مينفعش تعمل Suspend للكود.\n\nعلشان كده في بيئات الإنتاج، بنحط قاعدة معمارية صارمة: الأحداث التي تتطلب ضمان وصول حتمي (Guaranteed Delivery) لشاشات قد تكون مغلقة حالياً لا تُرسل عبر SharedFlow نهائياً، بل تمر عبر `Channel(Channel.BUFFERED)` لأن القناة طابور حقيقي يحتفظ بالرسائل حتى يستهلكها المستقبل."
+    }
+}
+
+# ==========================================
+# FLO-31: Choosing SharingStarted strategies
+# ==========================================
+DATA["FLO-31"] = {
+    "concept_en": """Converting cold upstream Flows into hot StateFlows or SharedFlows via stateIn or shareIn requires selecting a SharingStarted strategy that balances battery efficiency, resource cleanup, and configuration change resilience.
+SharingStarted controls the activation and cancellation lifecycle of the upstream flow producer coroutine based on downstream subscriber counts.
+The Kotlin coroutines library provides three primary strategies: SharingStarted.Eagerly starts upstream production immediately upon invocation and never terminates, maintaining active connections regardless of subscriber presence; SharingStarted.Lazily starts upstream production only after the first subscriber attaches and persists indefinitely thereafter; and SharingStarted.WhileSubscribed(stopTimeoutMillis) activates upstream production upon the first subscriber and gracefully cancels upstream work when subscriber count drops to zero after a configurable timeout.
+Configuring WhileSubscribed(5000) provides the Android standard: the 5-second grace period accommodates transient UI recreations (device rotation) without re-executing upstream queries, while reliably tearing down network sockets, hardware sensors, and Room database observers when the app moves to the background.""",
+    "walkthrough_en": """Balancing battery efficiency and configuration change survival using SharingStarted:
+```kotlin
+class LiveFeedViewModel(
+    private val locationRepository: LocationRepository,
+    private val configRepository: ConfigRepository
+) : ViewModel() {
+    // 1. Production Standard for UI State: WhileSubscribed(5000)
+    // Cancels GPS hardware in background, survives screen rotation!
+    val locationState: StateFlow<LocationUiState> = locationRepository.observeGps()
+        .map { LocationUiState.Success(it) }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5000),
+            initialValue = LocationUiState.Loading
+        )
+
+    // 2. Application-wide configuration: Lazily
+    // Fetches once when first screen opens, cached forever in ViewModel:
+    val appConfig: StateFlow<AppConfig> = configRepository.observeConfig()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Lazily,
+            initialValue = AppConfig.Default
+        )
+}
+```""",
+    "short_en": """WhileSubscribed(5000) is the Android production standard, cancelling upstream sources when the app enters the background while surviving 5-second rotation pauses. Eagerly starts immediately and never stops; Lazily starts on first subscription and never stops, suited for global configs.""",
+    "structured_en": """To begin with, choosing a SharingStarted strategy governs when upstream data producers start and stop executing.
+From an architectural standpoint, SharingStarted.Eagerly launches upstream collection immediately upon instantiation and runs indefinitely. This wastes battery and memory by maintaining database cursors and network connections even before any UI screen subscribes.
+In production scenarios, SharingStarted.Lazily waits for the first subscriber before launching, remaining active for the remainder of the CoroutineScope. It is ideal for one-time initialization data or app-wide configurations that should never re-trigger.
+As for UI state pipelines, SharingStarted.WhileSubscribed(stopTimeoutMillis = 5000) is the industry standard. When the UI enters the background and collectors cancel via repeatOnLifecycle, the subscriber count drops to zero. WhileSubscribed waits 5 seconds: if the Activity was simply rotating, resubscription happens within milliseconds without restarting upstream work; if the app was backgrounded, it cancels upstream collection, powering down GPS radios and network sockets.""",
+    "deep_senior_en": """Under the hood in SharingStarted.kt, WhileSubscribed is implemented as a Flow operator observing the StateFlow's subscriptionCount. When subscriptionCount transitions from 0 to 1, WhileSubscribed emits SharingCommand.START to the sharing coroutine. When subscriptionCount drops back to 0, WhileSubscribed emits a delayed SharingCommand.STOP after the configured stopTimeoutMillis delay, followed optionally by SharingCommand.RESET_BUFFER if replayExpirationMillis elapses.
+This 5000ms delay solves the fundamental Android configuration change dilemma. When an Activity rotates, onStop cancels the old collector, dropping subscriptionCount to zero. Approximately 100 to 300 milliseconds later, the new Activity reaches onStart and attaches a new collector, incrementing subscriptionCount back to 1. Because this transition occurs well within the 5000ms grace period, the stop timeout timer is cancelled, and upstream database or network connections continue running smoothly without re-executing.
+Conversely, if the user presses the Home button, the app remains in the background past 5 seconds. The timer expires, triggering SharingCommand.STOP. This cancels the upstream coroutine, allowing Room database query observers and LocationManager listeners to tear down cleanly and enter low-power sleep mode.
+In complex feature modules with multiple interdependent streams, WhileSubscribed coordinates lifecycle states cleanly, avoiding memory retention and preventing zombie coroutine background execution across all application layers.
+Staff engineers ban Eagerly for screen-level ViewModels, mandating WhileSubscribed(5000) to ensure compliance with Google Play battery consumption vitals.""",
+    "meta_ar": {
+        "id": "FLO-31",
+        "questionAr": "كيف تختار SharingStarted لتحقيق التوازن بين البطارية وصحة البيانات وسلوك المشتركين؟",
+        "topicAr": TOPIC_AR,
+        "evaluates_ar": "- الفهم المعماري لاستراتيجيات SharingStarted الثلاثة: Eagerly و Lazily و WhileSubscribed.\n- إدراك سر استخدام مهلة 5000ms في WhileSubscribed وتأثيرها على تدوير الشاشة (Configuration Changes).\n- فهم كيفية توفير البطارية والموارد بإيقاف المصدر العلوي في الخلفية.",
+        "why_it_matters_ar": "استخدام `Eagerly` يبقي تدفقات الحساسات واتصالات السيرفر نشطة في الخلفية للأبد مما يستنزف البطارية، بينما نسيان مهلة الـ 5 ثوانٍ يجعل دوران الشاشة يعيد طلب البيانات من السيرفر ويسبب وميضاً متكرراً في الواجهة.",
+        "worked_example_ar": "ضبط SharingStarted القياسي في الـ ViewModel:\n```kotlin\nval uiState: StateFlow<UiState> = repository.observeData()\n    .map { UiState.Success(it) }\n    .stateIn(\n        scope = viewModelScope,\n        // إيقاف التجميع في الخلفية بعد 5 ثوانٍ مع النجاة من تدوير الشاشة:\n        started = SharingStarted.WhileSubscribed(5000L),\n        initialValue = UiState.Loading\n    )\n```",
+        "trade_offs_ar": "`WhileSubscribed(5000)` ممتاز لتوفير البطارية ويدير دورة الحياة بذكاء، ولكنه يعيد تشغيل التدفق لو غاب المستخدم أكثر من 5 ثوانٍ، مما يتطلب أن يكون المصدر العلوي قادراً على الاستئناف بسلاسة.",
+        "failure_modes_ar": "استخدام `WhileSubscribed()` بدون أي مهلة زمنية (stopTimeoutMillis = 0)، مما يؤدي لإلغاء وإعادة تشغيل التدفق فوراً مع كل دوران للشاشة وإهدار الموارد. خطأ آخر هو استخدام `Eagerly` مع حساسات الـ GPS.",
+        "production_perspective_ar": "في المشروعات الكبيرة، نضع فحص Lint يفرض استخدام `SharingStarted.WhileSubscribed(5000)` في جميع الـ ViewModels التي تعرض UI State، ونمنع استخدام `Eagerly` منعاً باتاً لحماية مؤشرات الـ Android Vitals الخاصة باستهلاك البطارية.",
+        "how_to_answer_ar": "- **Eagerly:** تبدأ فوراً ومبتقفش للأبد حتى لو مفيش أي شاشة بتسمع، ممتازة فقط للخدمات الخلفية المستمرة.\n- **Lazily:** تبدأ مع أول مشترك وتفضل شغالة في الذاكرة للأبد، ممتازة للبيانات الثابتة زي App Configuration.\n- **WhileSubscribed(5000):** المعيار الذهبي في أندرويد؛ تشغل التدفق مع أول شاشة، وتوقفه بعد 5 ثوانٍ من خروج المستخدم.\n- **سر الـ 5 ثوانٍ:** مهلة أمان تكفي لإنهاء تدوير الشاشة (Configuration Change) بدون إلغاء وإعادة تشغيل نداءات السيرفر والداتابيز.\n- **حماية البطارية:** بمجرد انتهاء الـ 5 ثوانٍ في الخلفية، تلغي الكوروتين العلوية وتفصل الحساسات تماماً.",
+        "talking_points_ar": "ناقش دور subscriptionCount الداخلي، وأمر SharingCommand.STOP، ودور replayExpirationMillis في تصفير الكاش عند الغياب الطويل.",
+        "follow_ups_ar": "- **المحاور:** \"لماذا حددت جوجل مهلة 5000 ملي ثانية تحديداً في WhileSubscribed؟\"\n  **المرشح:** \"الـ 5 ثوانٍ معموله خصيصاً كمهلة أمان لتغطية عملية تدوير الشاشة (Rotation) وعملية التنقل السريع بين الشاشات. لما الشاشة بتلف، بتاخد عادة من 100 لـ 400 ملي ثانية عشان ترجع تشترك. فالـ 5 ثوانٍ بتضمن إن الـ Flow ميتلغيش ويرجع يطلب داتا من الأول أثناء التدوير، وفي نفس الوقت لو المستخدم خرج للهوم بتفصل بعد 5 ثوانٍ وتوفر البطارية.\"\n\n- **المحاور:** \"ما فائدة معامل replayExpirationMillis الإضافي؟\"\n  **المرشح:** \"المعامل ده بيحدد المدة اللي بعدها الـ StateFlow يمسح الـ Replay Cache ويرجع لـ initialValue؛ فلو المستخدم ساب التطبيق في الخلفية نص ساعة ورجع، يفضل نعمل له Loading جديد بدل ما يشوف داتا قديمة (Stale Data).\"",
+        "self_check_ar": "هل قارنت بين الاستراتيجيات الثلاثة بوضوح؟ هل شرحت سر مهلة الـ 5 ثوانٍ مع تدوير الشاشة؟ وهل وضحت دورها في ترشيد البطارية؟",
+        "references_ar": f"- [Things to know about WhileSubscribed(5000)](https://medium.com/androiddevelopers/things-to-know-about-the-new-statein-and-sharein-operators-2ff59d4a2310) — مقال فريق أندرويد الرسمي حول stateIn و WhileSubscribed.\n- [SharingStarted official documentation](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-sharing-started/index.html) — توثيق كوتلن الرسمي لـ SharingStarted.\n\n{REVIEWED_DATE_AR}",
+        "quick_answer_ar": "المعيار الإنتاجي لشاشات أندرويد هو `WhileSubscribed(5000)`؛ لأنه بيقفل اتصالات الشبكة والحساسات في الخلفية بعد 5 ثوانٍ لتوفير البطارية، وبيدي مهلة 5 ثوانٍ لتدوير الشاشة بدون إعادة تشغيل الـ Flow من الصفر. أما `Lazily` فللإعدادات العامة و `Eagerly` للمهام المستمرة.",
+        "best_answer_ar": "اختيار استراتيجية `SharingStarted` عند استخدام `stateIn` أو `shareIn` هو القرار المعماري اللي بيحدد امتى الـ Flow العلوي يبدأ ينتج بيانات وامتى يقف لتوفير البطارية.\n\nاستراتيجية `SharingStarted.Eagerly` بتبدأ التدفق فوراً ومبتقفش للأبد حتى لو مفيش شاشة مفتوحة، وده بيهدر البطارية جداً لو استخدمته مع حساسات أو داتابيز.\n\nواستراتيجية `SharingStarted.Lazily` بتستنى لحد ما أول شاشة تشترك، وبعدها بتفضل شغالة للأبد في الذاكرة ومبتقفش، وده ممتاز للبيانات الثابتة زي إعدادات التطبيق أو بيانات تسجيل الدخول.\n\nأما `SharingStarted.WhileSubscribed(5000)` فده المعيار الذهبي لشاشات أندرويد؛ بيشغل التدفق مع أول مشترك، ولما المستخدم يقفل الشاشة وينزل عدد المشتركين للصفر، بيستنى مهلة أمان مدتها 5 ثوانٍ؛ لو الشاشة كانت بتلف هترجع تشترك في جزء من الثانية ويكمل التدفق بدون أي إعادة تحميل، ولو المستخدم خرج من التطبيق فعلاً، بعد 5 ثوانٍ بيلغي التدفق العلوي ويفصل اتصالات السيرفر وحساسات الـ GPS فوراً لتوفير الطاقة.",
+        "deep_answer_ar": "تحت الكابوت في كلاس `WhileSubscribed`، الاستراتيجية دي بتراقب تدفق الـ `subscriptionCount` الخاص بالـ StateFlow الداخلي. أول ما العداد يتحول من 0 لـ 1، بتصدر أمر `SharingCommand.START` للكوروتين الحاضنة علشان تبدأ التجميع من المصدر العلوي.\n\nولما الشاشة تدخل في `onStop` وينزل العداد من 1 لـ 0، المشغل مبيوقفش الكود فوري؛ هو بيشغل مؤقت تأخير زمني بالمدة المحددة (`stopTimeoutMillis = 5000`). في حالة تدوير الشاشة (Configuration Change)، الـ Activity الجديدة بتفتح في `onStart` خلال 200 إلى 400 ملي ثانية وتشترك في الـ Flow، فيرتفع العداد لـ 1 من جديد. في اللحظة دي المؤقت بيتلغي فوراً ويفضل التدفق شغال في خط مستقيم بدون أي وميض في الشاشة وبدون إعادة استعلام قاعدة البيانات.\n\nأما لو المستخدم خرج للشاشة الرئيسية، الـ 5 ثوانٍ بتخلص، وبيصدر أمر `SharingCommand.STOP`. الأمر ده بيلغي الـ CoroutineJob العلوية، فتقوم كتل `awaitClose` أو استعلامات Room بإلغاء تسجيل المراقبين وغلق مؤشرات القراءة من الديسك، وده بيسمح لمعالج الهاتف بالدخول في وضع السكون العميق (Deep Sleep / Doze Mode).\n\nالمعامل الإضافي `replayExpirationMillis` بيسمح كمان بتصفير الـ Buffer وإعادة الحالة لـ Loading لو طالت فترة الغياب.\n\nعلشان كده في بيئات الإنتاج، بنمنع تماماً استخدام `Eagerly` داخل الـ ViewModels ونلزم الجميع بـ `WhileSubscribed(5000)` كمعيار جودة أساسي لاجتياز اختبارات الأداء والبطارية."
+    }
+}
+
+# ==========================================
+# FLO-32: Danger of runCatching with cancellation
+# ==========================================
+DATA["FLO-32"] = {
+    "concept_en": """Using Kotlin's standard library runCatching { } block around suspending coroutine invocations or flow operations represents a catastrophic anti-pattern that sabotages structured concurrency and leaks background processes.
+Under structured concurrency, coroutine cancellation operates cooperatively by throwing a specialized CancellationException through the coroutine hierarchy. When a coroutine scope (such as viewModelScope or lifecycleScope) is cancelled, all child jobs receive cancellation signals via this exception.
+The standard runCatching function catches Throwable—the root of the exception hierarchy—which unconditionally intercepts and swallows CancellationException. Consequently, the exception is encapsulated inside a Result.failure instead of propagating upward to the coroutine dispatcher.
+Swallowing CancellationException prevents the coroutine runtime from transitioning the Job into the CANCELLED state, causing background loops to continue executing undead, leaking CPU threads, network sockets, and hardware sensors, and causing subtle state corruption bugs.""",
+    "walkthrough_en": """Mitigating runCatching cancellation swallowing with runCatchingCancellable:
+```kotlin
+// ❌ CATASTROPHIC ANTI-PATTERN: Swallowing CancellationException
+suspend fun fetchUserDataCatastrophic(): Result<UserData> = runCatching {
+    // If the screen closes, delay or api throws CancellationException:
+    delay(2000L) // Or networkApi.getUser()
+    networkApi.getUser()
+    // runCatching catches CancellationException! The coroutine never cancels!
+}
+
+// ✅ SAFE PRODUCTION PATTERN: Explicitly rethrowing CancellationException
+suspend fun fetchUserDataSafe(): Result<UserData> = runCatching {
+    networkApi.getUser()
+}.onFailure { throwable ->
+    if (throwable is CancellationException) throw throwable // Propagate cancellation!
+}
+
+// ✅ IDIOMATIC EXTENSION: Custom runCatchingCancellable
+inline fun <R> runCatchingCancellable(block: () -> R): Result<R> {
+    return try {
+        Result.success(block())
+    } catch (e: CancellationException) {
+        throw e // Re-throw to honor structured concurrency!
+    } catch (e: Throwable) {
+        Result.failure(e)
+    }
+}
+```""",
+    "short_en": """runCatching catches all Throwables including CancellationException, swallowing cancellation signals and breaking structured concurrency. This prevents cancelled coroutines from terminating, keeping undead background work, network calls, and hardware sensors running indefinitely while leaking memory and system resources.""",
+    "structured_en": """To begin with, runCatching is a dangerous utility when applied to coroutines because it blindly swallows cancellation signals.
+From an architectural standpoint, Kotlin coroutine cancellation relies on throwing CancellationException up the job hierarchy. When an Activity closes or a ViewModel clears, its CoroutineScope cancels child jobs cooperatively via this specific exception type.
+In production scenarios, runCatching catches java.lang.Throwable. Because CancellationException is a subclass of Throwable, runCatching intercepts it and wraps it inside a Result.failure, treating normal cooperative cancellation as an ordinary business failure.
+As for runtime consequences, the coroutine fails to recognize that it was cancelled, continuing to execute subsequent statements or infinite background loops. To maintain structured concurrency, developers must either rethrow CancellationException explicitly, use declarative Flow catch operators, or implement a custom runCatchingCancellable helper that preserves cancellation mechanics.""",
+    "deep_senior_en": """Under the hood in kotlinx.coroutines, cancellation is cooperative and driven by the CancellationException class, which extends java.lang.IllegalStateException (and ultimately Throwable). When a coroutine suspends at a suspension point—such as delay(), withContext(), or FlowCollector.emit()—and its parent Job has been cancelled, the suspension machinery un-suspends the continuation abnormally by throwing a CancellationException.
+If this suspension point is wrapped inside runCatching { ... }, the try-catch block inside runCatching catches the CancellationException and wraps it in a Result.failure(exception). The coroutine continues running past the block instead of unwinding its call stack and terminating. If this happens inside a while(isActive) or while(true) loop, the coroutine transforms into an undead zombie process that permanently consumes CPU cycles, ignores scope disposal, and prevents the enclosing class from being garbage collected.
+Furthermore, flow operators like catch { } explicitly check for CancellationException and rethrow it immediately: if (e is CancellationException) throw e. This is why standard Flow operators honor structured concurrency natively, whereas standard library runCatching destroys it.
+Staff engineers create custom extension utilities like runCatchingCancellable or enforce custom Lint rules that forbid standard runCatching across all suspending functions and repository classes. By strictly isolating business error handling from coroutine infrastructure cancellation, applications guarantee that lifecycle events—such as Fragment destruction or user back-press navigation—instantly and deterministically terminate active background I/O operations.""",
+    "meta_ar": {
+        "id": "FLO-32",
+        "questionAr": "ما هو خطر استخدام runCatching حول عمليات الـ Flow والكوروتين القابلة للإلغاء؟",
+        "topicAr": TOPIC_AR,
+        "evaluates_ar": "- الفهم العميق لآلية الإلغاء التعاوني (Cancellation) في الكوروتينات.\n- إدراك سبب خطورة كتم CancellationException داخل runCatching.\n- معرفة كيفية الحفاظ على مبدأ Structured Concurrency باستخدام runCatchingCancellable مخصصة أو إعادة رمي الاستثناء.",
+        "why_it_matters_ar": "كتم استثناء الإلغاء يجعل الكوروتينات تستمر في العمل في الخلفية كعمليات زومبي (Zombie Coroutines) حتى بعد خروج المستخدم من الشاشة، مما يسرب الذاكرة ويهدر طاقة المعالج وباقة الإنترنت.",
+        "worked_example_ar": "تصحيح مصيدة runCatching بحل آمن يحترم الإلغاء:\n```kotlin\n// دالة مساعدة تحترم الـ Structured Concurrency:\ninline fun <T> runCatchingCancellable(block: () -> T): Result<T> {\n    return try {\n        Result.success(block())\n    } catch (e: CancellationException) {\n        throw e // إعادة رمي استثناء الإلغاء ليموت الكوروتين بسلام\n    } catch (e: Throwable) {\n        Result.failure(e)\n    }\n}\n```",
+        "trade_offs_ar": "دالة `runCatching` القياسية بسيطة ومغرية برمجياً، ولكنها تدمر التزامن المهيكل، والبديل المخصص يضيف أسطر كود بسيطة ولكنه يضمن استقرار موارد النظام بنسبة 100%.",
+        "failure_modes_ar": "استخدام `runCatching` داخل حلقة `while(true)` في الكوروتين، مما يمنع إلغاء الحلقة للأبد حتى بعد تدمير الـ ViewModel، فيحدث تسريب ذاكرة دائم وتجمد في المعالج.",
+        "production_perspective_ar": "في المشروعات الكبرى، نضع قاعدة في Detekt أو Android Lint تحظر تماماً استخدام `kotlin.runCatching` داخل أي Suspending Function أو كود تجميع Flow، وتفرض استخدام `runCatchingCancellable` بدلاً منها.",
+        "how_to_answer_ar": "- **آلية الإلغاء:** إلغاء الكوروتينات يتم برمي استثناء `CancellationException` للأعلى.\n- **المشكلة في runCatching:** تمسك أي `Throwable`، وبما أن CancellationException يورث منها، فإنها تكتمه وتضعه داخل `Result.failure`.\n- **الأثر الكارثي:** كسر مبدأ الـ Structured Concurrency؛ الكوروتين لا تموت وتتحول لـ Zombie Process تسحب البطارية والذاكرة.\n- **سلوك المشغلات الرسمية:** مشغل `catch` في Flow يتحقق صراحة من الاستثناء ويعيد رميه لو كان CancellationException.\n- **الحل الهندسي:** كتابة دالة `runCatchingCancellable` تعيد رمي CancellationException وتمسك باقي الأخطاء.",
+        "talking_points_ar": "ناقش وراثة CancellationException من IllegalStateException، وكيف يعالج مشغل catch الرسمي هذا الاستثناء، ومخاطر استمرار المهام في Doze Mode.",
+        "follow_ups_ar": "- **المحاور:** \"لماذا صممت كوتلن CancellationException ليكون نوعاً من Throwable إذا كان ابتلاعه خطيراً؟\"\n  **المرشح:** \"لأن كوتلن اعتمدت على ميكانيزم الـ Exception Unwinding الطبيعي في الجافا لتفكيك مكدس الاستدعاءات (Call Stack) وتنظيف الموارد في كتل `finally`. الخطأ مش في إنه Throwable، الخطأ في استخدام دوال عامة زي `runCatching` بتكتم كل حاجة بدون وعي بطبيعة الكوروتينات.\"\n\n- **المحاور:** \"كيف يتصرف مشغل catch الرسمي في Flow مع هذا الاستثناء؟\"\n  **المرشح:** \"مشغل `flow.catch { }` مكتوب جواه صراحة فحص: `if (e is CancellationException) throw e`؛ يعني بيمرر إشارة الإلغاء فوراً للأعلى ومبيكتمهاش، وده السبب اللي بيخلي مشغلات Flow الرسمية آمنة تماماً مقارنة بـ runCatching.\"",
+        "self_check_ar": "هل شرحت أن CancellationException هو وسيلة إلغاء الكوروتينات؟ هل بينت كيف تكتمه runCatching؟ وهل قدمت الحل بـ runCatchingCancellable؟",
+        "references_ar": f"- [Kotlin coroutines cancellation and timeouts](https://kotlinlang.org/docs/cancellation-and-timeouts.html) — توثيق كوتلن الرسمي للإلغاء.\n- [Exceptions in coroutines: CancellationException](https://medium.com/androiddevelopers/exceptions-in-coroutines-ce8da1ed9f96) — مقال فريق أندرويد حول استثناءات الكوروتين.\n\n{REVIEWED_DATE_AR}",
+        "quick_answer_ar": "الخطر الكارثي هو إن `runCatching` بيمسك أي `Throwable` بما فيها `CancellationException` المسؤولة عن إلغاء الكوروتينات؛ فبيكتم إشارة الإلغاء ويكسر مبدأ الـ Structured Concurrency، فيفضل الكود شغال في الخلفية كعملية زومبي تسرب البطارية والذاكرة حتى بعد غلق الشاشة.",
+        "best_answer_ar": "استخدام `runCatching` من مكتبة كوتلن القياسية حول دوال معلقة (Suspending functions) أو داخل Flow هو أحد أخطر الأفخاخ البرمجية في كوتلن الحديثة.\n\nآلية الإلغاء في الكوروتينات (Cancellation) شغالة بنظام تعاوني بيعتمد على رمي استثناء خاص اسمه `CancellationException`. لما المستخدم يقفل الشاشة والـ `viewModelScope` يتلغي، الكوروتينات المعلقة بترمي الاستثناء ده علشان توقف كل الشغل التابع لها وتنظف الموارد.\n\nالمشكلة إن دالة `runCatching` مكتوبة بحيث تمسك أي `Throwable`؛ وبما إن `CancellationException` بيورث من الـ Throwable، فـ runCatching بتمسكه وتكتمه وتغلفه جوه كائن `Result.failure` وتعتبره خطأ عادي!\n\nالنتيجة الكارثية هنا هي كسر مبدأ الـ Structured Concurrency؛ الكوروتين مبيوصلهاش أمر الإلغاء، وبتتحول لعملية زومبي تفضل شغالة في الخلفية تطلب داتا من السيرفر وتستهلك البطارية وتسرب الذاكرة رغم إن الشاشة اتقفلت من زمان. والحل الصح هو إعادة رمي الـ CancellationException صراحة أو استخدام بديل مخصص للكوروتينات.",
+        "deep_answer_ar": "تحت الكابوت في `kotlinx.coroutines`، كلاس `CancellationException` بيورث في النهاية من `java.lang.Throwable`. لما أي دالة تعليق زي `delay()` أو `emit()` بتكتشف إن الـ Job اتلغت، هي بتصحي الكوروتين برمي `CancellationException` علشان تفكك مكدس الاستدعاءات (Stack Unwinding) وتنقل الكوروتين لحالة `CANCELLED`.\n\nلما بتغلف الكود بـ `runCatching { }`، كود الدالة الداخلي بيعمل `try { ... } catch (e: Throwable)`، وده بيخلي الـ CancellationException يتحبس جوه كائن `Result`. الكوروتين مش بتعرف إنها اتلغت وبتكمل تنفيذ باقي الأسطر البرمجية عادي جداً، ولو الكود كان جوه حلقة تكرارية، هيفضل شغال للأبد في الـ Background بدون ما يقف.\n\nقارن ده بمشغل `catch` الرسمي في الـ Flow؛ كود `catch` في كوتلن مكتوب جواه صراحة: لو الاستثناء من نوع `CancellationException`، متكتموش واعمل له `throw` فوراً للحفاظ على دورة حياة الكوروتين.\n\nعلشان نتفادى الكارثة دي في بيئات الإنتاج، بنعمل دالة مساعدة مخصصة زي `runCatchingCancellable`؛ بتعمل catch لـ `CancellationException` صراحة وتعيد رميه للأعلى، وتمسك باقي الـ Throwables وتحطها في `Result.failure`.\n\nوبنحط قاعدة في الـ Detekt أو الـ Android Lint بتمنع استخدام `kotlin.runCatching` داخل أي Suspend function أو كود تجميع Flow لحماية التطبيق من تسريب الموارد. وده بيضمن إن التطبيق يستجيب فوراً لقرارات المستخدم، فلو ضغط على زر الرجوع أو قفل الشاشة، تتوقف جميع العمليات وتتحرر اتصالات الشبكة وحجوزات الذاكرة في اللحظة نفسها بدون أي تأخير."
+    }
+}
+
+
+def main():
+    print(f"Elevating {len(DATA)} questions in FLO (FLO-25 to FLO-32)...")
+    for qid, data in DATA.items():
+        ee.update_canonical_question(
+            qid=qid,
+            concept_en=data["concept_en"],
+            walkthrough_en=data["walkthrough_en"],
+            short_en=data["short_en"],
+            structured_en=data["structured_en"],
+            deep_senior_en=data["deep_senior_en"]
+        )
+
+    # Save metadata chunk
+    chunk_meta = {qid: DATA[qid]["meta_ar"] for qid in DATA}
+    meta_path = ee.DATA_DIR / "metadata_flo_25_32.json"
+    ee.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    meta_path.write_text(json.dumps(chunk_meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Saved Arabic metadata to {meta_path}")
+
+    # Merge metadata into master
+    ee.merge_all_metadata()
+
+    # Validate all 8 questions
+    all_ok = True
+    for qid in DATA:
+        errs = ee.validate_question(qid)
+        if errs:
+            print(f"❌ {qid} validation failed with {len(errs)} errors:")
+            for e in errs:
+                print(f"  - {e}")
+            all_ok = False
+        else:
+            print(f"✅ {qid} passed validation with 0 errors!")
+
+    if not all_ok:
+        print("Some questions failed validation!")
+        sys.exit(1)
+    else:
+        print("All 8 FLO questions (FLO-25 to FLO-32) successfully elevated and passed validation!")
+
+
+if __name__ == "__main__":
+    main()

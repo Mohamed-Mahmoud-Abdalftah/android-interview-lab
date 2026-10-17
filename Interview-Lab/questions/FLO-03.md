@@ -20,6 +20,36 @@ What are StateFlow and SharedFlow? Why are they hot?
 
 Explain hot StateFlow/SharedFlow lifetime, current state versus configurable broadcast.
 
+## Concept and technical explanation
+
+StateFlow and SharedFlow are specialized "hot" stream primitives in Kotlin coroutines whose execution and lifecycle exist independently of the presence or number of active collectors. Unlike cold flows, a hot stream begins executing and holds values in memory as soon as it is allocated in a CoroutineScope, broadcasting emissions to multiple concurrent subscribers simultaneously (multicast). StateFlow is a state-holder hot stream that always stores and exposes a current value, requires an initial value upon instantiation, conflates sequential updates, and replays exactly its latest state to newly arriving subscribers. SharedFlow is a highly configurable, general-purpose hot event bus that supports custom replay cache sizes, extra buffer capacities, and configurable BufferOverflow drop strategies. They are classified as "hot" because their upstream producers emit regardless of whether downstream collectors are actively listening, and emissions not captured within configured buffers are dropped.
+
+## Practical walkthrough (English)
+
+Contrasting StateFlow state retention with SharedFlow event broadcasting:
+```kotlin
+class NewsFeedViewModel : ViewModel() {
+    // 1. StateFlow: Holds current state, requires initial value, always replays 1 to new collectors
+    private val _uiState = MutableStateFlow<NewsUiState>(NewsUiState.Loading)
+    val uiState: StateFlow<NewsUiState> = _uiState.asStateFlow()
+
+    // 2. SharedFlow: Broadcasts transient events, zero replay by default, drops if uncollected
+    private val _userEvents = MutableSharedFlow<UserMessage>(
+        replay = 0,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val userEvents: SharedFlow<UserMessage> = _userEvents.asSharedFlow()
+
+    fun onRefresh() {
+        viewModelScope.launch {
+            _uiState.value = NewsUiState.Success(fetchNews())
+            _userEvents.emit(UserMessage.ShowToast("Feed updated successfully!"))
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 الـ `StateFlow` والـ `SharedFlow` هما الـ Hot Streams الأساسيان في Kotlin Coroutines، وفهم سبب كونهما 'Hot' هو جوهر إدارة الحالة والأحداث:
@@ -88,25 +118,25 @@ A ViewModel exposes immutable screen state through StateFlow. Toast-like best-ef
 
 ## Interview answer — short
 
-StateFlow and SharedFlow are hot streams because they exist and emit independently of collectors, residing in memory. StateFlow manages observable state, always retains a current value (.value), and suppresses duplicate emissions; SharedFlow broadcasts events to multiple collectors with configurable replay caches and buffer policies.
+StateFlow and SharedFlow are hot streams because they exist and emit independently of collectors, multicasting values to multiple subscribers. StateFlow is a state holder that always retains a current value, requires an initial state, and conflates updates. SharedFlow is a configurable event stream with customizable replay cache, buffer capacity, and overflow policies.
 
 ## Interview answer — structured
 
-StateFlow and SharedFlow are 'hot' streams because their lifecycles are completely decoupled from subscribers. Unlike cold flows that only execute when collected, hot flows exist in memory, accept emissions, and retain state regardless of whether any collectors are active.
+StateFlow and SharedFlow represent hot streams whose lifecycles operate independently of downstream collectors.
 
-**StateFlow** is specialized for state management. It is a state machine that always holds an accessible current value via `.value`. It requires an initial value, retains exactly the latest emission, and features built-in conflation—meaning it uses `Any.equals()` to suppress emissions if the new state is identical to the current state.
+The definition of a "hot" stream is that it produces and retains values in memory regardless of whether any subscriber is actively listening. When values are emitted, they are broadcast simultaneously to all active collectors using a multicast distribution model.
 
-**SharedFlow** is a general-purpose, highly configurable multicaster designed for broadcasting events to multiple collectors. It does not require an initial value, supports configurable replay buffer sizes (`replay = N`), and handles backpressure buffer overflow strategies (`BufferOverflow.DROP_OLDEST` or `SUSPEND`).
+In production, we choose between them based on state persistence versus event transmission. StateFlow is designed specifically for UI state management. It requires an initial value, exposes a synchronous value getter, replays exactly its current state to new subscribers, and automatically conflates identical consecutive values.
+
+SharedFlow serves as an event stream. It does not require an initial value and allows engineers to customize replay capacity, buffer size, and overflow behavior, making it the preferred primitive for broadcasting one-off events, system notifications, or shared domain messages across multiple application components.
 
 
 ## Interview answer — deep senior
 
-Under the hood, `StateFlow` is actually a specialized, optimized subtype of `SharedFlow`. Specifically, `StateFlow` behaves identically to a `SharedFlow` configured with `replay = 1` and `onBufferOverflow = BufferOverflow.DROP_OLDEST`, augmented with two critical characteristics.
-
-First, **Synchronous Value Access:** You can read `stateFlow.value` at any time from any thread without launching a coroutine. Finally, **State Deduplication:** When you write `_stateFlow.value = newState`, it compares `newState == oldState`. If true, the update is a no-op; it skips notifying collectors and avoids triggering Jetpack Compose recompositions.
-
-In contrast, `MutableSharedFlow` allows duplicate identical emissions. If you emit `SnackbarMessage("Error")` twice, collectors receive both events sequentially, which is why SharedFlow is chosen for discrete user actions and events.
-
+At the lower plumbing layer of kotlinx.coroutines, StateFlow and SharedFlow are built on top of AbstractSharedFlow, a thread-safe allocation-free synchronization structure. Unlike cold flows that execute via sequential continuation passes, hot flows maintain an internal array of active subscriber slots (StateFlowSlot and SharedFlowSlot). When emit is invoked, the hot stream acquires an internal mutex, iterates over its active slot table, and wakes up suspended collector continuations directly.
+StateFlow is mathematically equivalent to a specialized SharedFlow configured with replay = 1 and onBufferOverflow = BufferOverflow.DROP_OLDEST, coupled with strict Any.equals conflation. When MutableStateFlow.value is updated, it performs an equality check: if the new value equals the existing value, the emission is discarded immediately without waking collector slots, preventing redundant recompositions in Jetpack Compose and frame drops.
+SharedFlow provides fine-grained backpressure tuning through three constructor parameters: replay determines how many previous emissions are cached for new subscribers; extraBufferCapacity provides headroom for emissions when collectors are slow; and onBufferOverflow dictates whether emit suspends (SUSPEND), drops the oldest buffered value (DROP_OLDEST), or drops the newly emitted value (DROP_LATEST).
+Staff engineers enforce strict guidelines: UI screens must observe state via StateFlow to guarantee that rotated screens instantly render the current state; transient one-off events must either use SharedFlow with replay = 0 or be modeled directly as consumed fields within the single immutable StateFlow to prevent event loss or double execution.
 
 ## How to answer in the interview
 

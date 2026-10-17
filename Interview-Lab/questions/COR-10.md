@@ -20,6 +20,41 @@ What is cooperative cancellation? What are cancellation points?
 
 Whether the candidate can locate cancellation checks and explain that cancellation is cooperative, not forced thread interruption.
 
+## Concept and technical explanation
+
+In Kotlin coroutines, cancellation is cooperative, meaning that a running coroutine cannot be preemptively or forcefully aborted from the outside by an operating system thread interruption. When a coroutine or its parent Job is cancelled, its state transitions to Cancelling, and it must cooperatively inspect its cancellation status to terminate execution. Cancellation points are specific locations during coroutine execution where cancellation is checked; if the coroutine has been cancelled, a CancellationException is thrown to unwind the call stack cleanly. All suspending functions provided by kotlinx.coroutines (such as delay, yield, withContext, await, and receive) are built-in cancellation points. However, if a coroutine executes a long-running CPU computation or a synchronous blocking Java I/O stream without invoking suspending functions, it will continue running unabated unless the developer explicitly inserts cancellation checks, such as calling ensureActive(), querying isActive, or invoking yield(). Furthermore, swallowing CancellationException in a generic try-catch block without re-throwing it violates cooperative cancellation, causing cancelled coroutines to silently resurrect and run indefinitely.
+
+## Practical walkthrough (English)
+
+Consider a background file encryption routine executing a tight loop over thousands of byte chunks.
+
+Uncooperative implementation that ignores cancellation:
+```kotlin
+// Defective: Ignores cancellation signals
+suspend fun encryptFile(data: ByteArray): ByteArray = withContext(Dispatchers.Default) {
+    val result = ByteArray(data.size)
+    for (i in data.indices) {
+        result[i] = computeByteHash(data[i]) // Tight CPU loop, no suspension point!
+    }
+    result
+}
+```
+If the user cancels this operation, the loop continues running to completion, burning CPU cycles and draining the battery.
+
+The correct cooperative implementation:
+```kotlin
+suspend fun encryptFile(data: ByteArray): ByteArray = withContext(Dispatchers.Default) {
+    val result = ByteArray(data.size)
+    for (i in data.indices) {
+        // Check cancellation every 1,000 iterations
+        if (i % 1000 == 0) ensureActive()
+        result[i] = computeByteHash(data[i])
+    }
+    result
+}
+```
+Calling ensureActive() immediately throws CancellationException if the coroutine is cancelled, terminating execution gracefully.
+
 ## Explanation in Arabic
 
 الإلغاء في Kotlin Coroutines هو **Cooperative (تعاوني)**، وهذا المفهوم هو السبب رقم واحد لحدوث أخطاء عدم توقف العمليات في الخلفية:
@@ -97,40 +132,30 @@ A ViewModel starts a large local search over cached products. New query input ca
 
 ## Interview answer — short
 
-Coroutine cancellation is cooperative: calling cancel() merely sets the job's state to cancelled. The coroutine itself must actively cooperate by reaching a cancellation point—such as delay(), yield(), or ensureActive()—which checks that state and throws a CancellationException to terminate execution.
+Cancellation in Kotlin coroutines is cooperative and never preemptive. A coroutine must check its cancellation status or reach a cancellation point—such as delay(), yield(), or ensureActive()—which throws CancellationException to terminate. Swallowing CancellationException in try-catch prevents cancellation from taking effect.
 
 ## Interview answer — structured
 
-Coroutine cancellation is strictly cooperative. Calling `job.cancel()` does not preemptively kill the thread or forcibly terminate execution like a deprecated Thread.stop() would. Instead, it transitions the coroutine's internal Job state to 'cancelling'.
+Cancellation in Kotlin coroutines is strictly cooperative. An external scope cannot forcibly terminate a running coroutine; instead, it signals cancellation, requiring the coroutine to check its active state.
 
-The coroutine code must cooperate to actually stop. Standard library suspending functions—such as `delay()`, `withContext()`, `yield()`, and `await()`—act as built-in **cancellation points**. Before executing and immediately upon resuming, they check if their Job is cancelled. If it is, they throw a `CancellationException`, which unwinds the coroutine call stack cleanly.
+Cancellation points are checkpoints where the coroutine checks its Job status. All standard suspending functions in kotlinx.coroutines act as cancellation points by throwing CancellationException when cancelled.
 
-The failure case occurs during tight, non-suspending CPU loops or blocking Java I/O. If a coroutine executes a mathematical loop for 10 seconds without calling any suspending functions, it will completely ignore `cancel()` until the loop finishes. To make CPU-bound code cancellable, we explicitly insert `ensureActive()` or `yield()` inside the loop body.
+In production, long CPU-bound loops or blocking stream reads lack automatic cancellation points. Engineers must explicitly include ensureActive(), check isActive, or invoke yield() periodically to allow cancellation signals to take effect.
+
+Resource cleanup should occur within finally blocks. If an unmanaged catch block intercepts CancellationException without re-throwing it, cancellation is silently broken, leaving orphaned background tasks running indefinitely.
 
 
 ## Interview answer — deep senior
 
-At the runtime level, cancellation uses `CancellationException` as its unwinding vehicle. Crucially, `CancellationException` is treated specially by the coroutine machinery: it is considered normal completion of a cancelled task rather than an error. It does not cancel parent scopes or trigger uncaught exception handlers.
+Under the hood, coroutine cancellation operates through the Job state machine and the throwing of CancellationException. When job.cancel() is invoked, the Job transitions from Active to Cancelling. It notifies all registered children to cancel and dispatches cancellation to any currently suspended continuation.
 
-However, this introduces a classic production trap: swallowing `CancellationException`. If a developer writes a broad catch block:
+If the coroutine is currently suspended at a cancellation point—such as delay(1000)—the underlying cancellable continuation (CancellableContinuationImpl) immediately resumes the coroutine by throwing CancellationException. This unwinds the continuation stack frame by frame, triggering finally blocks along the way to release resources such as file handles or database locks.
 
-```kotlin
-try {
-    doWork()
-} catch (e: Exception) { // Swallows CancellationException!
-    logError(e)
-}
-```
+However, if the coroutine is currently executing active CPU instructions inside a non-suspending loop, it remains oblivious to the Job state until it explicitly calls a cancellation point. The standard library provides three mechanisms for non-suspending code: isActive returns a boolean check of the Job state; ensureActive() throws CancellationException immediately if the Job is no longer active; and yield() checks cancellation while also cooperatively giving up the thread to other pending coroutines on the dispatcher.
 
-This catches `CancellationException` and ignores it, completely breaking cancellation. The coroutine will refuse to stop! The golden rule is to either catch specific exceptions (like `IOException`) or immediately rethrow `CancellationException`:
+A critical pitfall in production is catching Exception or Throwable. If a developer writes try { ... } catch (e: Exception) { log(e) }, the catch block intercepts CancellationException, treating it as an ordinary error and allowing execution to continue. To handle errors safely, engineers must either catch specific domain exceptions (like IOException) or explicitly re-throw CancellationException: if (e is CancellationException) throw e.
 
-```kotlin
-} catch (e: Exception) {
-    if (e is CancellationException) throw e
-    handleError(e)
-}
-```
-
+Finally, if cleanup logic inside a finally block requires invoking another suspending function (such as sending a network abort signal), it must be wrapped in withContext(NonCancellable) { ... }; otherwise, the already-cancelled coroutine will immediately throw CancellationException and abort the cleanup routine.
 
 ## How to answer in the interview
 

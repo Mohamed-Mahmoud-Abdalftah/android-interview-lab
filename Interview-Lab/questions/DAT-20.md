@@ -20,6 +20,62 @@ The server accepted a payment but the response was lost. How do you recover safe
 
 Recover a server-accepted payment whose response was lost, without duplicate charge.
 
+## Concept and technical explanation
+
+Safe recovery from lost payment responses addresses the classic Two Generals' network partition problem using idempotency protocols and deterministic state reconciliation:
+- The Failure Scenario: The client sends a payment POST request. The payment gateway charges the customer and persists the record. Before the 200 OK HTTP response reaches the mobile device, the cellular signal drops or the connection times out. The Android client catches a SocketTimeoutException. Blindly retrying the transaction without an idempotency key triggers a duplicate charge, while reporting failure induces user panic.
+- Client-Generated Idempotency Keys: Before transmitting the payment request, the client generates a unique cryptographically random UUID (Idempotency-Key HTTP header) and saves the payment record locally in Room with status PENDING_CONFIRMATION.
+- Server Idempotency Contract: The backend stores idempotency keys in Redis or a relational database with strict unique constraints. When a duplicate request with the identical key arrives, the backend does not re-execute the charge; it returns the cached receipt from the initial successful execution.
+- Safe Recovery Protocol:
+  1. Intercept network failure (SocketTimeoutException or IOException).
+  2. Do not report payment failure or show an error toast. Transition UI to a 'Verifying Transaction' state.
+  3. Query a dedicated idempotency status endpoint (GET /api/v1/payments/status/{idempotencyKey}).
+  4. If network recovery fails, schedule an immediate non-destructive WorkManager task with Exponential Backoff to reconcile the payment status in the background.
+
+## Practical walkthrough (English)
+
+Safe payment execution with client-generated idempotency key and status recovery:
+```kotlin
+@Entity(tableName = "payments")
+data class PaymentRecord(
+    @PrimaryKey val idempotencyKey: String,
+    val orderId: String,
+    val amount: Double,
+    val status: PaymentStatus // PENDING, CONFIRMED, FAILED
+)
+
+class PaymentRecoveryManager(
+    private val paymentDao: PaymentDao,
+    private val paymentApi: PaymentApiService
+) {
+    suspend fun executePayment(orderId: String, amount: Double): PaymentResult {
+        val key = UUID.randomUUID().toString()
+        paymentDao.insert(PaymentRecord(key, orderId, amount, PaymentStatus.PENDING))
+
+        return try {
+            val response = paymentApi.charge(idempotencyKey = key, orderId = orderId, amount = amount)
+            paymentDao.updateStatus(key, PaymentStatus.CONFIRMED)
+            PaymentResult.Success(response.receiptId)
+        } catch (e: IOException) {
+            // Network failed: do NOT treat as failed charge; initiate recovery
+            recoverPaymentState(key)
+        }
+    }
+
+    private suspend fun recoverPaymentState(key: String): PaymentResult {
+        // Poll status endpoint using the same idempotency key
+        return runCatching {
+            val status = paymentApi.checkStatus(key)
+            paymentDao.updateStatus(key, status.toRecordStatus())
+            if (status.isSuccess) PaymentResult.Success(status.receiptId)
+            else PaymentResult.PendingConfirmation(key)
+        }.getOrElse {
+            PaymentResult.PendingConfirmation(key)
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 قبل السيرفر عملية دفع مالي (Payment Accepted) لكن الاستجابة ضاعت في شبكة الهاتف (Lost Network Response). كيف تتعافى بأمان تام دون خصم العميل مرتين؟
@@ -117,24 +173,28 @@ A checkout backend stores a ledger operation keyed by client operation ID and ex
 
 ## Interview answer — short
 
-Recover safely from lost payment responses by treating network drops on mutating requests as uncertain outcomes, never outright failures. Persist an Idempotency Key in Room prior to network dispatch. Upon timeout, query a dedicated status reconciliation endpoint using that key rather than issuing a fresh charge with a new ID.
+Recovering from lost payment responses requires client-generated Idempotency Keys persisted in Room before dispatching network calls. Upon experiencing timeouts, the client avoids blind retries to prevent duplicate charges, transitions the UI to a verification state, polls a status endpoint using the existing key, and delegates persistent background reconciliation to WorkManager.
 
 ## Interview answer — structured
 
-In distributed mobile networking, a lost response after a mutating payment request represents an **Uncertain Outcome (the Two Generals' Problem)**. The server may have already committed the card charge. Retrying blindly or showing a failure screen causes double charges and furious customers.
-
-A production recovery architecture operates in three phases.
-
-First, with Pre-Flight Idempotency Persistence, prior to making the network call, persist the transaction intention in Room: `orderId`, `amount`, `status = PENDING`, and a deterministic `Idempotency-Key` (e.g. `UUID`). Next, with State Transition to Uncertain UI, if the call fails with `SocketTimeoutException` or `IOException`, do **NOT** show a 'Payment Failed - Tap to Retry' button. Update local state to `PaymentStatus.PENDING_VERIFICATION` and inform the user: 'Verifying payment with your bank...'.
-Finally, with Authoritative Reconciliation, query a dedicated reconciliation endpoint (`GET /orders/{id}/payment-status` or re-issue the `POST` with the *identical* Idempotency-Key). A compliant backend recognizes the key and returns the existing transaction status without charging again. If the server confirms payment, update local state to `SUCCESS`.
-
+Safely recovering when a payment response is dropped after server processing requires client-driven idempotency and defensive verification protocols.
+First, generate an Idempotency-Key prior to network transmission. The client generates a unique UUID, persists it in Room with the pending payment details, and attaches it as an HTTP header.
+Second, establish server idempotency semantics. If a network drop occurs and the same request is replayed, the backend recognizes the idempotency key and returns the original transaction receipt without charging the customer a second time.
+Third, implement safe recovery instead of blind failure reporting. When encountering network timeouts, never display a generic payment failed error. Transition the UI to a pending verification state, query a dedicated payment status endpoint using the idempotency key, and enqueue a WorkManager job to reconcile the transaction reliably in the background.
 
 ## Interview answer — deep senior
 
-From an engineering telemetry and edge-case standpoint.
-
-First, with Background Polling via WorkManager, if the user closes the app while in `PENDING_VERIFICATION`, schedule a constrained `PaymentReconciliationWorker` in WorkManager. When connectivity returns, the worker polls the backend, resolves the payment receipt, and triggers a local notification: 'Your order #123 is confirmed!'. Finally, with Backend Webhooks as Secondary Confirmation, in robust payment flows (Stripe, Adyen, Apple Pay), mobile apps do not rely solely on client polling. The payment provider delivers an asynchronous server-to-server webhook directly to your backend. The backend updates the order status in the cloud database, which your app observes via WebSocket or a silent push notification upon relaunch.
-
+In financial mobile engineering, dropped payment responses represent the classic distributed systems Two Generals' problem.
+When a POST payment request succeeds on the banking gateway but the connection drops before the HTTP 200 payload returns to the phone, the Android client receives a SocketTimeoutException.
+Rookie engineers often make two critical errors: either reporting an immediate payment failure which induces user panic, or automatically retrying the raw payment call which charges the customer's credit card twice.
+To guarantee mathematical safety, we enforce a strict idempotency architecture.
+Before any network bytes leave the device, our repository generates a cryptographically random UUID as an Idempotency-Key and commits the transaction into Room with status PENDING.
+This key is injected into the HTTP request headers.
+If OkHttp throws a SocketTimeoutException or network partition error, our recovery flow intercepts the exception.
+The UI immediately transitions into an informational 'Verifying Payment Status' state with clear messaging.
+The repository then queries a lightweight, side-effect-free status endpoint passing the idempotency key.
+If the status check returns confirmed, we update Room and transition the UI to success.
+If the device remains completely offline, we enqueue a dedicated WorkManager worker configured with Exponential Backoff and network constraints to resolve the payment status in the background, notifying the user via a system notification once confirmation is finalized.
 
 ## How to answer in the interview
 

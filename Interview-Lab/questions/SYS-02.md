@@ -20,6 +20,45 @@ Design a scalable multi-feature Android application.
 
 Design scalable multi-feature Android app with team boundaries, data ownership and build health.
 
+## Concept and technical explanation
+
+Designing a scalable multi-feature Android application for dozens of engineers requires strict modularization, clear data ownership, and decoupled navigation. A monolithic codebase creates severe build bottlenecks, merge conflicts, and tight cross-team coupling. Modern enterprise architecture organizes code into three distinct tiers: feature modules containing UI and presentation logic, core infrastructure modules (networking, database, security, design system tokens), and domain API contract modules. Feature modules never depend directly on sibling feature implementations; instead, they communicate through abstract API contracts or event-driven navigation routers. This separation decouples compile-time graphs, enables fine-grained Gradle build caching, allows teams to operate with high velocity, and ensures that feature modules can be compiled and tested in standalone sample runner applications.
+
+## Practical walkthrough (English)
+
+Implementing decoupled multi-feature API/Impl architecture and navigation contract:
+```kotlin
+// 1. Feature API module (:feature:checkout-api) exposing contracts only
+interface CheckoutFeatureApi {
+    fun getCheckoutDestination(orderId: String): NavigationDestination
+    suspend fun isUserEligibleForInstantCheckout(userId: String): Boolean
+}
+
+data class NavigationDestination(val route: String)
+
+// 2. Feature Implementation module (:feature:checkout-impl) keeping logic private
+class CheckoutFeatureApiImpl @Inject constructor(
+    private val checkoutRepository: CheckoutRepository
+) : CheckoutFeatureApi {
+    override fun getCheckoutDestination(orderId: String): NavigationDestination {
+        return NavigationDestination(route = "checkout/flow/$orderId")
+    }
+
+    override suspend fun isUserEligibleForInstantCheckout(userId: String): Boolean {
+        return checkoutRepository.hasValidPaymentMethod(userId)
+    }
+}
+
+// 3. Central Application Graph (:app) assembling implementations via Dagger/Hilt
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class FeatureBindingsModule {
+    @Binds
+    @Singleton
+    abstract fun bindCheckoutApi(impl: CheckoutFeatureApiImpl): CheckoutFeatureApi
+}
+```
+
 ## Explanation in Arabic
 
 كيف تصمم تطبيق أندرويد ضخم متعدد الميزات (Scalable Multi-Feature Android Application) يعمل عليه عشرات الفرق؟
@@ -107,27 +146,31 @@ A 20-team commerce app has team-owned feature APIs, central session/payment cont
 
 ## Interview answer — short
 
-Design a scalable multi-feature app by splitting features into separate :api and :impl modules, isolating shared functionality into low-level :core modules, enforcing unidirectional dependency rules, using dependency injection to bind interfaces at the root :app module, and decoupling navigation via contract interfaces or deep links.
+We design a scalable multi-feature application by separating features into API and implementation modules to eliminate cross-feature compile-time coupling. Sibling features communicate through abstract domain contracts or deep links rather than direct references. Core shared infrastructure like networking, persistence, and design system tokens reside in stable foundational modules, enabling parallel Gradle compilation, clear team code ownership, and rapid feature development.
 
 ## Interview answer — structured
 
-Scaling an Android codebase across multiple autonomous engineering teams requires decoupling compilation and architectural boundaries.
-
-First, **The Feature API / Implementation Separation**. Next, split each business domain into two modules: `:feature:name:api` and `:feature:name:impl`.
-The `:api` module exposes public interfaces, navigation arguments, and lightweight data contracts. Other features depend strictly on `:api`. The `:impl` module contains internal composables, ViewModels, and data repositories. No other module depends directly on `:impl`.
-**Layered Module Hierarchy**. With App Layer (`:app`), thin application orchestrator that includes all `:impl` modules and wires Dagger/Hilt dependency graphs.
-**Feature Layer (`:feature:*`)**: Isolated vertical slices owning specific user journeys. **Core Layer (`:core:*`)**: Horizontal building blocks (`:core:network`, `:core:database`, `:core:designsystem`, `:core:common`).
-**Decoupled Navigation & Communication**. Features navigate to other features via exposed entry-point interfaces or typed deep link contracts, eliminating direct cross-feature class imports.
-**Build Performance Optimization**. Finally, decoupled modules leverage Gradle build caching, parallel execution, and configuration caching, preventing full-project recompilations when a single feature changes.
-
+Designing a multi-feature application that scales across dozens of engineers requires enforcing architectural decoupling, strict data ownership, and build pipeline optimization.
+We organize the codebase into three horizontal layers and multiple vertical feature slices.
+Vertically, each business capability like authentication, search, or checkout is isolated into its own module pair: a lightweight API module exposing interfaces and models, and an implementation module containing private UI and logic.
+Sibling feature implementations never depend directly on each other.
+When the cart screen needs to invoke checkout, it communicates via the checkout API contract or deep-link navigation, completely breaking circular compilation dependencies.
+Horizontally, we provide stable foundational modules containing the network client, local storage, security utilities, and the Compose design system.
+Dependency injection dynamically binds implementations into the application module at the top of the dependency graph.
+This structure enables clear code ownership using CODEOWNERS files, accelerates local and CI build times through fine-grained Gradle task caching, and prevents unintended architectural regressions across growing feature teams.
 
 ## Interview answer — deep senior
 
-From an organizational and platform engineering perspective, modularization must be protected by governance tooling.
-
-First, with Enforcing Dependency Direction via Tooling, architecture rules rot without automated guardrails. Use Gradle plugins like `dependency-analysis-android-plugin` or custom ArchUnit/Konsist tests to enforce that no feature module ever imports another feature's `:impl` module, and that `:core` modules never depend on `:feature` modules. Next, with Independent Standalone Sample Apps, each major feature module should maintain a lightweight `:feature:name:sample` runnable app module. Developers on the checkout team can run and iterate on their feature in isolation within 5 seconds without compiling the remaining 50 features of the monolithic app.
-Finally, with Binary Dependency Substitution, in mega-apps (100+ engineers), build times can be further reduced by substituting local module projects with pre-compiled AAR artifacts hosted on an internal Maven cache for modules outside the engineer's active feature domain.
-
+At scale, the hardest challenges in multi-feature architecture are dependency explosion, transitive ABI changes, and fragmented application state.
+When dozens of teams modify shared code, modifying a single core module invalidates Gradle caches across the entire project, inflating build times from minutes to half an hour.
+To maintain build health, we strictly enforce the API and Implementation module pattern, using Gradle api dependencies exclusively for exported interfaces and implementation dependencies for internal libraries.
+Furthermore, data ownership must be strictly localized.
+A common anti-pattern is sharing a centralized, mutable database entity across multiple feature modules, which leads to unpredictable race conditions and tight schema coupling.
+Instead, each feature owns its persistence boundary or interacts through an authoritative domain repository.
+Navigation between features is abstracted through a central navigation contract or deep-link URI router, allowing feature teams to develop and test their flows using standalone sample apps without compiling the full monolithic application.
+For runtime state management, we adopt unidirectional data flow within each feature, exposing immutable StateFlow streams and encapsulating side effects within dedicated coroutine scopes tied to the feature lifecycle.
+We also configure a distributed remote Gradle build cache across developer machines and continuous integration workers, ensuring that clean builds achieve hit rates above eighty percent on unmodified feature modules.
+This architecture guarantees high developer velocity, modular testability, and operational stability in enterprise production environments.
 
 ## How to answer in the interview
 

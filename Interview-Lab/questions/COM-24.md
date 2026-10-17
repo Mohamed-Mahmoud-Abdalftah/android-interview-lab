@@ -22,6 +22,47 @@ A listener keeps working after a composable leaves composition. Which effect is 
 - Use DisposableEffect keys and onDispose appropriately.
 - Verify actual lifecycle and late callbacks.
 
+## Concept and technical explanation
+
+When a listener, broadcast receiver, sensor observer, or external callback continues executing after a composable unmounts from the composition tree, the root cause is registering imperative listeners inside inappropriate effect handlers or bare composable bodies without lifecycle cleanup. Using LaunchedEffect(Unit) or SideEffect to register an observer is a critical anti-pattern because neither primitive provides an automatic teardown callback. The correct architectural primitive is DisposableEffect, which enforces an explicit onDispose { ... } cleanup block that the Compose runtime guarantees to execute whenever the effect keys change or when the composable leaves the composition hierarchy entirely.
+
+## Practical walkthrough (English)
+
+Fixing a persistent listener memory leak using DisposableEffect:
+```kotlin
+// ❌ CRITICAL LEAK: LaunchedEffect(Unit) has NO cleanup teardown mechanism!
+// When the user navigates away, sensorListener continues running, leaking memory and draining battery!
+@Composable
+fun LeakySensorScreen(sensorManager: SensorManager) {
+    LaunchedEffect(Unit) {
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) { /* handle updates */ }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+        sensorManager.registerListener(listener, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_NORMAL)
+        // ❌ There is NO onDispose block! The listener outlives the composable and leaks forever!
+    }
+}
+
+// ✅ ARCHITECTURAL BEST PRACTICE: DisposableEffect guarantees cleanup on exit!
+@Composable
+fun SafeSensorScreen(sensorManager: SensorManager) {
+    DisposableEffect(sensorManager) {
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) { /* handle updates */ }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+        val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+
+        // ✅ onDispose executes GUARANTEED when leaving composition or when sensorManager changes!
+        onDispose {
+            sensorManager.unregisterListener(listener)
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 عندما يستمر مستمع (Listener) في العمل واستهلاك الموارد بعد مغادرة الـ Composable للشاشة: ما هو الـ Effect الخاطئ وكيف يُعالج؟
@@ -109,28 +150,32 @@ Document source, owner, register/unregister pair and visibility requirement. Tes
 
 ## Interview answer — short
 
-The wrong effect is `LaunchedEffect(Unit)` or `SideEffect`. They lack cleanup callbacks for non-suspending listeners. When the composable leaves composition, the listener remains registered. The correct solution is `DisposableEffect`, which enforces an `onDispose { ... }` block to unregister listeners synchronously.
+The wrong effect being used is LaunchedEffect(Unit) or SideEffect, neither of which provides an explicit cleanup mechanism. When a composable unmounts, listeners registered inside them remain active, leaking memory and draining battery. The correct tool is DisposableEffect. DisposableEffect enforces an onDispose block that is guaranteed by the Compose runtime to execute whenever the effect key changes or when the composable leaves the composition entirely, ensuring proper resource unregistration.
 
 ## Interview answer — structured
 
-If a callback or listener continues operating after a composable leaves the composition, the developer mistakenly implemented the registration inside **`LaunchedEffect`** or raw composable code.
-
-`LaunchedEffect` is tailored exclusively for cooperative Kotlin coroutines. When a composable leaves the Slot Table, Compose cancels the coroutine job. However, if a non-suspending, platform-level listener (such as `LocationListener`, `SensorEventListener`, or `BroadcastReceiver`) was registered inside the coroutine body, canceling the coroutine does not invoke `unregisterListener()`. The system service retains a strong reference, causing a persistent memory leak and background battery drain.
-
-The mandatory solution is **`DisposableEffect`**.
-
-First, it executes registration upon entering the composition. Next, it mandates a trailing **`onDispose { ... }`** clause.
-Finally, the instant the composable leaves the composition tree (or if any key argument changes), Compose synchronously executes `onDispose`, unregistering the listener cleanly.
-
+Encountering background listeners that outlive composable lifecycles is one of the most hazardous resource leakage patterns in Jetpack Compose development.
+The defect occurs when developers register external system observers—such as BroadcastReceivers, SensorEventListeners, LocationServices listeners, or third-party SDK analytics observers—inside LaunchedEffect(Unit) or directly in the composable body.
+While LaunchedEffect(Unit) cancels its internal coroutine Job when leaving composition, it has no intrinsic mechanism to invoke imperative unregistration APIs on external Android system services.
+Similarly, SideEffect executes on every recomposition with zero teardown capability.
+Consequently, the platform service retains a strong reference to the listener callback, leaking memory, keeping GPS or sensors active, and causing background battery drain.
+The correct, non-negotiable tool for this pattern is DisposableEffect.
+DisposableEffect is explicitly designed for side-effects that require teardown logic.
+It forces developers to supply an onDispose clause at compile time.
+The Compose runtime guarantees that onDispose will execute in two deterministic scenarios: before re-executing the effect with updated keys, and immediately when the composable leaves the composition tree, ensuring reliable resource cleanup.
 
 ## Interview answer — deep senior
 
-Under the hood, `DisposableEffectImpl` implements `RememberObserver`. When the Compose runtime determines during a layout pass that an existing node was pruned from the UI hierarchy, it invokes `onForgotten()` on registered `RememberObserver` instances, directly triggering the `onDispose` lambda.
-
-Another frequent leak pattern is capturing changing parameters inside `onDispose`. If the keys passed to `DisposableEffect(key1)` mutate, Compose first executes `onDispose` for the old keys before executing the effect block for the new keys. If keys are omitted or set to `Unit` while external dependencies mutate, the unregistration might hold stale objects or unregister the wrong instance.
-
-In modern Android architectures, we often hoist these listeners entirely out of the UI into cold Flows in repository/data layers using `callbackFlow { ... AwaitClose { unregisterListener() } }`, consuming them in Compose via `collectAsStateWithLifecycle()`.
-
+Under the hood, DisposableEffect interfaces directly with the Composer's Disposables lifecycle tracking queue inside the SlotTable.
+When a DisposableEffect block executes, the Compose compiler allocates a DisposableEffectImpl node within the current slot interval.
+The lambda block must return a DisposableEffectResult instance, which encapsulates the user-defined onDispose() closure.
+If the developer omits the onDispose block, the Kotlin compiler generates a compile-time type mismatch error, enforcing correctness before bytecode generation.
+When the hosting composable unmounts from the composition tree—such as when the user navigates back or conditional UI branches evaluate to false—the Composer initiates a teardown pass across the SlotTable.
+During this pass, the Composer traverses all registered DisposableEffectImpl nodes and immediately invokes their cached onDispose() lambdas synchronously on the main thread before discarding the slot memory.
+By contrast, LaunchedEffect creates a StandaloneCoroutine tied to a Job.
+While the Job cancels cooperatively upon unmounting, standard Java/Android listener callbacks registered with system services (like android.hardware.SensorManager) are not coroutines; canceling the coroutine Job leaves the underlying platform callback registered in Android OS memory.
+Failing to unregister these listeners prevents the Garbage Collector from freeing the enclosing Activity or Context references, causing severe native handle leaks and draining the battery in the background.
+Senior engineers mandate DisposableEffect in code reviews for any integration touching system services, broadcast receivers, or hardware listeners.
 
 ## How to answer in the interview
 

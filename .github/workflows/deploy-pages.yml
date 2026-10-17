@@ -22,6 +22,8 @@ jobs:
           python-version: '3.13'
       - name: Check editorial release gate
         run: python3 scripts/validate_interview_lab.py --require-complete
+      - name: Check bilingual parity and spoken quality gate
+        run: python3 scripts/validate_bilingual_parity.py
       - uses: pnpm/action-setup@v4
         with:
           version: 11.25.0

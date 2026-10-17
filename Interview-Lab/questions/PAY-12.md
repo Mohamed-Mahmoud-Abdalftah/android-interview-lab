@@ -21,6 +21,74 @@ A POS transaction is approved by issuer but the terminal loses power before savi
 - Recovery when issuer approved but terminal lost power before local save.
 - Need for backend/provider record and reconciliation beyond local DB.
 
+## Concept and technical explanation
+
+When a payment is approved by the card issuer but the terminal loses electrical power before persisting the approval response, the system enters a split-brain state requiring disciplined boot-time recovery and batch reconciliation:
+- The Split-Brain Disaster:
+  - Bank Ledger State: The issuer approved the transaction, assigned an authorization code and Retrieval Reference Number (RRN), and locked or deducted the cardholder's funds.
+  - Terminal Ledger State: The local database record remains in `INITIATED` or `PROCESSING` because the device lost power before flushing the `APPROVED` state to flash memory.
+- Multi-Stage Recovery Architecture:
+  1. Boot-Time Journal Scan:
+     - Upon reboot (`android.intent.action.BOOT_COMPLETED`), the application startup coordinator inspects the local Room database before opening any cashier UI.
+     - Any transaction stranded in `INITIATED` or `PROCESSING` is immediately flagged as `IN_DOUBT`.
+  2. Authoritative Status Inquiry (Check Before Reverse):
+     - The terminal dispatches an authenticated Status Inquiry request to the payment gateway using the immutable `idempotencyKey` and `correlationId`.
+     - Scenario A (Approved on Gateway): The gateway returns the original authorization response. The terminal updates the local journal to `APPROVED`, saves the RRN, and automatically prints a receipt marked "RECOVERED TRANSACTION - DUPLICATE RECEIPT".
+     - Scenario B (Unknown / Expired on Gateway): The terminal dispatches an ISO 8583 0400 Reversal to release any orphaned funds hold.
+  3. End-of-Day Settlement Reconciliation (Z-Report):
+     - If the terminal remains offline throughout the business day, the end-of-day batch settlement process compares the terminal's journal against the acquirer's switch ledger. Any unmatched authorization is automatically flagged for merchant review and resolved without double-billing.
+
+## Practical walkthrough (English)
+
+Implementing boot-time payment recovery and status reconciliation in Kotlin:
+```kotlin
+class BootRecoveryCoordinator(
+    private val journalDao: PaymentJournalDao,
+    private val paymentGatewayApi: PaymentGatewayApi,
+    private val receiptPrinter: PosReceiptPrinter
+) {
+    suspend fun recoverStrandedTransactions() {
+        val strandedTransactions = journalDao.getStrandedInFlightTransactions()
+
+        for (tx in strandedTransactions) {
+            // Mark as IN_DOUBT locally to prevent conflicting cashier actions
+            journalDao.updateStatus(tx.id, "IN_DOUBT")
+
+            try {
+                // Authoritative Status Inquiry using the original immutable idempotency key
+                val statusResult = paymentGatewayApi.queryStatus(
+                    orderId = tx.orderId,
+                    idempotencyKey = tx.idempotencyKey
+                )
+
+                when (statusResult) {
+                    is GatewayStatus.Approved -> {
+                        // Issuer approved it: Reconcile locally and print recovered receipt
+                        journalDao.markApproved(tx.id, statusResult.authCode, statusResult.rrn)
+                        receiptPrinter.printCustomerReceipt(
+                            orderId = tx.orderId,
+                            amount = tx.amountCents,
+                            authCode = statusResult.authCode,
+                            isRecovered = true
+                        )
+                    }
+                    is GatewayStatus.NotFoundOrDeclined -> {
+                        // Gateway has no record or failed: Execute Reversal to guarantee customer safety
+                        paymentGatewayApi.sendReversal(tx.id, tx.correlationId)
+                        journalDao.markReversed(tx.id)
+                    }
+                    is GatewayStatus.Pending -> {
+                        // Gateway is still processing: Keep in-doubt and retry on next cycle
+                    }
+                }
+            } catch (e: IOException) {
+                // Network unavailable: will be reconciled during nightly settlement
+            }
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 وافق البنك المصدر (Issuer) على معاملة نقطة البيع (POS)، ولكن الماكينة فقدت الطاقة تماماً وانطفأت قبل حفظ الموافقة. اشرح بالتفصيل بروتوكول التعافي والمطابقة (Recovery & Reconciliation)؟
@@ -101,26 +169,27 @@ Use an operations dashboard for orphaned authorizations, settlement mismatches a
 
 ## Interview answer — short
 
-Recover an in-doubt transaction after sudden power loss by auditing the database on boot, querying the payment gateway using the persistent idempotency key via a Status Inquiry, and either marking the transaction Approved and printing a recovered receipt if captured, or dispatching an automated Reversal if unconfirmed.
+When a terminal loses power before recording an issuer approval, a split-brain state occurs. On reboot, the terminal identifies the stranded transaction, flags it as in-doubt, and performs an authoritative status inquiry using the original idempotency key. If approved, it records the authorization and prints a recovered receipt; if absent, it dispatches an automated reversal, resolving offline discrepancies during end-of-day reconciliation.
 
 ## Interview answer — structured
 
-Handling power loss during the authorization commit window is a core requirement of POS terminal certification.
-
-First, **The In-Doubt Dilemma**. Next, the acquiring host approved the transaction and sent the SMS to the cardholder, but terminal volatile RAM was destroyed before the approval code hit SQLite or the thermal printer engaged.
-**The Systematic Recovery Protocol**. With Boot-Time Ledger Scan, upon application startup, a `StartupRecoveryService` scans the persistent Room ledger for records lingering in `PROCESSING` or `INITIATED` status.
-A Host Status Inquiry is the terminal dispatches a Status Inquiry request (`GET /v1/payments/status`) presenting the durable `idempotency_key` and original `correlation_id`. With Branch A (Gateway Captured), if the host confirms approval, the terminal transitions the local state to `APPROVED`, persists the authorization code, and automatically prints a marked duplicate receipt (`RECOVERED TRANSACTION RECEIPT`) so the merchant can release goods.
-With Branch B (Host Incomplete / Pending), if the host reports the transaction as pending or unconfirmed, the terminal generates an automated reversal (0400 Reversal message) to release the authorization hold, marks local state as `REVERSED`, and prints a void notification. **End-of-Day Batch Reconciliation Safety Net**.
-Finally, if connectivity fails completely during boot inquiry, the record is flagged for end-of-day batch reconciliation. During clearing, host and terminal ledgers are reconciled before merchant settlement payout.
-
+Handling a sudden power loss after bank approval but before local persistence requires an automated recovery and reconciliation protocol.
+In this failure scenario, a split-brain condition arises: the cardholder's issuing bank has captured the funds, but the terminal's local database remains in an in-flight processing state.
+To restore accounting consistency, the terminal executes a recovery routine during device boot before permitting any new sales. It scans the local database for stranded in-flight records and transitions them to In-Doubt.
+Next, the terminal initiates a status inquiry to the payment gateway utilizing the persisted idempotency key and correlation ID.
+If the gateway confirms that the authorization succeeded, the terminal updates the transaction to Approved, saves the authorization code and reference numbers, and prints a duplicate receipt for the merchant and customer.
+If the gateway reports that the transaction was never captured, the terminal issues an ISO 8583 reversal message to release any potential funds hold. If the device remains offline, the discrepancy is reconciled during the end-of-day batch settlement.
 
 ## Interview answer — deep senior
 
-From an EMV Level 2 transaction state machine perspective, hardware terminal certification enforces specific rules.
-
-First, with EMV Second Generate AC (Application Cryptogram) Failure, in chip transactions, after receiving host authorization, the terminal must feed the issuer script back to the physical chip to generate the final Application Cryptogram (TC - Transaction Certificate). If power is lost before the chip generates TC, the transaction is **legally incomplete under EMV rules**, even if the issuer approved it! In this scenario, EMV compliance mandates issuing an automatic reversal because the chip never confirmed the sale. Next, with Preventing Cashier Panic Retries, during boot recovery, the UI must display a non-dismissible modal: 'Reconciling pending transactions, please wait...' This prevents a hurried cashier from attempting a second card swipe before the system has determined the fate of the first charge.
-Finally, merchant Protection Receipts is the thermal printer must produce physical receipts with clear cryptographic audit markers (STAN, RRN, Auth Code, masked PAN) so the merchant is protected against chargeback disputes.
-
+From an ISO 8583 transaction processing and financial audit reconciliation perspective, a power failure occurring precisely between bank authorization and local persistence represents one of the most critical operational edge cases in retail engineering.
+In this split-brain failure mode, the issuing bank has debited or held the customer's funds, and the payment gateway has recorded a successful transaction. However, because electrical power was cut before the terminal's SQLite database committed the response payload, the terminal boots up with no record of success. If the cashier assumes the payment failed and requests another card swipe, the customer is double-billed, leading to severe chargeback disputes.
+The robust architectural solution divides resolution into immediate boot recovery and deferred batch reconciliation.
+At boot time, triggered by the BOOT_COMPLETED intent, the startup manager queries Room for records stuck in INITIATED or PROCESSING. The system immediately locks the terminal cashier interface to prevent further transactions.
+The recovery engine then dispatches a Status Inquiry request to the gateway, supplying the original immutable idempotency key and correlation ID. The gateway looks up the transaction in its distributed ledger.
+If the gateway returns an Approved status, the terminal executes an atomic database transaction updating the record to APPROVED with the original authCode and RRN, immediately spooling a customer receipt clearly stamped "RECOVERED TRANSACTION - DUPLICATE".
+If the gateway reports that the transaction timed out or was declined, the terminal enqueues an ISO 8583 0400 reversal to release any pending holds.
+Finally, as an ironclad safety net, if connectivity cannot be re-established, the nightly Z-Report batch reconciliation compares the terminal's offline journal with the acquirer switch summary. Any unpaired transaction is flagged in an exception report, enabling finance teams to balance the books without manual customer friction.
 
 ## How to answer in the interview
 

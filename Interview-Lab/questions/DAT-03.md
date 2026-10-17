@@ -20,6 +20,43 @@ What are connect, read, write, and call timeouts?
 
 Distinguish connection establishment, socket inactivity and whole-call deadlines.
 
+## Concept and technical explanation
+
+OkHttp provides granular timeout dimensions to handle flaky mobile networks and prevent hung sockets:
+- Connect Timeout: The maximum duration allowed to establish the initial connection with the target server. This includes DNS resolution, TCP three-way handshake, and TLS cryptographic negotiation. If connection fails within this window, OkHttp aborts or attempts alternative IP addresses.
+- Write Timeout: The maximum duration allowed between transmitting consecutive bytes of the request to the server. It governs pushing the request headers and streaming upload payloads. If the socket blocks longer than this duration between byte writes, a SocketTimeoutException is thrown.
+- Read Timeout: The maximum duration allowed between receiving consecutive bytes of the response from the server. It does not measure the total download time; rather, it ensures the server has not stalled or abandoned the connection midway through streaming.
+- Call Timeout: A macro-level wall-clock timeout introduced in OkHttp 3.12 that spans the entire lifecycle of an HTTP invocation. It encompasses DNS lookup, connection establishment, request writing, server processing, response reading, and any transparent HTTP redirects or retries. It acts as an absolute safety net against runaway coroutine executions.
+
+## Practical walkthrough (English)
+
+Configuring granular timeouts and call-level safety nets in OkHttp:
+```kotlin
+val okHttpClient = OkHttpClient.Builder()
+    // 1. Connection phase (DNS + TCP + TLS)
+    .connectTimeout(10, TimeUnit.SECONDS)
+    // 2. Inter-byte socket write threshold (uploading payload)
+    .writeTimeout(15, TimeUnit.SECONDS)
+    // 3. Inter-byte socket read threshold (server response gap)
+    .readTimeout(15, TimeUnit.SECONDS)
+    // 4. End-to-end wall-clock timeout for the entire request lifecycle
+    .callTimeout(30, TimeUnit.SECONDS)
+    .build()
+
+// Overriding timeouts per-call for large file uploads
+val uploadRequest = Request.Builder()
+    .url("https://api.example.com/v1/media/upload")
+    .post(fileRequestBody)
+    .tag(Invocation::class.java, null)
+    .build()
+
+// Call-level timeout configuration via OkHttp client customization
+val longRunningClient = okHttpClient.newBuilder()
+    .callTimeout(120, TimeUnit.SECONDS)
+    .writeTimeout(60, TimeUnit.SECONDS)
+    .build()
+```
+
 ## Explanation in Arabic
 
 ما هي مهلات الاتصال في OkHttp:
@@ -103,24 +140,28 @@ A media client uses longer write timeout for uploads and exposes progress; a sea
 
 ## Interview answer — short
 
-connectTimeout bounds TCP/TLS handshake duration. readTimeout bounds inactivity gaps between incoming data packets. writeTimeout bounds inactivity gaps when transmitting packets. callTimeout sets an absolute, end-to-end deadline spanning DNS, handshakes, retries, and complete response consumption.
+Connect timeout limits the time to complete DNS, TCP, and TLS handshakes. Write timeout limits delays between transmitting request bytes, while read timeout limits delays between receiving response bytes. Call timeout acts as an overarching wall-clock limit governing the entire invocation lifecycle including all redirects and retries.
 
 ## Interview answer — structured
 
-OkHttp divides timeouts into granular socket-level phases and a top-level end-to-end deadline.
-
-First, connectTimeout is the maximum time allotted to establish a physical connection to the remote host. It includes DNS resolution, TCP handshake, and TLS session negotiation. If the server is unreachable or cellular towers drop the SYN packet, OkHttp aborts with a connection timeout. Next, readTimeout is the maximum duration of inactivity allowed between two incoming bytes read from the socket. Crucially, **this is NOT the total download timeout**. A 100MB download taking 10 minutes will never trigger a `readTimeout` as long as data packets continue arriving within the configured threshold.
-Additionally, writeTimeout is the maximum duration of inactivity allowed when pushing bytes to the socket, essential during large multipart image or video uploads. Finally, with callTimeout, introduced in OkHttp 3.12 as an absolute upper bound for the **entire HTTP transaction**. It encompasses DNS, redirects, multi-hop proxy chains, authentication retries, and full body reading. If the entire operation exceeds this threshold, OkHttp immediately aborts the call.
-
+Managing timeouts properly in OkHttp is essential for mobile network stability and resource conservation.
+First, connect timeout bounds the initial handshake phase. It covers DNS lookup, establishing the TCP socket, and completing TLS negotiation. A typical mobile setting is 10 to 15 seconds.
+Second, write timeout governs sending request data. It measures the maximum permitted inactivity gap between consecutive bytes written to the socket, preventing uploads from hanging indefinitely on stalled uplinks.
+Third, read timeout governs receiving server responses. Crucially, it measures the time between consecutive bytes received rather than total download duration, ensuring an active download is never terminated prematurely as long as data packets arrive.
+Finally, call timeout sets an absolute ceiling on the entire request execution. It bounds connection, writing, server computation, reading, redirects, and retries under a single aggregate threshold.
 
 ## Interview answer — deep senior
 
-From an error-handling and idempotency perspective, distinguishing between `connectTimeout` and `readTimeout` is vital in production.
-
-First, a **`connectTimeout`** guarantees that **the server never received the request**. The TCP connection never established. Retrying this request immediately (even a `POST` payment request) is 100% safe because no server state was altered. Finally, a **`readTimeout`** guarantees that **the server received the request, and may have already committed the database transaction**. The socket timeout occurred only while waiting for the response. Retrying a `readTimeout` blindly on a non-idempotent endpoint risks duplicate operations and double charges.
-
-Senior architectures treat `readTimeout` on mutating operations as an *uncertain state*, querying the server via an idempotency reconciliation check rather than issuing a raw retry.
-
+In enterprise mobile applications operating across volatile cellular networks, misconfigured timeouts directly degrade battery life, exhaust connection pools, and lock up coroutine worker threads.
+Developers frequently misunderstand read timeout, assuming it represents total response download duration.
+In reality, read timeout in OkHttp is an inter-byte socket inactivity timer implemented via Okio's AsyncTimeout.
+If a 200-megabyte file download takes three minutes but packets arrive every two hundred milliseconds, a fifteen-second read timeout will never trigger because the inter-byte deadline is continuously reset.
+Conversely, if an edge server accepts the TCP connection but stalls for sixteen seconds while executing a heavy database query, the read timeout fires, throwing a SocketTimeoutException.
+To establish a hard boundary against unbounded processing, we configure call timeout.
+Introduced in OkHttp 3.12, call timeout wraps the entire Call.execute() or enqueue() pipeline.
+Even if an API request encounters multiple 302 redirects or OkHttp attempts failover connections across multiple IP addresses returned by DNS, the aggregate elapsed time cannot exceed the call timeout.
+For production setups, we tune timeouts contextually: lightweight JSON RPC endpoints receive short 10-second connect and read timeouts, whereas file upload and telemetry endpoints utilize a dedicated OkHttp client instance with expanded write and call timeouts.
+Furthermore, when handling critical socket cancellations, OkHttp cancels the active HTTP/2 stream via RST_STREAM frames without tearing down the underlying TCP connection, conserving radio battery and preserving the warm connection in the pool.
 
 ## How to answer in the interview
 

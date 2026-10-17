@@ -21,6 +21,48 @@ What should be unit-tested versus verified with an emulator/device?
 - JVM versus platform fidelity boundary.
 - Emulator/device matrix driven by OS and hardware risks.
 
+## Concept and technical explanation
+
+Establishing a rigorous architectural boundary between local JVM unit testing and on-device instrumentation testing dictates the speed, fidelity, and operational cost of an Android engineering pipeline. Approximately 70 to 80 percent of application logic should be unit-tested purely on the host JVM in milliseconds without booting Android runtimes. This includes ViewModels, UseCases, business domain rules, mapping algorithms, offline caching logic using MockWebServer, and isolated Compose UI rendering via Robolectric. Conversely, on-device or emulator testing (comprising 15 to 20 percent) is strictly reserved for behaviors inextricably bound to the physical Android OS and ART runtime: complex SQLite Room database schema migrations, hardware biometric authentication via Android Keystore, native C++ NDK interop, WorkManager background constraints, CameraX hardware streams, and release-candidate macrobenchmarks.
+
+## Practical walkthrough (English)
+
+Contrasting local JVM domain testing with on-device biometric Keystore verification:
+```kotlin
+// 1. JVM Unit Test in src/test/ (Pure business validation executing in ~5ms)
+class CartPricingUseCaseTest {
+    @Test
+    fun calculateTotal_appliesVatAndDiscountDeterministically() {
+        val useCase = CalculateCartTotalUseCase()
+        val total = useCase(items = listOf(CartItem(price = 100.0, qty = 2)), discount = 20.0)
+        // 200 - 20 = 180 + 14% VAT = 205.2
+        assertEquals(205.2, total, 0.001)
+    }
+}
+
+// 2. Instrumented Test in src/androidTest/ (Strictly requires real Android Keystore hardware!)
+@RunWith(AndroidJUnit4::class)
+class CryptographyManagerIntegrationTest {
+    private lateinit var cryptoManager: CryptographyManager
+
+    @Before
+    fun setup() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        cryptoManager = CryptographyManagerImpl(context)
+    }
+
+    @Test
+    fun encryptAndDecryptToken_usingHardwareAndroidKeyStore() {
+        val rawToken = "super_secret_jwt_token_payload"
+        // Interacts with Android KeyStore provider inside hardware TEE / StrongBox!
+        val encryptedData = cryptoManager.encrypt(alias = "auth_key", data = rawToken)
+        val decryptedData = cryptoManager.decrypt(alias = "auth_key", encryptedData = encryptedData)
+
+        assertEquals(rawToken, decryptedData)
+    }
+}
+```
+
 ## Explanation in Arabic
 
 ما هي المعايير الدقيقة لتحديد ما يجب اختباره كـ Unit Test على الـ JVM وما يجب التحقق منه على محاكي أو جهاز حقيقي (Emulator/Device)؟
@@ -95,25 +137,30 @@ Build a supported API/device/ABI matrix. Run fast JVM PR checks, targeted emulat
 
 ## Interview answer — short
 
-Test pure business rules, ViewModels, UseCases, mappers, and state machines on the local JVM for millisecond speed. Reserve on-device/emulator tests for framework and hardware boundaries: Android Keystore, BiometricPrompt, Room SQLite migrations, Macrobenchmark performance, and IPC components.
+We divide testing strictly by execution environment. Fast JVM unit tests in src/test cover 70-80% of code: ViewModels, UseCases, business logic, mapping, and repositories with MockWebServer. Instrumented tests in src/androidTest cover 15-20% and are reserved strictly for platform-bound code: Room database migrations, Android Keystore encryption, hardware sensors, WorkManager system constraints, and release Macrobenchmarks that cannot execute accurately on the desktop JVM.
 
 ## Interview answer — structured
 
-Allocating tests between the local JVM and real devices balances execution economics against operational fidelity.
-
-First, **Local JVM Tests (`src/test/`) — The 80% Rule**. Next, with Scope, viewModels, pure domain UseCases, reactive StateFlow pipelines, business algorithms, DTO mappers, and state machines.
-Additionally, a Why JVM executes in milliseconds. Zero emulator boot overhead. Allows rapid Test-Driven Development (TDD) iteration without blocking local machines. **On-Device / Emulator Tests (`src/androidTest/`) — The 20% Rule**.
-With Hardware & Security Boundaries, Android Keystore hardware-backed keys, Secure Element operations, and `BiometricPrompt` flows (the JVM has no Keymaster TEE daemon). With Real SQLite Engine, Room database migrations and complex multi-threaded WAL transactions (desktop SQLite diverges from mobile OEM SQLite builds).
-With Framework IPC, validating exported ContentProviders, BroadcastReceivers, and Deep Link intent filter matching. Finally, with Performance Profiling, baseline Profiles and Macrobenchmark measuring real frame rendering and startup latency.
-
+Striking the optimal balance between JVM unit tests and on-device emulator tests is the hallmark of a senior Android engineer.
+The governing design principle is to run every test on the cheapest, fastest platform possible that still yields decisive confidence.
+On the local JVM in src/test, we execute the vast majority of our test suite—roughly 70 to 80 percent.
+Because JVM tests bypass Android OS boot cycles and run in milliseconds, they are ideal for testing domain UseCases, mathematical pricing logic, ViewModel state emissions with Turbine, data mapping, and repository network synchronization with MockWebServer.
+Furthermore, using Robolectric or modern desktop Compose tooling, teams can even verify UI semantic layout and screenshot golden images directly on the JVM.
+Conversely, on-device or emulator tests in src/androidTest are expensive, slow, and compute-intensive.
+We reserve this tier strictly for functionality that directly interfaces with the compiled Android Runtime (ART) and native platform subsystems.
+This includes verifying complex Room database migrations across historic SQLite versions, testing hardware biometric authentication backed by the Android Keystore and Secure Element, verifying background WorkManager scheduling under system battery-saver constraints, and executing Macrobenchmark startup and frame-timing metrics before production release.
 
 ## Interview answer — deep senior
 
-From an engineering resource allocation and cloud cost perspective, minimizing on-device testing saves thousands of engineering hours.
-
-First, with The Infrastructure Cost Calculation, 1,000 local unit tests execute in ~10 seconds on a standard GitHub Actions runner. 1,000 instrumented tests require spinning up dozens of nested-virtualization emulator containers, consuming 40+ minutes of cloud runner compute and thousands of dollars in monthly CI billing. Next, with Robolectric as the Middle Tier, where code requires light Android framework abstractions (e.g. `Bundle`, `Intent`, `Parcelable`, or `ColorRes`), use Robolectric on the JVM. This keeps tests in `src/test/` while providing simulated framework fidelity without emulator overhead.
-Finally, with Architectural Separation as an Enabler, when architecture cleanly decouples domain logic into pure Kotlin modules (`:core:domain`), developers are physically prevented from importing Android framework classes, ensuring code remains 100% JVM testable by design.
-
+Under the hood, the boundary between JVM and device testing is defined by runtime bytecode execution, native framework bridges, and hardware abstraction layers.
+Local JVM tests compile against mockable-android.jar and run inside a desktop HotSpot or OpenJDK virtual machine.
+Because desktop JVMs lack Android's native Linux zygote process, Binder IPC drivers, and hardware security modules, any attempt to test Android Keystore or SQLite file transactions requires either mocking or third-party shadows.
+However, using shadows for complex hardware features introduces false confidence; Robolectric cannot replicate the exact cryptographic behavior of a hardware Trusted Execution Environment (TEE) or StrongBox keymaster.
+Therefore, cryptographic key generation, biometric cipher initialization, and Room schema migrations must be validated inside the real Android Runtime (ART) via an emulator or physical device.
+In src/androidTest, the test runner compiles code into Dalvik Executable (DEX) format and executes inside a real Linux process initialized by the Zygote daemon.
+This guarantees genuine interaction with the Linux kernel, native C++ libsqlite3 engines, and hardware drivers.
+Conversely, running pure business logic on an emulator wastes immense CI compute resources: booting an emulator takes minutes and running a suite takes ten times longer than on the JVM.
+Senior engineers enforce an architectural firewall: if code contains pure business algorithms or presentation state transitions, it must be testable on the JVM via dependency injection; device execution is reserved strictly for platform integration validation.
 
 ## How to answer in the interview
 

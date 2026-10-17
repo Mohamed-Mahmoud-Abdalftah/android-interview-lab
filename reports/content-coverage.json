@@ -700,7 +700,7 @@
       "topic": "AND",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": true
+      "hasKotlinCode": false
     },
     "AND-05": {
       "topic": "AND",
@@ -718,7 +718,7 @@
       "topic": "AND",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "AND-08": {
       "topic": "AND",
@@ -730,7 +730,7 @@
       "topic": "AND",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": true
+      "hasKotlinCode": false
     },
     "AND-10": {
       "topic": "AND",
@@ -796,7 +796,7 @@
       "topic": "AND",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "AND-21": {
       "topic": "AND",
@@ -2296,7 +2296,7 @@
       "topic": "SEC",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "SEC-04": {
       "topic": "SEC",
@@ -2626,13 +2626,13 @@
       "topic": "MOD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "MOD-03": {
       "topic": "MOD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "MOD-04": {
       "topic": "MOD",
@@ -2698,7 +2698,7 @@
       "topic": "MOD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": true
+      "hasKotlinCode": false
     },
     "MOD-15": {
       "topic": "MOD",
@@ -2716,7 +2716,7 @@
       "topic": "MOD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "MOD-18": {
       "topic": "MOD",
@@ -2728,7 +2728,7 @@
       "topic": "MOD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "MOD-20": {
       "topic": "MOD",
@@ -2740,7 +2740,7 @@
       "topic": "MOD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "BLD-01": {
       "topic": "BLD",
@@ -2770,7 +2770,7 @@
       "topic": "BLD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "BLD-06": {
       "topic": "BLD",
@@ -2794,7 +2794,7 @@
       "topic": "BLD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "BLD-10": {
       "topic": "BLD",
@@ -2812,7 +2812,7 @@
       "topic": "BLD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "BLD-13": {
       "topic": "BLD",
@@ -2866,7 +2866,7 @@
       "topic": "BLD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "TST-01": {
       "topic": "TST",
@@ -3004,13 +3004,13 @@
       "topic": "TST",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "TST-24": {
       "topic": "TST",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "CIC-01": {
       "topic": "CIC",
@@ -3070,7 +3070,7 @@
       "topic": "CIC",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "CIC-11": {
       "topic": "CIC",
@@ -3232,31 +3232,31 @@
       "topic": "LEAD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "LEAD-02": {
       "topic": "LEAD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "LEAD-03": {
       "topic": "LEAD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "LEAD-04": {
       "topic": "LEAD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "LEAD-05": {
       "topic": "LEAD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "LEAD-06": {
       "topic": "LEAD",
@@ -3268,13 +3268,13 @@
       "topic": "LEAD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "LEAD-08": {
       "topic": "LEAD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "LEAD-09": {
       "topic": "LEAD",
@@ -3286,37 +3286,37 @@
       "topic": "LEAD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "LEAD-11": {
       "topic": "LEAD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "LEAD-12": {
       "topic": "LEAD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "LEAD-13": {
       "topic": "LEAD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "LEAD-14": {
       "topic": "LEAD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "LEAD-15": {
       "topic": "LEAD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": false
+      "hasKotlinCode": true
     },
     "PAY-01": {
       "topic": "PAY",

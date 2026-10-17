@@ -20,6 +20,44 @@ Design a cross-feature account/session state without creating circular dependenc
 
 Design shared session ownership without feature-to-feature imports or a process-only singleton.
 
+## Concept and technical explanation
+
+Designing cross-feature account and session state without circular dependencies requires applying the Dependency Inversion Principle by hoisting authentication contracts into a dedicated foundational module, such as :core:session or :core:user. In a modularized Gradle architecture, independent feature modules (like :feature:checkout and :feature:profile) must never declare horizontal dependencies on each other. Instead, the shared session module defines the immutable UserSession data model and an authoritative SessionRepository interface exposing a StateFlow<UserSession?>. All feature modules depend downward on this core contract. A centralized network authenticator invalidates the session upon encountering HTTP 401 Unauthorized responses, while the root navigation graph in the :app module observes session state changes to execute global logout routing.
+
+## Practical walkthrough (English)
+
+Structuring cross-feature session state across independent Gradle modules:
+```kotlin
+// 1. In module ':core:session' (Foundational module with zero feature dependencies)
+data class UserSession(val userId: String, val authToken: String, val isPremium: Boolean)
+
+interface SessionRepository {
+    val activeSession: StateFlow<UserSession?>
+    suspend fun updateSession(session: UserSession)
+    suspend fun clearSession()
+}
+
+// 2. In module ':feature:checkout' (Depends solely on ':core:session', NOT on ':feature:profile')
+class CheckoutViewModel @Inject constructor(
+    private val sessionRepository: SessionRepository
+) : ViewModel() {
+    val isUserPremium: StateFlow<Boolean> = sessionRepository.activeSession
+        .map { it?.isPremium == true }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+}
+
+// 3. In module ':app' (Root orchestration module coordinating global logout)
+@Composable
+fun RootAppNavigation(sessionRepository: SessionRepository) {
+    val session by sessionRepository.activeSession.collectAsStateWithLifecycle()
+    if (session == null) {
+        AuthNavGraph() // Automatically navigates to Login on session expiration
+    } else {
+        MainAppNavGraph()
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تصمم حالة الحساب/الجلسة المشتركة (Cross-Feature Account/Session State) دون الوقوع في مشكلة التبعيات الدائرية (Circular Dependencies)؟
@@ -97,29 +135,23 @@ A multi-feature wallet app exposes `Authenticated(userId)` or `SignedOut` to fea
 
 ## Interview answer — short
 
-Design cross-feature session state by hoisting it into a lower-level `:core:session` or `:core:user` module that feature modules depend on unidirectionally. Expose an immutable `StateFlow<UserSession?>` from a singleton `SessionRepository`, preventing circular Gradle dependencies and enabling global reactive logout handling.
+Design cross-feature session state by hoisting it into a lower-level :core:session module that feature modules depend on unidirectionally. Expose an immutable StateFlow<UserSession?> from an authoritative SessionRepository, preventing circular Gradle compilation errors and enabling automatic global logout coordination through the root navigation graph.
 
 ## Interview answer — structured
 
-Managing cross-cutting account and session state across features without inducing circular dependencies requires strict architectural layering.
-
-First, **The Core Session Inversion Pattern**. Next, features (`:feature:checkout`, `:feature:settings`, `:feature:chat`) must never depend on each other horizontally.
-Instead, we hoist identity and session contracts into a dedicated foundational module: **`:core:session`** (or `:core:model`). `:core:session` has zero feature dependencies. All feature modules depend unidirectionally downward onto `:core:session`.
-**Reactive Session Repository**. Inside `:core:session`, a singleton `SessionRepository` manages active authentication credentials, exposing `val activeSession: StateFlow<UserSession?>`.
-Feature ViewModels inject `SessionRepository` to inspect user identity or observe permission changes. **Global Session Invalidation (401 Handling)**.
-An OkHttp Authenticator in `:core:network` catches HTTP 401 Unauthorized responses. It calls `sessionRepository.clearSession()`. Finally, the top-level `RootNavHost` in the `:app` module observes `activeSession`. When nullified, it tears down active feature graphs and routes immediately to authentication.
-
+Managing shared session state across modularized Android features without inducing circular Gradle dependencies requires strict unidirectional architecture.
+Feature modules such as checkout, account, and chat must never depend horizontally on one another. If feature payment imports feature account while account requires payment status, Gradle compilation halts with a circular dependency failure.
+To resolve this, we hoist session models and contracts downward into a dedicated foundational module: :core:session. This core module has zero dependencies on any feature modules. All feature modules declare a unidirectional downward dependency on :core:session.
+Within :core:session, a singleton SessionRepository owns the active authentication credentials, exposing an immutable StateFlow of UserSession. Feature ViewModels inject this repository to observe session state or check user permissions reactively.
+For global session termination, such as receiving an HTTP 401 Unauthorized response, an OkHttp authenticator in :core:network calls clearSession on the repository. The root navigation host in the top-level :app module observes the session flow; when the session becomes null, it invalidates active feature graphs and immediately routes to the login screen.
 
 ## Interview answer — deep senior
 
-Under the hood, in Gradle multi-module builds, circular dependencies (`:feature:A -> :feature:B -> :feature:A`) cause fatal compilation graph cycles. By applying the **Dependency Inversion Principle**, if Feature A needs to trigger an action in Feature B (e.g. Payment completed, navigate to Order History in Account), Feature A must **never import Feature B directly**.
-
-Instead, we use **API/Impl splits** or **Event/Navigation Hoisting**.
-
-First, feature A exposes an output navigation lambda: `onPaymentSuccess: (OrderId) -> Unit`. Finally, the top-level orchestration module (`:app`), which knows both `:feature:payment` and `:feature:account`, wires the navigation call from Payment to Account.
-
-This preserves complete compilation independence: the payment team can build and test `:feature:payment` in total isolation without compiling the account module.
-
+Under the hood, managing shared identity across a large-scale multi-module build requires preventing module graph cycles and memory leakage. Circular dependencies in Gradle are fatal compile-time errors because the build graph must form a Directed Acyclic Graph (DAG) to determine task ordering and compilation outputs.
+By decoupling session state into an API and Implementation structure—such as :core:session-api containing data classes and repository interfaces, and :core:session-data managing encrypted local storage—we minimize compilation dependencies. Feature modules compile against lightweight API interfaces without recompiling data sources when storage implementations change.
+When features need to interact across boundaries—for example, when a successful checkout in :feature:checkout must navigate to order history in :feature:profile—features must not navigate directly between each other. Instead, engineers use navigation event hoisting. The checkout feature exposes an output lambda or sealed navigation event such as onOrderCompleted, which the top-level :app orchestrator intercepts to route to the profile screen.
+Staff engineers also safeguard session lifecycle by avoiding insecure process-level global singletons. SessionRepository is backed by EncryptedSharedPreferences or encrypted Room storage and securely managed via Hilt in the SingletonComponent.
+When a session terminates, the repository cancels active user coroutines and wipes secure storage, guaranteeing that sensitive tokens and cached personal information never leak into subsequent sessions.
 
 ## How to answer in the interview
 

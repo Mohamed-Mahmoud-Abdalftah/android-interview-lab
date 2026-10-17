@@ -20,6 +20,44 @@ What is the Dependency Rule, and in which direction should dependencies point?
 
 Explain compile-time source dependencies versus runtime control flow and where interfaces are placed.
 
+## Concept and technical explanation
+
+The Dependency Rule is the central governance constraint of Clean Architecture: source code dependencies must point exclusively inward, toward higher-level policies and business entities. Inner layers (Domain) must have zero knowledge of outer layers (Presentation, Data, Frameworks, Database, Network), meaning no name, interface, function, or data type declared in an outer circle can be mentioned or imported by an inner circle. To enable inner business logic to communicate with external data sources or dispatch UI callbacks without violating this rule, architects apply the Dependency Inversion Principle (DIP). The inner domain layer declares abstract repository interfaces representing its requirements, while the outer data layer implements those contracts and converts external payloads into domain models. Inversion of control is resolved at application startup using dependency injection frameworks like Hilt or Dagger.
+
+## Practical walkthrough (English)
+
+Enforcing inward dependencies via Dependency Inversion in Kotlin:
+```kotlin
+// ==========================================
+// INNER CIRCLE: :core:domain (Pure Kotlin)
+// ==========================================
+data class PaymentTransaction(val id: String, val amount: Double, val status: String)
+
+// Domain declares the contract it needs; knows NOTHING about Retrofit or Room
+interface PaymentGateway {
+    suspend fun executePayment(amount: Double): Result<PaymentTransaction>
+}
+
+class ProcessPaymentUseCase(private val gateway: PaymentGateway) {
+    suspend operator fun invoke(amount: Double): Result<PaymentTransaction> {
+        if (amount <= 0.0) return Result.failure(IllegalArgumentException("Amount must be positive"))
+        return gateway.executePayment(amount)
+    }
+}
+
+// ==========================================
+// OUTER CIRCLE: :core:data (Depends on :core:domain)
+// ==========================================
+class StripePaymentGateway(
+    private val stripeApi: StripeApi // Retrofit dependency lives OUTSIDE
+) : PaymentGateway { // Implements inward domain interface!
+    override suspend fun executePayment(amount: Double): Result<PaymentTransaction> = runCatching {
+        val response = stripeApi.charge(StripeChargeRequest(amount))
+        response.toDomainTransaction()
+    }
+}
+```
+
 ## Explanation in Arabic
 
 ما هي قاعدة التبعية (The Dependency Rule)، وفي أي اتجاه يجب أن تشير التبعيات دائماً؟
@@ -89,30 +127,24 @@ A payment eligibility rule depends on a `PaymentStatusSource` contract. One adap
 
 ## Interview answer — short
 
-The Dependency Rule states that source code dependencies must only point inward toward higher-level policies (the Domain layer). Inner layers must have zero awareness of outer layers. Outer layers (UI, Network, Database) depend on interfaces declared by the Domain layer, realized at runtime via Dependency Inversion.
+Dependencies must point strictly inward toward pure business logic. Domain depends on nothing; Data and Presentation depend on Domain. We invert control using interfaces declared in Domain and implemented in Data, keeping core business policies completely insulated from framework volatility and third-party libraries.
 
 ## Interview answer — structured
 
-The Dependency Rule is the foundational postulate of Clean Architecture: **source code dependencies must strictly point inward toward higher-level business policies**.
+The Dependency Rule is the foundational governance principle of Clean Architecture dictating that source code dependencies must point exclusively inward.
 
-Under this rule, inner layers (Domain) must know absolutely nothing about outer layers (Data, UI, Frameworks). Nothing declared in an outer circle—such as a database class, a Retrofit API definition, an Android `Activity`, or a JSON parser—may be mentioned or imported by code in an inner circle.
+Inner layers represent high-level business policies and domain models, while outer layers represent volatile implementation mechanisms like UI frameworks, Room databases, and Retrofit network clients. The inner domain layer must know nothing about the outer layers, meaning no class in domain can import classes from data or presentation.
 
-The direction of dependencies is structured as follows.
-
-First, `Presentation / UI` -> depends on -> `Domain` Next, `Data` -> depends on -> `Domain`
-Finally, `Domain` -> depends on -> **Nothing (Pure Kotlin)**
-
-This protects core business value from framework churn. If the team migrates from Retrofit to Ktor, or swaps Room for SQLDelight, not a single line of business rule logic in the Domain layer is touched, invalidated, or recompiled.
+In production, when the domain layer requires information from an external database or network endpoint, it enforces the Dependency Inversion Principle. The domain layer declares an abstract repository interface representing the required business contract, and the outer data layer implements that interface.
+As for dependency injection, frameworks like Dagger and Hilt wire the concrete data implementation into the domain consumer at runtime, keeping compile-time dependencies strictly pointed inward while runtime execution flows outward to external drivers.
 
 
 ## Interview answer — deep senior
 
-A frequent question arises: how can the Domain layer drive data operations if it cannot depend on the Data layer? This is resolved via the **Dependency Inversion Principle (DIP)**. The Domain layer defines an abstraction—a `Repository` interface—that specifies the queries and mutations it requires. The Data layer, residing in the outer circle, imports the Domain module and implements that interface (`RepositoryImpl`).
-
-At application startup, the Dependency Injection container (Hilt/Koin) wires the concrete Data implementation to the Domain interface contract. Thus, at compile time, the source code dependency points inward, while at runtime, control flows outward through the interface abstraction.
-
-In Gradle multi-module codebases, we enforce this rule via module dependencies: `:core:domain` has zero module dependencies, while `:core:data` has `implementation(project(":core:domain"))`.
-
+Under the hood, the Dependency Rule decouples the lifespan of core business rules from external technology stacks. In traditional layered architectures, business logic frequently imported database DAOs or network models directly, creating a downstream dependency on third-party libraries and database schema definitions. When libraries change or APIs deprecate, business logic breaks.
+By enforcing an inward dependency direction, the domain layer defines its own stable contracts and models. The outer data layer references the domain module and maps external DTOs into domain entities before returning them. This inversion ensures that updating from Retrofit to Ktor or switching from Room to SQLDelight requires zero changes inside domain use cases or business validation rules.
+In modular Android architectures, this rule is strictly enforced by Gradle dependency graphs. The core domain module has no implementation dependency on data or presentation. Instead, app and data modules depend on domain, making accidental cyclic dependencies or illegal framework imports fail at compile time.
+Staff engineers pay close attention to boundary leaks where developers define domain repository interfaces that inadvertently leak external types—such as Retrofit Response objects or Room exceptions—into domain method signatures. True inward dependency requires all exceptions and responses to be mapped into domain-safe results before crossing the architectural boundary. This ensures complete isolation and allows enterprise applications to swap infrastructure layers with zero regression risk.
 
 ## How to answer in the interview
 

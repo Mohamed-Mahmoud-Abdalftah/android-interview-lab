@@ -21,6 +21,68 @@ How do you ensure atomic persistence of transaction status and reversal intent?
 - Atomic local transition pairing payment status with reversal intent.
 - Limits of local atomicity across provider boundary.
 
+## Concept and technical explanation
+
+Ensuring atomic persistence of transaction status transitions and reversal intent prevents state skew where a transaction is marked failed locally but the reversal is never dispatched:
+- The State Skew Trap (The Dual-Write Hazard):
+  - Scenario:
+    1. Client transitions transaction status from `PROCESSING` to `UNKNOWN` or `FAILED` in the database.
+    2. App attempts to enqueue a background reversal job in WorkManager or a separate table.
+    3. The OS kills the process between steps 1 and 2 due to low memory or user swipe.
+  - Consequence: The database marks the payment failed, but the reversal intent was never recorded. The issuer keeps the cardholder funds locked indefinitely.
+- The Architectural Solution: Atomic Two-Phase Database Transactions:
+  - Both mutations must execute within a single atomic database transaction (`db.withTransaction` or `BEGIN IMMEDIATE TRANSACTION`).
+  - Table 1: `payment_transactions` (Updates status to `IN_DOUBT`).
+  - Table 2: `reversal_queue` (Inserts reversal record containing transactionId, correlationId, STAN, amount, retryCount, and payload).
+- SQLite ACID Guarantees:
+  - Atomicity ensures that either both mutations are committed to the Write-Ahead Log (WAL) or neither is.
+  - Durability ensures that once committed, power disconnection cannot corrupt or revert the queued reversal intent.
+
+## Practical walkthrough (English)
+
+Executing atomic transaction state update and reversal queuing in Kotlin Room:
+```kotlin
+@Entity(tableName = "reversal_queue")
+data class ReversalQueueEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val transactionId: String,
+    val correlationId: String,
+    val amountCents: Long,
+    val originalStan: String,
+    val retryCount: Int = 0,
+    val createdAtEpoch: Long = System.currentTimeMillis()
+)
+
+class PaymentPersistenceCoordinator(
+    private val appDatabase: AppDatabase,
+    private val paymentDao: PaymentDao,
+    private val reversalDao: ReversalDao
+) {
+    suspend fun markTransactionInDoubtAndQueueReversal(
+        transactionId: String,
+        correlationId: String,
+        amount: Long,
+        stan: String
+    ) {
+        // ATOMIC GUARANTEE: Single SQLite transaction ensures zero state skew
+        appDatabase.withTransaction {
+            // Step 1: Update transaction journal to IN_DOUBT state
+            paymentDao.updateStatus(transactionId, "IN_DOUBT")
+
+            // Step 2: Enqueue reversal intent in the persistent table
+            reversalDao.insertReversal(
+                ReversalQueueEntity(
+                    transactionId = transactionId,
+                    correlationId = correlationId,
+                    amountCents = amount,
+                    originalStan = stan
+                )
+            )
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تضمن التخزين الذري الحتمي (Atomic Persistence) لحالة المعاملة ونية العكس (Reversal Intent) في أندرويد؟
@@ -126,24 +188,22 @@ Production has unique constraints on original operation ID, a worker lease/claim
 
 ## Interview answer — short
 
-Ensure atomic persistence of transaction status and reversal intent by executing both operations inside a single database transaction (@Transaction in Room/SQLite). If a sudden power loss occurs, SQLite WAL guarantees that both the status update and the reversal queue insertion succeed together or rollback completely.
+Ensure atomic persistence by wrapping the transaction state update and the reversal queue insertion inside a single atomic SQLite database transaction using Room's withTransaction. This eliminates the dual-write hazard, guaranteeing that if a timeout occurs, the in-doubt status and the reversal intent are committed together to the Write-Ahead Log, surviving sudden power loss or process death.
 
 ## Interview answer — structured
 
-Atomic persistence prevents state divergence between payment status records and outbound reversal queues.
-
-First, **The Dual-Write Vulnerability**. Next, when handling an ambiguous payment outcome (such as a gateway read timeout), two state mutations must occur: (1) transitioning the transaction status to `IN_DOUBT`, and (2) enqueuing a reversal payload in the pending dispatch queue. If performed as separate uncoordinated queries, a crash in between drops the reversal intent while recording a failed status, permanently leaking held customer funds.
-**SQLite ACID Transaction Guarantees**. Wrap both operations in an atomic database transaction using Room's `@Transaction` annotation or `db.runInTransaction { ... }`. SQLite's Write-Ahead Log (WAL) ensures that either both mutations are durably committed to the database file or neither takes effect, preventing partial state writes.
-**Deterministic WorkManager Triggering**. Finally, following the successful database transaction commit, schedule a persistent `OneTimeWorkRequest` with exponential backoff to dispatch the reversal. If the device powers off immediately after the commit, WorkManager inspects the pending table upon boot and resumes dispatch automatically.
-
+Atomic persistence of transaction status and reversal intent is necessary to avoid catastrophic state skew in financial applications.
+When a transaction encounters a network timeout, the application must mark the transaction as in-doubt and enqueue a reversal instruction to cancel the cardholder hold. If these two operations are executed separately, a process crash or battery removal between them leaves the database showing a failed transaction while the reversal intent vanishes. The customer's funds remain locked at the bank with no automated recovery path.
+To resolve this, the system executes both mutations inside a single atomic database transaction using Room's withTransaction block. The database simultaneously updates the payment record to in-doubt and inserts a new entry into the persistent reversal queue table.
+Because SQLite guarantees atomicity and durability via Write-Ahead Logging, either both records are permanently committed to disk or neither is, ensuring that unacknowledged authorizations are always paired with a durable reversal intent.
 
 ## Interview answer — deep senior
 
-From an ACID transaction isolation and POS hardware crash perspective, atomicity requires hardware-aware sequencing.
-
-First, with Isolation Levels in Android SQLite, SQLite operates with `SERIALIZABLE` transaction isolation by default in WAL mode. This guarantees that background sync workers reading the `reversal_queue` cannot observe a half-written transaction state while the UI thread is committing an in-doubt payment. Next, with Immutable Reversal Enqueueing, store the exact raw cryptographic payload required for the reversal (e.g. Original STAN, terminal ID, card cryptogram, transaction amount) inside the `reversal_queue` table. Do not rely on recomputing the payload later, as volatile context variables will be lost if the process restarts.
-Finally, with Battery-Removal Defense, on Android POS smart terminals, users frequently pull the battery pack to force-reset frozen screens. By executing `markInDoubtAndEnqueueReversal` before attempting any UI teardown or navigation, the reversal intent is guaranteed to survive the hard reset.
-
+From an ACID database guarantees and mission-critical financial engineering perspective, dual-write operations represent the single most common source of payment state desynchronization.
+The dual-write problem occurs whenever an application attempts to modify two independent storage constructs or state stores sequentially without distributed transactional semantics. In POS terminals, marking a payment as Unknown in SQLite while registering a reversal task in WorkManager as two separate operations creates an unavoidable race window. If the Low Memory Killer or a user battery disconnection occurs precisely after the database write but prior to the WorkManager enqueue, the reversal intent evaporates. The client considers the transaction terminated, but the card brand ledger maintains an active authorization hold.
+The robust engineering solution decouples external job scheduling from state persistence by employing the Transactional Outbox pattern backed by SQLite ACID transactions.
+Within a single database transaction using SQLite's BEGIN IMMEDIATE mode, the system updates the payment journal record to IN_DOUBT and inserts a corresponding record into a dedicated reversal_queue table. SQLite's Write-Ahead Log guarantees that both rows are flushed to non-volatile flash memory simultaneously.
+A separate, idempotent background worker continuously polls the reversal_queue table or listens to Room invalidation trackers. Even if the terminal experiences immediate power loss, the recovery engine during device boot detects the pending row in the reversal_queue and dispatches the ISO 8583 reversal message. This architecture guarantees zero orphan transactions and perfect ledger consistency.
 
 ## How to answer in the interview
 

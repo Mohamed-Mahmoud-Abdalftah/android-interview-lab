@@ -20,6 +20,39 @@ Compare catch, retry, retryWhen, and onCompletion.
 
 Compare upstream catch, retry/retryWhen predicates and completion observation.
 
+## Concept and technical explanation
+
+Flow error handling and completion mechanisms rely on catch, retry, retryWhen, and onCompletion, which provide structured, declarative management of exceptions and termination lifecycles without disrupting coroutine hierarchies.
+catch encapsulates upstream exceptions, preventing crashes by handling errors, executing recovery logic, or emitting fallback default states; crucially, it handles exceptions occurring strictly upstream, leaving downstream collector exceptions untouched.
+retry and retryWhen intercept upstream exceptions and resubscribe to the upstream flow from the beginning, either for a fixed iteration count or based on dynamic predicate evaluations (such as applying exponential backoff delays for network recovery).
+onCompletion acts as a reactive finally block, executing when the flow terminates either normally upon reaching EOF or exceptionally due to an unhandled failure or cancellation, receiving a nullable Throwable cause parameter to distinguish clean completion from failure.
+
+## Practical walkthrough (English)
+
+Resilient error handling and retry with exponential backoff:
+```kotlin
+fun observeExchangeRates(): Flow<ExchangeRates> = flow {
+    emit(api.fetchLiveRates()) // Might throw IOException
+}
+.retryWhen { cause, attempt ->
+    if (cause is IOException && attempt < 3) {
+        val backoffDelay = (attempt + 1) * 1000L
+        delay(backoffDelay) // Exponential backoff: 1s, 2s, 3s
+        true // Resubscribes upstream
+    } else {
+        false // Do not retry, let exception propagate to catch
+    }
+}
+.catch { throwable ->
+    // Handle error gracefully by emitting offline cached rates:
+    emit(cacheDao.getCachedRates())
+}
+.onCompletion { cause ->
+    if (cause != null) logError("Stream terminated with error: $cause")
+    else logInfo("Stream completed successfully")
+}
+```
+
 ## Explanation in Arabic
 
 المقارنة بين مشغلات معالجة الأخطاء وإنهاء التدفق `catch` و `retry` و `retryWhen` و `onCompletion`:
@@ -100,43 +133,26 @@ A feed repository retries transient read failures with capped backoff and then e
 
 ## Interview answer — short
 
-catch intercepts upstream exceptions and emits fallback values; retry attempts upstream re-collection for a fixed count; retryWhen provides dynamic retry predicates with exponential backoff; and onCompletion executes cleanup upon completion or failure, analogous to a finally block.
+catch captures upstream exceptions and can emit fallback values; retry and retryWhen re-collect upstream upon errors based on retry counts or backoff predicates; and onCompletion executes at stream termination, receiving a nullable Throwable indicating clean completion or failure.
 
 ## Interview answer — structured
 
-These operators handle resilience, recovery, and cleanup across the lifecycle of a Flow:
+Declarative error operators in Flow isolate exception handling from procedural try-catch blocks.
 
-**`catch`** intercepts exceptions thrown by upstream operators or the producer block. It allows graceful recovery by inspecting the error, logging telemetry, or emitting a fallback state via `emit()`. Crucially, `catch` only intercepts upstream errors; it does not catch exceptions thrown inside the downstream `collect { }` block.
+Catch intercepts errors originating strictly upstream. When an upstream database query or network call throws an exception, catch absorbs the failure, logs diagnostic telemetry, and conditionally emits a fallback state, preventing unhandled exceptions from crashing the parent CoroutineScope.
 
-**`retry`** transparently re-subscribes to the upstream flow if an upstream exception occurs, up to a specified attempt count.
+In production, transient network failures require resilience. retry resubscribes up to a fixed attempt limit, while retryWhen allows senior engineers to implement exponential backoff by inspecting the error type and applying delay before returning true.
 
-**`retryWhen`** is the advanced predicate version, passing the `Throwable` and the current `attempt` counter. It allows implementing exponential backoff with jitter via `delay()` and selectively retrying transient IOExceptions while failing immediately on permanent 4xx errors.
-
-**`onCompletion`** executes when the stream terminates, receiving a nullable `Throwable?` parameter. If `cause == null`, the flow finished normally; if non-null, it completed due to an exception or cancellation. It serves as Flow's reactive `finally` block for closing resources.
+OnCompletion serves as the declarative lifecycle finalizer. It executes regardless of whether the stream finishes normally, cancels due to lifecycle changes, or aborts via an error, enabling deterministic cleanup of socket handles, file descriptors, and loading indicators.
 
 
 ## Interview answer — deep senior
 
-A frequent architecture trap in code reviews is placing `catch` above operators that might also fail, or failing to handle errors thrown inside `collect`:
-
-```kotlin
-// ❌ BUG: catch does not intercept collect errors:
-flow.catch { emit(Fallback) }
-    .collect { throw RuntimeException() } // Crash! catch cannot see this!
-```
-
-To catch errors that occur during element handling, the recommended pattern is moving the collection logic into `onEach` before `catch`, and terminating with a plain `collect()`:
-
-```kotlin
-// ✅ SAFE: catches both producer and processing errors:
-flow
-    .onEach { processItem(it) }
-    .catch { handleException(it) }
-    .collect()
-```
-
-Furthermore, inside `catch`, `CancellationException` is respected by default: if a collector coroutine is cancelled, `catch` rethrows `CancellationException` to preserve structured concurrency.
-
+Under the hood in kotlinx.coroutines.flow, catch operates by intercepting exceptions thrown during upstream FlowCollector.emit or transformation calls. When an exception is trapped, catch verifies the exception type: if the exception is a CancellationException, it rethrows it immediately to preserve structured concurrency cancellation semantics.
+Crucially, catch cannot trap downstream exceptions. If an exception is thrown inside the action block of collect { ... }, downstream of catch, catch will not intercept it, causing the coroutine to crash. To protect against downstream collection crashes, developers must place catch after intermediate operators or wrap the collector block in procedural try-catch.
+retry and retryWhen operate by wrapping the upstream flow inside an iterative loop. When an exception occurs, if the predicate returns true, the operator cancels the failed subscription and invokes collect on the original upstream Flow from the beginning. This requires upstream producers to be idempotent; if an upstream flow performed partial mutations before throwing, retrying without rollback duplicates operations.
+In addition, onCompletion intercepts stream termination by inspecting the nullable Throwable cause parameter. If upstream fails or the parent job cancels, the cause is forwarded into the lambda for diagnostics and resource cleanup before the exception propagates downstream.
+Staff engineers structure error boundaries cleanly: placing retryWhen with backoff upstream, followed by catch emitting cached UI state models, and finishing with onCompletion resetting loading spinners.
 
 ## How to answer in the interview
 

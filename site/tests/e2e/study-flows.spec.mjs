@@ -130,19 +130,30 @@ test('bilingual language switching and shared progress persistence', async ({ pa
   await practiceEn.getByRole('textbox', { name: 'Private note / your answer' }).fill('Bilingual persistence test note.');
   await expect(practiceEn.getByText('Saved locally')).toBeVisible();
 
-  // 2. Switch to Arabic page
-  await page.goto(`${base}ar/lab/questions/kot-01/`);
+  // 2. Switch to Arabic using the REAL Starlight header language dropdown
+  const langSelectEn = page.getByLabel('Select language').first();
+  await langSelectEn.selectOption({ label: 'العربية' });
+  await expect(page).toHaveURL(/\/ar\/lab\/questions\/kot-01\/$/);
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   await expect(page.locator('html')).toHaveAttribute('lang', /^ar/);
   await expect(page.getByRole('heading', { name: 'إجابة المقابلة — مناقشة Senior متعمقة' })).toBeVisible();
+
+  // Verify full Arabic content rendering
+  await expect(page.getByRole('heading', { name: 'ما يقيّمه المحاور' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'المفاضلات الهندسية ومعايير القرار' })).toBeVisible();
 
   // Verify progress is shared across language switch!
   const practiceAr = page.locator('lab-question');
   await expect(practiceAr.getByRole('button', { name: 'إزالة من المفضلة' })).toHaveAttribute('aria-pressed', 'true');
   await expect(practiceAr.getByRole('textbox', { name: 'ملاحظة خاصة / إجابتك الشخصية' })).toHaveValue('Bilingual persistence test note.');
 
-  // 3. Switch back to English page
-  await page.goto(`${base}lab/questions/kot-01/`);
+  // 3. Switch back to English using the Arabic page's Starlight header language dropdown
+  const langSelectAr = page.getByLabel('Select language').first();
+  await langSelectAr.selectOption({ label: 'English' });
+  await expect(page).toHaveURL(/\/lab\/questions\/kot-01\/$/);
+  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.getByRole('heading', { name: 'Interview answer — deep senior' })).toBeVisible();
   await expect(practiceEn.getByRole('button', { name: 'Remove bookmark' })).toHaveAttribute('aria-pressed', 'true');
   await expect(practiceEn.getByRole('textbox', { name: 'Private note / your answer' })).toHaveValue('Bilingual persistence test note.');
 });

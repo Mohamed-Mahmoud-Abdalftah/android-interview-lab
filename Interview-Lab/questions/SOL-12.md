@@ -20,6 +20,47 @@ How does strategy-based payment routing support OCP?
 
 Use provider strategy to isolate variation while stating what remains in shared payment policy.
 
+## Concept and technical explanation
+
+Strategy-based payment routing supports the Open/Closed Principle (OCP) by encapsulating variable payment provider mechanics behind a stable, polymorphic contract. In transactional systems, business logic must adapt dynamically to diverse payment rails such as Google Pay, Stripe, PayPal, and local gateways without continually editing core checkout workflows. By defining a common PaymentStrategy interface and leveraging dependency injection multibindings, adding a new gateway becomes an entirely additive operation: developers write a new isolated strategy class and register it into the DI graph, keeping core orchestrator classes strictly closed to modification.
+
+## Practical walkthrough (English)
+
+Implementing an extensible payment routing architecture adhering to OCP:
+```kotlin
+// 1. Stable abstraction contract
+interface PaymentStrategy {
+    fun supports(method: PaymentMethod): Boolean
+    suspend fun processPayment(amount: Long, payload: PaymentData): Result<TransactionReceipt>
+}
+
+// 2. Additive concrete payment rail implementations
+class StripePaymentStrategy @Inject constructor(private val stripeClient: StripeClient) : PaymentStrategy {
+    override fun supports(method: PaymentMethod) = method is PaymentMethod.CreditCard
+    override suspend fun processPayment(amount: Long, payload: PaymentData): Result<TransactionReceipt> {
+        return runCatching { stripeClient.charge(amount, payload.token) }
+    }
+}
+
+class GooglePayStrategy @Inject constructor(private val gPayClient: GooglePayClient) : PaymentStrategy {
+    override fun supports(method: PaymentMethod) = method is PaymentMethod.GooglePay
+    override suspend fun processPayment(amount: Long, payload: PaymentData): Result<TransactionReceipt> {
+        return runCatching { gPayClient.authorizeAndCapture(amount) }
+    }
+}
+
+// 3. Routing orchestrator is strictly CLOSED to modification
+class PaymentRouter @Inject constructor(
+    private val strategies: Set<@JvmSuppressWildcards PaymentStrategy>
+) {
+    suspend fun routePayment(method: PaymentMethod, amount: Long, payload: PaymentData): Result<TransactionReceipt> {
+        val strategy = strategies.firstOrNull { it.supports(method) }
+            ?: return Result.failure(IllegalArgumentException("Unsupported payment rail: $method"))
+        return strategy.processPayment(amount, payload)
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف يدعم توجيه المدفوعات القائم على الاستراتيجية (Strategy-Based Payment Routing) مبدأ Open/Closed Principle (OCP)؟
@@ -101,26 +142,25 @@ A wallet app routes card and bank methods through adapters, persists request IDs
 
 ## Interview answer — short
 
-Strategy-based payment routing implements OCP by abstracting providers behind a common `PaymentStrategy` interface. A `PaymentRouter` delegates payments to the matching strategy at runtime. New payment methods are introduced by adding new strategy classes without modifying, recompiling, or risking regressions in existing payment code.
+Strategy-based payment routing upholds OCP by delegating transaction execution to polymorphic strategy classes conforming to a common interface. Instead of maintaining a central checkout class with growing when statements that require editing for every new payment method, the router receives a collection of strategies via dependency injection. Adding a new provider like Google Pay simply requires implementing the interface in a new class, leaving the orchestrator completely untouched and free from regression risks.
 
 ## Interview answer — structured
 
-Strategy-based payment routing is the premier textbook demonstration of the Open/Closed Principle (OCP) in production architecture.
-
-First, **The Anti-Pattern (Closed to Extension, Open to Modification)**. Next, a centralized `PaymentManager` uses a massive `when(type)` statement branching into credit card, PayPal, and crypto logic.
-Every time a product manager requests Apple Pay or a regional provider, engineers must edit `PaymentManager.kt`. This introduces regression risks to existing revenue streams, causes Git merge conflicts, and invalidates existing payment test suites. **The OCP Architecture (Open to Extension, Closed to Modification)**.
-With Abstractions, define a `PaymentStrategy` interface with `authorize(amount, details)`. With Concrete Strategies, each provider is encapsulated in an isolated class: `StripeStrategy`, `PayPalStrategy`, `GooglePayStrategy`.
-Finally, a The Open Router is the `PaymentRouter` depends strictly on a collection of injected strategies (`Set<PaymentStrategy>`), selecting the appropriate handler by querying `strategy. Method == requestedMethod`.
-
-Adding a new provider requires creating a new class and registering it with Dagger/Hilt; the core `PaymentRouter` and existing providers remain 100% untouched and closed to modification.
-
+Using the Strategy pattern for payment routing is a quintessential textbook demonstration of the Open/Closed Principle in enterprise Android engineering.
+In anti-pattern architectures, payment routing is implemented through a centralized checkout manager with a massive when expression. Every time business requirements introduce a new payment method or regional banking rail, engineers are forced to open the critical checkout class, add a new conditional branch, and modify existing code. This introduces high regression risk, invalidates past QA certification, and causes merge conflicts among feature teams.
+To uphold OCP, the checkout mechanism is divided into an orchestrator and isolated strategies.
+First, a PaymentStrategy interface defines the contract, requiring each strategy to declare which payment methods it supports and execute the transaction.
+Second, each provider (Stripe, PayPal, Google Pay) is implemented as a self-contained strategy class encapsulating its specific SDK dependencies and error mapping.
+Third, the orchestrating PaymentRouter injects a set of strategies using Dagger Multibindings (@IntoSet). At runtime, it iterates through the injected set to select and execute the appropriate strategy polymorphically.
+When new payment methods arrive, engineers write a new strategy without altering a single line of existing routing logic.
 
 ## Interview answer — deep senior
 
-Under the hood, Dagger/Hilt's **Multibindings (`@IntoSet`)** perfectly operationalizes this pattern. A feature module can define `class KlarnaStrategy : PaymentStrategy` and bind it into the multibinding set inside its own internal Hilt module. The core `:feature:payment` module doesn't even have a compile-time dependency on Klarna's SDK! Dagger collects all strategies at application assembly time, realizing true runtime extensibility without coupling.
-
-In testing, verifying `PaymentRouter` requires a simple unit test with mock/fake strategies to ensure it returns the correct error when a method is unsupported, while each strategy's network integration is tested in complete isolation.
-
+Under the hood, strategy-based payment routing replaces hardcoded compiler branch instructions (tableswitch or lookupswitch bytecodes) with dynamic polymorphic dispatch and set lookups.
+In a large multi-module Gradle architecture, this pattern provides significant compilation avoidance benefits. If the central payment router directly imports Stripe, PayPal, and Google Pay SDKs, the payment feature module becomes coupled to massive external vendor dependencies. Upgrading the Stripe SDK triggers a complete recompilation of the checkout feature module and all its consumers.
+By applying OCP with Dagger Multibindings, the core :feature:checkout module depends solely on the abstract PaymentStrategy interface. Each provider lives in its own isolated Gradle module: :payment:stripe, :payment:googlepay, and :payment:paypal.
+These provider modules plug their strategies into the Dagger dependency graph via @Binds @IntoSet within their respective Hilt modules. The :feature:checkout module never compiles against the third-party payment SDKs, keeping incremental compilation times minimal and enabling parallel compilation across CI build nodes.
+Furthermore, this architecture maximizes runtime safety and testing velocity. Unit testing the PaymentRouter requires only passing a simple mock or fake strategy into the set, verifying routing logic in milliseconds on the JVM without loading heavyweight merchant SDKs or native cryptography libraries. This design isolates transient vendor API breaking changes from affecting the core checkout pipeline, guaranteeing maximum transactional reliability.
 
 ## How to answer in the interview
 

@@ -22,6 +22,39 @@ How do you identify avoidable recomposition?
 - Separate composition, layout, and draw costs.
 - Trace state reads, unstable inputs, and expensive body work before changing code.
 
+## Concept and technical explanation
+
+Identifying avoidable recomposition in Jetpack Compose involves systematically auditing UI trees using developer tooling, compiler metrics, and runtime profiling. Avoidable recompositions occur when composable functions re-execute despite their visually rendered content remaining unchanged, typically triggered by unstable parameter types, frequent ambient state reads hoisted unnecessarily high, or instantiating unmemoized objects inside composable bodies. Engineers diagnose these regressions using the Android Studio Layout Inspector recomposition counters, Compose Compiler metrics reports, and runtime recomposition highlighting modifiers.
+
+## Practical walkthrough (English)
+
+Diagnosing and eliminating an avoidable recomposition loop:
+```kotlin
+// ❌ AVOIDABLE RECOMPOSITION: Reading scroll position too early in parent hierarchy!
+// The entire ParentScreen recomposes on every single scrolled pixel!
+@Composable
+fun BadParentScreen(listState: LazyListState) {
+    // ❌ ANTI-PATTERN: Reading scroll offset directly causes entire screen to recompose on every pixel!
+    val offset = listState.firstVisibleItemScrollOffset
+
+    HeaderView(offset = offset)
+    LazyColumn(state = listState) { /* items */ }
+}
+
+// ✅ FIXED: Defer state reads using lambda modifiers or derivedStateOf!
+@Composable
+fun OptimizedParentScreen(listState: LazyListState) {
+    // Reading state is deferred directly to the layout phase via a lambda!
+    HeaderView(
+        modifier = Modifier.offset {
+            // State read happens in LAYOUT phase, completely bypassing COMPOSITION phase!
+            IntOffset(x = 0, y = listState.firstVisibleItemScrollOffset)
+        }
+    )
+    LazyColumn(state = listState) { /* items */ }
+}
+```
+
 ## Explanation in Arabic
 
 كيفية اكتشاف وتحديد عمليات الـ Recomposition الزائدة غير الضرورية (Avoidable Recompositions) ومعالجتها:
@@ -110,24 +143,30 @@ Capture baseline frame metrics, relevant traces and UI correctness tests. Change
 
 ## Interview answer — short
 
-Identify avoidable recomposition using Android Studio Layout Inspector (tracking Recomposition Counts vs Skip Counts) and Compose Compiler Metrics. Fix it by eliminating unstable parameters, wrapping heavy allocations in `remember`, deferring state reads to the layout/draw phases via lambdas, and dampening high-frequency reads with `derivedStateOf`.
+We identify avoidable recompositions using Android Studio Layout Inspector, Compose Compiler metrics reports, and runtime profiling tools. Layout Inspector displays real-time recomposition and skip counts for every node. Compiler metrics generate reports flagging restartable and skippable composables and highlighting unstable parameters. Common fixes include stabilizing data models, wrapping expensive objects in remember, using derivedStateOf, and deferring state reads to the layout phase via lambda modifiers.
 
 ## Interview answer — structured
 
-Detecting and eliminating avoidable recompositions is central to maintaining 60/120fps UI fluidity.
-
-First, **Detection Tools**. Next, with Android Studio Layout Inspector, we enable recomposition highlights and inspect the **Recomposition Count** and **Skip Count** columns in real-time. If interacting with a single widget (e.g. Typing in a search bar) increments the recomposition count of distant, unrelated UI elements while their skip count remains zero, a state leak or unstable parameter is present.
-Additionally, with Compose Compiler Metrics, generating compiler metrics reveals which composables are marked as `unskippable` and highlights exact unstable parameters. **Common Root Causes & Fixes**.
-With Unstable Parameter Leaks, using unstable collections (`List<T>`). Solved with `@Immutable` or `ImmutableList`. With Premature State Reading, reading rapidly changing state (like scroll offset) in the *composition phase*. Solved by deferring reads to the *layout or draw phase* using lambda-based modifiers (`Modifier.offset { ... }` or `drawBehind { ... }`).
-Finally, with Unmemoized Allocations, creating fresh objects on every recomposition pass without `remember`.
-
+Diagnosing and eliminating avoidable recomposition is a core discipline for senior Android engineers ensuring fluid 60fps or 120fps UI performance.
+Avoidable recompositions occur when composables re-run without producing any visual change.
+The primary diagnostic tool is Android Studio's Layout Inspector.
+When connected to a running debug build, Layout Inspector overlays live Recomposition Count and Skip Count columns beside the component tree.
+If a component's recomposition count increments continuously during idle states or simple scrolling while its skip count remains zero, that composable is suffering from avoidable recomposition.
+The second essential tool is Compose Compiler Metrics.
+By passing compiler flags like reportsDestination in Gradle, the compiler generates text files detailing which composables are skippable versus restartable-only, explicitly listing unstable parameters like standard Lists or third-party classes.
+The third diagnostic technique is using debug highlighting modifiers like recomposeHighlighter, which flashes colored bounding boxes around composables as they recompose.
+Once identified, engineers resolve these bottlenecks by wrapping collections in @Immutable wrappers, deferring state reads to layout or draw phases, and memoizing lambdas and calculations with remember.
 
 ## Interview answer — deep senior
 
-Understanding Compose's three rendering phases—**Composition**, **Layout**, and **Draw**—is the highest-leverage insight for optimization. If a state is read during the Composition phase, any mutation forces the composable function to re-execute from top to bottom. If state is read strictly during the Layout phase (inside `MeasurePolicy` or a layout lambda modifier), Compose **skips composition entirely** and executes only layout measurement. If state is read in the Draw phase (inside `Modifier.drawWithContent { ... }`), Compose skips both composition and layout, jumping directly to the canvas draw pass!
-
-Another critical check is **Lambda Stabilization**. Passing inline lambdas that capture changing values or unstable parent properties invalidates the lambda instance on every pass unless Strong Skipping is enabled or the lambda is hoisted or wrapped in `remember`.
-
+Under the hood, diagnosing recompositions requires understanding Compose's three distinct rendering phases: Composition, Layout, and Draw.
+Avoidable recomposition regressions almost always stem from reading high-frequency state during the Composition phase when the read could have been deferred to the Layout or Draw phases.
+When you read a SnapshotState primitive (such as scroll offset or animation progress) directly in a composable function body, Compose registers a dependency inside the current RecomposeScope. Every frame tick invalidates that scope, forcing the Compose runtime to re-execute the function, allocate new layout nodes, and reconcile the SlotTable.
+By deferring the state read using lambda-based modifiers—such as Modifier.offset { IntOffset(0, state.value) } or Modifier.drawBehind { drawCircle(...) }—the state read is deferred past the Composition phase entirely.
+When the state mutates, Compose skips the Composition phase and invalidates only the LayoutNode or RenderNode directly on the hardware canvas, achieving near-zero CPU overhead.
+Furthermore, analyzing compiler metrics reports (specifically *-composables.txt and *-classes.txt) reveals stability signatures.
+If a function is marked restartable but not skippable, the report pinpoints the exact culprit parameter marked as unstable.
+Senior engineers integrate compiler metrics audits into CI pipelines to fail pull requests that introduce accidental stability regressions into critical user journeys. This automated enforcement guarantees that production apps maintain zero-jank UI responsiveness across all supported device tiers.
 
 ## How to answer in the interview
 

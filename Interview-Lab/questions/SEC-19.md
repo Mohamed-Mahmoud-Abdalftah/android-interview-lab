@@ -21,6 +21,59 @@ How do you secure WebView, JavaScript bridges, and file/content URIs?
 - WebView origin/content controls and JavaScript bridge exposure.
 - File/content URI handling and external URL navigation.
 
+## Concept and technical explanation
+
+Securing Android WebView components requires mitigating cross-site scripting (XSS), arbitrary code execution via JavaScript bridges, and local file exfiltration through file and content URIs. WebViews run Chromium rendering engines inside the host application process, meaning compromised web content shares the app's full sandboxed storage and network permissions. First, local file access must be explicitly disabled via WebSettings: setAllowFileAccess(false), setAllowContentAccess(false), and disallowing cross-file access. Instead of loading sensitive assets via file:// schemes, applications use WebViewAssetLoader, which intercepts requests and serves local assets under a virtual, secure HTTPS domain. Second, exposing native methods via @JavascriptInterface represents a critical threat: any untrusted page loaded into the WebView or injected via XSS can invoke exposed native methods. Applications must restrict JavaScript bridges exclusively to trusted first-party HTTPS domains, enforce strict origin verification inside shouldOverrideUrlLoading, and avoid injecting bridge objects into WebViews that navigate open web URLs.
+
+## Practical walkthrough (English)
+
+Hardening WebView settings, asset loading, and domain-bound JavaScript bridge:
+```kotlin
+// 1. Hardening WebView settings to eliminate file scheme vulnerabilities
+fun configureSecureWebView(webView: WebView, context: Context) {
+    webView.settings.apply {
+        javaScriptEnabled = true // Enable only if strictly necessary
+        allowFileAccess = false // Block raw local file access
+        allowContentAccess = false // Block content:// provider access
+        // Disallow cross-origin access from file URLs
+        allowFileAccessFromFileURLs = false
+        allowUniversalAccessFromFileURLs = false
+        mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+    }
+
+    // 2. Safe local asset loading via virtual HTTPS domain
+    val assetLoader = WebViewAssetLoader.Builder()
+        .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
+        .build()
+
+    webView.webViewClient = object : WebViewClient() {
+        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+            return assetLoader.shouldInterceptRequest(request.url)
+        }
+
+        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+            val url = request.url.toString()
+            // Strict allowlist: only navigate within first-party domain
+            return if (url.startsWith("https://checkout.bank.example.com/")) {
+                false // Allow navigation
+            } else {
+                true // Block untrusted third-party navigation!
+            }
+        }
+    }
+
+    // 3. Secure JavascriptInterface bound to trusted origin
+    webView.addJavascriptInterface(SecurePaymentBridge(), "AndroidPaymentBridge")
+}
+
+class SecurePaymentBridge {
+    @JavascriptInterface
+    fun notifyPaymentCompleted(orderId: String) {
+        // Enforce strict parameter validation and verify caller state
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تقوم بتأمين الـ WebView، جسور الـ JavaScript، والوصول إلى ملفات النظام و الـ Content URIs؟
@@ -140,25 +193,28 @@ Security tests enumerate loaded domains, redirects, bridge methods and URI grant
 
 ## Interview answer — short
 
-Secure WebViews by disabling allowFileAccess and allowContentAccess, loading local bundled content safely via AndroidX WebViewAssetLoader under a virtual HTTPS origin, canceling onReceivedSslError unconditionally, and strictly restricting addJavascriptInterface to audited, whitelisted internal origins.
+We secure WebView by disabling local file and content access, serving local assets under virtual HTTPS using WebViewAssetLoader, blocking mixed content, and strictly restricting JavaScript interfaces to verified first-party HTTPS domains to prevent malicious scripts from executing native code.
 
 ## Interview answer — structured
 
-Hardening Android WebView requires mitigating data exfiltration, local file access, and bridge exploitation.
-
-First, with Disable File & Content Scheme Access, Next, explicitly disable `settings.allowFileAccess = false` and `settings.allowContentAccess = false`. This blocks attackers from using malicious scripts or iframe tags to read private app files (`file:///data/data/<package>/...`) or query internal ContentProviders.
-**Use AndroidX WebViewAssetLoader**. Traditional `file:///android_asset/` URLs violate modern web security models and cross-origin boundaries. `WebViewAssetLoader` intercepts requests and serves local assets via a virtual domain (`https://appassets.androidplatform.net/assets/`), enforcing the standard Same-Origin Policy and secure HTTPS context.
-**Lock Down JavaScript Interfaces**. Only expose `@JavascriptInterface` methods to pages loaded from strictly whitelisted, first-party HTTPS origins verified inside `shouldOverrideUrlLoading` or `onPageStarted`.
-**Unconditional SSL Error Rejection**. Finally, in `WebViewClient.onReceivedSslError()`, always call `handler.cancel()`. Never call `handler.proceed()`, as doing so completely bypasses TLS validation and exposes users to Man-in-the-Middle attacks.
-
+Securing WebView instances requires treating web content as inherently dangerous and enforcing strict sandboxing controls.
+We disable local file and content schemes by setting allowFileAccess and allowContentAccess to false in WebSettings, neutralizing attacks that attempt to exfiltrate private app databases via file URLs.
+To load local HTML and JavaScript assets securely, we implement WebViewAssetLoader, which hosts assets under a virtual HTTPS domain that respects modern web origin boundaries.
+For network transport, we eliminate insecure channels by setting mixedContentMode to never allow HTTP assets on HTTPS pages.
+Native bridges created with @JavascriptInterface demand the tightest scrutiny created with @JavascriptInterface.
+Because any script running inside the WebView can call exposed bridge methods, we only attach interfaces to WebViews locked to first-party origins.
+In WebViewClient, we implement shouldOverrideUrlLoading to inspect target URLs and terminate navigation if an attempt is made to load untrusted third-party domains.
 
 ## Interview answer — deep senior
 
-From an advanced security engineering perspective, WebViews represent a hybrid execution environment requiring strict boundaries.
-
-First, with Safe Browsing Integration, in Android 8.0+ (API 27), verify that Google Safe Browsing is enabled in WebView (`settings.safeBrowsingEnabled = true`). Implement `onSafeBrowsingHit()` to handle malicious phishing URLs identified by Google before page rendering begins. Next, with Mitigating Universal Cross-Site Scripting (UXSS), for sensitive hybrid applications, enable multi-process WebView mode (default on Android 8+) and restrict JavaScript execution permissions dynamically. Avoid exposing native payment or authentication tokens through JavaScript bridge callback return values; instead, bridge only transient action triggers while executing actual cryptographic token transfers over native secure channels.
-Finally, with Content Security Policy (CSP), ensure server responses loaded into WebViews include strict HTTP Content Security Policy headers (`default-src 'self'`), mitigating inline script injections and preventing unauthorized external script loading.
-
+From an adversarial perspective, an insecurely configured WebView represents a direct bridge between untrusted web content and the host operating system's native process memory.
+If an application enables JavaScript and adds a @JavascriptInterface while allowing the WebView to navigate to arbitrary URLs or load user-generated links, an attacker who achieves cross-site scripting on that page can invoke native methods directly, exfiltrating auth tokens or triggering financial actions.
+On legacy Android versions, reflective exploitation of addJavascriptInterface allowed arbitrary native code execution; on modern platforms, while reflection is restricted, exposed methods remain an accessible API surface.
+Furthermore, loading local files via file:// URLs is historically notorious for file-theft vulnerabilities: a malicious HTML file downloaded to external storage can read app-private databases or shared preferences using cross-origin file navigation.
+We mitigate these systemic vectors through three architecture rules.
+To eliminate attack surfaces, we completely disallow file access, setting allowFileAccess, allowFileAccessFromFileURLs, and allowUniversalAccessFromFileURLs to false, relying strictly on WebViewAssetLoader.
+Second, we restrict navigation strictly to trusted HTTPS domains using an allowlist in shouldOverrideUrlLoading, blocking iframes and redirects to third-party endpoints.
+Third, we apply least privilege to JavaScript bridges, validating incoming parameters with strict regex schemas and ensuring that sensitive actions require independent user confirmation rather than blind execution upon web trigger.
 
 ## How to answer in the interview
 

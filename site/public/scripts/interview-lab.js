@@ -206,6 +206,8 @@ class LabQuestion extends HTMLElement {
       ['.lab-tool', '✍️ مساحة التدريب'],
     ] : [
       ['#what-the-interviewer-evaluates', '📌 Evaluation'],
+      ['#concept-and-technical-explanation', '📖 Explanation'],
+      ['#practical-walkthrough', '💡 Walkthrough'],
       ['#why-it-matters-and-how-it-works', '⚙️ Mechanics'],
       ['#worked-example', '💻 Code Lab'],
       ['#trade-offs-and-decision-criteria', '⚖️ Trade-offs'],

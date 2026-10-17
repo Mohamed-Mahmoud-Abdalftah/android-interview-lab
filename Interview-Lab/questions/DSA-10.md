@@ -21,6 +21,88 @@ How do you design and analyze an LRU cache?
 - O(1) lookup and recency update using map plus ordered links.
 - Capacity, expiry, concurrency and Android cache policy.
 
+## Concept and technical explanation
+
+A Least Recently Used (LRU) Cache discards the oldest unaccessed items when reaching capacity, requiring strictly constant-time eviction and retrieval:
+- Dual-Structure Architecture for $O(1)$ Operations:
+  - Hash Map (`HashMap<K, Node<K, V>>`): Provides $O(1)$ constant-time lookup by mapping keys directly to corresponding node references on the heap.
+  - Doubly-Linked List (`head` <-> `tail`): Tracks access recency. Adding to the front (Most Recently Used / MRU) and evicting from the back (Least Recently Used / LRU) execute in strictly $O(1)$ time by manipulating neighboring pointers without shifting elements.
+- Algorithmic Mechanics:
+  - `get(key)`: If missing, return `null`. If present, locate `Node` via HashMap, detach it from its current list position, reinsert it at the head (MRU), and return value. Complexity: $O(1)$.
+  - `put(key, value)`: If key exists, update value and move `Node` to head. If key is new: instantiate `Node`, insert at head, and insert reference into HashMap. If `size > capacity`, evict the node immediately preceding dummy `tail` (LRU), remove its key from HashMap, and decrement size. Complexity: $O(1)$.
+- Android Platform Standards (`LruCache`):
+  - Android provides `android.util.LruCache` (and `androidx.collection.LruCache`).
+  - Internally wraps a Java `LinkedHashMap(capacity, 0.75f, accessOrder = true)`.
+  - Memory-Sized Caching: In Android image and bitmap caching, overriding `sizeOf(key, value)` to measure memory bytes (`bitmap.byteCount`) rather than item counts prevents OutOfMemoryError crashes.
+  - Sizing Rule: Cache budgets are allocated as a fraction of available heap: `val cacheSize = (Runtime.getRuntime().maxMemory() / 8).toInt()`.
+
+## Practical walkthrough (English)
+
+Custom O(1) LRU Cache implementation and Android LruCache usage:
+```kotlin
+// Custom O(1) LRU Cache combining HashMap and DoublyLinkedList
+class CustomLruCache<K, V>(private val capacity: Int) {
+    private class Node<K, V>(val key: K, var value: V) {
+        var prev: Node<K, V>? = null
+        var next: Node<K, V>? = null
+    }
+
+    private val map = HashMap<K, Node<K, V>>()
+    private val head = Node<K, V>(null as K, null as V) // Dummy head
+    private val tail = Node<K, V>(null as K, null as V) // Dummy tail
+
+    init {
+        head.next = tail
+        tail.prev = head
+    }
+
+    fun get(key: K): V? {
+        val node = map[key] ?: return null
+        moveToHead(node) // Mark as MRU
+        return node.value
+    }
+
+    fun put(key: K, value: V) {
+        val node = map[key]
+        if (node != null) {
+            node.value = value
+            moveToHead(node)
+        } else {
+            val newNode = Node(key, value)
+            map[key] = newNode
+            addNode(newNode)
+            if (map.size > capacity) {
+                val lru = popTail()
+                map.remove(lru.key)
+            }
+        }
+    }
+
+    private fun addNode(node: Node<K, V>) {
+        node.prev = head
+        node.next = head.next
+        head.next?.prev = node
+        head.next = node
+    }
+
+    private fun removeNode(node: Node<K, V>) {
+        node.prev?.next = node.next
+        node.next?.prev = node.prev
+    }
+
+    private fun moveToHead(node: Node<K, V>) {
+        removeNode(node)
+        addNode(node)
+    }
+
+    private fun popTail(): Node<K, V> {
+        val res = tail.prev!!
+        removeNode(res)
+        return res
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تقوم بتصميم وتحليل كاش الـ LRU (Least Recently Used Cache) برمجياً، وما هو دوره في أندرويد؟
@@ -112,25 +194,21 @@ Profile hit rate, byte use, GC and OOMs; cap by device class and clear on memory
 
 ## Interview answer — short
 
-An LRU cache maintains a fixed capacity, evicting the least recently accessed item when full. It achieves O(1) get and put operations by combining a Doubly Linked List (for O(1) access-order tracking) with a HashMap (for O(1) key-to-node lookups). Android provides this natively via androidx.collection.LruCache.
+An LRU cache achieves O(1) get and put operations by combining a HashMap for constant-time key lookup with a Doubly-Linked List for constant-time recency tracking. On access, nodes move to the head, and upon capacity overflow, the tail node is evicted. Android provides LruCache, which teams size by memory bytes rather than count to manage Bitmaps safely.
 
 ## Interview answer — structured
 
-Designing an LRU cache requires coupling two data structures to guarantee constant-time access and eviction.
-
-First, **The Combined Data Structure Architecture**. Next, a Doubly Linked List tracks recency of access. The most recently accessed node is placed at the head; the least recently accessed node sits at the tail. Given a direct node reference, unlinking and prepending operates in $O(1)$ without element shifting.
-Additionally, with HashMap (`HashMap<Key, Node>`), maps keys directly to their corresponding doubly linked list node pointers, enabling $O(1)$ lookups. **Operational Workflow ($O(1)$ Time)**.
-With get(key), lookup node in map. If present, unlink the node and move it to the head of the list; return value ($O(1)$). With put(key, value), if key exists, update value and move node to head. If absent, create new node, insert at head, and store in map. If size exceeds capacity, evict the tail node from both list and map in $O(1)$.
-**Android Platform `LruCache`**. Finally, Android's `androidx.collection.LruCache` is internally backed by a Java `LinkedHashMap(capacity, 0.75f, true)` configured with `accessOrder = true`. It supports custom metric weighting via `sizeOf()`.
-
+Designing a Least Recently Used cache requires pairing two complementary data structures to guarantee constant-time performance across all operations.
+A standalone HashMap provides O(1) lookups but cannot maintain order without scanning. A standalone array or list maintains order but requires O(n) time to find or shift elements. By combining a HashMap with a Doubly-Linked List, we achieve the best of both worlds.
+The HashMap maps each key to its corresponding list node in O(1) time. The Doubly-Linked List maintains access recency: newly inserted or accessed items are moved to the head as Most Recently Used, while the tail represents the Least Recently Used item.
+When capacity is exceeded during a put operation, the node preceding the tail is removed from both the list and the map in O(1) pointer updates. In Android development, the platform provides LruCache, which wraps LinkedHashMap with access-order mode. For media apps, overriding sizeOf to budget cache limits by bitmap byte counts rather than item counts prevents out-of-memory crashes.
 
 ## Interview answer — deep senior
 
-In Android production systems, LRU cache tuning determines stability against OutOfMemory crashes.
-
-First, with Byte-Weighted Cache Sizing, when caching memory-heavy assets like Android `Bitmap`s, sizing by element count (`capacity = 50`) is fatal because a single uncompressed 4K Bitmap can consume 33MB of RAM while an icon consumes 10KB. Always override `sizeOf(key, value)` to return byte count, sizing the cache dynamically against available runtime memory: `val cacheSize = (Runtime.getRuntime().maxMemory() / 1024 / 8).toInt()`. Next, with Thread Safety, Android's `LruCache` methods are synchronized internally using intrinsic locks (`synchronized (this)`). If accessed across hundreds of parallel coroutine workers, lock contention can stall threads. High-concurrency systems use sharded LRU partitions or lock-free concurrent caches.
-Finally, with Eviction Hooks (`entryRemoved`), in Android, when Bitmaps or native buffers are evicted from an LRU cache, overriding `entryRemoved(evicted, key, oldValue, newValue)` enables recycling pooled buffers (e.g. `BitmapPool`) to prevent memory allocation churn on subsequent renders.
-
+From a systems architecture and memory management perspective, the LRU cache represents the canonical design pattern for bounded in-memory caching under resource constraints.
+The architectural brilliance of an LRU cache lies in its zero-shifting pointer mechanics. If an engineer attempts to implement an LRU cache using an ArrayList, accessing an element requires an O of n linear search, followed by an O of n array copy to shift elements forward. By employing a Doubly-Linked List flanked by sentinel dummy head and dummy tail nodes, detaching and prepending a node involves exactly four pointer reassignments, completing in strictly deterministic O of one time. Pairing this with a HashMap that stores direct memory references to these nodes eliminates traversal overhead completely.
+In the Android ecosystem, the framework provides android.util.LruCache, which delegates internally to Java's LinkedHashMap configured with access-order set to true. However, senior Android engineers recognize that item-count sizing is a dangerous anti-pattern for mobile image caching. A cache limited to fifty items could hold fifty thumbnail images consuming five megabytes, or fifty high-resolution camera photos consuming four hundred megabytes, instantly exhausting the ART heap and triggering an OutOfMemoryError.
+The production solution is memory-weighted caching. We allocate a safe fraction of the application's runtime memory—typically one-eighth of maxMemory—and override LruCache.sizeOf() to return the exact byte footprint of each cached Bitmap via bitmap.byteCount. Furthermore, we synchronize operations or utilize concurrent wrappers to prevent race conditions across parallel Coroutine dispatchers, guaranteeing thread-safe, sub-millisecond retrieval without risking heap exhaustion.
 
 ## How to answer in the interview
 

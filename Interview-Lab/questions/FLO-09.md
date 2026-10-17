@@ -20,6 +20,38 @@ Compare SharingStarted.Eagerly, Lazily, and WhileSubscribed.
 
 Compare eager, lazy and subscriber-driven sharing including restart and resource tradeoffs.
 
+## Concept and technical explanation
+
+The SharingStarted strategy parameter in stateIn and shareIn governs the precise execution lifecycle of the upstream cold flow subscription, dictating when data production commences and terminates based on collector presence.
+SharingStarted.Eagerly starts upstream collection immediately upon instantiation of the sharing coroutine and executes indefinitely until the parent CoroutineScope terminates, regardless of whether any UI subscriber ever collects the stream.
+SharingStarted.Lazily defers upstream execution until the very first subscriber attaches, but once activated, it remains executing permanently even if all subscribers subsequently detach.
+SharingStarted.WhileSubscribed(stopTimeoutMillis, replayExpirationMillis) provides the standard Android UI lifecycle strategy. It activates upstream production only when at least one active subscriber is observing, and introduces a configurable grace period (typically 5,000 milliseconds) when the subscriber count drops to zero. This 5-second window prevents wasteful upstream cancellation and restart cycles during transient configuration changes like screen rotations, while ensuring physical resources such as network sockets, database query observers, and hardware sensors are cleanly shut down when the screen is placed in the background.
+
+## Practical walkthrough (English)
+
+Configuring sharing strategies in an Android ViewModel:
+```kotlin
+class LiveScoresViewModel(private val repository: ScoresRepository) : ViewModel() {
+    // Standard Android presentation strategy:
+    // Survives screen rotation without restarting, stops 5s after app backgrounds
+    val matchScores: StateFlow<MatchUiState> = repository.observeLiveScores()
+        .map { MatchUiState.Live(it) }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
+            initialValue = MatchUiState.Loading
+        )
+
+    // Eager background sync: runs continuously while ViewModel is alive
+    val unreadBadgeCount: StateFlow<Int> = repository.observeUnreadCount()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = 0
+        )
+}
+```
+
 ## Explanation in Arabic
 
 المقارنة بين استراتيجيات `SharingStarted` في `stateIn` و `shareIn` هي جوهر الحفاظ على موارد الهاتف والبطارية في أندرويد:
@@ -92,31 +124,26 @@ A live score screen uses WhileSubscribed with a short grace window to survive ro
 
 ## Interview answer — short
 
-Eagerly starts upstream immediately and never stops; Lazily starts with the first subscriber and stays active permanently; WhileSubscribed(5000) starts with the first subscriber, cancels upstream when subscribers drop to zero after a 5-second grace period, making it the premier choice for battery conservation across Android rotations.
+SharingStarted controls when upstream collection starts and stops in stateIn and shareIn. Eagerly starts immediately and never stops; Lazily starts with the first subscriber and runs forever; WhileSubscribed with a 5000ms timeout activates only while UI subscribers exist and waits five seconds before cancelling, bridging screen rotations while preserving battery in the background.
 
 ## Interview answer — structured
 
-The `SharingStarted` strategy governs the lifecycle of the upstream flow in `stateIn` and `shareIn`, deciding when collection starts and stops based on subscriber presence.
+The SharingStarted policy dictates the lifetime and execution boundary of the upstream coroutine in stateIn and shareIn.
 
-**SharingStarted.Eagerly** starts collecting from upstream immediately upon creation and never cancels until the parent scope is destroyed, regardless of whether any UI component is observing. It is best for critical background sync tasks that must start immediately.
+Each policy strikes a different balance between freshness and resource consumption. Eagerly starts upstream production the instant the ViewModel is instantiated, ignoring subscriber presence completely. We reserve it for critical background sync tasks that must start immediately.
 
-**SharingStarted.Lazily** defers execution until the first subscriber collects, but once started, it remains active indefinitely even if all subscribers disconnect. It is suitable for expensive one-time caches that should not restart.
+In production, Lazily defers execution until the initial subscriber attaches, but continues running even after all subscribers detach. This makes it suitable for immutable caches that should warm up on demand without restarting.
 
-**SharingStarted.WhileSubscribed(5000)** is the gold standard for Android UI development. It only activates upstream collection when there is at least one active subscriber. When subscribers drop to zero, it waits 5,000 milliseconds before cancelling the upstream flow. This 5-second window prevents cancelling and restarting expensive network or database queries during configuration changes like screen rotations.
+WhileSubscribed with a five-second timeout is the definitive gold standard for Android presentation layers. When UI collectors transition to zero during screen rotation, the five-second countdown prevents tearing down expensive database or WebSocket connections. If the user navigates away or backgrounds the app, the timer elapses and cancels upstream production, stopping battery drain and radio activity.
 
 
 ## Interview answer — deep senior
 
-At the technical mechanism level, `WhileSubscribed` monitors the `subscriptionCount` state flow of the underlying `SharedFlow`. When `subscriptionCount.value` transitions from 0 to 1, it starts the upstream collector coroutine. When it drops back to 0, it launches a delay timer:
-
-```kotlin
-SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000, replayExpirationMillis = 0)
-```
-
-If a new subscriber attaches within the 5,000ms window (which happens during Activity recreation upon screen rotation), the cancellation timer is cancelled and upstream collection continues uninterrupted.
-
-The second parameter, `replayExpirationMillis`, determines when the cached replay buffer is reset. Leaving it at 0 means that when the upstream is cancelled due to inactivity, the cached state is kept. If set to a duration, it evicts stale cached state after the user leaves the screen for an extended period.
-
+Under the hood in kotlinx.coroutines, WhileSubscribed is implemented by observing the subscriptionCount StateFlow of the underlying SharedFlow instance. When subscriptionCount transitions from zero to one, WhileSubscribed emits SharingCommand.START, instructing the sharing loop to launch the upstream collector coroutine.
+When subscriptionCount drops back to zero, such as when an Activity invokes onStop and unbinds its repeatOnLifecycle block, WhileSubscribed emits a command sequence: it introduces a delay of stopTimeoutMillis, followed by SharingCommand.STOP. If a new subscriber arrives before the timer completes—which reliably happens during Activity recreation within 300 milliseconds—subscriptionCount rises back to one, aborting the pending cancellation timer and keeping the upstream connection intact.
+The second configuration parameter, replayExpirationMillis, governs cache freshness. Setting replayExpirationMillis to zero preserves the cached state indefinitely during pauses. Supplying a non-zero timeout resets the replay cache to initialValue once the timeout elapses, preventing the UI from showing stale financial data when the user returns after thirty minutes.
+Additionally, in automated unit testing, test dispatchers pause virtual time; developers must call advanceTimeBy(5001) to simulate subscriber detachment and verify that the upstream sharing job was cancelled cleanly as expected.
+Staff engineers pair WhileSubscribed(5000) with collectAsStateWithLifecycle in Jetpack Compose or repeatOnLifecycle in Views. Using plain collectAsState fails to decrement subscriptionCount in the background, keeping WhileSubscribed running perpetually and defeating battery conservation.
 
 ## How to answer in the interview
 

@@ -20,6 +20,44 @@ What is the risk of GlobalScope or creating a scope inside each repository metho
 
 Explain detached lifetime and why a fresh repository scope per method loses caller ownership.
 
+## Concept and technical explanation
+
+Violating structured concurrency by relying on GlobalScope or instantiating unattached CoroutineScope instances inside repository methods is a critical architectural anti-pattern in Android engineering. GlobalScope is an unbounded, top-level scope that operates across the entire lifetime of the application process. Coroutines launched in GlobalScope completely bypass the caller's cancellation hierarchy; if a user navigates away and the hosting ViewModel is cleared, a GlobalScope coroutine continues running, leaking memory references, consuming network bandwidth and battery, and dropping unhandled exceptions into the global process handler. Similarly, creating a new ad-hoc scope inside a repository method (such as CoroutineScope(Dispatchers.IO).launch) severs caller ownership. The calling ViewModel or UseCase cannot cancel the underlying task, cannot await its completion, cannot observe exceptions directly, and unit testing becomes non-deterministic because test runners cannot control detached scopes. Repositories should exclusively expose main-safe suspending functions or cold Flows that execute within the caller's lifecycle scope, delegating long-running operations to an injected application-level supervisor scope or WorkManager.
+
+## Practical walkthrough (English)
+
+Consider a repository method updating user profile settings:
+```kotlin
+// Erroneous implementation: creates a detached scope inside repository
+class BadUserRepository {
+    // BUG: Severing caller ownership and structured concurrency!
+    fun updateUser(user: User) {
+        CoroutineScope(Dispatchers.IO).launch {
+            api.update(user) // Uncancellable by caller, leaks if ViewModel clears!
+        }
+    }
+}
+
+// Production-grade implementation: main-safe suspending contract
+class GoodUserRepository(
+    private val api: UserApi,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) {
+    // Suspends within caller scope, fully cancellable, main-safe:
+    suspend fun updateUser(user: User): Result<Unit> = withContext(ioDispatcher) {
+        try {
+            api.update(user)
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+}
+```
+If the caller's viewModelScope cancels while api.update is in flight, withContext ensures the network call is promptly cancelled, maintaining zero resource leaks.
+
 ## Explanation in Arabic
 
 استخدام `GlobalScope` أو إنشاء CoroutineScope داخل دوال الـ Repository هو أحد أسوأ الـ Anti-Patterns التي تدمر الـ Architecture:
@@ -92,36 +130,22 @@ A profile ViewModel calls `repository.load` in `viewModelScope`; navigation canc
 
 ## Interview answer — short
 
-GlobalScope and ad-hoc repository scopes destroy structured concurrency. They produce un-cancellable background tasks that leak memory, waste network bandwidth, bypass exception handling, and make deterministic unit testing impossible. Repositories should expose suspend functions or Flows, leaving lifecycle scoping to ViewModels.
+Using GlobalScope or creating detached CoroutineScopes inside repository methods breaks structured concurrency. It severs the caller's cancellation hierarchy, causing zombie background tasks, memory leaks, and silent failures when screens close. Repositories should expose main-safe suspend functions or cold Flows that execute within the caller's lifecycle scope, using an injected application scope or WorkManager only for durable operations.
 
 ## Interview answer — structured
 
-Using `GlobalScope` or creating ad-hoc `CoroutineScope` instances inside repository methods completely breaks structured concurrency.
+Structured concurrency establishes that every coroutine must be launched within a well-defined lifecycle boundary that guarantees parent-child ownership. Relying on GlobalScope or instantiating ad-hoc CoroutineScopes inside repository methods directly undermines this contract.
 
-When a repository creates its own scope (e.g., `CoroutineScope(Dispatchers.IO).launch`), that coroutine is detached from the calling ViewModel's lifecycle. If the user navigates away and the screen is destroyed, the ViewModel's `viewModelScope` cancels, but the repository coroutine keeps running in the background. This wastes CPU, leaks network bandwidth, and can trigger database race conditions.
+Launching work in GlobalScope creates orphaned coroutines tied to process lifetime. When a ViewModel is cleared during screen exit, the coroutine continues executing in the background, wasting network bandwidth, battery, and retaining references that cause memory leaks.
 
-Furthermore, detached scopes swallow or misdirect exceptions, making centralized error handling impossible, and they break unit testing because test runners cannot wait for or control un-tracked scopes.
+In production, creating an internal scope like CoroutineScope(Dispatchers.IO) inside a repository method severs the link with the caller. The caller cannot cancel the operation, cannot await its completion, and cannot catch thrown exceptions. Furthermore, automated unit testing with runTest becomes impossible to synchronize deterministically because the detached scope operates outside the test scheduler.
 
-In clean architecture, repositories should never launch coroutines. Repositories should expose **suspend functions** for one-shot operations (using `withContext` for main-safety) or **Flow** for streams. The ViewModel remains the sole owner of the lifecycle scope via `viewModelScope`.
+Repositories must expose suspending functions using withContext for main-safety, or emit cold Flows. If a task must outlive the screen, it must be delegated to an application-scoped supervisor scope injected via dependency injection or scheduled durably using WorkManager.
 
 
 ## Interview answer — deep senior
 
-From an architectural governance perspective, there is only one legitimate use case for a non-ViewModel scope in the data layer: operations that **must survive UI teardown** (like saving an offline transaction or uploading an analytics batch). However, even in that scenario, creating ad-hoc scopes inside methods is forbidden. Instead, we use an explicitly injected **ApplicationScope**:
-
-```kotlin
-class OrderRepository @Inject constructor(
-    @ApplicationScope private val externalScope: CoroutineScope,
-    private val api: OrderApi
-) {
-    suspend fun submitOrder(order: Order) {
-        externalScope.launch { api.submit(order) }.join()
-    }
-}
-```
-
-By injecting a singleton `ApplicationScope` bound to a `SupervisorJob`, the lifecycle is formally tracked by the DI container, exceptions are captured by a centralized handler, and unit tests can easily inject a `TestScope` to verify background completion.
-
+At the framework level, the power of Kotlin coroutines derives from parent-child Job hierarchy trees. When viewModelScope.launch executes, the child coroutine inherits the parent's Job, ensuring that viewModelScope.cancel cascades downwards, transitioning all active child jobs to the Cancelling state and terminating active delay or I/O suspension points. When an engineer writes CoroutineScope(Dispatchers.IO).launch inside a repository, a new root Job is created with zero parent link. If the ViewModel is destroyed, its cancellation signal never reaches this orphaned job. This introduces severe production bugs: an orphaned network request can complete seconds later and attempt to write stale data into local databases, overwriting newer user changes in a race condition. Moreover, any unhandled exception in that detached scope cannot be caught by the calling ViewModel; it bypasses standard UI error handling and crashes the entire application process through the default thread exception handler. In staff-level architecture, we enforce a strict separation of concerns regarding scope ownership. UI and presentation logic own transient, view-bound lifecycles via viewModelScope. Repositories and DataSources must remain stateless with regard to execution lifecycles; they expose suspend functions or cold Flows that execute on whichever CoroutineContext the caller provides, switching dispatchers internally via withContext(ioDispatcher) to guarantee Main-Safety. For the rare operations that must survive screen transitions—such as finishing an offline database sync or logging an analytics event—we inject an @ApplicationScope CoroutineScope(SupervisorJob() + Dispatchers.Default) managed by Hilt. For guaranteed durability across process termination or device reboots, we reject in-memory scopes entirely and delegate execution to Android Jetpack WorkManager.
 
 ## How to answer in the interview
 

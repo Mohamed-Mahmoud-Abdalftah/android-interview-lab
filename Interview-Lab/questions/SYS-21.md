@@ -20,6 +20,64 @@ Design a Home screen that relies on 3 independent services with partial failure.
 
 Design Home with three independent services and partial failures without swallowing cancellation.
 
+## Concept and technical explanation
+
+Designing an enterprise Home screen dependent on multiple independent upstream services—such as a promotional banner service, a personalized user feed, and an algorithm-driven recommendation engine—requires an architecture that isolates partial failures. In mobile application design, a single failing or slow secondary service must never compromise the entire user experience. If the recommendation engine suffers a backend outage, the user must still view their active feed items and promotional banners. The presentation layer models screen state around independent section containers, each maintaining discrete loading, success, and error states. Concurrency must be coordinated using Kotlin Coroutines where child requests execute under a SupervisorJob or via independent async blocks wrapped in runCatching, preventing uncaught cancellations from bubbling up. Furthermore, applying the Stale-While-Revalidate caching pattern allows the UI to render cached local database entities immediately while refreshing sections asynchronously over the network.
+
+## Practical walkthrough (English)
+
+Implementing partial failure isolation and independent section states for a Home screen:
+```kotlin
+// 1. Independent sealed section state modeling partial failure per surface
+sealed interface SectionState<out T> {
+    data object Loading : SectionState<Nothing>
+    data class Success<T>(val data: T) : SectionState<T>
+    data class Error(val errorMessage: String, val cachedFallback: Boolean = false) : SectionState<Nothing>
+}
+
+// 2. Composed UI state representing the entire Home screen
+data class HomeUiState(
+    val banners: SectionState<List<Banner>> = SectionState.Loading,
+    val feed: SectionState<List<FeedItem>> = SectionState.Loading,
+    val recommendations: SectionState<List<Recommendation>> = SectionState.Loading
+)
+
+// 3. ViewModel coordinating concurrent fetches without cross-job cancellation
+class HomeViewModel @Inject constructor(
+    private val bannerRepo: BannerRepository,
+    private val feedRepo: FeedRepository,
+    private val recommendationRepo: RecommendationRepository
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(HomeUiState())
+    val uiState = _uiState.asStateFlow()
+
+    fun loadHomeScreen() = viewModelScope.launch {
+        // Execute independent async jobs wrapped in runCatching to isolate failures
+        val bannersDeferred = async { runCatching { bannerRepo.fetchBanners() } }
+        val feedDeferred = async { runCatching { feedRepo.fetchFeed() } }
+        val recommendationsDeferred = async { runCatching { recommendationRepo.fetchRecommendations() } }
+
+        _uiState.update { current ->
+            current.copy(
+                banners = bannersDeferred.await().fold(
+                    onSuccess = { SectionState.Success(it) },
+                    onFailure = { SectionState.Error("Failed to load banners") }
+                ),
+                feed = feedDeferred.await().fold(
+                    onSuccess = { SectionState.Success(it) },
+                    onFailure = { SectionState.Error("Failed to load feed") }
+                ),
+                recommendations = recommendationsDeferred.await().fold(
+                    onSuccess = { SectionState.Success(it) },
+                    onFailure = { SectionState.Error("Recommendations unavailable") }
+                )
+            )
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تصمم شاشة رئيسية (Home Screen) تعتمد على 3 خدمات مستقلة وتدعم الفشل الجزئي (Partial Failure) دون تعطل الشاشة بالكامل؟
@@ -123,25 +181,25 @@ A commerce Home loads offers, order status and support tips independently, each 
 
 ## Interview answer — short
 
-Design aggregate screens for partial failure by fetching independent services concurrently using isolated supervisor scopes with cancellation-preserving error handling. Represent sections with independent state streams in a unified UI state, fall back to local cached data where available, and render inline section retries without blocking or failing the entire screen.
+We design resilient Home screens by modeling each content area with independent loading, success, and error states. We fetch data concurrently using Kotlin Coroutines wrapped in runCatching to isolate service exceptions, showing cached local data immediately while individual failed sections display retry buttons without breaking the rest of the screen.
 
 ## Interview answer — structured
 
-Aggregating multiple microservices into a single mobile dashboard requires defensive concurrency and resilient UI state composition.
-
-First, **Avoid All-or-Nothing Composition**. Next, combining calls via `zip`, `combine` with synchronous throws, or `awaitAll` creates an all-or-nothing anti-pattern. If a non-essential service (e.g. Recommendations) throws a 500 or times out, the entire screen fails.
-**Independent Section Concurrency**. Launch three independent coroutine jobs within a supervisory scope (`supervisorScope`), capturing exceptions while strictly preserving `CancellationException`. If the Recommendations service fails, its exception is caught in isolation, allowing the Feed and Hero Banners to load and render immediately.
-**Modular State Modeling**. Model the overall screen state as an aggregate data class holding individual `SectionState<T>` wrappers (`Loading`, `Success`, `Error`). Compose renders each section according to its discrete state.
-**Graceful UI Degradation & Cache Fallbacks**. Finally, if a service fails, check Room persistence for cached records. If cached data exists, render it with a subtle 'Offline' chip. If no cache exists, render an inline retry placeholder or cleanly collapse the section without breaking the parent layout.
-
+Designing a Home screen powered by multiple independent backend services requires isolating failures so that a broken endpoint never brings down the whole screen.
+I structure the presentation layer around independent section states. The screen UI state does not represent a binary success or failure. Instead, each section—banners, feed, and recommendations—manages its own discrete state.
+In the ViewModel, we dispatch concurrent network requests using Kotlin Coroutines async blocks governed by a SupervisorJob.
+Each call is wrapped inside runCatching so that an exception in one service does not cancel sibling coroutines or trigger an unhandled failure.
+We adopt a Stale-While-Revalidate caching strategy using Room. When the screen opens, it immediately renders cached data from disk.
+When network responses arrive, successful sections update seamlessly, while any failing section retains its cached content and displays an inline retry action without blocking user interactions with the rest of the screen.
 
 ## Interview answer — deep senior
 
-From a staff-level systems perspective, partial failure resilience extends into network protocol design and backend orchestration.
-
-First, with Backend-for-Frontend (BFF) vs. Client Aggregation, in enterprise architectures, mobile clients should ideally query a single mobile BFF gateway. The BFF aggregates the 3 microservices concurrently on high-speed datacenter backbones. If recommendations time out within 150ms, the BFF returns a partial JSON payload containing banners and feed items along with a partial-error metadata flag, saving mobile battery and round-trips. Next, with Independent Section Pull-to-Refresh, when the user performs a pull-to-refresh gesture, trigger refresh jobs across all three sections concurrently. Keep already-rendered cached content on screen while refreshing, transitioning sections to loading indicators only if no data was previously visible.
-Finally, with Targeted Telemetry & Alerting, log individual endpoint failure rates. If Recommendations fail for 15% of sessions while Core Feed succeeds, telemetry surfaces microservice-specific degradation rather than generic app-level crash alarms.
-
+From a staff architecture perspective, multi-service aggregation on mobile requires defensive concurrency, selective degradation, and careful lifecycle management.
+A common architectural anti-pattern is using standard coroutineScope with async when aggregating endpoints. Under standard coroutines, if the recommendation service fails with an HTTP 500, the exception automatically cancels the parent scope, aborting the feed and banner requests even if they were about to succeed. We eliminate this by utilizing supervisorScope or wrapping each async child in runCatching, ensuring failure containment.
+We also introduce differential timeout budgets. User feed data is critical, so we allocate an eight-second deadline, whereas personalized recommendations are secondary and receive a strict three-second timeout. If recommendations do not respond within three seconds, the client abandons the request and collapses the section gracefully or displays popular fallbacks.
+Furthermore, we prevent UI layout jank by designing skeleton placeholder loaders that match the exact aspect ratio of incoming content, preventing intrusive layout shifts when sections load at varying speeds.
+To handle flaky network connections without stalling interactive rendering, each section independently tracks its own stale-while-revalidate timestamp. If the user scrolls rapidly past a failed section, the hosting recyclerview or lazy column unbinds the section view without aborting in-flight retry requests from other sections, ensuring optimal memory utilization and butter-smooth scrolling performance across legacy devices.
+Finally, we implement partial refresh mechanics. When the user performs a swipe-to-refresh gesture, our state holder triggers refreshes only for stale or previously failed sections, saving bandwidth and delivering a highly responsive user experience.
 
 ## How to answer in the interview
 

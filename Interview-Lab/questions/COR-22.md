@@ -20,6 +20,45 @@ When should you use ensureActive or yield during CPU-bound work?
 
 Explain cancellation responsiveness in CPU loops and the scheduling distinction between ensureActive and yield.
 
+## Concept and technical explanation
+
+In Kotlin coroutines, cooperative cancellation requires active suspension points to inspect cancellation signals. Standard suspending functions like delay, withContext, or Channel operations check cancellation automatically. However, heavy CPU-bound computations—such as cryptographic hashing, mathematical matrix calculations, image parsing, or large JSON decoding loops—contain no native suspension points. If a parent coroutine scope is cancelled while a CPU-bound loop is running, the loop ignores the cancellation and continues monopolizing the worker thread indefinitely. To make CPU-bound algorithms cancellation-responsive, engineers must explicitly inject cancellation checks using either ensureActive() or yield(). The method ensureActive() checks the Job.isActive state of the current coroutine context and immediately throws a CancellationException if the job is cancelled. It executes a lightweight, zero-allocation boolean check without yielding the thread. In contrast, yield() not only checks for cancellation but also cooperatively relinquishes the current thread, posting the coroutine to the back of the dispatcher queue to allow other pending tasks to execute before resuming.
+
+## Practical walkthrough (English)
+
+Consider an image processing routine applying a Gaussian blur filter across a multi-megapixel bitmap:
+```kotlin
+// Erroneous implementation: uncooperative CPU loop ignoring cancellation
+suspend fun applyBlurUncooperative(bitmap: Bitmap): Bitmap = withContext(Dispatchers.Default) {
+    for (y in 0 until bitmap.height) {
+        for (x in 0 until bitmap.width) {
+            // No suspension points! Ignores Job.cancel() completely!
+            computePixelBlur(bitmap, x, y)
+        }
+    }
+    bitmap
+}
+
+// Cooperative implementation using ensureActive and yield:
+suspend fun applyBlurCooperative(bitmap: Bitmap): Bitmap = withContext(Dispatchers.Default) {
+    for (y in 0 until bitmap.height) {
+        // Lightweight cancellation check per scanline:
+        ensureActive() 
+        
+        for (x in 0 until bitmap.width) {
+            computePixelBlur(bitmap, x, y)
+        }
+        
+        // Yield thread to other tasks every 100 scanlines to ensure fair scheduling:
+        if (y % 100 == 0) {
+            yield()
+        }
+    }
+    bitmap
+}
+```
+If the user navigates away or closes the photo editor, ensureActive() immediately aborts the loop with CancellationException, freeing the CPU core instantly.
+
 ## Explanation in Arabic
 
 استخدام `ensureActive()` و `yield()` أثناء العمليات المكثفة على المعالج (CPU-Bound Work) ضروري لضمان التعاونية وعدم تجويع العمليات الأخرى:
@@ -101,31 +140,22 @@ A gallery indexer processes images in chunks on Default and checks cancellation 
 
 ## Interview answer — short
 
-Use ensureActive() to verify cancellation and throw CancellationException immediately with zero scheduling overhead. Use yield() to both check for cancellation and yield the current thread to other waiting coroutines in the dispatcher queue, ensuring fair scheduling during heavy CPU tasks.
+CPU-bound loops lack suspension points and will ignore coroutine cancellation unless checked explicitly. ensureActive() performs an ultra-fast boolean check on Job.isActive, throwing CancellationException immediately without yielding the thread. yield() checks cancellation and voluntarily yields the thread to the dispatcher's queue, enabling fair-share scheduling for other pending coroutines.
 
 ## Interview answer — structured
 
-During intensive CPU-bound calculations, coroutines do not hit natural suspension points like network calls or delays. This causes two production problems: they ignore cancellation, and they monopolize worker threads in the dispatcher pool.
+Cooperative cancellation in Kotlin coroutines relies on code periodically checking whether its parent Job has been cancelled. While standard I/O and delay functions do this automatically, CPU-bound computations contain no natural suspension points and will run to completion regardless of cancellation.
 
-I use `ensureActive()` when I strictly want cancellation responsiveness with maximum performance. It checks the Job's active state and immediately throws `CancellationException` if the job was cancelled. If the job is active, it does nothing and has zero dispatching or scheduling overhead.
+Kotlin provides two distinct tools to make CPU loops cooperative: ensureActive and yield. The function ensureActive performs an ultra-lightweight check of the coroutine's active status; if the Job is no longer active, it throws a CancellationException immediately without any dispatching overhead. In contrast, yield introduces an actual suspension point that surrenders the current thread back to the dispatcher event loop.
 
-I use `yield()` when a CPU-bound task is heavy and I want fair scheduling. `yield()` checks for cancellation just like `ensureActive()`, but if active, it suspends the coroutine and dispatches it to the back of the dispatcher's work queue. This temporarily releases the OS thread so other waiting coroutines on the same dispatcher can execute, preventing thread starvation.
+In production, ensureActive is ideal for tight inner loops where maximum execution throughput is critical. We use yield at broader interval boundaries—such as processing batch chunks—to prevent thread starvation and allow other coroutines on the pool to make progress.
+
+Neither method catches or suppresses exceptions; both guarantee that cancellation unwinds the stack cleanly.
 
 
 ## Interview answer — deep senior
 
-Under the hood, `ensureActive()` is an inline extension function on `CoroutineScope` and `Job` that executes:
-
-```kotlin
-if (!isActive) throw getCancellationException()
-```
-
-Because it is inlined, it compiles directly to a simple conditional jump in bytecode without creating any continuation frames or dispatch objects.
-
-`yield()`, by contrast, is a true suspending function. It captures the current `Continuation` and dispatches it via `dispatcher.dispatchYield()`. If the dispatcher's event queue is empty, the runtime immediately reschedules and resumes the coroutine on the same thread with minimal latency. If other tasks are enqueued, they execute first.
-
-In high-frequency loops (e.g., iterating 100,000 times), calling `yield()` on every single iteration causes excessive scheduling overhead and degrades throughput. The senior engineering pattern is batching: call `ensureActive()` on every iteration, and throttle `yield()` to once every 100 or 500 iterations.
-
+Under the hood, coroutine cancellation does not preempt or interrupt CPU instructions; it is purely cooperative. When Job.cancel is invoked, the JobSupport state transitions to Cancelling, setting its internal isActive flag to false. In pure CPU code, thread registers and program counters continue executing instructions undisturbed unless the bytecode explicitly queries that flag. Invoking coroutineContext.ensureActive() executes JobSupport.ensureActive, which verifies if (job != null && !job.isActive) throw job.getCancellationException(). This requires only a single interface lookup and an atomic volatile state read, introducing virtually zero performance penalty inside high-iteration loops. The function yield(), on the other hand, is a full suspending operation. When yield executes, it obtains the current CoroutineDispatcher from the context and checks whether dispatch is needed. If the dispatcher determines other tasks are queued, it registers the continuation at the tail of the dispatcher's work-stealing queue and returns COROUTINE_SUSPENDED, transferring execution to another ready coroutine. In multi-threaded worker pools like Dispatchers.Default, a tight CPU loop that never yields can hog a core, delaying other parallel coroutines and starving critical UI state emissions. In staff-level architecture, we establish clear guidelines: use ensureActive() on high-frequency iterations (such as per-pixel or per-element processing) to guarantee prompt cancellation response times under 10 milliseconds, and use yield() intermittently (such as every N chunks or milliseconds) to maintain CPU fairness and prevent dispatcher thread starvation.
 
 ## How to answer in the interview
 

@@ -22,6 +22,58 @@ How do you implement a reusable design system and themes?
 - Support dynamic color, typography, shape, dark mode and accessibility.
 - Balance central consistency with feature autonomy and versioning.
 
+## Concept and technical explanation
+
+Implementing a reusable design system and custom theme in Jetpack Compose involves creating a unified system of design tokens—Colors, Typography, Shapes, and Spacing—and distributing them through the composition tree via CompositionLocal. Rather than hardcoding styles or relying solely on standard MaterialTheme defaults, enterprise teams define strongly typed, immutable token models and wrap their application inside a custom Theme composable backed by CompositionLocalProvider. By exposing convenient accessor objects (such as AppTheme.colors and AppTheme.spacing), UI components consume standardized tokens with automatic dark mode adaptation, dynamic theming support, and zero performance overhead.
+
+## Practical walkthrough (English)
+
+Building a custom design system token hierarchy in Jetpack Compose:
+```kotlin
+// 1. Define custom design tokens (e.g. Spacing)
+@Immutable
+data class AppSpacing(
+    val extraSmall: Dp = 4.dp,
+    val small: Dp = 8.dp,
+    val medium: Dp = 16.dp,
+    val large: Dp = 24.dp,
+    val extraLarge: Dp = 32.dp
+)
+
+// 2. Create static CompositionLocals (Static prevents re-evaluating the whole tree on reads!)
+val LocalAppSpacing = staticCompositionLocalOf { AppSpacing() }
+
+// 3. Custom Theme composable providing tokens
+@Composable
+fun AppDesignTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    spacing: AppSpacing = AppSpacing(),
+    content: @Composable () -> Unit
+) {
+    CompositionLocalProvider(
+        LocalAppSpacing provides spacing
+    ) {
+        MaterialTheme(content = content)
+    }
+}
+
+// 4. Clean theme accessor object for developers
+object AppTheme {
+    val spacing: AppSpacing
+        @Composable
+        @ReadOnlyComposable
+        get() = LocalAppSpacing.current
+}
+
+// 5. Usage in any UI component
+@Composable
+fun ThemedCard(title: String) {
+    Card(modifier = Modifier.padding(AppTheme.spacing.medium)) {
+        Text(title, modifier = Modifier.padding(AppTheme.spacing.small))
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيفية بناء نظام تصميم (Design System) وثيمات (Themes) قابلة لإعادة الاستخدام في Jetpack Compose:
@@ -126,23 +178,29 @@ Maintain documented token and component contracts, a preview/gallery matrix, scr
 
 ## Interview answer — short
 
-Build reusable design systems in Compose using Material 3 themes providing `ColorScheme`, `Typography`, and `Shapes`. Extend custom branding tokens (like Spacings or elevation) using `staticCompositionLocalOf`, provide them via `CompositionLocalProvider`, and expose a clean accessor object like `AppTheme.spacing`.
+We implement a custom design system by defining strongly typed, immutable token models for Colors, Typography, Shapes, and Spacing, and providing them down the composition tree using staticCompositionLocalOf. A custom AppTheme composable wraps the content and provides these values via CompositionLocalProvider. We expose an accessor object like AppTheme.spacing and AppTheme.colors so UI components consume consistent design tokens that support dark mode and dynamic theming seamlessly.
 
 ## Interview answer — structured
 
-A production-grade design system in Jetpack Compose is anchored on Material 3 foundations augmented with custom design tokens.
-
-First, with Core Material 3 Contracts, we define standard tokens using `lightColorScheme` and `darkColorScheme`, supporting Android 12+ dynamic theming via `dynamicLightColorScheme(context)` when appropriate. Typography is centralized in `Typography`, ensuring consistent scaling across accessibility font scales, and `Shapes` standardizes border radii. Next, with Custom Design Tokens (Extensions), enterprise design systems frequently require dimensions that Material 3 does not model—such as standardized component paddings (`Spacing`), custom border widths, or domain-specific semantic colors (e.g. `cryptoGreen`, `fraudAlertRed`). We model these as immutable data classes and provide them through **`CompositionLocal`**.
-`val LocalAppSpacing = staticCompositionLocalOf { AppSpacing() }` In the top-level theme composable, we wrap the hierarchy with `CompositionLocalProvider(LocalAppSpacing provides spacing)`.
-Finally, with Unified Accessor, we provide an ergonomic theme accessor object `AppTheme` with `@ReadOnlyComposable` getters, allowing engineers to write `AppTheme.spacing.medium` with zero recomposition overhead.
-
+Constructing a scalable, multiplatform design system in Jetpack Compose requires centralizing visual tokens and distributing them cleanly without prop drilling.
+A robust design system standardizes four primary token pillars: Color palettes (supporting Light, Dark, and High-Contrast schemes), Typography scales, Shape definitions, and Spacing/Elevation dimensions.
+The implementation begins by modeling these tokens as @Immutable data classes.
+To expose tokens globally without passing them as parameters to every composable, we leverage CompositionLocal.
+Choosing between compositionLocalOf and staticCompositionLocalOf is a crucial architectural decision.
+For design system tokens that rarely change at runtime—such as typography styles, shapes, and spacing—we use staticCompositionLocalOf.
+When a static CompositionLocal's value changes, Compose invalidates the entire content tree; however, because theme tokens change only during rare events like toggling dark mode, using static composition locals eliminates internal tracking overhead, speeding up normal frame execution.
+Finally, we provide a unified AppTheme object with @ReadOnlyComposable accessors, enabling developers to write AppTheme.spacing.medium or AppTheme.colors.brandPrimary cleanly across all app modules.
 
 ## Interview answer — deep senior
 
-The choice between `compositionLocalOf` and `staticCompositionLocalOf` is a key performance consideration. `staticCompositionLocalOf` does not track reads during composition; when its value changes, the **entire composition tree below the provider is recomposed from scratch**. Because design system tokens (colors, spacings, fonts) rarely or never change dynamically within a single user session (only on dark-mode toggle), `staticCompositionLocalOf` is drastically faster because it skips registering per-read slot observers.
-
-In large design systems, we build custom UI component libraries (Buttons, InputFields, Cards) that enforce strict internal modifier rules. For example, an `AppButton` internally enforces standard touch targets (minimum 48dp for accessibility), applies `AppTheme.spacing` internal padding, and maps visual variants to semantic tokens, preventing inconsistent raw Material calls across feature teams.
-
+Under the hood, CompositionLocal mechanisms govern token propagation throughout the Compose SlotTable hierarchy.
+When a token is provided using CompositionLocalProvider, the Composer inserts a new entry into the ambient locals map for that subcomposition scope.
+The architectural difference between compositionLocalOf and staticCompositionLocalOf centers on dependency tracking and invalidation scopes.
+compositionLocalOf registers a snapshot read dependency whenever .current is read inside a composable function. If the provided value changes, the Compose runtime invalidates only the specific RecomposeScopes that read that token. However, this fine-grained tracking incurs a continuous memory and CPU cost to maintain read records in the SlotTable.
+In contrast, staticCompositionLocalOf does not track individual consumer reads.
+If a static token changes, the runtime conservatively re-executes the entire content lambda provided to CompositionLocalProvider.
+Because design system tokens (such as Spacing dimensions, Typography fonts, and CornerRadius shapes) never change on a frame-by-frame basis—they change only during user-initiated theme toggles or system dark-mode switches—staticCompositionLocalOf is the mathematically optimal choice, delivering maximum runtime performance and zero memory bloat during standard rendering.
+Furthermore, annotating accessor getters with @ReadOnlyComposable informs the Compose compiler that reading AppTheme.spacing produces no mutable state reads or slot writes, allowing the compiler to optimize the calling site into a direct property access.
 
 ## How to answer in the interview
 

@@ -21,6 +21,30 @@ An attacker modifies an APK and bypasses client-only checks. How should the back
 - A repackaged APK can forge all client-only decisions.
 - Backend reconstruction of identity, price, state and replay protection.
 
+## Concept and technical explanation
+
+The foundational law of mobile security architecture states: Never trust the client. On a client endpoint under attacker control, any client-side business logic, price calculations, entitlement checks, or root detections can be trivially neutralized by modifying Smali bytecode or hooking runtime methods with Frida. The backend must operate under zero-trust assumptions, treating all incoming requests as potentially forged. The backend reconstructs state by accepting only minimal operational intents (such as productId and quantity), fetching canonical prices and discounts directly from trusted database tables, validating transaction nonces and timestamps to defeat replay attacks, and enforcing strict state machine transitions. Client app authenticity is validated via server-to-server attestation through Play Integrity API.
+
+## Practical walkthrough (English)
+
+Server-side transaction reconstruction and anti-tamper verification architecture:
+```kotlin
+// 1. Client submits intent ONLY; never authoritative pricing or calculations
+data class PurchaseIntentRequest(
+    val productId: String,
+    val quantity: Int,
+    val clientNonce: String,
+    val integrityToken: String
+)
+
+// 2. Server-side transaction processing pseudo-logic:
+// val authenticProduct = database.findProductById(request.productId)
+// val serverCalculatedPrice = authenticProduct.unitPrice * request.quantity
+// val isValidApp = googlePlayIntegrityClient.verifyToken(request.integrityToken, request.clientNonce)
+// if (!isValidApp.meetsStrongIntegrity) throw FraudException("Compromised client binary")
+// executePayment(serverCalculatedPrice)
+```
+
 ## Explanation in Arabic
 
 مهاجم قام بتعديل الـ APK وتجاوز جميع الفحوصات الأمنية المحلية (Client-Side Checks). كيف يجب على الـ Backend حماية نفسه؟
@@ -85,25 +109,30 @@ Backend tests include changed amount, foreign order ID, stale state, duplicate o
 
 ## Interview answer — short
 
-The backend must enforce a Zero-Trust architecture: never trust client-calculated prices, roles, or checks. Recalculate business invariants entirely on the server, validate Google-signed Play Integrity attestation tokens bound to server nonces, enforce strict rate limiting, and use cryptographic transaction signing.
+The backend must never trust the client, operating under the rule that any client-side check can be reversed or patched. The server must reconstruct all business state, computing authoritative prices, discounts, and eligibility directly from its trusted databases. Every transaction requires cryptographic nonces to prevent replays, paired with server-verified Play Integrity attestation.
 
 ## Interview answer — structured
 
-When an attacker tampers with an APK to bypass client validations, backend security controls form the true line of defense.
-
-First, with Server Authoritative Business Logic, Next, clients submit intentions (e.g. `productId`, `quantity`), never outcomes (e.g. `price`, `discountedTotal`). The server looks up product costs in authoritative databases, computes taxes and discounts, and initiates charges based solely on its own calculations.
-**Cryptographic Attestation Verification**. The backend validates the Google Play Integrity token provided with critical requests. The server verifies Google's cryptographic signature, checking that `appRecognitionVerdict` equals `PLAY_RECOGNIZED` and the signing certificate SHA-256 matches the official release keystore. Modified/repackaged APKs will return `UNRECOGNIZED_VERSION`.
-**Idempotency & Replay Protection**. Critical requests require a server-issued one-time cryptographically random nonce or UUID idempotency key stored in Redis with short TTL. Replayed requests are rejected.
-**Strict Server-Side Authorization (RBAC/ABAC)**. Finally, every request verifies that the authenticated user identity extracted from the verified session token has explicit permission to access the target entity ID (preventing IDOR vulnerabilities).
-
+When an attacker decompiles and modifies an APK, every client-side barrier including input validation, pricing calculations, entitlement checks, and root detection routines can be eliminated with a few bytecode edits.
+Consequently, our backend architecture operates under an absolute zero-trust policy toward incoming mobile payloads.
+The mobile application is treated as a remote presentation layer that only submits user intent, never authoritative state.
+For example, in a checkout flow, the app transmits solely product identifiers and quantities.
+The server queries its database to retrieve authentic prices, applies active discounts, computes taxes, and calculates the total payable amount.
+To prevent replay attacks where an attacker captures and repeats a legitimate request, the server issues cryptographically random nonces and enforces single-use idempotency keys.
+Furthermore, the backend validates client integrity out-of-band by requiring signed attestation tokens from Google Play Integrity API, verifying application signing signatures and licensing directly with Google servers.
 
 ## Interview answer — deep senior
 
-From an enterprise fraud and threat modeling perspective, backend defenses incorporate multi-signal behavioral analytics.
-
-First, with Behavioral Fraud Scoring, even if an attacker successfully patches an APK and mimics API payloads, machine learning fraud engines analyze request velocity, header entropy, TLS client fingerprinting (JA3/JA4 signatures), and impossible geographic travel intervals to score transaction risk. Next, with Step-Up Authentication Challenges, when risk signals indicate an anomalous client environment, the backend refuses to execute the requested action directly. Instead, it challenges the client with step-up verification (e.g., FIDO2 / Passkey biometric challenge or out-of-band push notification to a trusted secondary device).
-Finally, with Tarpitting and Honeypots, backend APIs can embed decoy parameters or obscure endpoints. Modified clients invoking hidden deprecated endpoints expose automated tampering tools, triggering silent shadow-banning without alerting the attacker.
-
+The core law of distributed systems security is that client-side logic provides user convenience, while server-side logic provides system security.
+On an endpoint under adversary control, decompilers like JADX and tools like APKTool allow modifying Smali bytecode to invert boolean checks or bypass local validation.
+Our defense strategy centers on server-side state reconstruction and transaction invariants.
+The backend never accepts computed financial figures, account privileges, or validation flags from mobile requests.
+When processing transactions, the backend validates state machine transitions in the database, verifying that an account has sufficient balance and appropriate status before advancing order state.
+To defeat automated tampering and botnets, we integrate Google Play Integrity API through server-to-server verification.
+The mobile client requests a one-time cryptographic nonce from the backend, bound to the user id and transaction hash.
+The client retrieves a signed integrity verdict from Google Play Services and sends it to our server.
+Our backend decrypts and verifies the token, checking that appRecognitionVerdict matches our registered package and SHA-256 certificate digest, and verifying that deviceRecognitionVerdict confirms genuine Android hardware.
+If any parameter deviates, the backend rejects the transaction, records the anomaly in our fraud prevention telemetry, and flags the associated user account for administrative review. We also enforce strict API schema validation on the gateway, immediately dropping payloads that submit unexpected properties or tampered client headers.
 
 ## How to answer in the interview
 

@@ -20,6 +20,50 @@ How would Facade simplify an unreliable third-party SDK?
 
 Design a facade that normalizes an unreliable SDK without hiding errors or durability needs.
 
+## Concept and technical explanation
+
+The Facade pattern is a structural design pattern that provides a clean, unified, and simplified high-level interface over a complex, disparate, or unreliable subsystem. In enterprise Android engineering, a Facade acts as an essential Anti-Corruption Layer (ACL) positioned between fragile vendor SDKs and clean application domain logic. It encapsulates convoluted configuration lifecycles, converts unpredictable vendor threading models and legacy callback listeners into structured Kotlin Coroutines and Results, centralizes error handling, retry policies, and fallback mechanisms, and prevents leaky third-party vendor dependencies from polluting core architecture layers.
+
+## Practical walkthrough (English)
+
+Encapsulating an unreliable vendor SDK behind a resilient Facade:
+```kotlin
+// Domain Model & Interface (Pure Kotlin, zero vendor types)
+data class UserIdentity(val id: String, val verificationToken: String)
+interface IdentityVerificationService {
+    suspend fun verifyIdentity(documentImage: ByteArray): Result<UserIdentity>
+}
+
+// Resilient Facade wrapping messy vendor SDK
+class VendorIdentityFacade @Inject constructor(
+    private val vendorSdk: FlakyThirdPartyIdentitySdk,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) : IdentityVerificationService {
+
+    override suspend fun verifyIdentity(documentImage: ByteArray): Result<UserIdentity> = withContext(ioDispatcher) {
+        suspendCancellableCoroutine { continuation ->
+            try {
+                vendorSdk.initializeEngine("KEY_123") // Hide noisy multi-step setup
+                vendorSdk.startScan(documentImage, object : FlakyVendorCallback {
+                    override fun onSuccess(vendorPayload: VendorPayloadBundle) {
+                        // Translate vendor-specific types into clean domain model
+                        val identity = UserIdentity(vendorPayload.subId, vendorPayload.rawToken)
+                        continuation.resume(Result.success(identity))
+                    }
+                    override fun onError(code: Int, msg: String?) {
+                        // Absorb vendor error codes into domain exceptions
+                        continuation.resume(Result.failure(DomainVerificationException(code, msg)))
+                    }
+                })
+            } catch (t: Throwable) {
+                continuation.resume(Result.failure(t))
+            }
+            continuation.invokeOnCancellation { vendorSdk.abortCurrentScan() }
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف يبسط نمط الواجهة (Facade Pattern) التعامل مع مكتبة خارجية غير موثوقة أو فوضوية (Unreliable Third-Party SDK)؟
@@ -92,22 +136,22 @@ A fintech app wraps a flaky provider SDK, persists request IDs, and monitors cal
 
 ## Interview answer — short
 
-A Facade encapsulates an unreliable third-party SDK behind a simplified, resilient application-owned API. It converts cumbersome callbacks into suspending coroutines, absorbs unpredictable exceptions into safe Result types, and acts as an anti-corruption layer so swapping the vendor SDK later touches only the Facade.
+A Facade encapsulates an unreliable third-party SDK behind a simplified, resilient domain interface. It acts as an Anti-Corruption Layer that shields the application from messy multi-step configurations, converts unruly callbacks into modern Kotlin suspending functions, translates vendor exceptions into safe Result types, and centralizes retry and fallback policies. If the vendor SDK is later swapped or upgraded, application domain logic remains entirely untouched.
 
 ## Interview answer — structured
 
-Wrapping an unreliable third-party SDK inside a **Facade** acts as an **Anti-Corruption Layer (ACL)**, protecting the core application from external instability and poor vendor API design.
-
-First, with API Simplification, third-party SDKs frequently demand multi-step initialization rituals (setting listeners, configuring flags, handling token exchanges). A Facade condenses 10 steps into a single cohesive, high-level suspending method: `suspend fun scanDocument(): DocumentResult`. Next, with Resilience & Error Containment, volatile vendor libraries often throw undocumented runtime exceptions or return obscure integer error codes. The Facade catches vendor exceptions, intercepts error codes, and maps them into safe, typed domain results (`Result<T>`), preventing vendor crashes from taking down the app.
-Finally, with Vendor Insulation (Zero Lock-in), by consuming only the Facade, feature ViewModels and Use Cases never import vendor package classes (`com.vendor.sdk.*`). If the vendor doubles their pricing or deprecates their library, swapping to a competitor requires rewriting only the internal implementation of the Facade; the rest of the application remains completely untouched.
-
+Wrapping an unreliable vendor SDK behind a Facade solves critical architectural vulnerabilities regarding stability, maintainability, and clean boundaries.
+Third-party vendor SDKs are notorious for leaky abstractions: they often mandate complex static initialization sequences, throw undocumented runtime exceptions, execute callbacks on arbitrary background threads, and force the app to import vendor-specific data structures across multiple layers. If ViewModels or UseCases interact directly with such an SDK, vendor bugs and breaking API changes ripple throughout the entire codebase.
+A Facade establishes an architectural boundary known in Domain-Driven Design as an Anti-Corruption Layer. The Facade exposes a concise, application-owned interface that satisfies exactly what the domain needs, hiding internal SDK complexity.
+Internally, the Facade handles defensive engineering: it converts callback spaghetti into suspending coroutines using suspendCancellableCoroutine, wraps network calls in defensive try-catch blocks to catch undocumented runtime crashes, injects retry logic or circuit breakers for unreliable endpoints, and maps foreign data types into clean domain entities.
+This structural isolation guarantees that the host application remains stable, unit-testable using mock facades, and completely decoupled from external vendor lifecycles.
 
 ## Interview answer — deep senior
 
-In modern Android, Facades excel at **converting legacy Callback APIs into Coroutines and Flows**. Vendors often supply outdated Java listener interfaces (`onSuccess`, `onError`). Inside the Facade, we wrap these callbacks using `suspendCancellableCoroutine` or `callbackFlow`, installing proper cancellation cleanup in `awaitClose { ... }`.
-
-Furthermore, a Facade allows injecting **Feature Flags and Fallback Mechanisms**. If the third-party analytics or crash SDK crashes or hangs, the Facade can evaluate an in-memory killswitch, silently bypassing the vendor call and returning a cached fallback without the UI ever knowing a failure occurred.
-
+Under the hood, a Facade for a third-party SDK manages thread synchronization, cancellation propagation, and process-level crash containment.
+Many legacy vendor libraries spawn uncontrolled background threads or retain Activity references, causing memory leaks and uncatchable background exceptions. Within the Facade, senior engineers wrap vendor invocations inside structured Coroutine scopes, leveraging invokeOnCancellation to signal the vendor SDK to abort ongoing operations and release camera, location, or biometric hardware resources immediately when a ViewModel scope cancels.
+Furthermore, the Facade provides a strategic seam for fallback orchestration and dynamic feature flagging. If a remote analytics or identity verification SDK crashes frequently or exceeds latency Service Level Objectives (SLOs), the Facade can evaluate Remote Config flags or local circuit breaker state machines to transparently degrade gracefully, routing requests to a secondary fallback provider or returning a cached offline result without client code ever realizing an outage occurred.
+From a modularization perspective, the vendor SDK dependency should be restricted to a private :infrastructure:vendor-name Gradle module using implementation dependencies. The rest of the application depends strictly on the domain interface. This compilation boundary cuts build times and ensures that if the vendor releases a breaking update or must be completely decommissioned, only the isolated Facade module requires modification.
 
 ## How to answer in the interview
 

@@ -21,6 +21,76 @@ What is a payment state machine (initiated, processing, approved, declined, unkn
 - Explicit legal transitions and unknown state.
 - Separation of terminal display, backend/provider truth and reversal.
 
+## Concept and technical explanation
+
+A payment state machine is a deterministic finite state automaton governing the lifecycle of financial transactions across mutually exclusive, strictly monotonic states:
+- The Binary Fallacy in Financial Systems:
+  - In ordinary applications, network requests are often modeled as a boolean `Result.Success` or `Result.Failure`.
+  - In point-of-sale (POS) and fintech systems, this simplification causes catastrophic double-charging. A network timeout does not mean the transaction failed; the issuing bank may have deducted funds while the mobile client failed to receive the TCP packet.
+- The 6 Canonical Payment States:
+  1. `Initiated`: Transaction intent, cryptographic correlation ID, and amount are durably committed to SQLite/Room before opening any network socket.
+  2. `Processing`: The transaction payload has been dispatched to the payment gateway or bank switch; client awaits cryptographic authorization.
+  3. `Approved`: The issuer returns a signed authorization code confirming funds hold; receipt can be printed.
+  4. `Declined`: Explicit rejection code from the card issuer (e.g., insufficient balance, expired card, incorrect PIN); a definitive terminal state requiring no retry.
+  5. `Unknown` (In-Doubt): The socket dropped, timed out, or process terminated while waiting for response. The ledger state is undefined; funds may or may not be debited.
+  6. `Reversed`: An automated reversal (such as ISO 8583 message 0400/0420) was dispatched and acknowledged, releasing any pre-authorized hold on the cardholder's funds.
+- Monotonicity and Durability Invariants:
+  - State transitions must be strictly unidirectional and written using write-ahead logging (WAL) transactions. Once a transaction reaches `Approved` or `Declined`, it can never transition back to `Processing`.
+
+## Practical walkthrough (English)
+
+Modeling a deterministic financial payment state machine in Kotlin:
+```kotlin
+sealed interface PaymentState {
+    val transactionId: String
+    val amountCents: Long
+
+    // 1. Durably recorded in Room prior to network transmission
+    data class Initiated(
+        override val transactionId: String,
+        override val amountCents: Long,
+        val createdAtEpoch: Long
+    ) : PaymentState
+
+    // 2. In-flight over HTTPS/TCP to gateway
+    data class Processing(
+        override val transactionId: String,
+        override val amountCents: Long,
+        val idempotencyKey: String
+    ) : PaymentState
+
+    // 3. Terminal success: Authorization code granted
+    data class Approved(
+        override val transactionId: String,
+        override val amountCents: Long,
+        val authCode: String,
+        val rrn: String // Retrieval Reference Number
+    ) : PaymentState
+
+    // 4. Terminal failure: Explicit bank refusal
+    data class Declined(
+        override val transactionId: String,
+        override val amountCents: Long,
+        val errorCode: String,
+        val reason: String
+    ) : PaymentState
+
+    // 5. In-Doubt state: Network timeout or crash during flight
+    data class Unknown(
+        override val transactionId: String,
+        override val amountCents: Long,
+        val failureReason: Throwable
+    ) : PaymentState
+
+    // 6. Terminal release: Pre-authorization hold cancelled
+    data class Reversed(
+        override val transactionId: String,
+        override val amountCents: Long,
+        val reversalReference: String
+    ) : PaymentState
+}
+```
+
 ## Explanation in Arabic
 
 ما هي آلة حالة الدفع (Payment State Machine) وما هي الحالات الأساسية (Initiated, Processing, Approved, Declined, Unknown, Reversed) ولماذا تعتبر حاسمة في التطبيقات المالية؟
@@ -104,27 +174,21 @@ Keep a transition table with allowed evidence, actor and durable write for each 
 
 ## Interview answer — short
 
-A payment state machine governs financial transaction lifecycles across explicit states: Initiated (locally persisted), Processing (in-flight), Approved (issuer authorized), Declined (issuer rejected), Unknown (network drop/timeout during transit), and Reversed (undone via auto-reversal). It prevents double-charging and catastrophic state ambiguity.
+A payment state machine is a deterministic automaton that manages financial lifecycles across six explicit states: Initiated, Processing, Approved, Declined, Unknown, and Reversed. It replaces dangerous boolean success-failure models with durable, crash-resilient transitions, ensuring that network timeouts enter an in-doubt state requiring automated reconciliation or ISO 8583 reversal rather than risking double-charging.
 
 ## Interview answer — structured
 
-A deterministic payment state machine is the foundational architectural safeguard in fintech and POS engineering.
-
-First, **Eliminating the Binary Fallacy**. Next, financial transactions must never be modeled as a boolean (success/failure). Network timeouts produce ambiguous states where funds were deducted at the issuer bank but never acknowledged on the mobile terminal.
-**The Six Canonical Transaction States**. With Initiated, transaction intent, idempotency key, and payload are durably written to disk (Room/SQLite) before opening any socket connection.
-A Processing is the payload is in transit to the payment gateway or EMV switch. With Approved, cryptographically signed confirmation received with an authorization code.
-With Declined, explicit rejection code (e.g., insufficient funds, expired card); a terminal state requiring no automatic retries. With Unknown / In-Doubt, network timeout, socket hangup, or terminal reboot occurs mid-flight. Funds may or may not have been captured.
-A Reversed is an automated reversal (0400/0420 ISO 8583 message) has released held funds back to the cardholder. **State Transition Guarantees**.
-Finally, transitions must be strictly monotonic and persisted atomically in local databases to survive sudden process termination or hardware battery pulls.
-
+A deterministic payment state machine is the core architectural safeguard in mobile point-of-sale and fintech engineering.
+Standard mobile applications frequently treat network operations as a binary success or failure. In financial systems, this binary assumption leads to double-charging because a socket timeout indicates an ambiguous state where the bank might have debited funds while the client lost connectivity.
+The state machine models six mutually exclusive states. Initiated guarantees that the transaction intent and idempotency key are durably saved to local storage before opening a network socket. Processing marks the request in-flight. Approved and Declined represent definitive terminal outcomes from the card issuer.
+The critical state is Unknown or In-Doubt, triggered by connection drops or process termination. Transactions in this state are never treated as declined and are never naively retried. Instead, they transition to Reversed via an automated ISO 8583 reversal message or are resolved through backend ledger reconciliation.
 
 ## Interview answer — deep senior
 
-From an ISO 8583 and payment terminal compliance perspective, managing the 'Unknown' state dictates ledger consistency.
-
-First, with The 'In-Doubt' Protocol, when a transaction enters the `Unknown` state due to a 30-second gateway read timeout, client apps must **never immediately retry the authorization request**. Doing so risks charging the customer twice. The terminal must enqueue an automated Reversal (ISO 8583 0400 reversal message) and mark the local record as pending reversal. Next, with Terminal Status Inquiry vs. Auto-Reversal, high-reliability POS devices execute a Status Inquiry (`/v1/payments/{id}/status`) before issuing a reversal. If the gateway confirms the charge was captured, the client reconciles the transaction as Approved and prints the receipt; if not captured or still pending, it executes the reversal.
-Finally, with Crash-Resistant State Machine Engines, in Android, state machines must be tied to persistent WorkManager tasks and Room database observers rather than ViewModel in-memory state. If Android kills the app process due to low memory while in `Processing`, upon next launch the app inspects Room and resumes the reconciliation workflow.
-
+From an ISO 8583 banking switch and EMV terminal architecture perspective, a payment state machine enforces ledger consistency across distributed, unreliable mobile networks.
+The most dangerous vulnerability in client-side payments is treating an in-doubt state as a declined transaction. When a merchant taps to charge fifty dollars, a thirty-second gateway timeout can occur after the issuing bank captures the funds but before the mobile client receives the HTTP response. If the client naive logic marks this as failed, the cashier prompts the customer to swipe again, causing a catastrophic duplicate charge and merchant chargeback penalties.
+To prevent this, the client architecture must enforce an atomic state machine backed by persistent storage like SQLite Room with Write-Ahead Logging. The transition to Initiated occurs inside a local transaction. When entering Processing, the app assigns an immutable idempotency key and correlation ID.
+If a timeout or sudden power failure occurs, the state engine transitions to Unknown. The system immediately enqueues a background task in an isolated reversal queue, utilizing ISO 8583 0400 reversal messages. Furthermore, before initiating any subsequent transaction on the terminal, the POS software queries the gateway status endpoint. If the gateway confirms that authorization succeeded, the local transaction updates monotonically to Approved and prints the customer receipt. If authorization failed or was absent, the reversal releases held funds. This ensures perfect accounting balance regardless of battery pulls or carrier drops.
 
 ## How to answer in the interview
 

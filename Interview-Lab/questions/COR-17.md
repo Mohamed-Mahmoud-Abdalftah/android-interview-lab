@@ -20,6 +20,32 @@ How do timeout, withTimeout, and withTimeoutOrNull work?
 
 Can the candidate distinguish a coroutine deadline from network commit certainty and handle timeout nullability?
 
+## Concept and technical explanation
+
+The coroutine timeout operators withTimeout and withTimeoutOrNull enforce strict operational deadlines on asynchronous suspending executions without blocking operating system threads. Under the hood, both functions establish a cancellable child boundary governed by a scheduled timer dispatched through the active CoroutineDispatcher event loop. If the wrapped code completes before the timer fires, its computed result is returned immediately. If the duration expires first, the internal timer cancels the running child block by throwing a TimeoutCancellationException, which directly inherits from CancellationException. The crucial behavioral divergence between the two builders lies in exception handling: withTimeout allows TimeoutCancellationException to escape to the caller, requiring explicit handling or boundary conversion, whereas withTimeoutOrNull intercepts this specific exception internally and returns null instead. Importantly, if the parent coroutine scope is cancelled externally, both functions propagate the parent CancellationException upwards without converting it into a null return.
+
+## Practical walkthrough (English)
+
+Consider an Android application retrieving user geolocation with a strict fallback to a local cache:
+```kotlin
+suspend fun getCurrentLocation(): Location {
+    // Attempt location fix with a 5-second deadline:
+    val freshLocation = withTimeoutOrNull(5_000L) {
+        gpsClient.awaitSingleFix()
+    }
+    
+    // If null (timeout occurred), gracefully fallback to cache:
+    return freshLocation ?: locationCache.getLastKnownLocation()
+}
+```
+A dangerous failure scenario emerges when withTimeoutOrNull wraps a suspending operation that natively returns a nullable domain type (such as looking up an optional user in a database):
+```kotlin
+val result: User? = withTimeoutOrNull(2_000L) {
+    userDao.findUserById(id) // Can legitimately return null if not found!
+}
+```
+If result evaluates to null, the caller cannot determine whether the operation timed out or the database legitimately contained no record. To resolve this ambiguity, callers must wrap the value in a sealed outcome or use withTimeout with explicit TimeoutCancellationException handling.
+
 ## Explanation in Arabic
 
 إدارة الـ Timeouts في Kotlin Coroutines تتم عبر دالتين رئيسيتين: `withTimeout` و `withTimeoutOrNull`:
@@ -83,23 +109,22 @@ An address suggestion API uses a short timeout and cached suggestions as fallbac
 
 ## Interview answer — short
 
-withTimeout cancels the block and throws a TimeoutCancellationException if the time limit expires. withTimeoutOrNull cancels the block and safely returns null upon timeout instead of throwing an exception, making it much more ergonomic for fallbacks and retry logic.
+withTimeout and withTimeoutOrNull establish cooperative deadline boundaries for suspending code. If the deadline expires, withTimeout throws TimeoutCancellationException, unwinding the child block, whereas withTimeoutOrNull catches this specific exception and returns null. If the parent scope cancels externally, both functions propagate the parent CancellationException without swallowing it. Neither operator blocks threads.
 
 ## Interview answer — structured
 
-Both `withTimeout` and `withTimeoutOrNull` enforce execution time limits on suspending blocks, but they handle deadline expiration differently.
+WithTimeout and withTimeoutOrNull provide non-blocking deadline management for asynchronous tasks in Kotlin coroutines. When invoked, they register a scheduled timer task on the dispatcher delay loop that monitors the execution of the enclosed block.
 
-`withTimeout` cancels the enclosed coroutine block and throws a `TimeoutCancellationException` if the duration elapses before completion. Because `TimeoutCancellationException` inherits from `CancellationException`, it cancels the enclosing coroutine unless explicitly caught with a `try-catch` block around `withTimeout`.
+The key distinction between the two functions lies in their failure modeling. If the execution exceeds the allocated duration, withTimeout cancels the child coroutine and throws a TimeoutCancellationException, which must be handled by the caller. In contrast, withTimeoutOrNull intercepts this specific timeout exception and evaluates to null, making it ideal for fallback logic such as cache retrieval.
 
-`withTimeoutOrNull` is much more ergonomic for Android fallback scenarios. When the deadline expires, it cancels the internal block and cleanly returns `null` instead of throwing an exception. This allows elegant fallback expressions using the Elvis operator (`?:`), such as falling back to cached database data if a network request exceeds two seconds.
+In production, engineers must be cautious when wrapping operations that naturally return nullable domain types. If a database query returns null for a missing record, withTimeoutOrNull creates semantic ambiguity between a deadline breach and an absent entity.
+
+Neither function suppresses parent cancellation. If the parent scope is cancelled while waiting on a timeout, both operators rethrow the parent CancellationException, ensuring structured concurrency contracts remain intact.
 
 
 ## Interview answer — deep senior
 
-Under the hood, both functions schedule a delayed task on the coroutine dispatcher's event loop via `Delay.scheduleResumeAfterDelay()`. When the timer fires, it calls `cancelCoroutine(TimeoutCancellationException)`. However, timeout cancellation is strictly cooperative. If the code running inside `withTimeout` is executing a non-suspending, blocking loop (like heavy crypto or file I/O), the timeout cannot preempt the thread. It will only cancel when the block reaches a suspension point or checks `ensureActive()`.
-
-Another critical nuance is resource cleanup. If an unmanaged resource (like a database cursor or network socket) is opened inside `withTimeout`, a timeout cancellation during the open call could leak the resource before the assignment finishes. To guard against resource leaks, always allocate resources outside the timeout block or protect them with `try-finally`.
-
+Delving into internal mechanics, both withTimeout and withTimeoutOrNull instantiate a TimeoutCoroutine, which inherits from ScopeCoroutine and implements Runnable. When the timeout duration begins, the coroutine context schedules an event on the dispatcher's Delay provider, queueing a callback that will trigger if completion does not occur beforehand. If the timeout triggers first, the runnable executes TimeoutCoroutine.cancelCoroutine, synthesizing a TimeoutCancellationException that explicitly cancels child tasks and unwinds the call stack. A critical edge condition in concurrent programming is the race between block completion and timeout expiration. If the wrapped computation yields its result concurrently with the timer firing, the runtime uses atomic CAS state transitions inside JobSupport to guarantee an exact winner: either the computation commits and cancels the timer, or the timer cancels the computation and discards the computed value. Furthermore, withTimeoutOrNull catches TimeoutCancellationException only if the exception was generated by its own internal TimeoutCoroutine. If an inner nested withTimeout throws an exception from an earlier deadline, withTimeoutOrNull recognizes that the source coroutine does not match its own handle and allows the exception to escape. In high-reliability architectures, distinguishing transport-level socket timeouts from coroutine-level execution deadlines is essential. A coroutine timeout simply cancels local execution; it does not guarantee that a remote HTTP server has aborted processing. For mutating transactions like payment requests, wrapping an API call in withTimeout without server-side idempotency keys can lead to duplicate processing if the request timed out on the client while succeeding on the backend.
 
 ## How to answer in the interview
 

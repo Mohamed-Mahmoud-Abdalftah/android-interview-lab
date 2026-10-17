@@ -20,6 +20,41 @@ Compare Channel and SharedFlow, including event-loss and delivery caveats.
 
 Compare Channel queue/receive semantics with SharedFlow broadcast and acknowledge delivery limits.
 
+## Concept and technical explanation
+
+The architectural distinction between Channel and SharedFlow centers on communication topology, delivery guarantees, and event-loss characteristics under lifecycle transitions.
+Channel is a point-to-point (unicast), queue-based communication primitive. Every element sent to a Channel is delivered to and consumed by exactly one receiver; if multiple collectors listen to the same Channel, emissions are distributed competitively (fan-out worker queue) rather than broadcasted. Importantly, a buffered Channel retains elements in memory until consumed, guaranteeing that one-off events are not lost even if the UI is temporarily stopped.
+SharedFlow is a broadcasting (multicast), hot reactive stream. Every element emitted is distributed simultaneously to all active collectors. However, SharedFlow requires active subscribers at emission time; if an event is emitted when zero subscribers are active (and replay cache is zero), the event is dropped permanently into the void, creating catastrophic event loss for navigation intents during lifecycle pauses.
+
+## Practical walkthrough (English)
+
+Contrasting Channel unicast delivery with SharedFlow multicasting:
+```kotlin
+class OrderProcessingViewModel : ViewModel() {
+    // 1. Channel: Guarantees delivery to exactly ONE receiver, buffers during onStop
+    private val _navigationChannel = Channel<OrderNavigationEvent>(Channel.BUFFERED)
+    val navigationEvents = _navigationChannel.receiveAsFlow()
+
+    // 2. SharedFlow: Broadcasts to ALL active screens, drops if no one is listening
+    private val _orderUpdates = MutableSharedFlow<OrderBroadcast>(
+        replay = 0,
+        extraBufferCapacity = 16,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val orderUpdates = _orderUpdates.asSharedFlow()
+
+    fun onOrderApproved(orderId: String) {
+        viewModelScope.launch {
+            // Buffered until UI unpauses: Never lost!
+            _navigationChannel.send(OrderNavigationEvent.OpenReceipt(orderId))
+
+            // Multicast to all active observer screens:
+            _orderUpdates.emit(OrderBroadcast.StatusChanged(orderId, "APPROVED"))
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 المقارنة بين `Channel` و `SharedFlow` هي الفارق الجوهري بين طوابير المهام الفردية (Work Queues) والبث الجماعي (Broadcasting):
@@ -90,23 +125,26 @@ A snackbar may use a best-effort SharedFlow. A local in-process command dispatch
 
 ## Interview answer — short
 
-A Channel is a point-to-point FIFO queue where each element is consumed by exactly one receiver with zero event loss when buffered; SharedFlow is a broadcast multicaster where every emission fans out to all active subscribers, but drops events if no subscribers are listening when replay is 0.
+Channel is a unicast queue delivering each item to exactly one consumer, buffering events safely during UI pauses. SharedFlow is a multicast stream broadcasting to all active observers simultaneously, but drops emissions permanently if no subscribers exist at emission time unless replay or buffer is configured.
 
 ## Interview answer — structured
 
-The architectural distinction between `Channel` and `SharedFlow` lies in communication topology and event delivery guarantees.
+Channel and SharedFlow represent fundamentally distinct concurrency primitives serving opposing architectural topologies.
 
-A **Channel** is a point-to-point communication primitive (1-to-1). It models a queue: if multiple collectors read from a Channel, they compete for items, and each item is consumed by exactly one collector. Because it is buffered (`Channel.BUFFERED`), it guarantees zero event loss: an event sent while the UI is rotating or backgrounded waits safely in the queue until the UI recreates and consumes it. This makes Channels ideal for one-off side effects like navigation commands.
+Channel implements queue semantics (unicast). Elements sent into a Channel remain in its buffer until a consumer dequeues them. When multiple collectors observe a Channel, each emission is consumed by only one worker, making Channel ideal for transactional work distribution.
 
-A **SharedFlow** is a broadcast multicaster (1-to-N). Every emitted item is delivered to all active subscribers simultaneously. However, its major caveat is event loss: if an emission occurs when zero collectors are subscribed and `replay = 0`, the event is dropped permanently. It is suited for telemetry and broadcast notifications where dropped transient events are acceptable.
+In production, SharedFlow implements pub-sub broadcasting (multicast). Every emission is fanned out concurrently to all registered collectors, making it the premier choice for broadcasting state invalidation, user logout notifications, or global configuration updates across multiple screens.
+
+The primary risk with SharedFlow is event loss. If an event is emitted while an Activity is in onStop and has detached its collector, a SharedFlow with replay = 0 discards the event completely. Conversely, a Channel buffers the message, delivering it reliably as soon as the UI enters onStart and resumes collection.
 
 
 ## Interview answer — deep senior
 
-Under the hood, `Channel` manages an explicit queue of elements and suspended continuations. When `send()` is invoked, if a receiver is waiting in `receive()`, the value is handed off directly between continuations without buffering. When converting a Channel to a Flow using `receiveAsFlow()`, you get a hot flow backed by that Channel. However, if multiple collectors collect from `receiveAsFlow()`, they will interleave item consumption rather than multicasting.
-
-In contrast, `SharedFlow` maintains a ring buffer and an array of subscriber slot pointers. Each subscriber tracks its own index in the buffer. In Android architecture, this distinction dictates our pattern for ViewModel-to-UI communication: Use **StateFlow** for state (`UiState`); Use **Channel.receiveAsFlow()** for single-consumption events (`Navigation`, `Toast`); and Use **SharedFlow** only when multiple independent screens/subscribers must receive the exact same event.
-
+Under the hood in kotlinx.coroutines, Channel implements the SendChannel and ReceiveChannel interfaces, backed by low-level lock-free queues managing sender and receiver continuations. When send is invoked without an active receiver, the item sits in the channel buffer array. When receive or receiveAsFlow is invoked, the first waiting receiver extracts the element and dequeues it permanently.
+Conversely, SharedFlow manages an array of SharedFlowSlots. When emit is invoked, it iterates through all registered slots, incrementing their read head pointers. If the slot array is empty (zero subscribers), the emit operation immediately returns. Unless replay is positive or extraBufferCapacity is configured with an uncollected buffer, the emission evaporates completely without trace.
+However, Channel introduces its own architectural caveat: Single Consumer Queue semantics. If a developer uses receiveAsFlow() and collects it in two different Composables or Fragments, the collectors race to dequeue emissions. Collector A consumes event 1, and Collector B consumes event 2, resulting in split-brain event processing where neither UI screen observes the complete sequence.
+During Android configuration changes, a buffered Channel safely queues one-shot navigation events while the Activity recreates, delivering the pending intent immediately upon reconnection without duplicating events across screen rotations.
+Staff engineers apply strict architectural boundaries: Channel is reserved strictly for private 1:1 one-off UI events (like single-destination navigation), while SharedFlow is used strictly for 1:N multi-subscriber broadcasts with deliberate replay caching.
 
 ## How to answer in the interview
 

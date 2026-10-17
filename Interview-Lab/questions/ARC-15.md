@@ -20,6 +20,35 @@ When do you introduce interfaces, and when can concrete implementations be suffi
 
 Choose interfaces for meaningful polymorphism, boundaries and tests, not one per class.
 
+## Concept and technical explanation
+
+Interfaces in software architecture decouple contractual abstractions from concrete execution details, enabling polymorphism, the Dependency Inversion Principle, and isolated unit testing. Interfaces should be introduced when: (1) multiple distinct production implementations exist or are planned (such as PaymentGateway implemented via Stripe, PayPal, and Google Pay, or BiometricAuthenticator with platform variants), (2) formal architectural boundaries must be enforced across modules (e.g., Domain defines a Repository interface, while Data provides the concrete implementation), or (3) high-fidelity test fakes are required for deterministic JVM testing without mocking libraries. Conversely, concrete classes are entirely sufficient for internal helpers, data mappers, private repository implementations, and Use Cases that have exactly one logical implementation. Creating 1:1 interfaces (e.g. ILoginUseCase and LoginUseCaseImpl) creates interface pollution, adds navigation indirection, and provides zero architectural value.
+
+## Practical walkthrough (English)
+
+Contrasting necessary boundary interfaces with sufficient concrete classes:
+```kotlin
+// 1. GENUINE NEED FOR INTERFACE: Architectural boundary & test fakes
+interface PaymentGateway {
+    suspend fun processPayment(amount: Double): Result<TransactionReceipt>
+}
+// Concrete production implementation in :core:data
+class StripePaymentGateway(private val api: StripeApi) : PaymentGateway { ... }
+// Test fake in :core:testing for lightning-fast unit tests
+class FakePaymentGateway : PaymentGateway {
+    var shouldFail = false
+    override suspend fun processPayment(amount: Double) =
+        if (shouldFail) Result.failure(Exception("Declined")) else Result.success(TransactionReceipt("TX-1"))
+}
+
+// 2. CONCRETE SUFFICIENT: Single-purpose UseCase with pure domain rules
+class CalculateLoanInterestUseCase { // ❌ DO NOT create ICalculateLoanInterestUseCase!
+    operator fun invoke(principal: Double, rate: Double, tenureMonths: Int): Double {
+        return (principal * rate * tenureMonths) / 1200.0
+    }
+}
+```
+
 ## Explanation in Arabic
 
 متى تقوم بإنشاء واجهات (Interfaces)، ومتى تكون الكلاسات الحقيقية الملموسة (Concrete Implementations) كافية دون إفراط؟
@@ -82,26 +111,24 @@ A subscription app uses a narrow `EntitlementSource` contract consumed by policy
 
 ## Interview answer — short
 
-Introduce interfaces at architectural boundaries to invert dependencies (e.g. Domain Repository interfaces), when multiple production implementations exist (e.g. Stripe vs Google Pay), or to abstract volatile external systems (e.g. GPS, Bluetooth). Concrete classes are sufficient for single-implementation Use Cases and ViewModels.
+Introduce interfaces at architectural boundaries to invert dependencies, when multiple implementations exist like different payment gateways, or to enable fake implementations in tests. Concrete classes are sufficient for internal use cases, mappers, and utilities where only one implementation exists and mocking or direct instantiation is straightforward.
 
 ## Interview answer — structured
 
-Deciding when to introduce interfaces distinguishes pragmatic senior engineers from dogmatic architects suffering from 'Interface-itis'.
+Deciding between an interface and a concrete class requires evaluating boundary isolation and polymorphic necessity against navigation friction.
 
-First, **When Interfaces are Genuinely Necessary**. Next, inversion of Control across Boundaries is the quintessential Clean Architecture contract: the Domain layer declares `interface OrderRepository`, and the Data layer implements it, keeping the Domain pure.
-Additionally, with Multiple Real Implementations, when the system genuinely supports swappable implementations (e.g. `interface PaymentGateway` implemented by `StripeGateway` and `PayPalGateway`). With Abstracting Flaky External Systems, wrapping hardware, system frameworks, or third-party SDKs (`LocationManager`, `BluetoothScanner`, `BiometricAuth`) behind an interface allows creating high-speed `Fake` implementations for JVM unit testing.
-**When Concrete Classes are Sufficient**. An Use Cases (Interactors) is a Use Case encapsulates a single business scenario in pure Kotlin. Creating `interface CheckoutUseCase` paired with `CheckoutUseCaseImpl` is 100% redundant boilerplate.
-ViewModels have a single implementation bound to UI state. Finally, with Internal Utilities, helper classes and mappers.
+Interfaces are essential at architectural boundaries where you need to enforce the Dependency Inversion Principle. For example, declaring a Repository interface in the domain layer allows the data layer to implement it without the domain depending on data implementation details.
+
+In production, interfaces are mandatory when multiple implementations exist, such as swapping between Google Play Billing and Stripe, or providing high-fidelity test fakes for fast JVM unit tests without mock libraries.
+As for concrete classes, they are entirely sufficient for use cases, mappers, and internal repository helpers that have only one reasonable implementation. Creating 1:1 interfaces with names like ILoginUseCase adds navigation indirection and cognitive noise without delivering any real polymorphic or testability advantage.
 
 
 ## Interview answer — deep senior
 
-A legacy justification for interfaces was testability in Java: developers couldn't mock concrete classes without interfaces. In modern Kotlin, with MockK and Mockito-inline, mocking concrete classes is trivial. More importantly, modern testing best practices advocate using **Fakes over Mocks**. For a pure Kotlin Use Case, you don't even need a mock or a fake—you instantiate the concrete class directly in your test!
-
-In large multi-module codebases, interfaces enable **Compilation Avoidance**. If an interface lives in an API module (`:feature:chat:api`) and its implementation lives in an implementation module (`:feature:chat:impl`), changing the internal implementation logic does not invalidate or recompile the dozens of downstream modules that only depend on the API module.
-
-We adhere to the Rule of Three: do not abstract with an interface until you have two distinct implementations or a strict architectural dependency boundary.
-
+Under the hood, dogmatic adherence to the interface-everything rule stems from legacy Java and C# paradigms where mocking libraries required interfaces to generate dynamic proxies. In modern Kotlin and Android development with MockK and native test fakes, creating an interface with a single Impl class for every single component is an anti-pattern known as interface pollution.
+Interfaces shine when they define stable contracts across module boundaries. In multi-module Gradle setups, a feature module should depend only on an interface PaymentRepository defined in core model or core domain, while the concrete PaymentRepositoryImpl in core data is wired in via Hilt. This drastically reduces incremental build times because modifying the internal logic of PaymentRepositoryImpl does not invalidate the build cache of the consuming feature module.
+Furthermore, interfaces are superior when creating hand-crafted test fakes. While mocking libraries introduce reflection overhead, implementing a lightweight FakeUserRepository backing operations with a simple in-memory list makes unit tests lightning-fast, readable, and deterministic.
+Staff engineers apply a clear rule: use interfaces at architectural and module boundaries, when multiple production implementations exist, or for external hardware/SDK wrappers. Use concrete classes for internal business logic, UseCases, and private helpers where polymorphism is absent and 1:1 interfaces merely add visual clutter.
 
 ## How to answer in the interview
 

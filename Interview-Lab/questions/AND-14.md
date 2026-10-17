@@ -22,6 +22,52 @@ What is the Activity Result API, and why use it?
 - Explain lifecycle recreation and why stable registration order matters.
 - Choose typed contracts or a custom contract instead of manually managing request codes.
 
+## Concept and technical explanation
+
+The Activity Result API is the modern, type-safe framework introduced in AndroidX to handle cross-activity communication and result retrieval, completely superseding the legacy, deprecated `startActivityForResult()` and `onActivityResult()` pattern.
+
+The legacy approach suffered from severe architectural deficiencies:
+1. Lifecycle Coupling and Fragment Collisions:
+Result handling was tightly bound to the Activity or Fragment class, forcing developers to route disparate results through a monolithic, error-prone `onActivityResult` switch-case block using integer request codes. Request code collisions frequently occurred across large, multi-module codebases.
+2. The Fatal Low-Memory Process Kill Bug:
+When launching an external resource-heavy activity—such as the system camera or a file gallery picker—Android frequently terminated the background caller Activity under memory pressure. When the user returned with the captured photo, the calling Activity was recreated from scratch, but its `onActivityResult` callback frequently lost transient references or executed before view models were initialized, leading to blank screens or NullPointerExceptions.
+
+The Activity Result API addresses these problems by decoupling result handling through dedicated contracts (`ActivityResultContract<I, O>`) and registering persistent, type-safe launchers via `registerForActivityResult()`. The framework mandates registering launchers unconditionally during initialization or `onCreate()`. By doing so, if the host Activity is destroyed while the target activity is active, the framework re-registers the callback prior to entering the STARTED lifecycle state, automatically delivering the result to the rehydrated launcher without state loss.
+
+## Practical walkthrough (English)
+
+Selecting an image and handling results type-safely via the Activity Result API:
+```kotlin
+class ProfileActivity : AppCompatActivity() {
+
+    // 1. Unconditionally register the typed contract during property initialization
+    private val pickImageLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        // 2. Type-safe callback invoked automatically even if Activity was recreated
+        if (uri != null) {
+            loadAvatarPreview(uri)
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_profile)
+
+        findViewById<Button>(R.id.btn_change_avatar).setOnClickListener {
+            // 3. Launch with type-safe input parameter
+            pickImageLauncher.launch("image/*")
+        }
+    }
+
+    private fun loadAvatarPreview(imageUri: Uri) {
+        findViewById<ImageView>(R.id.avatar_image).setImageURI(imageUri)
+    }
+}
+```
+Failure scenario:
+If an engineer attempts to register `registerForActivityResult` inside a button click listener or after `onStart()`, the runtime immediately throws an `IllegalStateException: LifecycleOwner is attempting to register while current state is STARTED`. The callback MUST be registered during initialization so the OS can restore it if the Activity is killed in the background.
+
 ## Explanation in Arabic
 
 الـ Activity Result API هو البديل الحديث والموثوق لـ `startActivityForResult` القديمة المعيبة:
@@ -80,36 +126,28 @@ A profile editor stores the pending operation ID in `SavedStateHandle`, register
 
 ## Interview answer — short
 
-The Activity Result API replaces error-prone startActivityForResult and onActivityResult with strongly-typed, modular ActivityResultContracts. Crucially, it registers callbacks during initialization so results are safely reconnected even if the calling Activity is killed by process death while the external app is open.
+The Activity Result API replaces legacy startActivityForResult with a type-safe, decoupled contract pattern. By mandating launcher registration during component initialization, it ensures result callbacks survive caller Activity destruction and background process reclamation when external activities like the camera or gallery consume system RAM.
 
 ## Interview answer — structured
 
-The Activity Result API completely modernizes inter-activity result handling by replacing legacy `startActivityForResult` and monolithic `onActivityResult` overrides.
+The Activity Result API is Android's modern standard for initiating external component flows and processing their return results, completely superseding the deprecated startActivityForResult and onActivityResult pattern.
 
-It solves three major architectural defects of the old API.
+The legacy model suffered from two fundamental flaws: tightly coupling all result parsing to a monolithic switch-case method inside the Activity, and failing catastrophically when the calling Activity was destroyed in the background due to low memory while a memory-intensive camera or document picker was active.
 
-First, with Process Death Resilience, when launching memory-heavy external applications (like the camera or gallery), Android frequently kills the calling Activity process in the background. Because `registerForActivityResult()` registers the callback handle before `onStart()`, when the Activity recreates upon returning, the result is re-delivered to the restored callback cleanly without data loss. Next, with Type-Safe Modular Contracts, it uses `ActivityResultContract<I, O>` abstractions that explicitly define typed inputs and outputs—such as `TakePicture`, `GetContent`, or `RequestPermission`—eliminating raw `Intent` parsing and fragile `requestCode` integer switch statements.
-Finally, with Decoupled Architecture, result launchers can be registered inside standalone helper classes and lifecycle observers, removing bloated navigation code from the Activity class body.
+The Activity Result API decouples result handling into modular, type-safe contracts using ActivityResultContract. A launcher specifies typed input parameters and yields strongly typed output objects, eliminating manual integer request codes and Intent parsing boilerplate.
+
+In production, registration timing is critical. Launchers must be declared unconditionally during initialization or in onCreate before the lifecycle reaches STARTED. This timing contract allows the underlying ActivityResultRegistry to rebind the result listener automatically upon Activity recreation, guaranteeing seamless delivery even after process death.
 
 
 ## Interview answer — deep senior
 
-Under the hood, the API is managed by `ActivityResultRegistry`. When you invoke `registerForActivityResult(contract, callback)`, it generates a unique key and registers the callback in the registry. When `launch(input)` is called, the contract generates an Intent, saves the request key in the instance state Bundle, and dispatches the Intent.
+At the framework architecture and lifecycle registry level, the Activity Result API is orchestrated by ComponentActivity's internal ActivityResultRegistry. In the legacy startActivityForResult model, the platform dispatched results directly through ActivityThread into onActivityResult(). If the operating system terminated the calling Activity process while the user was interacting with an external camera application, re-instantiating the Activity frequently led to lost callbacks because the receiving listeners were not yet attached when the system delivered the result bundle.
 
-You can also write powerful **Custom Contracts**:
+The ActivityResultRegistry resolves this synchronization race through a durable key-based registry. When registerForActivityResult(contract, callback) is invoked during initialization, the registry generates or retrieves a unique persistent string key for that operation. If the hosting Activity is killed by the Low Memory Killer while the camera is open, the camera returns its result across Binder IPC to ActivityTaskManagerService.
 
-```kotlin
-class SelectUserContract : ActivityResultContract<String, UserProfile?>() {
-    override fun createIntent(context: Context, input: String): Intent =
-        Intent(context, UserPickerActivity::class.java).putExtra("team_id", input)
+When the caller Activity is reconstructed, ActivityThread invokes performCreate(), restoring the saved state Bundle. Because the launcher is registered unconditionally before onStart(), the ActivityResultRegistry matches the incoming system result against the re-registered key and queues the dispatch until the lifecycle reaches CREATED, delivering the parsed result safely to the developer's callback.
 
-    override fun parseResult(resultCode: Int, intent: Intent?): UserProfile? =
-        if (resultCode == Activity.RESULT_OK) intent?.getParcelableExtra("user") else null
-}
-```
-
-This encapsulates all intent parsing, extras keys, and result code checks into a single reusable component across multi-module codebases.
-
+Furthermore, Staff engineers leverage custom ActivityResultContracts to establish clean architectural boundaries. By extending ActivityResultContract<Input, Output>, teams encapsulate complex Intent assembly, URI permissions, and output parsing (such as transforming raw Intent extras into domain-specific DTOs) into isolated, unit-testable components, passing mock ActivityResultRegistry instances during testing without launching actual Android UI components.
 
 ## How to answer in the interview
 

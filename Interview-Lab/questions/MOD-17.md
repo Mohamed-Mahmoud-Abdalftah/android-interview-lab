@@ -22,6 +22,33 @@ When is a new feature module justified, and when is it unnecessary complexity?
 - Weigh module overhead and boundary stability.
 - Propose measured incremental extraction.
 
+## Concept and technical explanation
+
+The architectural decision to extract a new Gradle feature module requires weighing concrete productivity benefits against build system overhead and organizational friction:
+- Justified When:
+  1. Autonomous Squad Ownership: A dedicated engineering squad owns the domain slice and release lifecycle independently.
+  2. Large, Cohesive Bounded Context: The feature contains significant domain logic, data models, ViewModels, and screens (e.g., :feature:checkout, :feature:streaming) that benefit from parallel compilation and build caching.
+  3. Dynamic Delivery Candidate: The capability is heavy, optional, or regional, qualifying for Play Feature Delivery on-demand downloading.
+  4. Strict Compliance Isolation: Segregating sensitive regulatory logic (PCI-DSS payment vaults, HIPAA patient records) into an isolated boundary.
+- Unnecessary Complexity (Over-Modularization) When:
+  1. Trivial Functionality: Static or small screens (e.g., "About App", "Terms of Service") with two classes and no distinct business logic.
+  2. Tight Domain Coupling: Features that constantly change together in the same PRs, indicating an artificial split.
+  3. Excessive Configuration Penalty: Creating hundreds of tiny modules balloons Gradle configuration time and complicates navigation without delivering parallel compilation returns. Package-by-feature within an existing module is often vastly superior.
+
+## Practical walkthrough (English)
+
+Evaluating feature extraction criteria using an architectural decision matrix:
+```kotlin
+// ❌ UNJUSTIFIED EXTRACTION: 2 classes in its own Gradle module!
+// :feature:about (Contains only AboutActivity.kt and a static string)
+// Result: Adds 500ms to Gradle configuration time for zero build cache benefit.
+
+// ✅ JUSTIFIED EXTRACTION: Autonomous bounded context with dedicated logic
+// :feature:kyc:api  (KycNavigator, KycStatusContract)
+// :feature:kyc:impl (DocumentCaptureScreen, BiometricVerification, KycRepository)
+// Owned by Compliance Squad, changes independently, benefits from parallel compilation.
+```
+
 ## Explanation in Arabic
 
 متى يكون إنشاء موديول ميزة جديد (New Feature Module) مبرراً، ومتى يتحول إلى تعقيد زائد غير مبرر (Unnecessary Complexity)؟
@@ -76,27 +103,30 @@ Record why each module exists, owner and public API. Track configuration time, i
 
 ## Interview answer — short
 
-A new feature module is justified when driven by independent team ownership, high-velocity code changes requiring isolated build caching, dynamic feature delivery, or the need for an isolated sample app. It is unnecessary complexity for trivial single screens, tightly coupled sub-flows, or speculative modularization that inflates Gradle sync times.
+A new feature module is justified when an independent squad owns the feature, the domain logic is substantial enough to benefit from parallel compilation and caching, or the capability qualifies for dynamic delivery or compliance isolation. It is unnecessary complexity for trivial screens, tightly coupled flows, or when the Gradle configuration penalty outweighs build gains.
 
 ## Interview answer — structured
 
-Creating a new Gradle module carries a permanent maintenance and build cost. A senior engineer evaluates module extraction against four concrete criteria.
-
-First, **When It Is Justified**. Next, team Ownership Boundaries is a dedicated team owns the feature (e.g., `:feature:checkout` owned by the Payments team), supported by explicit GitHub `CODEOWNERS` rules.
-Additionally, a Compilation Velocity & Caching is the feature experiences high code churn. Isolating it ensures that hundreds of daily commits do not trigger recompilations of stable sibling modules. A Dynamic Feature Delivery is the feature is delivered conditionally or on-demand via Android App Bundles (e.g. Heavy ML or AR features).
-A Fast Isolated Feedback is the team requires an isolated sample app (`:feature:x:sample`) that compiles in 4 seconds to test UI flows without launching the monolithic app. **When It Is Accidental Complexity**.
-With Trivial Read-Only Screens, creating dedicated modules for 'About Us' or 'Legal Terms'. With Tightly Coupled Sub-flows, splitting screens that inherently share view models, state machines, and atomic transactions.
-Finally, with Premature Granularity, splitting code into hundreds of micro-modules, degrading Android Studio IDE sync times and increasing Gradle configuration overhead.
-
+Deciding when to create a new feature module requires evaluating both build system metrics and team organizational dynamics.
+A new feature module is fully justified when an independent engineering squad owns the domain slice and needs to ship updates without merge conflicts.
+It is also justified when the feature contains substantial domain logic, private database tables, and UI state machines, allowing Gradle to compile it in parallel and cache its outputs.
+Capabilities that qualify for on-demand downloading through Play Feature Delivery or require strict compliance isolation also warrant dedicated modules.
+Conversely, creating a module is unnecessary complexity when dealing with trivial screens like an About page or Terms of Service.
+If two features constantly change together in the same pull requests, splitting them creates artificial friction.
+Over-modularization inflates Gradle configuration time during project syncs and adds needless navigation indirection.
 
 ## Interview answer — deep senior
 
-The performance trade-off of modularization is governed by the ratio between **Gradle Configuration Time and Execution Time**.
-
-In a project with 300 micro-modules, Gradle must evaluate 300 `build.gradle.kts` files, configure 300 compile tasks, and Android Studio must index 300 module source sets. If modules are too small, the configuration phase takes 15 seconds, while the actual compilation takes 2 seconds—making the developer experience painfully sluggish.
-
-A pragmatic rule of thumb: **Start with cohesive package structures inside a single module**. Only extract a package into a discrete Gradle module when package-level boundaries are established, compilation frequency is high, or cross-team collaboration friction demands physical enforcement.
-
+In enterprise system design, modularization is not a virtue in itself; it is a mechanical trade-off between parallel compilation and configuration overhead.
+Every Gradle subproject incurs a fixed tax: project evaluation overhead in the configuration phase, memory footprint in the Gradle daemon, extra IDE indexing tasks, and navigation contract maintenance.
+If a proposed module contains only a few simple screens and a repository, the configuration tax and cognitive friction easily outweigh any parallel compilation dividend.
+A new feature module is justified only when it fulfills three objective architectural criteria.
+First, organizational autonomy: an independent product squad owns the domain boundary, enabling them to work with isolated git histories and clear CODEOWNERS definitions.
+Second, substantial computational weight: the module contains dozens of classes, custom Compose layouts, and domain use cases.
+Here, Gradle's parallel worker executors and remote build cache deliver massive speedups because the feature compiles independently while neighboring squads work on other modules.
+Third, operational lifecycle divergence: the feature targets dynamic feature delivery or requires compliance sandboxing, such as isolating credit card data under PCI-DSS controls.
+If these criteria are absent, senior architects mandate package-by-feature organization inside an existing module.
+Grouping files into cohesive packages provides eighty percent of encapsulation benefits without paying a single second of Gradle configuration penalty.
 
 ## How to answer in the interview
 

@@ -20,6 +20,55 @@ A global Singleton makes tests order-dependent. How do you redesign ownership?
 
 Redesign global mutable singleton ownership to eliminate test order dependence and lifecycle leaks.
 
+## Concept and technical explanation
+
+Global mutable singletons (such as Kotlin object declarations retaining var properties or static instance holders) introduce hidden shared mutable state across an entire JVM process, causing test order dependence, flaky test suites, and concurrency race conditions. When unit test suites run in a shared test process, modifications made by Test A persist in memory and contaminate the execution environment of Test B. To remediate this defect, software architects redesign state ownership by transforming static objects into ordinary instantiable classes, externalizing their lifecycle management to a Dependency Injection container, enforcing constructor injection, and providing fresh, isolated in-memory instances for every individual test execution.
+
+## Practical walkthrough (English)
+
+Refactoring a global mutable singleton into an isolated, test-friendly dependency:
+```kotlin
+// BAD ANTI-PATTERN: Global Mutable Singleton (Causes test contamination and order dependence!)
+object UserSessionManager {
+    var activeUser: User? = null // Persists across all unit tests in the same JVM runner!
+    fun logout() { activeUser = null }
+}
+
+// REDESIGNED: Ordinary instantiable class with clear contract
+interface UserSession {
+    val currentUser: User?
+    fun updateSession(user: User)
+    fun clear()
+}
+
+class UserSessionImpl @Inject constructor() : UserSession {
+    private var _user: User? = null
+    override val currentUser: User? get() = _user
+    override fun updateSession(user: User) { _user = user }
+    override fun clear() { _user = null }
+}
+
+// PRODUCTION: Scoped via DI container (Singleton within Application lifetime)
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class SessionModule {
+    @Binds @Singleton
+    abstract fun bindSession(impl: UserSessionImpl): UserSession
+}
+
+// UNIT TESTS: 100% Isolated, order-independent, parallel test runs!
+class UserProfileViewModelTest {
+    // Fresh instance created per test method, zero state leakage!
+    private val fakeSession: UserSession = UserSessionImpl()
+    private val viewModel = UserProfileViewModel(fakeSession)
+
+    @Test fun testLoginUpdatesState() {
+        fakeSession.updateSession(User("id_1", "Alice"))
+        assertEquals("Alice", viewModel.getCurrentUserName())
+    }
+}
+```
+
 ## Explanation in Arabic
 
 الـ Singleton العام القابل للتعديل (Global Mutable Singleton) يجعل الاختبارات تعتمد على ترتيب التنفيذ (Order-Dependent). كيف تعيد تصميم ملكية البيانات (Ownership)؟
@@ -116,25 +165,25 @@ A fintech app moves session facts to repository backed by protected storage and 
 
 ## Interview answer — short
 
-Global mutable singletons (`object` with `var`) persist state across test executions in the same JVM process, causing test order dependence and flakiness. Redesign ownership by turning the singleton into a standard class, injecting it via Constructor Injection, controlling its lifecycle scope through a DI container (like Hilt @Singleton), and creating fresh in-memory instances per test.
+A global mutable singleton persists modified state across unit tests running in the same JVM process, making test outcomes depend on execution order. To fix this, redesign ownership by converting the static singleton into an ordinary instantiable class implementing an interface. Enforce constructor injection for all consumers, let a DI container like Hilt manage its application-wide lifecycle scope in production, and instantiate fresh, isolated instances before each test method to guarantee deterministic, order-independent test execution.
 
 ## Interview answer — structured
 
-A global mutable singleton (`object Session { var user: User? }`) violates single ownership and destroys test determinism. Because JVM test runners reuse the same classloader process to run multiple test suites, mutations made by Test A persist into Test B. Tests become order-dependent: running Test B alone passes, but running the whole test suite fails.
-
-To fix this, we redesign state ownership.
-
-First, with Demote `object` to a Standard Class, we replace the Kotlin `object` with an interface and a concrete class (`SessionManager`). The class encapsulates its state within thread-safe abstractions like `StateFlow`. Next, with Explicit Constructor Injection, any ViewModel, Repository, or Interactor that needs session information declares `SessionManager` in its constructor. Nothing accesses ambient global state.
-Finally, with Container-Managed Scope, in production, the DI container (Hilt) manages a single instance scoped with `@Singleton`. In JVM tests, we instantiate a fresh `FakeSessionManager` in `@Before`, guaranteeing 100% test isolation and determinism.
-
+Order-dependent unit tests are a hallmark symptom of architectural contamination caused by global mutable singletons.
+When an application uses a Kotlin object or a static Java singleton holding mutable fields, that state lives in the static memory area of the JVM process. When test runners like JUnit execute test classes, all tests within the module frequently share that same JVM process to optimize execution speed. If Test A logs in a user or modifies a configuration flag in the singleton and Test B expects an unauthenticated state, the test suite passes when run in isolation but fails intermittently when run together, creating elusive flaky tests.
+Redesigning state ownership requires shifting from global implicit access to explicit scoped dependency injection.
+The first step is transforming the static object into a regular class with a private constructor and defining an interface that abstracts its behaviors.
+The second step is replacing global static call sites with explicit constructor injection, ensuring that every consuming ViewModel, UseCase, or Repository declares its dependency openly.
+The third step is delegating lifecycle ownership to the dependency injection framework. In production, Hilt or Dagger scopes the class to SingletonComponent, ensuring a single shared instance per application runtime.
+In test environments, each unit test instantiates a fresh, isolated instance of the class or a lightweight test double during setup, guaranteeing total test independence regardless of execution order.
 
 ## Interview answer — deep senior
 
-Beyond test ordering bugs, global mutable singletons introduce severe Android runtime vulnerabilities.
-
-First, with Process Death Vulnerability, when Android terminates an app process in the background due to low memory, static variables are purged. When the user returns, the Activity is recreated, but the global singleton's state is reset to `null`, causing widespread `NullPointerExceptions` or forcing unexpected logouts. Proper ownership means persisting critical state to Room or encrypted DataStore, with the session manager reloading state reactively. Next, with Concurrency and Visibility Hazards, naive global singletons with `var` fields lack memory barriers. If thread A writes `user = newProfile` and thread B reads it on another thread, thread B can observe stale cached CPU register values unless fields are `@Volatile` or guarded by a Mutex.
-Finally, with Stateless Utilities vs. State Holders, Kotlin `object` is perfectly appropriate for stateless utilities (math functions, date formatters, serializers). It becomes toxic only when it holds mutable state. By moving state into injected repositories, we gain observability, thread-safety, and test parallelizability.
-
+Under the hood, static singletons circumvent the JVM garbage collection root lifecycle by hanging directly off the ClassLoader's static reference table.
+Because the ClassLoader does not unload classes between individual JUnit test methods, any mutable data structure (such as an in-memory HashMap, token cache, or CoroutineScope) attached to a static field remains resident in memory throughout the entire test process. Attempting to fix this by adding a resetForTesting() method is a fragile anti-pattern: it leaks test-only logic into production bytecode, fails to protect against concurrent parallel test runners, and relies on developer discipline to invoke reset in @After teardown methods.
+Senior architects resolve this at the structural root by enforcing Inversion of Control. By decoupling the class definition from its instantiation scope, the class becomes a standard transient object whose lifecycle is governed strictly by whatever container or test harness constructs it.
+In modern JVM testing architectures, this enables seamless parallel test execution (junit.jupiter.execution.parallel.enabled = true). Because each test method constructs its own isolated object graph via constructor injection, tests run across multiple CPU cores simultaneously without mutex contention, race conditions, or state contamination.
+This redesign also eliminates hidden Android framework dependencies. By replacing static context-dependent singletons with injected abstractions, tests execute as pure, blazing-fast JVM tests without requiring Robolectric or device instrumentation overhead.
 
 ## How to answer in the interview
 

@@ -22,6 +22,37 @@ Two feature teams need the same business logic. Where should it live?
 - Separate stable shared policy from UI convenience code.
 - Account for versioning, tests and cross-team governance.
 
+## Concept and technical explanation
+
+When two autonomous feature teams require identical business logic, resolving where that logic should live is a fundamental architectural dilemma with distinct trade-offs:
+- Anti-Patterns to Avoid:
+  1. Direct Feature Coupling: Having Feature B import Feature A breaks horizontal layer isolation, risks circular dependency loops, and compromises team release autonomy.
+  2. The Common Garbage Dump: Shoving the logic into :core:common destroys cohesion and turns core into an uncontrolled monolith that invalidates the build cache project-wide.
+- Architectural Solutions:
+  1. Extract a Focused Shared Domain Module: If the capability represents a genuine, cohesive enterprise business concept (e.g., loan tax calculations, currency conversions), extract it into a leaf domain module: :domain:taxation or :core:domain:currency.
+  2. API/Impl Feature Extraction: If one squad legitimately owns the domain (e.g., Identity squad owns biometric verification), they expose a contract in :feature:identity:api and house the logic in :feature:identity:impl for other features to consume.
+  3. Controlled Code Duplication (AHA Programming): If the logic superficially appears similar but belongs to distinct bounded contexts with divergent lifecycles, duplicate the code rather than introducing premature, tightly coupled abstractions.
+
+## Practical walkthrough (English)
+
+Extracting shared business logic into an isolated leaf domain module:
+```kotlin
+// ❌ WRONG: :feature:cart imports :feature:checkout (Horizontal coupling!)
+// ❌ WRONG: Logic dumped in :core:common (Cohesion destroyed!)
+
+// ✅ CORRECT: Extract focused leaf domain module :domain:pricing
+// domain/pricing/src/main/kotlin/CalculateDiscountUseCase.kt
+class CalculateDiscountUseCase @Inject constructor() {
+    operator fun invoke(cartTotal: BigDecimal, couponCode: String?): BigDecimal {
+        // Pure Kotlin business calculation, zero Android dependencies
+        return if (couponCode == "VIP") cartTotal.multiply(BigDecimal("0.80")) else cartTotal
+    }
+}
+
+// Both :feature:cart and :feature:checkout depend on :domain:pricing
+// Maintains clean DAG and enables sub-second JVM unit testing!
+```
+
 ## Explanation in Arabic
 
 فريقان لميزتين مختلفتين (Feature Teams) يحتاجان إلى نفس منطق الأعمال (Same Business Logic). أين يجب أن يعيش هذا المنطق معمارياً؟
@@ -82,24 +113,31 @@ Assign codeowners and versioned contract review, build a boundary test matrix, a
 
 ## Interview answer — short
 
-When two feature teams share business logic, never couple the features directly or dump code into :core:common. Extract the logic into a focused, single-responsibility domain module (e.g. :domain:pricing) containing pure Use Cases and business rules, with clear CODEOWNERS governance.
+When two feature teams need the same business logic, never create a direct feature-to-feature dependency or dump it into core:common. Extract the logic into a focused, single-responsibility leaf domain module, or have the owning feature expose an api module. If the logic belongs to separate bounded contexts with different reasons to change, prefer controlled duplication over premature coupling.
 
 ## Interview answer — structured
 
-When two feature teams require identical business logic, resolving placement demands strict architectural governance.
-
-First, with Never Create Feature-to-Feature Dependencies, permitting `:feature:cart` to depend on `:feature:checkout` violates the fundamental acyclic boundary rule and entangles two distinct user journeys. Next, with Extract to a Focused Domain Module, create a dedicated JVM module representing the specific business capability: e.g. `:domain:pricing` or `:domain:identity`. This module houses pure Kotlin business entities, invariants, and Use Cases (`CalculateTaxUseCase`). Both feature modules depend downward on this domain module.
-Finally, with Establish Clear Code Ownership, designate a single team as the primary owner in `CODEOWNERS` (e.g. Payments team owns `:domain:pricing`). If the other team needs enhancements, they submit pull requests subject to the owning team's review and automated test suites.
-
+Deciding where shared business logic should live requires balancing code reuse against architectural coupling.
+We strictly avoid two common anti-patterns: allowing one feature module to import another directly, or dumping the logic into a monolithic core:common module.
+Instead, we apply three structured options.
+If the logic represents a distinct enterprise rule like currency exchange or tax calculation, we extract a dedicated leaf domain module like domain:pricing.
+Both feature modules import this pure Kotlin module, preserving an acyclic dependency graph and enabling instantaneous JVM testing.
+If one squad clearly owns the capability, such as identity verification, that team exposes an interface in an api module while retaining the implementation.
+Finally, if the logic only appears similar coincidentally but belongs to different business domains with independent reasons to change, senior architects prefer controlled code duplication rather than coupling the teams with a premature shared abstraction.
 
 ## Interview answer — deep senior
 
-Before extracting shared business logic into a common module, senior engineers evaluate **Semantic Equivalence vs. Accidental Coincidence**.
-
-Often, two features appear to need the 'same' logic, but their underlying domain invariants are actually diverging. For example, calculating price in a product catalog may tolerate cached approximate tax estimations, whereas calculating price in final checkout requires strict real-time fiscal compliance.
-
-If you force divergent requirements into a single shared function with boolean flags (`calculatePrice(isCheckout: Boolean)`), you introduce toxic coupling. If the business rules have fundamentally different lifecycles or reasons to change, it is better to maintain separate use cases. Only extract shared code when the underlying business invariant is mathematically or legally identical.
-
+In enterprise mobile architecture, sharing code across team boundaries is primarily an organizational governance decision rather than a simple refactoring exercise.
+Engineers frequently suffer from dogmatic DRY (Don't Repeat Yourself) obsession, creating premature abstractions that tightly couple autonomous feature teams.
+When two feature teams require shared business logic, we evaluate ownership, volatility, and domain alignment across three clear tiers.
+First, if the capability represents an authentic, shared business policy—such as credit risk scoring or tax withholding calculations—we extract a dedicated, leaf-level pure Kotlin domain module, such as :domain:finance:tax.
+Because this module has zero dependencies on Android frameworks, UI widgets, or sibling features, it compiles in milliseconds and can be unit-tested thoroughly on the JVM.
+Both features declare an implementation dependency on this shared domain module, preserving a clean Directed Acyclic Graph.
+Second, if the capability is a service owned by a specific squad—such as user identity verification—that team hosts the logic in its :feature:identity:impl module and publishes a clean interface in :feature:identity:api.
+Other teams depend strictly on the :api contract, wiring the implementation via Hilt.
+Third, we actively evaluate the AHA (Avoid Hasty Abstractions) principle.
+If the shared logic is simply a five-line data transformation that happens to look identical today but serves different product goals—such as order sorting versus search result sorting—we intentionally allow controlled code duplication.
+Duplicating a few lines of code is vastly cheaper than introducing an artificial shared module that requires cross-team synchronization and consensus for every future modification.
 
 ## How to answer in the interview
 

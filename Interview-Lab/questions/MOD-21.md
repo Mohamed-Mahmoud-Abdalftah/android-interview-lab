@@ -22,6 +22,32 @@ When are dynamic feature modules inappropriate because of offline/runtime constr
 - Explain install failure and Play distribution constraints.
 - Offer install-time/base alternatives with evidence.
 
+## Concept and technical explanation
+
+While Dynamic Feature Modules (DFMs) effectively shrink initial APK download sizes through Google Play Feature Delivery, they introduce profound operational risks that make them entirely inappropriate in specific mission-critical scenarios:
+1. Offline-First and Field Operation Constraints: Applications operating in connectivity-deprived environments (field service, maritime logistics, emergency response, flight management) cannot rely on on-demand downloading; missing features leave users stranded without network fallback.
+2. Core Revenue and Critical Funnels: Core revenue journeys (login, user registration, onboarding, primary checkout flows, emergency customer support) must never be dynamic. A transient network timeout, cellular data limit, or Play Store service glitch directly destroys user acquisition and financial conversion.
+3. Latency-Sensitive User Experiences: Features requiring immediate responsiveness (real-time camera capture, QR code scanner at a store checkout, instant authentication) degrade user satisfaction if the user must endure a 30-second download progress dialog.
+4. Non-Google Play Ecosystems: Devices lacking Google Play Services (Chinese domestic Android stores, Huawei AppGallery, Amazon FireOS, enterprise sideloaded APKs) do not natively support Play Core split installations, requiring complex, fragile multi-APK fallback architectures.
+5. Storage and OS Cleanup Risks: On Android Go or low-storage devices, the Android package manager may reclaim storage by clearing split APKs, forcing unexpected redownloads at awkward moments.
+
+## Practical walkthrough (English)
+
+Evaluating dynamic delivery feasibility against operational constraints:
+```kotlin
+// ❌ DANGEROUS: Putting core onboarding or payment into a Dynamic Feature Module!
+// If network drops or Google Play Store fails, user CANNOT register or pay!
+
+// ✅ APPROPRIATE ARCHITECTURAL DECISION:
+// Keep Mission-Critical paths inside Base APK:
+// - :feature:auth          -> In Base APK (Zero-tolerance for download failures)
+// - :feature:checkout      -> In Base APK (Core revenue path must be offline-capable)
+
+// Reserve Dynamic Delivery ONLY for Heavy, Niche, Optional features:
+// - :dynamic:ar-viewer     -> 35MB AR Core models, used by < 5% of users.
+// - :dynamic:tax-scanner   -> Heavy ML model, used once per year.
+```
+
 ## Explanation in Arabic
 
 متى تكون موديولات الميزات الديناميكية (Dynamic Feature Modules - DFMs) غير مناسبة وخياراً معمارياً سيئاً بسبب قيود وضع عدم الاتصال وأوقات التشغيل؟
@@ -73,25 +99,32 @@ Write availability requirements per journey, test fresh install/offline/poor net
 
 ## Interview answer — short
 
-Dynamic Feature Modules are inappropriate for critical paths (login, checkout), offline-first apps, latency-sensitive workflows, and apps distributed outside Google Play. Downloading on-demand introduces network failure points, loading spinners, and dependency on Google Play Services that ruin core app experiences.
+Dynamic Feature Modules are inappropriate for offline-first applications, core revenue funnels like login and checkout, and latency-critical interactions like payment scanners. They are also unsuitable for apps distributed outside Google Play (such as Amazon FireOS or Huawei AppGallery) and low-end devices where the OS frequently uninstalls split APKs to free up storage.
 
 ## Interview answer — structured
 
-Dynamic Feature Modules (DFMs) solve APK download size constraints, but they introduce severe runtime failure vectors that make them inappropriate for core application functionality.
-
-First, with Critical Path User Journeys, onboarding, Authentication, Catalog browsing, and Checkout must **never** be dynamic features. Requiring a user to wait for a 15MB download before they can log in or swipe their credit card causes catastrophic conversion drops. Next, with Offline-First Architectural Constraints, if an application must operate without active cellular connectivity (e.g., warehouse inventory scanning, field inspections, emergency response), an uninstalled on-demand module is completely unreachable, turning core features into dead buttons.
-Finally, with Store Vendor Lock-in, google Play Feature Delivery relies strictly on the Google Play Core library and Play Store client infrastructure. If the app is distributed via sideloading, enterprise MDM, Amazon Appstore, or Huawei AppGallery, dynamic split downloading is unsupported.
-
-Reserve DFMs strictly for non-critical, heavy, infrequently used capabilities (e.g. A 40MB AR furniture previewer or an annual tax calculator). Core capabilities should always be bundled into the base APK using standard Gradle library modules.
-
+While Dynamic Feature Modules optimize initial download sizes, they introduce runtime vulnerabilities that make them unsuitable for critical application workflows.
+Dynamic delivery is fundamentally inappropriate for offline-first applications where users operate in environments with spotty or nonexistent internet connectivity.
+Similarly, core business funnels such as user onboarding, authentication, checkout, and emergency support must never be placed in dynamic modules.
+A single network timeout or Google Play Store error during download prevents users from completing transactions, causing direct revenue loss and customer churn.
+Furthermore, dynamic features are impractical for apps distributed across diverse app stores like Huawei AppGallery, Amazon FireOS, or third-party enterprise distribution, as Play Feature Delivery relies strictly on Google Play Services.
+High-frequency, latency-sensitive features like QR code scanners should remain in the base APK to eliminate download waiting screens.
 
 ## Interview answer — deep senior
 
-When analyzing failure modes for on-demand DFMs in production telemetry.
-
-First, with High Download Drop-off, network metrics reveal that 10% to 25% of on-demand download requests fail due to mobile network handoffs, slow roaming data, or insufficient device disk storage (`ERROR_INSUFFICIENT_STORAGE`). Next, with User Drop-off During Progress Spinners, even when the download succeeds, placing a 10-second download progress bar between a user's tap and screen presentation causes over 30% of users to abandon the funnel.
-Finally, with The Architectural Sweet Spot, if module size reduction is the primary goal, senior teams evaluate asset streaming (downloading heavy 3D assets or ML models from a standard CDN to local disk) rather than dynamic code splits. Streaming assets keeps code paths in the base APK with full compile-time type safety while keeping initial download sizes minimal.
-
+In production mobile architecture, Dynamic Feature Modules represent a calculated gamble: trading runtime reliability for initial download size reduction.
+When a feature is packaged dynamically, availability ceases to be a deterministic compile-time guarantee and becomes a volatile runtime network dependency subject to cellular coverage, Google Play Core service health, device storage availability, and roaming data limits.
+Consequently, deploying dynamic modules across mission-critical workflows is a catastrophic anti-pattern.
+First, core revenue paths must remain in the base APK.
+Placing registration, login, or checkout into a dynamic module means that an error code from SplitInstallManager directly translates into aborted customer onboarding and lost revenue.
+Second, offline-first architectures demand immediate local availability.
+Field engineering tools, warehouse scanners, and healthcare emergency apps cannot tolerate an 'Unable to download module, check your internet connection' error dialog when an ambulance technician or remote inspector opens a screen.
+Third, distribution platform fragmentation presents a hard technical blocker.
+Play Feature Delivery is fundamentally proprietary to Google Play Services.
+If your application targets global markets including China, runs on Huawei HMS devices, or distributes via enterprise MDMs, dynamic modules fail to load unless you maintain complex, parallel multi-flavor fallback architectures that package the dynamic modules back into monolithic APKs.
+Finally, Android Go and low-end devices introduce storage volatility.
+When physical device storage runs low, the Android OS package manager can silently purge unmounted split APKs, forcing a paying user to re-download a previously installed feature unexpectedly.
+Senior architects mandate dynamic modules exclusively for heavy, optional, low-frequency capabilities—such as a 30-megabyte augmented reality preview or an annual tax return scanner—while anchoring all core business capabilities firmly inside the immutable base APK.
 
 ## How to answer in the interview
 

@@ -20,6 +20,45 @@ How do you begin a mobile system-design interview (requirements, scale, constrai
 
 Begin system-design answer with scope, nonfunctional requirements, constraints and measurable tradeoffs.
 
+## Concept and technical explanation
+
+A mobile system design interview differs fundamentally from backend system design. While backends prioritize queries per second, distributed database sharding, and consensus algorithms, mobile design centers on client resource scarcity, network volatility, operating system lifecycle constraints, and offline data consistency. Beginning an interview effectively requires a structured, collaborative engineering framework. In the first five to seven minutes, the engineer must clarify functional scope, defining core user journeys while explicitly bounding what is out of scope to avoid low-impact rabbit holes. Next, non-functional requirements must be established with concrete mobile metrics: offline-first versus online-only durability, cold startup latency thresholds (such as under 400 milliseconds), disk cache size ceilings (such as 150 megabytes), battery and cellular data constraints, and target hardware tiers (such as low-end Android devices with two gigabytes of RAM). Before selecting any libraries or third-party frameworks, the high-level architecture must be established around unidirectional data flow: UI state holders observing reactive database streams, domain use cases orchestrating business rules, and repositories mediating between local persistence and remote network APIs. Only after aligning on data flow and state ownership should the discussion drill down into complex subsystems, failure modes, and architectural trade-offs.
+
+## Practical walkthrough (English)
+
+Structuring the mobile system design scaffold with clear boundaries and domain contracts:
+```kotlin
+// 1. Domain contracts establishing repository boundaries before technical implementations
+interface FeedRepository {
+    // Local single source of truth streaming reactive UI state from disk
+    fun getFeedStream(): Flow<PagingData<FeedItem>>
+
+    // Explicit background synchronization contract with configurable strategy
+    suspend fun syncFeed(strategy: SyncStrategy): Result<SyncSummary>
+}
+
+sealed interface SyncStrategy {
+    data object CacheFirst : SyncStrategy
+    data object NetworkFirst : SyncStrategy
+    data class DeltaSync(val lastSyncTimestampMs: Long) : SyncStrategy
+}
+
+// 2. Unidirectional UI State modeling to handle partial failures and offline modes
+data class FeedUiState(
+    val isLoading: Boolean = false,
+    val isOfflineMode: Boolean = false,
+    val pendingUploadsCount: Int = 0,
+    val bannerMessage: String? = null
+)
+
+// 3. User intent actions dispatched to the state machine
+sealed interface FeedUserAction {
+    data object RefreshTriggered : FeedUserAction
+    data class ItemLiked(val itemId: String) : FeedUserAction
+    data class RetrySyncRequested(val failedBatchId: String) : FeedUserAction
+}
+```
+
 ## Explanation in Arabic
 
 كيف تبدأ مقابلة Mobile System Design (المتطلبات، المقاييس، القيود، والمفاضلات) باحترافية كمهندس Senior/Staff؟
@@ -95,25 +134,28 @@ For a marketplace app, clarify browsing offline versus checkout online, account 
 
 ## Interview answer — short
 
-Begin a mobile system design interview by clarifying functional and non-functional requirements in the first 5 minutes. Establish mobile constraints like offline tolerance, battery consumption, network flakiness, and low-end hardware profiles before proposing high-level data flow, domain contracts, and architectural trade-offs.
+We begin a mobile system design interview by clarifying functional boundaries and mobile-specific constraints before sketching architecture or picking libraries. We define core user journeys, latency budgets, offline expectations, battery limits, and budget device targets. Then we sketch unidirectional data flow from presentation to persistence, proactively addressing process death, network volatility, and local data consistency.
 
 ## Interview answer — structured
 
-A disciplined mobile system design interview follows a structured, collaborative engineering framework.
-
-First, with Scope Clarification & Functional Requirements, clarify the core user journeys and deliberately define out-of-scope items. For example, in an Instagram-like feed, clarify whether we are designing feed ingestion, media uploading, real-time comments, or strictly offline consumption. Next, with Mobile Constraints & Non-Functional Requirements, establish concrete operational targets.
-Additionally, with Network Profile, offline-first vs. Connected-only, cellular data thrift, latency ceilings (e.g. Sub-200ms feed render from local cache). With Hardware Envelope, memory footprints for budget devices (2GB RAM), battery constraints (deferring syncs to Wi-Fi/charging via WorkManager).
-With Data Volume, cache size ceilings (e.g., maximum 200MB LRU disk cache). With High-Level Architecture, establish the layered system boundary: presentation state machines, domain business logic, repository local-source-of-truth abstractions, and network/local persistence layers.
-With Deep Dive & Bottlenecks, drill down into complex bottlenecks (e.g., two-way sync conflict resolution, binary chunk upload resumption, image pipeline memory management). Finally, with Trade-offs & Failure Modes, explicitly address edge cases (process death, partial backend outages, version skew).
-
+A disciplined mobile system design interview begins with collaborative problem scoping rather than immediate architecture diagrams.
+In the first five minutes, I clarify primary user journeys and establish what is deliberately out of scope to prevent unproductive diversions.
+Next, I establish mobile-specific non-functional requirements that directly dictate architectural decisions: whether the application must be offline-first, the acceptable latency threshold for screen rendering, cache size limits, and the minimum hardware envelope like budget Android devices with two gigabytes of RAM.
+Once requirements and scale are bounded, I establish high-level boundaries showing unidirectional data flow: UI state holders observing reactive database streams, domain interactors executing business policies, and repositories coordinating remote APIs with local persistence.
+Only after aligning on data flow and state ownership do we dive deep into complex bottlenecks like background synchronization conflict resolution, payload compaction, and process death recovery, concluding with explicit failure modes and architectural trade-offs.
 
 ## Interview answer — deep senior
 
-From a staff-level perspective, the primary failure mode in mobile system design interviews is treating mobile like a stripped-down backend.
-
-First, with The Client As An Untrusted, Volatile Runtime, backends operate in predictable server clusters; mobile clients operate on hostile, battery-constrained, physically moving devices where the OS can terminate the process at any second. Highlighting Android-specific lifecycle realities (Activity destruction, configuration changes, background execution limits) immediately differentiates senior candidates. Next, with Driving the Conversation Proactively, do not wait for the interviewer to prompt for constraints. Drive the whiteboard by outlining the API schema contract (REST vs. GraphQL vs. GRPC), storage strategy (Room SQLite vs. Proto DataStore), and telemetry footprint upfront.
-Finally, with Explicit Trade-off Articulation, every architectural choice has a cost. If you choose an offline-first Room database with delta synchronization, immediately articulate the complexity trade-off: distributed conflict resolution (Client-Wins vs. Server-Wins), schema migrations, and sync queuing overhead.
-
+What distinguishes a staff-level mobile engineer in system design is recognizing that mobile clients run inside an untrusted, resource-constrained, and hostile operating environment.
+Unlike backend nodes that run in controlled server clusters, Android applications face spontaneous process termination by the Low Memory Killer, battery preservation restrictions imposed by Doze mode, and hostile network handoffs between cellular towers and Wi-Fi.
+When opening the interview, I proactively articulate these runtime realities before the interviewer prompts me.
+I frame the client database as the local single source of truth and the remote network as an asynchronous synchronization mechanism.
+This immediately sets up a discussion around data durability, write queues, and idempotent mutations.
+Furthermore, I establish operational trade-offs upfront.
+Choosing an offline-first Room architecture with delta synchronization delivers instant UI rendering and zero offline perceived latency, but introduces substantial complexity around distributed conflict resolution, database schema migrations, and sync queuing overhead.
+Conversely, an online-only cache-aside strategy simplifies state management and cuts client storage footprint, but degrades user experience during poor connectivity and increases backend request volume.
+To complete the system envelope, I establish operational monitoring metrics including ANR rate thresholds under zero point four percent, cold startup latency targets under four hundred milliseconds, and automated contract testing with backend teams to validate schema evolution before shipping client releases.
+Framing every decision around concrete trade-offs, operational failure modes, and client resource budgets demonstrates production maturity.
 
 ## How to answer in the interview
 

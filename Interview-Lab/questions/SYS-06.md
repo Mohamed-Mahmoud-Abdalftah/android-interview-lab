@@ -20,6 +20,96 @@ Design caching, pagination, and remote synchronization.
 
 Combine cache, Paging 3 and remote sync with stable keys and freshness.
 
+## Concept and technical explanation
+
+Designing mobile caching, pagination, and remote data synchronization requires balancing network bandwidth, memory pressure, and UI frame rate stability. A modern Android pagination architecture pairs Jetpack Paging 3 with Room local database caching via a RemoteMediator. RemoteMediator bridges remote REST/GraphQL APIs with the local SQLite persistence layer, requesting subsequent network pages only when the user scrolls near the boundary of cached data. Fetched items are persisted directly into Room within an atomic transaction alongside a dedicated RemoteKeys table tracking page tokens or timestamps. The Compose UI observes a continuous Flow of PagingData sourced directly from Room's PagingSource, guaranteeing 60/120 FPS jank-free scrolling, zero-latency offline access, and automatic memory windowing.
+
+## Practical walkthrough (English)
+
+Implementing robust caching, pagination, and sync with Jetpack Paging 3 and RemoteMediator:
+```kotlin
+// 1. Entities for Content and Pagination Remote Keys
+@Entity(tableName = "articles")
+data class ArticleEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val summary: String,
+    val publishedAtMs: Long
+)
+
+@Entity(tableName = "article_remote_keys")
+data class ArticleRemoteKeys(
+    @PrimaryKey val articleId: String,
+    val prevKey: Int?,
+    val nextKey: Int?
+)
+
+// 2. RemoteMediator coordinating network page fetches with Room caching
+@OptIn(ExperimentalPagingApi::class)
+class ArticleRemoteMediator(
+    private val database: AppDatabase,
+    private val apiService: ArticleApiService
+) : RemoteMediator<Int, ArticleEntity>() {
+
+    override suspend fun load(
+        loadType: LoadType,
+        state: PagingState<Int, ArticleEntity>
+    ): MediatorResult {
+        val page = when (loadType) {
+            LoadType.REFRESH -> {
+                val remoteKeys = getRemoteKeyClosestToPosition(state)
+                remoteKeys?.nextKey?.minus(1) ?: 1
+            }
+            LoadType.PREPEND -> return MediatorResult.Success(endOfPaginationReached = true)
+            LoadType.APPEND -> {
+                val remoteKeys = getRemoteKeyForLastItem(state)
+                val nextKey = remoteKeys?.nextKey
+                    ?: return MediatorResult.Success(endOfPaginationReached = remoteKeys != null)
+                nextKey
+            }
+        }
+
+        return try {
+            val response = apiService.getArticles(page = page, pageSize = state.config.pageSize)
+            val articles = response.items
+            val endOfPaginationReached = articles.isEmpty()
+
+            database.withTransaction {
+                if (loadType == LoadType.REFRESH) {
+                    database.articleRemoteKeysDao().clearRemoteKeys()
+                    database.articleDao().clearArticles()
+                }
+
+                val prevKey = if (page == 1) null else page - 1
+                val nextKey = if (endOfPaginationReached) null else page + 1
+                val keys = articles.map { ArticleRemoteKeys(it.id, prevKey, nextKey) }
+
+                database.articleRemoteKeysDao().insertAll(keys)
+                database.articleDao().insertAll(articles.map { it.toEntity() })
+            }
+
+            MediatorResult.Success(endOfPaginationReached = endOfPaginationReached)
+        } catch (e: Exception) {
+            MediatorResult.Error(e)
+        }
+    }
+
+    private suspend fun getRemoteKeyForLastItem(state: PagingState<Int, ArticleEntity>): ArticleRemoteKeys? {
+        return state.pages.lastOrNull { it.data.isNotEmpty() }?.data?.lastOrNull()?.let { article ->
+            database.articleRemoteKeysDao().getRemoteKeyByArticleId(article.id)
+        }
+    }
+
+    private suspend fun getRemoteKeyClosestToPosition(state: PagingState<Int, ArticleEntity>): ArticleRemoteKeys? {
+        return state.anchorPosition?.let { position ->
+            state.closestItemToPosition(position)?.id?.let { articleId ->
+                database.articleRemoteKeysDao().getRemoteKeyByArticleId(articleId)
+            }
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تصمم نظام تخزين مؤقت (Caching)، تقسيم صفحات (Pagination)، ومزامنة البيانات عن بُعد (Remote Synchronization)؟
@@ -123,26 +213,29 @@ A news/social feed opens from Room, refreshes pages by opaque cursor, marks stal
 
 ## Interview answer — short
 
-Design caching and pagination using a multi-tiered architecture: L1 in-memory LruCache, L2 persistent Room database as the single source of truth, and HTTP ETag caching. Implement pagination using Jetpack Paging 3 with RemoteMediator and cursor keys to seamlessly stream network pages directly into the local database.
+We combine Jetpack Paging 3 with Room database caching using a RemoteMediator. The UI observes a reactive PagingData stream directly from Room, guaranteeing instant offline rendering and smooth scrolling. As the user approaches the scroll boundary, RemoteMediator fetches the next page from the network, stores it in Room alongside boundary keys in a single transaction, and automatically updates the UI.
 
 ## Interview answer — structured
 
-Designing scalable pagination and caching balances UI responsiveness, memory limits, and data freshness.
-
-First, **Multi-Tiered Cache Architecture**. Next, with L1 Memory (LruCache), fast access for decoded bitmaps and active view models; bounded by a strict memory cap (e.g. 25% of available heap).
-Additionally, with L2 Disk (Room Database), persistent single source of truth surviving process death. With L3 HTTP Layer, leverage OkHttp's disk cache with `ETag` and `If-None-Match` to avoid re-downloading unmodified server payloads (`304 Not Modified`).
-**Cursor-Based Pagination with Jetpack Paging 3**. Avoid traditional `offset/limit` pagination because inserting new items at the head of a live feed causes duplicate items or skipped records during scrolling. Use cursor keys (timestamps or opaque server tokens).
-Use `RemoteMediator` to coordinate between network requests and the database. The mediator triggers network loads only when the user approaches the end of cached content, persisting pages directly to Room in an atomic transaction. **Cache Eviction Strategy**.
-Finally, enforce an LRU eviction policy with a 200MB ceiling or TTL expiration. When refreshing lists, keep the top N items and evict stale records beyond page 5 to conserve device storage.
-
+A scalable pagination and caching architecture utilizes Room persistence as the backing store for Jetpack Paging 3, orchestrated by RemoteMediator.
+Instead of loading network payloads directly into memory-backed lists that are lost on process death, all paginated data flows from the network into Room tables.
+The UI observes a continuous Flow of PagingData sourced from a Room PagingSource, ensuring that list items remain available offline and survive orientation changes without re-fetching.
+When the user scrolls near the list boundary, Paging 3 signals RemoteMediator to fetch additional items.
+RemoteMediator looks up the corresponding page token from a dedicated RemoteKeys table, executes the HTTP request, and saves both the new items and updated keys within a single atomic database transaction.
+If the network request fails, Paging 3 surfaces the error state directly to the UI's load state adapter, allowing users to retry with a single tap while continuing to view previously cached content.
+This decouples network latency from UI rendering and optimizes memory consumption.
 
 ## Interview answer — deep senior
 
-From an advanced performance and memory perspective, pagination architectures must prevent memory leaks and UI stutter.
-
-First, with Paging 3 Flow Lifecycle & Invalidation, expose paged streams as `Flow<PagingData<Item>>` cached in `viewModelScope` using `.cachedIn(viewModelScope)`. This ensures that screen rotations or configuration changes do not re-fetch or re-paginate data from scratch, retaining the exact scroll position in Compose `LazyColumn`. Next, with Boundary Conditions & Placeholders, enable placeholders in `PagingConfig` when list items have fixed heights. This allows `LazyColumn` to allocate scrollbar travel accurately without jumping or layout thrashing when new pages append.
-Finally, with Network Resilience & Partial Failures, if a page fails to load, `RemoteMediator` returns `MediatorResult.Error(e)`. The UI catches this in `CombinedLoadStates.append` and renders a retry button at the bottom of the list without wiping the already-loaded items from the screen.
-
+Under the hood, the combination of Paging 3 and Room eliminates common production pitfalls like duplicate items, scroll jumps, and memory bloat.
+In memory-only pagination, rapid user scrolling accumulates thousands of heavy object allocations in the heap, eventually triggering garbage collection pauses and OutOfMemory errors.
+By backing the PagingSource with SQLite, Room and Paging 3 utilize windowed cursor queries, holding only the active viewport items and a small prefetch buffer in memory while paging data in and out of disk seamlessly.
+The critical design challenge in RemoteMediator is managing cache invalidation and prepend or append boundary keys.
+We maintain a separate RemoteKeys table storing next and previous page identifiers keyed by item ID.
+During a user pull-to-refresh action, RemoteMediator triggers a REFRESH load type, clearing stale entities and resetting remote keys in an atomic transaction before writing fresh items.
+Furthermore, we decouple item identity using stable keys in LazyColumn, which prevents Compose recomposition flicker during item updates.
+For freshness, we store a sync timestamp; if the cached dataset exceeds our time-to-live threshold, RemoteMediator initiates a background refresh while immediately displaying the cached data, achieving instantaneous startup performance.
+Additionally, to avoid exceeding Android's two-megabyte SQLite CursorWindow threshold on media-heavy datasets, our Room queries select only the minimal columns needed for list rendering, preventing CursorWindowAllocationException under high scroll velocity.
 
 ## How to answer in the interview
 

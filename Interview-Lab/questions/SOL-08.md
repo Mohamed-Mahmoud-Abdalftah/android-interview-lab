@@ -20,6 +20,50 @@ Compare SRP and ISP.
 
 Contrast module cohesion/change actors with client-specific dependency surfaces.
 
+## Concept and technical explanation
+
+The Single Responsibility Principle (SRP) and the Interface Segregation Principle (ISP) are complementary SOLID principles addressing cohesion and coupling at different structural granularities. SRP governs implementation cohesion at the class, module, and actor level, mandating that a component must have only one reason to change. ISP governs contract coupling at the interface and consumer level, asserting that no client should be forced to depend on methods it does not invoke. A class can completely satisfy SRP by maintaining a single, highly cohesive responsibility (such as user account management) while simultaneously violating ISP if it exposes a fat, monolithic interface combining administrative, billing, and profile methods to disparate callers.
+
+## Practical walkthrough (English)
+
+Demonstrating a class satisfying SRP while violating ISP, and its refactoring:
+```kotlin
+// A class that has a single business responsibility (satisfies SRP: User Account Management)
+// But its single interface violates ISP because distinct clients need only a fraction of its methods!
+interface MonolithicAccountContract { // VIOLATES ISP: Combines disparate client needs
+    fun getDisplayName(): String
+    fun getAvatarUrl(): String
+    fun changePassword(oldPass: String, newPass: String)
+    fun processSubscriptionRenewal()
+}
+
+// REFACTORED TO SATISFY BOTH SRP AND ISP:
+// Segregated Client-Specific Interfaces (ISP Satisfied)
+interface UserProfileHeaderViewContract {
+    fun getDisplayName(): String
+    fun getAvatarUrl(): String
+}
+
+interface AccountSecurityContract {
+    fun changePassword(oldPass: String, newPass: String)
+}
+
+interface SubscriptionBillingContract {
+    fun processSubscriptionRenewal()
+}
+
+// Cohesive implementation satisfies SRP and multiple role-specific ISP interfaces
+class UserAccountService @Inject constructor(
+    private val api: AccountApi
+) : UserProfileHeaderViewContract, AccountSecurityContract, SubscriptionBillingContract {
+    // Single cohesive responsibility: manages account logic, but exposes fine-grained seams to callers!
+    override fun getDisplayName() = "Alice"
+    override fun getAvatarUrl() = "https://cdn.io/avatar.png"
+    override fun changePassword(oldPass: String, newPass: String) { /* ... */ }
+    override fun processSubscriptionRenewal() { /* ... */ }
+}
+```
+
 ## Explanation in Arabic
 
 المقارنة والفرق الجوهري بين مبدأ المسؤولية الواحدة (SRP) ومبدأ فصل الواجهات (ISP):
@@ -87,29 +131,24 @@ A wallet team separates risk policy from session refresh (SRP) but exposes one s
 
 ## Interview answer — short
 
-SRP focuses on classes and actors: a class should have only one reason to change. ISP focuses on interfaces and clients: a client should not be forced to depend on methods it doesn't use. A class can satisfy SRP (single responsibility) while its interface violates ISP (exposing too many methods to distinct callers).
+SRP focuses on classes and actors, dictating that a class should have only one reason to change. ISP focuses on interfaces and clients, dictating that a client should not depend on methods it does not use. A class can satisfy SRP by having a single cohesive responsibility, yet violate ISP if its interface forces callers to depend on unused methods. SRP promotes high internal cohesion, while ISP minimizes external caller coupling.
 
 ## Interview answer — structured
 
-While both SRP and ISP promote modularity, they operate from opposing perspectives in the design hierarchy.
-
-First, **SRP (Single Responsibility Principle - Inside-Out Perspective)**. Next, governs **classes, modules, and concrete implementations**.
-Focuses on the *producer* of behavior. Criterion: A class must have only one reason to change, serving a single business actor (e.g. `PaymentValidator` serves business rules; `PaymentRepository` serves storage).
-Goal: High cohesion within the class. **ISP (Interface Segregation Principle - Outside-In Perspective)**.
-Governs **interfaces and abstractions**. Focuses on the *consumer (client)* of behavior.
-Criterion: No client should be forced to depend on methods it does not invoke. Finally, goal: Loose coupling between clients and shared abstractions.
-
-A concrete class can be 100% compliant with SRP (e.g. `UserRepositoryImpl` has the single cohesive responsibility of managing user data persistence), yet violate ISP if it exposes a monolithic 30-method interface to simple read-only UI clients.
-
+Comparing SRP and ISP clarifies how cohesion and coupling operate together across class implementations and interface contracts.
+The Single Responsibility Principle evaluates an entity from the inside out and from the perspective of the actors who request changes. It asks: does this class do only one job, and does it serve a single stakeholder? If a class handles validation, networking, and UI rendering, it violates SRP because changes in business rules, backend APIs, or visual designs all force modifications to that single file.
+The Interface Segregation Principle evaluates an entity from the outside in and from the perspective of the clients who consume it. It asks: does this caller need every method exposed by this interface? If an interface combines read operations, write operations, and administrative functions, a caller that only reads data is forced to depend on the full contract, violating ISP.
+The key insight is that a class can perfectly satisfy SRP while violating ISP. A UserManager class might focus purely on user account domain mechanics, satisfying SRP. However, if it exposes a single 15-method interface to both a lightweight UI header widget and a security settings screen, it violates ISP.
+Applying ISP splits the contract into role interfaces, ensuring clients remain decoupled while the underlying implementation maintains its single responsibility.
 
 ## Interview answer — deep senior
 
-Under the hood, violating ISP harms build performance and incremental compilation in Gradle multi-module projects. If an interface `FullUserApi` is shared across 10 feature modules, modifying or adding a method used by only one feature invalidates the ABI hash. Gradle is forced to recompile all 10 consuming modules!
-
-Applying ISP prevents this ripple effect: fine-grained interfaces (`UserReader`, `UserPreferences`) isolate compilation boundaries. Updating `UserWriter` triggers recompilation strictly for the edit profile module, leaving read-only feed modules cached.
-
-In Kotlin, using interface segregation combined with delegation allows composing rich capabilities: `class FacadeRepo(reader: UserReader, writer: UserWriter) : UserReader by reader, UserWriter by writer`.
-
+Under the hood, SRP and ISP operate at different phases of software development, compilation, and automated verification.
+SRP directly impacts codebase maintainability, change velocity, and merge conflict frequency. When classes violate SRP, multiple developers working on different features constantly edit the same source file, leading to high friction in Git branch workflows.
+ISP, on the other hand, directly impacts compilation avoidance in Gradle, binary compatibility across SDK boundaries, and mocking overhead in test harnesses.
+When a client module depends on a fat interface violating ISP, any addition or modification to an unused method signature changes the interface's public ABI. The Gradle build cache is invalidated, and the client module must be recompiled despite having zero functional interest in the change.
+Furthermore, in unit testing, ISP violations lead to fragile test doubles. If a ViewModel depends on a fat 20-method repository interface, tests must supply mock configurations or throwaway stubs for methods that the ViewModel never executes.
+When ISP is enforced, testing seams become razor-thin. A test passes a clean fake satisfying a 2-method SAM interface, keeping test setup code concise, deterministic, and resilient against unrelated interface churn across the enterprise codebase, ensuring smooth and rapid continuous delivery. This isolation ensures that client modules remain unaffected when other consumers request contract extensions.
 
 ## How to answer in the interview
 

@@ -20,6 +20,65 @@ How do you test Presentation, Domain, and Data independently?
 
 Define independent tests for UI transitions, business rules and data consistency, plus boundary integration checks.
 
+## Concept and technical explanation
+
+Testing Presentation, Domain, and Data layers independently requires establishing clear boundary seams and substituting adjacent dependencies with test doubles. The Domain layer comprises pure Kotlin business logic with zero Android dependencies; it is verified through blazingly fast JVM unit tests using lightweight in-memory Fake repositories. The Data layer is tested using Fake remote data sources or MockWebServer to assert network error handling, caching policies, and DTO-to-entity mapping, while Room DAOs are tested against in-memory SQLite instances to validate queries, migrations, and relational integrity. The Presentation layer is tested by driving ViewModels with runTest and TestDispatchers, utilizing Turbine to assert deterministic UiState emissions, and evaluating Compose screens with createComposeRule to verify rendering and semantics without booting device activities.
+
+## Practical walkthrough (English)
+
+Testing Domain, Data, and Presentation layers in complete isolation:
+```kotlin
+// 1. DOMAIN: Pure Kotlin unit test with in-memory Fake repository
+class CalculateCartDiscountUseCaseTest {
+    @Test
+    fun appliesTenPercentDiscount_whenCartExceedsThreshold() {
+        val fakeRepo = FakeCartRepository(initialTotal = 150.0)
+        val useCase = CalculateCartDiscountUseCase(fakeRepo)
+        val discountedTotal = useCase()
+        assertEquals(135.0, discountedTotal, 0.01)
+    }
+}
+
+// 2. DATA: Room DAO test using in-memory SQLite database
+@RunWith(AndroidJUnit4::class)
+class ProductDaoTest {
+    private lateinit var db: AppDatabase
+    private lateinit var dao: ProductDao
+
+    @Before
+    fun createDb() {
+        db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java).build()
+        dao = db.productDao()
+    }
+
+    @After
+    fun closeDb() = db.close()
+
+    @Test
+    fun insertAndObserveProducts() = runTest {
+        dao.insert(ProductEntity("1", "Laptop", 1200))
+        val products = dao.observeProducts().first()
+        assertEquals(1, products.size)
+    }
+}
+
+// 3. PRESENTATION: ViewModel test asserting state emissions via Turbine
+class CheckoutViewModelTest {
+    @Test
+    fun submitPayment_transitionsFromLoadingToSuccess() = runTest {
+        val fakeCheckoutRepo = FakeCheckoutRepository()
+        val viewModel = CheckoutViewModel(fakeCheckoutRepo, StandardTestDispatcher(testScheduler))
+
+        viewModel.uiState.test {
+            assertEquals(CheckoutUiState.Idle, awaitItem())
+            viewModel.onPayClicked()
+            assertEquals(CheckoutUiState.Processing, awaitItem())
+            assertEquals(CheckoutUiState.Success("txn_99"), awaitItem())
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تختبر طبقات العرض (Presentation)، النطاق (Domain)، والبيانات (Data) بشكل مستقل ومعزول؟
@@ -106,25 +165,22 @@ CI runs JVM ViewModel/domain suites on each change, data integration tests for R
 
 ## Interview answer — short
 
-Test Domain independently using pure JVM unit tests with Fake Repositories to verify business rules. Test Data using Fake DataSources or MockWebServer for repositories, and In-Memory Room databases for DAOs. Test Presentation using Turbine and TestDispatchers for ViewModels, and `createComposeRule()` for UI composables.
+Test Domain independently using pure JVM unit tests with Fake repositories to verify business rules. Test Data by validating repository caching and mapping against Fake data sources, and verifying Room DAOs using in-memory SQLite databases. Test Presentation using Turbine and TestDispatchers for ViewModels to assert deterministic UiState transitions, and createComposeRule for testing composables in isolation.
 
 ## Interview answer — structured
 
-Architectural layering enables independent, deterministic test suites without brittle end-to-end integration dependencies.
-
-First, **Domain Layer Testing**. Next, with Environment, pure JVM tests running in milliseconds.
-Additionally, with Methodology, instantiate Use Cases directly. Inject lightweight in-memory Fake Repositories. Assert business rule calculations, edge-case thresholds, and domain error flows without mock frameworks. **Data Layer Testing**.
-With Repositories, tested via Fake Remote DataSources and Fake DAOs. Verify that repository logic correctly coordinates caching, writes network responses into the database, and maps DTOs into domain models. With DAOs, tested via `Room.inMemoryDatabaseBuilder()` in JVM tests (via Robolectric) or instrumented tests to verify SQL queries, table relations, and foreign key cascades.
-**Presentation Layer Testing**. With ViewModels, tested via `runTest`, `StandardTestDispatcher`, and Cash App's **Turbine**. Assert that repository emissions produce the exact sequence of `UiState` snapshots.
-Finally, with Composables, tested via `createComposeRule()` on pure stateless screen composables, asserting semantic trees and user interactions.
-
+Layered architecture allows each tier of an Android application to be tested in isolation using the fastest and most appropriate verification tools.
+For the Domain layer, testing focuses entirely on pure business logic. Because use cases contain no Android SDK references, they execute as JVM unit tests in milliseconds. We inject lightweight in-memory Fake repositories through constructors, verifying calculations, business validations, and error pathways without relying on mock frameworks.
+Within the Data layer, we separate repository testing from database verification. Repositories are tested on the JVM using Fake network data sources to ensure caching policies, entity mapping, and synchronization algorithms operate correctly. In contrast, Room DAOs are tested against in-memory SQLite databases to validate raw SQL queries, foreign key constraints, and database migrations under realistic relational behavior.
+In the Presentation layer, ViewModel unit tests run on the JVM using runTest and StandardTestDispatcher. By pairing test dispatchers with Turbine, we observe StateFlow streams and assert the exact chronological sequence of UiState emissions. Finally, Compose UI elements are validated using createComposeRule, testing user interactions and visual semantics in isolation.
 
 ## Interview answer — deep senior
 
-The overarching principle is preferring **Fakes over Mocks**. Mocking libraries (Mockito/MockK) record interactions (`verify { repo.call() }`), which tightly couples tests to implementation details and makes refactoring brittle. In contrast, a `FakeUserRepository` implements the `UserRepository` interface backed by a simple in-memory `MutableStateFlow` or `HashMap`. Tests verify visible outcomes (the state changes) rather than whether a specific method was invoked, dramatically increasing test resilience.
-
-Furthermore, because Domain and ViewModel tests have zero Android Gradle plugin dependencies, an entire enterprise test suite of 3,000+ tests runs in under 15 seconds in CI, providing immediate developer feedback.
-
+Under the hood, a resilient testing strategy across architectural boundaries hinges on favoring Fakes over Mocks. Mocking frameworks like Mockito or MockK encourage interaction testing, asserting that specific methods were invoked a certain number of times. This couples tests to private implementation details; refactoring internal method calls breaks the test suite even when user-visible behavior remains completely intact.
+By creating lightweight Fake implementations of repositories and data sources backed by simple HashMaps or MutableStateFlows, tests verify observable state outcomes rather than mechanics. When a ViewModel triggers an action, the test asserts that the resulting UiState contains the expected models.
+In the Presentation layer, testing asynchronous coroutines requires deterministic scheduling. Using runTest with a StandardTestDispatcher freezes virtual time. Suspending functions like delay do not stall test execution; developers advance the test scheduler explicitly using advanceUntilIdle to verify intermediate loading states and final emissions without introducing flaky Thread.sleep calls.
+For Data layer verification, testing Room DAOs requires executing real SQLite operations because SQLite syntax and constraint violations cannot be simulated through JVM mocks. Using Room.inMemoryDatabaseBuilder allows these tests to run either via Robolectric on the local JVM or as fast instrumented tests, ensuring database schemas match entity definitions.
+Staff engineers establish a pyramid where Domain and Presentation JVM tests constitute eighty percent of the suite, completing thousands of checks in seconds on CI, while integration tests validate database and network serialization boundaries.
 
 ## How to answer in the interview
 

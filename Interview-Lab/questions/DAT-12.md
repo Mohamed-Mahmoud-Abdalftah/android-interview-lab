@@ -20,6 +20,55 @@ How do you use Room transactions for all-or-nothing writes?
 
 Use Room transaction for atomic multi-table writes and explain scope of guarantee.
 
+## Concept and technical explanation
+
+Enforcing ACID atomicity across multi-step database writes in Room prevents partial data corruption and state inconsistencies:
+- Atomicity Guarantee (All-or-Nothing): A database transaction ensures that a group of interdependent SQL write operations (inserts, updates, deletes) either all succeed completely and commit to disk, or if any single operation fails or throws a runtime exception, the entire operation is rolled back to the exact initial state.
+- Implementation Paradigms in Room:
+  1. The @Transaction DAO Annotation: When a DAO method is annotated with @Transaction, Room automatically wraps its execution body within a SQLite transaction block (beginTransaction / setTransactionSuccessful / endTransaction). It is commonly applied to methods that clear existing cache and insert fresh items, or queries fetching @Relation composite entities.
+  2. Programmatic RoomDatabase.withTransaction: A Kotlin Coroutines extension function designed for repository or UseCase layers. It enables cross-DAO transactional boundaries, allowing writes across multiple distinct tables and DAOs to execute atomically within a single SQLite transaction on Dispatchers.IO.
+- Concurrency & SQLite WAL Mode: Room operates in SQLite Write-Ahead Logging (WAL) mode by default. Transactions use beginTransactionNonExclusive(), allowing concurrent read operations from the UI thread or background workers to proceed unimpeded without being blocked by active write transactions.
+
+## Practical walkthrough (English)
+
+Atomic cache replacement using @Transaction and cross-DAO withTransaction:
+```kotlin
+// 1. DAO-level Transaction for atomic cache refresh
+@Dao
+interface OrderDao {
+    @Query("DELETE FROM orders WHERE status = :status")
+    suspend fun deleteOrdersByStatus(status: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrders(orders: List<OrderEntity>)
+
+    // Atomic All-or-Nothing execution: if insert fails, delete is rolled back
+    @Transaction
+    suspend fun refreshOrders(status: String, newOrders: List<OrderEntity>) {
+        deleteOrdersByStatus(status)
+        insertOrders(newOrders)
+    }
+}
+
+// 2. Repository-level cross-DAO atomic transaction
+class CheckoutRepository(
+    private val db: AppDatabase,
+    private val orderDao: OrderDao,
+    private val inventoryDao: InventoryDao
+) {
+    suspend fun completePurchase(order: OrderEntity, items: List<OrderItemEntity>): Result<Unit> = runCatching {
+        // Enforces atomic boundary across distinct tables
+        db.withTransaction {
+            orderDao.insertOrder(order)
+            items.forEach { item ->
+                val updated = inventoryDao.decrementStock(item.productId, item.quantity)
+                if (updated == 0) throw IllegalStateException("Insufficient inventory for product ${item.productId}")
+            }
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تستخدم معاملات Room (@Transaction / withTransaction) لتنفيذ عمليات كتابة ذرية كلية أو لا شيء (All-or-Nothing Writes)؟
@@ -114,32 +163,27 @@ An order repository first persists a Pending operation and lines in one Room tra
 
 ## Interview answer — short
 
-Use Room's @Transaction on DAO methods or database.withTransaction { } in repositories to guarantee ACID atomicity across multi-table writes. If an exception occurs, changes roll back completely, preventing partial database states. Never execute network calls inside database transactions to avoid blocking SQLite threads.
+Room transactions enforce atomic all-or-nothing guarantees, ensuring multiple writes commit completely or roll back entirely upon failure. They can be declared via the @Transaction annotation on DAO methods or programmatically across multiple DAOs using RoomDatabase.withTransaction, operating with SQLite WAL mode to prevent blocking concurrent reads.
 
 ## Interview answer — structured
 
-Room transactions provide ACID atomicity, guaranteeing that multi-step database writes either completely succeed or completely roll back.
-
-First, dAO-Level Transactions (`@Transaction`) is used when combining multiple queries within a single DAO (e.g. Deleting old cached posts and inserting fresh posts). If the app crashes or throws an exception during insertion, the delete operation rolls back automatically, preventing an empty UI state. Next, repository-Level Transactions (`roomDatabase.withTransaction { }`) is the preferred coroutine construct for multi-DAO atomic operations. For example, saving an order in `OrderDao`, recording line items in `OrderItemDao`, and clearing the shopping cart in `CartDao` must occur atomically. `withTransaction` wraps the block in SQLite `BEGIN TRANSACTION ... COMMIT`.
-Finally, with Consistency for Observers, observers watching Room `Flow` queries only receive an updated dataset *after* the entire transaction commits. They never observe intermediate, half-written states.
-
+Using Room transactions guarantees data consistency by enforcing atomic all-or-nothing writes across database tables.
+First, atomicity ensures that when executing multi-step updates, such as clearing a cache table and inserting fresh records, any mid-operation failure cleanly reverts the database to its pre-transaction state, preventing partial data corruption.
+Second, Room supports two implementation approaches: annotating DAO methods with @Transaction for single-DAO operations, or utilizing the RoomDatabase.withTransaction coroutine extension for coordinating multi-DAO transactions at the repository level.
+Third, Room combines transactions with SQLite Write-Ahead Logging (WAL) mode. This architectural separation ensures that background write transactions execute without locking the database against concurrent read queries, keeping UI Flow rendering smooth and uninterrupted.
 
 ## Interview answer — deep senior
 
-A critical concurrency trap is **Executing Network Calls inside `withTransaction`**:
-
-```kotlin
-// ❌ ANTI-PATTERN:
-database.withTransaction {
-    orderDao.savePendingOrder(order)
-    val response = networkApi.submit(order) // BLOCKS SQLITE CONNECTION POOL FOR 5 SECONDS!
-    orderDao.markConfirmed(response.id)
-}
-```
-SQLite has a limited connection pool (often 1 write connection in WAL mode). Holding an open database transaction while awaiting a remote HTTP call locks the database for seconds, starving all other read and write threads and causing widespread `SQLiteDatabaseLockedException` and UI ANRs.
-
-**Rule**: Network operations must happen outside database transactions. First write the pending state in a fast 2ms transaction, make the network call, and update status in a second fast transaction.
-
+In complex mobile applications, maintaining database invariants across multi-table writes without transactions is impossible.
+Consider an e-commerce checkout flow where an app must insert an order record, insert line items, and decrement local stock counters.
+If the device process dies midway due to low memory or an uncaught exception, executing these statements independently leaves the local database in a corrupted state: the order exists, but stock was never decremented and line items are missing.
+By wrapping the logic inside db.withTransaction, Room binds the coroutine context to an exclusive database transaction.
+Under the hood, Room invokes beginTransactionNonExclusive().
+If any statement throws an exception or the coroutine job is cancelled, SQLite executes a rollback, restoring all tables to their exact state prior to the transaction.
+Furthermore, Room's default Write-Ahead Logging mode provides snapshot isolation: readers read from the main database file while writes append to the -wal journal file.
+This means active write transactions never block the Main thread from querying Room via Flow, completely preventing UI jank.
+However, senior engineers avoid wrapping heavy network calls or complex business computations inside withTransaction, as keeping a SQLite transaction open excessively long locks out other background write workers and risks database busy timeouts.
+By keeping transaction blocks micro-scoped and atomic, we guarantee pristine data integrity while maintaining peak database throughput across concurrent background threads.
 
 ## How to answer in the interview
 

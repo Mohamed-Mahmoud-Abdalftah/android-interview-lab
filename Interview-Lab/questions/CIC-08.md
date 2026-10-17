@@ -21,6 +21,75 @@ How do you configure PR checks for lint, static analysis, and tests?
 - Required PR checks and trust boundaries.
 - Lint/static analysis/test coverage without an excessively slow gate.
 
+## Concept and technical explanation
+
+Pull Request verification gates enforce automated quality standards before code enters the shared mainline, operating on the fail-fast principle to maximize developer velocity:
+- Tiered Quality Gate Strategy:
+  - Formatting & Style Verification:
+    - Executes deterministic linters like Spotless or ktlint. Confirms spacing, imports, and naming standards without semantic analysis overhead within seconds.
+  - Static Code Analysis:
+    - Runs Detekt to detect cyclomatic complexity, code smells, duplicate code, and custom architectural boundary rules (e.g., forbidding Android framework imports in domain modules).
+  - Android Framework Linting:
+    - Runs `./gradlew lintDebug`. Evaluates Android resource hygiene, security vulnerabilities, accessibility omissions, and API compatibility across minSdk and targetSdk versions.
+  - Historical Debt Management via Baselines:
+    - In mature codebases with legacy warnings, running Lint without baselines can produce hundreds of historical errors. Teams generate `lint-baseline.xml` and Detekt baseline files; the gate ignores preexisting issues but strictly breaks the build if a developer introduces even one net-new defect.
+  - Host JVM Unit Testing:
+    - Executes `./gradlew testDebugUnitTest` across affected modules, validating domain business logic, state machines, and repository contracts without emulator latency.
+  - Unified Failure Reporting:
+    - Pipelines execute checks with the `--continue` flag so all errors across modules are aggregated in a single run. Reports are ingested and published directly as SARIF annotations and inline PR comments.
+
+## Practical walkthrough (English)
+
+GitHub Actions workflow configuring fail-fast PR static analysis and unit testing:
+```yaml
+# .github/workflows/pr_checks.yml
+name: PR Quality Verification
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+
+concurrency:
+  group: pr-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  static_analysis:
+    name: Lint & Detekt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v3
+        with: { cache-read-only: true }
+      - name: Run Formatting & Static Analysis
+        run: ./gradlew spotlessCheck detekt lintDebug --continue
+      - name: Publish SARIF Lint Report
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: build/reports/detekt/detekt.sarif
+
+  unit_tests:
+    name: JVM Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v3
+        with: { cache-read-only: true }
+      - name: Run Host Unit Tests
+        run: ./gradlew testDebugUnitTest --continue
+      - name: Archive Test Results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: '**/build/reports/tests/testDebugUnitTest/'
+```
+
 ## Explanation in Arabic
 
 كيف تقوم بإعداد وتأمين بوابات فحص الـ PRs (Pull Request Checks) للـ Lint والتحليل الساكن واختبارات الوحدة؟
@@ -93,25 +162,21 @@ CI publishes lint SARIF/report, test failures and changed-file context. Owners r
 
 ## Interview answer — short
 
-Configure PR checks by chaining Spotless/ktlint for formatting, Detekt for static analysis, Android Lint with baseline files for framework checks, and testDebugUnitTest for local JVM unit tests. Run with the --continue flag in parallel jobs to fail fast while aggregating all errors into PR comments or build summaries.
+PR checks are configured as fail-fast parallel pipelines combining Spotless for formatting, Detekt for static complexity rules, Android Lint with baselines for SDK and resource hygiene, and testDebugUnitTest for business logic. Running with the continue flag aggregates all defects in a single pass, publishing inline PR annotations so developers receive comprehensive feedback within minutes.
 
 ## Interview answer — structured
 
-A production PR quality gate is designed to enforce strict code standards without crippling developer velocity.
-
-First, **Fail-Fast Pipeline Structure**. Next, separate lightweight checks into parallel jobs: (a) formatting and static analysis (Spotless/ktlint, Detekt), and (b) local JVM unit tests (`testDebugUnitTest`). This provides feedback within 2–3 minutes.
-**Baseline Management for Legacy Projects**. Enforce zero-tolerance for new issues in legacy codebases by generating Lint and Detekt baselines (`lintOptions { baseline = file("lint-baseline.xml") }`). Existing issues are recorded and grandfathered in, while newly introduced violations fail the PR build immediately.
-**Inline PR Feedback & Actionable Reporting**. Integrate tools like Danger or reviewdog to parse Lint XML reports and publish inline GitHub PR comments directly on offending lines, eliminating the need for engineers to download raw CI log files.
-**Execution Resilience**. Finally, use the `--continue` Gradle flag so the runner executes all static checks in a single pass, reporting formatting, lint, and unit test failures simultaneously rather than forcing repeated CI runs for sequential errors.
-
+Configuring Pull Request checks requires balancing thorough regression prevention against developer iteration velocity.
+In high-performing engineering teams, we structure PR validation into parallel, fail-fast jobs. The first tier runs Spotless or ktlint to enforce code formatting instantly. Alongside it, Detekt executes static analysis rules enforcing cyclomatic complexity thresholds and preventing architectural layer violations.
+For platform correctness, we run Android Lint on debug variants. To prevent historical warnings from blocking new feature work in mature codebases, we enforce baseline files like lint-baseline.xml; this ensures the pipeline only breaks when net-new violations are introduced. Concurrently, host JVM unit tests run across all modified modules using testDebugUnitTest.
+By executing Gradle tasks with the continue flag and leveraging GitHub Actions concurrency cancellation, existing runs on outdated commits are terminated immediately when a developer pushes a new commit. Build summaries and SARIF annotations post failure reports directly into the pull request review interface, providing complete actionable feedback in under five minutes.
 
 ## Interview answer — deep senior
 
-From an engineering governance and CI infrastructure standpoint, PR checks require careful caching and branch protection rules.
-
-First, with Branch Protection Enforcement, in GitHub or GitLab settings, mandate 'Require status checks to pass before merging' and 'Require branches to be up to date before merging'. This prevents race conditions where two PRs pass CI independently but break when merged together. Next, with Targeted Subproject Execution, in a multi-module architecture of 80+ modules, running `./gradlew check` across the entire project on every 3-line PR wastes massive compute. Teams configure path filters or tools like Gradle's configuration-cache and affected-module-detector to run tests only on modules impacted by the PR's git diff.
-Finally, enable Gradle's remote build cache (`org.gradle.caching=true`) backed by an S3/GCS or Develocity instance. If an engineer refactors a leaf module, upstream modules are retrieved from cache with `FROM-CACHE` status in seconds.
-
+From a release engineering and developer productivity perspective, pull request checks are the foundational filter protecting mainline stability and reducing code review cycle time.
+When designing an enterprise-scale PR verification pipeline, the primary architectural trap is attempting to run exhaustive test suites or full instrumentation emulators on every commit. This bloats queue times to half an hour and degrades team velocity. Instead, we divide verification into fast presubmit gates on PRs and exhaustive post-merge nightly runs. Presubmit checks focus exclusively on deterministic, low-overhead tasks: bytecode and source formatting with Spotless, static architecture governance with Detekt, platform resource verification with Android Lint, and JVM unit tests.
+Managing technical debt in large legacy codebases requires disciplined baseline governance. Simply turning on Lint with fail-on-warning will paralyze development by surfacing thousands of legacy warnings. We establish baseline files that capture historical debt at a specific point in time, configuring CI to fail only on regression deltas. We then schedule automated recurring maintenance tasks to ratcheting down baselines incrementally over time.
+To optimize CI infrastructure costs and runtimes, we combine Gradle configuration caching with affected-module detection tools. If a pull request touches only the profile feature module, our pipeline skips compiling unaffected payments and authentication modules entirely. Furthermore, we mandate pull request concurrency controls; pushing a new commit immediately cancels obsolete runner jobs, freeing up CI runners and ensuring that engineering feedback loops remain snappy, reliable, and friction-free.
 
 ## How to answer in the interview
 

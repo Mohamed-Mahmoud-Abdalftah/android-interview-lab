@@ -22,6 +22,59 @@ How do you correctly implement Snackbar, navigation, and callbacks?
 - Explain Snackbar coroutine ownership and navigation idempotence.
 - Handle lifecycle gaps and current callbacks.
 
+## Concept and technical explanation
+
+Implementing Snackbar messages, navigation transitions, and event callbacks in Jetpack Compose requires a disciplined separation between persistent UI state and transient UI effects. Rather than relying on fragile single-shot channels or passing ambient navigation controllers down the UI hierarchy, modern Compose architecture treats one-off events as consumable state or hoisted lambda callbacks. Snackbars are orchestrated via a hoisted SnackbarHostState inside Scaffold and launched in a coroutine scope. Navigation is decoupled by hoisting navigation callbacks to top-level navigation graphs, keeping screen composables completely agnostic of NavController instances.
+
+## Practical walkthrough (English)
+
+Architectural implementation of Snackbar, navigation, and callbacks:
+```kotlin
+// 1. Screen Composable: Completely stateless, receives lambdas, NO NavController passed!
+@Composable
+fun ProductDetailContent(
+    productName: String,
+    onBackClick: () -> Unit,
+    onShowMessage: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.padding(16.dp)) {
+        IconButton(onClick = onBackClick) { Icon(Icons.Default.ArrowBack, "Back") }
+        Text("Product: $productName", style = MaterialTheme.typography.headlineMedium)
+        Button(onClick = { onShowMessage("Item added to cart!") }) {
+            Text("Add to Cart")
+        }
+    }
+}
+
+// 2. Route Composable: Orchestrates Scaffold, SnackbarHostState, and Navigation
+@Composable
+fun ProductDetailRoute(
+    productId: String,
+    onNavigateBack: () -> Unit,
+    viewModel: ProductViewModel = hiltViewModel()
+) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { padding ->
+        ProductDetailContent(
+            productName = "Pixel 9 Pro",
+            onBackClick = onNavigateBack,
+            onShowMessage = { msg ->
+                scope.launch {
+                    snackbarHostState.currentSnackbarData?.dismiss() // Dismiss previous!
+                    snackbarHostState.showSnackbar(msg)
+                }
+            },
+            modifier = Modifier.padding(padding)
+        )
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيفية التعامل الصحيح مع أحداث المرة الواحدة (One-off Events) مثل الـ Snackbar والتنقل (Navigation) والـ Callbacks في Jetpack Compose:
@@ -111,24 +164,32 @@ Test duplicate taps, rotation during saving, STOP/START delivery, and back navig
 
 ## Interview answer — short
 
-Model one-off UI events (like Snackbars) as consumable state properties inside the UI state, displaying them via `LaunchedEffect(userMessage)` and immediately calling an `onMessageDismissed()` event to clear the state. Navigation triggered by user input should be handled directly in the UI via callbacks, while business-driven navigation is driven by explicit state transitions.
+We implement Snackbars using a hoisted SnackbarHostState inside a Scaffold, triggering showSnackbar() within a rememberCoroutineScope or LaunchedEffect. For navigation and callbacks, we hoist lambda events to the navigation graph level instead of passing NavController into screen composables. This keeps screens stateless, enables seamless Compose Previews, and makes unit and screenshot testing trivial without mocking Android navigation classes.
 
 ## Interview answer — structured
 
-Handling one-off events in Jetpack Compose requires transitioning away from legacy event-bus and channel antipatterns toward state-driven architectures.
-
-First, with Snackbar and Transient Messages as State, rather than pushing side-effect events through `Channel` or `SharedFlow`, the modern official pattern models messages as state: `userMessage: UserMessage?` inside `ScreenUiState`. In Compose, a `LaunchedEffect(uiState.userMessage)` observes this field. When non-null, it invokes `snackbarHostState.showSnackbar(message)`, and immediately fires a callback `viewModel.onMessageShown(id)` to reset the state to `null`. This prevents missed messages or duplicate displays upon screen rotation. Next, with User-Driven Navigation, clicks and direct user navigation (e.g. Tapping an item) should be handled immediately in the UI layer through hoisted lambda callbacks (`onItemClick: (Id) -> Unit`), directly invoking the `NavController`.
-Finally, with Business-Driven Navigation, when navigation depends on business outcomes (e.g. Successful authentication), the ViewModel emits a distinct terminal state (e.g. `AuthState.Authenticated`), which the UI observes to execute navigation.
-
+Managing transient UI events like Snackbars and navigation transitions is a frequent architectural testing ground in Android interviews.
+In legacy architectures, developers relied on SingleLiveEvent or Channel anti-patterns that frequently leaked events or dropped them during configuration changes.
+Modern Jetpack Compose adheres to clean architectural decoupling.
+For Snackbars, the standard pattern utilizes Scaffold and its dedicated snackbarHost parameter.
+The screen creates a remembered SnackbarHostState.
+When a user action triggers a message, a coroutine launched via rememberCoroutineScope or a state-driven LaunchedEffect invokes snackbarHostState.showSnackbar().
+Calling dismiss() on currentSnackbarData before showing a new snackbar prevents stacking delayed message queues.
+For navigation, a major industry rule is never passing NavHostController down into presenter composables.
+Passing NavController tightly couples the UI to a specific navigation library, destroys Android Studio Previews, and prevents isolated UI testing.
+Instead, screens expose explicit callback lambdas like onNavigateToDetails or onBackClick.
+The outer navigation graph or route composable implements these lambdas, invoking navController.navigate() at the top boundary.
 
 ## Interview answer — deep senior
 
-Why did Google advise against using `Channel` or `SharedFlow` for one-off UI events in Compose? Channels buffer events imperatively. If an event is posted while the UI is transitioning lifecycles (e.g. During an Activity recreation or rotation), the collector may either drop the event or consume it before the new composition is ready, resulting in dropped Snackbars or phantom double navigations.
-
-By embedding events in the immutable `UiState`, state restoration is guaranteed: if the screen dies and is recreated via `SavedStateHandle`, the pending message is preserved and displayed reliably.
-
-For navigation specifically, to prevent rapid double-clicks from pushing two duplicate screens onto the backstack, we either guard navigations with a boolean gate or debounce click modifiers, and verify that the destination is not already the top destination on the NavController backstack.
-
+Under the hood, SnackbarHostState acts as an asynchronous state coordinator powered by Kotlin Coroutines Mutex locks.
+When showSnackbar() is called, SnackbarHostState acquires an internal Mutex. If another snackbar is currently visible, the calling coroutine suspends until the existing snackbar dismisses, times out, or is explicitly cancelled via currentSnackbarData?.dismiss().
+This built-in suspension mechanism guarantees thread-safe, serialized message presentation without requiring custom queue data structures.
+When integrating with architecture ViewModels, transient events should be modeled either as consumable state properties inside an immutable UiState data class (cleared via an onEventConsumed callback once displayed) or emitted through a state-driven UI message queue.
+Regarding navigation, decoupling NavController from leaf composables is critical for compiler skipping and multiplatform modularization.
+NavController is a complex, mutable Android platform class that is marked unstable by the Compose compiler. Passing it down as a parameter immediately renders the child composable unskippable.
+By replacing NavController with stable lambda function types (such as () -> Unit), the Compose compiler marks the parameter as stable, enabling zero-overhead smart skipping across the entire presenter layer.
+Furthermore, this separation allows the same presenter screen to be reused across standard phone screens, navigation drawer panels, and adaptive foldable split-panes without altering a single line of presentation code.
 
 ## How to answer in the interview
 

@@ -22,6 +22,39 @@ What triggers recomposition, and what can be skipped?
 - Explain skipping with stability caveats rather than a blanket guarantee.
 - Diagnose an actual expensive scope.
 
+## Concept and technical explanation
+
+Recomposition is triggered when a composable function reads a Snapshot State object whose underlying value changes during state mutation. However, Compose does not blindly re-execute the entire UI hierarchy; instead, it enforces fine-grained, localized recomposition. A composable function can be completely skipped if all of its input parameters are determined to be Stable or Immutable by the Compose compiler and their runtime values remain unchanged since the previous composition. Conversely, functions accepting unstable types (such as standard Java/Kotlin collections like List, or mutable data classes with var properties) cannot be proven unchanged, forcing Compose to re-execute them conservatively on every recomposition pass.
+
+## Practical walkthrough (English)
+
+Contrasting an unskippable composable with a fully skippable composable:
+```kotlin
+// ❌ FAILS TO SKIP: Standard Kotlin List is considered UNSTABLE by Compose Compiler!
+// Even if the list content is identical, UserList will ALWAYS re-execute whenever parent recomposes!
+@Composable
+fun UnstableUserList(users: List<String>, onUserClick: (String) -> Unit) {
+    LazyColumn {
+        items(users) { user -> Text(user, modifier = Modifier.clickable { onUserClick(user) }) }
+    }
+}
+
+// ✅ ARCHITECTURAL BEST PRACTICE: Fully skippable composable using Immutable wrapper or Kotlinx Immutable
+@Immutable
+data class UserListState(val users: List<String>) // Marked @Immutable promises compiler list will never mutate!
+
+@Composable
+fun StableUserList(
+    state: UserListState, // Stable type!
+    onUserClick: (String) -> Unit // Stable lambda reference!
+) {
+    // Compose compiler successfully SKIPS this function if state and lambda have not changed!
+    LazyColumn {
+        items(state.users) { user -> Text(user, modifier = Modifier.clickable { onUserClick(user) }) }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 ما الذي يطلق الـ Recomposition (Triggers) وما الذي يمكن للـ Runtime تخطيه (Skipping)؟
@@ -108,27 +141,26 @@ Use compiler metrics, Layout Inspector or trace tools appropriate to the install
 
 ## Interview answer — short
 
-Recomposition is triggered when a composable reads a `State` object whose value changes, or when its parent recomposes with updated parameters. A composable can be skipped if all its arguments are `Stable` and structurally equal to their previous values, and no observed internal states have changed.
+Recomposition is triggered whenever a Snapshot State object read by a composable function is modified. A composable can be skipped if all its input arguments are stable and equal to their previous composition values. The Compose compiler marks primitive types, Strings, function lambdas, and classes annotated with @Immutable or @Stable as stable. However, standard collections like List or classes with mutable var properties are treated as unstable, forcing Compose to re-execute the composable even if the underlying data has not changed.
 
 ## Interview answer — structured
 
-Recomposition triggers strictly through state reads and parameter mutations.
-
-First, a The Trigger is the Compose snapshot system observes which `State<T>` objects are read within each `RecomposeScope`. When an assignment occurs on a state property, all scopes that registered a read for that property are scheduled for recomposition. Next, with Smart Skipping, during a recomposition pass of a parent composable, Compose inspects child composables. A child composable is **skipped** if and only if.
-The composable is marked **restartable** and **skippable** by the Compose Compiler. All parameters passed to the function are **Stable**.
-Finally, none of the parameter values have changed according to their `equals()` implementation.
-
-If a single parameter is inferred as **Unstable** (such as standard Kotlin `List<T>`, collections, or classes containing `var` properties), Compose cannot guarantee that the object's contents haven't changed behind its back. Consequently, the compiler forces the child to recompose every single time the parent recomposes, degrading performance.
-
+Achieving peak UI performance in Jetpack Compose depends on understanding the exact mechanics governing recomposition triggers and compiler skipping.
+Recomposition is not triggered by arbitrary background variable modifications; it is triggered strictly when a function reads a Snapshot State object (such as mutableStateOf or StateFlow converted via collectAsState) whose value subsequently updates.
+Compose analyzes function signatures to determine skippability.
+A composable is deemed skippable if all its parameters are stable. Stable types guarantee that if two instances are equal via equals(), they will never silently mutate over time.
+The Compose compiler automatically recognizes primitives, String, enums, and classes with only val properties of stable types as stable.
+A major trap in Android development involves standard collections like List or Map. Because Kotlin's List is technically a read-only interface that could be backed by a mutable ArrayList at runtime, the Compose compiler flags it as unstable. Consequently, any composable accepting a raw List cannot be skipped during parent recompositions.
+To enable skipping, developers wrap collections inside @Immutable data classes, use Kotlinx Immutable Collections, or leverage strong skipping mode in modern Compose compilers.
 
 ## Interview answer — deep senior
 
-The Compose Compiler classifies types into three stability categories: **Immutable** (all public properties are `val` of primitive or immutable types; will never change), **Stable** (may mutate, but notifies the composition when mutations occur via snapshot state), and **Unstable** (may mutate without notifying Compose).
-
-With the introduction of the **Strong Skipping Mode** in recent Compose compiler releases (enabled by default in Kotlin 2.0+), Compose became significantly smarter: composables with unstable parameters can now be skipped if the instance reference has not changed (`===`), and lambdas with captures are automatically memoized using `remember`.
-
-To audit stability in production apps, we enable Compose Compiler Metrics (`reportsDestination`). The generated reports categorize every composable as `skippable` or `restartable only`, and pinpoint exact unstable parameters (e.g. `unstable users: List<User>`), guiding us to wrap them in Kotlinx `ImmutableList` or annotate models with `@Immutable`.
-
+Under the hood, skipping behavior is governed by stability inference performed by the Compose Compiler plugin during compilation.
+For each composable function, the compiler computes a stability summary for every parameter, assigning it $stable, $unstable, or $dynamic. In the generated bytecode, the compiler inserts change-tracking logic into the synthetic changed bitmask integer. Each parameter occupies 3 bits in the mask, representing states like SAME, DIFFERENT, UNCERTAIN, and STATIC.
+When a parent composable recomposes, it evaluates the bitmask. If a parameter is marked unstable, the bitmask is forced to UNCERTAIN, forcing the child function body to execute.
+If all parameters are stable and evaluate to SAME (or have STATIC references), the method executes an early return opcode, entirely skipping slot allocation and child tree reconciliation.
+In modern Compose compilers (Compose Compiler 1.5.4+ and Kotlin 2.0+), Google introduced Strong Skipping Mode (enabled by default in Kotlin 2.0). Strong skipping relaxes classical stability rules: composables with unstable parameters become skippable if their runtime instances compare equal via instance equality (===) or structural equality (equals).
+Furthermore, lambda memoization automatically wraps unstable lambda captures inside remember blocks, dramatically reducing unnecessary recompositions across enterprise Android codebases. Senior engineers inspect compiler metrics using the reportsDestination flag to audit unskippable composables and verify that critical screens achieve predictable, near-zero recomposition overhead.
 
 ## How to answer in the interview
 

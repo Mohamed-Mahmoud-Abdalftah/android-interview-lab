@@ -20,6 +20,56 @@ How do you manage caching expiration and invalidation?
 
 Set cache expiry and invalidation by data semantics, server validators and session changes.
 
+## Concept and technical explanation
+
+Managing caching expiration and invalidation ensures data freshness while preserving the low-latency and offline benefits of local storage:
+- Time-To-Live (TTL) & Expiration Windows: Caches attach ingestion timestamps to persisted records. When accessed, the repository compares the record's age against predefined freshness bounds. Expired data either forces a synchronous network refresh or triggers a background fetch while returning stale data temporarily.
+- Conditional HTTP Validation: Leverages HTTP headers (ETag, Last-Modified, and Cache-Control) via OkHttp Cache. When a cached resource becomes stale, OkHttp dispatches an If-None-Match or If-Modified-Since validation request. If the backend resource is unchanged, the server responds with HTTP 304 Not Modified without a response payload, refreshing the local TTL without network data overhead.
+- Event-Driven Remote Invalidation: Uses server-pushed events (Firebase Cloud Messaging silent data notifications or WebSockets) to explicitly evict or refresh stale client records immediately upon server-side mutations.
+- Mutation-Triggered Invalidation: Local write operations (POST, PUT, DELETE) immediately invalidate corresponding cached query results or update local Room entities directly.
+- Cache Eviction Policies: Enforces size-bounded storage eviction (such as Least Recently Used - LRU) and schedules periodic Room cleanup jobs via WorkManager to purge historical records and prevent database bloat.
+
+## Practical walkthrough (English)
+
+Cache manager coordinating TTL validation and ETag HTTP caching:
+```kotlin
+@Entity(tableName = "products")
+data class ProductEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val price: Double,
+    val cachedAt: Long = System.currentTimeMillis()
+)
+
+class ProductRepository(
+    private val dao: ProductDao,
+    private val api: ProductApi,
+    private val maxAgeMillis: Long = 10 * 60 * 1000L // 10 minutes TTL
+) {
+    fun getProduct(id: String): Flow<Product> = flow {
+        val cached = dao.getById(id)
+        val isExpired = cached == null || (System.currentTimeMillis() - cached.cachedAt) > maxAgeMillis
+
+        if (cached != null) {
+            emit(cached.toDomain())
+        }
+
+        if (isExpired) {
+            runCatching {
+                val fresh = api.fetchProduct(id)
+                dao.insert(fresh.toEntity(cachedAt = System.currentTimeMillis()))
+            }
+        }
+    }
+
+    // Invalidation on mutation
+    suspend fun updateProduct(product: Product) {
+        api.updateProduct(product)
+        dao.insert(product.toEntity(cachedAt = System.currentTimeMillis()))
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تدير انتهاء صلاحية الكاش (Caching Expiration) وإبطاله (Invalidation) في تطبيقات Android؟
@@ -106,28 +156,27 @@ A catalog caches pages with server versions and fetchedAt, revalidates on app fo
 
 ## Interview answer — short
 
-Manage cache expiration using domain-specific TTLs paired with HTTP conditional validation (ETags / If-None-Match returning 304 Not Modified). Invalidate caches proactively upon user mutations, FCM push invalidations, and enforce immediate database purges on logout or user switching.
+Managing cache expiration and invalidation requires pairing client-side Time-To-Live policies with server-driven conditional headers and event triggers. Room entities record ingestion timestamps for expiration checks, OkHttp utilizes ETags and 304 responses to eliminate redundant payloads, and Firebase Cloud Messaging pushes trigger targeted eviction of stale local records.
 
 ## Interview answer — structured
 
-A comprehensive caching strategy separates time-based expiration from event-driven invalidation.
-
-First, **Time-To-Live (TTL) Expiration**. Next, different domains demand different freshness thresholds: user avatars (7 days), catalog feed (15 minutes), account balances (0 seconds / always revalidate).
-Leverage **HTTP Conditional Requests**: Store server `ETag` or `Last-Modified` headers. When the TTL expires, issue a lightweight `If-None-Match` request. If unchanged, the server returns **`304 Not Modified`** with an empty body, saving mobile bandwidth while refreshing the TTL. **Event-Driven Invalidation**.
-With Local Write Invalidation, when a user updates their profile, the repository immediately mutates Room, ensuring UI screens observe fresh state without waiting for a TTL cycle. With Remote Server Invalidation, use high-priority FCM Silent Push notifications to instruct clients to invalidate specific cache keys when backend data updates.
-Finally, with Session Purges, on `Logout` or account switching, execute an atomic SQLite wipe (`database.clearAllTables()`) to prevent data leaking between users.
-
+Managing cache freshness and invalidation effectively balances immediate offline responsiveness against data staleness across several complementary mechanisms.
+First, client-side Time-To-Live policies store expiration timestamps alongside Room entities, allowing repositories to determine whether cached data can be served directly or requires a network refresh.
+Second, HTTP conditional validation utilizes ETags and Last-Modified headers in OkHttp. When the client issues a request with If-None-Match, a 304 Not Modified response validates that the local cache remains pristine without redownloading JSON bodies.
+Third, event-driven invalidation leverages silent push notifications via Firebase Cloud Messaging or WebSockets to instantly purge stale resources upon backend changes.
+Fourth, automated eviction policies employ periodic WorkManager background tasks to prune expired, non-favorited records from SQLite, preventing unconstrained disk bloat.
 
 ## Interview answer — deep senior
 
-A subtle pitfall in Android caching is **Clock Skew with Device Time**.
-
-If a developer calculates expiration using `System.currentTimeMillis()` (`now - lastFetched > TTL`), and the user manually alters device time or travels across time zones, the cache may appear permanently expired or permanently fresh.
-
-To prevent clock skew bugs.
-
-First, use **`SystemClock.elapsedRealtime()`** for in-session relative cache calculations (which counts milliseconds since device boot, immune to user time adjustments). Finally, for persistent multi-day caches, rely on the server's HTTP `Date` header to calculate relative age rather than trusting the Android hardware clock.
-
+A robust caching architecture requires a unified strategy spanning the HTTP transport layer, local SQLite persistence, and real-time backend synchronization.
+At the HTTP layer, we configure OkHttp's disk cache with strict size limits and integrate conditional requests using ETags and Cache-Control directives.
+When a repository requests data, OkHttp evaluates Cache-Control headers; if stale, it transmits an If-None-Match header, allowing the server to emit an empty 304 Not Modified status that preserves battery and bandwidth.
+At the persistence layer, Room models incorporate a cachedAt timestamp.
+When reading from the repository, our business logic checks this timestamp against screen-specific Time-To-Live thresholds: five minutes for live commerce inventory versus twenty-four hours for static category taxonomies.
+However, relying purely on polling or passive TTL is insufficient for enterprise applications where remote mutations must reflect immediately.
+To achieve real-time accuracy, we implement event-driven cache invalidation: when a product price or user permission updates on the backend, a high-priority silent push notification dispatches through Firebase Cloud Messaging.
+The background receiver catches the notification, extracts the affected entity IDs, and executes an atomic Room deletion or background sync.
+Finally, to prevent storage leaks on budget devices, a daily WorkManager job evicts unreferenced cache rows older than thirty days.
 
 ## How to answer in the interview
 

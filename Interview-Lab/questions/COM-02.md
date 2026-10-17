@@ -22,6 +22,46 @@ What is a @Composable function? What is recomposition?
 - Relate recomposition to changed inputs or state reads.
 - Separate recomposition from every layout or draw and reject side effects in rendering.
 
+## Concept and technical explanation
+
+A @Composable function is a Kotlin function annotated with @Composable that serves as a basic building unit in Jetpack Compose, emitting UI nodes into the composition graph rather than returning a value. The @Composable annotation alters the function's calling conventions at compile time, allowing it to read and write state, access composition locals, and participate in lifecycle management. Recomposition is the process whereby the Compose runtime re-executes composable functions in response to state changes to update the visual UI tree, intelligently skipping any functions whose input parameters have not changed.
+
+## Practical walkthrough (English)
+
+Demonstrating a Composable function, state observation, and recomposition execution:
+```kotlin
+// A pure Composable function that observes state and re-executes during recomposition
+@Composable
+fun CounterWidget(count: Int, onIncrement: () -> Unit) {
+    // This function will re-execute (recompose) whenever 'count' changes
+    Column(
+        modifier = Modifier.padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Current Taps: $count",
+            style = MaterialTheme.typography.headlineMedium
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(onClick = onIncrement) {
+            Text("Increment")
+        }
+    }
+}
+
+// Side-effects MUST NOT be placed directly in the composable body, as recomposition can happen frequently!
+@Composable
+fun BadAnalyticsComposable(screenName: String) {
+    // ❌ ANTI-PATTERN: Side-effect executed directly in the body! Runs on EVERY recomposition!
+    // analytics.track(screenName) 
+
+    // ✅ BEST PRACTICE: Wrap side-effects inside dedicated effect handlers
+    LaunchedEffect(screenName) {
+        // Runs only when screenName changes, not on every random recomposition!
+    }
+}
+```
+
 ## Explanation in Arabic
 
 ما هي دالة `@Composable` وما هو مفهوم الـ Recomposition؟
@@ -101,28 +141,26 @@ Use state/event boundaries and effects for controlled work. Profile with Compose
 
 ## Interview answer — short
 
-A `@Composable` function is a Kotlin function transformed by the Compose compiler to emit UI nodes into the composition tree. Recomposition is the process where Compose re-executes composables whose observed `State` has changed to produce updated UI, skipping unchanged composables intelligently.
+A @Composable function is a Kotlin function annotated with @Composable that describes UI layout and emits nodes into the composition hierarchy. Recomposition is the automatic re-execution of composable functions by the runtime whenever their observed state changes. During recomposition, Compose inspects function parameters and intelligently skips re-running any composables whose inputs remain identical, ensuring high rendering performance and smooth 60fps animations.
 
 ## Interview answer — structured
 
-A `@Composable` annotation transforms a Kotlin function at compile time. Much like the `suspend` keyword modifies a function's calling convention to inject a `Continuation`, `@Composable` modifies the function type to inject a `$composer` parameter and runtime control structures.
-
-**Recomposition** is the core reactive mechanism of Jetpack Compose. When a snapshot `State` object read within a composable changes its value, the Compose runtime invalidates that specific scope in the **Slot Table** and re-executes the composable function to produce updated UI nodes.
-
-Three critical operational rules govern recomposition.
-
-First, with Idempotency & Purity, composables must be free of side-effects because recomposition can execute on every single frame during animations. Next, with Parallel & Arbitrary Order, composables may run concurrently on background thread pools or in arbitrary order.
-Finally, with Optimistic Cancellation, if state updates again while recomposition is underway, Compose discards the pending pass and restarts with the fresh state.
-
+Understanding @Composable functions and recomposition mechanics is the cornerstone of writing performant Jetpack Compose applications.
+The @Composable annotation is a compiler directive that fundamentally transforms a function's bytecode. Much like Kotlin's suspend keyword, @Composable alters the function type, enabling it to be invoked only from within another composable context. Instead of constructing and returning a View instance, a composable function accepts state parameters and emits declarative UI layout descriptions.
+Recomposition is Compose's reactive update mechanism.
+When a snapshot state variable read by a composable changes, the Compose runtime invalidates that specific function scope.
+During the subsequent frame rendering phase, Compose re-executes the invalidated composables with the updated state values.
+Because recomposition can occur on every single animation frame (up to 120 times per second), composable functions must remain idempotent, pure, and completely free of direct side-effects like database queries, network requests, or direct analytics tracking.
+Compose ensures optimal performance through smart skipping: if a composable's arguments are stable and unchanged, the runtime skips its execution entirely, updating only the modified leaf nodes.
 
 ## Interview answer — deep senior
 
-Under the hood, the Compose Compiler generates synthetic bytecode called **Restartable and Replaceable Groups**. A composable marked with `@Composable` is wrapped in `$composer.startRestartGroup()` and `$composer.endRestartGroup()`. The returned scope implements `RecomposeScopeImpl`, which registers itself as an observer of snapshot state reads.
-
-When you read `state.value` inside a composable, the `Snapshot` system records that read against the active `RecomposeScope`. When `state.value = newValue` is assigned, the snapshot system marks that `RecomposeScope` as dirty and dispatches an invalidation to the Choreographer frame loop.
-
-If all parameters passed to a composable are known to be **Stable** and have not changed by `equals()` comparison, Compose skips executing the function body entirely (`Skipping`), which is why understanding Compose compiler stability is fundamental to fluid 120fps performance.
-
+Under the hood, the @Composable annotation activates the Compose Compiler plugin, which rewrites the function signature by appending two synthetic parameters: a Composer instance and an integer bitmask (changed).
+The Composer parameter acts as a low-level broker between your code and the SlotTable. It tracks code location keys, allocates slots for remember calculations, records state read dependencies, and manages the execution stack.
+The changed integer parameter contains bit flags that communicate the stability and mutation status of every input argument across recompositions. Before executing the function body, the compiled bytecode evaluates a conditional check comparing current arguments with previous values stored in the SlotTable. If all arguments are unchanged and stable, the function branches immediately to the end of the method, achieving zero-allocation skipping.
+Furthermore, the Compose runtime does not guarantee that recomposition runs in top-down sequential order, nor does it guarantee that recomposition executes on the main thread during speculative phases.
+Recomposition can also be canceled mid-execution if state updates again before the frame completes, discarding the intermediate composition work.
+Senior engineers design composables to be completely side-effect free, delegating asynchronous tasks and imperative mutations exclusively to lifecycle-aware effect primitives like LaunchedEffect or DisposableEffect. By keeping composables deterministic and referentially transparent, the runtime safely parallelizes composition across worker threads in future compiler optimizations without risking concurrency locks or corrupted UI state.
 
 ## How to answer in the interview
 

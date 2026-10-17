@@ -21,6 +21,49 @@ Compare cryptographic keys, access tokens, refresh tokens, API keys, and passwor
 - Purpose, lifetime, exposure and rotation of five credential types.
 - Why a bearer token is not a cryptographic key and an APK API key is not a secret.
 
+## Concept and technical explanation
+
+Secure Android application architecture requires categorizing sensitive data into distinct credential classes, each with unique lifetimes, cryptographic properties, exposure risks, and storage requirements. Cryptographic keys (such as AES symmetric keys or ECDSA asymmetric key pairs) provide mathematical confidentiality and digital signatures; they must reside inside the hardware-backed Android Keystore. Access tokens are short-lived bearer credentials (typically OAuth 2.0 JWTs valid for 15 to 60 minutes) used in HTTP headers to authorize client API requests; they are kept in secure volatile memory or encrypted storage and rotated frequently. Refresh tokens are high-value, long-lived credentials (valid for weeks or months) whose sole purpose is to authenticate with the identity provider to obtain new access tokens; they require maximum protection in EncryptedSharedPreferences backed by Keystore master keys, combined with refresh token rotation (RTR). API keys are public client identifiers used by platforms like Google Maps to track usage and quota; they are not secrets and must be restricted by package name and SHA-1 signing certificates in cloud consoles. Passwords are user-held master authentication secrets that should never be permanently persisted on mobile devices, manipulated only as ephemeral char arrays to avoid immutable JVM heap String intern pooling.
+
+## Practical walkthrough (English)
+
+Production token storage and secure password memory handling in Android:
+```kotlin
+// 1. Secure token storage using Jetpack Security EncryptedSharedPreferences
+class SecureSessionManager(context: Context) {
+    private val masterKey = MasterKey.Builder(context)
+        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+        .build()
+
+    private val encryptedPrefs = EncryptedSharedPreferences.create(
+        context,
+        "secure_session_prefs",
+        masterKey,
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+    )
+
+    fun saveTokens(accessToken: String, refreshToken: String) {
+        encryptedPrefs.edit()
+            .putString("access_token", accessToken)
+            .putString("refresh_token", refreshToken)
+            .apply()
+    }
+}
+
+// 2. Safe user password handling: zeroing out character arrays immediately
+fun authenticateWithZeroablePassword(passwordChars: CharArray, onComplete: () -> Unit) {
+    try {
+        // Send password over TLS to exchange for OAuth token pair
+        transmitCredentialsOverTls(passwordChars)
+    } finally {
+        // Overwrite memory buffer immediately to prevent heap dump exposure
+        passwordChars.fill('0')
+    }
+    onComplete()
+}
+```
+
 ## Explanation in Arabic
 
 مقارنة شاملة بين 5 أنواع من بيانات الاعتماد الحساسة في Android:
@@ -86,26 +129,31 @@ Document a credential inventory: owner, storage location, scope, lifetime, rotat
 
 ## Interview answer — short
 
-Cryptographic keys perform local crypto inside Keystore. Access tokens authenticate API requests with short lifespans (15-60m). Refresh tokens obtain new access tokens and require rotation and secure storage. APK API keys are public client identifiers (not secrets) secured via Google Cloud SHA-1 restrictions. Passwords authenticate users and must never be stored locally.
+We categorize mobile credentials into five distinct security classes: cryptographic keys stored in Keystore for mathematical operations, short-lived access tokens for daily API calls, long-lived refresh tokens securely persisted to rotate access tokens, public API keys restricted in cloud consoles for service quotas, and raw user passwords that are never persisted and zeroed from memory immediately after exchange.
 
 ## Interview answer — structured
 
-A senior engineer establishes strict threat models and retention boundaries across these five distinct credential types.
-
-First, with Cryptographic Keys (AES/RSA/ECC), mathematical keys used to encrypt data or sign tokens. Protected exclusively inside hardware-backed `AndroidKeyStore`. They never leave secure hardware and cannot be inspected over the network. Next, with Access Tokens (JWT / Bearer Tokens), ephemeral proofs of authorization granted to an authenticated client. They have short lifespans (15 to 60 minutes) to minimize damage if intercepted in memory. Kept in memory or encrypted persistent storage.
-Additionally, with Refresh Tokens, long-lived credentials (days to months) used solely to issue fresh access tokens. Held in encrypted storage and rotated on every use (Refresh Token Rotation). Revocable server-side. With API Keys (Embedded in APK), client identifiers (Google Maps, Mixpanel, Firebase). **These are never secrets**. Anyone who downloads the APK can decompile it and read the string. They must be protected on the cloud provider side via IP, Package Name, and SHA-1 signing certificate restrictions.
-Finally, with Passwords / PINs, user-provided secrets used to establish identity. Never store raw passwords on the device. Transmit over TLS to exchange for session tokens, wiping password buffers from RAM immediately.
-
+A resilient mobile security posture treats credentials differently according to their specific blast radius, lifetime, and storage requirements.
+Cryptographic keys are mathematical instruments used for encryption and digital signing, requiring non-exportable hardware protection inside Android Keystore.
+Access tokens are ephemeral bearer credentials with short lifespans between fifteen and sixty minutes, used in HTTP Authorization headers to authenticate API calls without requiring persistent storage.
+Refresh tokens are high-privilege credentials used exclusively with authorization servers to fetch fresh access tokens; they must be encrypted on disk using EncryptedSharedPreferences and rotated on every exchange.
+API keys identify the client application for third-party platforms like Google Maps or Firebase; because they are packaged inside the APK, they are public identifiers rather than secrets and must be restricted in developer consoles using application package names and SHA-1 signing fingerprints.
+User passwords represent user identity secrets that should never be written to local storage, handled in memory exclusively as ephemeral char arrays that are wiped with zeroes immediately after exchanging them over TLS for authentication tokens.
 
 ## Interview answer — deep senior
 
-The Architectural Fallacy of 'Hiding' Third-Party Backend Secrets in an APK:
-
-Teams frequently ask: 'Where should I store our Stripe Secret Key or OpenAI Private API Key in our Android app? In NDK C++? Obfuscated with XOR? In local.properties?'
-
-**The Senior Answer: Nowhere in the APK!**
-A distributed Android APK is entirely in the hands of the client (attacker). No amount of ProGuard, NDK C++ compilation, or XOR encoding will prevent an attacker with Frida, Ghidra, or Wireshark from extracting the private key. Private API keys must reside **exclusively on your backend server**. The Android client authenticates to your backend with a user session token, and your backend proxies requests to Stripe or OpenAI using the private key.
-
+When evaluating credential management at a staff level, the most common architectural failure is conflating client identification with client authorization.
+Developers frequently embed third-party API keys in BuildConfig and treat them as secrets.
+In reality, any string bundled into an APK is a public identifier easily extracted with static analysis tools.
+For vendor API keys, security relies entirely on platform-level restrictions such as pinning the key to the release SHA-256 signing fingerprint and package name, combined with API quotas.
+For user session management, OAuth 2.0 with Proof Key for Code Exchange (PKCE) is the industry standard.
+Access tokens must have strict, short time-to-live envelopes to minimize exposure if intercepted over compromised networks.
+Conversely, refresh tokens represent the real crown jewels of client authentication.
+If a refresh token leaks, an attacker maintains persistent access to the user account.
+Therefore, we persist refresh tokens in EncryptedSharedPreferences backed by hardware-rooted Keystore master keys, while enforcing Refresh Token Rotation on the backend.
+Under this rotation pattern, using a refresh token invalidates it and issues a replacement; if an authorization server observes an already-consumed refresh token, it assumes token theft and immediately terminates the entire user session.
+Finally, raw passwords must never touch disk persistence or SQLite databases.
+In memory, we avoid Java Strings because they are immutable and cached in the internal string pool where garbage collection cannot guarantee timely erasure; instead, we handle passwords as mutable CharArrays and explicitly overwrite them with zeroes immediately following network transmission.
 
 ## How to answer in the interview
 

@@ -20,6 +20,14 @@ When would a sealed hierarchy be better than an enum for UI or payment states?
 
 Model payload-bearing state and transitions, distinguish UI display from server-side payment authority.
 
+## Concept and technical explanation
+
+Deciding between an Enum class and a Sealed Hierarchy (`sealed interface` / `sealed class`) is a foundational architectural decision in Kotlin domain and UI state modeling. Enums represent a strictly closed set of constant, immutable singleton values. Every enum constant must conform to identical constructor parameters, cannot carry dynamic, stateful payloads that vary per instance, and cannot vary its fields across different instances. In stark contrast, a sealed hierarchy models a closed family of distinct types. Each subclass within a sealed hierarchy can be declared as an object (for stateless cases), a data class (with distinct, strongly typed payload parameters), or even another sealed hierarchy. For complex domain workflows—such as e-commerce checkout flows or asynchronous UI state machines—states inevitably carry disparate payloads (e.g., an Idle state has no data, a Loading state carries progress metadata, a Success state carries a domain Receipt, and an Error state carries failure codes and recovery policies). Sealed hierarchies represent these diverse states without resorting to nullable anti-patterns, while ensuring exhaustive compiler evaluation in `when` expressions.
+
+## Practical walkthrough (English)
+
+Consider modeling an e-commerce checkout state machine. If an engineer naively attempts an enum: `enum class CheckoutState { IDLE, LOADING, SUCCESS, FAILED }`, all state-specific payloads must be shoved into nullable fields on the host ViewModel or enum: `var receipt: Receipt? = null; var error: String? = null`. This creates an illegal state space where `CheckoutState.SUCCESS` can coexist with a null receipt, leading to defensive assertions and runtime crashes. By implementing a sealed hierarchy: `sealed interface CheckoutState { data object Idle : CheckoutState; data class Processing(val progress: Float) : CheckoutState; data class Success(val receipt: Receipt) : CheckoutState; data class Failed(val reason: String, val canRetry: Boolean) : CheckoutState }`, invalid state combinations become completely unrepresentable in the type system. In Jetpack Compose or ViewModel observers, a `when (state)` block exhaustively handles each branch with zero unsafe casting.
+
 ## Explanation in Arabic
 
 المقارنة بين `enum` و `sealed class` / `sealed interface` في نمذجة الحالات (UI & Payment States) هي محور أساسي في تصميم الأنظمة الحديثة:
@@ -92,25 +100,22 @@ Checkout ViewModel renders sealed local states while repository persists request
 
 ## Interview answer — short
 
-Enums are strictly for static constants that share identical attributes across all instances. Sealed hierarchies are superior for UI and payment states because they allow individual states to hold distinct payloads (e.g., Success holds a Receipt, while Failed holds an ErrorReason), eliminating invalid states and enabling compiler-enforced smart casting in when expressions.
+Enums represent fixed, stateless singleton instances sharing identical fields, ideal for static categories like days or directions. Sealed hierarchies represent closed type families where each branch can have distinct types, payloads, and lifecycles, making them far superior for state machines and UI models where each state requires distinct data.
 
 ## Interview answer — structured
 
-I choose sealed hierarchies over enums whenever different states require different payloads. Enums represent fixed sets of uniform constants; every enum entry must share the exact same constructor properties, and every entry is a singleton instantiated when the class is loaded.
+The choice between an enum and a sealed hierarchy in Kotlin hinges on whether the states require distinct, type-safe data payloads. An enum class represents a fixed collection of singleton constants that share identical constructor properties, making it optimal for uniform categories such as order sorting modes or days of the week.
 
-In real-world UI and payment flows, states are inherently heterogeneous. An Idle state carries no data, a Loading state might carry a progress percentage, a Success state carries a PaymentReceipt object, and a Failed state carries an error domain model and a retry policy. Modeling this with an enum forces you into a bloated 'God state' with dozens of nullable properties, creating invalid states like being in Success status with a null receipt.
+Sealed hierarchies represent closed algebraic data types where each case can be an independent class with unique fields, or a data object for stateless transitions.
 
-With a sealed interface, illegal states become unrepresentable in the type system. In the UI or ViewModel, Kotlin's when expression guarantees exhaustive branch coverage and smart-casts each branch to its concrete type, giving safe, direct access to that state's payload without null assertions.
+In production, such as payment flows or screen UI states, states require radically different payloads: an idle state carries nothing, while a success state holds an order receipt, and a failure state holds an error code and retry policy.
+
+Sealed hierarchies make invalid states completely unrepresentable in the type system and provide compile-time exhaustive evaluation in when expressions without fallback else clauses.
 
 
 ## Interview answer — deep senior
 
-From an architectural domain-modeling perspective, sealed hierarchies embody Algebraic Data Types (specifically Sum Types with Product Type variants). Using `sealed interface` combined with `data object` (introduced in Kotlin 1.9) gives the best of both worlds: parameterless states like `Idle` compile to singletons with clean toString() logging, while parameterized states like `Success(val receipt: Receipt)` allocate new instances holding distinct payloads.
-
-In contrast, forcing an enum to represent dynamic states leads to architectural rot: developers often resort to mutable companion objects, global singletons, or nullable fields in a single giant class. If a new business requirement emerges—such as adding a `TwoFactorRequired(val challengeToken: String)` state to a payment flow—with a sealed interface, the Kotlin compiler will fail compilation at every single `when` expression across the entire project that doesn't handle the new variant, acting as an automated refactoring guide.
-
-In Jetpack Compose, sealed states are especially critical for recomposition stability. Distinct state classes allow Compose to skip recomposition when only unrelated properties in sibling states change, boosting rendering performance.
-
+Under the hood, Kotlin sealed hierarchies compile to standard JVM classes with restricted visibility mechanisms. Prior to Kotlin 1.5, sealed classes were compiled as abstract classes with private synthetic constructors, permitting subclasses only within the same file. Starting with Kotlin 1.5+, `sealed interface` was introduced, compiling to standard JVM interfaces equipped with permitted subclass metadata recognized by modern JVM bytecode verifiers, allowing subclasses across any file within the same compilation module and package. In contrast, every enum constant compiles to a `public static final` singleton instance inheriting from `java.lang.Enum`, holding an internal integer ordinal and string name. Regarding memory lifecycle, enum constants reside permanently in the JVM PermGen/Metaspace heap once loaded, whereas sealed data class instances are instantiated on demand, updated dynamically, and reclaimed by the garbage collector when state transitions occur. For serialization in modern Android applications, `kotlinx.serialization` handles sealed hierarchies through compile-time polymorphic serializers (`@Polymorphic` or `@SerialName`), allowing dynamic JSON discrimination based on a type descriptor property. In fintech payment systems, a critical distinction must be drawn between transient local UI state and server-side transaction authority. A network timeout in a payment flow must not be mapped naively to a terminal `Failed` state if the server might have already authorized the charge. Senior engineers model this using a dedicated `PaymentState.PendingVerification(val transactionId: String)` branch, forcing the client to poll or reconcile with the server before declaring finality.
 
 ## How to answer in the interview
 

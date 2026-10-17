@@ -21,6 +21,62 @@ A malicious pull request tries to access signing secrets. How do you prevent lea
 - Malicious PR code in build scripts/tests and privileged workflow contexts.
 - Separation of untrusted validation from signing/release.
 
+## Concept and technical explanation
+
+Mitigating secret exfiltration and remote code execution attacks from untrusted pull requests requires strict runner sandboxing, trigger hygiene, and least-privilege infrastructure:
+- Attack Vectors in Mobile CI Pipelines:
+  - An attacker submits a pull request containing modified Gradle tasks, dependencies, or GitHub Action steps designed to dump environment variables, print base64 keystores, or transmit credentials to an external endpoint.
+- The Danger of `pull_request_target`:
+  - The standard `pull_request` event executes workflows in the context of the fork, strictly withholding repository secrets and write permissions.
+  - Using `pull_request_target` grants workflows access to secrets and write tokens while running against the base repository. If the workflow checks out the untrusted head commit (`ref: github.event.pull_request.head.sha`), it allows arbitrary untrusted code to execute with full access to production signing credentials.
+- Multi-Layered Defense Architecture:
+  1. Complete Fork Secret Isolation:
+     - Workflows triggered by external pull requests must never be exposed to signing keystores, service account JSON files, or deployment credentials.
+  2. GitHub Environments & Manual Approvals:
+     - Production secrets must be bound to a protected GitHub Environment.
+     - Deployments and signing jobs require manual gate approval from designated code owners, preventing automated execution on arbitrary branches.
+  3. Ephemeral Secrets & Workload Identity Federation (OIDC):
+     - Replace long-lived static service account keys with OpenID Connect (OIDC) tokens federated with Google Cloud IAM. Credentials expire within an hour and cannot be reused outside the specific workflow scope.
+  4. Secret Masking and Runner Log Hygiene:
+     - CI platforms automatically mask registered secret values, printing `***` in build logs.
+     - Ephemeral runner directories are scrubbed immediately in post-execution hooks (`if: always()`).
+  5. Scoped Access Permissions:
+     - Enforce minimum permissions on CI bot tokens (`permissions: contents: read`). Restrict write and secret-access permissions exclusively to protected mainline deployment jobs.
+
+## Practical walkthrough (English)
+
+Hardened GitHub Actions workflow mitigating malicious PR credential exfiltration:
+```yaml
+# .github/workflows/pr_verification.yml
+name: PR Untrusted Verification
+
+# Safe event: Does not expose production secrets to forks
+on:
+  pull_request:
+    branches: [ main ]
+
+# Minimal default permissions for the GITHUB_TOKEN
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v3
+
+      # Executes checks strictly WITHOUT any production secrets or signing materials
+      - name: Run Build and Unit Tests
+        run: ./gradlew testDebugUnitTest lintDebug
+
+# Note: Release signing is isolated in a separate workflow:
+# Triggered ONLY on push to protected mainline, NEVER on pull_request!
+```
+
 ## Explanation in Arabic
 
 فتح شخص غريب أو مساهم خارجي Pull Request خبيث يحاول الوصول لمفاتيح التوقيع والأسرار. كيف تحمي الـ CI/CD من التسريب؟
@@ -88,25 +144,21 @@ Security review covers workflows, actions, Gradle plugins and artifact handoff. 
 
 ## Interview answer — short
 
-Prevent secret leakage by relying on CI security boundaries where PRs from forks have zero access to repository secrets by default. Avoid the vulnerable pull_request_target checkout pattern, mandate human maintainer approval for first-time contributors before workflows run, and isolate signing secrets into protected environments with strict branch restrictions.
+Prevent signing secret leakage by running PR checks under the standard pull_request event which strictly isolates secrets from forks. Never use pull_request_target with untrusted checkouts. Protect production secrets inside GitHub Environments requiring manual approvals, isolate release signing exclusively to protected mainline pushes, and adopt OIDC short-lived tokens.
 
 ## Interview answer — structured
 
-Defending Android CI pipelines against malicious pull requests targeting signing secrets requires multi-layered controls.
-
-First, **Default Fork Secret Isolation**. Next, modern CI platforms (such as GitHub Actions) strictly withhold repository secrets from workflow runs triggered by `pull_request` events originating from forked repositories. The runner operates in a zero-secret sandbox.
-**Eliminate the `pull_request_target` Pwn Vulnerability**. Never use `pull_request_target` combined with checking out the pull request's untrusted HEAD commit. This dangerous pattern grants untrusted code access to write permissions and repository secrets, allowing attackers to exfiltrate keys via build scripts.
-**First-Time Contributor Execution Gates**. Configure repository security policies to require maintainer review and manual approval before any workflow runs for first-time contributors, preventing malicious crypto-miners or credential-stealing scripts from executing automatically.
-**Environment Isolation & Branch Protection**. Finally, bind production signing secrets to a protected 'Production' Environment in GitHub/GitLab. Restrict this environment exclusively to the protected `main` branch with mandatory code reviews, ensuring PRs cannot reference release secrets.
-
+Preventing credential leakage from malicious pull requests requires strict isolation between untrusted code execution and repository secrets.
+The primary attack vector occurs when a malicious pull request injects code into build scripts to print or exfiltrate environment variables. To neutralize this, we use the standard pull_request workflow trigger, which inherently restricts runner permissions and withholds all production secrets from untrusted forks. We strictly avoid using pull_request_target with untrusted head commits, as doing so permits remote code execution within a privileged environment.
+Furthermore, we restrict signing materials and Google Play service account keys to protected GitHub Environments. These environments enforce mandatory manual approval gates by senior release engineers before jobs can acquire secret access.
+By isolating release signing pipelines exclusively to merges onto protected mainline branches and migrating toward short-lived OIDC tokens, we ensure that untrusted contributors have zero access to production cryptographic materials.
 
 ## Interview answer — deep senior
 
-From a supply-chain security and build provenance perspective, defense-in-depth extends into Gradle and dependencies.
-
-First, a Gradle Build Cache & Dependency Poisoning is a malicious PR could modify dependency resolution repositories in `settings. Gradle.kts` to point to an attacker-controlled Maven server serving poisoned binaries, or poison the shared remote build cache. Ensure PR builds have read-only build cache permissions and restrict dependency repositories to verified HTTPS hosts. Next, with Dynamic Log Redaction & Audit, even within trusted teams, mistakes happen. CI systems employ automated output scanners that mask detected high-entropy strings and recognized private key formats (`-----BEGIN PRIVATE KEY-----`). Any attempt to print masked variables results in `***` in the public build logs.
-Finally, with Audit CI Network Egress, in enterprise self-hosted runner infrastructure, configure firewall egress rules to restrict CI outbound network traffic exclusively to authorized endpoints (Maven Central, Google Maven, Google Play API, GitHub), blocking unauthorized outbound sockets to arbitrary external IP addresses.
-
+From an application security engineering and platform governance standpoint, CI/CD pipelines are prime targets for software supply chain compromises. If an adversary can coax a CI runner into executing arbitrary Gradle code with access to production secrets, your application signing keys and distribution channels are compromised.
+The most frequent architectural blunder in GitHub Actions is misconfiguring pull_request_target. Teams often adopt it to allow external pull requests to run linters or post status comments, but then naively checkout the pull request's untrusted head SHA. Because pull_request_target runs in the security context of the base branch, it grants the runner full access to repository secrets. A malicious actor can simply add a line to build.gradle.kts that curls the environment variables to a remote command-and-control server. We strictly prohibit pull_request_target in favor of standard pull_request events with read-only token permissions.
+To achieve zero-trust CI security, we physically decouple presubmit validation from release signing. Pull request workflows only compile debug variants and execute JVM unit tests without needing any signing material. Production keystores and deployment service accounts are sequestered inside protected deployment environments. These environments enforce required reviewers, meaning an authorized release engineer must manually approve execution before secrets are decrypted.
+Finally, we replace static, long-lived service account JSON keys with OpenID Connect federated authentication against Google Cloud IAM. CI runners request short-lived, single-use identity tokens that automatically expire within minutes and are strictly scoped to upload AABs to specific Play Store tracks, neutralizing credential exfiltration risks completely.
 
 ## How to answer in the interview
 

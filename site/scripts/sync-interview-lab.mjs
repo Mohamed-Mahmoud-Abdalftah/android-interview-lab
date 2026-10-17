@@ -149,23 +149,44 @@ for (const [index, q] of questions.entries()) {
   const routeEn = (item) => href(`lab/questions/${item.id.toLowerCase()}/`);
   const navEn = `<nav class="lab-adjacent" aria-label="Question navigation">${previous ? `<a href="${routeEn(previous)}">← ${previous.id}</a>` : '<span></span>'}${next ? `<a href="${routeEn(next)}">${next.id} →</a>` : ''}</nav>`;
 
+  const enWalkthrough = sections['Practical walkthrough (English)'] || sections['Practical walkthrough & failure scenario'] || sections['Practical walkthrough'] || '';
+  if (!enWalkthrough.trim()) {
+    throw new Error(`Missing English practical walkthrough for question ${q.id}!`);
+  }
+
+  const requiredEnSections = [
+    ['What the interviewer evaluates', 'What the interviewer evaluates'],
+    ['Concept and technical explanation', 'Concept and technical explanation'],
+    ['Practical walkthrough', enWalkthrough],
+    ['Why it matters and how it works', 'Why it matters and how it works'],
+    ['Worked example', 'Worked example'],
+    ['Trade-offs and decision criteria', 'Trade-offs and decision criteria'],
+    ['Failure modes', 'Failure modes'],
+    ['Production perspective', 'Production perspective'],
+    ['Interview answer — short', 'Interview answer — short'],
+    ['Interview answer — structured', 'Interview answer — structured'],
+    ['Interview answer — deep senior', 'Interview answer — deep senior'],
+    ['How to answer in the interview', 'How to answer in the interview'],
+    ['Deep-dive talking points', 'Deep-dive talking points'],
+    ['Follow-up questions', 'Follow-up questions'],
+    ['Self-check rubric', 'Self-check rubric'],
+    ['References and reviewed-on date', 'References and reviewed-on date'],
+  ];
+
+  for (const [secTitle, secSource] of requiredEnSections) {
+    const val = typeof secSource === 'string' && secTitle !== 'Practical walkthrough' ? sections[secSource] : secSource;
+    if (!val || !val.trim()) {
+      throw new Error(`Missing English section '${secTitle}' for question ${q.id}!`);
+    }
+  }
+
   const enSections = [
     `## Original interview question\n\n${q.question}`,
-    sections['What the interviewer evaluates'] ? `## What the interviewer evaluates\n\n${sections['What the interviewer evaluates']}` : '',
-    sections['Why it matters and how it works'] ? `## Why it matters and how it works\n\n${sections['Why it matters and how it works']}` : '',
-    sections['Worked example'] ? `## Worked example\n\n${sections['Worked example']}` : '',
-    sections['Trade-offs and decision criteria'] ? `## Trade-offs and decision criteria\n\n${sections['Trade-offs and decision criteria']}` : '',
-    sections['Failure modes'] ? `## Failure modes\n\n${sections['Failure modes']}` : '',
-    sections['Production perspective'] ? `## Production perspective\n\n${sections['Production perspective']}` : '',
-    sections['Interview answer — short'] ? `## Interview answer — short\n\n${sections['Interview answer — short']}` : '',
-    sections['Interview answer — structured'] ? `## Interview answer — structured\n\n${sections['Interview answer — structured']}` : '',
-    sections['Interview answer — deep senior'] ? `## Interview answer — deep senior\n\n${sections['Interview answer — deep senior']}` : '',
-    sections['How to answer in the interview'] ? `## How to answer in the interview\n\n${sections['How to answer in the interview']}` : '',
-    sections['Deep-dive talking points'] ? `## Deep-dive talking points\n\n${sections['Deep-dive talking points']}` : '',
-    sections['Follow-up questions'] ? `## Follow-up questions\n\n${sections['Follow-up questions']}` : '',
-    sections['Self-check rubric'] ? `## Self-check rubric\n\n${sections['Self-check rubric']}` : '',
-    sections['References and reviewed-on date'] ? `## References and reviewed-on date\n\n${sections['References and reviewed-on date']}` : '',
-  ].filter(Boolean).join('\n\n');
+    ...requiredEnSections.map(([secTitle, secSource]) => {
+      const val = typeof secSource === 'string' && secTitle !== 'Practical walkthrough' ? sections[secSource] : secSource;
+      return `## ${secTitle}\n\n${val.trim()}`;
+    }),
+  ].join('\n\n');
 
   const enContent = `---\ntitle: ${title(`${q.id} — ${q.question}`)}\ndescription: ${title(`${q.topic} · Group ${q.group} · Phase ${q.phase}`)}\nsidebar:\n  hidden: true\n---\n\n<div class="canonical-source"><bdi>${q.id}</bdi> · ${escapeHtml(q.topic)} · Group ${q.group} · Phase ${q.phase} · ${q.priority}</div>\n\n${enSections}\n\n${status === 'source-only' ? '> **Editorial state:** The exact source question is preserved here. A complete technical explanation and reviewed answer have not yet been published for this ID.\n\n' : ''}<lab-question question-id="${q.id}" editorial-status="${status}"></lab-question>\n\n${navEn}\n`;
 
@@ -175,25 +196,36 @@ for (const [index, q] of questions.entries()) {
   const routeAr = (item) => href(`ar/lab/questions/${item.id.toLowerCase()}/`);
   const navAr = `<nav class="lab-adjacent" aria-label="التنقل بين الأسئلة">${previous ? `<a href="${routeAr(previous)}">← ${previous.id}</a>` : '<span></span>'}${next ? `<a href="${routeAr(next)}">${next.id} →</a>` : ''}</nav>`;
 
+  const requiredArFields = [
+    ['evaluates_ar', 'ما يقيّمه المحاور'],
+    ['concept_ar', 'الشرح والمفهوم التقني'],
+    ['walkthrough_ar', 'التطبيق العملي وسيناريو الفشل'],
+    ['why_it_matters_ar', 'آلية العمل والتحليل الهندسي'],
+    ['worked_example_ar', 'مثال تطبيقي واختبار'],
+    ['trade_offs_ar', 'المفاضلات الهندسية ومعايير القرار'],
+    ['failure_modes_ar', 'أنماط الفشل ومصائد الأخطاء'],
+    ['production_perspective_ar', 'منظور بيئة العمل الفعلي (Production)'],
+    ['quick_answer_ar', 'إجابة المقابلة — ملخصة وسريعة'],
+    ['best_answer_ar', 'إجابة المقابلة — نموذجية ومهيكلة'],
+    ['deep_answer_ar', 'إجابة المقابلة — مناقشة Senior متعمقة'],
+    ['how_to_answer_ar', 'طريقة تقديم الإجابة في المقابلة'],
+    ['talking_points_ar', 'محاور النقاش المتقدم'],
+    ['follow_ups_ar', 'أسئلة المتابعة واعتراضات المحاور'],
+    ['self_check_ar', 'معايير التقييم الذاتي'],
+    ['references_ar', 'المراجع وتاريخ المراجعة الفنية'],
+  ];
+
+  for (const [fieldKey] of requiredArFields) {
+    if (!qAr[fieldKey] || !qAr[fieldKey].trim()) {
+      throw new Error(`Missing Arabic metadata field '${fieldKey}' for question ${q.id}. Silent fallback to English is prohibited!`);
+    }
+  }
+
   const arSections = [
     `## السؤال الأصلي في المقابلة\n\n<p dir="ltr" lang="en"><code>${q.question}</code></p>\n\n> **الترجمة والسياق العربي:** ${questionAr}`,
-    sections['What the interviewer evaluates'] ? `## ما يقيّمه المحاور\n\n${sections['What the interviewer evaluates']}` : '',
-    sections['Explanation in Arabic'] ? `## الشرح والمفهوم التقني\n\n${sections['Explanation in Arabic']}` : '',
-    sections['Practical walkthrough'] ? `## التطبيق العملي وسيناريو الفشل\n\n${sections['Practical walkthrough']}` : '',
-    sections['Why it matters and how it works'] ? `## آلية العمل والتحليل الهندسي\n\n${sections['Why it matters and how it works']}` : '',
-    sections['Worked example'] ? `## مثال تطبيقي واختبار\n\n${sections['Worked example']}` : '',
-    sections['Trade-offs and decision criteria'] ? `## المفاضلات الهندسية ومعايير القرار\n\n${sections['Trade-offs and decision criteria']}` : '',
-    sections['Failure modes'] ? `## أنماط الفشل ومصائد الأخطاء\n\n${sections['Failure modes']}` : '',
-    sections['Production perspective'] ? `## منظور بيئة العمل الفعلي (Production)\n\n${sections['Production perspective']}` : '',
-    qAr.quick_answer_ar || sections['Interview answer — short'] ? `## إجابة المقابلة — ملخصة وسريعة\n\n${qAr.quick_answer_ar || sections['Interview answer — short']}` : '',
-    qAr.best_answer_ar || sections['Interview answer — structured'] ? `## إجابة المقابلة — نموذجية ومهيكلة\n\n${qAr.best_answer_ar || sections['Interview answer — structured']}` : '',
-    qAr.deep_answer_ar || sections['Interview answer — deep senior'] ? `## إجابة المقابلة — مناقشة Senior متعمقة\n\n${qAr.deep_answer_ar || sections['Interview answer — deep senior']}` : '',
-    sections['How to answer in the interview'] ? `## طريقة تقديم الإجابة في المقابلة\n\n${sections['How to answer in the interview']}` : '',
-    sections['Deep-dive talking points'] ? `## محاور النقاش المتقدم\n\n${sections['Deep-dive talking points']}` : '',
-    qAr.follow_ups_ar || sections['Follow-up questions'] ? `## أسئلة المتابعة واعتراضات المحاور\n\n${qAr.follow_ups_ar || sections['Follow-up questions']}` : '',
-    sections['Self-check rubric'] ? `## معايير التقييم الذاتي\n\n${sections['Self-check rubric']}` : '',
-    sections['References and reviewed-on date'] ? `## المراجع وتاريخ المراجعة الفنية\n\n${sections['References and reviewed-on date']}` : '',
-  ].filter(Boolean).join('\n\n');
+    ...requiredArFields.map(([fieldKey, headerTitle]) => `## ${headerTitle}\n\n${qAr[fieldKey].trim()}`),
+  ].join('\n\n');
+
 
   const arContent = `---\ntitle: ${title(`${q.id} — ${questionAr}`)}\ndescription: ${title(`${topicAr} · المجموعة ${q.group} · المرحلة ${q.phase}`)}\nsidebar:\n  hidden: true\n---\n\n<div class="canonical-source"><bdi>${q.id}</bdi> · ${escapeHtml(topicAr)} · المجموعة ${q.group} · المرحلة ${q.phase} · ${q.priority}</div>\n\n${arSections}\n\n${status === 'source-only' ? '> **حالة المحتوى:** السؤال محفوظ بالصيغة الأصلية. الشرح والإجابة المعتمدة قيد الإعداد.\n\n' : ''}<lab-question question-id="${q.id}" editorial-status="${status}"></lab-question>\n\n${navAr}\n`;
 

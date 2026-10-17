@@ -21,6 +21,44 @@ What is runTest? How are virtual time and TestScope used?
 - runTest lifecycle and virtual-time scheduler semantics.
 - What virtual time can and cannot control.
 
+## Concept and technical explanation
+
+runTest is the official coroutine test runner provided by kotlinx-coroutines-test that executes suspending test blocks synchronously while controlling execution timing via virtual time virtualization. Built on top of TestScope and TestCoroutineScheduler, runTest creates an isolated testing environment where delay() calls skip real-world wall-clock latency, executing long delays in sub-millisecond CPU time. The underlying TestScope exposes virtual time control primitives—including advanceTimeBy(), advanceUntilIdle(), and runCurrent()—alongside an internal currentTime property that mirrors virtual elapsed milliseconds. Additionally, runTest automatically monitors unhandled coroutine exceptions, guarantees that all child coroutines launched in the test scope finish or are cancelled before the test exits, and enforces a safety timeout to prevent deadlocks.
+
+## Practical walkthrough (English)
+
+Controlling virtual time and testing long delays using runTest and TestScope:
+```kotlin
+class AutoLogoutUseCaseTest {
+    @Test
+    fun userInactivity_triggersLogout_afterThirtySeconds() = runTest {
+        var isLoggedOut = false
+
+        // Launch an asynchronous coroutine that delays for 30 real seconds!
+        val job = backgroundScope.launch {
+            delay(30_000) // Skips 30 seconds instantly via virtual time!
+            isLoggedOut = true
+        }
+
+        // 1. Initial assertion at time T = 0ms
+        assertEquals(0, currentTime)
+        assertFalse(isLoggedOut)
+
+        // 2. Fast-forward virtual clock by 10 seconds (T = 10,000ms)
+        advanceTimeBy(10_000)
+        assertEquals(10_000, currentTime)
+        assertFalse(isLoggedOut)
+
+        // 3. Fast-forward past the threshold (T = 30,000ms)
+        advanceTimeBy(20_001)
+        assertEquals(30_001, currentTime)
+        assertTrue(isLoggedOut)
+
+        job.cancel()
+    }
+}
+```
+
 ## Explanation in Arabic
 
 ما هي دالة `runTest` في مكتبة `kotlinx-coroutines-test`، وكيف يعمل الوقت الافتراضي (Virtual Time) و `TestScope`؟
@@ -122,7 +160,7 @@ class VirtualTimeExampleTest {
 }
 ```
 
-في Android استبدل `Dispatchers.Main` بقاعدة اختبار، واحقن أي dispatcher تاني يستخدمه الكود؛ المثال هنا JVM ولا يختبر SDK أو شبكة حقيقية.
+On Android, replace `Dispatchers.Main` with a test rule, and inject any background dispatchers into production classes; this example executes purely on the JVM without external SDK dependencies.
 
 ## Trade-offs and decision criteria
 
@@ -138,25 +176,33 @@ Use a main-dispatcher test rule and shared scheduler across ViewModel collaborat
 
 ## Interview answer — short
 
-runTest is the official coroutine test runner that executes tests inside a TestScope equipped with virtual time. It automatically skips delays so that long delay() operations resolve instantaneously, provides fine-grained control via advanceTimeBy() and advanceUntilIdle(), and asserts that no background jobs are leaked.
+runTest is the primary test runner in kotlinx-coroutines-test that executes suspending code with virtual time control. Delays are skipped instantly, allowing hours of simulated time to pass in milliseconds. It provides a TestScope backed by TestCoroutineScheduler, exposing controls like advanceTimeBy to move the virtual clock, advanceUntilIdle to run all pending work, and runCurrent to drain current tasks, guaranteeing synchronous, deterministic coroutine testing without thread sleeps.
 
 ## Interview answer — structured
 
-`runTest` (from `kotlinx-coroutines-test`) provides deterministic coroutine execution by orchestrating virtual time via `TestScope` and `TestScheduler`.
-
-First, **Automatic Delay Skipping**. Next, calls to `delay(60_000L)` inside coroutines run under `runTest` do not block thread execution for 60 seconds. The underlying `TestScheduler` detects scheduled delays and advances virtual time (`currentTime`) instantaneously, executing tests in milliseconds.
-**Fine-Grained Virtual Time Manipulation**. `advanceTimeBy(millis)`: Advances virtual time by an exact duration, triggering tasks scheduled within that temporal window.
-`runCurrent()`: Executes tasks currently scheduled at the active virtual timestamp without advancing time. `advanceUntilIdle()`: Continuously drains the scheduler until no pending or delayed tasks remain in the queue.
-**Automatic Leak & Exception Detection**. Finally, upon exiting the `runTest` block, the runner asserts that all active children coroutines have concluded. If an orphaned background job remains running, `runTest` throws an `UncompletedCoroutinesError`, guaranteeing clean test boundaries.
-
+Testing asynchronous coroutine workflows reliably requires eliminating unpredictable wall-clock latency, which is the primary purpose of runTest.
+Replacing deprecated testing utilities like runBlockingTest and runBlocking, runTest creates a dedicated TestScope configured with a TestCoroutineScheduler.
+When a coroutine inside runTest invokes delay(10_000), it does not pause or block the operating system thread for ten seconds.
+Instead, the scheduler captures the continuation and schedules it on an internal virtual timeline, skipping the delay instantly.
+Within the runTest lambda, developers control time progression deterministically using three core TestScope APIs.
+advanceTimeBy(millis) moves the virtual clock forward by a specified duration, executing all scheduled tasks whose trigger times fall within that window.
+advanceUntilIdle() advances virtual time until the scheduler's queue is completely empty, ensuring all active and delayed background coroutines run to completion.
+runCurrent() executes all tasks scheduled at the current exact timestamp without advancing the virtual clock.
+Furthermore, runTest provides built-in safety: it fails the test if unhandled exceptions occur in child coroutines, asserts that no active jobs are leaked upon completion, and enforces a default sixty-second execution timeout to prevent infinite loops.
 
 ## Interview answer — deep senior
 
-From an advanced concurrency testing perspective, understanding the relationship between runTest, TestScope, and MainDispatcherRule is vital.
-
-First, a Sharing the TestScheduler is a frequent testing pitfall occurs when a ViewModel launches coroutines on a `TestDispatcher` that does not share the same `TestScheduler` as `runTest`. In `kotlinx.coroutines.test`, `runTest` creates a root `TestScope`. When replacing `Dispatchers.Main`, you must bind it to the active `testScheduler` (e.g. `StandardTestDispatcher(testScheduler)`) so that time advances synchronously across all coroutine scopes. Next, with Handling Infinite Loop Coroutines, if code under test launches an infinite ticker (e.g. `while(isActive) { delay(1000); emit() }`), invoking `advanceUntilIdle()` triggers an infinite loop and crashes with an out-of-memory or timeout error. For infinite loops, advance time incrementally with `advanceTimeBy()` and explicitly cancel the parent job before exiting `runTest`.
-Finally, with Default Timeout (60 Seconds), `runTest` enforces a 60-second virtual time timeout to prevent hanging test suites if non-virtual blocking operations (like standard `Thread.sleep` or un-yielded loops) block the thread.
-
+Under the hood, runTest coordinates its deterministic execution through TestCoroutineScheduler, which replaces the physical system clock with an event-driven virtual priority queue.
+When runTest initializes, it instantiates a TestScope whose CoroutineContext contains a StandardTestDispatcher linked to this shared scheduler.
+Every coroutine launched inside the test scope or using backgroundScope inherits this scheduler.
+When a coroutine calls delay(duration), the Kotlin coroutines runtime intercepts the suspension point.
+Rather than dispatching to an OS timer via ScheduledExecutorService, the StandardTestDispatcher wraps the Continuation into a timed task object and inserts it into the scheduler's Min-Heap priority queue, indexed by target virtual timestamp (currentTime + duration).
+The coroutine yields execution, returning control immediately to the test runner thread.
+When the developer invokes advanceTimeBy(duration), the scheduler advances its internal currentTime variable and enters an execution loop.
+It pops all scheduled tasks whose execution timestamp is less than or equal to the new currentTime, dispatching their continuations synchronously on the test thread in chronological order.
+Calling advanceUntilIdle() repeatedly inspects the priority queue and advances currentTime to match the next scheduled task until the queue is completely drained.
+If background jobs run forever—such as infinite while(true) event loops—developers launch them inside backgroundScope.
+runTest automatically cancels the backgroundScope upon test completion, preventing pending continuous tasks from hanging the test runner while verifying state transitions with zero real-world execution delay.
 
 ## How to answer in the interview
 

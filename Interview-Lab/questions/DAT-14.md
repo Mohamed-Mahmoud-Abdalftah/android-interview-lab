@@ -20,6 +20,60 @@ How do you design retries while respecting idempotency and rate limits?
 
 Design retries from HTTP semantics, server throttling and operation identity.
 
+## Concept and technical explanation
+
+Designing resilient network retry architectures requires balancing recovery from transient failures against server protection and transactional safety:
+- Idempotency & Operation Identity:
+  * Safe vs Unsafe Retries: HTTP GET, PUT, and DELETE are idempotent by specification and can be retried automatically upon network dropouts. In contrast, POST requests modify server state (such as placing orders or charging payments).
+  * Idempotency Keys: Mobile applications must inject client-generated UUIDs (e.g., X-Idempotency-Key) into mutable operations and persist them in Room alongside the pending request. This ensures that if a network timeout occurs after the server processed the transaction, retrying with the identical key deduplicates the operation on the backend without duplicate charges.
+- Exponential Backoff with Jitter:
+  * Exponential Delay Formula: Delay doubles with each successive failure: T = Base * 2^(attempt).
+  * Full Jitter: Adding randomized randomness (delay = random(0, T)) breaks synchronization among thousands of mobile devices recovering from an outage, preventing the 'thundering herd' spike from crashing recovering infrastructure.
+- Server Throttling & 429/503 Governance:
+  * Parse Retry-After: When a backend returns HTTP 429 (Too Many Requests) or HTTP 503 (Service Unavailable), the client must extract the Retry-After header (in seconds or HTTP-date) and halt all retries until that window elapses.
+  * Fatal Error Classification: Client errors (400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found) are non-transient and must fail immediately without retrying, conserving radio battery.
+
+## Practical walkthrough (English)
+
+Production retry policy combining exponential backoff, jitter, and Retry-After handling:
+```kotlin
+suspend fun <T> retryWithBackoff(
+    maxAttempts: Int = 3,
+    initialDelayMs: Long = 1000L,
+    maxDelayMs: Long = 10000L,
+    factor: Double = 2.0,
+    block: suspend () -> Response<T>
+): Response<T> {
+    var currentDelay = initialDelayMs
+
+    repeat(maxAttempts - 1) { attempt ->
+        try {
+            val response = block()
+            if (response.isSuccessful) return response
+
+            // 1. Handle Server Rate Limits (429 or 503)
+            val statusCode = response.code()
+            if (statusCode == 429 || statusCode == 503) {
+                val retryAfterSec = response.headers()["Retry-After"]?.toLongOrNull() ?: (currentDelay / 1000)
+                delay(retryAfterSec * 1000L)
+            } else if (statusCode in 400..499) {
+                // Fatal client error; do not retry
+                return response
+            }
+        } catch (e: IOException) {
+            // Transient network failure: proceed with jittered backoff
+        }
+
+        // 2. Exponential Backoff with Full Jitter
+        val jitteredDelay = Random.nextLong(0, currentDelay)
+        delay(jitteredDelay)
+        currentDelay = (currentDelay * factor).toLong().coerceAtMost(maxDelayMs)
+    }
+
+    return block() // Final attempt
+}
+```
+
 ## Explanation in Arabic
 
 كيف تصمم استراتيجية إعادة المحاولة (Retry Strategy) مع احترام مبادئ الـ Idempotency وحدود معدل الطلبات (Rate Limits)؟
@@ -119,30 +173,29 @@ A feed refresh uses bounded retries for network I/O, records stale cache on fail
 
 ## Interview answer — short
 
-Design retries by distinguishing transient network/server errors (503, timeouts) from permanent client errors (400, 401, 404). Use exponential backoff with full jitter to prevent thundering herd spikes on the backend, respect server Retry-After headers on 429 status codes, and mandate client-side Idempotency Keys on all retried mutations.
+Designing retries requires respecting idempotency by attaching client UUID keys to POST requests, applying exponential backoff with randomized jitter to prevent thundering herd spikes, and honoring Retry-After headers on 429 and 503 responses while failing client errors immediately.
 
 ## Interview answer — structured
 
-A production-grade retry architecture balances user resilience against backend capacity.
-
-First, **Error Classification**. Next, with Retryable (Transient), `SocketTimeoutException`, `UnknownHostException`, and HTTP `502`, `503`, `504`.
-Additionally, with Non-Retryable (Permanent), client errors (`400 Bad Request`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, `422 Unprocessable Entity`). Retrying permanent errors burns battery and cellular quota without any chance of success. **Exponential Backoff with Full Jitter**.
-Simple fixed delays (e.g. Retrying every 2 seconds) cause the **Thundering Herd Problem**: if an outage resolves, millions of devices retry at synchronized intervals, knocking the server offline again. Exponential backoff ($1s, 2s, 4s, 8s$) paired with randomized Jitter (`delay = Random(0, currentBackoff)`) spreads retry distribution smoothly across the timeline.
-**Rate Limit Governance (`429 Too Many Requests`)**. Always parse the `Retry-After` header. If present, pause coroutines or queue execution for the server-requested duration rather than applying client backoff.
-Finally, with Write Idempotency, never retry a mutating `POST` request unless backed by a persistent client-generated `Idempotency-Key`.
-
+A resilient mobile retry strategy must protect the backend from cascading collapse while recovering gracefully from flaky cellular connections.
+First, retries must respect operation idempotency. While GET and PUT are safe to retry automatically, state-changing POST requests require unique client-generated idempotency keys to guarantee that network timeouts do not trigger duplicate transactions or charges.
+Second, retry timing must incorporate exponential backoff with jitter. Rather than retrying at fixed intervals, the client doubles delay intervals and adds randomized variance, de-synchronizing thousands of client retries.
+Third, the client must strictly adhere to server backpressure signals. When receiving HTTP 429 Too Many Requests or 503 Service Unavailable, the client parses the Retry-After header and suspends requests. Non-retryable 4xx client errors abort immediately to conserve battery.
 
 ## Interview answer — deep senior
 
-When designing background synchronization retries in Android, senior architects offload execution from in-memory coroutine loops to **`WorkManager`**.
-
-If an in-memory coroutine retry loop is executing with a 30-second delay, and the user swipes the app away from recents, Android kills the process and cancels the coroutine, dropping the pending retry permanently.
-
-By encapsulating offline retries inside WorkManager.
-
-First, workManager persists the retry intent in its own SQLite database. Next, it supports native backoff policies: `setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)`.
-Finally, it respects OS constraints (`NetworkType.CONNECTED`, battery not low), ensuring retries execute deterministically even after phone reboots.
-
+In large-scale distributed systems, naive client retry loops frequently cause catastrophic self-inflicted Denial of Service (DoS) outages.
+When an edge gateway experiences a transient hiccup, thousands of mobile clients fail simultaneously.
+If every app retries immediately or at fixed 2-second intervals, the client fleet forms a synchronized wave of traffic that repeatedly hammers the recovering backend, keeping it down permanently in an outage death spiral.
+To prevent this, our retry policy enforces three mandatory architectural rules.
+First, we apply Full Jitter to our exponential backoff formula.
+Randomizing the backoff sleep duration across the interval [0, Base * 2^attempt] flattens the retry curve into a smooth, manageable background distribution that allows servers to recover gracefully.
+Second, we implement strict status code classification.
+Transient transport failures like SocketTimeoutException and server 5xx codes warrant retries.
+Conversely, client errors such as 400 Bad Request, 401 Unauthorized, or 403 Forbidden indicate non-recoverable state; retrying them is a bug that wastes CPU cycles and battery power.
+When receiving a 429 or 503, our interceptor parses the Retry-After header and halts automated background sync for the specified duration.
+Finally, for all mutating financial operations, we require an X-Idempotency-Key.
+Even if a cellular connection drops and the client re-executes the transaction via WorkManager three hours later, the backend identifies the key and returns the cached receipt without charging the customer twice.
 
 ## How to answer in the interview
 

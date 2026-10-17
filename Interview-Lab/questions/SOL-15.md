@@ -20,6 +20,59 @@ How would you split a large interface with mostly unused methods?
 
 Split a fat interface by consumer capabilities while preserving migration compatibility and behavior.
 
+## Concept and technical explanation
+
+Splitting a bloated interface with mostly unused methods enforces the Interface Segregation Principle (ISP) and eliminates fragile client coupling. When an interface combines disparate operational concerns, it becomes a 'fat interface' that forces callers to implement or depend on methods they never invoke. To split it effectively, senior engineers analyze client usage patterns, partition the contract along natural actor and consumer boundaries into fine-grained role interfaces (frequently Single Abstract Method / SAM interfaces in Kotlin), and use interface inheritance, composite interfaces, or Kotlin class delegation (by) to preserve backward compatibility where unified access is legitimately required.
+
+## Practical walkthrough (English)
+
+Refactoring a fat media player interface into cohesive role interfaces:
+```kotlin
+// BAD ANTI-PATTERN: Fat interface violating ISP (Forces audio-only player to implement video methods)
+interface MediaPlayerController {
+    fun play()
+    fun pause()
+    fun seekTo(positionMs: Long)
+    fun setVideoSurface(surface: Surface) // Video-only concern!
+    fun adjustSubtitleTrack(trackId: Int) // Video-only concern!
+    fun setPlaybackSpeed(speed: Float)
+}
+
+// ARCHITECTURAL BEST PRACTICE: Segregated role interfaces based on client capabilities
+interface PlaybackControls {
+    fun play()
+    fun pause()
+    fun seekTo(positionMs: Long)
+}
+
+interface SpeedAdjustable {
+    fun setPlaybackSpeed(speed: Float)
+}
+
+interface VideoSurfaceController {
+    fun setVideoSurface(surface: Surface)
+    fun adjustSubtitleTrack(trackId: Int)
+}
+
+// Composite interface for clients that genuinely need full multimedia capabilities
+interface FullVideoPlayerContract : PlaybackControls, SpeedAdjustable, VideoSurfaceController
+
+// Concrete implementation satisfies granular interfaces cleanly
+class ExoPlayerWrapper @Inject constructor() : FullVideoPlayerContract {
+    override fun play() { /* ... */ }
+    override fun pause() { /* ... */ }
+    override fun seekTo(positionMs: Long) { /* ... */ }
+    override fun setPlaybackSpeed(speed: Float) { /* ... */ }
+    override fun setVideoSurface(surface: Surface) { /* ... */ }
+    override fun adjustSubtitleTrack(trackId: Int) { /* ... */ }
+}
+
+// Audio-only notification widget depends strictly on minimal playback controls!
+class AudioWidgetPresenter(private val controls: PlaybackControls) {
+    fun onPlayClicked() = controls.play()
+}
+```
+
 ## Explanation in Arabic
 
 كيف تقوم بتقسيم واجهة ضخمة (Fat Interface) تحتوي على دوال كثيرة غير مستخدمة؟ وما هي الخطوات العملية؟
@@ -103,26 +156,24 @@ A large app gradually migrates account features to session-read, profile-edit an
 
 ## Interview answer — short
 
-Split a large interface by analyzing client call sites, grouping methods by cohesion and consumer role into smaller functional interfaces (`PlaybackStateListener`, `MediaErrorListener`), providing interface default method implementations, and utilizing Kotlin SAM lambdas.
+We split a large interface by identifying cohesive groupings based on client consumption rather than implementation convenience. Following ISP, we break the monolith into focused role interfaces, such as separating a bloated media player into PlaybackControls, SpeedAdjustable, and VideoSurfaceController. Clients like audio widgets depend only on the playback controls they actually use. For callers needing all features, we provide a composite interface combining the smaller ones, maintaining clean decoupling and zero unused boilerplate.
 
 ## Interview answer — structured
 
-Splitting a bloated 'Fat Interface' requires role-based refactoring governed by the Interface Segregation Principle (ISP).
-
-First, with Audit Call Sites and Consumer Personas, analyze every client implementing the interface. Identify distinct clusters of methods that are invoked together by specific consumers. For example, in a massive `MediaController` interface, the UI widget only cares about play/pause, the metadata notification only cares about track titles, and the analytics telemetry service only cares about buffer underruns and bitrates. Next, with Extract Role Interfaces, deconstruct the interface into cohesive, fine-grained contracts.
-`PlaybackStateListener`: `onPlay()`, `onPause()` `TrackMetadataListener`: `onTrackChanged()`
-`StreamingQualityListener`: `onBitrateDrop()`, `onBufferStall()` **Leverage Kotlin SAM & Default Implementations**.
-Convert single-method contracts into `fun interface` (Single Abstract Method), allowing callers to pass simple trailing lambdas. Finally, provide default no-op method bodies (`fun onBuffering() {}`) in interfaces for truly optional callbacks, preventing implementers from writing redundant stub methods.
-
+Refactoring a bloated interface into client-centric role interfaces is a direct application of the Interface Segregation Principle.
+When an interface accumulates too many methods, it becomes a fat interface. Callers requiring only a small subset of features are forced to depend on methods they never invoke. In Android, this leads to empty stub implementations, brittle test mocks, and unwanted recompilation cycles whenever unused method signatures change.
+The refactoring process follows a disciplined three-step workflow.
+First, perform client consumption analysis. Audit all existing consumers to map which methods each caller actually invokes. Natural cluster boundaries will emerge between read operations, write operations, administrative actions, or media types.
+Second, extract fine-grained role interfaces matching these consumer clusters. In Kotlin, these often take the form of functional types, SAM interfaces, or small 2-to-3 method contracts like PlaybackControls and VideoSurfaceController.
+Third, satisfy backward compatibility and full-featured implementations using composite interfaces and Kotlin class delegation. A full player class can implement multiple role interfaces simultaneously, while callers depend strictly on their dedicated slice of functionality.
 
 ## Interview answer — deep senior
 
-To migrate safely without breaking existing production consumers, apply the **Adapter or Composite Interface pattern** during refactoring. Declare the new segregated interfaces first. Then, define the legacy interface as a composite that inherits the new interfaces: `interface LegacyMediaListener : PlaybackStateListener, TrackMetadataListener`. Mark the legacy interface `@Deprecated(message = "Use specific segregated listeners")`.
-
-Existing legacy code continues compiling without modification, while all new feature developments adopt the fine-grained role interfaces.
-
-In unit testing, this reduces mocking boilerplate exponentially: testing a play button requires passing a 1-line lambda rather than a 15-method mock instance.
-
+Under the hood, splitting fat interfaces preserves binary interface stability (ABI) and unlocks Gradle Compilation Avoidance in large-scale multi-module Android codebases.
+When a module depends on a bloated interface, any modification to an uncalled method's signature alters the interface's public ABI bytecode. When Gradle compiles the project, its incremental analysis detects an ABI change in the upstream dependency, forcing the invalidation of compile caches and triggering a full recompilation of the consumer module even though the consumer's source code never referenced the altered method.
+By decomposing the fat interface into granular role interfaces, the consumer module depends exclusively on its specific contract. Changes to unrelated methods remain isolated to their respective interfaces, allowing Gradle to completely skip recompilation of unaffected modules during continuous integration builds.
+Furthermore, interface segregation dramatically simplifies test harness engineering. In unit tests for components depending on a fat interface, developers must create voluminous mock objects or stubs for dozens of methods to prevent NullPointerExceptions or unmet mock expectations.
+With segregated role interfaces, test doubles require only implementing the one or two methods relevant to the test case, often represented as pure Kotlin lambdas, enabling clean, deterministic, and blazing-fast JVM test suites. This razor-thin contract segregation protects client modules from unrelated API refactoring across the repository.
 
 ## How to answer in the interview
 

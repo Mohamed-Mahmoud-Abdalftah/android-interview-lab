@@ -22,6 +22,53 @@ Your app receives an untrusted deep link. What validation should happen before n
 - Validate route shape and identifiers, then recheck authentication and authorization at the destination/backend.
 - Prevent unsafe intent redirection, WebView loading, and sensitive-action side effects from URL parameters.
 
+## Concept and technical explanation
+
+Deep links and universal App Links bridge external web pages, emails, and third-party messaging apps into an application's internal navigation stack. Because incoming URIs and Intent extras originate outside the application's security boundary, they must be treated as completely untrusted input. Malicious actors frequently exploit unvalidated deep links to execute path traversal attacks, trigger arbitrary internal screen navigation (bypassing authentication or payment gates), manipulate query parameters, or abuse open redirectors to phish credentials.
+Securing deep link navigation requires a comprehensive validation pipeline across multiple architectural checkpoints. First, apps should prioritize verified Android App Links (https scheme) configured with Digital Asset Links (.well-known/assetlinks.json) over custom URI schemes (myapp://), which lack domain verification and can be hijacked by malicious third-party apps on the same device. Second, the incoming URI must be rigorously parsed against an explicit allowlist of supported schemes, hosts, and paths. Third, all query parameters must undergo strict type validation and regex sanitization to block path traversal sequences (such as ../). Fourth, incoming routes targeting protected resources must be gated behind an authentication and authorization layer, ensuring that unauthenticated users are intercepted and redirected to a login flow before accessing sensitive destinations.
+
+## Practical walkthrough (English)
+
+Implementing a secure, layered deep link validation gateway before dispatching navigation:
+
+```kotlin
+class DeepLinkHandler {
+    fun parseAndValidate(uri: Uri?, session: UserSession): NavigationTarget? {
+        if (uri == null) return null
+
+        // 1. Enforce strict Scheme and Host allowlist:
+        if (uri.scheme != "https" || uri.host != "app.mycompany.com") {
+            return null
+        }
+
+        // 2. Validate Path and sanitize parameters:
+        val segments = uri.pathSegments
+        return when {
+            segments.size == 2 && segments[0] == "product" -> {
+                val productId = segments[1]
+                // Ensure ID is alphanumeric, preventing injection or traversal:
+                if (productId.matches(Regex("^[a-zA-Z0-9_-]{1,32}$"))) {
+                    NavigationTarget.ProductDetails(productId)
+                } else null
+            }
+
+            segments.size == 1 && segments[0] == "checkout" -> {
+                // 3. Authorization check before navigation:
+                if (session.isAuthenticated) {
+                    NavigationTarget.Checkout
+                } else {
+                    NavigationTarget.Login(returnTarget = NavigationTarget.Checkout)
+                }
+            }
+
+            else -> null // Reject unrecognized paths
+        }
+    }
+}
+```
+
+Failure scenario: A deep link handler accepts myapp://webview?url=... without domain validation. An attacker sends a malicious SMS containing myapp://webview?url=https://phishing-login.com. When tapped, the app opens the internal WebView displaying the attacker's phishing site within the trusted application frame, tricking the user into revealing sensitive banking credentials.
+
 ## Explanation in Arabic
 
 فحص وتأمين الروابط العميقة غير الموثوقة (Untrusted Deep Links) قبل التنقل هو أحد أهم اختبارات الأمان في تطبيقات أندرويد لمنع ثغرات الـ Phishing والـ Injection:
@@ -109,22 +156,25 @@ Define a typed link contract per destination, validate it at one ingress boundar
 
 ## Interview answer — short
 
-Validate untrusted deep links by verifying the scheme and host, strictly whitelisting allowed path patterns, sanitizing all query parameters to prevent injection or path traversal, and enforcing an authentication gateway before navigating to protected screens.
+Treat every external deep link as untrusted input. Validate scheme and host against strict allowlists, and prefer verified Android App Links with Digital Asset Links over custom schemes to prevent intent hijacking. Sanitize all path parameters to prevent injection or directory traversal, and route sensitive destinations through an authentication gate to enforce active session verification.
 
 ## Interview answer — structured
 
-Deep links are inherently untrusted external input that must undergo rigorous security validation before driving navigation.
+Every incoming deep link originates outside the application boundary and must be treated as untrusted user input. We prioritize verified Android App Links using HTTPS and Digital Asset Links over custom URI schemes, preventing rogue applications installed on the device from intercepting our traffic via intent filter collisions.
 
-First, with Scheme & Host Whitelisting, verify that incoming URIs strictly match authorized domains. Prefer verified Android App Links (`https://`) backed by `assetlinks.json` over custom schemes (`myapp://`), which any malicious app can register and hijack. Next, with Strict Path Routing, route exclusively against a hardcoded whitelist of allowed destination paths. Never use dynamic reflection or generic string concatenation to instantiate activities from deep link path segments.
-Additionally, with Query Parameter Sanitization, validate types and bounds on all parameters (e.g., verifying `id` matches expected alphanumeric UUID formats) to prevent SQL injection or path traversal attacks. Finally, with Authentication and Authorization Gate, never assume an authenticated session when processing deep links. If a deep link targets an authenticated screen (like Account Settings or Checkout), the navigation handler must verify active credentials. If unauthenticated, redirect to the Login flow, caching the target route to resume upon successful authentication.
+The deep link ingress must pass through a centralized validation gateway before invoking navigation. The router matches incoming URIs against a strict allowlist of recognized schemes, domain hosts, and path patterns, instantly dropping unknown or malformed URIs.
+
+In production, path and query parameters require rigorous sanitization. We parse parameters into strongly typed domain models, enforcing alphanumeric regex constraints to prevent SQL injection, cross-site scripting in WebViews, and directory traversal sequences like ../.
+
+Access to sensitive destinations like account settings or checkout must be gated behind authentication guards. If an incoming link targets a protected screen while the user session is expired or unauthenticated, the router halts navigation, redirects to the login gateway, and caches the validated destination to resume navigation post-authentication.
 
 
 ## Interview answer — deep senior
 
-From an application security standpoint, special care must be taken with **Embedded WebViews** opened via deep links. If a deep link accepts a parameter like `myapp://webview?url=https://...`, an attacker can craft a link pointing to a phishing website (`https://evil-phishing.com`). If the internal WebView has JavaScript interfaces enabled (`addJavascriptInterface`), the external website can execute code within the app's context.
-
-To secure WebView deep links: 1. Strictly enforce domain whitelisting on all target URLs. 2. Never pass arbitrary query parameters directly into database queries or IPC intents without strict parsing. 3. Ensure the receiving Activity validates incoming extras before forwarding them to internal exported components.
-
+From a security engineering perspective, deep link vulnerabilities are among the most exploited vectors on mobile platforms. Custom URI schemes like myapp:// offer zero cryptographic ownership; any application on the device can declare an identical scheme in its manifest, leading to Intent Ambiguity dialogs or silent traffic hijacking. To establish verifiable identity, enterprise applications implement Android App Links, where the operating system's PackageManager verifies domain ownership during app installation by fetching assetlinks.json from the HTTPS domain and matching the SHA-256 fingerprint of the APK's release signing key.
+Within the application, deep link handling must adhere to strict defensiveness against Open Redirects and Confused Deputy attacks. A notorious vulnerability pattern occurs when an exported activity takes a url query parameter and loads it directly into an internal WebView that has JavaScript and file access enabled. An external link loading a file URI can exfiltrate local SQLite databases. Our routing engine enforces that all WebView URLs match an explicit domain allowlist with strict subdomain validation.
+Furthermore, navigation routing must never couple directly to raw framework Intent objects or Uri strings. In modern Jetpack Compose or Fragment architectures, the ingress Activity parses the raw URI, validates the structure, and maps it into a type-safe navigation destination using Kotlinx Serialization.
+Finally, session state verification must occur in the Domain layer, not merely in UI navigation guards. If a deep link opens an order route, the UI destination must not assume user ownership of that order. When the repository fetches the resource, the backend API must validate that the authenticated bearer token owns the requested record, returning an HTTP 403 Forbidden if an attacker attempts horizontal privilege escalation by guessing sequential order identifiers.
 
 ## How to answer in the interview
 

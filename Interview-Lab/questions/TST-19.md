@@ -21,6 +21,75 @@ Write tests for three parallel APIs with partial success and cancellation.
 - Testing all-or-nothing versus partial-success semantics for three parallel APIs.
 - Cancellation propagation and late-result handling.
 
+## Concept and technical explanation
+
+Testing concurrent asynchronous operations across three parallel network APIs requires verifying both partial-success aggregation and parent-child cancellation semantics. When an application fetches independent data streams simultaneously (such as UserProfile, AccountBalance, and LoyaltyRewards), senior architectures avoid rigid all-or-nothing failures by encapsulating concurrent requests inside a supervisorScope or executing parallel async jobs with isolated failure handling. In partial-success configurations, failure of a non-critical endpoint (such as LoyaltyRewards returning an HTTP 500) must not cancel the remaining siblings; the system aggregates available data into a degraded UI state while recording error telemetry. Conversely, when the parent coroutine scope is cancelled (due to the user navigating away or screen dismissal), all three in-flight network requests must immediately abort via cooperative cancellation, preventing orphaned socket leaks and late-arriving state mutations.
+
+## Practical walkthrough (English)
+
+Testing parallel API aggregation with partial success and cooperative cancellation:
+```kotlin
+// Data aggregator combining three parallel API streams
+class DashboardAggregator(
+    private val profileApi: ProfileApi,
+    private val balanceApi: BalanceApi,
+    private val loyaltyApi: LoyaltyApi
+) {
+    suspend fun fetchDashboard(): DashboardResult = supervisorScope {
+        val profileDeferred = async { runCatching { profileApi.getProfile() } }
+        val balanceDeferred = async { runCatching { balanceApi.getBalance() } }
+        val loyaltyDeferred = async { runCatching { loyaltyApi.getLoyaltyPoints() } }
+
+        DashboardResult(
+            profile = profileDeferred.await().getOrNull(),
+            balance = balanceDeferred.await().getOrNull(),
+            loyalty = loyaltyDeferred.await().getOrNull()
+        )
+    }
+}
+
+// Unit testing partial success and cancellation with TestScope
+@OptIn(ExperimentalCoroutinesApi::class)
+class DashboardAggregatorTest {
+    private val profileApi = mockk<ProfileApi>()
+    private val balanceApi = mockk<BalanceApi>()
+    private val loyaltyApi = mockk<LoyaltyApi>()
+    private val aggregator = DashboardAggregator(profileApi, balanceApi, loyaltyApi)
+
+    @Test
+    fun fetchDashboard_oneApiFails_returnsPartialSuccessWithRemainingData() = runTest {
+        // Profile and Balance succeed, Loyalty throws 500 error
+        coEvery { profileApi.getProfile() } returns UserProfile("Alex")
+        coEvery { balanceApi.getBalance() } returns AccountBalance(amount = 1500.0)
+        coEvery { loyaltyApi.getLoyaltyPoints() } throws HttpException(Response.error<Any>(500, "".toResponseBody()))
+
+        val result = aggregator.fetchDashboard()
+
+        // Assert partial degradation: profile and balance present, loyalty null
+        assertEquals("Alex", result.profile?.name)
+        assertEquals(1500.0, result.balance?.amount)
+        assertNull(result.loyalty)
+    }
+
+    @Test
+    fun fetchDashboard_parentCancelled_cancelsAllInFlightRequests() = runTest {
+        // Simulate long-running network calls
+        coEvery { profileApi.getProfile() } coAnswers { delay(1000); UserProfile("Alex") }
+        coEvery { balanceApi.getBalance() } coAnswers { delay(1000); AccountBalance(100.0) }
+        coEvery { loyaltyApi.getLoyaltyPoints() } coAnswers { delay(1000); LoyaltyPoints(50) }
+
+        val job = launch { aggregator.fetchDashboard() }
+
+        // Advance virtual clock partially, then cancel parent job
+        advanceTimeBy(300)
+        job.cancelAndJoin()
+
+        // Verify cooperative cancellation terminated all three calls cleanly
+        assertTrue(job.isCancelled)
+    }
+}
+```
+
 ## Explanation in Arabic
 
 اكتب اختبارات وحدة (Unit Tests) لثلاث استدعاءات متزامنة في الشبكة (3 Parallel APIs) تدعم النجاح الجزئي (Partial Success) وإلغاء العمليات (Cancellation)؟
@@ -166,26 +235,32 @@ Production telemetry records per-call status and aggregate outcome without PII. 
 
 ## Interview answer — short
 
-Test parallel APIs by wrapping concurrent async calls inside supervisorScope with runCatching to assert partial success when one dependency throws an exception. Test cancellation by launching the aggregation job, invoking job.cancel(), and asserting via finally blocks that child coroutines execute cancellation cleanup immediately.
+We test three parallel APIs by evaluating two distinct behaviors. For partial success, we wrap parallel async jobs in supervisorScope, simulate one endpoint failing while the others succeed, and assert the resulting UI model gracefully aggregates available data while degrading the failed section. For cancellation, we launch the call in a test job, advance virtual time, cancel the parent job, and assert all in-flight child requests abort immediately.
 
 ## Interview answer — structured
 
-Writing tests for concurrent multi-service aggregation requires validating both partial fault tolerance and structured cancellation boundaries.
-
-First, **Testing Partial Success (Fault Isolation)**. Next, implement the aggregator using `supervisorScope` so that failure in one async branch does not automatically cancel sibling branches.
-Configure test stubs such that Service A returns valid user data, Service B returns order records, and Service C throws `IOException("503 Service Unavailable")`. Assert that the aggregated result contains populated data for Services A and B alongside an explicit typed error or empty fallback for Service C, verifying graceful UI degradation.
-**Testing Coordinated Cancellation**. Launch the aggregation call inside a parent `launch` coroutine job.
-Provide mock functions configured with long delays (`delay(10_000L)`) instrumented with `finally` blocks tracking cancellation flags. Advance time partially, invoke `job.cancel()`, and advance the scheduler.
-Finally, assert that `job.isCancelled` becomes true and all child jobs terminate cleanly without leaking un-cancelled background coroutines.
-
+Testing parallel network requests requires verifying both resilient fault isolation and cooperative cancellation propagation.
+When fetching data from three independent endpoints—such as user profile, bank balance, and rewards—an application must not collapse if an auxiliary service experiences downtime.
+To test partial-success semantics, we configure our mock APIs so that the profile and balance calls succeed while the rewards call throws an HTTP 500 server exception.
+In the implementation, wrapping child deferred calls in supervisorScope or runCatching ensures that the loyalty failure does not trigger cancellation of its siblings.
+The test asserts that the returned aggregate data class successfully contains the user profile and bank balance, while gracefully marking the rewards payload as unavailable for degraded UI presentation.
+To test cancellation semantics, we verify resource cleanup when the hosting lifecycle ends prematurely.
+In our coroutine test, we simulate slow responses using delay and launch the aggregator inside an active TestScope job.
+We advance virtual time partially using advanceTimeBy and invoke cancelAndJoin on the parent job.
+The test asserts that the parent cancellation cooperatively cancels all three underlying async child jobs, confirming that no orphaned network requests continue executing in the background or mutate state after the user departs.
 
 ## Interview answer — deep senior
 
-From an advanced concurrency testing perspective, verifying thread safety and race conditions requires strict assertions.
-
-First, with Concurrent Dispatcher Stress Testing, in addition to virtual time tests in `runTest`, run concurrent aggregation routines against `Dispatchers.Default` under multi-threaded stress tests with 100 iterations. This verifies that shared state aggregators or cache mutations do not throw `ConcurrentModificationException` when three parallel network threads complete at the exact same physical millisecond. Next, with Asserting Non-Blocking Concurrency, assert that execution is genuinely parallel rather than sequential by measuring virtual elapsed time. If three independent APIs each take 1,000ms, the entire aggregated call must complete in exactly 1,000ms of virtual time, not 3,000ms.
-Finally, with CancellationException Preservation, ensure your error-handling operators (`runCatching`) do not swallow `CancellationException`. If cancellation is swallowed, cancelling the screen or leaving the view fails to abort child HTTP requests, resulting in wasted radio bandwidth.
-
+Under the hood, coroutine concurrency and failure propagation depend on the structural relationship between Job and SupervisorJob within the coroutine context hierarchy.
+In a standard coroutineScope, an uncaught exception in any child async builder cancels the scope's internal Job immediately.
+This cancellation immediately propagates downwards to cancel all other active siblings and upwards to the parent caller, enforcing strict all-or-nothing transaction semantics.
+For partial success, replacing coroutineScope with supervisorScope introduces a resilient SupervisorJob boundary into the hierarchy.
+A SupervisorJob overrides the default parent-child cancellation contract: child failure does not cancel the supervisor and does not cancel neighboring sibling jobs.
+However, because async deferred builders rethrow exceptions upon await(), tests verify that exceptions are encapsulated via runCatching or custom Result wrappers before awaiting to prevent unhandled CoroutineExceptionHandler triggers from crashing the test runner.
+When testing cooperative cancellation, the mechanism relies on suspension points checking Job.isActive periodically.
+When the parent Job is cancelled, it transitions to a Cancelling state and dispatches CancellationException to all active children.
+Functions like delay or OkHttp's suspendCancellableCoroutine listen for this signal, aborting the active network call and closing the socket connection.
+Using StandardTestDispatcher with advanceTimeBy allows tests to freeze time between request dispatch and response arrival, verifying that cancellation cleans up every child job deterministically without race conditions or memory leaks.
 
 ## How to answer in the interview
 

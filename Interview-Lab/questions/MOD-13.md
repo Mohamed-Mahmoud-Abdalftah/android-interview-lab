@@ -22,6 +22,36 @@ When should a module depend on an interface versus a concrete type?
 - Avoid interface-per-class ceremony.
 - Explain compile boundary, tests and dependency direction.
 
+## Concept and technical explanation
+
+The decision to depend on an interface versus a concrete type across module boundaries governs architectural coupling and build cache efficiency:
+- Depend on an Interface when: Crossing team ownership or feature boundaries; depending on volatile business implementations that change frequently; abstracting external infrastructure like network APIs, databases, or payment gateways that require test doubles in unit tests; or breaking potential circular dependency loops. Housing the interface in an independent :api module decouples consumers from internal implementation changes, preserving the Application Binary Interface (ABI) boundary.
+- Depend on a Concrete Type when: The type represents an immutable value object, domain entity, or pure data transfer model without behavioral logic; relying on completely stable, foundational platform utilities that are never mocked (e.g., Kotlin standard library collections, time primitives); or operating within the private internal boundary of a single module. Creating interfaces for trivial, stable data models introduces needless indirection without architectural benefit.
+
+## Practical walkthrough (English)
+
+Contrasting interface contracts with concrete data models across module boundaries:
+```kotlin
+// 1. DEPEND ON CONCRETE TYPE: Immutable domain entity (Stable, pure data)
+// In :core:model
+data class MonetaryAmount(val amountInCents: Long, val currencyCode: String)
+
+// 2. DEPEND ON INTERFACE: Volatile business capability with external I/O
+// In :feature:payment:api
+interface PaymentProcessor {
+    suspend fun executePayment(amount: MonetaryAmount): Result<PaymentConfirmation>
+}
+
+// 3. In :feature:checkout:impl: Consumes the interface and concrete model
+class CheckoutViewModel @Inject constructor(
+    private val processor: PaymentProcessor // Interface dependency allows mocking in tests
+) : ViewModel() {
+    fun pay(cents: Long) = viewModelScope.launch {
+        processor.executePayment(MonetaryAmount(cents, "USD"))
+    }
+}
+```
+
 ## Explanation in Arabic
 
 متى يجب أن يعتمد الموديول على واجهة مجردة (Interface) ومتى يكون اعتماده على كلاس ملموس (Concrete Type) أفضل وأكثر عملية؟
@@ -84,26 +114,30 @@ Review dependency direction and contract change frequency. Keep public interface
 
 ## Interview answer — short
 
-Depend on interfaces across module boundaries where independent substitution, test seams, and compile-time decoupling are required (e.g. repositories, payment gateways). Depend on concrete types for immutable data models, value objects, and internal same-module utilities where multiple implementations will never exist.
+A module should depend on an interface when crossing architectural boundaries, interacting with volatile implementations, or abstracting external systems like networks and databases that require mocking. It should depend on a concrete type when dealing with immutable domain entities, stable value models, or internal utilities within the same module.
 
 ## Interview answer — structured
 
-The decision to depend on an interface versus a concrete type is an architectural choice balancing flexibility against ceremony.
-
-First, **Depend on an Interface**. Next, with Architectural Seams, between domain layers and data layers (Repositories, Gateways). This allows UI and Domain logic to be tested on the JVM with fast Fakes without compiling Room or Retrofit.
-Additionally, with Cross-Module API Contracts, when splitting modules into `:feature:api` and `:feature:impl` to break rebuild cascades and circular dependencies. With Polymorphism, when multiple implementations exist (e.g., debug mock data source vs. Production network data source).
-**Depend on a Concrete Type**. With Data Models and Value Objects, immutable data classes (`User`, `TransactionDetails`) should never be wrapped in interfaces. They carry data, not behavior.
-Finally, with Same-Module Collaborators, internal helpers within a single feature module that will never need polymorphic variation or independent substitution.
-
+Deciding whether to depend on an interface or a concrete type determines how changes ripple through your multi-module build graph.
+You should depend on an interface whenever you are crossing architectural or organizational boundaries.
+When a feature module needs to invoke capabilities from another feature, or interacts with external I/O systems like network clients and databases, relying on an interface is essential.
+This decouples the caller from volatile implementation details and allows effortless substitution with test doubles during unit testing.
+Conversely, you should depend directly on concrete types when dealing with immutable data structures, domain entities, and stable value objects.
+A data class representing a user identifier or monetary amount contains no execution logic and rarely changes its structure.
+Wrapping pure data models in interfaces adds pointless indirection without improving decoupling.
 
 ## Interview answer — deep senior
 
-From a build system perspective, an interface serves as an **ABI firewall**.
-
-If module `A` depends on concrete class `DatabaseUserRepository` in module `B`, any private change inside `DatabaseUserRepository` (even changing a private helper method or adding a local variable) alters `B`'s bytecode. Depending on Gradle caching granularity, this can trigger recompilations.
-
-If module `A` instead depends on `interface UserRepository` in `:domain:user-api`, module `A`'s compile classpath references **only the interface's ABI**. You can rewrite the entire SQL query, add caching, or refactor private methods inside `DatabaseUserRepository` in `:data:user`, and Gradle will **never recompile module `A`**. This compile-time insulation is one of the primary drivers of developer velocity in 100+ module repositories.
-
+From a systems compilation and testing perspective, the choice between interface and concrete dependencies directly affects build cache invalidation and unit test execution speed.
+When module A depends on a concrete class in module B, any modification to module B's class—including changing private variables or refactoring internal methods—alters module B's bytecode.
+This triggers recompilation of module A unless strict ABI firewalls are maintained.
+By introducing an interface inside an independent :api module, module A depends on a stable contract that rarely changes.
+Refactoring the concrete implementation inside module B leaves module A's compile classpath clean, allowing Gradle to mark module A's compileKotlin task as UP-TO-DATE and preserving the build cache.
+Furthermore, depending on interfaces is mandatory for architectural decoupling: it allows unit tests to substitute mock implementations instantly without loading device runtimes or starting real HTTP servers.
+However, dogmatically creating interfaces for every single class is an anti-pattern known as interface pollution.
+Immutable data models, value objects, and domain entities should always remain concrete classes.
+A data class MonetaryAmount has no hidden behavior, does not perform I/O, and does not require mocking.
+We reserve interfaces for components with operational behavior, external side effects, or cross-boundary coordination, ensuring maximum architectural flexibility without unneeded structural bloat.
 
 ## How to answer in the interview
 

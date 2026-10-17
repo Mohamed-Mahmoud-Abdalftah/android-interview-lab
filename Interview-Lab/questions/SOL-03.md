@@ -20,6 +20,54 @@ Explain Open/Closed Principle with an Android example.
 
 Explain extension of stable policy and the strategic nature of “closed,” without banning all edits.
 
+## Concept and technical explanation
+
+The Open/Closed Principle (OCP) states that software entities (classes, modules, functions) should be open for extension, but closed for modification. This architectural rule mandates that systems must accommodate new functional behaviors, business rules, and third-party integrations without rewriting or mutating existing, fully tested, and verified source code. In Android development, OCP is implemented primarily through polymorphic interfaces, abstract base capabilities, and strategy registries. Rather than scattering monolithic when or switch branches across repositories and UI controllers, engineers define extensible contracts that allow new implementations to plug in seamlessly at compile time or runtime.
+
+## Practical walkthrough (English)
+
+Refactoring a rigid payment processor to adhere to Open/Closed Principle:
+```kotlin
+// BAD ANTI-PATTERN: Closed for extension, constantly modified when new gateways arrive
+class FragilePaymentHandler(private val stripe: StripeSdk, private val paypal: PayPalSdk) {
+    fun processPayment(type: String, amount: Long) {
+        when (type) {
+            "STRIPE" -> stripe.charge(amount)
+            "PAYPAL" -> paypal.pay(amount)
+            // Adding GooglePay or Klarna forces editing this tested class!
+            else -> throw IllegalArgumentException("Unknown type")
+        }
+    }
+}
+
+// ARCHITECTURAL BEST PRACTICE: Open for extension, closed for modification
+interface PaymentStrategy {
+    fun supports(method: PaymentMethod): Boolean
+    suspend fun execute(amount: Long): Result<TransactionReceipt>
+}
+
+class StripeStrategy @Inject constructor(private val client: StripeClient) : PaymentStrategy {
+    override fun supports(method: PaymentMethod) = method == PaymentMethod.STRIPE
+    override suspend fun execute(amount: Long) = client.charge(amount)
+}
+
+class PayPalStrategy @Inject constructor(private val client: PayPalClient) : PaymentStrategy {
+    override fun supports(method: PaymentMethod) = method == PaymentMethod.PAYPAL
+    override suspend fun execute(amount: Long) = client.authorize(amount)
+}
+
+// Extensible orchestrator: Never modified when new payment strategies are added!
+class PaymentProcessor @Inject constructor(
+    private val strategies: Set<@JvmSuppressWildcards PaymentStrategy>
+) {
+    suspend fun pay(method: PaymentMethod, amount: Long): Result<TransactionReceipt> {
+        val strategy = strategies.find { it.supports(method) }
+            ?: return Result.failure(UnsupportedOperationException("Unsupported gateway: $method"))
+        return strategy.execute(amount)
+    }
+}
+```
+
 ## Explanation in Arabic
 
 شرح مبدأ الفتح والإغلاق (Open/Closed Principle - OCP) مع مثال عملي واقعي في Android:
@@ -101,28 +149,25 @@ A fintech checkout integrates card and wallet providers. A narrow route contract
 
 ## Interview answer — short
 
-Open/Closed Principle states that code should be open for extension but closed for modification. In Android, rather than using massive `when` statements checking payment or notification types, we use polymorphism and the Strategy pattern (`PaymentProcessor` interface), allowing new providers to be added without editing existing, tested classes.
+The Open/Closed Principle mandates that software should be open for extension but closed for modification. In Android, instead of using sprawling when or switch blocks that inspect type flags and require constant edits whenever new features arrive, we rely on polymorphism and the Strategy pattern. By defining an interface like PaymentStrategy and injecting a collection of implementations, adding a new payment gateway or analytics tracker involves creating a new class without touching existing, tested codebase files.
 
 ## Interview answer — structured
 
-The Open/Closed Principle (OCP) requires that software entities (classes, modules, functions) should be **open for extension, but closed for modification**.
-
-First, an Open for extension is the system's behavior can be enhanced as business requirements evolve. Finally, with Closed for modification, adding new behaviors does not require modifying, recompiling, or risking regressions in existing, production-tested code.
-
-The primary violator of OCP in Android is type branching via long `when (type)` or `if-else` chains. For instance, an analytics engine or payment router that inspects string types: adding 'Google Pay' requires opening `PaymentManager.kt`, editing the conditional statements, and re-testing every existing payment method.
-
-We adhere to OCP using **Polymorphic Abstraction (The Strategy Pattern)**.
-
-First, declare a common interface: `PaymentStrategy`. Next, implement distinct classes: `CreditCardStrategy`, `PayPalStrategy`, `GooglePayStrategy`.
-Finally, inject a set of strategies via Dagger/Hilt Multibindings (`@IntoSet`). To introduce a new payment method, developers simply create a new class and bind it in a Dagger module; zero existing payment code is touched.
-
+The Open/Closed Principle provides stability and scalability by enabling systems to grow through additive changes rather than destructive edits.
+In typical Android applications, the most visible violation of OCP appears as massive conditional dispatchers. When implementing payment providers, push notification handlers, or analytics tracking, developers often write centralized when expressions that check string keys or enums. Whenever product managers introduce a new provider like Google Pay or Braze, developers must modify existing, production-tested classes. This introduces high regression risks, requires re-running entire test suites, and creates merge conflicts across feature branches.
+Applying OCP decouples execution from concrete variants through polymorphism.
+First, an interface establishes a contract for the capability, defining an execution signature and a predicate method to check support.
+Second, concrete providers implement this interface in independent, self-contained classes.
+Third, the orchestrating class injects a collection of these strategies, querying the appropriate provider polymorphically at runtime.
+When a new requirement emerges, developers simply create a new class implementing the interface and bind it via dependency injection. Existing orchestrator classes remain completely closed to modification, eliminating regression risks and ensuring zero disruption to existing business flows.
 
 ## Interview answer — deep senior
 
-In modern Kotlin, **Sealed Hierarchies** offer an intentional balance with OCP. When using `sealed interface UiState`, the compiler enforces exhaustive `when` expressions, which intentionally requires modifying the UI when a new state is added. This is desirable when the set of states is closed and known at compile time.
-
-However, for **domain extensibility** (plugins, analytics trackers, payment gateways, validation rules), open interfaces and DI multibindings are strictly preferred over sealed classes. This allows feature modules to register new plugins dynamically without touching core orchestration modules.
-
+Under the hood, the Open/Closed Principle transforms hardcoded control flow branches into dynamic polymorphic dispatch tables (v-tables) or hash-based dependency injection lookups.
+In large-scale Android development, coupling systems to monolithic when expressions creates significant compilation bottlenecks. When a single central class references every payment provider SDK, changes to any provider dependency force Gradle to recompile the shared file and all downstream consumers.
+By restructuring the system around OCP with Dagger Multibindings (@IntoSet or @IntoMap), each provider lives in an isolated Gradle feature module. Adding a new provider creates a new independent compilation unit that Gradle compiles in parallel, keeping build times constant regardless of application feature growth.
+Furthermore, OCP is foundational to Android framework design and modern UI paradigms. In the Android OS, RecyclerView does not contain hardcoded if-statements checking whether to display a text row, an image grid, or a video card. Instead, RecyclerView.Adapter is open for extension via onCreateViewHolder and onBindViewHolder while remaining completely closed to internal framework modifications.
+Similarly, Jetpack Compose utilizes slot-based APIs (slots pattern) where composable containers accept generic @Composable () -> Unit lambdas, allowing engineers to extend UI structures arbitrarily without modifying the parent layout mechanics or introducing runtime state regressions. This slot architecture provides effortless extensibility while completely shielding the core layout runtime from unexpected modifications.
 
 ## How to answer in the interview
 

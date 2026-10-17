@@ -21,6 +21,80 @@ What are screenshot tests, Baseline Profiles, and Macrobenchmark tests?
 - Purpose and limitations of screenshots, Baseline Profiles and Macrobenchmark.
 - Correct production-like performance setup.
 
+## Concept and technical explanation
+
+Screenshot tests, Baseline Profiles, and Macrobenchmark tests represent three distinct advanced quality and performance disciplines in modern Android engineering. Screenshot testing (using frameworks such as Roborazzi, Paparazzi, or Shot) captures visual renderings of UI components or full screens and compares them pixel-by-pixel against versioned golden master images, detecting unintended visual regressions, typography clipping, and layout shifts. Baseline Profiles are human-readable ART compilation rules bundled into the APK that instruct Android's Ahead-Of-Time (AOT) and Profile-Guided Optimization (PGO) compiler to pre-compile critical execution paths—such as app startup, authentication, and core list scrolling—during app installation, slashing cold startup times by 30-40% and eliminating initial JIT compilation jank. Macrobenchmark tests execute black-box performance measurements on physical production-like devices without mocking, quantifying real-world frame timing, UI stutter, and cold, warm, or hot startup durations in release builds.
+
+## Practical walkthrough (English)
+
+Implementing screenshot tests, Baseline Profile generation, and Macrobenchmark measurements:
+```kotlin
+// 1. Screenshot testing a Compose component with Roborazzi
+@RunWith(AndroidJUnit4::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class PaymentCardScreenshotTest {
+    @get:Rule
+    val composeTestRule = createComposeRule()
+
+    @Test
+    fun paymentCard_verifiedState_matchesGoldenImage() {
+        composeTestRule.setContent {
+            PaymentCard(
+                accountNumber = "**** 4242",
+                isVerified = true,
+                status = CardStatus.ACTIVE
+            )
+        }
+
+        // Captures screenshot and validates against golden image in source control
+        composeTestRule.onRoot().captureRoboImage("golden_payment_card_verified.png")
+    }
+}
+
+// 2. Baseline Profile generator for app startup and list scrolling
+@RunWith(AndroidJUnit4::class)
+class AppStartupBaselineProfileGenerator {
+    @get:Rule
+    val baselineRule = BaselineProfileRule()
+
+    @Test
+    fun generateAppStartupProfile() = baselineRule.collect(
+        packageName = "com.example.banking",
+        profileBlock = {
+            // Cold start the application
+            pressHome()
+            startActivityAndWait()
+
+            // Scroll the main transaction feed to capture JIT hotspots
+            val feed = device.findObject(By.res("transaction_list"))
+            feed.fling(Direction.DOWN)
+            device.waitForIdle()
+        }
+    )
+}
+
+// 3. Macrobenchmark measuring cold startup timing with Baseline Profiles enforced
+@RunWith(AndroidJUnit4::class)
+class StartupMacrobenchmarkTest {
+    @get:Rule
+    val benchmarkRule = MacrobenchmarkRule()
+
+    @Test
+    fun measureColdStartupWithBaselineProfile() = benchmarkRule.measureRepeated(
+        packageName = "com.example.banking",
+        metrics = listOf(StartupTimingMetric(), FrameTimingMetric()),
+        compilationMode = CompilationMode.Partial(
+            baselineProfileMode = BaselineProfileMode.Require
+        ),
+        iterations = 10,
+        startupMode = StartupMode.COLD
+    ) {
+        pressHome()
+        startActivityAndWait()
+    }
+}
+```
+
 ## Explanation in Arabic
 
 ما هي اختبارات لقطات الشاشة (Screenshot Tests)، والـ Baseline Profiles، واختبارات الـ Macrobenchmark في معايير الجودة الحديثة؟
@@ -102,24 +176,31 @@ Use release-like benchmark variants, controlled thermal/battery state and repres
 
 ## Interview answer — short
 
-Screenshot tests capture and pixel-diff rendered UI against baseline golden images to catch visual regressions. Baseline Profiles pre-compile critical execution paths at install time via AOT compilation to eliminate launch jank. Macrobenchmark tests measure real-world startup latency and scroll frame metrics on physical devices.
+We use screenshot tests to capture UI components and assert pixel-perfect parity against golden images, catching unintended visual shifts. Baseline Profiles generate ART compilation rules that pre-compile critical user flows during installation, eliminating JIT jank and boosting startup by up to 40%. Macrobenchmark tests run on physical devices in release mode to measure real black-box frame timing and cold startup latency, guaranteeing production performance.
 
 ## Interview answer — structured
 
-Modern Android reliability and performance testing relies on three specialized verification technologies.
-
-First, **Screenshot / Visual Regression Tests (Roborazzi / Paparazzi)**. Next, render Composables off-screen and compare output PNGs pixel-by-pixel against committed golden reference images. They catch unintended regressions in theme inheritance, text truncation across dynamic font scales, and RTL mirror alignments in seconds on the JVM.
-**Baseline Profiles**. Human-readable specifications of classes and methods compiled during app installation using Android Runtime (ART) Ahead-Of-Time (AOT) compilation. By pre-compiling critical user paths (app startup, feed scrolling), Baseline Profiles eliminate runtime JIT interpretation pauses, improving cold launch speed by 30–40%.
-**Macrobenchmark Testing**. Finally, black-box performance testing running against non-debuggable release builds on physical hardware. Uses Android OS trace instrumentation to measure `StartupTimingMetric` (Time to Initial Display) and `FrameTimingMetric` (measuring 90th/99th percentile frame drops during fast scrolling lists).
-
+Modern Android engineering relies on three specialized testing pillars to safeguard user experience, visual fidelity, and runtime performance.
+Screenshot testing operates at the UI presentation layer.
+Using tools like Roborazzi or Paparazzi, screenshot tests render composables in isolated JVM or instrumentation environments, comparing the resulting bitmap against reference golden files stored in git.
+This catches regressions in font scaling, dark mode, RTL layouts, and unexpected padding adjustments that semantic assertions miss.
+Baseline Profiles address Android's runtime compilation bottleneck.
+Because Android's ART uses a hybrid of JIT and AOT compilation, unprofiled apps suffer from frame drops during initial user interactions while code interprets.
+A Baseline Profile generator records which DEX methods and classes are executed during app launch and list scrolling, packaging these rules into the APK so the OS pre-compiles them upon installation.
+Macrobenchmark tests provide rigorous empirical validation of this performance.
+Running on physical devices with release minification enabled, Macrobenchmark repeatedly boots the application, measuring StartupTimingMetric and FrameTimingMetric under realistic thermal conditions.
+Senior engineers combine these three disciplines to maintain flawless UI designs alongside peak runtime speed.
 
 ## Interview answer — deep senior
 
-From an engineering platform and release infrastructure perspective, incorporating these tools requires dedicated pipeline stages.
-
-First, with CI Screenshot Differential Reporting, when a visual regression occurs, CI should not merely fail the build. Integrate tools (like GitHub Action artifact reports) that generate an HTML visual diff carousel showing the original Golden, the Candidate, and an overlay diff highlighting mismatched pixels in red. Next, with Baseline Profile Automation, configure AGP's Baseline Profile Gradle plugin (`androidx.baselineprofile`). Schedule automated monthly Macrobenchmark profiling runs in CI that traverse critical user journeys, generate fresh `baseline-prof.txt` rules, and commit them directly to the repository before major releases.
-Finally, with Device Requirements for Benchmarks, never run Macrobenchmark on standard emulators or debug builds. ART compiles debuggable builds with optimizations disabled, skewing measurements. Always execute benchmarks on real, rooted or userdebug physical devices pinned at stable thermal CPU frequencies.
-
+Under the hood, these three specialized testing tools interact directly with Android's OS rendering pipeline, Ahead-of-Time compilation architecture, and Linux kernel tracing subsystems.
+Screenshot testing via Roborazzi leverages Robolectric's native graphics engine (Skia) to rasterize Compose draw commands directly into PNG byte arrays on the desktop host, eliminating physical emulator overhead while achieving 100% deterministic pixel-perfect validation across theme variations.
+Baseline Profiles manipulate ART's Profile-Guided Optimization (PGO) pipeline.
+When the generator executes, it instruments the ART runtime via adb commands, dumping raw profman profile files containing method indexes and class descriptors into an assets directory.
+When Google Play delivers the APK, the device installer invokes dex2oat to pre-compile these profiled methods directly into native ELF binary machine instructions (OAT files), bypassing the JIT interpreter completely during the critical first cold launch.
+Macrobenchmark operates via the Jetpack Benchmark library using Android OS Perfetto tracing and simpleperf profiler hooks under the hood.
+To produce reliable metrics, it enforces strict device requirements: disabling CPU thermal throttling when possible, requiring a non-debuggable release build, and executing kill-and-restart cycles to flush Android OS page caches.
+By comparing CompilationMode.None against CompilationMode.Partial(BaselineProfileMode.Require), engineering teams quantify the exact millisecond startup reduction and jank-free frame percentile directly in continuous integration reporting.
 
 ## How to answer in the interview
 

@@ -22,6 +22,49 @@ What are Intent and PendingIntent? Explain explicit versus implicit intents.
 - Explain component-targeted explicit versus action/data-based implicit resolution.
 - Choose safe `PendingIntent` target, mutability, identity, and validation for notifications.
 
+## Concept and technical explanation
+
+In the Android operating system, an Intent is an asynchronous messaging object used to request an action from another app component or to broadcast system-wide events. Intents serve as the fundamental inter-process communication (IPC) abstraction binding Activities, Services, and BroadcastReceivers.
+
+Intents are categorized into two core types:
+1. Explicit Intent:
+Designates the target component explicitly by specifying either its fully qualified Java or Kotlin class name (such as Intent(context, OrderDetailsActivity::class.java)) or an explicit component identifier. Because the target is predetermined, the runtime routes the message directly to that component within the application or a known target package. Explicit intents are type-safe, fast, and secure.
+
+2. Implicit Intent:
+Specifies an abstract general action to be performed (such as ACTION_VIEW, ACTION_SEND, or ACTION_DIAL) alongside data URIs, MIME types, and categories, without declaring the destination class. When launched, the Android PackageManagerService queries all installed applications on the device, matching the intent against registered intent-filters declared in their manifests. If multiple applications match, the system displays an app chooser dialog.
+
+In contrast, a PendingIntent is a token of authorization granted to an external system service or foreign application (such as NotificationManager, AlarmManager, or AppWidgetHost). It encapsulates an underlying Intent along with a delegate permission grant: it authorizes the external process to fire the encapsulated Intent at a future timestamp with the exact identity, Linux User ID (UID), and permissions of the originating application, even if the originating application process is terminated. Modern Android (API 31+) mandates declaring explicit mutability flags (FLAG_IMMUTABLE or FLAG_MUTABLE) to prevent malicious intent modification and hijacking.
+
+## Practical walkthrough (English)
+
+Constructing and dispatching a secure PendingIntent for a system notification:
+```kotlin
+// 1. Construct the explicit internal intent with payload
+val intent = Intent(context, OrderDetailsActivity::class.java).apply {
+    putExtra("order_id", "ORD-12345")
+    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+}
+
+// 2. Wrap in PendingIntent with mandatory security flags
+val pendingIntent = PendingIntent.getActivity(
+    context,
+    ORDER_REQUEST_CODE,
+    intent,
+    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE // Mandatory on Android 12+
+)
+
+// 3. Attach to NotificationCompat.Builder
+val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+    .setContentTitle("Order Shipped")
+    .setContentText("Tap to view your tracking details")
+    .setSmallIcon(R.drawable.ic_shipping)
+    .setContentIntent(pendingIntent)
+    .setAutoCancel(true)
+    .build()
+```
+Failure scenario:
+If an engineer declares an implicit Intent inside a PendingIntent or omits FLAG_IMMUTABLE, a malicious third-party application on the device can intercept the pending token, alter the embedded Intent's extras or target component (Intent Hijacking), and execute privileged code with the victim application's permissions.
+
 ## Explanation in Arabic
 
 الـ `Intent` والـ `PendingIntent` هما رسائل التواصل بين المكونات في نظام Android:
@@ -104,27 +147,28 @@ An order app creates a distinct explicit immutable PendingIntent per notificatio
 
 ## Interview answer — short
 
-An Intent is an asynchronous messaging object requesting an action: Explicit specifies the exact target component, while Implicit declares an action for the OS to resolve. A PendingIntent is a security wrapper granting another application or the OS system server permission to execute your Intent with your app's identity and privileges in the future.
+An Intent is a messaging object requesting an action from a component: explicit intents name the target class directly, while implicit intents declare an abstract action resolved by the OS through intent filters. A PendingIntent is a security token granting an external process permission to execute a preconfigured Intent with the originating app's identity and privileges.
 
 ## Interview answer — structured
 
-An **`Intent`** is an operational message that requests an action from an Android component.
+An Intent is Android's core messaging abstraction, facilitating both intra-process and cross-process communication between Activities, Services, and BroadcastReceivers. It encapsulates the action to be performed, target data URIs, and optional bundle extras.
 
-First, with Explicit Intent, explicitly names the target component class (`Intent(context, TargetActivity::class.java)`). Used almost exclusively for internal application navigation. Finally, an Implicit Intent declares a general action to perform (e.g., `Intent.ACTION_DIAL` with `tel:123`, or `ACTION_SEND` for sharing). The Android OS queries all package manifests for matching `<intent-filter>` declarations and displays the system app chooser.
+Intents divide into explicit and implicit variants. An explicit intent specifies the target component class directly, ensuring predictable, internal routing. In contrast, an implicit intent declares a generalized action, such as sharing content or viewing a web URL, prompting the operating system's PackageManagerService to resolve matching components across installed applications via their manifest intent filters.
 
-A **`PendingIntent`** is a security token wrapping an Intent. It delegates execution permission to a foreign application or system process—most commonly `NotificationManager`, `AlarmManager`, or App Widgets. When triggered, the system executes the pre-configured Intent with the permissions and identity of *your application*, even if your app's process is currently dead.
+A PendingIntent wraps an Intent with delegated execution rights. It passes a token to external system actors, such as NotificationManager, AlarmManager, or AppWidgetHost. When triggered, the receiving system service fires the embedded Intent with the exact Linux identity and permissions of the originating application, even if its process is currently dead.
+
+In production, security is paramount. Starting in Android 12, developers must explicitly designate every PendingIntent as either FLAG_IMMUTABLE or FLAG_MUTABLE. Defaulting to immutable prevents malicious applications from modifying the underlying intent parameters and executing unauthorized privilege escalation.
 
 
 ## Interview answer — deep senior
 
-At the systems and security architecture level, a `PendingIntent` is essentially an IPC handle referencing a token maintained by the system's `ActivityManagerService` (AMS). Because foreign apps execute it using your app's Linux UID, security vulnerabilities historically arose if malicious apps mutated the underlying intent parameters.
+At the operating system and Linux kernel boundary, Intents and PendingIntents leverage the Binder inter-process communication driver and the system_server's ActivityTaskManagerService. When startActivity(intent) is invoked, the call marshals the Intent structure across Binder to the system server. For explicit intents, the system server directly accesses the target package's ComponentInfo. For implicit intents, PackageManagerService executes an Intent Resolution algorithm, querying its internal IntentResolver tables against registered IntentFilters, evaluating actions, categories, data schemes, and MIME types.
 
-Starting in Android 12 (API 31), the platform mandates declaring mutability flags on every `PendingIntent`.
+The internal architecture of a PendingIntent is fundamentally different from a standard Intent. A PendingIntent does not pass an executable object; instead, it registers an IIntentSender IPC Binder interface inside the system_server process. The system server maintains an internal PendingIntentRecord that stores the calling application's Linux UID, package name, request code, target Intent, and execution flags.
 
-First, fLAG_IMMUTABLE is the default standard. Freezes the Intent parameters completely; the receiving app or system cannot modify its extras or URI. Finally, with FLAG_MUTABLE, allows callers to inject extra parameters via `fillIn()`. Only used in specialized features like notification inline replies or bubbles.
+Because the token is maintained by the system server, when a notification or alarm triggers the token, ActivityTaskManagerService dispatches the intent attributing all security permissions and identity to the originating UID rather than the caller's UID. Historically, this presented a critical security vulnerability known as Intent Redirection or Hijacking (CWE-927). If a PendingIntent was mutable, a malicious receiver could populate the empty Intent fields, redirecting the target component to internal, non-exported Activities containing sensitive financial or user data.
 
-Attempting to create a `PendingIntent` without declaring one of these flags on Android 12+ crashes immediately with an `IllegalArgumentException`.
-
+To permanently close this attack surface, Android 12 (API level 31) made declaring FLAG_IMMUTABLE or FLAG_MUTABLE mandatory. A Staff engineer enforces immutable tokens by default, reserving FLAG_MUTABLE exclusively for system integrations that require dynamic payload injection, such as inline notification replies via RemoteInput or custom camera capture URIs.
 
 ## How to answer in the interview
 

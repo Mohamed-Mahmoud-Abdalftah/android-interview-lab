@@ -20,6 +20,37 @@ How do launch exceptions differ from async exceptions?
 
 Can the candidate compare the observation of `launch` and `async` exceptions while preserving structured failure propagation?
 
+## Concept and technical explanation
+
+The critical distinction between launch and async in Kotlin coroutines lies in their return abstractions and exception propagation timelines. The launch builder is a fire-and-forget orchestrator that returns a Job. Exceptions thrown inside launch propagate eagerly and immediately up the job hierarchy to the parent and thread-level uncaught exception handlers. Conversely, async returns a Deferred handle representing a future computation result. In a root coroutine, async encapsulates exceptions inside the Deferred instance, remaining dormant until the consumer explicitly invokes await, at which point the stored exception is rethrown directly into the caller's call stack. However, when async is invoked as a child inside a standard coroutineScope, its unhandled exception immediately propagates upward to cancel the parent scope, regardless of whether await was ever called.
+
+## Practical walkthrough (English)
+
+Comparing exception timing in launch versus root async and child async:
+```kotlin
+// 1. launch: Eager and immediate propagation
+scope.launch {
+    throw IllegalStateException("Fails immediately!") // Crashes process or hits CEH immediately
+}
+
+// 2. Root async: Exception is encapsulated until await() is called
+val deferred = scope.async {
+    throw IllegalStateException("Deferred failure")
+}
+delay(1000) // Exception remains completely silent here!
+try {
+    deferred.await() // The exception is rethrown right here!
+} catch (e: IllegalStateException) {
+    println("Caught during await: ${e.message}")
+}
+
+// 3. Child async trap: Inside coroutineScope, child async cancels parent immediately!
+coroutineScope {
+    val task = async { throw RuntimeException("Child async failed") }
+    // Even if we NEVER call task.await(), the parent scope is cancelled right now!
+}
+```
+
 ## Explanation in Arabic
 
 الفارق الجوهري في معالجة الاستثناءات بين `launch` و `async` هو من أهم الأسئلة التي تميز الفهم العميق لـ Kotlin Coroutines:
@@ -92,33 +123,25 @@ A dashboard requests independent badges using supervised `async` and captures ea
 
 ## Interview answer — short
 
-Exceptions in 'launch' propagate eagerly and immediately up the job hierarchy to the parent and uncaught exception handlers. Exceptions in root 'async' coroutines are encapsulated inside the Deferred object and are only rethrown when await() is called.
+launch exceptions propagate eagerly and immediately up the job hierarchy, triggering cancellation and uncaught exception handlers. Root async exceptions are encapsulated inside the Deferred handle and are only rethrown when await() is called. However, a child async inside coroutineScope still cancels its parent immediately even before await() is invoked.
 
 ## Interview answer — structured
 
-The key difference lies in timing and delivery: exceptions in `launch` are treated as immediate unhandled failures, whereas exceptions in `async` are encapsulated into the return value until observed.
+The fundamental divergence between launch and async centers on exception delivery timing and result representation.
 
-When a coroutine launched with `launch` encounters an unhandled exception, it treats it like an uncaught exception in a thread: it immediately propagates up to its parent, cancels its scope, and delegates to a `CoroutineExceptionHandler` or crashes the process.
+Launch is designed for fire-and-forget side effects and returns a Job. When an uncaught exception occurs inside launch, it propagates eagerly and immediately up the job hierarchy. If unhandled, it cancels the parent scope and dispatches to the CoroutineExceptionHandler or crashes the application thread.
 
-When a root coroutine launched with `async` throws an exception, the exception is stored inside the resulting `Deferred<T>` instance. It remains dormant and unthrown until the caller invokes `deferred.await()`, at which point `await()` rethrows the original exception. This allows the caller to handle failures locally using a standard `try-catch` block around `await()`.
+In production, async is designed for computations that return values, producing a Deferred instance. When async operates as a root coroutine, it encapsulates unhandled exceptions inside the Deferred container. The exception remains completely dormant and unobserved until a consumer invokes await, which unpacks the result and rethrows the original exception directly at the await call site where standard try-catch blocks can recover it.
+
+Engineers must be aware of the child async trap. When async is invoked as a child inside a standard coroutineScope, structured concurrency still applies upward failure propagation immediately, cancelling the parent and sibling coroutines even if await is never invoked.
 
 
 ## Interview answer — deep senior
 
-There is a crucial architectural nuance that trips up many engineers: **the context of `async` determines whether it behaves quietly or eagerly**.
-
-If `async` is launched as a child inside a standard `coroutineScope { }`:
-
-```kotlin
-coroutineScope {
-    val task = async { throw NetworkException() }
-}
-```
-
-Even if you never call `task.await()`, the moment the child `async` fails, it signals failure to its parent `coroutineScope`. The parent immediately cancels all other siblings and rethrows the `NetworkException`. Wrapping `task.await()` in a `try-catch` will catch the exception locally, but the parent `coroutineScope` has already been destroyed!
-
-To catch an `async` exception locally with `try-catch` around `await()` without cancelling sibling operations, you must run the operations inside a `supervisorScope { }`.
-
+At the lower runtime tier, launch and async instantiate StandaloneCoroutine and DeferredCoroutine respectively. Both extend AbstractCoroutine, but override exception handling hooks differently. In StandaloneCoroutine, when an unhandled exception triggers completion, handleJobException invokes handleCoroutineException immediately, escalating the failure to the context hierarchy.
+DeferredCoroutine alters this contract by overriding handleJobException to return false. Instead of escalating the error, it transitions its internal state machine to CompletedExceptionally, packaging the Throwable into an internal CompletedExceptionally wrapper. When a caller subsequently invokes await, the continuation checks the state machine; if exceptionally completed, it unpacks the throwable and throws it into the caller's stack frame via recoverStackTrace, preserving both the asynchronous dispatch trace and the current suspension point.
+However, this encapsulation is frequently misunderstood in the context of child hierarchies. When async is called within a standard coroutineScope, the child still notifies its parent via parentHandle.childCancelled(cause). Unless the parent is a supervisorScope or backed by a SupervisorJob, the parent Job immediately enters the Cancelling state, tearing down all sibling coroutines before the consumer ever reaches the await statement.
+Staff engineers enforce strict patterns: use launch with structured exception handlers for terminal background actions; use async wrapped inside supervisorScope with local try-catch blocks around await calls when parallel tasks must be isolated; and never leave a Deferred handle un-awaited in long-lived scopes.
 
 ## How to answer in the interview
 

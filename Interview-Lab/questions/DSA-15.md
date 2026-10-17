@@ -21,6 +21,74 @@ Build a rate limiter or deduplication map for requests. What data structure fits
 - Rate limiter versus dedup map semantics and expiry.
 - Local map is not payment-wide exactly-once authority.
 
+## Concept and technical explanation
+
+Designing client-side rate limiters and in-flight request deduplication systems requires choosing data structures that ensure thread-safety, bounded memory footprints, and low-latency execution:
+- Sliding Window Log (Rate Limiting):
+  - Architecture: A thread-safe map (`ConcurrentHashMap<String, ArrayDeque<Long>>`) mapping endpoint keys to queues of request epoch timestamps.
+  - Algorithm: On an incoming request, purge timestamps older than `now - windowDuration` from the queue front. If remaining count is below the threshold, append `now` and approve; otherwise, throttle.
+  - Complexity: Amortized $O(1)$ operations, exact boundary accuracy, with memory bounded by `maxRequestsPerWindow` timestamps per key.
+- Token Bucket (Low-Footprint Rate Limiting):
+  - Architecture: Tracks two primitive numeric variables per endpoint: `availableTokens: Double` and `lastRefillTimestamp: Long`.
+  - Algorithm: On arrival, calculates tokens accumulated since last refill: `tokens += (now - lastRefill) * refillRate`. If `tokens >= 1.0`, decrement and allow; otherwise, reject.
+  - Complexity: Strictly $O(1)$ constant time and $O(1)$ memory (only 16 bytes per endpoint), allowing burst capacity while smoothing traffic.
+- In-Flight Request Deduplication (Coalescing):
+  - Architecture: `ConcurrentHashMap<RequestKey, Deferred<Response>>`.
+  - Algorithm: When a network request fires (such as repeated button taps or parallel screen initializations), inspect the map. If an active `Deferred` exists, await it directly without launching a second HTTP call.
+  - Clean-up Invariant: A `finally` block or completion callback guarantees key removal upon request termination, preventing memory leaks and stale cached responses.
+
+## Practical walkthrough (English)
+
+Thread-safe Sliding Window Rate Limiter and Request Deduplicator in Kotlin:
+```kotlin
+import kotlinx.coroutines.*
+import java.util.concurrent.ConcurrentHashMap
+
+// 1. Thread-safe Sliding Window Rate Limiter
+class SlidingWindowRateLimiter(
+    private val maxRequests: Int,
+    private val windowDurationMs: Long
+) {
+    private val requestLogs = ConcurrentHashMap<String, ArrayDeque<Long>>()
+
+    @Synchronized
+    fun shouldAllowRequest(endpointKey: String): Boolean {
+        val now = System.currentTimeMillis()
+        val queue = requestLogs.getOrPut(endpointKey) { ArrayDeque() }
+
+        // Evict expired timestamps outside the active window
+        while (queue.isNotEmpty() && (now - queue.first()) > windowDurationMs) {
+            queue.removeFirst()
+        }
+
+        return if (queue.size < maxRequests) {
+            queue.addLast(now)
+            true // Request permitted
+        } else {
+            false // Throttled
+        }
+    }
+}
+
+// 2. Coroutine-based In-Flight Request Deduplicator
+class RequestDeduplicator {
+    private val inFlight = ConcurrentHashMap<String, Deferred<String>>()
+
+    suspend fun executeDeduplicated(key: String, networkCall: suspend () -> String): String {
+        val deferred = inFlight.compute(key) { _, existing ->
+            existing ?: CoroutineScope(Dispatchers.IO).async {
+                try {
+                    networkCall()
+                } finally {
+                    inFlight.remove(key) // Guaranteed memory cleanup
+                }
+            }
+        }!!
+        return deferred.await()
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تبني نظام تحديد معدل الطلبات (Rate Limiter) أو خريطة لمنع تكرار الطلبات المتزامنة (Request Deduplication) في أندرويد، وما هو الهيكل الأنسب؟
@@ -139,24 +207,21 @@ Production limits by authenticated identity and endpoint, monitors denial rates,
 
 ## Interview answer — short
 
-For a rate limiter, a sliding window log using an ArrayDeque of timestamps fits best, pruning expired entries in O(1) amortized time. For concurrent request deduplication, use a ConcurrentHashMap mapping request keys to in-flight Coroutine Deferred instances (Single-Flight pattern), coalescing concurrent duplicate calls into a single network invocation.
+Implement a rate limiter using a sliding window log via ConcurrentHashMap and ArrayDeque for precise timestamp eviction, or a Token Bucket for minimal O(1) memory overhead. Deduplicate in-flight requests using a ConcurrentHashMap of Coroutine Deferred instances, allowing concurrent calls to share a single network invocation with guaranteed cleanup in a finally block.
 
 ## Interview answer — structured
 
-Designing rate limiters and deduplication managers requires thread-safe collections tailored to sliding time windows and task coalescing.
-
-First, **Sliding Window Rate Limiter (`ArrayDeque<Long>`)**. Next, a Mechanism maintains timestamps of recent requests in an `ArrayDeque`. On each incoming request at time $t$, pop timestamps older than $t - \text{windowDuration}$ from the head in $O(1)$ time. If the remaining deque size is within limits, push $t$ to the tail and allow the request; otherwise, throttle.
-Additionally, a Trade-off provides exact precision without the boundary burst vulnerabilities of fixed-window counters, consuming minimal $O(k)$ memory where $k$ is the rate limit. **Concurrent Request Deduplication (Single-Flight Pattern)**.
-With Mechanism, use a `ConcurrentHashMap<String, Deferred<Result>>`. When a request arrives, invoke `computeIfAbsent(key) { async { executeNetworkCall() } }`. Multiple concurrent callers subscribe to the identical `Deferred.await()`, eliminating duplicate network traffic. Finally, with Cleanup, in a `finally` block, remove the key from the map once the network call completes to ensure subsequent requests fetch fresh data.
-
+Designing rate limiting and request deduplication on Android requires matching data structures to specific concurrency and memory constraints.
+For rate limiting with strict boundary precision, the sliding window log is an excellent fit. It utilizes a ConcurrentHashMap mapping endpoint keys to an ArrayDeque of timestamps. When a request arrives, timestamps older than the active window are evicted from the queue. If the remaining count is within limits, the request proceeds, delivering amortized O(1) performance.
+If memory efficiency is paramount, the Token Bucket algorithm stores just two numbers per endpoint: current tokens and last refill timestamp. It runs in strictly O(1) constant time and negligible memory, smoothly accommodating bursts.
+For request deduplication, we use a ConcurrentHashMap mapping request keys to active Coroutine Deferred objects. When duplicate requests fire simultaneously, subsequent callers attach to the in-flight Deferred rather than spawning duplicate network requests. An explicit finally block guarantees map eviction upon completion, preventing memory leaks.
 
 ## Interview answer — deep senior
 
-From an Android networking and resilience perspective, these patterns protect battery and server quotas.
-
-First, with Thundering Herd Mitigation on Screen Launch, when 4 distinct UI components on a dashboard independently request the current user profile upon startup, naive code fires 4 duplicate HTTP requests. The Single-Flight deduplication pattern coalesces these into 1 HTTP call, saving radio wakeups and network bandwidth. Next, with Token Bucket Algorithm Alternative, for high-throughput client scenarios, the Token Bucket algorithm (`AtomicInteger` tokens replenished at a constant rate) is preferred over timestamp deques because it consumes $O(1)$ space and handles traffic bursts gracefully without logging individual timestamps.
-Finally, with Handling Network Failures in Deduplication, if the in-flight network call fails with an exception, all awaiting callers must receive the exception cleanly, and the key must be removed from the map immediately so retry logic is not stuck on a failed cached future.
-
+From a high-concurrency client systems perspective, request governance mechanisms protect both mobile battery life and backend microservices from accidental Denial of Service conditions.
+When architecting a client-side rate limiter, the sliding window log offers superior accuracy compared to fixed-window counters, which suffer from boundary traffic spikes where double the limit executes across the reset boundary. By maintaining a timestamp queue inside an ArrayDeque, we achieve amortized O of one eviction. However, if thousands of unique parameterized query keys are generated, the map can grow unbounded. We resolve this by constraining the map with an LRU eviction policy or adopting the Token Bucket algorithm. Token Bucket calculates available capacity lazily through timestamp deltas, requiring only two numeric primitives per key and zero object allocations during active traffic.
+Request deduplication requires atomic state coordination. A frequent bug in Android networking occurs when a user repeatedly taps a purchase or refresh button, or when multiple ViewModels request the same user profile simultaneously. If unmanaged, the app initiates redundant HTTP requests, wasting cellular data and risking duplicate state mutations.
+By maintaining a ConcurrentHashMap of Coroutine Deferred objects, we coalesce duplicate requests atomically. The first caller initiates the network call and registers the Deferred. Concurrent callers atomically acquire the existing Deferred and await the identical response. To ensure fault tolerance and prevent memory leaks, we wrap the execution in a try-finally construct that removes the key from the map upon completion or cancellation. This architecture guarantees single-flight network efficiency with ironclad thread safety.
 
 ## How to answer in the interview
 

@@ -20,6 +20,33 @@ Compare package-by-layer and package-by-feature.
 
 Compare navigation, cohesion, ownership and Gradle module implications of two packaging strategies.
 
+## Concept and technical explanation
+
+Code organization strategy governs codebase discoverability, coupling boundaries, and scalability. Package-by-layer groups code according to technical roles (e.g. presentation/, domain/, data/, adapters/), pooling all ViewModels, Repositories, and DAOs together. Package-by-feature organizes code into functional user-facing business verticals (e.g. feature/auth/, feature/checkout/, feature/profile/), where each package contains its own UI components, ViewModels, Use Cases, and internal models. While package-by-layer is common in tiny tutorials, it causes low cohesion, tight cross-layer coupling, high merge conflicts, and blocks modularization in enterprise teams. Package-by-feature delivers high cohesion, strict encapsulation, independent team ownership, and directly mirrors multi-module Gradle architectures.
+
+## Practical walkthrough (English)
+
+Contrasting Package-by-layer with Package-by-feature:
+```text
+// ❌ PACKAGE-BY-LAYER: Low cohesion, cross-cutting sprawl
+com.example.app/
+├── presentation/
+│   ├── LoginFragment.kt, CheckoutFragment.kt, ProfileFragment.kt
+│   └── LoginViewModel.kt, CheckoutViewModel.kt, ProfileViewModel.kt
+├── domain/
+│   └── LoginUseCase.kt, CheckoutUseCase.kt
+└── data/
+    └── UserRepository.kt, OrderRepository.kt
+
+// ✅ PACKAGE-BY-FEATURE: High cohesion, natural Gradle module boundaries
+com.example.app/
+├── feature/auth/
+│   ├── LoginScreen.kt, LoginViewModel.kt, AuthRepository.kt
+├── feature/checkout/
+│   ├── CheckoutScreen.kt, CheckoutViewModel.kt, CheckoutUseCase.kt
+└── core/database/ (shared foundational infrastructure)
+```
+
 ## Explanation in Arabic
 
 المقارنة الهيكلية بين تنظيم الحزم حسب الطبقة (Package-by-Layer) وحسب الميزة (Package-by-Feature):
@@ -94,26 +121,24 @@ A marketplace organizes checkout, search and account by feature; shared payment 
 
 ## Interview answer — short
 
-Package-by-layer groups files by technical role (all ViewModels together, all Repositories together), causing scattered feature code and low cohesion. Package-by-feature groups files by business capability (all auth code together, all cart code together), providing high cohesion, encapsulation, and an easy path to Gradle modularization.
+Package-by-layer groups code by technical function (all ViewModels together, all Repositories together), causing low cohesion and tight coupling. Package-by-feature groups code by business verticals (authentication, checkout), maximizing cohesion, reducing cross-feature merge conflicts, and serving as the direct stepping stone to multi-module Gradle architectures.
 
 ## Interview answer — structured
 
-Packaging strategy determines cognitive load, code navigation speed, and modularization readiness in growing codebases.
+Package organization directly impacts codebase scalability, developer velocity, and architectural modularity.
 
-First, **Package-by-Layer (Horizontal Partitioning)**. Next, groups files strictly by their technical classification (`presentation`, `domain`, `data`).
-*Drawbacks*: As the app grows beyond a few screens, packages balloon to hundreds of files. Feature cohesion is completely lost: developing a single feature requires jumping across multiple directories. Everything must be marked `public`, destroying encapsulation. **Package-by-Feature (Vertical Partitioning)**.
-Groups all artifacts required for a specific business capability into a single cohesive package (`auth`, `checkout`, `profile`). *Benefits*: High cohesion. Deleting or modifying a feature touches files in a single self-contained directory. Allows leveraging Kotlin's `internal` visibility to hide feature-internal implementation details.
-**Modern Hybrid Standard**. Finally, in enterprise Android architecture, we package **by feature at the macro level** (often as separate Gradle modules), and **by layer at the micro level** within that feature (`:feature:checkout/ui`, `.../domain`, `.../data`).
+Package-by-layer groups classes according to technical categories: all activities in one package, all viewmodels in another, and all repositories in a third. This creates low cohesion because working on a single feature like user authentication requires navigating across four distinct root packages, making deletion or refactoring cumbersome.
+
+In production, package-by-feature groups all components belonging to a specific user journey—such as checkout, onboarding, or search—into a dedicated package. Each feature contains its own Composables, ViewModels, and private helpers, keeping related code tightly localized.
+As for enterprise growth, package-by-feature maps seamlessly to multi-module Gradle architectures. Teams can easily extract feature modules into isolated Gradle modules, enabling parallel compilation, fine-grained access control, and independent feature team ownership without cross-team merge conflicts.
 
 
 ## Interview answer — deep senior
 
-The major architectural triumph of package-by-feature is enabling painless **Multi-Module Migration**. A project structured by layer is nearly impossible to modularize because circular dependencies between packages are rampant across features. In contrast, a project structured by feature can extract `auth/` or `checkout/` directly into an independent Gradle module `:feature:auth` within hours.
-
-Encapsulation is another vital advantage. Under package-by-layer, a repository implementation class in `data` must be declared `public` so a use case in `domain` or a ViewModel in `ui` can access it. Under package-by-feature in separate modules, concrete implementation classes can be marked `internal`, exposing only a clean public interface or entry point.
-
-Shared infrastructure (Network clients, Database drivers, Common UI Design Tokens) lives in dedicated core packages (`core:network`, `core:database`, `core:designsystem`).
-
+Under the hood, the choice between package-by-layer and package-by-feature determines how cleanly code can be decoupled and compiled. In package-by-layer, classes within the same technical package have little semantic relationship—a CheckoutViewModel and an AuthViewModel share nothing except that they both extend the Android Jetpack ViewModel base class. Because dependencies crisscross horizontally between layers, developers easily introduce unintended circular couplings, and deleting a deprecated feature requires hunting down files across every layer folder.
+Package-by-feature adheres to the Common Closure Principle: classes that change together should be packaged together. When modifying the checkout user experience, all relevant Composables, ViewModels, and state models reside in the same directory. Features can mark internal helpers with Kotlin's internal visibility modifier, protecting private implementation details from being accidentally imported by unrelated features.
+In modern Android enterprise development, this structure directly mirrors the modularization strategy recommended by Google. Core shared functionality lives in core network, core database, and core designsystem, while feature verticals are packaged independently as feature cart, feature payments, and feature settings.
+Staff engineers ensure that feature packages never depend on peer feature packages directly. Any cross-feature communication is handled via navigation deep links or core API interfaces, allowing Gradle to build feature modules in parallel and drastically reducing CI build times across large engineering departments.
 
 ## How to answer in the interview
 

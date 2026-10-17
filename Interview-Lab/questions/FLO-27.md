@@ -20,6 +20,50 @@ A navigation event fires twice after rotation. How do you investigate event mode
 
 Investigate duplicate navigation through replay, collector duplication and consumption race.
 
+## Concept and technical explanation
+
+A navigation event firing repeatedly following device orientation changes represents the classic Android "Event Replay" anti-pattern, caused by mismodeling transient one-off side effects as persistent UI state.
+When navigation destinations, snackbars, or toast messages are stored inside StateFlow or SharedFlow with positive replay cache (replay >= 1), the flow retains the navigation payload in memory. When device rotation triggers Activity destruction and recreation, the newly attached observer collects the flow and immediately receives the retained navigation event from the replay cache, re-triggering the navigation intent.
+Investigating and resolving this failure mode involves evaluating event lifecycle ownership: transient side effects must not rely on sticky state caches or anti-patterns like EventWrapper / SingleLiveEvent. Senior Android engineering standards resolve this either by modeling navigation actions via single-consumer buffered Channels exposed as Flows, or by modeling events as explicit, state-driven UI models where the UI explicitly notifies the ViewModel upon consumption to acknowledge and clear the event.
+
+## Practical walkthrough (English)
+
+Investigating and fixing navigation event replay via state-driven consumption acknowledgement:
+```kotlin
+// 1. Model navigation as a nullable property within the UI State:
+data class CheckoutUiState(
+    val isLoading: Boolean = false,
+    val navigationEvent: CheckoutNavigation? = null // Transient event
+)
+
+sealed interface CheckoutNavigation {
+    data class NavigateToReceipt(val orderId: String) : CheckoutNavigation
+}
+
+class CheckoutViewModel : ViewModel() {
+    private val _uiState = MutableStateFlow(CheckoutUiState())
+    val uiState: StateFlow<CheckoutUiState> = _uiState.asStateFlow()
+
+    fun onPaymentSuccess(orderId: String) {
+        _uiState.update { it.copy(navigationEvent = CheckoutNavigation.NavigateToReceipt(orderId)) }
+    }
+
+    // Crucial: UI explicitly acknowledges consumption, clearing sticky state!
+    fun onNavigationHandled() {
+        _uiState.update { it.copy(navigationEvent = null) }
+    }
+}
+
+// 2. In Jetpack Compose screen:
+val state by viewModel.uiState.collectAsStateWithLifecycle()
+LaunchedEffect(state.navigationEvent) {
+    state.navigationEvent?.let { nav ->
+        navController.navigate("receipt/${nav.orderId}")
+        viewModel.onNavigationHandled() // Acknowledged! Rotation won't re-trigger!
+    }
+}
+```
+
 ## Explanation in Arabic
 
 تكرار حدث الانتقال مرتين بعد تدوير الشاشة (Navigation Event firing twice after rotation) هو أحد أشهر الـ Bugs الكلاسيكية في تطبيقات أندرويد:
@@ -93,26 +137,25 @@ For sign-in, the authoritative session state drives the destination so a recreat
 
 ## Interview answer — short
 
-This bug occurs when navigation events are improperly modeled as persistent state in StateFlow or SharedFlow with replay >= 1, causing the recreated UI to re-read and re-execute the cached event. Fix it by modeling one-off events using a buffered Channel.receiveAsFlow() or consuming and clearing the event from state immediately upon execution.
+Navigation fires twice because the event was stored in a sticky stream like StateFlow or SharedFlow with replay, replaying upon screen rotation. We fix this by modeling navigation as part of UI state with explicit consumption acknowledgement, or using a single-consumer buffered Channel.
 
 ## Interview answer — structured
 
-When a navigation event fires twice after screen rotation, it is almost always caused by modeling a transient event as durable state.
+Duplicate navigation upon screen rotation indicates that transient events were modeled using sticky state primitives.
 
-The root cause is storing navigation commands in a `StateFlow` or a `SharedFlow` configured with `replay >= 1`. When the device rotates, the Activity is destroyed and recreated. When the new Activity subscribes to the stream, the flow dutifully replays the cached navigation command from memory, triggering a duplicate navigation transaction.
+StateFlow and SharedFlow with replay retain their latest emission in memory. When the Activity recreates upon rotation, the new UI collector subscribes and immediately receives the historical navigation payload, executing navigation a second time.
 
-To fix this, we change the event modeling to guarantee **single-time consumption**.
-
-First, **Channel-based Events:** Use a private `Channel<NavTarget>(Channel.BUFFERED)` and expose `channel.receiveAsFlow()`. Channels are FIFO queues: once an event is consumed by the UI, it is dequeued. A recreated Activity on rotation will find the channel empty. Finally, **State-driven Acknowledgment:** If kept in UI state (`data class UiState(val navRoute: NavRoute? = null)`), the UI must immediately notify the ViewModel upon navigation (`viewModel.onNavigated()`), which resets `navRoute = null` before any rotation can occur.
+In production, legacy workarounds like EventWrapper or SingleLiveEvent introduced race conditions and anti-pattern flags that violated unidirectional data flow.
+As for modern resolution, Google officially recommends modeling events directly inside the UI state class. The navigation payload resides as a nullable field within the state data class; as soon as the UI executes the navigation transition, it sends a consumption intent back to the ViewModel, which clears the event to null. Alternatively, a single-consumer buffered Channel guarantees exactly-once delivery without retention.
 
 
 ## Interview answer — deep senior
 
-In code review investigations, I verify the event lifecycle across three audit checkpoints.
-
-First, **Stream Type Inspection:** Check if the event flow is declared as `MutableStateFlow` or `MutableSharedFlow(replay = 1)`. If yes, replace it with `Channel(Channel.BUFFERED).receiveAsFlow()`. Next, **Collection Lifecycle Inspection:** In View-based code, verify that navigation events are collected inside `viewLifecycleOwner.lifecycleScope.launch { viewLifecycleOwner.repeatOnLifecycle(STARTED) { ... } }`. In Compose, verify it uses `LaunchedEffect(Unit)`.
-Finally, **Queue Deduplication:** If using Channel, ensure the channel is buffered (`Channel.BUFFERED`) so events sent while the screen is in transit between lifecycles are retained until the new screen is ready, but consumed strictly once.
-
+Under the hood, investigating duplicate emissions starts by inspecting the stream declaration inside the ViewModel. If the stream is declared as MutableStateFlow or MutableSharedFlow(replay = 1), the replay cache is the root cause. Upon recreation, repeatOnLifecycle enters STARTED and attaches a new subscriber slot. The hot flow traverses its circular buffer and immediately dispatches the cached item to the fresh subscriber before any user interaction occurs.
+To eliminate this defect, two architectural patterns exist. The first pattern is the Single-Consumer Buffered Channel: Channel<NavEvent>(Channel.BUFFERED) exposed via receiveAsFlow(). A Channel enforces queue semantics where elements are consumed destructively; once the UI dequeues the navigation intent, it is permanently removed from memory, preventing replay across rotations.
+The second pattern—recommended in modern Jetpack Compose architecture—is State-Driven Modeling with Explicit Consumption Acknowledgement. The UI state holds a nullable event object. In the Composable, a LaunchedEffect keyed to event executes the navigation command and immediately invokes viewModel.onEventConsumed(). The ViewModel atomically resets the state property to null via MutableStateFlow.update.
+This pattern aligns with modern Unidirectional Data Flow guidelines: the UI never manages independent event state, but instead reflects the current state snapshot and dispatches user actions back to the ViewModel, eliminating navigation inconsistencies during configuration changes.
+Staff engineers ban hacky solutions like reading and manually toggling boolean hasBeenHandled flags across multiple threads, enforcing deterministic state management across all navigation flows.
 
 ## How to answer in the interview
 

@@ -20,6 +20,49 @@ What is the difference between state and transient events?
 
 Separate durable/current state from one-time UI effects and define delivery semantics.
 
+## Concept and technical explanation
+
+In reactive Android architecture, distinguishing between persistent State and transient Events is fundamental to predictable UI rendering and avoiding duplicate side effects.
+State represents an enduring, observable snapshot of the user interface at any given instant—such as a list of loaded products, a loading spinner visibility flag, or an error screen layout. State is persistent, non-destructive, supports immediate replay to newly attached observers, and conflates intermediate updates so that collectors always receive the freshest representation.
+Transient Events represent momentary, one-off side effects that must be consumed exactly once—such as triggering screen navigation, showing a SnackBar notification, requesting biometric authentication, or playing an audio alert. Events must not persist in the UI state buffer; if an event is held in a regular state stream, configuration changes like screen rotations cause newly recreated UI observers to collect the cached event a second time, triggering repeated navigation loops or duplicate toast popups.
+
+## Practical walkthrough (English)
+
+Contrasting UI state with one-off transient events in an Android ViewModel:
+```kotlin
+// 1. UI State: Persistent snapshot of screen data
+data class CheckoutUiState(
+    val isProcessing: Boolean = false,
+    val cartTotal: BigDecimal = BigDecimal.ZERO
+)
+
+// 2. Transient Events: One-off navigation or snackbar intents
+sealed interface CheckoutUiEvent {
+    data class NavigateToReceipt(val orderId: String) : CheckoutUiEvent
+    data class ShowErrorSnackBar(val message: String) : CheckoutUiEvent
+}
+
+class CheckoutViewModel : ViewModel() {
+    // State: Exposed via StateFlow with initial loading state
+    private val _uiState = MutableStateFlow(CheckoutUiState())
+    val uiState: StateFlow<CheckoutUiState> = _uiState.asStateFlow()
+
+    // Events: Exposed via Channel or SharedFlow(replay = 0)
+    private val _eventChannel = Channel<CheckoutUiEvent>(Channel.BUFFERED)
+    val events = _eventChannel.receiveAsFlow()
+
+    fun completeCheckout() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isProcessing = true) }
+            val orderId = api.placeOrder()
+            _uiState.update { it.copy(isProcessing = false) }
+            // Transient event sent once:
+            _eventChannel.send(CheckoutUiEvent.NavigateToReceipt(orderId))
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 الفرق بين الحالة (State) والأحداث العابرة (Transient Events) هو من أهم النقاط المعمارية لتجنب تكرار الأحداث (Duplicate Events Bug) عند تدوير الشاشة:
@@ -107,25 +150,25 @@ A payment completion is recorded in Room/server status. UI observes Success and 
 
 ## Interview answer — short
 
-State represents persistent screen conditions that survive rotation and should always be observable via StateFlow; transient events are one-off side effects (like navigation or snackbars) that must be consumed exactly once and never replayed on screen rotation, typically modeled using Channel or SharedFlow.
+State represents a continuous, persistent snapshot of the screen that survives rotation and supports replay. Transient events represent one-shot actions like navigation or toasts that must execute exactly once. Storing transient events in StateFlow causes duplicate execution upon rotation, requiring either Channel-backed event streams or consumed state flags.
 
 ## Interview answer — structured
 
-Distinguishing between persistent state and transient events is crucial for preventing duplicate navigation or repeated snackbars in Android.
+The architectural dichotomy between state and transient events dictates how data streams are modeled and consumed.
 
-**State** represents the durable condition of the UI at any given moment: the list of items, form input text, or loading indicators. State must be retained across configuration changes so that rotating the device immediately restores the exact same visual representation. We model state using `StateFlow`.
+State represents what the screen currently displays. It is persistent, stateful, and must replay immediately when an Activity recreates after rotation. We model UI state using StateFlow, conflating updates so the UI always reflects the latest snapshot.
 
-**Transient Events** (also called Side Effects) represent one-off occurrences that must happen exactly once: navigating to a details screen, showing a temporary error Toast, or requesting biometric authentication. If you store an event inside a StateFlow, the new Activity created after a rotation will observe that same StateFlow, re-reading the event and navigating a second time.
+In production, transient events represent fire-and-forget side effects like triggering navigation, displaying a toast, or vibrating the haptic engine. These actions must be delivered and processed exactly once.
 
-We model transient events either through a separate one-shot stream like `Channel.receiveAsFlow()` or by embedding an event in UI state paired with an explicit confirmation action (`onEventHandled()`).
+Modeling one-off events inside a StateFlow is a frequent source of severe bugs. When the device rotates, newly registered collectors re-read the cached state, causing redundant navigation commands or re-showing dismissed SnackBars. We solve this by modeling events as Channel-backed streams or resetting state properties via explicit event consumption patterns.
 
 
 ## Interview answer — deep senior
 
-Historically, developers addressed this issue using `SingleLiveEvent` or `Event<T>` wrappers containing an `isHandled` boolean flag. While functional, those patterns are considered workarounds that break reactive purity.
-
-In modern Android architecture, Google's Architecture Guide recommends two clean approaches: 1. **Channel as Event Stream:** A ViewModel exposes `val sideEffects = effectChannel.receiveAsFlow()`. Channels guarantee single-receiver delivery (FIFO queue); once an event is received and handled by `LaunchedEffect` in Compose, it is dequeued and cannot be replayed on rotation. 2. **State-Driven Events:** Model the event directly inside the UI state with a unique ID: `data class UiState(val userMessage: UserMessage? = null)`. When the UI displays the message, it immediately dispatches an intent `viewModel.onMessageShown(message.id)`, and the ViewModel clears `userMessage = null`. This keeps everything in a single unidirectional state pipeline.
-
+At the system and lifecycle boundary level, handling transient events reliably in Android coroutines has undergone substantial architectural evolution. Naive historical patterns, such as SingleLiveEvent or wrapping events in an Event<T> wrapper with a getContentIfNotHandled() flag, suffered from race conditions and anti-pattern state mutability inside the presentation layer.
+Modern reactive patterns utilize two primary production approaches. The first approach is Channel-based event streaming: creating a private Channel<Event>(Channel.BUFFERED) and exposing it downstream via channel.receiveAsFlow(). Because a Channel operates on queue semantics with individual message delivery, each emitted event is consumed by exactly one collector and immediately dequeued. However, if an event is emitted while the UI is between onStop and onStart, the Channel buffers the event in memory until the UI lifecycle resumes and collects it.
+The second, increasingly recommended pattern from Google Android Architecture guidelines is Pure State Modeling: treating UI messages as part of the immutable UiState data class. In this pattern, the state includes a nullable message object with a unique identifier. Once the Composable or Fragment displays the SnackBar, it invokes an explicit callback on the ViewModel (such as onMessageDismissed(messageId)), which updates the StateFlow to nullify that specific event property.
+Staff engineers select pure state modeling for user-facing visual notifications to guarantee state idempotency, while reserving Channels for critical single-shot operational commands like navigation transitions.
 
 ## How to answer in the interview
 

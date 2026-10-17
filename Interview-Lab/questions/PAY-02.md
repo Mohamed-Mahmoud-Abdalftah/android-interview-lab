@@ -22,6 +22,64 @@ What is idempotency, and why does it matter for financial transactions?
 - Understanding of stable operation identity, server-side key handling, and unknown outcomes after timeouts.
 - Ability to connect durable client state, reconciliation, and payment-provider constraints.
 
+## Concept and technical explanation
+
+Idempotency is a mathematical and architectural property whereby performing an operation multiple times produces the exact same outcome as performing it once:
+- Mathematical and API Definition:
+  - Formally, $f(f(x)) = f(x)$.
+  - In financial HTTP/RPC APIs, an idempotent payment endpoint ensures that submitting the identical payment intent multiple times results in exactly one debit from the payer's ledger and returns the identical response payload.
+- The Financial Necessity of Idempotency:
+  - Mobile networks frequently drop TCP packets during the ACK phase: the gateway processes the charge, but the cellular tower loses connectivity before delivering the response.
+  - The client networking layer (or an aggressive retry policy) resends the HTTP request.
+  - Without idempotency, the backend interprets the retry as a distinct charge instruction, executing multiple debits for a single physical checkout.
+- Mechanics of Idempotency Keys:
+  - Unique Identifier: Client generates a cryptographically random UUIDv4 or deterministic composite key (`terminalId + localSequenceNumber + timestamp`).
+  - Request Header: Client attaches the key (e.g., `Idempotency-Key: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d`).
+  - Gateway Ledger Cache: Gateway records the key in a distributed lock (e.g., Redis). If a second request arrives with the identical key:
+    - If first request is still in-flight: Returns `409 Conflict` or awaits resolution.
+    - If first request completed: Replays the cached authorization response without hitting the card processing network.
+- Client-Side Durability Requirements:
+  - The idempotency key must be generated and persisted alongside the transaction record in local storage before the initial HTTP request. Regenerating keys upon retry destroys idempotency guarantees.
+
+## Practical walkthrough (English)
+
+Implementing resilient client-side idempotency handling in Kotlin:
+```kotlin
+data class PaymentIntent(
+    val orderId: String,
+    val amountCents: Long,
+    val idempotencyKey: String = UUID.randomUUID().toString()
+)
+
+class PaymentRepository(
+    private val paymentDao: PaymentDao,
+    private val paymentApi: PaymentApiService
+) {
+    suspend fun executePayment(orderId: String, amount: Long): PaymentResult {
+        // Step 1: Ensure durable idempotency key persistence before network dispatch
+        val record = paymentDao.getOrCreatePaymentRecord(
+            orderId = orderId,
+            amount = amount,
+            idempotencyKey = UUID.randomUUID().toString()
+        )
+
+        // Step 2: Transmit using the persisted, immutable idempotency key
+        return try {
+            val response = paymentApi.charge(
+                idempotencyKey = record.idempotencyKey,
+                body = ChargeRequest(record.orderId, record.amount)
+            )
+            paymentDao.markApproved(record.id, response.authCode)
+            PaymentResult.Success(response.authCode)
+        } catch (e: IOException) {
+            // Network dropped mid-flight: Never generate a new key on retry!
+            paymentDao.markInDoubt(record.id)
+            PaymentResult.InDoubt(record.idempotencyKey)
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 ما هي خاصية الـ Idempotency (اللاتكرارية)، ولماذا تعتبر أمراً حيوياً وإلزامياً في المعاملات المالية؟
@@ -112,25 +170,21 @@ A POS terminal loses connectivity after an authorization request. It durably ret
 
 ## Interview answer — short
 
-Idempotency guarantees that executing an operation multiple times produces the identical outcome with zero additional side effects. In financial transactions, it prevents catastrophic double-charging when network timeouts cause mobile clients or users to retry payment submissions.
+Idempotency guarantees that executing an operation multiple times produces the identical side effect as executing it once. In financial transactions, clients generate a unique idempotency key persisted before dispatch, attaching it to payment requests. When network drops cause retry attempts, the backend recognizes the key and replays the original response instead of double-billing the customer.
 
 ## Interview answer — structured
 
-Idempotency is the cornerstone of distributed transaction safety in mobile financial applications.
-
-First, **The Core Financial Hazard**. Next, because mobile payment authorizations rely on HTTP `POST` over unreliable cellular connections, packets are routinely dropped on the return leg after the issuer bank has captured the charge. Without idempotency, automatic retries or repeated user button taps result in duplicate credit card charges.
-**Mechanics of the Idempotency Key Architecture**. A Client Generation is the mobile client generates a cryptographically unique identifier (UUID v4) and durably commits it to local storage (Room) alongside the payment entity *before* making the network call.
-A Header Transmission is the key is attached to the HTTP header (`Idempotency-Key: <UUID>`). A Server Atomic Deduplication is the payment gateway (e.g. Stripe, Adyen) caches the key in an atomic distributed lock (Redis). If an identical key arrives while processing, the server queues or rejects the duplicate; if it arrives after completion, the server returns the cached response without debiting the customer again.
-**Idempotency Lifetime Contract**. Finally, keys are typically valid for a 24-hour window, ensuring that retry queues, offline reconciliations, and user retries safely resolve to the identical single ledger entry.
-
+Idempotency is an indispensable architectural guarantee in financial transaction processing.
+By mathematical definition, an operation is idempotent if repeating it yields the exact same state as the initial execution. In mobile payment systems, cellular handovers and transient timeouts frequently interrupt connections after the payment switch has approved a charge but before the mobile client receives the confirmation packet.
+If an application resends the charge request without an idempotency safeguard, the server treats it as a brand-new transaction, debiting the customer a second time.
+To enforce idempotency, the mobile client creates an immutable idempotency key, such as a UUID, and saves it in durable local storage alongside the transaction record. When the request is sent, this key is included in the headers. The payment gateway verifies the key in a distributed cache; if it detects a repeated key, it returns the cached authorization result without re-charging the credit card. Crucially, the client must never regenerate the key during retries.
 
 ## Interview answer — deep senior
 
-From an API design and distributed consensus perspective, client-side idempotency implementation contains subtle traps.
-
-First, a The 'Key Regeneration on Retry' Bug is the most dangerous junior bug is generating a fresh `UUID. RandomUUID().toString()` inside the network retry loop or ViewModel method. If a timeout occurs and the retry function generates a *new* idempotency key, the backend treats it as a brand-new distinct charge, completely defeating the safeguard! The key must be tied to the immutable domain `Transaction` entity. Next, with Idempotency Payload Fingerprinting, high-security payment backends hash the request payload along with the idempotency key. If a client sends the same key with an altered amount ($100 vs $200), the server flags a tampering conflict (HTTP 422 / 409 Conflict) and halts execution.
-Finally, with Offline Sync & Mesh POS Terminals, in offline POS environments (e.g. Airplane in-flight purchases), terminals store offline payment cryptograms tagged with hardware-derived sequence counters and idempotency keys, guaranteeing deterministic processing once backhaul connectivity restores.
-
+From a distributed systems and financial ledger perspective, idempotency is the foundational bridge between at-least-once network delivery and exactly-once business semantics.
+Under the CAP theorem and the realities of wireless mobile communications, exactly-once network transmission is physically impossible. Networks can only guarantee at-most-once or at-least-once delivery. Financial engineering mandates an at-least-once retry posture to ensure that transactions are never lost. However, pairing an at-least-once transport layer with non-idempotent ledger endpoints guarantees duplicate debit anomalies.
+The implementation requires coordinated discipline across both client and gateway layers. The client must never generate the idempotency key in memory inside a ViewModel or coroutine scope that could be destroyed and re-instantiated. Instead, the key generation must be tied to a local database transaction. The entity schema stores the business order ID, the amount, the status, and the idempotency key as a unique constraint.
+When a timeout occurs, any retry mechanism executed by the app or an automated WorkManager task must read the existing idempotency key from the database record. On the backend, the gateway employs distributed locking to prevent race conditions from concurrent duplicate submissions. If a concurrent retry arrives while the first call is being processed by the card network, the gateway halts execution until the lock releases, then returns the original response. This decoupled architectural pattern ensures flawless financial accuracy across volatile networks.
 
 ## How to answer in the interview
 

@@ -20,6 +20,55 @@ Two coroutines update a shared balance. Demonstrate and fix a race condition.
 
 Demonstrate lost update on balance and choose local plus authoritative transaction fixes.
 
+## Concept and technical explanation
+
+A race condition on a shared balance variable occurs when multiple concurrent coroutines interleave non-atomic read-modify-write operations across worker threads, leading to lost updates. If an initial balance of 100 is concurrently updated by coroutine A adding 50 and coroutine B adding 100 on Dispatchers.Default, both coroutines may read the baseline 100 into local CPU registers simultaneously. Coroutine A computes 150 and writes it to memory; microseconds later, coroutine B computes 200 and overwrites memory, completely obliterating coroutine A's 50-dollar increment. In Kotlin coroutines, fixing this requires choosing the appropriate synchronization abstraction. For local in-memory coordination across suspending boundaries, kotlinx.coroutines.sync.Mutex provides non-blocking mutual exclusion via withLock, ensuring only one coroutine updates the state while others suspend without consuming thread resources. For single numerical fields, AtomicLong provides lock-free hardware compare-and-swap guarantees. However, in enterprise financial production systems, monetary balances should never reside in volatile memory variables; they must be managed through ACID database transactions in Room using @Transaction and verified against backend double-entry ledgers.
+
+## Practical walkthrough (English)
+
+Consider two coroutines concurrently updating an in-memory balance:
+```kotlin
+// Erroneous implementation: suffers from lost updates
+class UnsafeLedger {
+    var balance = 100L
+
+    suspend fun deposit(amount: Long) {
+        val current = balance // Read
+        delay(10) // Simulates asynchronous processing gap
+        balance = current + amount // Non-atomic write!
+    }
+}
+// Running deposit(50) and deposit(100) concurrently results in balance = 200 instead of 250!
+
+// In-memory fix using Mutex:
+class MutexLedger {
+    private val mutex = Mutex()
+    var balance = 100L
+        private set
+
+    suspend fun deposit(amount: Long) = mutex.withLock {
+        val current = balance
+        delay(10)
+        balance = current + amount
+    }
+}
+
+// Enterprise production fix using Room ACID Transactions:
+@Dao
+interface AccountDao {
+    @Query("SELECT balance FROM accounts WHERE id = :accountId")
+    suspend fun getBalance(accountId: String): Long
+
+    @Query("UPDATE accounts SET balance = balance + :amount WHERE id = :accountId")
+    suspend fun addAmount(accountId: String, amount: Long)
+
+    @Transaction
+    suspend fun depositAtomic(accountId: String, amount: Long) {
+        addAmount(accountId, amount)
+    }
+}
+```
+
 ## Explanation in Arabic
 
 هذا السؤال عملي ويتطلب إظهار الـ Race Condition في الكود وإصلاحه بأكثر من طريقة صحيحة:
@@ -103,44 +152,22 @@ A wallet UI reads server ledger-derived balance. The backend transaction checks 
 
 ## Interview answer — short
 
-When two coroutines update a shared var balance concurrently on multi-threaded dispatchers, non-atomic read-modify-write operations cause lost updates. Fix it using an AtomicInteger for simple numbers, a coroutine Mutex (withLock) for suspending critical sections, or single-threaded confinement via limitedParallelism(1).
+A balance race condition occurs when concurrent coroutines interleave read-modify-write sequences on a multi-threaded dispatcher, overwriting updates. In memory, this is resolved using Mutex.withLock to suspend competing coroutines non-blockingly, or AtomicLong for lock-free CAS. In enterprise production, monetary balances must be persisted in SQLite using Room @Transaction to enforce ACID consistency and prevent state corruption.
 
 ## Interview answer — structured
 
-To demonstrate the race condition:
+Demonstrating a race condition on a shared balance highlights the fundamental concurrency hazard where compound read-modify-write operations interleave across threads. When two coroutines update a shared balance variable concurrently on Dispatchers.Default, both coroutines read the identical initial balance, compute their respective additions independently, and store their results back, causing one update to be completely lost.
 
-```kotlin
-var balance = 0
-coroutineScope {
- launch(Dispatchers.Default) { repeat(10_000) { balance++ } }
- launch(Dispatchers.Default) { repeat(10_000) { balance++ } }
-}
-// balance will be far less than 20,000 due to race conditions!
-```
+Resolving this hazard requires isolating the critical section. For in-memory coordination where the update involves suspending operations, kotlinx.coroutines.sync.Mutex is the idiomatic solution. By wrapping the update inside mutex.withLock, the second coroutine suspends without blocking physical operating system threads until the first coroutine releases the lock.
 
-The operation `balance++` breaks into three assembly instructions: read value, increment, and write back. When executed concurrently across worker threads on `Dispatchers.Default`, Thread B overwrites Thread A's updates.
+In production, financial balances must never be treated as mutable memory fields. We persist balances in a local SQLite database using Room, executing updates inside an atomic database transaction annotated with @Transaction.
 
-To fix it, we have three production strategies depending on the use case.
-
-First, **AtomicInteger** for primitive counters: `val balance = AtomicInteger(0); balance.addAndGet(amount)`. This is lock-free and resolved in CPU hardware. Next, **Kotlin Mutex** when suspension is involved: protect the mutation with `mutex.withLock { balance += amount }`. Mutex suspends non-blockingly without starving worker threads.
-Finally, with Thread Confinement, confine the balance update to a sequential dispatcher: `withContext(Dispatchers.Default.limitedParallelism(1)) { balance += amount }`.
+Local transactions must reconcile with backend authoritative accounting systems using double-entry bookkeeping, ensuring mathematical consistency across device reboots and network partitions.
 
 
 ## Interview answer — deep senior
 
-From a performance and benchmarking perspective: 1. `AtomicInteger` executes millions of operations per second with zero garbage collection churn and zero context switching because it uses atomic Compare-And-Swap (CAS) CPU instructions. It is the fastest possible fix for simple counters. 2. `Mutex` adds object allocation overhead (`LockContender` queues) and continuation state-machine transitions. However, if updating the balance requires calling a suspending validation function (like checking an online fraud rule or reading Room DB), `Mutex` is mandatory because atomic variables cannot protect multi-step asynchronous transactions. 3. In Android UI architecture, the most idiomatic fix is immutable state management with `MutableStateFlow`:
-
-```kotlin
-private val _balance = MutableStateFlow(0)
-val balance = _balance.asStateFlow()
-
-fun deposit(amount: Int) {
-    _balance.update { current -> current + amount }
-}
-```
-
-`StateFlow.update` uses an internal CAS loop that guarantees atomic updates without locks.
-
+At the bytecode and machine instruction level, balance = balance + amount decompiles into separate GETFIELD, LADD, and PUTFIELD opcodes. On modern multi-core processors, CPU caches maintain local copies of memory lines. Without synchronization, core 1 and core 2 execute the addition in parallel registers and flush their respective store buffers non-deterministically. Marking the balance variable with @Volatile guarantees cache coherence and visibility across cores, but does not provide mutual exclusion: the read-modify-write sequence remains non-atomic and will still suffer from lost increments under high contention. For purely in-memory coordination, engineers can adopt lock-free atomics: AtomicLong.addAndGet executes a hardware-level LOCK XADD or CAS loop, providing maximum throughput with zero thread suspension. However, when the balance modification involves multi-field invariants—such as checking if balance >= withdrawalAmount before deducting and logging an audit event—Atomics become unwieldy. Here, Mutex.withLock provides non-blocking mutual exclusion. Unlike Java's synchronized monitor, which blocks the OS kernel thread, Mutex suspends the calling coroutine and enqueues its continuation. When the active coroutine exits the withLock block, the next waiting continuation is resumed directly in user space. In staff-level architecture, we elevate this to the persistence layer: financial state must survive unexpected application process death by the Android Low Memory Killer. We model ledger mutations as immutable append-only transaction records in Room. Using Room's @Transaction decorator enforces SQLite BEGIN IMMEDIATE TRANSACTION semantics, guaranteeing atomic write-ahead logging (WAL), crash recovery, and isolation levels that prevent concurrent in-memory corruptions entirely.
 
 ## How to answer in the interview
 

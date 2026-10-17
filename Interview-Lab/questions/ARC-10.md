@@ -20,6 +20,33 @@ What is Single Source of Truth (SSOT)?
 
 Define one authoritative owner per data type and distinguish local cache from server authority.
 
+## Concept and technical explanation
+
+Single Source of Truth (SSOT) is an architectural pattern dictating that a specific piece of application data has exactly one authoritative owner responsible for its storage, mutation, and distribution. In Android, the Data layer—specifically local persistent storage such as a Room database or an authoritative in-memory StateFlow repository—acts as the SSOT. When remote network payloads arrive from Retrofit or WebSocket streams, they are written directly to local storage rather than dispatched to the UI. The UI observes database tables reactively via Flow. This guarantees consistent offline-first data, prevents conflicting states between concurrent screens, and simplifies application recovery after process death.
+
+## Practical walkthrough (English)
+
+Implementing an offline-first Single Source of Truth with Room and Retrofit:
+```kotlin
+class OfflineFirstUserRepository(
+    private val userDao: UserDao,
+    private val userApi: UserApi,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) : UserRepository {
+    // 1. SSOT: Room database is the sole data stream exposed to the application
+    override fun observeUserProfile(userId: String): Flow<UserProfile> =
+        userDao.observeUser(userId).map { it.toDomain() }
+
+    // 2. Network mutations write directly into SSOT, never bypassing it
+    override suspend fun refreshUserProfile(userId: String): Result<Unit> = withContext(ioDispatcher) {
+        runCatching {
+            val remoteUserDto = userApi.fetchUser(userId)
+            userDao.upsertUser(remoteUserDto.toEntity()) // DB update automatically emits to downstream Flow
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 ما هو مبدأ المصدر الوحيد للحقيقة (Single Source of Truth - SSOT) وكيف نطبقه في أندرويد؟
@@ -86,28 +113,24 @@ An offline news app uses Room as SSOT for articles and tracks `lastSyncedAt`; a 
 
 ## Interview answer — short
 
-Single Source of Truth (SSOT) means every piece of data has a single owner that acts as the authoritative source. In Android, the local database (Room) is typically the SSOT: network responses write directly to Room, and the UI exclusively observes Room flows, preventing data inconsistency and providing offline support.
+Single Source of Truth establishes that a single, authoritative component owns and mutates a piece of state. In Android, local storage like Room acts as the SSOT. Network responses update the database, and the UI reacts purely to database flows, ensuring offline consistency and preventing data discrepancies.
 
 ## Interview answer — structured
 
-Single Source of Truth (SSOT) is an architectural discipline ensuring that every piece of state has exactly one authoritative owner responsible for its storage, mutation, and distribution.
+Single Source of Truth guarantees data consistency across multi-screen Android applications by establishing one authoritative owner for each data entity.
 
-In modern Android architectures, we implement SSOT via the **Offline-First Reactive Repository pattern**.
+The local database—typically Room—functions as the SSOT within the data layer. Instead of the UI observing both network responses and cached models, all read operations observe continuous Flow streams emitted by the database.
 
-First, an Authoritative Storage is the local database (Room) serves as the definitive SSOT for app data. Next, an Unidirectional Observation is the UI layer and ViewModels observe data strictly through reactive streams (`Flow<T>`) emitted by the local database DAO. The UI never queries the network directly.
-Finally, with Write-Through Ingestion, when network requests complete, the repository does not return network models to the UI. Instead, it writes the payload directly into Room inside a database transaction. Room's internal invalidation tracker automatically triggers a new emission on the active Flow, notifying all listening ViewModels.
-
-This eliminates state desynchronization: if five different screens or background workers observe the same user profile, modifying that profile in one place instantly updates all five screens automatically.
+In production, write operations follow an offline-first pipeline. When user actions trigger mutations or background workers fetch remote data from Retrofit, the repository inserts the new records directly into Room. The database then automatically notifies active UI collectors through reactive queries.
+As for system reliability, SSOT eliminates race conditions where two screens display conflicting account balances, ensures full offline functionality without special UI branching, and simplifies testing by reducing state validation to inspecting the persistent database store.
 
 
 ## Interview answer — deep senior
 
-Contrast this with the flawed **Dual-Source Anti-Pattern**: a screen fetches data from Retrofit, displays it, and separately writes a copy to SharedPreferences or Room. If the network request succeeds but database persistence fails, or if an in-memory cache differs from disk, the user encounters jarring contradictions—such as navigating back and seeing an outdated item count.
-
-SSOT applies to the Presentation layer as well. Inside the ViewModel, a single `MutableStateFlow<ScreenUiState>` acts as the SSOT for the entire screen. Mutating UI state requires calling `_uiState.update { ... }`, preventing multiple independent LiveData streams from racing each other.
-
-In testing, SSOT drastically simplifies verification: repository tests simply verify that executing a network sync populates the local Fake DAO, and UI tests verify reactions to simulated DAO emissions.
-
+Under the hood, Single Source of Truth transforms the data layer from an imperative request-response bridge into an authoritative reactive store. In flawed architectures, ViewModels often maintain their own in-memory caches or combine network payloads with database records inside presentation coroutines. When a user updates their profile name on one screen, sibling screens or background sync tasks continue displaying stale information because each component references disparate copies of the data.
+Enforcing SSOT centralizes data ownership inside a repository backed by a persistent relational database like Room or an authoritative StateFlow in memory. The repository exposes read-only reactive streams using Flow. Upstream consumers, whether ViewModels or background workers, cannot mutate the data directly; they dispatch write requests to the repository, which validates the payload, performs optimistic or pessimistic database writes, and handles backend synchronization.
+Because Room's query pipeline observes SQLite table updates via InvalidationTracker, writing to the database triggers automatic recalculation and emission across every active collector in the application simultaneously.
+Staff engineers ensure that SSOT is not violated by caching network DTOs in transient ViewModel variables. They also design conflict resolution strategies: when offline modifications conflict with remote server states, the repository reconciles timestamps and operational transforms before committing to the SSOT, guaranteeing enterprise-grade data integrity across device restarts.
 
 ## How to answer in the interview
 

@@ -20,6 +20,58 @@ How do you make a reusable Android SDK with a stable public API?
 
 Design reusable Android SDK with narrow stable API, lifecycle ownership and compatibility tests.
 
+## Concept and technical explanation
+
+Authoring an enterprise-grade reusable Android SDK requires a fundamentally different engineering mindset than building end-user applications. In an SDK, the consumers are other engineering teams whose app stability, binary size, build speeds, and architectural integrity depend entirely on the library's design. The public API surface must be strictly minimal, exposing only high-level interfaces, immutable configuration models, and explicit callbacks or Flows, while hiding all internal orchestration behind Kotlin internal visibility and package-private constructs. The Kotlin Binary Compatibility Validator (BCV) must be integrated into continuous integration to catch unintended public signature breaks. Furthermore, SDKs must isolate their dependencies, avoiding transitive leakage through Gradle implementation configurations. SDKs must never trigger unhandled runtime exceptions that crash the host application, must publish consumer ProGuard rules that preserve only necessary entry points, and must utilize distinct resource prefixes to prevent resource collisions with host applications.
+
+## Practical walkthrough (English)
+
+Structuring an isolated Android SDK with public interfaces and hidden implementations:
+```kotlin
+// 1. Minimal, stable public interface exposed to host applications
+interface IdentityVerificationSdk {
+    fun startVerification(sessionId: String, callback: VerificationCallback)
+
+    companion object {
+        // Factory pattern hiding internal class instantiation and lifecycle binding
+        fun create(context: Context, configuration: SdkConfiguration): IdentityVerificationSdk {
+            return IdentityVerificationSdkImpl(context.applicationContext, configuration)
+        }
+    }
+}
+
+// 2. Immutable public configuration contract
+data class SdkConfiguration(
+    val apiKey: String,
+    val environment: Environment = Environment.PRODUCTION,
+    val enableBiometrics: Boolean = true
+) {
+    enum class Environment { SANDBOX, PRODUCTION }
+}
+
+// 3. Callback contract communicating terminal outcomes without throwing exceptions
+interface VerificationCallback {
+    fun onSuccess(verifiedToken: String)
+    fun onFailure(error: SdkError)
+}
+
+sealed class SdkError(val code: Int, val message: String) {
+    class NetworkFailure(message: String) : SdkError(1001, message)
+    class UserCancelled : SdkError(1002, "User aborted verification")
+    class InternalError(cause: Throwable) : SdkError(1003, cause.localizedMessage ?: "Unknown error")
+}
+
+// 4. Internal implementation hidden from host app autocomplete and classpath
+internal class IdentityVerificationSdkImpl(
+    private val appContext: Context,
+    private val config: SdkConfiguration
+) : IdentityVerificationSdk {
+    override fun startVerification(sessionId: String, callback: VerificationCallback) {
+        // Internal orchestration using hidden network and biometric engines
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تصمم مكتبة أندرويد (Reusable Android SDK) بواجهة عامة مستقرة (Stable Public API) ومعايير أمان عالية للتوزيع؟
@@ -102,26 +154,24 @@ A payments SDK publishes core Kotlin API, optional UI adapter, consumer R8 rules
 
 ## Interview answer — short
 
-Design a reusable SDK by strictly hiding implementation details behind internal modifiers and clean public interfaces, avoiding leaked transitive dependencies via implementation Gradle scopes, validating binary ABI compatibility in CI with BCV, and supporting graceful zero-friction initialization.
+We build reusable Android SDKs by keeping the public API minimal, using Kotlin internal visibility to hide implementation details, and enforcing binary compatibility in CI. We isolate transitive dependencies, ship consumer ProGuard rules, prefix all resources, and catch internal failures to prevent host application crashes.
 
 ## Interview answer — structured
 
-Architecting a distributed Android SDK requires strict discipline regarding backward compatibility, dependency isolation, and lifecycle consumption.
-
-First, **API Surface Minimization**. Next, expose the smallest viable public API surface. Mark all internal ViewModels, utilities, and models with Kotlin's `internal` visibility modifier.
-Hide concrete implementations behind stable interfaces instantiated via companion factory methods. **Preventing Dependency Hell**.
-Never leak internal dependencies into client builds. Use Gradle `implementation` instead of `api` for internal networking (Retrofit/OkHttp) or storage libraries. If third-party dependencies are required, consider shading/relocating package namespaces using the Shadow Jar plugin to prevent version collision with host apps.
-**Binary Compatibility (ABI) Enforcement**. Follow Semantic Versioning (SemVer). Integrate Jetpack's **Binary Compatibility Validator (BCV)** plugin into CI. Any breaking signature change (changing return types, adding non-default interface methods) alters the public `.dump` file and breaks CI, preventing accidental runtime crashes in consuming apps.
-**Non-Intrusive Lifecycle & Initialization**. Finally, avoid heavy blocking work in `Application.onCreate`. Use AndroidX `Initializer` for zero-setup workflows, or provide an explicit `Sdk.initialize(config)` allowing the host app to defer initialization off the critical launch path.
-
+Designing a production-grade Android SDK requires isolating the library implementation while providing a bulletproof, minimal public contract.
+I enforce strict API surface discipline by declaring internal classes and dependencies as internal, exposing only clean interfaces and immutable configuration objects.
+We enforce semantic versioning and integrate the Kotlin Binary Compatibility Validator plugin in continuous integration to catch accidental binary or source incompatibilities before merging.
+Dependency isolation is critical. In the build script, dependencies use the implementation configuration rather than api to prevent leaking third-party libraries like Retrofit or OkHttp into the host app classpath.
+The SDK must never crash the host application. All internal coroutine scopes catch unexpected errors and surface them through structured error callbacks or sealed result types.
+Finally, we ship embedded consumer-proguard-rules.pro files so consumer apps automatically retain necessary SDK interfaces while shrinking internal bytecodes, and we prefix all Android resources with a unique namespace to prevent naming collisions.
 
 ## Interview answer — deep senior
 
-From an enterprise SDK engineering perspective, public libraries must treat the host application as an unpredictable environment.
-
-First, with R8/ProGuard Consumer Rules, bundle optimized `consumer-rules.pro` files within the AAR. This automatically instructs the consuming app's R8 shrinker which public entry points and serialized DTOs must be retained, preventing host builds from stripping necessary SDK reflection classes. Next, with Strict Manifest Merging Hygiene, audit the SDK's `AndroidManifest.xml`. Never declare aggressive permissions (e.g. `ACCESS_FINE_LOCATION`) inside an SDK manifest unless strictly optional, and avoid defining top-level single-instance activities that alter the host app's back stack.
-Finally, with Defensive Error Isolation, exceptions inside SDK background routines must be caught and returned through typed error callbacks rather than bubbling unhandled to crash the host app process.
-
+From a staff architecture perspective, distributing an Android library requires deep consideration of lifecycle independence, initialization overhead, and binary footprint impact.
+Historically, SDKs relied on empty ContentProviders for auto-initialization at app startup. While convenient, this practice slows cold startup across all consumer apps. Modern SDK architecture favors explicit lazy initialization via a builder or App Startup Initializer, allowing host apps to control execution timing and pass necessary application contexts.
+Managing transitive dependency conflicts is a major maintenance hazard. If an SDK bundles an opinionated JSON serializer or specific coroutines version, it can cause duplicate class runtime crashes in host apps with mismatched dependencies. We mitigate this by either writing zero-third-party dependency core modules relying solely on pure Kotlin and Android framework primitives, or shading critical internal dependencies using Gradle shadow relocation plugins.
+Backward compatibility must be preserved across both source and binary levels. Adding a default parameter in a Kotlin public function breaks binary compatibility for Java callers because the compiled bytecode signature changes. We guard against this by applying JvmOverloads annotations and maintaining golden API dump files in version control.
+Lastly, the SDK must establish clean memory boundaries, using ApplicationContext to prevent Activity leaks and providing an explicit teardown method to cancel internal background workers when host applications log out or terminate the flow.
 
 ## How to answer in the interview
 

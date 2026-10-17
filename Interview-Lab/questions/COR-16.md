@@ -20,6 +20,42 @@ How do you propagate CancellationException correctly?
 
 Can the candidate preserve CancellationException through catch, Result and retry layers?
 
+## Concept and technical explanation
+
+In Kotlin coroutines, CancellationException represents the foundational cooperative control-flow signal rather than an unexpected operational failure or system crash. When a coroutine scope or parent Job cancels, active suspension points throw a CancellationException to tear down the coroutine call stack and release associated resources cleanly. If an application layer intercepts and swallows this exception via generic catch blocks like catch (e: Exception) or catch (e: Throwable) without rethrowing, structured concurrency breaks down completely. The cancelled coroutine refuses to terminate, resulting in phantom background loops, persistent network connections, and critical memory leaks. Standard library functions like kotlin.runCatching catch all Throwables indiscriminately, silently encapsulating CancellationException into a failure state unless explicitly filtered. Proper cancellation propagation requires catching only specific expected domain exceptions, immediately rethrowing CancellationException when broad catches are unavoidable, and guarding asynchronous cleanup blocks inside finally using withContext(NonCancellable) to prevent immediate premature aborts.
+
+## Practical walkthrough (English)
+
+Consider a repository method executing a user avatar upload from an Android ViewModel:
+```kotlin
+// Erroneous implementation: swallows CancellationException
+suspend fun uploadAvatar(file: File) {
+    try {
+        api.upload(file)
+    } catch (e: Exception) {
+        // Catches and swallows CancellationException!
+        showErrorToast()
+    }
+}
+```
+If the user exits the screen before the upload completes, viewModelScope cancels the coroutine. However, the generic catch block catches CancellationException, treats it as a standard network error, and displays an error toast on a destroyed screen while keeping background resources pinned.
+The production-grade, cancellation-safe implementation:
+```kotlin
+suspend fun uploadAvatar(file: File) {
+    try {
+        api.upload(file)
+    } catch (e: CancellationException) {
+        throw e // Rethrow immediately to honour structured cancellation
+    } catch (e: IOException) {
+        showErrorToast() // Handle real network transport errors only
+    } finally {
+        withContext(NonCancellable) {
+            tempFileManager.cleanup(file)
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 التعامل مع `CancellationException` في Kotlin Coroutines هو أحد أدق وأهم المواضيع في الـ Senior Level:
@@ -95,35 +131,22 @@ A search repository returns domain errors from API calls while propagating cance
 
 ## Interview answer — short
 
-CancellationException is coroutines' internal control-flow signal for cooperative cancellation. It must never be swallowed. If catching broad Exception or Throwable, you must always rethrow CancellationException immediately so the coroutine can unwind its call stack and terminate cleanly.
+CancellationException is the internal control-flow signal powering cooperative coroutine cancellation. It must never be swallowed or treated as an application error. When catching generic Exception or Throwable, you must immediately rethrow CancellationException so the coroutine can unwind its execution stack and transition to the cancelled state cleanly. Swallowing it prevents structured teardown and leaks background resources.
 
 ## Interview answer — structured
 
-In Kotlin Coroutines, `CancellationException` is not a bug or system failure; it is the fundamental control-flow mechanism used to unwind the coroutine call stack when a task is cancelled.
+CancellationException represents cooperative cancellation control flow rather than a standard operational failure. When a Job is cancelled, suspending functions unblock by throwing this exception up the call stack to tear down child tasks.
 
-The most dangerous and common pitfall is swallowing `CancellationException` by catching generic `Exception`:
+The most critical mistake engineers make is wrapping suspend invocations in broad try-catch blocks that intercept generic Exception or Throwable. Because CancellationException extends java.lang.Exception, catching it indiscriminately prevents the coroutine runtime from completing its cancellation lifecycle, leaving zombie background operations active.
 
-```kotlin
-try {
-    doWork()
-} catch (e: Exception) {
-    // BUG: Swallows CancellationException!
-}
-```
+In production, we ensure proper propagation by adopting two strict practices. First, we restrict catch clauses to specific domain exceptions like IOException or HttpException. Alternatively, if a broad catch is unavoidable, we check if the caught throwable is a CancellationException and rethrow it immediately before performing any error handling.
 
-Because `CancellationException` inherits from `java.lang.Exception`, this catch block suppresses the cancellation signal. The coroutine assumes it recovered, refuses to terminate, and continues executing, creating background resource leaks and zombie network requests.
-
-To propagate it correctly: either catch only specific domain exceptions like `IOException` or `HttpException`, or if you must catch broad `Exception`, check for `if (e is CancellationException) throw e` before handling other errors.
+Utility constructs such as standard runCatching must be avoided or wrapped in cancellation-aware extensions, because they package CancellationException into a failure result, silently violating structured concurrency contracts.
 
 
 ## Interview answer — deep senior
 
-Under the hood, when `Job.cancel()` is called, active suspension points throw a `CancellationException`. The coroutine runtime distinguishes `CancellationException` from other throwables: it does not mark the Job as failed, does not report to `CoroutineExceptionHandler`, and does not cancel the parent Job. It simply transitions the coroutine to the CANCELLED state.
-
-This has serious implications for utility methods like `runCatching` in the standard library. `kotlin.runCatching` catches all `Throwable` instances, including `CancellationException`. If you use `runCatching` around suspending calls, it converts `CancellationException` into a `Result.failure`, breaking structured concurrency unless you explicitly inspect and rethrow it.
-
-In our Android architecture, we forbid raw `runCatching` on suspend functions in code review, replacing it with a custom `runSuspendCatching` helper that automatically rethrows `CancellationException`.
-
+Under the hood, JobSupport transitions through a strict state machine from Active to Completing, Cancelling, and finally Cancelled. When Job.cancel is invoked, the Job creates a CancellationException containing the cancellation cause and iterates through its internal NodeList, dispatching cancellation signals to all child coroutines. Suspending primitives like suspendCancellableCoroutine install a completion handler that invokes cancel on the underlying handle and throws CancellationException directly into the resumed execution frame. Crucially, the coroutine framework treats CancellationException differently from all other throwables: it does not mark the parent Job as failed, does not report to any attached CoroutineExceptionHandler, and does not cancel innocent sibling coroutines. This distinction breaks down completely when utility libraries swallow the exception. Standard kotlin.runCatching catches all instances of Throwable, transforming a CancellationException into a Result.failure. If an engineer then executes fold, getOrElse, or retry logic on that Result, the coroutine continues executing statements after the cancellation point, producing phantom mutations and corrupting application state. In staff-level Android architectures, we replace raw runCatching with a custom runSuspendCatching utility that inspects the thrown Throwable and rethrows if it is an instance of CancellationException. Furthermore, when cleanup work in a finally block requires suspending operations, such as flushing an encrypted file buffer or releasing a distributed socket lock, those suspending calls will fail instantly because the surrounding coroutine context is already cancelled. To execute vital asynchronous teardown safely, we wrap the cleanup invocation in withContext(NonCancellable), giving the routine a non-cancellable execution frame while keeping the block tightly scoped to prevent hanging the cancellation pipeline indefinitely.
 
 ## How to answer in the interview
 

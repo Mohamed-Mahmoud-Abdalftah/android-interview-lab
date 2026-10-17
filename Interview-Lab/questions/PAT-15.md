@@ -20,6 +20,53 @@ Design multiple payment providers with Strategy or Factory. How do you avoid a g
 
 Design multi-provider selection without centralizing every provider behavior in a single factory.
 
+## Concept and technical explanation
+
+Architecting multiple payment provider integrations requires combining the Strategy pattern for polymorphic payment execution with a decoupled creation mechanism, such as Dagger/Hilt Multibindings, to avoid creating an anti-pattern God Factory. In a naive design, a centralized factory switch-statement hardcodes constructor references to every concrete payment gateway (such as Stripe, PayPal, GooglePay, and Klarna), violating the Open/Closed Principle whenever a new provider is added. By decoupling creation into a distributed map of provider factories using dependency injection multibindings, new payment strategies register themselves modularly at compile time, allowing the system to resolve strategies dynamically without central monolithic coupling.
+
+## Practical walkthrough (English)
+
+Decoupling multiple payment strategies using Dagger Multibindings:
+```kotlin
+// 1. Unified Domain Strategy Interface
+interface PaymentStrategy {
+    val method: PaymentMethod
+    suspend fun executePayment(amountCents: Long, currency: String): Result<PaymentReceipt>
+}
+
+// 2. Concrete Strategy implementations (Isolated in independent modules)
+class StripePaymentStrategy @Inject constructor(private val stripeClient: StripeClient) : PaymentStrategy {
+    override val method = PaymentMethod.STRIPE
+    override suspend fun executePayment(amountCents: Long, currency: String) = stripeClient.charge(amountCents)
+}
+
+class PayPalPaymentStrategy @Inject constructor(private val payPalSdk: PayPalSdk) : PaymentStrategy {
+    override val method = PaymentMethod.PAYPAL
+    override suspend fun executePayment(amountCents: Long, currency: String) = payPalSdk.checkout(amountCents)
+}
+
+// 3. Extensible Multi-binding Module (Eliminates God Factory switch-statements!)
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class PaymentModule {
+    @Binds @IntoMap @PaymentMethodKey(PaymentMethod.STRIPE)
+    abstract fun bindStripe(impl: StripePaymentStrategy): PaymentStrategy
+
+    @Binds @IntoMap @PaymentMethodKey(PaymentMethod.PAYPAL)
+    abstract fun bindPayPal(impl: PayPalPaymentStrategy): PaymentStrategy
+}
+
+// 4. Client Resolver (Open/Closed: never needs modification when new providers are added!)
+class PaymentProcessor @Inject constructor(
+    private val strategies: Map<PaymentMethod, @JvmSuppressWildcards Provider<PaymentStrategy>>
+) {
+    suspend fun process(method: PaymentMethod, amount: Long, currency: String): Result<PaymentReceipt> {
+        val strategyProvider = strategies[method] ?: return Result.failure(UnsupportedPaymentException(method))
+        return strategyProvider.get().executePayment(amount, currency)
+    }
+}
+```
+
 ## Explanation in Arabic
 
 تصميم نظام دفع يدعم مزودي خدمة متعددين (Stripe, PayPal, Google Pay) باستخدام Strategy أو Factory، وكيفية تجنب الـ God Factory:
@@ -120,27 +167,24 @@ A commerce app adds a bank transfer provider through one adapter and DI binding,
 
 ## Interview answer — short
 
-To support multiple payment providers without creating a God Factory, define a clean Strategy interface (PaymentStrategy) representing unified payment contracts. Implement isolated Adapters for each provider SDK. Instead of hardcoding all initializations in a massive factory switch-statement, use Dagger/Hilt multibindings to inject a map or set of strategies, adhering strictly to the Open/Closed Principle.
+To design multiple payment providers without a God Factory, combine the Strategy pattern with Dagger/Hilt Multibindings. Define a unified PaymentStrategy interface implemented by isolated payment adapters. Instead of hardcoding all providers into a monolithic factory switch-statement that violates the Open/Closed Principle, use multibindings to inject a Map of provider factories. Adding a new payment provider requires only binding the new strategy in its own module, leaving existing processor code untouched.
 
 ## Interview answer — structured
 
-When designing a multi-payment architecture, the common failure is building a monolithic 'God Factory' that imports every vendor SDK, configures their credentials, handles their distinct callback listeners, and manages UI presentation logic in a giant `when` statement.
-
-A clean production architecture decouples this into three distinct layers.
-
-First, with Unified Strategy Contract, we declare a high-level `PaymentStrategy` interface exposing common transaction semantics: `suspend fun pay(orderId: String, amount: Money): PaymentResult`. Next, with Isolated Vendor Adapters, each provider (Stripe, PayPal, Google Pay) lives in its own class—or even its own Gradle module. The adapter handles SDK initialization, maps vendor exceptions into typed domain results, and keeps third-party imports quarantined.
-Finally, with Registry via DI Multibindings, instead of a monolithic factory class, we use Dagger/Hilt multibindings (`@IntoSet` or `@IntoMap`). The `PaymentProcessor` receives an injected `Map<PaymentMethod, PaymentStrategy>`. Adding a new payment provider requires writing one new adapter class and one binding module; existing code is completely untouched, honoring the Open/Closed Principle.
-
+Designing a scalable multi-provider payment architecture requires separating algorithmic strategy execution from provider instantiation mechanics.
+The traditional pitfall in payment architecture is creating a God Factory. In this anti-pattern, a single factory class contains a massive switch or when block that directly instantiates Stripe, PayPal, Adyen, and crypto providers. This violates the Open/Closed Principle: every time a payment vendor is added, modified, or decommissioned, the shared factory file must be edited, recompiled, and retested, creating merge conflicts and tight coupling across independent vendor dependencies.
+To solve this cleanly, architects implement the Strategy pattern alongside distributed dependency injection.
+First, a clean PaymentStrategy interface establishes a common contract for processing transactions, handling two-factor authentication callbacks, and returning standardized receipts. Each concrete payment provider implements this strategy within an isolated feature or infrastructure module.
+To avoid the God Factory, the system uses Dagger/Hilt Multibindings to collect strategies into a map: Map<PaymentMethod, Provider<PaymentStrategy>>. Each module contributes its own strategy binding using @IntoMap and a custom key annotation.
+The calling PaymentProcessor simply queries the injected map at runtime. Adding a new payment provider involves authoring the new class and registering its binding, achieving complete extensibility without altering a single line of existing orchestrator code.
 
 ## Interview answer — deep senior
 
-The subtle architectural challenge in multi-payment systems is that payment providers rarely share identical lifecycle and UI capabilities. For example, Google Pay presents a native Android BottomSheet sheet, Stripe requires a 3D Secure Webview/Activity redirect, while direct card entry requires PCI-DSS compliant tokenization fields.
-
-If you force all these divergent requirements into a single synchronous `pay()` method, your Strategy abstraction leaks. To address this in enterprise systems.
-
-First, with Capability Interfaces, we break the strategy into capabilities: `DirectCheckoutStrategy` for headless API payments, and `InteractiveCheckoutStrategy` for providers requiring an Activity result launcher (`ActivityResultLauncher`). Next, an Idempotency and Reconciliation is the payment processor must be backed by an idempotency key generated prior to engaging the strategy. If the user completes 3DS verification and the app process dies while returning, the app queries the backend status rather than retrying through the strategy.
-Finally, with Feature Flagging & Remote Fallbacks, strategies can be decorated with a `CircuitBreakerDecorator` or remote configuration flag. If Stripe experiences an outage in a specific region, the processor dynamically removes Stripe from the UI and falls back to PayPal without deploying a new app binary.
-
+Under the hood, using Provider<PaymentStrategy> inside the injected map is essential for memory efficiency, cold-start latency, and classloading optimization.
+If the map injected direct strategy instances: Map<PaymentMethod, PaymentStrategy>, the dependency injection container would be forced to eagerly initialize every payment SDK, allocate network pools, and load foreign vendor native libraries during application launch, severely degrading cold startup time even if the user never opens the checkout flow.
+By wrapping each map value in a Dagger Provider, strategies are instantiated lazily on demand. The vendor SDK and its associated memory footprint are only allocated when the user explicitly taps that specific payment option.
+Furthermore, this architecture enforces strict multi-module compilation boundaries. Each payment gateway can reside in its own isolated Gradle module, such as :feature:payment:stripe and :feature:payment:paypal. These implementation modules depend on the abstract payment contract module, while the app module combines them via Gradle dependencies.
+This separation allows Gradle to build payment modules in parallel, isolates sensitive third-party SDK dependencies from core domain logic, and enables dynamic feature delivery where rarely used payment gateways can be downloaded on demand via Android Play Feature Delivery. Furthermore, incorporating Circuit Breaker or Retry decorators around individual payment strategies shields the core checkout flow against transient vendor outages, providing predictable failover mechanisms without polluting strategy logic.
 
 ## How to answer in the interview
 

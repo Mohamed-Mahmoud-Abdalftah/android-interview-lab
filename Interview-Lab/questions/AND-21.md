@@ -22,6 +22,53 @@ A payment screen is killed by Android mid-operation. What must be reconstructed,
 - Separate reconstructable UI state from durable transaction identity and server authority.
 - Explain safe retry, idempotency, reconciliation, and process-death testing.
 
+## Concept and technical explanation
+
+When a financial checkout or payment flow is abruptly killed by the operating system mid-operation (such as through background Low Memory Killer termination, configuration crashes, or battery death), the application enters an ambiguous state. In distributed systems, a lost client response must never be assumed to indicate that the remote transaction failed; the server may have successfully charged the customer's credit card and updated the ledger just as the client process died.
+Engineering a resilient payment flow requires a strict division of responsibilities. What MUST NOT be repeated under any circumstance is the financial mutation call. Resubmitting an unverified payment charge blindly creates catastrophic duplicate billing, chargeback penalties, and severe customer distrust. What MUST be reconstructed is the user's transaction session, shopping cart summary, and durable transaction identifier. By generating a client-side UUID idempotency key before dispatching the payment and persisting it in local storage, the application can safely reconcile state with the backend upon process restoration by querying transaction status rather than issuing duplicate debits.
+
+## Practical walkthrough (English)
+
+Designing a resilient payment ViewModel backed by SavedStateHandle and durable repository synchronization:
+
+```kotlin
+class PaymentViewModel(
+    private val savedStateHandle: SavedStateHandle,
+    private val paymentRepository: PaymentRepository
+) : ViewModel() {
+
+    // Reconstructed securely from SavedStateHandle:
+    private val orderId: String = checkNotNull(savedStateHandle["order_id"])
+    private val idempotencyKey: String = savedStateHandle.get<String>("idempotency_key")
+        ?: UUID.randomUUID().toString().also { savedStateHandle["idempotency_key"] = it }
+
+    private val _uiState = MutableStateFlow<PaymentUiState>(PaymentUiState.Loading)
+    val uiState: StateFlow<PaymentUiState> = _uiState.asStateFlow()
+
+    fun resumePaymentFlow() {
+        viewModelScope.launch {
+            // NEVER charge again blindly! Reconcile status first:
+            val status = paymentRepository.checkTransactionStatus(orderId, idempotencyKey)
+            when (status) {
+                is TransactionStatus.Success -> _uiState.value = PaymentUiState.Success(status.receipt)
+                is TransactionStatus.Pending -> _uiState.value = PaymentUiState.Processing
+                is TransactionStatus.NotFound -> {
+                    // Safe to initiate payment because server has not seen this idempotency key
+                    executeCharge(orderId, idempotencyKey)
+                }
+                is TransactionStatus.Failed -> _uiState.value = PaymentUiState.Failed(status.error)
+            }
+        }
+    }
+
+    private suspend fun executeCharge(orderId: String, key: String) {
+        // Execute charge with idempotency key attached
+    }
+}
+```
+
+Failure scenario: An app dispatches a payment request without an idempotency key. The user switches to their authenticator app, causing the OS to kill the payment process. Upon returning, the app detects an incomplete order and automatically triggers a fresh payment call, charging the customer's credit card twice for the exact same order.
+
 ## Explanation in Arabic
 
 مقتل شاشة الدفع بواسطة نظام أندرويد في منتصف العملية (Payment Screen killed mid-operation): ماذا يجب إعادة بنائه وما الذي يجب ألا يتكرر؟
@@ -91,33 +138,25 @@ Persist attempt identity before submission, bind it to authenticated order and a
 
 ## Interview answer — short
 
-Do NOT repeat the financial charge request or regenerate the idempotency key, preventing double billing. DO reconstruct the order details and original transaction idempotency key via SavedStateHandle, and execute an idempotent reconciliation query (GET /status) to verify whether the payment succeeded on the backend before offering a retry.
+Never repeat the financial charge mutation blindly; an unreceived response does not prove payment failure. What must be reconstructed is the order ID, cart parameters, and a pre-generated client-side idempotency key preserved in SavedStateHandle and local database. Upon process restoration, query transaction status from the backend to reconcile state before allowing the user to retry.
 
 ## Interview answer — structured
 
-When a payment screen is killed by the OS mid-operation, the golden architectural rule is: **Separate state reconstruction from transactional execution**.
+In financial transactions, a terminated process or lost network response represents an indeterminate outcome, never a confirmed failure. The payment gateway may have committed the charge just as the client was reclaimed by the operating system, meaning we must never re-trigger the charge mutation automatically.
 
-**What must NOT be repeated:**
+We enforce idempotency by generating a unique client-side UUID idempotency key before initiating the transaction. This key, along with the order ID and amount, is persisted immediately to durable local storage like Room and mirrored into SavedStateHandle.
 
-First, never re-execute the financial charge API call automatically upon screen recreation. Finally, never generate a new transaction ID or fresh idempotency key. Repeating a POST charge request will bill the customer twice if the backend already processed the initial request before the app was killed.
+In production, where the screen is recreated after process death, the ViewModel checks the transaction status against the backend using the order ID and idempotency key. If the server has already settled the charge, the UI transitions directly to the success confirmation screen. Only if the backend explicitly confirms the transaction was never received or failed safely do we enable a retry.
 
-**What MUST be reconstructed:**
-
-First, restore the transaction metadata (`orderId`, `amount`, and the existing `idempotencyKey`) from `SavedStateHandle`. Finally, immediately execute an **Idempotent Status Reconciliation Query** (`GET /payments/status?key=<uuid>`). If the backend settled the charge during the process kill, restore the UI straight into `PaymentSuccess(receipt)`. If the backend confirms no transaction occurred, restore the UI to `ReadyToSubmit`, enabling the customer to retry safely.
+User interface state like selected payment methods and form inputs are reconstructed cleanly from SavedStateHandle, while sensitive card details and CVV codes are never persisted locally, ensuring strict compliance with PCI-DSS security standards.
 
 
 ## Interview answer — deep senior
 
-From a mission-critical Fintech reliability perspective, payment dispatches should ideally not rely exclusively on in-memory ViewModel scopes. If the transaction submission was initiated via an application-level CoroutineScope or an expedited **WorkManager** worker, the background task might still be executing on the network thread while the UI is killed.
-
-By maintaining a local transaction entity in Room:
-
-```text
-Order #1234 -> Status: SUBMITTING | Idempotency: 8a7f-43b2
-```
-
-When the recreated Activity and ViewModel spin up, they observe the Room entity. If the background worker finishes in Room with `Status: SUCCESS`, the UI updates automatically to the Success screen without any duplicate API calls, guaranteeing zero financial inconsistencies.
-
+From a distributed systems and fault-tolerance perspective, handling client death during payment processing is an instance of the Two Generals Problem. When a mobile client initiates an HTTP POST request to /api/v1/charge, several failure domains exist: the network may drop before reaching the server, the server may process the charge through payment processors like Stripe but fail before sending the response, or the Android Low Memory Killer (lmkd) may terminate the app process while the network connection is in flight. Assuming failure and re-executing the charge leads to duplicate card authorizations and chargeback disputes.
+To build a bulletproof architecture, the client must generate an idempotency key before any network I/O occurs. This key is written synchronously to an encrypted local database table (Room with SQLCipher) alongside the order state marked as PENDING_AUTHORIZATION. The idempotency key is also injected into SavedStateHandle so that upon activity recreation, the ViewModelProvider restores the exact transaction context.
+When the resurrected Activity initializes, the ViewModel enters a reconciliation state. It executes an idempotent status probe (such as GET /api/v1/orders/{orderId}/payment-status or passing the Idempotency-Key header). The backend payment service guarantees that identical idempotency keys yield identical responses without re-executing charges on payment rails. If the status returns SUCCEEDED, the client marks the local order as paid and navigates to the receipt screen. If the payment is still processing, the client subscribes to a WebSocket or polling mechanism with exponential backoff.
+From a regulatory standpoint, PCI-DSS strictly prohibits persisting sensitive card verification values (CVV) or raw PANs in SavedStateHandle or local disk storage. Only tokenized payment tokens provided by the payment gateway SDK can be safely retained. By combining client-side idempotency, local transactional states, and server-driven reconciliation, the financial flow remains resilient against any unexpected process termination.
 
 ## How to answer in the interview
 

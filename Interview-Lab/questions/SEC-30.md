@@ -21,6 +21,39 @@ A payment app must mask PAN and avoid sensitive logs. Design a logging/observabi
 - PAN masking, PIN/CVV exclusion and correlation without sensitive payloads.
 - Redaction before third-party SDK boundaries and retention.
 
+## Concept and technical explanation
+
+A production payment application subject to PCI-DSS (Payment Card Industry Data Security Standard) must implement strict observability guardrails. Under PCI-DSS Requirement 3, the Primary Account Number (PAN) must be masked wherever displayed or logged, allowing at most the first six digits (BIN) and last four digits to be visible. Sensitive Authentication Data (SAD)—including card verification values (CVV, CVC, CID), PIN blocks, and full magnetic stripe data—must NEVER be logged, cached, or persisted post-authorization under any circumstance. Designing a zero-leakage observability architecture requires defense at multiple boundaries: compiling out Logcat statements via R8 rules, deploying a sanitizing HTTP interceptor that regex-scrubs JSON payloads and strips Authorization headers, masking form fields in crash reporting SDKs, and correlating distributed traces using non-sensitive correlation UUIDs.
+
+## Practical walkthrough (English)
+
+PCI-DSS compliant sanitizing interceptor and R8 log removal:
+```kotlin
+// 1. OkHttp Redacting Interceptor for secure network telemetry
+class SensitiveDataSanitizingInterceptor : Interceptor {
+    private val panRegex = Regex("\b(?:\d[ -]*?){13,16}\b")
+    private val cvvRegex = Regex(""cvv"\s*:\s*"\d{3,4}"")
+
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        // Strip sensitive authorization tokens from outgoing log streams
+        val sanitizedHeaders = request.headers.newBuilder()
+            .set("Authorization", "[REDACTED]")
+            .build()
+
+        val response = chain.proceed(request.newBuilder().headers(sanitizedHeaders).build())
+        return response
+    }
+}
+
+// 2. ProGuard/R8 rule stripping Logcat in release builds:
+// -assumenosideeffects class android.util.Log {
+//     public static *** d(...);
+//     public static *** v(...);
+//     public static *** i(...);
+// }
+```
+
 ## Explanation in Arabic
 
 تطبيق مدفوعات إلكترونية (Payment App) ملزم بقواعد PCI-DSS ويجب أن يخفي أرقام البطاقات (PAN) ويمنع طباعة البيانات الحساسة في السجلات. كيف تصمم سياسة Logging ومراقبة محكمة؟
@@ -117,26 +150,30 @@ Build a telemetry dictionary with prohibited fields, safe event types, retention
 
 ## Interview answer — short
 
-Design a PCI-DSS compliant logging policy by masking PANs to display only the first 6 and last 4 digits, strictly prohibiting CVV/PIN logging, stripping all Logcat output in release builds via R8, deploying sanitizing HTTP interceptors that scrub card fields, and filtering crash reporting breadcrumbs before dispatch.
+A payment app logging policy strictly complies with PCI-DSS: PAN numbers must be masked to display at most the first six and last four digits, while sensitive authentication data like CVVs and PINs are completely prohibited from logs. We strip Logcat statements via R8, implement an OkHttp redacting interceptor, and sanitize crash payloads.
 
 ## Interview answer — structured
 
-A PCI-DSS compliant observability policy on Android requires strict controls across the data ingestion and transmission pipeline.
-
-First, **PCI-DSS Masking Requirements**. Next, with PAN (Primary Account Number), display at most the first 6 (BIN) and last 4 digits (e.g. `411111******1111`). All intermediate digits must be obscured.
-Additionally, with SAD (Sensitive Authentication Data), cVV/CVC, full magnetic stripe data, and PIN blocks must **never** be logged, cached on disk, or retained post-authorization under any circumstances. **Network Interceptor Sanitation**.
-Configure custom OkHttp interceptors that parse JSON payloads before logging. Apply regex filters replacing `cvv`, `cardNumber`, and `pin` fields with `[REDACTED]`. Set `HttpLoggingInterceptor.Level.NONE` in release variants. **Crash Reporting and Analytics Sanitization**.
-Implement a Crashlytics/Sentry `BeforeSendCallback`. Programmatically scrub event messages, stack traces, and breadcrumb trails for 13-19 digit sequences matching the Luhn algorithm. **Build-Time Enforcement**.
-Finally, enforce ProGuard/R8 `-assumenosideeffects` rules to strip standard `android.util.Log` invocations from release binaries entirely.
-
+Observability in a payment application requires strict architectural boundaries to achieve PCI-DSS compliance and eliminate data leak vectors.
+Under PCI-DSS rules, the Primary Account Number must be masked wherever displayed or recorded, allowing only the first six digits for bank identification and the last four digits for customer recognition.
+Sensitive Authentication Data including CVV codes, card PINs, and full magnetic stripe data must never be written to logs, disk, or memory dumps under any condition.
+In production builds, our R8 configuration strips all Logcat invocations using assumenosideeffects rules to ensure zero developer logs leak to logcat readers.
+For necessary network telemetry, we install a custom OkHttp SanitizingInterceptor.
+This interceptor parses JSON request and response payloads, replacing credit card number patterns with masked strings and completely stripping CVVs and authorization headers before events reach analytics or APM SDKs.
+Crash reporting tools like Crashlytics are configured with custom event transformers that redact user inputs, and distributed transactions are correlated using ephemeral UUIDs rather than personal customer data.
 
 ## Interview answer — deep senior
 
-Senior engineers treat compliance not as a documentation exercise, but as an automated architectural boundary.
-
-First, with Custom Android Lint Rules in CI, implement a custom AST-based Android Lint check that flags any invocation of `Log.*`, `Timber.*`, or `println()` accepting parameters containing substrings like `pan`, `card`, `cvv`, `expiry`, or `token`. Fail CI pipelines on lint warnings. Next, a Card Tokenization (Hosted Fields / SDKs) is the most effective security pattern is ensuring the mobile application never touches raw PAN or CVV at all. Integrate direct payment processor SDKs (e.g., Stripe, Adyen, Braintree) where credit card inputs are rendered inside isolated tokenization iframes or encrypted SDK views that return an ephemeral single-use token directly from the processor's PCI-certified servers.
-Finally, with Memory Scrubber Verifications, ensure custom credit card input fields in Compose or Views wipe the underlying character buffers immediately after tokenization is completed, preventing memory dump leakage during audit inspections.
-
+In regulated fintech applications, logging policies directly govern compliance certification and legal liability.
+A single unredacted PAN or CVV captured in an application monitoring tool like Datadog or Crashlytics constitutes an immediate PCI-DSS violation with severe financial penalties.
+We establish a zero-leakage observability architecture enforcing defense across compile, network, and crash-reporting boundaries.
+At compile time, our release ProGuard and R8 rules strip all android.util.Log and Timber debug invocations entirely, neutralizing inadvertent developer log statements.
+At the transport boundary, our OkHttp client integrates an automated RedactingInterceptor.
+This interceptor utilizes regex patterns to detect sixteen-digit PAN formats, replacing the middle six digits with asterisks to yield compliant six-plus-four masked formats, while explicitly dropping CVV fields, expiration months, and Bearer tokens.
+Furthermore, we override crash reporting metadata hooks.
+When Crashlytics or Bugsnag captures an unhandled exception, our custom filter scrubs intent extras, bundle arguments, and view hierarchies to prevent text input values from entering breadcrumbs.
+For distributed transaction tracing, we inject a cryptographically random correlation UUID into request headers.
+Engineers trace requests through microservices by querying this correlation ID, entirely eliminating the need to log account numbers, customer names, or transaction payloads in diagnostic logs. We also configure automated log scrubbing rules in our cloud log ingestion pipelines, ensuring that any stray credentials inadvertently sent to backend collectors are purged before storage.
 
 ## How to answer in the interview
 

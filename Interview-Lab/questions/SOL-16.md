@@ -20,6 +20,55 @@ How do you identify cohesive responsibilities within a God Class?
 
 Diagnose God Class responsibilities using change history, clients, data flow and safe extraction.
 
+## Concept and technical explanation
+
+Identifying cohesive responsibilities within a God Class involves analyzing cohesion metrics, state usage clusters, and distinct business stakeholders (actors) to deconstruct monolithic classes into single-responsibility components. In software architecture, a God Class typically exhibits a high Lack of Cohesion of Methods (LCOM), where disjoint subsets of methods operate on mutually exclusive member variables. By auditing field access graphs, identifying competing reasons to change, and grouping operations by their business domains (such as caching, network synchronization, UI presentation, and input validation), senior engineers isolate natural responsibility boundaries for extraction into dedicated UseCases and Repositories.
+
+## Practical walkthrough (English)
+
+Analyzing field clustering to decompose a God Class into cohesive components:
+```kotlin
+// BAD ANTI-PATTERN: God Class with high Lack of Cohesion of Methods (LCOM)
+class GodUserProfileController {
+    // Cluster 1 fields: Validation & Formatting
+    private val emailRegex = Regex("^[A-Za-z0-9+_.-]+@(.+)\$")
+    fun validateEmail(email: String) = email.matches(emailRegex)
+
+    // Cluster 2 fields: Database Caching
+    private val userDao: UserDao = getDatabase().userDao()
+    suspend fun cacheUser(user: UserEntity) = userDao.insert(user)
+
+    // Cluster 3 fields: HTTP Remote Networking
+    private val api: UserApi = getRetrofit().create(UserApi::class.java)
+    suspend fun fetchRemoteUser(id: String) = api.getUser(id)
+
+    // Cluster 4 fields: UI Presentation State
+    private val _uiState = MutableStateFlow<ProfileUiState>(ProfileUiState.Loading)
+    val uiState = _uiState.asStateFlow()
+}
+
+// ARCHITECTURAL BEST PRACTICE: Cohesive, single-responsibility components
+class UserInputValidator @Inject constructor() {
+    fun isValidEmail(email: String): Boolean = email.isNotBlank() && email.contains("@")
+}
+
+class UserRepository @Inject constructor(
+    private val api: UserApi,
+    private val dao: UserDao
+) {
+    suspend fun getUser(id: String): Result<User> = runCatching {
+        dao.getUser(id)?.toDomain() ?: api.getUser(id).toDomain().also { dao.insert(it.toEntity()) }
+    }
+}
+
+class ProfileViewModel @Inject constructor(
+    private val repository: UserRepository,
+    private val validator: UserInputValidator
+) : ViewModel() {
+    // Pure UI presentation state machine
+}
+```
+
 ## Explanation in Arabic
 
 كيف تحدد وتكتشف المسؤوليات المتماسكة (Cohesive Responsibilities) داخل كلاس متضخم (God Class)؟
@@ -90,29 +139,23 @@ A commerce team uses production incident history to prioritize extracting paymen
 
 ## Interview answer — short
 
-Identify cohesive responsibilities in a God Class by analyzing field-method clustering (identifying groups of methods that operate on isolated subsets of class variables), grouping methods by the business actors requesting changes, and isolating orthogonal concerns like validation, storage, and UI into dedicated classes.
+We identify cohesive responsibilities within a God Class by analyzing its field-method access graph and identifying distinct business actors. A God Class reveals itself when disjoint groups of methods access only specific subsets of member variables without cross-interaction, exhibiting high Lack of Cohesion of Methods (LCOM). By clustering methods around their shared state—separating network APIs, database DAOs, input validation, and UI state—we delineate clean boundaries to extract into dedicated Repositories, UseCases, and ViewModels.
 
 ## Interview answer — structured
 
-Dismantling a God Class requires an objective, metric-driven analysis of internal cohesion rather than subjective guesswork.
-
-First, **Variable-Method Clustering (LCOM - Lack of Cohesion of Methods)**. Next, map out the class fields and observe which methods access which properties.
-In a God Class, methods naturally form isolated clusters: Methods A, B, and C only read and write location coordinates; Methods D and E only touch the network client; Methods F and G only manipulate formatting and UI dialogs. Each distinct cluster represents a distinct cohesive class waiting to be extracted.
-**Actor Alignment (Single Reason to Change)**. Group methods by the business stakeholder who commands their changes.
-Methods requested by UI designers belong in the Presentation/UI layer. Methods requested by accountants or product rules (tax rules, loyalty points) belong in Domain Use Cases.
-Methods requested by infrastructure or backend changes belong in the Data Repository. **Linguistic Clustering (Naming & Verb Analysis)**.
-Finally, look for method prefixes: `validate*()` indicates a Validator, `format*()` indicates a Mapper/Formatter, `sync*()` or `save*()` indicates a Repository.
-
+Deconstructing a God Class requires a systematic methodology rather than arbitrary file splitting.
+A God Class arises when developers continually append new requirements to an existing file, gradually combining networking, storage, validation, and presentation.
+Senior engineers use three complementary techniques to identify natural responsibility seams.
+First, perform field-method cluster analysis. Diagram which methods access which member variables. In a God Class, you will discover distinct, disconnected islands of state: validation regexes used only by input checkers, database DAOs used only by persistence functions, and HTTP clients used only by network calls. These isolated clusters represent textbook candidates for extraction.
+Second, identify business actors and change triggers. Ask: who requests modifications to this method? Marketing changes analytics events, backend architects alter API schemas, DBAs modify caching tables, and UX designers adjust screen layouts. Methods driven by different actors belong in different classes.
+Third, extract components progressively along architectural boundaries: moving validation to pure utility classes, data persistence to Repositories, and business orchestration to UseCases, leaving the host class focused strictly on its primary responsibility.
 
 ## Interview answer — deep senior
 
-Static analysis tools (like SonarQube, Detekt, or Konsist) formalize this process. Detekt flags classes violating `ComplexInterface`, `LargeClass` (e.g. >600 LOC), or `TooManyFunctions` (>15 methods). When these metrics trigger, we run an automated dependency structure matrix (DSM) in IntelliJ/Android Studio to visualize coupling blocks.
-
-Once clusters are identified, refactor using the **Extract Class refactoring technique**.
-
-First, step 1: Create the new focused class (`DeliveryCalculator`). Next, step 2: Delegate the God Class's methods to an instance of the new class.
-Finally, step 3: Update client callers to inject the new class directly, gradually strangling the legacy God Class.
-
+Under the hood, cohesion can be mathematically formalized using the Lack of Cohesion of Methods (LCOM) metric suite (such as LCOM4).
+In graph theory, LCOM4 constructs an undirected graph where nodes represent class methods, and edges connect methods that access at least one shared instance variable or invoke each other directly. In an ideal single-responsibility class, LCOM4 equals 1, indicating a single connected component where all methods collaborate on a cohesive state. In an Android God Activity or God ViewModel, LCOM4 frequently reaches 5 or higher, proving that the class is a composite artifact artificially grouping independent subgraphs.
+Extracting these subgraphs into isolated classes directly impacts memory allocation and Garbage Collection behavior in the Android ART runtime. Monolithic God Classes hold long-lived references to multiple heavyweight resources simultaneously—SQLite database connections, OkHttpClient instances, Bitmaps, and View contexts. Because these references reside in the same object graph, their memory lifetimes are tied together, preventing generational Garbage Collection from reclaiming temporary buffers and driving up memory pressure.
+By decomposing the God Class into fine-grained, scoped dependencies managed by Hilt or Dagger, memory lifecycles decouple. Transient objects are collected promptly in generation-zero heap allocations, reducing GC pause frequencies and eliminating hidden memory leaks during Android screen configuration changes.
 
 ## How to answer in the interview
 

@@ -20,6 +20,46 @@ Where should DTOs, Room entities, domain models, and UI models live?
 
 Assign transport, persistence, domain and rendering models to boundaries and explain mapping.
 
+## Concept and technical explanation
+
+Model segregation across architectural boundaries enforces the Single Responsibility Principle and insulates core business logic from external payload variations. DTOs (Data Transfer Objects) belong strictly to the network module within the Data layer, directly modeling remote JSON/Protobuf schemas with serialization annotations. Room entities reside within the database module of the Data layer, carrying persistence annotations that map directly to SQLite tables, primary keys, and foreign indices. Domain models reside at the core in the Domain layer as pure, unannotated Kotlin data classes representing business truth, constraints, and enterprise invariants. UI models belong to the Presentation layer, structured specifically for rendering ergonomics in Jetpack Compose—flattening nested structures, converting raw timestamps into formatted localized strings, and providing UI flags.
+
+## Practical walkthrough (English)
+
+Differentiating and mapping the four model tiers in a financial ledger app:
+```kotlin
+// 1. DATA LAYER (Network): DTO mirrors backend JSON schema
+@Serializable
+data class AccountTransactionDto(
+    @SerialName("tx_id") val txId: String,
+    @SerialName("amount_cents") val amountCents: Long,
+    @SerialName("timestamp_epoch") val timestampEpoch: Long
+)
+
+// 2. DATA LAYER (Database): Entity models local SQLite table
+@Entity(tableName = "transactions")
+data class TransactionEntity(
+    @PrimaryKey val id: String,
+    val amountCents: Long,
+    val timestamp: Long
+)
+
+// 3. DOMAIN LAYER: Pure business entity with domain invariants
+data class Transaction(
+    val id: String,
+    val amount: BigDecimal,
+    val instant: Instant
+)
+
+// 4. PRESENTATION LAYER: UI model optimized for Compose rendering
+data class TransactionUiModel(
+    val id: String,
+    val formattedAmount: String, // e.g. "$12.50"
+    val displayDate: String,     // e.g. "Today, 3:45 PM"
+    val isDebit: Boolean
+)
+```
+
 ## Explanation in Arabic
 
 أين تعيش كائنات DTOs و Room Entities و Domain Models و UI Models في المعمارية؟ وما دور كل منها؟
@@ -103,22 +143,23 @@ An offline wallet maps validated response DTOs into domain Money values, persist
 
 ## Interview answer — short
 
-DTOs live in Data/remote matching API schemas. Room entities live in Data/local matching SQLite tables. Domain models live in Domain representing pure business entities without framework annotations. UI models live in Presentation holding formatted, display-ready data.
+DTOs live in the network module and Room entities live in the database module within the Data layer. Domain models reside in the pure Kotlin Domain layer representing core business concepts. UI models live in the Presentation layer optimized for Composable rendering.
 
 ## Interview answer — structured
 
-Separating models across architectural layers guarantees isolation and prevents external schema changes from cascading across the application.
+Separating data representations across layers prevents external framework changes from polluting internal business models.
 
-First, with DTOs (Data Transfer Objects), reside in the **Data Layer** (`remote/dto`). They represent network serialization schemas, annotated with `@Serializable` or `@SerializedName`. They are designed around API payloads and should never leak past the repository boundary. Next, with Room Entities, reside in the **Data Layer** (`local/entity`). They represent SQLite table schemas, annotated with `@Entity`, `@PrimaryKey`, and foreign keys. They reflect persistence requirements (indexes, table relations), not UI or business needs.
-Additionally, with Domain Models, reside in the **Domain Layer** (`domain/model`). Pure Kotlin data classes representing business truth. They contain zero serialization or database annotations, enforcing invariant validity across the app. Finally, with UI Models, reside in the **Presentation Layer** (`presentation/model`). They contain pre-formatted strings, localized labels, and visual state properties tailored for instant, allocation-free rendering in Compose.
+DTOs belong strictly to the network layer, mirroring remote JSON schemas with serialization annotations. Room entities belong to the local database layer, annotated with table and column definitions that reflect SQLite schemas.
+
+In production, Domain models reside at the architectural core inside the domain layer. They are pure, unannotated Kotlin classes that represent business truth and invariants, completely free from database or network serialization dependencies.
+As for UI models, they live in the presentation layer. These models are structured specifically for display ergonomics, containing formatted currency strings, localized date text, and layout visibility flags, allowing Jetpack Compose to render widgets passively without computing formatting logic during recomposition.
 
 
 ## Interview answer — deep senior
 
-Why not use a single model class annotated with `@Serializable`, `@Entity`, and consumed directly in Compose? This shortcut—common in junior tutorials—creates catastrophic tight coupling: changing an API property name alters the local SQLite column, forces a Room database migration, and breaks the UI layout simultaneously!
-
-Furthermore, UI models optimize rendering performance in Jetpack Compose. Instead of letting a Composable format dates or currency on every recomposition pass (`format(product.priceCents)`), the ViewModel maps the domain model into a `ProductUiModel` where `formattedPrice = "$19.99"` is computed once. This keeps the Composable function pure, lightweight, and skippable.
-
+Under the hood, model segregation enforces the Single Responsibility Principle and eliminates subtle coupling across boundaries. A frequent shortcut in rushed codebases is annotating a single entity with both Moshi @Json annotations and Room @Entity annotations, then passing it straight into the UI. While this saves initial lines of code, it binds your database schema, backend API contracts, and UI display logic into a single rigid structure. If the backend renames a JSON property, your local database schema breaks, requiring Room migrations and risking database crashes in production.
+By maintaining four distinct model types—DTOs for transport, Entities for persistent storage, Domain models for business logic, and UI models for presentation—each model is free to evolve independently. DTOs accommodate backend breaking changes and nullability quirks; Entities optimize for SQLite indexing, foreign keys, and relational normalization; Domain models enforce business rules and invariants; and UI models are tailored for Compose stability, memoization, and accessibility requirements.
+Staff engineers enforce explicit mapping at the boundaries using pure extension functions like toDomain, toEntity, and toUiModel. While this requires mapper boilerplate, it isolates defects: a network contract modification only touches the network mapper, leaving database persistence, business validation, and UI rendering entirely untouched. This structural isolation is the hallmark of resilient enterprise architecture.
 
 ## How to answer in the interview
 

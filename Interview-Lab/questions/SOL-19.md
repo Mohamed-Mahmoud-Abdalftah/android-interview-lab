@@ -20,6 +20,39 @@ When should you deliberately accept a little duplication instead of introducing 
 
 Choose small duplication over premature shared abstraction when concepts only look alike.
 
+## Concept and technical explanation
+
+Deliberately accepting a little duplication instead of introducing a premature abstraction is a hallmark of mature software engineering, famously articulated by Sandi Metz: 'Duplication is far cheaper than the wrong abstraction.' While the Don't Repeat Yourself (DRY) principle cautions against duplicate knowledge, superficial code similarity frequently represents accidental duplication rather than shared domain concepts. In Android development, when two features exhibit similar UI layouts or data structures but evolve under different business stakeholders or change velocities, forcing them into a shared base class or generic abstraction couples their lifecycles, causing architectural rigidity and regression cascades.
+
+## Practical walkthrough (English)
+
+Contrasting the wrong abstraction against pragmatic, independent duplication:
+```kotlin
+// BAD ANTI-PATTERN: The Wrong Abstraction! (Forcing Auth and Checkout into a bloated shared form model)
+open class GenericInputFormModel(
+    val email: String,
+    val isTermsAccepted: Boolean,
+    val promoCode: String? = null, // Leaked from Checkout into Auth!
+    val isSocialLogin: Boolean = false // Leaked from Auth into Checkout!
+)
+
+// ARCHITECTURAL BEST PRACTICE: Independent, cohesive models with accidental duplication
+// 1. Auth Feature Model (Owned strictly by Auth Team / Login Stakeholders)
+data class LoginCredentials(
+    val email: String,
+    val passwordHash: String
+)
+
+// 2. Checkout Feature Model (Owned strictly by Commerce Team / Billing Stakeholders)
+data class CheckoutCustomerInfo(
+    val email: String,
+    val shippingAddress: String,
+    val promotionalCode: String?
+)
+// Although both have 'email', their business reasons to change are 100% disconnected!
+// Preserving independent models prevents cross-feature coupling!
+```
+
 ## Explanation in Arabic
 
 متى يجب عليك قبول قليل من التكرار (Duplication) عمداً بدلاً من التسرع في بناء تجريد غير ناضج (Premature Abstraction)؟
@@ -85,29 +118,25 @@ A team allows two small UI mappers for different screens while sharing one autho
 
 ## Interview answer — short
 
-Deliberately accept slight duplication when code looks syntactically similar but represents distinct business concepts evolving for different actors (accidental duplication), or across feature module boundaries to avoid tight coupling. Sandi Metz's rule applies: 'Duplication is far cheaper than the wrong abstraction.'
+You should deliberately accept duplication when the similarity is accidental rather than conceptual, or when the requirements are still rapidly evolving. In Android, feature modules frequently have similar UI models or validation checks that serve different business actors. Forcing them into a premature shared abstraction creates tight coupling and makes future changes painful. As Sandi Metz observed, duplication is far cheaper than the wrong abstraction; wait until true domain commonality stabilizes.
 
 ## Interview answer — structured
 
-Software engineering maturity is recognizing that **premature abstraction is far more dangerous than temporary duplication**.
-
-As phrased by Sandi Metz: *'Duplication is far cheaper than the wrong abstraction.'* When engineers dogmatically enforce DRY (Don't Repeat Yourself) at the syntax level, they frequently merge two pieces of code that look identical today but evolve for completely different reasons tomorrow.
-
-**When to Deliberately Accept Duplication**.
-
-First, with Accidental Duplication vs True Duplication, if two mapping routines in `:feature:catalog` and `:feature:profile` look identical, but one responds to catalog marketing needs and the other responds to user account settings, the duplication is accidental. Unifying them creates an artificial coupling between two unrelated business domains. Next, with Feature Module Boundaries, in multi-module architectures, forcing two independent feature modules to share an abstraction just to eliminate 15 lines of UI formatting creates a shared compile-time dependency, slowing builds and creating merge friction. Duplicating those 15 lines preserves independent module deployability.
-Finally, with Early Stage / Exploratory Features, when a feature is brand-new, requirements mutate rapidly. Prematurely creating a rigid generic base class forces engineers to add boolean parameter flags (`isCaseB = true`) until the abstraction becomes an unmaintainable monster.
-
+Choosing pragmatic duplication over premature abstraction is an essential judgment call that separates dogmatic coders from senior architects.
+The DRY (Don't Repeat Yourself) principle is frequently misinterpreted as an absolute ban on duplicate lines of code. However, DRY is fundamentally about avoiding the duplication of business knowledge and authority, not syntactic similarity.
+There are three clear scenarios where accepting duplication is the superior architectural decision.
+First, when code similarity is accidental rather than essential. If an e-commerce checkout screen and a user profile registration screen both collect an address and an email, their technical data structures look identical. However, marketing may change profile registration rules while payment gateways alter billing address rules. Coupling them to a single shared AddressModel forces one feature to inherit breaking changes meant for another.
+Second, during early feature discovery and rapid prototyping. When requirements are fluid, the cost of guessing the wrong abstraction and continually adding boolean flags to accommodate edge cases is astronomically higher than maintaining two separate 20-line classes.
+Third, across Gradle module boundaries. Forcing two independent feature modules to share a common utility module just for a minor helper function introduces unnecessary compilation coupling, slowing down builds.
 
 ## Interview answer — deep senior
 
-The life cycle of the **Wrong Abstraction** follows a predictable, destructive pattern.
-
-First, developer A sees two similar routines and unifies them into `GenericHelper`. Next, feature requirements diverge. Developer B needs a slight difference, so they add an `if (flag)` parameter.
-Developer C needs another variation, adding another flag. Finally, a year later, `GenericHelper` takes 8 boolean flags, has 20 conditional branches, and nobody dares touch it.
-
-We adhere strictly to the **Rule of Three**: allow duplication to happen twice. Only when the exact same pattern recurs a third time across stable, mature requirements do we extract an abstraction, because by the third time, the true invariant shape of the abstraction is obvious.
-
+Under the hood, the wrong abstraction is an architectural debt multiplier that actively dismantles modularity and increases cognitive load.
+When developers prematurely merge two similar code paths into a shared class or generic UseCase, they create an artificial coupling point. As the two features inevitably diverge, the shared abstraction cannot adapt cleanly. Developers begin introducing conditional flags, nullable parameters, and boolean mode switches (like isCheckoutMode or skipValidation). The shared class mutates into a brittle state machine violating both SRP and OCP.
+In multi-module Android architectures, premature abstractions create toxic dependency graphs. If :feature:auth and :feature:cart share a bloated :core:user-form model, both modules must recompile whenever either team modifies the form.
+By deliberately accepting isolated duplication—allowing each feature module to define its own local DTO or UI state representation—modules compile in parallel without shared state locks.
+Furthermore, memory locality and ART runtime optimizations favor simple, monomorphic concrete classes over heavily genericized, polymorphic wrapper abstractions that allocate boxed objects and trigger additional virtual method lookups.
+Staff engineers follow the Rule of Three: tolerate duplication once, tolerate it twice, but when you encounter the exact same structural pattern a third time with identical change drivers, only then synthesize a deliberate, battle-tested abstraction. This disciplined restraint maintains rapid iteration cycles.
 
 ## How to answer in the interview
 

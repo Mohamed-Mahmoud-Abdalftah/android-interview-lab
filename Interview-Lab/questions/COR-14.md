@@ -20,6 +20,38 @@ When does CoroutineExceptionHandler run, and where does it not help?
 
 Can the candidate place `CoroutineExceptionHandler` at an uncaught boundary and distinguish it from recovery?
 
+## Concept and technical explanation
+
+CoroutineExceptionHandler (CEH) is an optional CoroutineContext element that serves as a global last-resort safety net for unhandled exceptions in Kotlin coroutines. It operates analogously to Thread.setDefaultUncaughtExceptionHandler in standard Java concurrency. Crucially, CEH executes only when installed on a root coroutine launched with the launch builder, or when installed on a root SupervisorJob/supervisorScope. It does not run for child coroutines, because child coroutines unconditionally delegate their uncaught exceptions up to their parent job in the hierarchy. Furthermore, CEH does not handle exceptions originating from the async builder, because async encapsulates failures inside its Deferred result. Most importantly, CEH is purely a diagnostic and reporting mechanism: by the time CEH is invoked, the coroutine has already terminated and its call stack has unwound, meaning CEH cannot recover execution, retry operations, or prevent scope cancellation.
+
+## Practical walkthrough (English)
+
+Demonstrating valid CEH placement versus common silent failure scenarios:
+```kotlin
+// 1. Ineffective placement: CEH installed on a child coroutine (Silently ignored!)
+val scope = CoroutineScope(Dispatchers.Default)
+val childHandler = CoroutineExceptionHandler { _, exception ->
+    println("Caught: $exception") // NEVER RUNS!
+}
+scope.launch {
+    launch(childHandler) { // Child delegates to parent; childHandler is ignored!
+        throw IllegalStateException("Child failure")
+    }
+}
+
+// 2. Production Placement: CEH installed at the root scope
+val rootHandler = CoroutineExceptionHandler { _, exception ->
+    FirebaseCrashlytics.getInstance().recordException(exception)
+    Telemetry.logFatalCoroutineError(exception)
+}
+
+val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default + rootHandler)
+applicationScope.launch {
+    // Uncaught exception here reaches rootHandler cleanly without crashing the process
+    performBackgroundSync()
+}
+```
+
 ## Explanation in Arabic
 
 الـ `CoroutineExceptionHandler` (CEH) هو من أكثر الأدوات التي يساء فهمها في Kotlin Coroutines:
@@ -106,25 +138,25 @@ An application sync coordinator uses a supervisor and handler to report unexpect
 
 ## Interview answer — short
 
-CoroutineExceptionHandler only catches uncaught exceptions in root coroutines launched with 'launch'. It does not catch exceptions in child coroutines (which delegate to their parent), it does not catch exceptions in 'async' (which encapsulate errors until await), and it cannot recover from failures—it only logs or reports them after the coroutine has already terminated.
+CoroutineExceptionHandler is a last-resort logging element for uncaught exceptions. It only runs when attached to a root coroutine launched with launch or on a root supervisor scope. It does not run on child coroutines (which delegate to their parent), does not handle async errors (which are held in Deferred), and cannot recover or resume execution.
 
 ## Interview answer — structured
 
-A `CoroutineExceptionHandler` (CEH) is purely a last-resort error logging and global reporting mechanism, not a general error recovery tool.
+CoroutineExceptionHandler functions as a global uncaught exception listener rather than an inline error-handling control structure.
 
-It only triggers under strict conditions: 1) It must be installed on a **root coroutine** or scope; and 2) the coroutine must be launched via `launch`. If an unhandled exception reaches the root of the hierarchy, the CEH executes its callback, typically used to log breadcrumbs to Crashlytics or show a generic error toast.
+The handler executes only under two strict conditions. First, it must be installed either on a root CoroutineScope or directly on a root launch builder. Second, the operation must be launched via launch rather than async. When an unhandled exception reaches the root of the coroutine hierarchy without being caught by try-catch blocks, the framework delegates the uncaught throwable to the CoroutineExceptionHandler.
 
-Where it does NOT help: First, it has zero effect when attached to child coroutines. A child coroutine always delegates unhandled exceptions upward to its parent, ignoring its own CEH. Second, it does not catch exceptions from `async` coroutines, which encapsulate errors inside the `Deferred` until `await()` is called. Third, it cannot recover or resume execution—by the time CEH runs, the coroutine has already crashed and unwound.
+In production, engineers frequently misunderstand where the handler does not help. It is completely ignored when installed on a child coroutine, because child tasks automatically delegate failure propagation to their parent Job. Furthermore, it does not catch exceptions thrown inside async builders, because async encapsulates failures inside the returned Deferred instance until await is invoked.
+
+CoroutineExceptionHandler is strictly a terminal reporting tool. It is designed to log crashes to telemetry engines like Crashlytics or present generic error dialogues; it cannot recover the failed operation, suppress scope cancellation, or retry the transaction.
 
 
 ## Interview answer — deep senior
 
-Under the hood, exception handling in structured concurrency operates through a hierarchical delegation chain. When a child coroutine throws an unhandled exception, it checks if it has a parent. If a parent Job exists, the child passes the exception to the parent via `parent.childCancelled(cause)` and terminates. It completely bypasses its own context's `CoroutineExceptionHandler`.
-
-Only when the exception reaches the root `Job` (a Job with no parent), does the coroutine machinery check the root context for a `CoroutineExceptionHandler`. If present, it invokes `handleException(context, exception)`. If no CEH is found in the root context, it delegates to the JVM's `Thread.currentThread().uncaughtExceptionHandler`, which results in a fatal Android app crash.
-
-In production architecture, CEH should never replace standard `try-catch` blocks or domain Result wrapping in repositories and ViewModels. It should only be configured once on top-level scopes (like custom application-level scopes) as a safety net against unexpected runtime crashes.
-
+At the lower plumbing level of kotlinx.coroutines, exception handling follows a strict escalation ladder defined in handleCoroutineException. When a coroutine launched with launch terminates with an uncaught exception, it attempts to notify its parent via childCancelled. If the parent is a standard Job, the parent absorbs the error and propagates it upward. This upward delegation continues recursively until the error reaches the root of the hierarchy.
+Only when the root Job completes exceptionally does the runtime invoke handleCoroutineException(context, exception). The runtime inspects the root CoroutineContext for a registered CoroutineExceptionHandler. If discovered, its handleException method is invoked synchronously. If no handler is found in the context, the runtime iterates through Java ServiceLoader instances of CoroutineExceptionHandler, and finally falls back to the current Thread's uncaughtExceptionHandler, which typically terminates the Android OS process with a fatal crash.
+This mechanism illuminates why attaching a handler to an async coroutine does nothing. The async builder instantiates a DeferredCoroutine, which overrides handleJobException to return false, suppressing invocation of handleCoroutineException. The exception is stored in the internal state of the DeferredCoroutine until await is called, at which point the continuation unrolls and rethrows the original exception directly at the await call site.
+Staff Android engineers enforce three rules: use inline try-catch or runSuspendCatching at repository boundaries for recoverable business logic; attach a CoroutineExceptionHandler to global application scopes exclusively for telemetry and crash reporting; and never rely on handlers for control flow.
 
 ## How to answer in the interview
 

@@ -20,6 +20,64 @@ Design a feature flags and staged rollout system.
 
 Design feature flags and staged rollout with typed defaults, kill switches and server trust.
 
+## Concept and technical explanation
+
+A feature flag and staged rollout architecture enables continuous integration, trunk-based development, dark launching, A/B experimentation, and emergency operational kill switches without publishing new APKs. Core system components include: strongly typed flag definitions (Boolean, String, JSON, and Multivariant), a multi-tiered evaluation hierarchy (local compile-time defaults, cached server configs, and runtime debug overrides), deterministic percentage hashing using stable client identifiers (such as hashing the user ID combined with the feature key modulo 100), offline caching in Proto DataStore or EncryptedSharedPreferences, and operational kill switches capable of instantly deactivating malfunctioning code paths via high-priority silent pushes or startup configuration polling.
+
+## Practical walkthrough (English)
+
+Implementing a typed feature flag manager with deterministic rollout hashing and kill switches:
+```kotlin
+// 1. Strongly typed feature flag definitions with default fallbacks
+enum class FeatureFlag(val key: String, val defaultValue: Boolean) {
+    NEW_CHECKOUT_FLOW("new_checkout_flow_enabled", defaultValue = false),
+    BIOMETRIC_AUTH("biometric_auth_v2_enabled", defaultValue = true),
+    DARK_MODE_V2("dark_mode_v2_enabled", defaultValue = false)
+}
+
+// 2. Feature Flag Manager with deterministic user hashing and local caching
+class FeatureFlagManager @Inject constructor(
+    private val localConfigStore: SharedPreferences,
+    private val sessionManager: SessionManager
+) {
+    // Kill switches that take immediate precedence
+    private val killSwitches = ConcurrentHashMap<String, Boolean>()
+
+    fun isFeatureEnabled(flag: FeatureFlag): Boolean {
+        // Priority 1: Emergency Kill Switch
+        killSwitches[flag.key]?.let { isKilled ->
+            if (isKilled) return false
+        }
+
+        // Priority 2: Cached remote configuration
+        if (localConfigStore.contains(flag.key)) {
+            return localConfigStore.getBoolean(flag.key, flag.defaultValue)
+        }
+
+        // Priority 3: Bundled compile-time default
+        return flag.defaultValue
+    }
+
+    // Deterministic rollout bucket calculation (0-99%) based on stable User ID
+    fun isUserInRolloutBucket(flagKey: String, rolloutPercentage: Int): Boolean {
+        val userId = sessionManager.getUserId() ?: return false
+        val hash = (userId + flagKey).hashCode().absoluteValue % 100
+        return hash < rolloutPercentage
+    }
+
+    fun applyEmergencyKillSwitch(flagKey: String) {
+        killSwitches[flagKey] = true
+    }
+
+    fun updateRemoteFlags(flags: Map<String, Boolean>) {
+        localConfigStore.edit().apply {
+            flags.forEach { (key, value) -> putBoolean(key, value) }
+            apply()
+        }
+    }
+}
+```
+
 ## Explanation in Arabic
 
 كيف تصمم نظام Feature Flags و Staged Rollout يدعم الطرح التدريجي، الإلغاء الفوري (Kill Switch)، والعمل Offline؟
@@ -117,25 +175,30 @@ A checkout feature rolls out to 1%, then 10%, with crash/ANR/payment error guard
 
 ## Interview answer — short
 
-Design feature flags using a tiered evaluation model: bundled in-app defaults for zero-latency fallback, persistent local storage for offline tolerance, and background remote fetching. Apply an activate-on-next-launch policy to prevent mid-session UI inconsistencies, and configure high-priority remote kill switches for emergency mitigations.
+We design feature flags using strongly typed definitions evaluated through a multi-tiered provider system. The system evaluates local build-time defaults, cached remote configs, and debug overrides. Staged percentage rollouts use deterministic hashing on user IDs to ensure stable feature assignment. Critical flags support emergency kill switches fetched at startup or via silent push, allowing instant feature deactivation without requiring new app releases.
 
 ## Interview answer — structured
 
-A production feature flag and staged rollout infrastructure separates deployment from release while insulating the app from network latency.
-
-First, **Multi-Layered Flag Evaluation**. Next, with Static Defaults, hardcoded compile-time defaults ensure instant fallback if network or disk fails.
-Additionally, with Local Disk Cache, persistent values stored in DataStore allow instant synchronous evaluation on app cold start without blocking UI rendering. With Remote Provider (Firebase Remote Config / LaunchDarkly), fetches remote updates in the background based on user targeting cohorts and percentage rollouts.
-**Activate-On-Next-Launch Policy**. Never mutate feature flags dynamically while the user is navigating an active flow. Changing flags mid-session causes jarring UI rebuilds, state fragmentation, or mid-transaction crashes. Fetch updates in the background, cache them locally, and activate on the next application restart.
-**Emergency Remote Kill Switch**. Finally, reserve a high-priority bypass channel for critical operational kill switches (e.g. Disabling a broken payment gateway). Critical kill-switch flags can be observed reactively to terminate broken components immediately.
-
+A production feature flag architecture separates software deployment from feature release, enabling safe staged rollouts and emergency remediation.
+We model all feature flags as strongly typed enums or value classes with compile-time default values to prevent null pointer exceptions if the network is unreachable.
+The evaluation engine resolves flags across a tiered hierarchy: developer debug overrides take precedence during testing, followed by cached server-delivered configurations, falling back to bundled hardcoded defaults.
+For staged rollouts, we calculate a deterministic hash of the user ID combined with the feature key, mapping the result to a percentile between zero and one hundred.
+This guarantees that a user assigned to a ten percent rollout bucket consistently experiences the feature across app restarts and device rotations without requiring persistent server state.
+To mitigate production incidents, our architecture includes a remote kill switch mechanism.
+By sending a high-priority silent push or polling lightweight config endpoints on startup, we can deactivate a malfunctioning feature globally within seconds, completely isolating production issues without waiting for Play Store review cycles.
 
 ## Interview answer — deep senior
 
-From an architectural governance and technical debt standpoint, feature flag systems require strict lifecycle management.
-
-First, with Flag Expiration & Technical Debt Cleanup, flags that remain in codebases indefinitely create exponential combinatorial testing permutations and dead code paths. Enforce an expiration SLA (e.g., maximum 60 days). Once a feature is rolled out to 100% and proven stable, schedule technical debt tickets to delete the flag checks, retire remote configurations, and inline the permanent implementation. Next, with Consistent Hashing for Percentage Rollouts, rollout buckets must be deterministic. Calculate user cohorts using consistent hashing over the `userId` combined with the `flagKey`: `hash(userId + flagKey) % 100 < rolloutPercentage`. This guarantees that an individual user remains in their assigned bucket across app restarts without state drift.
-Finally, with A/B Testing & Metric Correlation, correlate feature flag exposure events directly with analytics pipelines. When a user evaluates a flag, emit an exposure log so data platforms can measure business metric lift (conversion, retention, crashes) between control and treatment groups.
-
+At enterprise scale, the primary hazards of feature flagging are technical debt accumulation, stale flag pollution, and subtle race conditions during startup.
+If an app evaluates flags dynamically during mid-session flows, a user could see a screen change its layout or business rules while interacting with it, creating severe UI confusion.
+We address this by establishing flag evaluation lifecycles: flags are classified as startup-bound, session-bound, or dynamic.
+Startup-bound flags, such as new architecture migrations or core database schemas, are evaluated once during Application initialization from cached disk storage (such as Proto DataStore) and frozen for the remainder of the process.
+Session-bound flags are refreshed upon cold startup or user login and held immutable throughout the active user session.
+Furthermore, stale flags represent dead code paths that complicate unit tests and bloat bytecode.
+We enforce automated flag governance: every feature flag definition in code includes an expiration date and owner metadata.
+If a flag remains in the codebase beyond its target deprecation date, our CI lint check fails the build, prompting engineers to clean up the code branch and remove obsolete conditions.
+Finally, we integrate flag evaluation events directly into our analytics pipeline, tagging every crash report and business event with the active variant bucket to ensure statistically sound A/B experimentation without client attribution bias.
+This disciplined approach guarantees operational agility without sacrificing codebase maintainability.
 
 ## How to answer in the interview
 

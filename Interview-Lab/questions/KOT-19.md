@@ -20,6 +20,14 @@ What is Kotlin Result? How would you model domain errors instead?
 
 Know Result success/failure mechanics, exception payloads, and domain error modeling without swallowing cancellation.
 
+## Concept and technical explanation
+
+Kotlin's standard `kotlin.Result<T>` is a discriminated union representing either a successful outcome containing a value of type T or a failure containing a Throwable. Implemented as an `@JvmInline value class`, Result avoids heap allocations in unboxed scenarios, making it concise for capturing operations that interact with throwing infrastructure. However, using Result for domain errors has profound architectural deficiencies. Because its failure branch is permanently hardcoded to `java.lang.Throwable`, it forces business rules to treat normal domain outcomes—such as insufficient funds, expired sessions, or validation errors—as exceptions. Allocating a Throwable forces the JVM and ART runtime to capture an entire call stack trace, which consumes substantial CPU cycles and memory. Furthermore, idiomatic domain modeling requires strongly typed, exhaustive error categorization. By modeling domain results using custom closed type hierarchies—such as `sealed interface DomainResult<out T, out E>`—teams achieve compile-time exhaustive checking in `when` expressions, avoid stack trace overhead, and isolate business logic from transport-level exceptions.
+
+## Practical walkthrough (English)
+
+Consider a checkout workflow in a mobile banking application. If an engineer relies on standard exceptions: `fun processPayment(): Result<Receipt> = runCatching { ... }`, multiple architectural issues arise. First, throwing an `InsufficientFundsException` captures a full stack trace even though having a low balance is an expected business condition. Second, `runCatching` catches all Throwables indiscriminately, including `CancellationException`. If a user navigates away and the coroutine is cancelled, `runCatching` intercepts the cancellation, swallows it, and produces a failure result, breaking Kotlin's structured concurrency. The correct architecture uses a typed domain result: `sealed interface PaymentResult { data class Success(val receipt: Receipt) : PaymentResult; sealed interface Failure : PaymentResult { data class InsufficientBalance(val current: Long, val required: Long) : Failure; data object NetworkTimeout : Failure } }`. In the ViewModel, a `when` expression handles every failure case exhaustively without needing an else branch or allocating stack traces.
+
 ## Explanation in Arabic
 
 التعامل مع الأخطاء والـ Failures في Kotlin من أهم مواضيع الـ Clean Architecture:
@@ -100,23 +108,22 @@ A payments repository maps transport failures to `PaymentError.Network`, `Declin
 
 ## Interview answer — short
 
-Kotlin's built-in Result models either a value or a Throwable as an inline value class. For domain logic, modeling errors with a custom sealed hierarchy or an Either type is much better because domain failures are expected business outcomes, not exceptions; sealed classes avoid costly stack-trace generation and enable exhaustive compiler-checked handling.
+Kotlin's Result models either a value or a Throwable as an inline value class, ideal for capturing throwing infrastructure calls. For domain logic, modeling outcomes with a custom sealed hierarchy is vastly superior because business failures are expected outcomes, not exceptions; sealed classes avoid costly stack trace capture and enable compile-time exhaustive handling.
 
 ## Interview answer — structured
 
-Kotlin's standard Result<T> is designed primarily for encapsulating the outcome of operations that might throw exceptions, capturing either a successful value or a Throwable. Because it is implemented as an inline value class, it avoids heap allocations when used directly.
+Kotlin's standard Result class is designed primarily to encapsulate the outcome of operations that might throw exceptions, capturing either a successful value or a Throwable. Because it is implemented as an inline value class, it avoids heap allocations when returned directly from functions.
 
-However, using Result for domain errors has a fundamental flaw: its failure branch is hardcoded to Throwable. In clean domain architecture, business failures—such as InsufficientFunds or InvalidCredentials—are not unexpected runtime exceptions; they are legitimate, expected outcomes of domain rules. Creating a Throwable forces the JVM to capture an entire stack trace, which is expensive in terms of CPU and memory.
+However, using Result for domain errors violates clean architecture principles. In business domains, failures such as an invalid coupon code or insufficient funds are expected, legitimate outcomes of business rules, rather than system errors. Forcing these outcomes into a Throwable requires the runtime to capture an entire execution stack trace, which introduces measurable CPU and memory overhead.
 
-Instead, I model domain outcomes using a custom sealed interface—like `sealed interface DataResult<out T, out E>`—or dedicated state hierarchies. This gives compile-time exhaustive type checking via when expressions, attaches strongly typed metadata to failures, and avoids the performance penalty of exception allocation.
+In production, `runCatching` presents a severe concurrency danger because it catches `CancellationException`, inadvertently swallowing coroutine cancellation and breaking structured concurrency.
+
+Senior engineers model domain outcomes using custom sealed interfaces, which enable compile-time exhaustive checking in when expressions without exception overhead.
 
 
 ## Interview answer — deep senior
 
-When designing domain layers in production Android apps, the choice between Kotlin Result, Arrow's Either, and custom sealed hierarchies directly impacts code clarity and diagnostic capabilities. Until Kotlin 1.5, kotlin.Result could not even be returned from functions without compiler flags because of inline class ABI considerations. Even today, it suffers from ergonomic limitations: you cannot customize the failure type, and functions like `mapCatching` swallow all Throwables, including `CancellationException`, which breaks Coroutine cancellation hierarchies if not carefully handled.
-
-With a custom sealed hierarchy like `sealed interface AppResult<out T, out E>`: 1. Domain errors can carry rich context (e.g., `data class NetworkError(val httpCode: Int, val retryAfterSeconds: Int)`). 2. When consuming the result in a ViewModel or MVI reducer, the Kotlin compiler enforces exhaustiveness on the `E` domain error sealed branch without needing an `else` branch, eliminating runtime unhandled edge cases. 3. Stack traces are never collected for expected business validation failures, reducing GC churn in high-frequency operations.
-
+From a runtime and bytecode perspective, `kotlin.Result<T>` relies on advanced compiler synthesis. Declared as an `@JvmInline value class`, it stores either the success value or a synthetic `Result.Failure` wrapper wrapping the Throwable. When returned directly from a Kotlin function, the compiler unboxes the value, returning a raw Object in bytecode to prevent heap allocation. However, boxing immediately occurs if the Result is stored in a collection, cast to Any, or used as a generic type parameter. Furthermore, prior to Kotlin 1.5, `kotlin.Result` was strictly restricted from being returned from public API boundaries due to ABI stability concerns surrounding inline classes. Even today, developers must be extremely cautious when composing Result pipelines; functions like `mapCatching` intercept all throwables without discrimination, creating silent logical bugs where severe runtime errors are treated as routine domain failures. The most insidious danger of `runCatching` in modern asynchronous Android architectures is its interaction with Kotlin Coroutines. The coroutine framework relies on `CancellationException` to propagate cooperative cancellation up the job hierarchy. Because `runCatching` catches `Throwable` without rethrowing `CancellationException`, it converts cooperative cancellation into a failed result, keeping coroutines active and causing memory leaks or delayed screen updates. By implementing a typed domain hierarchy like `sealed interface AppResult<out T, out E>`, we completely decouple business failures from JVM exceptions. Domain errors carry strongly typed contextual payloads (such as validation failure maps or retry delays) without allocating stack traces, and the Kotlin compiler enforces complete exhaustiveness on the `E` error branch in when expressions without requiring an unsafe `else` fallback.
 
 ## How to answer in the interview
 

@@ -20,6 +20,46 @@ What is composition over inheritance?
 
 Explain flexible behavior assembly without fragile base-class coupling, while recognizing valid inheritance.
 
+## Concept and technical explanation
+
+Composition over inheritance is a foundational object-oriented design principle asserting that systems should achieve code reuse, polymorphism, and behavioral extension by assembling independent components through 'has-a' reference relationships rather than constructing rigid class hierarchies through 'is-a' inheritance trees. In Android engineering, excessive inheritance results in the notorious Fragile Base Class problem, monolithic BaseActivity and BaseFragment anti-patterns, inflexible compile-time coupling, and namespace pollution. Favoring composition enables dynamic runtime behavioral swapping, clean lifecycle observers, pure JVM testability, and forms the core foundational paradigm of modern Jetpack Compose.
+
+## Practical walkthrough (English)
+
+Refactoring a bloated BaseActivity inheritance tree into decoupled composition:
+```kotlin
+// BAD ANTI-PATTERN: Bloated BaseActivity (Fragile base class, tight coupling, hard to test)
+open class BaseActivity : AppCompatActivity() {
+    fun trackAnalytics(event: String) { /* Concrete mixpanel logic */ }
+    fun showLoadingDialog() { /* Dialog logic */ }
+    fun checkLocationPermission() { /* Activity permission requests */ }
+    // Every child activity inherits all 50 methods whether it needs them or not!
+}
+class CheckoutActivity : BaseActivity() { /* Inherits massive baggage */ }
+
+// ARCHITECTURAL BEST PRACTICE: Composition via dedicated delegates & lifecycle observers
+class AnalyticsTracker @Inject constructor() {
+    fun trackScreen(screenName: String) { /* Clean isolated analytics */ }
+}
+
+class LocationPermissionDelegate(private val activity: ComponentActivity) {
+    // Encapsulates permission contracts independently
+    fun requestLocation(onGranted: () -> Unit) { /* ... */ }
+}
+
+// Clean Activity: Composes only the capabilities it actually requires
+@AndroidEntryPoint
+class CleanCheckoutActivity : AppCompatActivity() {
+    @Inject lateinit var analytics: AnalyticsTracker
+    private val locationDelegate by lazy { LocationPermissionDelegate(this) }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        analytics.trackScreen("Checkout")
+    }
+}
+```
+
 ## Explanation in Arabic
 
 ما هو مبدأ تفضيل التركيب على الوراثة (Composition over Inheritance) ولماذا هو أساسي في Android الحديث؟
@@ -89,26 +129,23 @@ An app uses small injected collaborators for analytics and navigation, with life
 
 ## Interview answer — short
 
-Composition over inheritance favors assembling components with 'has-a' relationships over rigid 'is-a' inheritance trees. In Android, it eliminates bloated `BaseActivity` anti-patterns, enables runtime behavioral flexibility, avoids the fragile base class problem, and is the foundational architecture of Jetpack Compose.
+Composition over inheritance favors assembling components using 'has-a' relationships over building deep 'is-a' inheritance trees. In Android, inheritance creates bloated BaseActivity anti-patterns where every screen inherits irrelevant analytics, dialog, and permission methods. Composition replaces this by injecting independent, reusable helpers and lifecycle observers, avoiding fragile base class bugs and providing the foundational architectural model for Jetpack Compose.
 
 ## Interview answer — structured
 
-The principle of 'Composition over Inheritance' advocates that classes should achieve polymorphic reuse by containing instances of other classes ('has-a') rather than inheriting state and behavior from a superclass ('is-a').
-
-First, **The Fragility of Inheritance**. Next, inheritance creates the tightest possible compile-time coupling: changes to private or protected implementations in a superclass ripple unpredictably across derived subclasses (the *Fragile Base Class problem*).
-Subclasses inherit irrelevant or unwanted behaviors (violating LSP). Single inheritance in Kotlin/Java prevents combining multiple orthogonal features (e.g. An Activity cannot inherit from both `BaseCameraActivity` and `BaseBillingActivity`).
-**The Power of Composition**. Components encapsulate isolated concerns (`AnalyticsHelper`, `SessionTracker`, `ToolbarCoordinator`).
-Components can be dynamically plugged in, swapped, or mocked in unit tests. Finally, promotes high cohesion and clean unit testability.
-
-Jetpack Compose is the ultimate manifestation of this principle: Compose completely abandons the 15-year-old `android.view.View` inheritance tree in favor of pure, composable function graphs.
-
+The principle of favoring composition over inheritance resolves the architectural fragility inherent in deep class inheritance trees.
+Class inheritance creates white-box code reuse where child classes are tightly coupled to the internal implementation mechanics and protected fields of their parents. In Android development, this anti-pattern manifests most visibly in bloated BaseActivity and BaseFragment hierarchies. Over years of development, teams dump analytics tracking, toolbar setup, loading spinners, network retry dialogs, and permission handling into a monolithic base class. Every child screen inherits dozens of methods and lifecycle hooks it does not need, creating namespace collisions, accidental method override bugs, and untestable code.
+Composition solves this by treating capabilities as discrete, swappable components assembled via 'has-a' references.
+Instead of an Activity inheriting from a base class to gain analytics capabilities, it has an AnalyticsTracker injected into it. Instead of inheriting permission mechanics, it delegates to a LocationPermissionHelper that observes the Activity's Lifecycle.
+This approach eliminates the fragile base class problem, makes testing straightforward by allowing individual delegates to be mocked or faked on the JVM, and allows components to be combined flexibly without rigid parent-child hierarchies.
 
 ## Interview answer — deep senior
 
-Kotlin offers first-class language support for composition via **Class Delegation (`by`)**. By declaring `class MyActivity : AppCompatActivity(), AnalyticsManager by analyticsManager`, Kotlin generates forwarding bytecode calls under the hood. This delivers the syntactic convenience of inheritance while preserving the architectural purity and loose coupling of composition.
-
-In Android Jetpack, `LifecycleObserver` and `LifecycleEventObserver` represent the official migration from inheritance to composition: instead of overriding `onStart()` in a `BaseActivity`, self-contained components observe `lifecycle.addObserver(myComponent)`, managing their own cleanup automatically.
-
+Under the hood, composition fundamentally transforms memory layout, runtime dispatch, and evolutionary adaptability in Android applications.
+Class inheritance fixes behavior statically at compile time: once class CheckoutActivity extends BaseActivity, its class hierarchy, v-table offsets, and superclass constructor chains are permanently baked into DEX bytecode. If the base class constructor allocates expensive resources, every single derived Activity pays that heap and startup latency penalty, even for lightweight splash or deep-link routing screens.
+With composition, capabilities are allocated lazily and conditionally. A screen only instantiates delegates it actively uses, keeping the runtime heap footprint minimal.
+Furthermore, Kotlin provides native language ergonomics for composition through interface delegation using the by keyword (class SecureStorage(inner: Storage) : Storage by inner). This delivers the syntax convenience of inheritance with the structural safety of composition.
+Most importantly, composition is the defining paradigm shift behind Jetpack Compose. In the legacy View framework, every UI element extended the monolithic android.view.View class (which contains over 30,000 lines of code and hundreds of fields). Jetpack Compose completely abandons this inheritance model. A Compose UI tree is constructed purely through function composition, passing modifiers and state holders as parameters, ensuring that UI components remain lightweight, decoupled, and trivially reusable across multiple platforms.
 
 ## How to answer in the interview
 
