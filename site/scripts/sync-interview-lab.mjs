@@ -49,51 +49,51 @@ const topicGuide = {
 };
 
 const topicGuideAr = {
-  KOT: ['افهم وتتبع دلالات وقواعد Kotlin بعمق قبل الانتقال لمستوى الـ Framework.', []],
+  KOT: ['ابدأ بفهم Kotlin نفسها: الـ Type System والـ Generics والـ Coroutines، وبعدها اربطها بسلوك Android.', []],
   AND: ['تتبع دورات حياة الـ Activity والعملية والـ Context قبل تحديد مالك الحالة (State Owner).', ['KOT']],
   MEM: ['شخص تسريبات الذاكرة والـ ANRs وبدء التشغيل بالأدلة القياسية وذاكرة النظام.', ['AND']],
-  COR: ['اشرح سياق التنفيذ والإلغاء المنسق والملكية المهيكلة بدقة متناهية.', ['KOT', 'AND']],
-  FLO: ['ابنِ تدفقات البيانات وحالة الواجهة مع نمذجة واضحة لإعادة البث ودورة الحياة.', ['COR']],
-  ARC: ['اجعل ملكية البيانات واتجاه تدفقها صريحاً عبر طبقات الواجهة والنطاق والبيانات.', ['AND', 'FLO']],
+  COR: ['افهم مين مالك كل Coroutine، وإزاي الإلغاء والفشل بينتقلوا، وإمتى الشغل يخلص فعلًا.', ['KOT', 'AND']],
+  FLO: ['قارن Flow وStateFlow وSharedFlow من ناحية القيم، الـ Replay، والـ Lifecycle وقت الجمع.', ['COR']],
+  ARC: ['حدد مين يملك البيانات وإزاي بتتحرك بين الـ UI والـ Domain والـ Data، من غير طبقات زيادة بلا سبب.', ['AND', 'FLO']],
   SOL: ['طبق مبادئ التصميم لمواجهة ضغوط التغيير الفعلية بدلاً من حفظ الاختصارات.', ['KOT', 'ARC']],
   PAT: ['اختر النمط بناءً على المشكلة التي يحلها ودرجة الاقتران (Coupling) التي يضيفها.', ['SOL']],
-  DI: ['افهم رسوم الكائنات والـ Bindings ونطاقات الـ Scopes وحدود دورة الحياة.', ['ARC', 'SOL']],
-  COM: ['حلل عمليات الـ Composition والحالة والـ Effects وجمع البيانات الآمن دورياً.', ['KOT', 'FLO']],
-  DAT: ['صمم مصدر الحقيقة المحلي الدائم، وحدود الشبكة، ومعالجة التعارضات.', ['ARC', 'COR']],
+  DI: ['تتبّع Object Graph والـ Bindings والـ Scopes، واربط عمر كل Dependency بالمالك الصح.', ['ARC', 'SOL']],
+  COM: ['افهم Recomposition والـ State والـ Effects، وإمتى تجمع Flow مع الـ Lifecycle.', ['KOT', 'FLO']],
+  DAT: ['حدد مصدر الحقيقة للبيانات، وإمتى تخزن محليًا أو تطلب من الشبكة، وإزاي تتعامل مع التعارض.', ['ARC', 'COR']],
   BG: ['طابق نوع العمل مع عمر العملية، وظهورها للمستخدم، والمهام المجدولة.', ['AND', 'COR']],
-  SEC: ['افصل بين حماية الجهاز وسلطة السيرفر ونماذج التهديد المالي.', ['AND', 'DAT']],
-  SYS: ['حول متطلبات المنتج لقرارات معمارية واضحة وحلول صريحة لحالات الفشل.', ['ARC', 'DAT', 'SEC']],
+  SEC: ['حدد Threat Model واضح، وافصل حماية الجهاز عن القرارات اللي لازم يملكها الـ Server.', ['AND', 'DAT']],
+  SYS: ['حوّل متطلبات المنتج لقرارات Architecture واضحة، واشرح هتتصرف إزاي لما الشبكة أو الجهاز يفشل.', ['ARC', 'DAT', 'SEC']],
   MOD: ['ارسم حدود الموديولات حول الملكية المستقلة واتجاه التبعيات السليم.', ['ARC', 'DI']],
   BLD: ['افهم دورة البناء والتقليص والتوقيع والإطلاق كسلسلة تسليم واحدة.', ['MOD']],
   TST: ['اعتمد على اختبارات تثبت السلوك عند الحدود الصحيحة وتكشف حالات الانهيار.', ['ARC', 'DAT']],
   CIC: ['اربط بين مراجعة الكود والأتمتة وأدلة سلامة الإطلاق في الفريق.', ['TST', 'BLD']],
   DSA: ['حدد الـ Invariants والتعقيد الحسابي (Big O) قبل البدء في كتابة أو تحسين الكود.', ['KOT']],
-  LEAD: ['استند للأدلة والقرارات الشفافة لقيادة الفرق الهندسية وتجاوز الغموض.', ['SYS', 'TST']],
-  PAY: ['تعامل مع عمليات الدفع، والإعادات، والتسويات، والبيانات الحساسة كعقود غير قابلة للتفريط.', ['SEC', 'SYS']],
+  LEAD: ['احكي قرارك الهندسي بالأدلة: المشكلة، البدائل، قرار الفريق، والنتيجة اللي قدرت تقيسها.', ['SYS', 'TST']],
+  PAY: ['فرّق بين Authorization وCapture وSettlement، وتعامل مع النتيجة المجهولة حسب عقد مزود الدفع.', ['SEC', 'SYS']],
 };
 
 const topicArNames = {
-  KOT: 'أساسيات لغة Kotlin ومفاهيمها المتقدمة',
-  AND: 'أساسيات أندرويد ودورة الحياة والسياق (Context)',
-  MEM: 'إدارة الذاكرة والـ ANR وتحسين الأداء',
-  COR: 'الـ Coroutines والتزامن في Kotlin',
-  FLO: 'الـ Flow و StateFlow و SharedFlow والـ Channels',
-  ARC: 'العمارة النظيفة و MVVM و MVI و UDF',
-  SOL: 'مبادئ SOLID والتصميم الكائني',
-  PAT: 'أنماط التصميم البرمجية (Design Patterns)',
-  DI: 'حقن التبعيات: Hilt و Dagger',
-  COM: 'واجهات Jetpack Compose الحديثة',
-  DAT: 'الشبكات وقواعد بيانات Room والـ DataStore والتخزين المحلي',
-  BG: 'المهام الخلفية و WorkManager وقيود النظام',
-  SEC: 'أمان أندرويد والتشفير والنمذجة الأمنية لتطبيقات التكنولوجيا المالية',
-  SYS: 'تصميم أنظمة وتطبيقات الموبايل (System Design) والقرارات الهندسية',
-  MOD: 'تقسيم المشروع لموديولات (Modularization) وحدود التبعيات',
-  BLD: 'أنظمة البناء و Gradle و AGP و R8 والـ Signing وإصدار التطبيقات',
-  TST: 'اختبار البرمجيات والجودة والموثوقية',
-  CIC: 'الـ CI/CD والـ Git وتسليم المشاريع في الفرق الهندسية',
-  DSA: 'هياكل البيانات والخوارزميات والـ Big O',
-  LEAD: 'القيادة التقنية والتواصل وملكية المشاريع الهندسية',
-  PAY: 'سيناريوهات الدفع ونقاط البيع (POS) وتأمين المعاملات المالية',
+  KOT: 'Kotlin: الأساسيات والموضوعات المتقدمة',
+  AND: 'Android Components والـ Lifecycle والـ Context',
+  MEM: 'Memory وANR وتحسين الأداء',
+  COR: 'Kotlin Coroutines والتعامل مع الـ Concurrency',
+  FLO: 'Flow وStateFlow وSharedFlow وChannels',
+  ARC: 'Architecture وMVVM وMVI وUDF',
+  SOL: 'SOLID والتصميم الكائني',
+  PAT: 'Design Patterns واختيار النمط المناسب',
+  DI: 'Dependency Injection مع Hilt وDagger',
+  COM: 'Jetpack Compose وإدارة حالة الواجهة',
+  DAT: 'Networking وRoom وDataStore والتخزين المحلي',
+  BG: 'Background Work وWorkManager وقيود Android',
+  SEC: 'Android Security والتشفير وThreat Modeling',
+  SYS: 'Mobile System Design والقرارات الهندسية',
+  MOD: 'Modularization وحدود الـ Dependencies',
+  BLD: 'Gradle وAGP وR8 وإصدار التطبيقات',
+  TST: 'Testing والجودة والموثوقية',
+  CIC: 'CI/CD وGit وتسليم التغييرات',
+  DSA: 'Data Structures وAlgorithms وBig O',
+  LEAD: 'القيادة التقنية والتواصل واتخاذ القرار',
+  PAY: 'سيناريوهات الدفع وPOS وReconciliation',
 };
 
 // Clean output directories
@@ -197,21 +197,21 @@ for (const [index, q] of questions.entries()) {
   const navAr = `<nav class="lab-adjacent" aria-label="التنقل بين الأسئلة">${previous ? `<a href="${routeAr(previous)}">← ${previous.id}</a>` : '<span></span>'}${next ? `<a href="${routeAr(next)}">${next.id} →</a>` : ''}</nav>`;
 
   const requiredArFields = [
-    ['evaluates_ar', 'ما يقيّمه المحاور'],
-    ['concept_ar', 'الشرح والمفهوم التقني'],
-    ['walkthrough_ar', 'التطبيق العملي وسيناريو الفشل'],
-    ['why_it_matters_ar', 'آلية العمل والتحليل الهندسي'],
-    ['worked_example_ar', 'مثال تطبيقي واختبار'],
-    ['trade_offs_ar', 'المفاضلات الهندسية ومعايير القرار'],
-    ['failure_modes_ar', 'أنماط الفشل ومصائد الأخطاء'],
-    ['production_perspective_ar', 'منظور بيئة العمل الفعلي (Production)'],
-    ['quick_answer_ar', 'إجابة المقابلة — ملخصة وسريعة'],
-    ['best_answer_ar', 'إجابة المقابلة — نموذجية ومهيكلة'],
-    ['deep_answer_ar', 'إجابة المقابلة — مناقشة Senior متعمقة'],
-    ['how_to_answer_ar', 'طريقة تقديم الإجابة في المقابلة'],
-    ['talking_points_ar', 'محاور النقاش المتقدم'],
-    ['follow_ups_ar', 'أسئلة المتابعة واعتراضات المحاور'],
-    ['self_check_ar', 'معايير التقييم الذاتي'],
+    ['evaluates_ar', 'المحاور عايز يعرف إيه؟'],
+    ['concept_ar', 'الفكرة ببساطة'],
+    ['walkthrough_ar', 'خلينا نشوف سيناريو'],
+    ['why_it_matters_ar', 'إيه اللي بيحصل وليه؟'],
+    ['worked_example_ar', 'مثال عملي'],
+    ['trade_offs_ar', 'إمتى تختار الحل ده؟'],
+    ['failure_modes_ar', 'إيه اللي ممكن يغلط؟'],
+    ['production_perspective_ar', 'قرارك في Production'],
+    ['quick_answer_ar', 'إجابة سريعة للانترفيو'],
+    ['best_answer_ar', 'إجابة قوية للانترفيو'],
+    ['deep_answer_ar', 'لو الـ Interviewer دخل معاك في التفاصيل'],
+    ['how_to_answer_ar', 'إزاي تقدم الإجابة'],
+    ['talking_points_ar', 'نقط تستاهل نقاش أعمق'],
+    ['follow_ups_ar', 'أسئلة ممكن تتسأل بعدها'],
+    ['self_check_ar', 'راجع فهمك'],
     ['references_ar', 'المراجع وتاريخ المراجعة الفنية'],
   ];
 
@@ -263,7 +263,7 @@ for (const code of codes) {
   // Arabic topic groups
   const groupsAr = ['A', 'B', 'C'].map((group) => {
     const items = topicQuestions.filter((q) => q.group === group);
-    const grpName = group === 'A' ? 'الأساسيات والمفاهيم الجوهرية' : group === 'B' ? 'التطبيق العملي وبناء الميزات' : 'سيناريوهات الـ Senior والمفاضلات الهندسية';
+    const grpName = group === 'A' ? 'الأساسيات' : group === 'B' ? 'التطبيق العملي' : 'سيناريوهات Senior وقرارات التصميم';
     return `## ${group} — ${grpName}\n\n${items.map((q) => {
       const qAr = arabicMetadata[q.id] || {};
       return `- [${q.id}](${href(`ar/lab/questions/${q.id.toLowerCase()}/`)}) — ${qAr.questionAr || q.question}`;
@@ -287,13 +287,13 @@ await writeFile(path.join(docs, 'practice.md'), `---\ntitle: Mock interview\ndes
 await writeFile(path.join(docs, 'plans.md'), `---\ntitle: Study plans\ndescription: Seven, fourteen, and thirty day Android interview study schedules\n---\n\nUse the topic pages and set your daily question goal on the [Lab dashboard](../). Spend part of each session on first attempts and part on due reviews. These schedules do not imply source-only answers have been reviewed.\n\n## 7 days · focused refresh\n\n| Day | Focus |\n|---|---|\n| 1 | Kotlin, Android fundamentals, memory |\n| 2 | Coroutines and Flow |\n| 3 | Architecture, SOLID, patterns, DI |\n| 4 | Compose, data, background work |\n| 5 | Security, payments, system design |\n| 6 | Modularization, build/release, testing, CI/CD |\n| 7 | Algorithms, leadership, timed mock and weak areas |\n\n## 14 days · balanced practice\n\nSpend days 1–5 on Phase 1, days 6–8 on Phase 2, days 9–11 on Phase 3, days 12–13 on Phase 4, and day 14 on Phase 5 plus a mock interview. Review due cards every day.\n\n## 30 days · deeper pass\n\nAllocate one day to each of the 21 topics in original phase order. Use days 22–26 for cross-topic paths (Coroutines → Flow → Compose; Lifecycle → Memory → Background Work; Architecture → SOLID → DI → Modules; Security → Payments → System Design; Testing → CI/CD → Release). Use days 27–30 for due reviews, two timed mocks, and weak areas.\n`, 'utf8');
 
 // Generate Core Lab Pages (Arabic)
-await writeFile(path.join(docsAr, 'index.md'), `---\ntitle: مختبر أسئلة أندرويد\ndescription: 485 سؤالاً معتمداً من مقابلات كبرى الشركات التقنية عبر 21 موضوعاً في هندسة أندرويد\n---\n\nيحتوي بنك الأسئلة المعتمد على **485 سؤالاً تقنياً موزعة على 21 موضوعاً**. لكل سؤال مسار ثابت وتغطية تعليمية دقيقة ومراجعة برمجية كاملة.\n\n<lab-dashboard></lab-dashboard>\n\n## استكشف المراحل الخمس\n\n| الموضوع | عدد الأسئلة | المرحلة | الأولوية |\n|---|---:|---:|---|\n${rowsAr.join('\n')}\n\n[البحث والفلترة في كل الأسئلة](${href('ar/lab/explore/')}) · [البطاقات التعليمية والمراجعة](${href('ar/lab/review/')}) · [المقابلة التجريبية](${href('ar/lab/practice/')})\n`, 'utf8');
+await writeFile(path.join(docsAr, 'index.md'), `---\ntitle: مختبر أسئلة Android\ndescription: 485 سؤال Interview عبر 21 موضوعًا في Android Engineering\n---\n\nهنا **485 سؤال Interview في 21 موضوعًا**. لكل سؤال صفحة ثابتة فيها الشرح ومستويات مختلفة للإجابة. المراجعة التحريرية لإجابات الانترفيو لسه شغالة سؤال بسؤال.\n\n<lab-dashboard></lab-dashboard>\n\n## ابدأ من الموضوع اللي محتاجه\n\n| الموضوع | عدد الأسئلة | المرحلة | الأولوية |\n|---|---:|---:|---|\n${rowsAr.join('\n')}\n\n[دوّر في الأسئلة](${href('ar/lab/explore/')}) · [راجع البطاقات](${href('ar/lab/review/')}) · [جرّب Mock Interview](${href('ar/lab/practice/')})\n`, 'utf8');
 
 await writeFile(path.join(docsAr, 'explore.md'), `---\ntitle: استكشف جميع الأسئلة المعتمدة\ndescription: ابحث وفلتر في بنك أسئلة أندرويد الكامل المكون من 485 سؤالاً\n---\n\nابحث برمز السؤال، المصطلح التقني، أو نص السؤال. يمكنك الفلترة حسب الموضوع، المرحلة، مجموعة الصعوبة، وحالة تقدمك المحفوظة محلياً.\n\n<lab-explorer></lab-explorer>\n\nبحث الموقع في الشريط العلوي يبحث أيضاً في كافة الدروس والإجابات النموذجية.\n`, 'utf8');
 
 await writeFile(path.join(docsAr, 'review.md'), `---\ntitle: البطاقات التعليمية والمراجعة المتباعدة\ndescription: نظام تكرار متباعد محلي في المتصفح لأسئلة مقابلات أندرويد\n---\n\nأجب من ذاكرتك أولاً، ثم قيّم استرجاعك. زر **إعادة** يعيد البطاقة اليوم؛ وأزرار **صعب** و**جيد** و**سهل** تزيد الفترات الزمنية للمراجعة.\n\n<lab-review></lab-review>\n`, 'utf8');
 
-await writeFile(path.join(docsAr, 'practice.md'), `---\ntitle: محاكاة المقابلات التجريبية\ndescription: جلسات تدريب مؤقتة وتقييم ذاتي لمقابلات أندرويد الحقيقية\n---\n\nاختر مدة الجلسة (10، 20، 30، أو 45 دقيقة) وحدد موضوعاً معيناً أو جلسة شاملة. اكتب إجابتك الخاصة قبل الكشف عن نموذج الإجابة. جميع التقييمات ذاتية ومحفوظة في متصفحك.\n\n<lab-practice></lab-practice>\n\n## معايير التقييم الذاتي\n\nتأكد من شمول إجابتك للتعريف الدقيق، الآلية الداخلية للنظام، الكود، حالات الفشل أو الحالات الحدية، والمبررات الهندسية في الـ Production.\n`, 'utf8');
+await writeFile(path.join(docsAr, 'practice.md'), `---\ntitle: محاكاة المقابلات التجريبية\ndescription: جلسات تدريب مؤقتة وتقييم ذاتي لمقابلات أندرويد الحقيقية\n---\n\nاختر مدة الجلسة (10، 20، 30، أو 45 دقيقة) وحدد موضوعاً معيناً أو جلسة شاملة. اكتب إجابتك الخاصة قبل الكشف عن نموذج الإجابة. جميع التقييمات ذاتية ومحفوظة في متصفحك.\n\n<lab-practice></lab-practice>\n\n## راجع فهمك\n\nتأكد من شمول إجابتك للتعريف الدقيق، الآلية الداخلية للنظام، الكود، حالات الفشل أو الحالات الحدية، والمبررات الهندسية في الـ Production.\n`, 'utf8');
 
 await writeFile(path.join(docsAr, 'plans.md'), `---\ntitle: خطط المذاكرة المنظمة\ndescription: جداول مذاكرة مركزة لمقابلات أندرويد لـ 7 أيام و 14 يوماً و 30 يوماً\n---\n\nاستخدم صفحات المواضيع وحدد هدفك اليومي من الأسئلة في [لوحة التحكم](../). قسّم وقتك بين الأسئلة الجديدة ومراجعة البطاقات المستحقة.\n\n## 7 أيام · مراجعة سريعة ومركزة\n\n| اليوم | التركيز |\n|---|---|\n| 1 | كوتلن، أساسيات أندرويد، إدارة الذاكرة |\n| 2 | الـ Coroutines والـ Flow |\n| 3 | المعمارية، مبادئ SOLID، أنماط التصميم، حقن التبعيات |\n| 4 | واجهات Compose، قواعد البيانات، العمليات الخلفية |\n| 5 | الأمان، سيناريوهات الدفع، تصميم الأنظمة (System Design) |\n| 6 | تقسيم الموديولات، البناء والإطلاق، الاختبارات، الـ CI/CD |\n| 7 | الخوارزميات، القيادة التقنية، جلسات محاكاة ونقاط الضعف |\n\n## 14 يوماً · تدريب متوازن\n\nخصص الأيام 1–5 للمرحلة الأولى، والأيام 6–8 للمرحلة الثانية، والأيام 9–11 للمرحلة الثالثة، والأيام 12–13 للمرحلة الرابعة، واليوم 14 للمرحلة الخامسة مع جلسة محاكاة كاملة.\n\n## 30 يوماً · تعمق شامل\n\nخصص يوماً كاملاً لكل موضوع من الـ 21 موضوعاً. استخدم الأيام 22–26 للمسارات المترابطة (Coroutines → Flow → Compose; Lifecycle → Memory → Background Work; Architecture → SOLID → DI → Modules; Security → Payments → System Design; Testing → CI/CD → Release). وخصص الأيام 27–30 للمراجعة المتباعدة ومقابلتين تجريبيتين.\n`, 'utf8');
 

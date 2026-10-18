@@ -1,0 +1,2251 @@
+{
+  "scope": {
+    "questions": 485,
+    "topics": 21,
+    "arabicFieldsPerQuestion": 18
+  },
+  "editorialStatus": {
+    "complete": 4,
+    "pending": 465,
+    "legacy_spoken_pass": 16
+  },
+  "topicCoverage": {
+    "AND": {
+      "total": 25,
+      "pending": 25
+    },
+    "ARC": {
+      "total": 26,
+      "legacy_spoken_pass": 1,
+      "pending": 25
+    },
+    "BG": {
+      "total": 18,
+      "pending": 17,
+      "legacy_spoken_pass": 1
+    },
+    "BLD": {
+      "total": 21,
+      "pending": 21
+    },
+    "CIC": {
+      "total": 20,
+      "pending": 20
+    },
+    "COM": {
+      "total": 28,
+      "pending": 27,
+      "legacy_spoken_pass": 1
+    },
+    "COR": {
+      "total": 32,
+      "legacy_spoken_pass": 8,
+      "pending": 23,
+      "complete": 1
+    },
+    "DAT": {
+      "total": 22,
+      "pending": 22
+    },
+    "DI": {
+      "total": 20,
+      "pending": 20
+    },
+    "DSA": {
+      "total": 16,
+      "pending": 16
+    },
+    "FLO": {
+      "total": 32,
+      "pending": 32
+    },
+    "KOT": {
+      "total": 30,
+      "complete": 2,
+      "pending": 28
+    },
+    "LEAD": {
+      "total": 15,
+      "pending": 14,
+      "legacy_spoken_pass": 1
+    },
+    "MEM": {
+      "total": 26,
+      "pending": 26
+    },
+    "MOD": {
+      "total": 21,
+      "pending": 21
+    },
+    "PAT": {
+      "total": 18,
+      "pending": 18
+    },
+    "PAY": {
+      "total": 15,
+      "legacy_spoken_pass": 1,
+      "pending": 13,
+      "complete": 1
+    },
+    "SEC": {
+      "total": 32,
+      "legacy_spoken_pass": 1,
+      "pending": 31
+    },
+    "SOL": {
+      "total": 20,
+      "legacy_spoken_pass": 1,
+      "pending": 19
+    },
+    "SYS": {
+      "total": 24,
+      "pending": 23,
+      "legacy_spoken_pass": 1
+    },
+    "TST": {
+      "total": 24,
+      "pending": 24
+    }
+  },
+  "signalCounts": {
+    "terminology": 157,
+    "absolute-claim": 166,
+    "formal-style": 29
+  },
+  "signals": {
+    "AND-01": [
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      }
+    ],
+    "AND-06": [
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      }
+    ],
+    "AND-09": [
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "بدون أي تكلفة"
+      }
+    ],
+    "AND-14": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "AND-15": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "AND-18": [
+      {
+        "field": "trade_offs_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "AND-20": [
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "AND-23": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "worked_example_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "ARC-02": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "ARC-03": [
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "ARC-05": [
+      {
+        "field": "production_perspective_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "ARC-10": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "formal-style",
+        "text": "بدقة متناهية"
+      },
+      {
+        "field": "follow_ups_ar",
+        "kind": "absolute-claim",
+        "text": "بالضرورة"
+      }
+    ],
+    "ARC-12": [
+      {
+        "field": "trade_offs_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "ARC-15": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "ARC-18": [
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "الموزعات"
+      },
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "worked_example_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "ARC-20": [
+      {
+        "field": "worked_example_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "ARC-25": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "formal-style",
+        "text": "بدقة متناهية"
+      },
+      {
+        "field": "talking_points_ar",
+        "kind": "terminology",
+        "text": "آلة الحالات"
+      }
+    ],
+    "BG-02": [
+      {
+        "field": "references_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "BG-04": [
+      {
+        "field": "production_perspective_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "BG-07": [
+      {
+        "field": "trade_offs_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "BG-08": [
+      {
+        "field": "trade_offs_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "BG-10": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "BG-11": [
+      {
+        "field": "concept_ar",
+        "kind": "formal-style",
+        "text": "حتمية التكرار"
+      }
+    ],
+    "BG-16": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "BG-18": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "آلة الحالات"
+      }
+    ],
+    "BLD-10": [
+      {
+        "field": "concept_ar",
+        "kind": "formal-style",
+        "text": "بدقة متناهية"
+      }
+    ],
+    "BLD-21": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "failure_modes_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "CIC-01": [
+      {
+        "field": "failure_modes_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "follow_ups_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "CIC-11": [
+      {
+        "field": "best_answer_ar",
+        "kind": "formal-style",
+        "text": "بدقة متناهية"
+      }
+    ],
+    "CIC-14": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "why_it_matters_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "quick_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "CIC-15": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "بالضرورة"
+      }
+    ],
+    "CIC-16": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "COM-01": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COM-03": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COM-04": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "production_perspective_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "quick_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COM-06": [
+      {
+        "field": "why_it_matters_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COM-13": [
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COM-14": [
+      {
+        "field": "follow_ups_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COM-15": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "worked_example_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COM-18": [
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COM-19": [
+      {
+        "field": "why_it_matters_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COM-20": [
+      {
+        "field": "trade_offs_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "COM-21": [
+      {
+        "field": "trade_offs_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COM-23": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COM-24": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "quick_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COM-26": [
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COM-27": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COR-01": [
+      {
+        "field": "self_check_ar",
+        "kind": "terminology",
+        "text": "الموزعات"
+      },
+      {
+        "field": "references_ar",
+        "kind": "terminology",
+        "text": "الموزعات"
+      }
+    ],
+    "COR-02": [
+      {
+        "field": "questionAr",
+        "kind": "absolute-claim",
+        "text": "بالضرورة"
+      },
+      {
+        "field": "self_check_ar",
+        "kind": "terminology",
+        "text": "الموزعات"
+      }
+    ],
+    "COR-03": [
+      {
+        "field": "evaluates_ar",
+        "kind": "terminology",
+        "text": "التزامن المهيكل"
+      },
+      {
+        "field": "references_ar",
+        "kind": "terminology",
+        "text": "الموزعات"
+      }
+    ],
+    "COR-04": [
+      {
+        "field": "questionAr",
+        "kind": "terminology",
+        "text": "التزامن المهيكل"
+      },
+      {
+        "field": "questionAr",
+        "kind": "formal-style",
+        "text": "يُعد جوهري"
+      },
+      {
+        "field": "evaluates_ar",
+        "kind": "terminology",
+        "text": "التزامن المهيكل"
+      },
+      {
+        "field": "why_it_matters_ar",
+        "kind": "terminology",
+        "text": "التزامن المهيكل"
+      },
+      {
+        "field": "failure_modes_ar",
+        "kind": "terminology",
+        "text": "التزامن المهيكل"
+      },
+      {
+        "field": "talking_points_ar",
+        "kind": "terminology",
+        "text": "التزامن المهيكل"
+      },
+      {
+        "field": "self_check_ar",
+        "kind": "terminology",
+        "text": "التزامن المهيكل"
+      },
+      {
+        "field": "references_ar",
+        "kind": "terminology",
+        "text": "التزامن المهيكل"
+      }
+    ],
+    "COR-07": [
+      {
+        "field": "questionAr",
+        "kind": "terminology",
+        "text": "الموزعات"
+      },
+      {
+        "field": "trade_offs_ar",
+        "kind": "absolute-claim",
+        "text": "بالضرورة"
+      },
+      {
+        "field": "self_check_ar",
+        "kind": "terminology",
+        "text": "الموزعات"
+      },
+      {
+        "field": "references_ar",
+        "kind": "terminology",
+        "text": "الموزعات"
+      }
+    ],
+    "COR-09": [
+      {
+        "field": "why_it_matters_ar",
+        "kind": "terminology",
+        "text": "الموزعات"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "التزامن المهيكل"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "التزامن المهيكل"
+      },
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "الموزعات"
+      },
+      {
+        "field": "follow_ups_ar",
+        "kind": "terminology",
+        "text": "التزامن المهيكل"
+      }
+    ],
+    "COR-13": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COR-16": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "خيط التنفيذ"
+      }
+    ],
+    "COR-17": [
+      {
+        "field": "follow_ups_ar",
+        "kind": "terminology",
+        "text": "خيط التنفيذ"
+      }
+    ],
+    "COR-19": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COR-20": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COR-25": [
+      {
+        "field": "references_ar",
+        "kind": "terminology",
+        "text": "التزامن المهيكل"
+      }
+    ],
+    "COR-28": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "COR-30": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "quick_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "COR-32": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "why_it_matters_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "DI-01": [
+      {
+        "field": "questionAr",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "trade_offs_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "quick_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "follow_ups_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "follow_ups_ar",
+        "kind": "absolute-claim",
+        "text": "بالضرورة"
+      },
+      {
+        "field": "references_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "DI-02": [
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "production_perspective_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "references_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "DI-03": [
+      {
+        "field": "follow_ups_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "DI-04": [
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "DI-05": [
+      {
+        "field": "quick_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "DI-08": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "DI-09": [
+      {
+        "field": "references_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "DI-12": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "DI-14": [
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "بالضرورة"
+      }
+    ],
+    "DI-15": [
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "DI-16": [
+      {
+        "field": "questionAr",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "DI-18": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "DI-19": [
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "DI-20": [
+      {
+        "field": "questionAr",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "DSA-04": [
+      {
+        "field": "questionAr",
+        "kind": "absolute-claim",
+        "text": "بالضرورة"
+      },
+      {
+        "field": "quick_answer_ar",
+        "kind": "absolute-claim",
+        "text": "بالضرورة"
+      }
+    ],
+    "DSA-10": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "formal-style",
+        "text": "بدقة متناهية"
+      }
+    ],
+    "DSA-11": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "formal-style",
+        "text": "بدقة متناهية"
+      }
+    ],
+    "DSA-16": [
+      {
+        "field": "references_ar",
+        "kind": "formal-style",
+        "text": "بدقة متناهية"
+      }
+    ],
+    "FLO-04": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "FLO-06": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "FLO-07": [
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "follow_ups_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "FLO-09": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "FLO-12": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "FLO-14": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "FLO-17": [
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "FLO-19": [
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "FLO-21": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "FLO-22": [
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "FLO-23": [
+      {
+        "field": "trade_offs_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "FLO-24": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "production_perspective_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "FLO-28": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "FLO-29": [
+      {
+        "field": "trade_offs_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "FLO-30": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "FLO-32": [
+      {
+        "field": "trade_offs_ar",
+        "kind": "terminology",
+        "text": "التزامن المهيكل"
+      },
+      {
+        "field": "trade_offs_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "KOT-02": [
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      },
+      {
+        "field": "follow_ups_ar",
+        "kind": "absolute-claim",
+        "text": "بالضرورة"
+      }
+    ],
+    "KOT-03": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "بدون أي تكلفة"
+      },
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      },
+      {
+        "field": "follow_ups_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "KOT-04": [
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      }
+    ],
+    "KOT-05": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "بدون أي تكلفة"
+      },
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      }
+    ],
+    "KOT-06": [
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      }
+    ],
+    "KOT-07": [
+      {
+        "field": "questionAr",
+        "kind": "terminology",
+        "text": "الدوال ذات الرتب العليا"
+      },
+      {
+        "field": "quick_answer_ar",
+        "kind": "terminology",
+        "text": "الدوال ذات الرتب العليا"
+      },
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      },
+      {
+        "field": "references_ar",
+        "kind": "terminology",
+        "text": "الدوال ذات الرتب العليا"
+      }
+    ],
+    "KOT-08": [
+      {
+        "field": "quick_answer_ar",
+        "kind": "absolute-claim",
+        "text": "بدون أي تكلفة"
+      },
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      }
+    ],
+    "KOT-09": [
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      }
+    ],
+    "KOT-10": [
+      {
+        "field": "why_it_matters_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "worked_example_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "trade_offs_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "quick_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      },
+      {
+        "field": "follow_ups_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "KOT-11": [
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      }
+    ],
+    "KOT-12": [
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      }
+    ],
+    "KOT-13": [
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      }
+    ],
+    "KOT-15": [
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      }
+    ],
+    "KOT-18": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "بدون أي تكلفة"
+      }
+    ],
+    "KOT-19": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "KOT-22": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "why_it_matters_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "KOT-23": [
+      {
+        "field": "quick_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "LEAD-01": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "LEAD-02": [
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "LEAD-13": [
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "LEAD-15": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "formal-style",
+        "text": "بدقة متناهية"
+      }
+    ],
+    "MEM-02": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "بالضرورة"
+      }
+    ],
+    "MEM-03": [
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "بدون أي تكلفة"
+      }
+    ],
+    "MEM-04": [
+      {
+        "field": "follow_ups_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "MEM-05": [
+      {
+        "field": "worked_example_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "follow_ups_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "MEM-10": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "MEM-12": [
+      {
+        "field": "follow_ups_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "MEM-16": [
+      {
+        "field": "concept_ar",
+        "kind": "formal-style",
+        "text": "بدقة متناهية"
+      }
+    ],
+    "MEM-18": [
+      {
+        "field": "why_it_matters_ar",
+        "kind": "formal-style",
+        "text": "بدقة متناهية"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "formal-style",
+        "text": "بدقة متناهية"
+      }
+    ],
+    "MEM-22": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "MEM-25": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "MOD-01": [
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "MOD-02": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "talking_points_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "MOD-03": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "talking_points_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "MOD-07": [
+      {
+        "field": "quick_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "MOD-08": [
+      {
+        "field": "trade_offs_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "MOD-09": [
+      {
+        "field": "evaluates_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "walkthrough_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "self_check_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "references_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "MOD-11": [
+      {
+        "field": "questionAr",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "follow_ups_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "references_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "MOD-14": [
+      {
+        "field": "quick_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "الموزعات"
+      }
+    ],
+    "MOD-17": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "MOD-19": [
+      {
+        "field": "worked_example_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "MOD-21": [
+      {
+        "field": "trade_offs_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "PAT-03": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "بدون أي تكلفة"
+      }
+    ],
+    "PAT-06": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "PAT-07": [
+      {
+        "field": "questionAr",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "quick_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "quick_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "follow_ups_ar",
+        "kind": "absolute-claim",
+        "text": "بالضرورة"
+      },
+      {
+        "field": "references_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "PAT-08": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "PAT-09": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "PAT-10": [
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "PAT-13": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "PAT-14": [
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "PAT-16": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "PAT-17": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "trade_offs_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "references_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "PAY-02": [
+      {
+        "field": "questionAr",
+        "kind": "formal-style",
+        "text": "حتمية التكرار"
+      },
+      {
+        "field": "evaluates_ar",
+        "kind": "formal-style",
+        "text": "حتمية التكرار"
+      },
+      {
+        "field": "concept_ar",
+        "kind": "formal-style",
+        "text": "حتمية التكرار"
+      },
+      {
+        "field": "why_it_matters_ar",
+        "kind": "formal-style",
+        "text": "حتمية التكرار"
+      },
+      {
+        "field": "trade_offs_ar",
+        "kind": "formal-style",
+        "text": "حتمية التكرار"
+      },
+      {
+        "field": "quick_answer_ar",
+        "kind": "formal-style",
+        "text": "حتمية التكرار"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "formal-style",
+        "text": "حتمية التكرار"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "formal-style",
+        "text": "حتمية التكرار"
+      },
+      {
+        "field": "talking_points_ar",
+        "kind": "formal-style",
+        "text": "حتمية التكرار"
+      },
+      {
+        "field": "references_ar",
+        "kind": "formal-style",
+        "text": "حتمية التكرار"
+      }
+    ],
+    "PAY-03": [
+      {
+        "field": "production_perspective_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "PAY-06": [
+      {
+        "field": "questionAr",
+        "kind": "terminology",
+        "text": "التثبيت الذري"
+      },
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "التثبيت الذري"
+      },
+      {
+        "field": "quick_answer_ar",
+        "kind": "terminology",
+        "text": "التثبيت الذري"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "التثبيت الذري"
+      },
+      {
+        "field": "talking_points_ar",
+        "kind": "terminology",
+        "text": "التثبيت الذري"
+      }
+    ],
+    "PAY-14": [
+      {
+        "field": "production_perspective_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "SOL-01": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "SOL-04": [
+      {
+        "field": "worked_example_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "SOL-06": [
+      {
+        "field": "follow_ups_ar",
+        "kind": "absolute-claim",
+        "text": "بالضرورة"
+      }
+    ],
+    "SOL-07": [
+      {
+        "field": "questionAr",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "quick_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "references_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "SOL-08": [
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "SOL-09": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "SOL-10": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "walkthrough_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "SOL-12": [
+      {
+        "field": "quick_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "SOL-13": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "SOL-14": [
+      {
+        "field": "evaluates_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "quick_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "SOL-17": [
+      {
+        "field": "worked_example_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "SOL-18": [
+      {
+        "field": "trade_offs_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "SYS-01": [
+      {
+        "field": "evaluates_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      }
+    ],
+    "SYS-02": [
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "SYS-07": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "SYS-08": [
+      {
+        "field": "production_perspective_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "SYS-10": [
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "آلة الحالات"
+      },
+      {
+        "field": "trade_offs_ar",
+        "kind": "terminology",
+        "text": "آلة الحالات"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "آلة الحالات"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "آلة الحالات"
+      },
+      {
+        "field": "follow_ups_ar",
+        "kind": "terminology",
+        "text": "آلة الحالات"
+      },
+      {
+        "field": "self_check_ar",
+        "kind": "terminology",
+        "text": "آلة الحالات"
+      }
+    ],
+    "SYS-23": [
+      {
+        "field": "concept_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "production_perspective_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "TST-01": [
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "المفاضلات الهندسية"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "TST-02": [
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "TST-03": [
+      {
+        "field": "production_perspective_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "TST-04": [
+      {
+        "field": "evaluates_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "walkthrough_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "trade_offs_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "talking_points_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "TST-06": [
+      {
+        "field": "concept_ar",
+        "kind": "formal-style",
+        "text": "بدقة متناهية"
+      },
+      {
+        "field": "why_it_matters_ar",
+        "kind": "formal-style",
+        "text": "بدقة متناهية"
+      }
+    ],
+    "TST-08": [
+      {
+        "field": "trade_offs_ar",
+        "kind": "formal-style",
+        "text": "بدقة متناهية"
+      }
+    ],
+    "TST-09": [
+      {
+        "field": "trade_offs_ar",
+        "kind": "formal-style",
+        "text": "بدقة متناهية"
+      }
+    ],
+    "TST-10": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "TST-12": [
+      {
+        "field": "trade_offs_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "TST-13": [
+      {
+        "field": "concept_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "how_to_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      },
+      {
+        "field": "talking_points_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "TST-14": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "TST-15": [
+      {
+        "field": "trade_offs_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "TST-16": [
+      {
+        "field": "trade_offs_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "best_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "terminology",
+        "text": "حقن التبعيات"
+      }
+    ],
+    "TST-17": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "formal-style",
+        "text": "بدقة متناهية"
+      },
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ],
+    "TST-19": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "formal-style",
+        "text": "بدقة متناهية"
+      }
+    ],
+    "TST-22": [
+      {
+        "field": "deep_answer_ar",
+        "kind": "absolute-claim",
+        "text": "100%"
+      }
+    ]
+  },
+  "structuralErrors": [],
+  "note": "Signals are review leads; absent signals do not prove technical or semantic quality."
+}

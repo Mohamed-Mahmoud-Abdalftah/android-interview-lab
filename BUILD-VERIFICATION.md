@@ -1,5 +1,11 @@
 # Build and validation evidence
 
+## Arabic Interview Lab editorial batch — 2026-10-18
+
+The current branch has four newly completed question-level Arabic reviews; the other 481 remain in the editorial checkpoint. `./gradlew clean test check run --no-daemon` in `projects/kotlin-jvm-labs/` exited 0 with `BUILD SUCCESSFUL`; fresh JUnit XML reports **137 tests, 0 skipped, 0 failures, 0 errors**. Its first run failed because the newly edited KOT-01 compiled fence used undefined conceptual types; the fence was replaced with a self-contained Java-boundary example and the full suite passed on rerun. `PYTHONPATH=scripts python3 -m unittest discover -s scripts -p 'test_*.py'` ran **52 tests, all passed**.
+
+The bilingual structural validators passed for all 485 IDs. `pnpm build` generated **2,779 pages** and ran 13 site unit tests; `pnpm lint`, `pnpm typecheck`, `pnpm check:dist`, and Playwright **13/13** passed. `scripts/check_built_arabic_lab.py` checked all **485 built Arabic questions**, **21 topic pages**, and **63 topic/group combinations** with zero errors. The build retained four unrelated `proguard` highlighting fallbacks. `scripts/check_interview_links.py` found **303/303 unique URLs reachable** after a SEC-11 OWASP link repair. `scripts/validate.py` reported **0 errors**; the source ZIP was rebuilt and passed `unzip -t`. The editorial audit reported **4 complete question reviews, 352 review signals, and 0 structural errors**. These checks support the four edited records and site function; they do not certify the remaining 481 Arabic answers or Android-device and payment-terminal behavior. See `docs/ARABIC_INTERVIEW_EDITORIAL_REPORT.md` in the repository for scope and the exact remaining-ID checkpoint.
+
 ## Current integrated verification — 2026-10-11
 
 After the 48-day curriculum, specialist topics and mock packs were completed, the source inventory was regenerated before packaging. Every command below was observed in the current workspace; structural and browser checks still do not certify untested Android-device behavior.

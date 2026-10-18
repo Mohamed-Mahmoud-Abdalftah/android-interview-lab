@@ -1,6 +1,6 @@
-# Actual academy source inventory — 2026-10-17
+# Actual academy source inventory — 2026-10-18
 
-These 1223 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
+These 1229 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
 
 ```text
 .github/workflows/ci.yml
@@ -879,6 +879,8 @@ Speaking-Shadowing/DAY-46.md
 Speaking-Shadowing/DAY-47.md
 Speaking-Shadowing/DAY-48.md
 TECHNICAL-REVIEW-KOT-001.md
+docs/ARABIC_INTERVIEW_EDITORIAL_REPORT.md
+docs/ARABIC_TECH_TERMINOLOGY.md
 docs/ARCHITECTURE.md
 docs/CONTENT_GUIDELINES.md
 docs/DEPLOYMENT.md
@@ -934,13 +936,17 @@ projects/kotlin-jvm-labs/src/test/kotlin/academy/TerminalAttemptTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/TrustedReturnLinkTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/ViewSessionTest.kt
 projects/optional-payment-simulator/README.md
+reports/arabic-editorial-audit.json
+reports/arabic-editorial-checkpoint.json
 reports/content-coverage.json
 reports/content-inventory.md
 reports/external-links.json
 reports/source-crosswalk.json
 reports/source-manifest.json
+scripts/audit_arabic_editorial.py
 scripts/author_android_batch.py
 scripts/author_coroutines_batch.py
+scripts/check_built_arabic_lab.py
 scripts/check_interview_links.py
 scripts/complete_core_path.py
 scripts/complete_specialists_and_mocks.py

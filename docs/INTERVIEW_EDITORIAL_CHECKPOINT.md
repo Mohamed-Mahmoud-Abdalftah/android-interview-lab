@@ -1,5 +1,7 @@
 # Interview Lab spoken-answer editorial checkpoint — 2026-10-17
 
+> **2026-10-18 continuation:** The stricter Arabic brief now requires a manual review of all 18 Arabic metadata fields and the technical source before an ID is `complete`. Four new IDs meet that standard: KOT-01, KOT-14, COR-27, and PAY-12. The sixteen records below retain their valuable earlier spoken-answer work but are `legacy_spoken_pass` under the new standard. The exact 485-ID state is in [the machine checkpoint](../reports/arabic-editorial-checkpoint.json); 481 IDs still need a complete pass. See [the editorial report](ARABIC_INTERVIEW_EDITORIAL_REPORT.md) for verification and remaining work. The original 469 figure below describes the narrower 2026-10-17 pass.
+
 ## Scope and standard
 
 The requested goal is a question-by-question editorial review of all 485 English and Egyptian-Arabic interview records. A passing validator establishes structure, route parity, and limited text rules; it does not establish that a candidate can say and defend an answer aloud. The existing `editorial_status: reviewed` values predate this review and must not be used as evidence that the new speaking standard has been met.

@@ -1144,7 +1144,7 @@
       "topic": "COR",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": true
+      "hasKotlinCode": false
     },
     "COR-28": {
       "topic": "COR",
@@ -3388,7 +3388,7 @@
       "topic": "PAY",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": true
+      "hasKotlinCode": false
     },
     "PAY-13": {
       "topic": "PAY",

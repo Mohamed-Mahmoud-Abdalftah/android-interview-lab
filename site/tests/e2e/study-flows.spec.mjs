@@ -136,11 +136,11 @@ test('bilingual language switching and shared progress persistence', async ({ pa
   await expect(page).toHaveURL(/\/ar\/lab\/questions\/kot-01\/$/);
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   await expect(page.locator('html')).toHaveAttribute('lang', /^ar/);
-  await expect(page.getByRole('heading', { name: 'إجابة المقابلة — مناقشة Senior متعمقة' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'لو الـ Interviewer دخل معاك في التفاصيل' })).toBeVisible();
 
   // Verify full Arabic content rendering
-  await expect(page.getByRole('heading', { name: 'ما يقيّمه المحاور' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'المفاضلات الهندسية ومعايير القرار' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'المحاور عايز يعرف إيه؟' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'إمتى تختار الحل ده؟' })).toBeVisible();
 
   // Verify progress is shared across language switch!
   const practiceAr = page.locator('lab-question');

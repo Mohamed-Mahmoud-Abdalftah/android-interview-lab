@@ -1,0 +1,1553 @@
+{
+  "schemaVersion": 1,
+  "criteria": "complete means all 18 Arabic fields and the technical source were manually reviewed",
+  "questions": {
+    "KOT-01": {
+      "status": "complete",
+      "reviewedOn": "2026-10-18",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
+      ],
+      "metadataSha256": "fb919bda0e6ba01204138caabc8bd52bf71cbff685ad3917a938a12bfbc49dcb",
+      "sourceSha256": "b1bc2dc680d91d2e52fe3e808520bf37de3c4ef328775540862dcb9ed2f008d7"
+    },
+    "KOT-02": {
+      "status": "pending"
+    },
+    "KOT-03": {
+      "status": "pending"
+    },
+    "KOT-04": {
+      "status": "pending"
+    },
+    "KOT-05": {
+      "status": "pending"
+    },
+    "KOT-06": {
+      "status": "pending"
+    },
+    "KOT-07": {
+      "status": "pending"
+    },
+    "KOT-08": {
+      "status": "pending"
+    },
+    "KOT-09": {
+      "status": "pending"
+    },
+    "KOT-10": {
+      "status": "pending"
+    },
+    "KOT-11": {
+      "status": "pending"
+    },
+    "KOT-12": {
+      "status": "pending"
+    },
+    "KOT-13": {
+      "status": "pending"
+    },
+    "KOT-14": {
+      "status": "complete",
+      "reviewedOn": "2026-10-18",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
+      ],
+      "metadataSha256": "c0c8d8a95cf9ab8481a6440b8057eb6027ebb83d928776f326d914c7292ab91f",
+      "sourceSha256": "d8872265557e9349c684464c42f6c07da649858baa087b5ebb90254a7606a1b5"
+    },
+    "KOT-15": {
+      "status": "pending"
+    },
+    "KOT-16": {
+      "status": "pending"
+    },
+    "KOT-17": {
+      "status": "pending"
+    },
+    "KOT-18": {
+      "status": "pending"
+    },
+    "KOT-19": {
+      "status": "pending"
+    },
+    "KOT-20": {
+      "status": "pending"
+    },
+    "KOT-21": {
+      "status": "pending"
+    },
+    "KOT-22": {
+      "status": "pending"
+    },
+    "KOT-23": {
+      "status": "pending"
+    },
+    "KOT-24": {
+      "status": "pending"
+    },
+    "KOT-25": {
+      "status": "pending"
+    },
+    "KOT-26": {
+      "status": "pending"
+    },
+    "KOT-27": {
+      "status": "pending"
+    },
+    "KOT-28": {
+      "status": "pending"
+    },
+    "KOT-29": {
+      "status": "pending"
+    },
+    "KOT-30": {
+      "status": "pending"
+    },
+    "AND-01": {
+      "status": "pending"
+    },
+    "AND-02": {
+      "status": "pending"
+    },
+    "AND-03": {
+      "status": "pending"
+    },
+    "AND-04": {
+      "status": "pending"
+    },
+    "AND-05": {
+      "status": "pending"
+    },
+    "AND-06": {
+      "status": "pending"
+    },
+    "AND-07": {
+      "status": "pending"
+    },
+    "AND-08": {
+      "status": "pending"
+    },
+    "AND-09": {
+      "status": "pending"
+    },
+    "AND-10": {
+      "status": "pending"
+    },
+    "AND-11": {
+      "status": "pending"
+    },
+    "AND-12": {
+      "status": "pending"
+    },
+    "AND-13": {
+      "status": "pending"
+    },
+    "AND-14": {
+      "status": "pending"
+    },
+    "AND-15": {
+      "status": "pending"
+    },
+    "AND-16": {
+      "status": "pending"
+    },
+    "AND-17": {
+      "status": "pending"
+    },
+    "AND-18": {
+      "status": "pending"
+    },
+    "AND-19": {
+      "status": "pending"
+    },
+    "AND-20": {
+      "status": "pending"
+    },
+    "AND-21": {
+      "status": "pending"
+    },
+    "AND-22": {
+      "status": "pending"
+    },
+    "AND-23": {
+      "status": "pending"
+    },
+    "AND-24": {
+      "status": "pending"
+    },
+    "AND-25": {
+      "status": "pending"
+    },
+    "MEM-01": {
+      "status": "pending"
+    },
+    "MEM-02": {
+      "status": "pending"
+    },
+    "MEM-03": {
+      "status": "pending"
+    },
+    "MEM-04": {
+      "status": "pending"
+    },
+    "MEM-05": {
+      "status": "pending"
+    },
+    "MEM-06": {
+      "status": "pending"
+    },
+    "MEM-07": {
+      "status": "pending"
+    },
+    "MEM-08": {
+      "status": "pending"
+    },
+    "MEM-09": {
+      "status": "pending"
+    },
+    "MEM-10": {
+      "status": "pending"
+    },
+    "MEM-11": {
+      "status": "pending"
+    },
+    "MEM-12": {
+      "status": "pending"
+    },
+    "MEM-13": {
+      "status": "pending"
+    },
+    "MEM-14": {
+      "status": "pending"
+    },
+    "MEM-15": {
+      "status": "pending"
+    },
+    "MEM-16": {
+      "status": "pending"
+    },
+    "MEM-17": {
+      "status": "pending"
+    },
+    "MEM-18": {
+      "status": "pending"
+    },
+    "MEM-19": {
+      "status": "pending"
+    },
+    "MEM-20": {
+      "status": "pending"
+    },
+    "MEM-21": {
+      "status": "pending"
+    },
+    "MEM-22": {
+      "status": "pending"
+    },
+    "MEM-23": {
+      "status": "pending"
+    },
+    "MEM-24": {
+      "status": "pending"
+    },
+    "MEM-25": {
+      "status": "pending"
+    },
+    "MEM-26": {
+      "status": "pending"
+    },
+    "COR-01": {
+      "status": "legacy_spoken_pass"
+    },
+    "COR-02": {
+      "status": "legacy_spoken_pass"
+    },
+    "COR-03": {
+      "status": "legacy_spoken_pass"
+    },
+    "COR-04": {
+      "status": "legacy_spoken_pass"
+    },
+    "COR-05": {
+      "status": "legacy_spoken_pass"
+    },
+    "COR-06": {
+      "status": "legacy_spoken_pass"
+    },
+    "COR-07": {
+      "status": "legacy_spoken_pass"
+    },
+    "COR-08": {
+      "status": "legacy_spoken_pass"
+    },
+    "COR-09": {
+      "status": "pending"
+    },
+    "COR-10": {
+      "status": "pending"
+    },
+    "COR-11": {
+      "status": "pending"
+    },
+    "COR-12": {
+      "status": "pending"
+    },
+    "COR-13": {
+      "status": "pending"
+    },
+    "COR-14": {
+      "status": "pending"
+    },
+    "COR-15": {
+      "status": "pending"
+    },
+    "COR-16": {
+      "status": "pending"
+    },
+    "COR-17": {
+      "status": "pending"
+    },
+    "COR-18": {
+      "status": "pending"
+    },
+    "COR-19": {
+      "status": "pending"
+    },
+    "COR-20": {
+      "status": "pending"
+    },
+    "COR-21": {
+      "status": "pending"
+    },
+    "COR-22": {
+      "status": "pending"
+    },
+    "COR-23": {
+      "status": "pending"
+    },
+    "COR-24": {
+      "status": "pending"
+    },
+    "COR-25": {
+      "status": "pending"
+    },
+    "COR-26": {
+      "status": "pending"
+    },
+    "COR-27": {
+      "status": "complete",
+      "reviewedOn": "2026-10-18",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
+      ],
+      "metadataSha256": "15d25a72100f1b3915aa50a6fa323bd2f2ac2cc85e067633791d79db2830e14a",
+      "sourceSha256": "031004cdb8f4891c9c9d5237c4a46d5d10500bc653defee50fe6488e0744afc1"
+    },
+    "COR-28": {
+      "status": "pending"
+    },
+    "COR-29": {
+      "status": "pending"
+    },
+    "COR-30": {
+      "status": "pending"
+    },
+    "COR-31": {
+      "status": "pending"
+    },
+    "COR-32": {
+      "status": "pending"
+    },
+    "FLO-01": {
+      "status": "pending"
+    },
+    "FLO-02": {
+      "status": "pending"
+    },
+    "FLO-03": {
+      "status": "pending"
+    },
+    "FLO-04": {
+      "status": "pending"
+    },
+    "FLO-05": {
+      "status": "pending"
+    },
+    "FLO-06": {
+      "status": "pending"
+    },
+    "FLO-07": {
+      "status": "pending"
+    },
+    "FLO-08": {
+      "status": "pending"
+    },
+    "FLO-09": {
+      "status": "pending"
+    },
+    "FLO-10": {
+      "status": "pending"
+    },
+    "FLO-11": {
+      "status": "pending"
+    },
+    "FLO-12": {
+      "status": "pending"
+    },
+    "FLO-13": {
+      "status": "pending"
+    },
+    "FLO-14": {
+      "status": "pending"
+    },
+    "FLO-15": {
+      "status": "pending"
+    },
+    "FLO-16": {
+      "status": "pending"
+    },
+    "FLO-17": {
+      "status": "pending"
+    },
+    "FLO-18": {
+      "status": "pending"
+    },
+    "FLO-19": {
+      "status": "pending"
+    },
+    "FLO-20": {
+      "status": "pending"
+    },
+    "FLO-21": {
+      "status": "pending"
+    },
+    "FLO-22": {
+      "status": "pending"
+    },
+    "FLO-23": {
+      "status": "pending"
+    },
+    "FLO-24": {
+      "status": "pending"
+    },
+    "FLO-25": {
+      "status": "pending"
+    },
+    "FLO-26": {
+      "status": "pending"
+    },
+    "FLO-27": {
+      "status": "pending"
+    },
+    "FLO-28": {
+      "status": "pending"
+    },
+    "FLO-29": {
+      "status": "pending"
+    },
+    "FLO-30": {
+      "status": "pending"
+    },
+    "FLO-31": {
+      "status": "pending"
+    },
+    "FLO-32": {
+      "status": "pending"
+    },
+    "ARC-01": {
+      "status": "legacy_spoken_pass"
+    },
+    "ARC-02": {
+      "status": "pending"
+    },
+    "ARC-03": {
+      "status": "pending"
+    },
+    "ARC-04": {
+      "status": "pending"
+    },
+    "ARC-05": {
+      "status": "pending"
+    },
+    "ARC-06": {
+      "status": "pending"
+    },
+    "ARC-07": {
+      "status": "pending"
+    },
+    "ARC-08": {
+      "status": "pending"
+    },
+    "ARC-09": {
+      "status": "pending"
+    },
+    "ARC-10": {
+      "status": "pending"
+    },
+    "ARC-11": {
+      "status": "pending"
+    },
+    "ARC-12": {
+      "status": "pending"
+    },
+    "ARC-13": {
+      "status": "pending"
+    },
+    "ARC-14": {
+      "status": "pending"
+    },
+    "ARC-15": {
+      "status": "pending"
+    },
+    "ARC-16": {
+      "status": "pending"
+    },
+    "ARC-17": {
+      "status": "pending"
+    },
+    "ARC-18": {
+      "status": "pending"
+    },
+    "ARC-19": {
+      "status": "pending"
+    },
+    "ARC-20": {
+      "status": "pending"
+    },
+    "ARC-21": {
+      "status": "pending"
+    },
+    "ARC-22": {
+      "status": "pending"
+    },
+    "ARC-23": {
+      "status": "pending"
+    },
+    "ARC-24": {
+      "status": "pending"
+    },
+    "ARC-25": {
+      "status": "pending"
+    },
+    "ARC-26": {
+      "status": "pending"
+    },
+    "SOL-01": {
+      "status": "legacy_spoken_pass"
+    },
+    "SOL-02": {
+      "status": "pending"
+    },
+    "SOL-03": {
+      "status": "pending"
+    },
+    "SOL-04": {
+      "status": "pending"
+    },
+    "SOL-05": {
+      "status": "pending"
+    },
+    "SOL-06": {
+      "status": "pending"
+    },
+    "SOL-07": {
+      "status": "pending"
+    },
+    "SOL-08": {
+      "status": "pending"
+    },
+    "SOL-09": {
+      "status": "pending"
+    },
+    "SOL-10": {
+      "status": "pending"
+    },
+    "SOL-11": {
+      "status": "pending"
+    },
+    "SOL-12": {
+      "status": "pending"
+    },
+    "SOL-13": {
+      "status": "pending"
+    },
+    "SOL-14": {
+      "status": "pending"
+    },
+    "SOL-15": {
+      "status": "pending"
+    },
+    "SOL-16": {
+      "status": "pending"
+    },
+    "SOL-17": {
+      "status": "pending"
+    },
+    "SOL-18": {
+      "status": "pending"
+    },
+    "SOL-19": {
+      "status": "pending"
+    },
+    "SOL-20": {
+      "status": "pending"
+    },
+    "PAT-01": {
+      "status": "pending"
+    },
+    "PAT-02": {
+      "status": "pending"
+    },
+    "PAT-03": {
+      "status": "pending"
+    },
+    "PAT-04": {
+      "status": "pending"
+    },
+    "PAT-05": {
+      "status": "pending"
+    },
+    "PAT-06": {
+      "status": "pending"
+    },
+    "PAT-07": {
+      "status": "pending"
+    },
+    "PAT-08": {
+      "status": "pending"
+    },
+    "PAT-09": {
+      "status": "pending"
+    },
+    "PAT-10": {
+      "status": "pending"
+    },
+    "PAT-11": {
+      "status": "pending"
+    },
+    "PAT-12": {
+      "status": "pending"
+    },
+    "PAT-13": {
+      "status": "pending"
+    },
+    "PAT-14": {
+      "status": "pending"
+    },
+    "PAT-15": {
+      "status": "pending"
+    },
+    "PAT-16": {
+      "status": "pending"
+    },
+    "PAT-17": {
+      "status": "pending"
+    },
+    "PAT-18": {
+      "status": "pending"
+    },
+    "DI-01": {
+      "status": "pending"
+    },
+    "DI-02": {
+      "status": "pending"
+    },
+    "DI-03": {
+      "status": "pending"
+    },
+    "DI-04": {
+      "status": "pending"
+    },
+    "DI-05": {
+      "status": "pending"
+    },
+    "DI-06": {
+      "status": "pending"
+    },
+    "DI-07": {
+      "status": "pending"
+    },
+    "DI-08": {
+      "status": "pending"
+    },
+    "DI-09": {
+      "status": "pending"
+    },
+    "DI-10": {
+      "status": "pending"
+    },
+    "DI-11": {
+      "status": "pending"
+    },
+    "DI-12": {
+      "status": "pending"
+    },
+    "DI-13": {
+      "status": "pending"
+    },
+    "DI-14": {
+      "status": "pending"
+    },
+    "DI-15": {
+      "status": "pending"
+    },
+    "DI-16": {
+      "status": "pending"
+    },
+    "DI-17": {
+      "status": "pending"
+    },
+    "DI-18": {
+      "status": "pending"
+    },
+    "DI-19": {
+      "status": "pending"
+    },
+    "DI-20": {
+      "status": "pending"
+    },
+    "COM-01": {
+      "status": "pending"
+    },
+    "COM-02": {
+      "status": "pending"
+    },
+    "COM-03": {
+      "status": "pending"
+    },
+    "COM-04": {
+      "status": "pending"
+    },
+    "COM-05": {
+      "status": "pending"
+    },
+    "COM-06": {
+      "status": "pending"
+    },
+    "COM-07": {
+      "status": "pending"
+    },
+    "COM-08": {
+      "status": "pending"
+    },
+    "COM-09": {
+      "status": "pending"
+    },
+    "COM-10": {
+      "status": "pending"
+    },
+    "COM-11": {
+      "status": "pending"
+    },
+    "COM-12": {
+      "status": "pending"
+    },
+    "COM-13": {
+      "status": "pending"
+    },
+    "COM-14": {
+      "status": "pending"
+    },
+    "COM-15": {
+      "status": "pending"
+    },
+    "COM-16": {
+      "status": "pending"
+    },
+    "COM-17": {
+      "status": "pending"
+    },
+    "COM-18": {
+      "status": "pending"
+    },
+    "COM-19": {
+      "status": "pending"
+    },
+    "COM-20": {
+      "status": "pending"
+    },
+    "COM-21": {
+      "status": "pending"
+    },
+    "COM-22": {
+      "status": "pending"
+    },
+    "COM-23": {
+      "status": "pending"
+    },
+    "COM-24": {
+      "status": "pending"
+    },
+    "COM-25": {
+      "status": "pending"
+    },
+    "COM-26": {
+      "status": "pending"
+    },
+    "COM-27": {
+      "status": "pending"
+    },
+    "COM-28": {
+      "status": "legacy_spoken_pass"
+    },
+    "DAT-01": {
+      "status": "pending"
+    },
+    "DAT-02": {
+      "status": "pending"
+    },
+    "DAT-03": {
+      "status": "pending"
+    },
+    "DAT-04": {
+      "status": "pending"
+    },
+    "DAT-05": {
+      "status": "pending"
+    },
+    "DAT-06": {
+      "status": "pending"
+    },
+    "DAT-07": {
+      "status": "pending"
+    },
+    "DAT-08": {
+      "status": "pending"
+    },
+    "DAT-09": {
+      "status": "pending"
+    },
+    "DAT-10": {
+      "status": "pending"
+    },
+    "DAT-11": {
+      "status": "pending"
+    },
+    "DAT-12": {
+      "status": "pending"
+    },
+    "DAT-13": {
+      "status": "pending"
+    },
+    "DAT-14": {
+      "status": "pending"
+    },
+    "DAT-15": {
+      "status": "pending"
+    },
+    "DAT-16": {
+      "status": "pending"
+    },
+    "DAT-17": {
+      "status": "pending"
+    },
+    "DAT-18": {
+      "status": "pending"
+    },
+    "DAT-19": {
+      "status": "pending"
+    },
+    "DAT-20": {
+      "status": "pending"
+    },
+    "DAT-21": {
+      "status": "pending"
+    },
+    "DAT-22": {
+      "status": "pending"
+    },
+    "BG-01": {
+      "status": "pending"
+    },
+    "BG-02": {
+      "status": "pending"
+    },
+    "BG-03": {
+      "status": "pending"
+    },
+    "BG-04": {
+      "status": "pending"
+    },
+    "BG-05": {
+      "status": "pending"
+    },
+    "BG-06": {
+      "status": "pending"
+    },
+    "BG-07": {
+      "status": "pending"
+    },
+    "BG-08": {
+      "status": "pending"
+    },
+    "BG-09": {
+      "status": "pending"
+    },
+    "BG-10": {
+      "status": "pending"
+    },
+    "BG-11": {
+      "status": "pending"
+    },
+    "BG-12": {
+      "status": "pending"
+    },
+    "BG-13": {
+      "status": "pending"
+    },
+    "BG-14": {
+      "status": "pending"
+    },
+    "BG-15": {
+      "status": "pending"
+    },
+    "BG-16": {
+      "status": "pending"
+    },
+    "BG-17": {
+      "status": "pending"
+    },
+    "BG-18": {
+      "status": "legacy_spoken_pass"
+    },
+    "SEC-01": {
+      "status": "legacy_spoken_pass"
+    },
+    "SEC-02": {
+      "status": "pending"
+    },
+    "SEC-03": {
+      "status": "pending"
+    },
+    "SEC-04": {
+      "status": "pending"
+    },
+    "SEC-05": {
+      "status": "pending"
+    },
+    "SEC-06": {
+      "status": "pending"
+    },
+    "SEC-07": {
+      "status": "pending"
+    },
+    "SEC-08": {
+      "status": "pending"
+    },
+    "SEC-09": {
+      "status": "pending"
+    },
+    "SEC-10": {
+      "status": "pending"
+    },
+    "SEC-11": {
+      "status": "pending"
+    },
+    "SEC-12": {
+      "status": "pending"
+    },
+    "SEC-13": {
+      "status": "pending"
+    },
+    "SEC-14": {
+      "status": "pending"
+    },
+    "SEC-15": {
+      "status": "pending"
+    },
+    "SEC-16": {
+      "status": "pending"
+    },
+    "SEC-17": {
+      "status": "pending"
+    },
+    "SEC-18": {
+      "status": "pending"
+    },
+    "SEC-19": {
+      "status": "pending"
+    },
+    "SEC-20": {
+      "status": "pending"
+    },
+    "SEC-21": {
+      "status": "pending"
+    },
+    "SEC-22": {
+      "status": "pending"
+    },
+    "SEC-23": {
+      "status": "pending"
+    },
+    "SEC-24": {
+      "status": "pending"
+    },
+    "SEC-25": {
+      "status": "pending"
+    },
+    "SEC-26": {
+      "status": "pending"
+    },
+    "SEC-27": {
+      "status": "pending"
+    },
+    "SEC-28": {
+      "status": "pending"
+    },
+    "SEC-29": {
+      "status": "pending"
+    },
+    "SEC-30": {
+      "status": "pending"
+    },
+    "SEC-31": {
+      "status": "pending"
+    },
+    "SEC-32": {
+      "status": "pending"
+    },
+    "SYS-01": {
+      "status": "pending"
+    },
+    "SYS-02": {
+      "status": "pending"
+    },
+    "SYS-03": {
+      "status": "pending"
+    },
+    "SYS-04": {
+      "status": "pending"
+    },
+    "SYS-05": {
+      "status": "pending"
+    },
+    "SYS-06": {
+      "status": "pending"
+    },
+    "SYS-07": {
+      "status": "pending"
+    },
+    "SYS-08": {
+      "status": "pending"
+    },
+    "SYS-09": {
+      "status": "pending"
+    },
+    "SYS-10": {
+      "status": "pending"
+    },
+    "SYS-11": {
+      "status": "pending"
+    },
+    "SYS-12": {
+      "status": "pending"
+    },
+    "SYS-13": {
+      "status": "pending"
+    },
+    "SYS-14": {
+      "status": "pending"
+    },
+    "SYS-15": {
+      "status": "pending"
+    },
+    "SYS-16": {
+      "status": "pending"
+    },
+    "SYS-17": {
+      "status": "pending"
+    },
+    "SYS-18": {
+      "status": "pending"
+    },
+    "SYS-19": {
+      "status": "pending"
+    },
+    "SYS-20": {
+      "status": "pending"
+    },
+    "SYS-21": {
+      "status": "pending"
+    },
+    "SYS-22": {
+      "status": "pending"
+    },
+    "SYS-23": {
+      "status": "pending"
+    },
+    "SYS-24": {
+      "status": "legacy_spoken_pass"
+    },
+    "MOD-01": {
+      "status": "pending"
+    },
+    "MOD-02": {
+      "status": "pending"
+    },
+    "MOD-03": {
+      "status": "pending"
+    },
+    "MOD-04": {
+      "status": "pending"
+    },
+    "MOD-05": {
+      "status": "pending"
+    },
+    "MOD-06": {
+      "status": "pending"
+    },
+    "MOD-07": {
+      "status": "pending"
+    },
+    "MOD-08": {
+      "status": "pending"
+    },
+    "MOD-09": {
+      "status": "pending"
+    },
+    "MOD-10": {
+      "status": "pending"
+    },
+    "MOD-11": {
+      "status": "pending"
+    },
+    "MOD-12": {
+      "status": "pending"
+    },
+    "MOD-13": {
+      "status": "pending"
+    },
+    "MOD-14": {
+      "status": "pending"
+    },
+    "MOD-15": {
+      "status": "pending"
+    },
+    "MOD-16": {
+      "status": "pending"
+    },
+    "MOD-17": {
+      "status": "pending"
+    },
+    "MOD-18": {
+      "status": "pending"
+    },
+    "MOD-19": {
+      "status": "pending"
+    },
+    "MOD-20": {
+      "status": "pending"
+    },
+    "MOD-21": {
+      "status": "pending"
+    },
+    "BLD-01": {
+      "status": "pending"
+    },
+    "BLD-02": {
+      "status": "pending"
+    },
+    "BLD-03": {
+      "status": "pending"
+    },
+    "BLD-04": {
+      "status": "pending"
+    },
+    "BLD-05": {
+      "status": "pending"
+    },
+    "BLD-06": {
+      "status": "pending"
+    },
+    "BLD-07": {
+      "status": "pending"
+    },
+    "BLD-08": {
+      "status": "pending"
+    },
+    "BLD-09": {
+      "status": "pending"
+    },
+    "BLD-10": {
+      "status": "pending"
+    },
+    "BLD-11": {
+      "status": "pending"
+    },
+    "BLD-12": {
+      "status": "pending"
+    },
+    "BLD-13": {
+      "status": "pending"
+    },
+    "BLD-14": {
+      "status": "pending"
+    },
+    "BLD-15": {
+      "status": "pending"
+    },
+    "BLD-16": {
+      "status": "pending"
+    },
+    "BLD-17": {
+      "status": "pending"
+    },
+    "BLD-18": {
+      "status": "pending"
+    },
+    "BLD-19": {
+      "status": "pending"
+    },
+    "BLD-20": {
+      "status": "pending"
+    },
+    "BLD-21": {
+      "status": "pending"
+    },
+    "TST-01": {
+      "status": "pending"
+    },
+    "TST-02": {
+      "status": "pending"
+    },
+    "TST-03": {
+      "status": "pending"
+    },
+    "TST-04": {
+      "status": "pending"
+    },
+    "TST-05": {
+      "status": "pending"
+    },
+    "TST-06": {
+      "status": "pending"
+    },
+    "TST-07": {
+      "status": "pending"
+    },
+    "TST-08": {
+      "status": "pending"
+    },
+    "TST-09": {
+      "status": "pending"
+    },
+    "TST-10": {
+      "status": "pending"
+    },
+    "TST-11": {
+      "status": "pending"
+    },
+    "TST-12": {
+      "status": "pending"
+    },
+    "TST-13": {
+      "status": "pending"
+    },
+    "TST-14": {
+      "status": "pending"
+    },
+    "TST-15": {
+      "status": "pending"
+    },
+    "TST-16": {
+      "status": "pending"
+    },
+    "TST-17": {
+      "status": "pending"
+    },
+    "TST-18": {
+      "status": "pending"
+    },
+    "TST-19": {
+      "status": "pending"
+    },
+    "TST-20": {
+      "status": "pending"
+    },
+    "TST-21": {
+      "status": "pending"
+    },
+    "TST-22": {
+      "status": "pending"
+    },
+    "TST-23": {
+      "status": "pending"
+    },
+    "TST-24": {
+      "status": "pending"
+    },
+    "CIC-01": {
+      "status": "pending"
+    },
+    "CIC-02": {
+      "status": "pending"
+    },
+    "CIC-03": {
+      "status": "pending"
+    },
+    "CIC-04": {
+      "status": "pending"
+    },
+    "CIC-05": {
+      "status": "pending"
+    },
+    "CIC-06": {
+      "status": "pending"
+    },
+    "CIC-07": {
+      "status": "pending"
+    },
+    "CIC-08": {
+      "status": "pending"
+    },
+    "CIC-09": {
+      "status": "pending"
+    },
+    "CIC-10": {
+      "status": "pending"
+    },
+    "CIC-11": {
+      "status": "pending"
+    },
+    "CIC-12": {
+      "status": "pending"
+    },
+    "CIC-13": {
+      "status": "pending"
+    },
+    "CIC-14": {
+      "status": "pending"
+    },
+    "CIC-15": {
+      "status": "pending"
+    },
+    "CIC-16": {
+      "status": "pending"
+    },
+    "CIC-17": {
+      "status": "pending"
+    },
+    "CIC-18": {
+      "status": "pending"
+    },
+    "CIC-19": {
+      "status": "pending"
+    },
+    "CIC-20": {
+      "status": "pending"
+    },
+    "DSA-01": {
+      "status": "pending"
+    },
+    "DSA-02": {
+      "status": "pending"
+    },
+    "DSA-03": {
+      "status": "pending"
+    },
+    "DSA-04": {
+      "status": "pending"
+    },
+    "DSA-05": {
+      "status": "pending"
+    },
+    "DSA-06": {
+      "status": "pending"
+    },
+    "DSA-07": {
+      "status": "pending"
+    },
+    "DSA-08": {
+      "status": "pending"
+    },
+    "DSA-09": {
+      "status": "pending"
+    },
+    "DSA-10": {
+      "status": "pending"
+    },
+    "DSA-11": {
+      "status": "pending"
+    },
+    "DSA-12": {
+      "status": "pending"
+    },
+    "DSA-13": {
+      "status": "pending"
+    },
+    "DSA-14": {
+      "status": "pending"
+    },
+    "DSA-15": {
+      "status": "pending"
+    },
+    "DSA-16": {
+      "status": "pending"
+    },
+    "LEAD-01": {
+      "status": "pending"
+    },
+    "LEAD-02": {
+      "status": "pending"
+    },
+    "LEAD-03": {
+      "status": "pending"
+    },
+    "LEAD-04": {
+      "status": "pending"
+    },
+    "LEAD-05": {
+      "status": "pending"
+    },
+    "LEAD-06": {
+      "status": "pending"
+    },
+    "LEAD-07": {
+      "status": "pending"
+    },
+    "LEAD-08": {
+      "status": "pending"
+    },
+    "LEAD-09": {
+      "status": "pending"
+    },
+    "LEAD-10": {
+      "status": "pending"
+    },
+    "LEAD-11": {
+      "status": "pending"
+    },
+    "LEAD-12": {
+      "status": "legacy_spoken_pass"
+    },
+    "LEAD-13": {
+      "status": "pending"
+    },
+    "LEAD-14": {
+      "status": "pending"
+    },
+    "LEAD-15": {
+      "status": "pending"
+    },
+    "PAY-01": {
+      "status": "legacy_spoken_pass"
+    },
+    "PAY-02": {
+      "status": "pending"
+    },
+    "PAY-03": {
+      "status": "pending"
+    },
+    "PAY-04": {
+      "status": "pending"
+    },
+    "PAY-05": {
+      "status": "pending"
+    },
+    "PAY-06": {
+      "status": "pending"
+    },
+    "PAY-07": {
+      "status": "pending"
+    },
+    "PAY-08": {
+      "status": "pending"
+    },
+    "PAY-09": {
+      "status": "pending"
+    },
+    "PAY-10": {
+      "status": "pending"
+    },
+    "PAY-11": {
+      "status": "pending"
+    },
+    "PAY-12": {
+      "status": "complete",
+      "reviewedOn": "2026-10-18",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
+      ],
+      "metadataSha256": "ed75b74299042ecf41fcde73a6e315632a1e8d4d82b008e8256832d2cd0a02e3",
+      "sourceSha256": "575a1f0cfa43b4a315fa73affbac3d094e98b89b5be91d6a45c0be113740ce48"
+    },
+    "PAY-13": {
+      "status": "pending"
+    },
+    "PAY-14": {
+      "status": "pending"
+    },
+    "PAY-15": {
+      "status": "pending"
+    }
+  }
+}
