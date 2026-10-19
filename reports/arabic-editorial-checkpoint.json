@@ -3289,25 +3289,76 @@
       "humanReviewed": false
     },
     "ARC-01": {
-      "status": "legacy_spoken_pass",
+      "status": "complete",
       "topic": "ARC",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "0cc2b63fbd158666fb943bdf3f878e0993e196dcb1a97cfac2ad08fba0c9c237",
+      "sourceSha256": "74cf7521702b635c13e40b250113dfe1f91bdc63a0ebf138e59977770edc6a4d",
+      "scores": {
+        "naturalEgyptianArabic": 4,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 4,
+        "interviewUsefulness": 4,
+        "answerDepthAndRelevance": 4
+      },
+      "scoreEvidence": "Second pass checked the original question, all 18 Arabic fields, three distinct spoken answer levels, source alignment, practical failure cases, and current primary references.",
+      "changedFiles": [
+        "Interview-Lab/questions/ARC-01.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./gradlew clean test check run --no-daemon",
+        "pnpm build",
+        "pnpm lint",
+        "pnpm typecheck",
+        "pnpm check:dist",
+        "pnpm test:e2e",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/check_interview_links.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "ARC-02": {
       "status": "pending",
@@ -5743,25 +5794,76 @@
       "humanReviewed": false
     },
     "DAT-01": {
-      "status": "pending",
+      "status": "complete",
       "topic": "DAT",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "8873df2cf559af73434a2c92713cb9b2246e9f020fc98018d5cd2b885d15f4be",
+      "sourceSha256": "6f217264c2bed1449c583590dac3e35a4b7797360cfc72ab6fde0581c52dd0be",
+      "scores": {
+        "naturalEgyptianArabic": 4,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 4,
+        "interviewUsefulness": 4,
+        "answerDepthAndRelevance": 4
+      },
+      "scoreEvidence": "Second pass checked the original question, all 18 Arabic fields, three distinct spoken answer levels, source alignment, practical failure cases, and current primary references.",
+      "changedFiles": [
+        "Interview-Lab/questions/DAT-01.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./gradlew clean test check run --no-daemon",
+        "pnpm build",
+        "pnpm lint",
+        "pnpm typecheck",
+        "pnpm check:dist",
+        "pnpm test:e2e",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/check_interview_links.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "DAT-02": {
       "status": "pending",

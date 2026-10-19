@@ -5,9 +5,9 @@
     "arabicFieldsPerQuestion": 18
   },
   "editorialStatus": {
-    "complete": 10,
-    "pending": 459,
-    "legacy_spoken_pass": 16
+    "complete": 12,
+    "pending": 458,
+    "legacy_spoken_pass": 15
   },
   "topicCoverage": {
     "AND": {
@@ -17,7 +17,7 @@
     },
     "ARC": {
       "total": 26,
-      "legacy_spoken_pass": 1,
+      "complete": 1,
       "pending": 25
     },
     "BG": {
@@ -48,7 +48,8 @@
     },
     "DAT": {
       "total": 22,
-      "pending": 22
+      "complete": 1,
+      "pending": 21
     },
     "DI": {
       "total": 20,

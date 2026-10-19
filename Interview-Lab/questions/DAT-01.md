@@ -22,95 +22,23 @@ Place Retrofit API declarations over OkHttp transport and define repository/erro
 
 ## Concept and technical explanation
 
-The modern Android networking stack separates responsibilities into distinct architectural layers:
-- OkHttp (Transport & HTTP Engine): Operates at the lower transport and socket level. It manages TCP connection pooling, HTTP/2 multiplexing, TLS handshakes, DNS resolution, and physical network retries. It executes the interceptor chain for transparent cross-cutting concerns including authentication tokens, request/response logging, GZIP compression, and HTTP-level disk caching.
-- Retrofit (Declarative API & Serialization Layer): Sits directly on top of OkHttp as a type-safe abstraction. It uses dynamic proxies to convert annotated Kotlin interfaces (such as @GET and @POST) into configured OkHttp call instances. It delegates response deserialization to Converter Factories (Kotlinx Serialization or Moshi) and thread dispatching to Call Adapters (Kotlin Coroutines suspend functions or custom Result<T> types).
-- Repository Layer (Architectural Firewall): Sits between the UI/ViewModel and Retrofit. It executes API calls, maps transient network Data Transfer Objects (DTOs) into clean domain models, and isolates the rest of the application from network libraries and HTTP error formats.
+OkHttp is the HTTP client that handles connections, TLS, interceptors, timeouts, and optional cache. Retrofit sits above a configured call factory such as OkHttp: it maps annotated service interfaces to calls and uses configured converter factories for body serialization. JSON conversion is not automatic without an appropriate converter. A repository can translate HTTP, transport, and parsing outcomes and map DTOs into a contract suited to the rest of the app; a separate domain model is useful when it protects a real boundary, not a compulsory class for every response.
 
 ## Practical walkthrough (English)
 
-Architectural separation between OkHttp transport, Retrofit declarations, and repository isolation:
-```kotlin
-// 1. Transport Layer: OkHttp Client with interceptor chain
-val okHttpClient = OkHttpClient.Builder()
-    .connectTimeout(15, TimeUnit.SECONDS)
-    .readTimeout(20, TimeUnit.SECONDS)
-    .addInterceptor(AuthHeaderInterceptor(tokenProvider))
-    .addInterceptor(HttpLoggingInterceptor().apply {
-        level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY else HttpLoggingInterceptor.Level.NONE
-    })
-    .build()
-
-// 2. High-Level Declarative API: Retrofit Service Interface
-interface UserApiService {
-    @GET("api/v2/users/{id}")
-    suspend fun fetchUserProfile(
-        @Path("id") userId: String
-    ): UserNetworkDto
-}
-
-// 3. Repository Layer: Decouples network DTOs from Domain models
-class UserRepositoryImpl(
-    private val api: UserApiService
-) : UserRepository {
-    override suspend fun getUser(id: String): Result<UserDomainModel> = runCatching {
-        api.fetchUserProfile(id).toDomain()
-    }
-}
-```
+A shared OkHttpClient configures TLS, timeouts, and an interceptor that attaches an authorization header without logging secrets. Retrofit uses that client and a chosen JSON converter for a UserApi service interface. A repository calls the service, distinguishes a missing user from offline or malformed data, and maps the required fields to a UI or domain model. A retry for a write request needs an actual backend idempotency contract. This is an architecture sketch rather than a standalone compilable snippet.
 
 ## Explanation in Arabic
 
-كيف تتكامل مكتبتا Retrofit و OkHttp داخل طبقة الشبكة (Networking Stack) في تطبيقات Android؟
+`OkHttp` هو HTTP Client اللي بيبعت الطلبات: اتصال، TLS، Connection Pool، Interceptor Chain، Timeouts، وCache لو اتضبطت. `Retrofit` طبقة فوقه: بتحوّل API Interface فيها `@GET` و`@POST` إلى Calls، وتستخدم Converter Factory لو عايز تحول JSON لـ DTO. Retrofit مش هيحول أي JSON لوحده من غير Converter مناسب.
 
-1. تقسيم المسؤوليات المعماري:
-   - **OkHttp (طبقة النقل والاتصال الفعلي - Transport & HTTP Engine)**:
-     * يعمل في المستوى المنخفض (Socket Level).
-     * يدير تجميع الاتصالات (Connection Pooling) لإعادة استخدام اتصالات TCP ومصافحات TLS وتجنب تكلفة إنشائها المتكررة.
-     * يدير الـ Interceptors (إضافة التوكنز، ضغط GZIP، الـ Logging، و Caching).
-     * يتعامل مع الـ Timeouts، وفشل الاتصال، وإعادة المحاولة على مستوى الشبكة.
-   - **Retrofit (طبقة التحويل والواجهة البرمجية - High-Level Declaration & Serialization Engine)**:
-     * يعمل فوق OkHttp.
-     * يحول واجهات Kotlin (`interface ApiService`) المعلمة بتعليقات مثل `@GET("users/{id}")` إلى طلبات HTTP فعلية عبر OkHttp.
-     * يدير المحولات (Converter Factories مثل Kotlinx Serialization أو Moshi) لتحويل نصوص الـ JSON إلى كائنات Kotlin، ومحولات الاستدعاء (Call Adapters مثل Coroutines `suspend` أو `Result<T>`).
+الـ Repository بتدي Feature عقد يناسبها: تنادي API، تفسر Network وHTTP وParsing Failures، وتحول DTO لشكل مناسب للـ Domain أو UI حسب حجم التطبيق. مش لازم تعمل Domain Model منفصلة لكل DTO بلا سبب، لكن ما تخليش UI مربوطة بتفاصيل Server Response متغيرة.
 
-2. الحدود المعمارية الصارمة (Strict Architectural Boundaries):
-   - لا يجب أن تصل كائنات Retrofit أو OkHttp أو كلاسات الـ DTOs إلى طبقة الـ UI أو الـ ViewModels.
-   - طبقة الـ Repository تعزل الـ Network بالكامل: تستدعي Retrofit، وتعالج الأخطاء، وتحول الـ DTOs إلى Domain Models نقية ومستقرة.
+`Suspend Function` في Retrofit تساعد Coroutine تستنى Response من غير حبس Main Thread، لكن لا تعني إن الطلب مضمون أو إن Cancellation تلغي أثر حصل على السيرفر. ولو حوّلت Errors لـ `Result`، احذر `runCatching` العادية لأنها تمسك `CancellationException` كمان؛ سيب Cancellation تعدّي بدل ما تحولها لفشل Business عادي.
 
 ## Practical walkthrough
 
-المقارنة العملية لتوزيع الأدوار بين OkHttp و Retrofit وطبقة الـ Repository:
-```kotlin
-// 1. إعداد OkHttp (المسؤول عن النقل، الأمان، والتفاصيل الفيزيائية للشبكة):
-val okHttpClient = OkHttpClient.Builder()
-    .connectTimeout(15, TimeUnit.SECONDS)
-    .readTimeout(20, TimeUnit.SECONDS)
-    .addInterceptor(AuthHeaderInterceptor(tokenProvider))
-    .certificatePinner(CertificatePinner.Builder().add("api.example.com", "sha256/...").build())
-    .build()
-
-// 2. إعداد Retrofit (المسؤول عن تجريد الـ HTTP والـ Serialization):
-val retrofit = Retrofit.Builder()
-    .baseUrl("https://api.example.com/")
-    .client(okHttpClient) // OkHttp هو المحرك الحقيقي تحت الغطاء
-    .addConverterFactory(Json.asConverterFactory("application/json".toMediaType()))
-    .build()
-
-interface UserApiService {
-    @GET("v1/users/{id}")
-    suspend fun getUserProfile(@Path("id") userId: String): UserDto // تعبير نظيف عن العقد
-}
-
-// 3. طبقة الـ Repository: العازل الحامي للـ Domain والـ UI:
-class UserRepositoryImpl @Inject constructor(
-    private val api: UserApiService
-) : UserRepository {
-    override suspend fun getUser(id: String): Result<User> = runCatching {
-        api.getUserProfile(id).toDomain() // تحويل DTO إلى Domain Model
-    }
-}
-```
+في شاشة Profile، الـ `OkHttpClient` مشترك ومهيأ بـ TLS وTimeouts وInterceptor يضيف Authorization Header من Token Provider. `Retrofit` تستخدمه وتعرّف `suspend fun getProfile(id): ProfileDto` مع Converter مناسب. الـ Repository تحول DTO إلى `ProfileUiData` أو Domain Model وتترجم 404 وOffline وMalformed JSON إلى نتائج مفهومة للـ ViewModel. لو Token انتهت، Authenticator أو مسار Renewal يتعامل معها بعقد سيرفر واضح؛ ما تعملش Retry عشوائية لأي POST.
 
 ## Why it matters and how it works
 
@@ -150,24 +78,25 @@ A bank app injects a configured OkHttp client with TLS policy and safe telemetry
 
 ## Interview answer — short
 
-OkHttp acts as the low-level transport engine handling sockets, connection pooling, interceptors, and caching, while Retrofit acts as the high-level declarative layer transforming Kotlin interfaces into HTTP calls with automatic serialization. The repository layer encapsulates both, converting raw network DTOs into immutable domain models.
+OkHttp is the HTTP engine for connections, TLS, interceptors, and timeouts. Retrofit maps an annotated API interface to calls over a configured client and uses converter factories when body serialization is needed. A repository can translate DTOs and HTTP or transport failures into an app-facing contract. Share appropriately configured clients for connection reuse and avoid logging credentials or retrying writes without server support.
 
 ## Interview answer — structured
 
-A professional Android networking architecture divides responsibilities between OkHttp, Retrofit, and the Repository layer.
-First, OkHttp handles the transport and connection mechanics. It manages TCP socket lifecycles, HTTP/2 multiplexing, connection pooling to eliminate handshake overhead, and the interceptor pipeline for injecting authentication headers, logging, and caching.
-Second, Retrofit provides a type-safe declarative interface over OkHttp. It translates annotated Kotlin method declarations into HTTP requests using dynamic proxies, delegating JSON serialization to converters like Kotlinx Serialization or Moshi, and adapting responses to Coroutine suspend functions.
-Third, the Repository layer establishes a strict architectural boundary. ViewModels never interact with Retrofit interfaces or DTOs directly. The repository catches exceptions, applies retry or offline fallback logic, and transforms network models into stable domain entities.
+I separate three responsibilities. OkHttp is the HTTP client: it handles connection reuse, TLS, timeouts, and interceptors. Retrofit declares endpoint methods on an interface and creates calls that use that client. To deserialize JSON into DTOs, I configure an appropriate converter; Retrofit does not infer arbitrary JSON parsing without one.
+
+A repository can call the service, distinguish HTTP errors from connectivity and parsing errors, and expose a model suitable for the feature. I avoid coupling a Compose screen to a changing server DTO, but I do not create a domain class for every field if it adds no useful boundary.
+
+In production I share configured OkHttp clients, keep tokens out of logs, and test headers, failures, and cancellation with a mock server. A suspend service method does not prove a remote write was cancelled. Blindly retrying POST in an interceptor can duplicate an effect unless the backend defines an idempotency contract.
 
 ## Interview answer — deep senior
 
-From a platform engineering perspective, separating transport mechanics from API declaration is critical for maintainability and network resilience.
-OkHttp serves as our physical execution engine. By configuring connection pools with customized keep-alive durations, we mitigate expensive cellular radio warm-up latencies and TLS handshakes.
-Its interceptor architecture operates via the Chain of Responsibility pattern: application interceptors manage high-level authentication refresh and correlation IDs, while network interceptors inspect raw wire traffic, compression headers, and HTTP redirect chains.
-Retrofit abstracts this physical transport into type-safe developer contracts. Under the hood, Retrofit utilizes Java dynamic proxies to parse method annotations into immutable RequestFactory instances at runtime or during initialization.
-By plugging in Kotlinx Serialization as our Converter Factory, we gain compile-time reflectionless deserialization, which eliminates reflection overhead and prevents R8 obfuscation regressions.
-Architecturally, the repository acts as an anti-corruption layer. If a backend team redesigns their REST contract or migrates from snake_case to camelCase JSON payloads, only the network DTO and repository mapper change; our domain entities, UseCases, and Compose UI layouts remain untouched, preserving application stability.
-Additionally, we enforce strict certificate pinning inside OkHttp using CertificatePinner to mitigate man-in-the-middle attacks on untrusted networks, while routing analytical telemetry through custom EventListener hooks to measure DNS latency, connection acquisition time, and TLS handshake overhead across varying cell towers in production.
+OkHttpClient owns the HTTP transport configuration: connection pool, DNS, TLS, interceptors, timeouts, and optional caching. Reusing a configured client lets requests share connections; creating a new client per request defeats that and scatters policy. Interceptors can attach safe metadata but also see sensitive headers and bodies, so logging and retry behavior need careful review.
+
+Retrofit parses service-interface annotations, builds calls through the configured call factory, and uses converter factories for request and response bodies. Return shape matters: a direct body-returning suspend function and a Response<T> return expose HTTP status differently. Failures may come from transport, non-2xx HTTP, conversion, or business rules inside a nominally successful body. The repository should preserve that distinction where the product needs it and map DTOs when doing so shields a stable boundary.
+
+Coroutine cancellation can cancel client waiting but cannot prove the server did not execute a submitted write. Kotlin runCatching captures any Throwable, including CancellationException, so using it around a suspend call without rethrowing cancellation can turn cancellation into an ordinary UI failure. Retried writes require backend idempotency or a status-reconciliation path.
+
+A useful test suite checks authorization headers, 401 handling, 404, malformed JSON, timeouts, cancellation, and the absence of token logging with MockWebServer or an equivalent fake server. Timeouts and retry rules should reflect actual backend and mobile-network behavior, not universal constants.
 
 ## How to answer in the interview
 
@@ -183,11 +112,14 @@ Trace one request from UI to repository/service/client and classify transport, H
 
 ## Follow-up questions
 
-- **Interviewer:** "Why shouldn't you log authentication tokens in OkHttp Logging Interceptor in production?"
-  **Answer:** "Logging headers in production dumps sensitive JWTs or session credentials into Android Logcat, exposing user accounts to any app with log-reading permissions or crash reports."
+- **Interviewer:** "Does Retrofit deserialize JSON automatically?"
+  **Answer:** "Only with an appropriate configured converter factory. Retrofit maps service methods to calls; body conversion is a separate configuration."
 
-- **Interviewer:** "What happens if a Retrofit endpoint returns HTTP 404 in a suspending function?"
-  **Answer:** "Retrofit throws an `HttpException` with code 404, which must be caught via `runCatching` or a custom CallAdapter; it does not return null by default."
+- **Interviewer:** "Why share OkHttpClient?"
+  **Answer:** "Shared configuration and connection reuse. A client per request loses pooling benefits and scatters timeout and interceptor policy."
+
+- **Interviewer:** "What is risky about runCatching around suspend calls?"
+  **Answer:** "It catches CancellationException as a Throwable. Rethrow cancellation instead of reporting it as an ordinary business failure."
 
 ## Self-check rubric
 
@@ -195,8 +127,8 @@ Can I name each layer, classify failures, reuse transport and avoid credential l
 
 ## References and reviewed-on date
 
-- [Retrofit project](https://github.com/square/retrofit) — typed HTTP client.
-- [OkHttp documentation](https://lysine.dev/okhttp/) — transport features.
-- [Android network security](https://developer.android.com/privacy-and-security/security-config) — platform TLS configuration.
+- [Retrofit project](https://github.com/square/retrofit) — service interfaces and converters.
+- [OkHttp project](https://github.com/square/okhttp) — client reuse and interceptors.
+- [Kotlin runCatching](https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/run-catching.html) — Throwable capture.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against primary project documentation on 2026-10-19.
