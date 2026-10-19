@@ -5,8 +5,8 @@
     "arabicFieldsPerQuestion": 18
   },
   "editorialStatus": {
-    "complete": 57,
-    "pending": 428
+    "complete": 58,
+    "pending": 427
   },
   "topicCoverage": {
     "AND": {
@@ -51,8 +51,8 @@
     },
     "DI": {
       "total": 20,
-      "complete": 6,
-      "pending": 14
+      "complete": 7,
+      "pending": 13
     },
     "DSA": {
       "total": 16,
@@ -116,7 +116,7 @@
     }
   },
   "signalCounts": {
-    "terminology": 55,
+    "terminology": 53,
     "absolute-claim": 142,
     "formal-style": 18
   },
@@ -620,18 +620,6 @@
         "field": "deep_answer_ar",
         "kind": "absolute-claim",
         "text": "100%"
-      }
-    ],
-    "DI-05": [
-      {
-        "field": "quick_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "deep_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
       }
     ],
     "DI-08": [
