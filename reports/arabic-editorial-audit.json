@@ -5,8 +5,8 @@
     "arabicFieldsPerQuestion": 18
   },
   "editorialStatus": {
-    "complete": 36,
-    "pending": 449
+    "complete": 37,
+    "pending": 448
   },
   "topicCoverage": {
     "AND": {
@@ -111,13 +111,13 @@
     },
     "TST": {
       "total": 24,
-      "complete": 1,
-      "pending": 23
+      "complete": 2,
+      "pending": 22
     }
   },
   "signalCounts": {
-    "terminology": 124,
-    "absolute-claim": 159,
+    "terminology": 117,
+    "absolute-claim": 158,
     "formal-style": 28
   },
   "signals": {
@@ -1857,48 +1857,6 @@
         "field": "deep_answer_ar",
         "kind": "absolute-claim",
         "text": "100%"
-      }
-    ],
-    "TST-04": [
-      {
-        "field": "evaluates_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "concept_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "walkthrough_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "trade_offs_ar",
-        "kind": "absolute-claim",
-        "text": "100%"
-      },
-      {
-        "field": "best_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "deep_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "how_to_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "talking_points_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
       }
     ],
     "TST-06": [

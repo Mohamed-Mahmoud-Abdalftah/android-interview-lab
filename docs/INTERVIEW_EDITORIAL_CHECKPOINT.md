@@ -1,8 +1,8 @@
 # Interview Lab spoken-answer editorial checkpoint — 2026-10-19
 
-> **2026-10-19 continuation:** All 21 technical topics now have scored completed questions under the strict 18-field review standard. In total, **36 questions** have completed the full question-specific review, scored second pass, and automated verification. All 15 earlier legacy spoken-pass records have been upgraded to the complete standard. The exact 485-ID state is tracked in [reports/arabic-editorial-checkpoint.json](../reports/arabic-editorial-checkpoint.json); 449 IDs remain pending. See [docs/ARABIC_INTERVIEW_EDITORIAL_REPORT.md](ARABIC_INTERVIEW_EDITORIAL_REPORT.md) for full verification results.
+> **2026-10-19 continuation:** All 21 technical topics now have scored completed questions under the strict 18-field review standard. In total, **37 questions** have completed the full question-specific review, scored second pass, and automated verification. All 15 earlier legacy spoken-pass records have been upgraded to the complete standard. The exact 485-ID state is tracked in [reports/arabic-editorial-checkpoint.json](../reports/arabic-editorial-checkpoint.json); 448 IDs remain pending. See [docs/ARABIC_INTERVIEW_EDITORIAL_REPORT.md](ARABIC_INTERVIEW_EDITORIAL_REPORT.md) for full verification results.
 
-## Completed Scored Reviews by Topic (36 total)
+## Completed Scored Reviews by Topic (37 total)
 
 | Topic | Completed Questions |
 | --- | --- |
@@ -26,7 +26,7 @@
 | SEC | SEC-01, SEC-02 |
 | SOL | SOL-01 |
 | SYS | SYS-01, SYS-24 |
-| TST | TST-01 |
+| TST | TST-01, TST-04 |
 
 ## Verification Evidence
 All completed entries have passed:
