@@ -5,8 +5,8 @@
     "arabicFieldsPerQuestion": 18
   },
   "editorialStatus": {
-    "complete": 37,
-    "pending": 448
+    "complete": 38,
+    "pending": 447
   },
   "topicCoverage": {
     "AND": {
@@ -66,8 +66,8 @@
     },
     "KOT": {
       "total": 30,
-      "complete": 2,
-      "pending": 28
+      "complete": 3,
+      "pending": 27
     },
     "LEAD": {
       "total": 15,
@@ -116,8 +116,8 @@
     }
   },
   "signalCounts": {
-    "terminology": 117,
-    "absolute-claim": 158,
+    "terminology": 111,
+    "absolute-claim": 157,
     "formal-style": 28
   },
   "signals": {
@@ -1064,43 +1064,6 @@
         "field": "how_to_answer_ar",
         "kind": "terminology",
         "text": "المفاضلات الهندسية"
-      }
-    ],
-    "KOT-10": [
-      {
-        "field": "why_it_matters_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "worked_example_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "trade_offs_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "quick_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "deep_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "how_to_answer_ar",
-        "kind": "terminology",
-        "text": "المفاضلات الهندسية"
-      },
-      {
-        "field": "follow_ups_ar",
-        "kind": "absolute-claim",
-        "text": "100%"
       }
     ],
     "KOT-11": [
