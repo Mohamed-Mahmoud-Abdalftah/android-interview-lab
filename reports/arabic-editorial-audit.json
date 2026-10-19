@@ -5,8 +5,8 @@
     "arabicFieldsPerQuestion": 18
   },
   "editorialStatus": {
-    "complete": 40,
-    "pending": 445
+    "complete": 41,
+    "pending": 444
   },
   "topicCoverage": {
     "AND": {
@@ -66,8 +66,8 @@
     },
     "KOT": {
       "total": 30,
-      "complete": 4,
-      "pending": 26
+      "complete": 5,
+      "pending": 25
     },
     "LEAD": {
       "total": 15,
@@ -116,8 +116,8 @@
     }
   },
   "signalCounts": {
-    "absolute-claim": 156,
-    "terminology": 110,
+    "terminology": 109,
+    "absolute-claim": 154,
     "formal-style": 18
   },
   "signals": {
@@ -966,23 +966,6 @@
       },
       {
         "field": "trade_offs_ar",
-        "kind": "absolute-claim",
-        "text": "100%"
-      }
-    ],
-    "KOT-03": [
-      {
-        "field": "deep_answer_ar",
-        "kind": "absolute-claim",
-        "text": "بدون أي تكلفة"
-      },
-      {
-        "field": "how_to_answer_ar",
-        "kind": "terminology",
-        "text": "المفاضلات الهندسية"
-      },
-      {
-        "field": "follow_ups_ar",
         "kind": "absolute-claim",
         "text": "100%"
       }
