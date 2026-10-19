@@ -5,8 +5,8 @@
     "arabicFieldsPerQuestion": 18
   },
   "editorialStatus": {
-    "complete": 47,
-    "pending": 438
+    "complete": 48,
+    "pending": 437
   },
   "topicCoverage": {
     "AND": {
@@ -41,8 +41,8 @@
     },
     "COR": {
       "total": 32,
-      "complete": 9,
-      "pending": 23
+      "complete": 10,
+      "pending": 22
     },
     "DAT": {
       "total": 22,
@@ -116,7 +116,7 @@
     }
   },
   "signalCounts": {
-    "terminology": 76,
+    "terminology": 71,
     "absolute-claim": 150,
     "formal-style": 18
   },
@@ -537,33 +537,6 @@
         "field": "trade_offs_ar",
         "kind": "absolute-claim",
         "text": "بالضرورة"
-      }
-    ],
-    "COR-09": [
-      {
-        "field": "why_it_matters_ar",
-        "kind": "terminology",
-        "text": "الموزعات"
-      },
-      {
-        "field": "best_answer_ar",
-        "kind": "terminology",
-        "text": "التزامن المهيكل"
-      },
-      {
-        "field": "deep_answer_ar",
-        "kind": "terminology",
-        "text": "التزامن المهيكل"
-      },
-      {
-        "field": "how_to_answer_ar",
-        "kind": "terminology",
-        "text": "الموزعات"
-      },
-      {
-        "field": "follow_ups_ar",
-        "kind": "terminology",
-        "text": "التزامن المهيكل"
       }
     ],
     "COR-13": [

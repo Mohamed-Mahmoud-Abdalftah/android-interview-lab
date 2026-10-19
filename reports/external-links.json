@@ -1,8 +1,8 @@
 {
   "references": 1025,
-  "uniqueUrls": 321,
+  "uniqueUrls": 322,
   "counts": {
-    "ok": 321,
+    "ok": 322,
     "broken": 0,
     "unverified": 0
   },
@@ -813,7 +813,6 @@
         "COR-06",
         "COR-07",
         "COR-08",
-        "COR-09",
         "COR-14",
         "COR-29",
         "COR-31",
@@ -828,6 +827,7 @@
       "questionIds": [
         "ARC-18",
         "COR-02",
+        "COR-09",
         "COR-11",
         "COR-26",
         "MEM-09",
@@ -2864,6 +2864,15 @@
       "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/suspend-cancellable-coroutine.html"
     },
     {
+      "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-context.html",
+      "questionIds": [
+        "COR-09"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-context.html"
+    },
+    {
       "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout-or-null.html",
       "questionIds": [
         "COR-17"
@@ -3014,7 +3023,6 @@
         "COR-05",
         "COR-07",
         "COR-08",
-        "COR-09",
         "COR-10",
         "COR-12",
         "COR-13",
