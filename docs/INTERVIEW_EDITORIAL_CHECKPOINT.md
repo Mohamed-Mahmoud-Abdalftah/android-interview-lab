@@ -1,8 +1,8 @@
 # Interview Lab spoken-answer editorial checkpoint — 2026-10-19
 
-> **2026-10-19 continuation:** All 21 technical topics now have scored completed questions under the strict 18-field review standard. In total, **39 questions** have completed the full question-specific review, scored second pass, and automated verification. All 15 earlier legacy spoken-pass records have been upgraded to the complete standard. The exact 485-ID state is tracked in [reports/arabic-editorial-checkpoint.json](../reports/arabic-editorial-checkpoint.json); 446 IDs remain pending. See [docs/ARABIC_INTERVIEW_EDITORIAL_REPORT.md](ARABIC_INTERVIEW_EDITORIAL_REPORT.md) for full verification results.
+> **2026-10-19 continuation:** All 21 technical topics now have scored completed questions under the strict 18-field review standard. In total, **40 questions** have completed the full question-specific review, scored second pass, and automated verification. All 15 earlier legacy spoken-pass records have been upgraded to the complete standard. The exact 485-ID state is tracked in [reports/arabic-editorial-checkpoint.json](../reports/arabic-editorial-checkpoint.json); 445 IDs remain pending. See [docs/ARABIC_INTERVIEW_EDITORIAL_REPORT.md](ARABIC_INTERVIEW_EDITORIAL_REPORT.md) for full verification results.
 
-## Completed Scored Reviews by Topic (39 total)
+## Completed Scored Reviews by Topic (40 total)
 
 | Topic | Completed Questions |
 | --- | --- |
@@ -17,7 +17,7 @@
 | DI | DI-01 |
 | DSA | DSA-01 |
 | FLO | FLO-01 |
-| KOT | KOT-01, KOT-10, KOT-14 |
+| KOT | KOT-01, KOT-02, KOT-10, KOT-14 |
 | LEAD | LEAD-01, LEAD-12 |
 | MEM | MEM-01 |
 | MOD | MOD-01 |

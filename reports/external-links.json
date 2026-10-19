@@ -1,5 +1,5 @@
 {
-  "references": 1016,
+  "references": 1018,
   "uniqueUrls": 316,
   "counts": {
     "ok": 316,
@@ -446,7 +446,8 @@
       "url": "https://developer.android.com/develop/ui/compose/performance/stability",
       "questionIds": [
         "COM-03",
-        "COM-15"
+        "COM-15",
+        "KOT-02"
       ],
       "status": 200,
       "category": "ok",
@@ -3203,6 +3204,7 @@
     {
       "url": "https://kotlinlang.org/docs/properties.html",
       "questionIds": [
+        "KOT-02",
         "KOT-10"
       ],
       "status": 200,
