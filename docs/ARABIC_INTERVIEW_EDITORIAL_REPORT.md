@@ -2,12 +2,12 @@
 
 **Checkpoint date:** 2026-10-19
 
-**Branch:** `codex/senior-interview-editorial` (draft PR #1)
+**Preview integration:** PR #1 into `main`; editorial review remains in progress.
 **Status:** In progress. 60 questions pass the scored second pass across all 21 topics; 425 IDs remain below the final gate.
 
 ## Initial audit
 
-The immutable source bank contains 485 IDs across 21 topics. The Arabic metadata has 18 fields per question, or 8,730 populated field cells. The existing structural `editorial_status: reviewed` flag covers all 485 pages but predates this spoken-answer review and is not evidence of it. The draft PR began with a 16-question spoken-answer checkpoint. Those earlier partial records have since been upgraded to the full review standard, including ARC-01.
+The immutable source bank contains 485 IDs across 21 topics. The Arabic metadata has 18 fields per question, or 8,730 populated field cells. The existing structural `editorial_status: reviewed` flag covers all 485 pages but predates this spoken-answer review and is not evidence of it. The editorial branch began with a 16-question spoken-answer checkpoint. Those earlier partial records have since been upgraded to the full review standard, including ARC-01.
 
 The automated inventory covers all 485 records. The current audit found 213 review signals; these are leads for manual review, not editorial verdicts. These are occurrences, not a count of bad questions. Some are quoted or negated and need human interpretation. The current audit has zero structural or stale-checkpoint errors. Question-specific semantic review has reached 60 IDs on both a full first pass and the scored second pass; it has **not** reached all 485. It does not judge semantic equivalence or technical correctness automatically.
 
@@ -193,4 +193,4 @@ The build emitted pre-existing `proguard` syntax-highlighting fallback warnings 
 
 ## Remaining work
 
-**425 IDs remain** below the scored second-pass gate. All 15 earlier legacy spoken-pass IDs have received a full review. The pending Arabic fields and English technical sources need question-specific review. The audit’s 213 signals give a useful queue but do not cover every problem. The acceptance requirement for 485 polished, spoken answers has not been met; the draft PR should remain draft. Before calling the overhaul complete, finish all IDs, perform semantic review across all topics and A/B/C groups, then repeat full site and source-package verification.
+**425 IDs remain** below the scored second-pass gate. All 15 earlier legacy spoken-pass IDs have received a full review. The pending Arabic fields and English technical sources need question-specific review. The audit’s 213 signals give a useful queue but do not cover every problem. The acceptance requirement for 485 polished, spoken answers has not been met. Merging this preview makes the current site available for testing; it does not complete the editorial overhaul. Before calling the overhaul complete, finish all IDs, perform semantic review across all topics and A/B/C groups, then repeat full site and source-package verification.
