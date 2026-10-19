@@ -18,227 +18,120 @@ How do you model states and transitions with an explicit state machine?
 
 ## What the interviewer evaluates
 
-Model business states and legal transitions explicitly, including persistence and idempotency.
+Name states, events, and legal transitions; keep effects outside a pure reducer; guard stale asynchronous results with request identity or version; separate restorable UI state from durable business state.
 
 ## Concept and technical explanation
 
-Modeling application workflows and complex user flows using an explicit Finite State Machine (FSM) guarantees that illegal states become fundamentally unrepresentable at compile time. In Android applications, implicit state representations often scatter boolean flags across ViewModels, leading to race conditions where screens simultaneously exhibit loading indicators, error banners, and stale content. An explicit state machine architectures the domain around three immutable elements: discrete states, explicit transition events or intents, and asynchronous side effects. Kotlin sealed interfaces model the closed taxonomy of valid states and actions with exhaustive compiler checking. State transitions occur strictly through a pure reducer function that accepts the current state and incoming event, returning the next valid state alongside any required side-effect commands. State persistence across Android process recreation is achieved by saving deterministic state identifiers to SavedStateHandle or Room. This architecture provides predictable testing, eliminates invalid edge states, and ensures that asynchronous background operations cannot corrupt the user interface.
+An explicit state machine names possible states and events instead of combining independent flags. Kotlin sealed interfaces make a `when` over known variants exhaustive, but do not prove every business transition or payload valid at compile time. A reducer checks current state, event, and operation identity at runtime. External work runs outside the reducer and returns a result event. For durable operations, a repository or server remains authoritative; `SavedStateHandle` can retain small UI restoration keys but is not a transaction ledger.
 
 ## Practical walkthrough (English)
 
-Implementing an explicit state machine with sealed hierarchies and pure reducers:
-```kotlin
-// 1. Exhaustive state hierarchy ensuring impossible states cannot compile
-sealed interface CheckoutState {
-    data object Idle : CheckoutState
-    data object Submitting : CheckoutState
-    data class OtpChallengeRequired(val transactionId: String, val attemptsLeft: Int) : CheckoutState
-    data class OrderSettled(val orderId: String, val receiptUrl: String) : CheckoutState
-    data class TerminalFailure(val errorMessage: String, val isRecoverable: Boolean) : CheckoutState
-}
-
-// 2. Incoming events representing user actions and background results
-sealed interface CheckoutIntent {
-    data class AuthorizePayment(val cardToken: String, val amountCents: Long) : CheckoutIntent
-    data class SubmitOtp(val otpCode: String) : CheckoutIntent
-    data object RetryRequested : CheckoutIntent
-}
-
-// 3. Isolated side effects executed outside the pure state transition logic
-sealed interface CheckoutEffect {
-    data class LaunchBiometricPrompt(val challengeId: String) : CheckoutEffect
-    data class ShowToast(val message: String) : CheckoutEffect
-}
-
-// 4. Pure state reducer function enforcing deterministic transitions
-class CheckoutStateMachine {
-    fun reduce(current: CheckoutState, intent: CheckoutIntent): Pair<CheckoutState, CheckoutEffect?> {
-        return when (current) {
-            is CheckoutState.Idle -> when (intent) {
-                is CheckoutIntent.AuthorizePayment -> CheckoutState.Submitting to null
-                else -> current to null
-            }
-            is CheckoutState.Submitting -> when (intent) {
-                is CheckoutIntent.SubmitOtp -> current to null // Illegal transition ignored
-                else -> current to null
-            }
-            is CheckoutState.OtpChallengeRequired -> when (intent) {
-                is CheckoutIntent.SubmitOtp -> CheckoutState.Submitting to null
-                is CheckoutIntent.RetryRequested -> current to CheckoutEffect.ShowToast("Enter received code")
-                else -> current to null
-            }
-            is CheckoutState.TerminalFailure -> when (intent) {
-                is CheckoutIntent.RetryRequested -> if (current.isRecoverable) CheckoutState.Idle to null else current to null
-                else -> current to null
-            }
-            is CheckoutState.OrderSettled -> current to null
-        }
-    }
-}
-```
+For upload, `Idle + Start(id)` becomes `Sending(id)`. `Sending(id) + Succeeded(id, receipt)` becomes `Complete`; a completion carrying an older ID is ignored or recorded as stale. A handler performs the upload and emits the result with the same ID. If a newer request starts first, the old callback cannot overwrite it. For payment, recover the authoritative operation state after process recreation rather than trusting a restored screen label.
 
 ## Explanation in Arabic
 
-كيف تقوم بنمذجة حالات التطبيق وتدفقات الشاشات باستخدام آلة حالات صريحة (Explicit State Machine) لمنع الحالات غير الصالحة؟
-
-1. مخاطر الـ State Modeling العشوائي (Boolean Hell):
-   - كثير من المطورين يعرّفون الـ State بمجموعة من المتغيرات المنفصلة:
-     `var isLoading: Boolean = false`, `var isError: Boolean = false`, `var data: List<Item>? = null`.
-   - هذا يؤدي إلى **حالات متناقضة وغير منطقية مستحيلة هندسياً**! مثل: `isLoading = true` و `isError = true` في نفس الوقت، أو وجود بيانات مع خطأ فادح!
-
-2. آلة الحالات الصريحة (Finite State Machine - FSM):
-   - **Sealed Interfaces للحالات**: تمثيل كل حالة ممكنة بكلاس صريح ومغلق:
-     `sealed interface UiState { object Loading; data class Success(val items); data class Error(val msg) }`.
-   - **Sealed Interfaces للأحداث (User Actions & System Events)**: تمثيل كل حدث يغير الحالة:
-     `sealed interface UiEvent { object Retry; data class SelectItem(val id); object Refresh }`.
-   - **دالة التحويل النقية (State Reducer)**: دالة تأخذ الحالة الحالية والحدث وتعيد الحالة الجديدة فقط: `reduce(currentState, event): UiState`.
-
-3. فصل الآثار الجانبية (Side-Effects Isolation):
-   - العمليات غير النقية (Navigation, Showing Snackbars, Triggering Haptics) لا توضع داخل الـ State، بل تُعامل كـ `SharedFlow` أو `Channel` للأحداث الفردية (One-Off Side Effects) لمنع إعادة تنفيذها عند تدوير الشاشة.
+State Machine صريحة معناها تسمي الحالات الممكنة والأحداث اللي تنقل بينها، بدل Boolean flags منفصلة ممكن تركّب Loading وSuccess وError مع بعض. `sealed interface` تساعد الـ compiler يراجع فروع `when` للأنواع المعروفة، لكن مش كل Transition business تتمنع وقت الـ compile؛ reducer لازم يتحقق من الـ current state والـ event والـ IDs وقت التشغيل. في Upload مثلًا `Start` ينقل Idle إلى Sending مع requestId، و`Succeeded` تقبل فقط لو نفس requestId لسه نشطة؛ Response قديمة تتجاهل أو تسجل كـ stale. تنفيذ Network Request أو Navigation يحصل خارج reducer، ونتيجته ترجع Event. لو عملية لها أثر دائم، Repository أو Server هو المصدر المعتمد، و`SavedStateHandle` تحفظ فقط الحد الأدنى اللازم لإعادة بناء UI، مش ضمان لكل حالة بعد Process Death.
 
 ## Practical walkthrough
 
-تنفيذ State Machine صريحة ونقية مع MVI لتدفق دفع معقد ومنع الحالات المتضاربة:
-```kotlin
-// 1. نمذجة الحالات الممكنة حصرياً (Impossible States are Unrepresentable):
-sealed interface CheckoutState {
-    object Idle : CheckoutState
-    object ProcessingPayment : CheckoutState
-    data class AwaitingOtpVerification(val transactionId: String) : CheckoutState
-    data class Completed(val receiptNumber: String) : CheckoutState
-    data class Failed(val reason: String, val canRetry: Boolean) : CheckoutState
-}
-
-// 2. نمذجة الأحداث الصريحة:
-sealed interface CheckoutEvent {
-    data class SubmitPayment(val cardToken: String) : CheckoutEvent
-    data class VerifyOtp(val code: String) : CheckoutEvent
-    object Retry : CheckoutEvent
-}
-
-// 3. محرك الـ State Machine داخل ViewModel:
-class CheckoutStateMachineViewModel @Inject constructor(
-    private val paymentRepository: PaymentRepository
-) : ViewModel() {
-    private val _state = MutableStateFlow<CheckoutState>(CheckoutState.Idle)
-    val state: StateFlow<CheckoutState> = _state.asStateFlow()
-
-    fun onEvent(event: CheckoutEvent) {
-        val currentState = _state.value
-        viewModelScope.launch {
-            when (event) {
-                is CheckoutEvent.SubmitPayment -> {
-                    if (currentState is CheckoutState.Idle || currentState is CheckoutState.Failed) {
-                        _state.value = CheckoutState.ProcessingPayment
-                        val result = paymentRepository.process(event.cardToken)
-                        _state.value = when (result) {
-                            is PaymentResult.RequiresOtp -> CheckoutState.AwaitingOtpVerification(result.txId)
-                            is PaymentResult.Success -> CheckoutState.Completed(result.receipt)
-                            is PaymentResult.Error -> CheckoutState.Failed(result.message, canRetry = true)
-                        }
-                    }
-                }
-                is CheckoutEvent.VerifyOtp -> {
-                    if (currentState is CheckoutState.AwaitingOtpVerification) {
-                        _state.value = CheckoutState.ProcessingPayment
-                        // تنفيذ التحقق وتحديث الحالة
-                    }
-                }
-                is CheckoutEvent.Retry -> {
-                    if (currentState is CheckoutState.Failed && currentState.canRetry) {
-                        _state.value = CheckoutState.Idle
-                    }
-                }
-            }
-        }
-    }
-}
-```
+ابدأ برسم جدول: `Idle + Start -> Sending(id)`، و`Sending(id) + Success(id) -> Complete`، و`Success(otherId)` تتعامل معها كـ stale. خَلّي reducer pure لتختبر الجدول. Handler منفصلة تنفذ Upload وترجع `Succeeded` أو `Failed` بنفس ID. لو المستخدم بدأ محاولة أحدث، القديمة ما تكتبش فوقها. في عملية دفع، مجرد UI State لا تثبت النتيجة المالية؛ بعد Process Death ارجع إلى Journal/Server authoritative state وفك حالة UNKNOWN وفق العقد.
 
 ## Why it matters and how it works
 
-A reducer/transition function centralizes rules and can be pure for testability. Persistent state version or compare-and-set prevents concurrent workers overwriting newer results. External effects are issued through durable commands with stable IDs; completion events must be reconciled against authoritative source.
+A transition table makes invariants reviewable and testable. It does not eliminate races by itself: two asynchronous producers still need ordering or a version guard, and durable state changes may need transactional compare-and-set. Distinguish transient UI projection from persistent operation state.
 
 ## Worked example
 
-Kotlin conceptual pure transition function for a local upload; server business states need stronger authority.
+This runnable Kotlin/JVM reducer rejects a late upload completion for an older request.
 
 ```kotlin
 sealed interface UploadState {
-    data object Pending : UploadState
-    data class Sending(val attempt: Int) : UploadState
+    data object Idle : UploadState
+    data class Sending(val requestId: String) : UploadState
     data class Complete(val receipt: String) : UploadState
 }
-sealed interface UploadEvent { data object Start : UploadEvent
-    data class Acknowledged(val receipt: String) : UploadEvent }
-fun reduce(state: UploadState, event: UploadEvent): UploadState = when {
-    state is UploadState.Pending && event is UploadEvent.Start -> UploadState.Sending(1)
-    state is UploadState.Sending && event is UploadEvent.Acknowledged -> UploadState.Complete(event.receipt)
-    else -> state // production may reject/log illegal transitions explicitly
+sealed interface UploadEvent {
+    data class Start(val requestId: String) : UploadEvent
+    data class Succeeded(val requestId: String, val receipt: String) : UploadEvent
+}
+fun reduce(state: UploadState, event: UploadEvent): UploadState = when (state) {
+    UploadState.Idle -> when (event) {
+        is UploadEvent.Start -> UploadState.Sending(event.requestId)
+        is UploadEvent.Succeeded -> state
+    }
+    is UploadState.Sending -> when (event) {
+        is UploadEvent.Start -> UploadState.Sending(event.requestId)
+        is UploadEvent.Succeeded -> if (event.requestId == state.requestId) UploadState.Complete(event.receipt) else state
+    }
+    is UploadState.Complete -> state
+}
+fun main() {
+    val state = reduce(UploadState.Sending("new"), UploadEvent.Succeeded("old", "r-1"))
+    check(state == UploadState.Sending("new"))
 }
 ```
 
 ## Trade-offs and decision criteria
 
-Explicit states add code but prevent impossible combinations like loading=true and settled=true. A permissive reducer that silently ignores illegal transitions can hide bugs; choose rejection/telemetry where appropriate. Distinguish UI transient state from durable business state.
+Explicit state/event types add code and transition tests, justified for workflows with several rules or overlapping asynchronous results. A simple screen may need a smaller model. Silently ignoring every illegal event can hide a bug; choose rejection or diagnostic logging where appropriate.
 
 ## Failure modes
 
-Two workers can race to mark Pending and Complete if updates lack version checks. A late network failure can overwrite a newer success. Treating timeout as final failure can trigger duplicate payment. Migration must preserve older state encodings.
+Request A completes after request B starts and overwrites B's state. A restored screen label claims processing though the work did not resume after process death. A one-off effect is replayed on collection and repeats navigation. Use operation IDs, distinguish durable and UI state, and test out-of-order completion and restoration.
 
 ## Production perspective
 
-A payment repository stores operation state/version, applies server receipts transactionally and rejects stale updates. UI derives a screen from state; workers replay pending IDs after crash. Property tests enumerate legal/illegal transitions and race interleavings.
+Carry an operation ID or version through workers and network callbacks. When several producers update durable state, apply transitions transactionally or with compare-and-set in the repository and reconcile server truth. Test legal and illegal transitions, duplicates, stale results, and process recreation. A sealed type or actor is not a guarantee of distributed consistency.
 
 ## Interview answer — short
 
-We model application workflows using explicit state machines built with Kotlin sealed interfaces to represent mutually exclusive states and legal transitions. A pure reducer processes user intents, producing deterministic new states and side effects, while eliminating invalid edge states and surviving process death via SavedStateHandle.
+I define explicit states and events, then a reducer validates legal transitions against the current state. Kotlin sealed interfaces make `when` exhaustive, but business guards still run at runtime. A late result must carry a request ID or version so it cannot overwrite a newer attempt. Effects stay outside the reducer, and durable operation truth comes from a repository or server rather than `SavedStateHandle` alone.
 
 ## Interview answer — structured
 
-An explicit state machine eliminates subtle race conditions by making illegal combinations of loading, data, and error flags impossible to compile.
-I structure the system around three core pillars. States are represented through a sealed interface containing only mutually exclusive models with all necessary payload data.
-User interactions and asynchronous completions are captured as sealed intents.
-Transitions are governed by a pure, deterministic reducer function that takes the current state and incoming intent to compute the next valid state and optional side-effect commands.
-If an event arrives that is illegal for the active state, such as an OTP submission while in an idle state, the reducer safely ignores it or emits a diagnostic warning.
-To withstand Android process death and configuration changes, the state machine stores its active state identifier and restored parameters inside SavedStateHandle, enabling the screen to reconstruct its exact state upon process rebirth.
+If an upload screen has independent loading, error, and done flags, it can display contradictory combinations. I model `Idle`, `Sending(requestId)`, and `Complete(receipt)`, then events such as `Start` and `Succeeded`. A pure reducer decides transitions. The sealed hierarchy helps the compiler check all variants; the rule that success belongs to the active request still needs a runtime ID comparison.
+
+The network request runs in a handler outside the reducer and emits a result event. If request A finishes after B starts, A's result cannot overwrite B. Illegal events should be rejected or diagnosed deliberately rather than always ignored.
+
+For a simple screen, a smaller model may suffice. For a durable operation, restore from a repository or server after process death. `SavedStateHandle` is useful for small UI keys, not proof that an external transaction completed.
 
 ## Interview answer — deep senior
 
-From an enterprise architecture perspective, explicit state machines provide mathematical determinism to high-stakes mobile workflows like multi-step checkouts, authentication challenges, and hardware pairing.
-The primary failure mode in mobile state handling is temporal coupling, where asynchronous coroutines complete out of order and overwrite newer states with stale data. An explicit reducer solves this by executing transitions sequentially over an actor-style Channel or Mutex, ensuring atomic state progression.
-Side effects such as navigation commands, haptic feedback, or network requests must never be triggered directly inside state reducers. Instead, the reducer returns side-effect descriptions that an external effect handler consumes via buffered SharedFlow or Channel pipelines.
-When designing distributed multi-screen flows, state machines should be partitioned into hierarchical sub-machines. A parent checkout coordinator delegates screen-specific steps to local machine instances while retaining ownership of overall transaction state and payment idempotency tokens.
-Explicit state machines also empower time-travel debugging in production environments. By recording each transition event alongside incoming payloads and resulting states into a lightweight in-memory circular ring buffer, diagnostic logs capture the exact sequence of user actions leading up to an issue, making complex edge-case bug reproduction trivial.
-Finally, testing complex business logic becomes trivial. Because the reducer is a pure function without Android framework dependencies, we write automated unit tests that feed event sequences into the reducer and assert resulting states without needing coroutine delays, mocking frameworks, or UI instrumentation tests.
+A state machine makes a workflow's states, events, and transition preconditions explicit. It replaces scattered loading/error flags with a reviewable table. Kotlin sealed interfaces close the direct variant set and permit exhaustive `when` expressions, but they do not establish that every payload value or business transition is legal. A reducer checks the current state and event at runtime and may return an effect description for work handled outside it.
+
+For upload, `Idle + Start(id)` yields `Sending(id)`. `Sending(id) + Succeeded(id, receipt)` yields `Complete`. A success with another ID is stale. Network callbacks carry the operation ID because completion order can differ from start order. Serial event handling or version/CAS guards can help with local concurrency; a worker or server updating persistent state needs a transactional guard in the repository as well.
+
+Network and navigation effects run outside the pure reducer and feed result events back with identities. One-off UI actions need a delivery contract to avoid loss or replay on recollection. `SavedStateHandle` is suitable for small inputs used to reconstruct UI after process death, but not as an authoritative ledger. In checkout or payments, query durable repository or server state before claiming completion or retrying.
+
+Test legal and illegal transitions, duplicate completions, stale results after a new attempt, and UI reconstruction. More state types are justified only when they clarify actual rules. The test is whether the invariants are visible and verifiable, not the number of sealed classes.
 
 ## How to answer in the interview
 
-- **Why:** explicit states make invariants reviewable.
-- **How:** define events, preconditions, versions, and atomic transition persistence.
-- **Trade-off:** more types and transitions require maintenance.
-- **Failure case:** delayed callback overwrites a terminal state.
-- **Production solution:** pure transition tests plus transactional compare-and-set on durable state.
+- **Model:** state/event table and legal transitions.
+- **Guard:** correlate asynchronous results with request IDs or versions.
+- **Separate:** pure reducer from effects and UI restoration from durable state.
+- **Test:** duplicates, stale results, illegal transitions, and process recreation.
 
 ## Deep-dive talking points
 
-Draw state graph with duplicate/out-of-order events and version guard.
+Sealed hierarchy versus runtime guards; pure transition function; operation identity and versioning; effect delivery; `SavedStateHandle` limitations; durable repository authority.
 
 ## Follow-up questions
 
-- **Interviewer:** "Why should one-off UI events not be stored directly in StateFlow state?"
-  **Answer:** "StateFlow retains its latest value; if an event like ShowSnackbar is stored in state, re-subscribing on screen rotation re-emits and displays the snackbar again."
+- **Interviewer:** "Do sealed classes make every illegal transition impossible at compile time?"
+  **Answer:** "No. They close state variants and help exhaustive `when`, but a success event for an old request is still well typed. The reducer compares identity at runtime."
 
-- **Interviewer:** "What is the difference between MVI and traditional MVVM?"
-  **Answer:** "MVI enforces a single immutable StateFlow and unidirectional event-driven reducers, whereas traditional MVVM often exposes multiple independent LiveData/StateFlow streams."
+- **Interviewer:** "Can `SavedStateHandle` restore a payment flow completely?"
+  **Answer:** "It can restore small UI keys. Durable financial outcome must be reconciled with the repository or provider/server."
 
 ## Self-check rubric
 
-Can I enumerate states, reject illegal transitions and protect against stale concurrent updates?
+Name states and events, show an illegal transition and stale-result guard, and separate UI restoration from authoritative operation state.
 
 ## References and reviewed-on date
 
-- [Android architecture guide](https://developer.android.com/topic/architecture) — UDF and SSOT.
-- [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — durable operation states.
+- [Kotlin sealed classes](https://kotlinlang.org/docs/sealed-classes.html) — exhaustive `when` and hierarchy limits.
+- [Saved State for ViewModel](https://developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-savedstate) — UI restoration.
+- [Android UI state holders](https://developer.android.com/topic/architecture/ui-layer/stateholders) — state ownership.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against primary documentation on 2026-10-19.

@@ -1,6 +1,6 @@
 # Actual academy source inventory — 2026-10-19
 
-These 1241 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
+These 1243 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
 
 ```text
 .github/workflows/ci.yml
@@ -942,6 +942,7 @@ projects/kotlin-jvm-labs/src/test/kotlin/academy/ProfileSemanticsTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/RuntimeTypeRegistryTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/SaveNoteTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/ShortestPathTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/StateMachineSnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/TerminalAttemptTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/TestabilitySnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/TrustedReturnLinkTest.kt
@@ -1195,6 +1196,7 @@ scripts/rebuild_spoken_learning.py
 scripts/test_interview_lab.py
 scripts/test_interview_quality.py
 scripts/test_package_source.py
+scripts/test_payment_outbox_transaction.py
 scripts/test_validate.py
 scripts/validate.py
 scripts/validate_bilingual_parity.py

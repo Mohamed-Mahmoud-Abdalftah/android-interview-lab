@@ -42,7 +42,9 @@ A mediator or narrow contract keeps UI implementation details local and makes da
 
 ## Worked example
 
-This runnable Kotlin/JVM contract shows a catalog action emitting a small route. The app can supply the real navigation callback.\n\n```kotlin
+This runnable Kotlin/JVM contract shows a catalog action emitting a small route. The app can supply the real navigation callback.
+
+```kotlin
 data class CheckoutRoute(val productId: String)
 class CatalogActions(private val openCheckout: (CheckoutRoute) -> Unit) {
     fun onBuy(productId: String) {

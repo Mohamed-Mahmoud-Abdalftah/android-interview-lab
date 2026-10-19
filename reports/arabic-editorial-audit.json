@@ -5,8 +5,8 @@
     "arabicFieldsPerQuestion": 18
   },
   "editorialStatus": {
-    "complete": 45,
-    "pending": 440
+    "complete": 47,
+    "pending": 438
   },
   "topicCoverage": {
     "AND": {
@@ -91,8 +91,8 @@
     },
     "PAY": {
       "total": 15,
-      "complete": 3,
-      "pending": 12
+      "complete": 4,
+      "pending": 11
     },
     "SEC": {
       "total": 32,
@@ -106,8 +106,8 @@
     },
     "SYS": {
       "total": 24,
-      "complete": 2,
-      "pending": 22
+      "complete": 3,
+      "pending": 21
     },
     "TST": {
       "total": 24,
@@ -116,7 +116,7 @@
     }
   },
   "signalCounts": {
-    "terminology": 87,
+    "terminology": 76,
     "absolute-claim": 150,
     "formal-style": 18
   },
@@ -1380,33 +1380,6 @@
         "text": "100%"
       }
     ],
-    "PAY-06": [
-      {
-        "field": "questionAr",
-        "kind": "terminology",
-        "text": "التثبيت الذري"
-      },
-      {
-        "field": "concept_ar",
-        "kind": "terminology",
-        "text": "التثبيت الذري"
-      },
-      {
-        "field": "quick_answer_ar",
-        "kind": "terminology",
-        "text": "التثبيت الذري"
-      },
-      {
-        "field": "best_answer_ar",
-        "kind": "terminology",
-        "text": "التثبيت الذري"
-      },
-      {
-        "field": "talking_points_ar",
-        "kind": "terminology",
-        "text": "التثبيت الذري"
-      }
-    ],
     "PAY-14": [
       {
         "field": "production_perspective_ar",
@@ -1538,38 +1511,6 @@
         "field": "production_perspective_ar",
         "kind": "absolute-claim",
         "text": "100%"
-      }
-    ],
-    "SYS-10": [
-      {
-        "field": "concept_ar",
-        "kind": "terminology",
-        "text": "آلة الحالات"
-      },
-      {
-        "field": "trade_offs_ar",
-        "kind": "terminology",
-        "text": "آلة الحالات"
-      },
-      {
-        "field": "best_answer_ar",
-        "kind": "terminology",
-        "text": "آلة الحالات"
-      },
-      {
-        "field": "deep_answer_ar",
-        "kind": "terminology",
-        "text": "آلة الحالات"
-      },
-      {
-        "field": "follow_ups_ar",
-        "kind": "terminology",
-        "text": "آلة الحالات"
-      },
-      {
-        "field": "self_check_ar",
-        "kind": "terminology",
-        "text": "آلة الحالات"
       }
     ],
     "SYS-23": [

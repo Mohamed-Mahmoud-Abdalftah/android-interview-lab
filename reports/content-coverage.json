@@ -3352,7 +3352,7 @@
       "topic": "PAY",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": true
+      "hasKotlinCode": false
     },
     "PAY-07": {
       "topic": "PAY",

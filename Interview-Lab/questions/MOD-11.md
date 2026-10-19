@@ -44,7 +44,9 @@ Hilt does not infer bindings from module names. Gradle classpath visibility dete
 
 ## Worked example
 
-This Kotlin/JVM contract shows direct fake construction for a consumer test. It does not compile or verify an Android Hilt graph.\n\n```kotlin
+This Kotlin/JVM contract shows direct fake construction for a consumer test. It does not compile or verify an Android Hilt graph.
+
+```kotlin
 interface SessionSource { fun currentUserId(): String? }
 class CheckoutAccess(private val sessions: SessionSource) {
     fun canCheckout(): Boolean = sessions.currentUserId() != null
