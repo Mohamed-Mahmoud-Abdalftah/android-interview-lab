@@ -5,8 +5,8 @@
     "arabicFieldsPerQuestion": 18
   },
   "editorialStatus": {
-    "complete": 38,
-    "pending": 447
+    "complete": 39,
+    "pending": 446
   },
   "topicCoverage": {
     "AND": {
@@ -91,8 +91,8 @@
     },
     "PAY": {
       "total": 15,
-      "complete": 2,
-      "pending": 13
+      "complete": 3,
+      "pending": 12
     },
     "SEC": {
       "total": 32,
@@ -118,7 +118,7 @@
   "signalCounts": {
     "terminology": 111,
     "absolute-claim": 157,
-    "formal-style": 28
+    "formal-style": 18
   },
   "signals": {
     "AND-06": [
@@ -1506,58 +1506,6 @@
         "field": "references_ar",
         "kind": "terminology",
         "text": "حقن التبعيات"
-      }
-    ],
-    "PAY-02": [
-      {
-        "field": "questionAr",
-        "kind": "formal-style",
-        "text": "حتمية التكرار"
-      },
-      {
-        "field": "evaluates_ar",
-        "kind": "formal-style",
-        "text": "حتمية التكرار"
-      },
-      {
-        "field": "concept_ar",
-        "kind": "formal-style",
-        "text": "حتمية التكرار"
-      },
-      {
-        "field": "why_it_matters_ar",
-        "kind": "formal-style",
-        "text": "حتمية التكرار"
-      },
-      {
-        "field": "trade_offs_ar",
-        "kind": "formal-style",
-        "text": "حتمية التكرار"
-      },
-      {
-        "field": "quick_answer_ar",
-        "kind": "formal-style",
-        "text": "حتمية التكرار"
-      },
-      {
-        "field": "best_answer_ar",
-        "kind": "formal-style",
-        "text": "حتمية التكرار"
-      },
-      {
-        "field": "deep_answer_ar",
-        "kind": "formal-style",
-        "text": "حتمية التكرار"
-      },
-      {
-        "field": "talking_points_ar",
-        "kind": "formal-style",
-        "text": "حتمية التكرار"
-      },
-      {
-        "field": "references_ar",
-        "kind": "formal-style",
-        "text": "حتمية التكرار"
       }
     ],
     "PAY-03": [

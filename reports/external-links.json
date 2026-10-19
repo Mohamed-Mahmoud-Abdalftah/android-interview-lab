@@ -2,9 +2,9 @@
   "references": 1016,
   "uniqueUrls": 316,
   "counts": {
-    "ok": 315,
+    "ok": 316,
     "broken": 0,
-    "unverified": 1
+    "unverified": 0
   },
   "results": [
     {
@@ -1381,7 +1381,6 @@
         "PAT-12",
         "PAT-15",
         "PAT-16",
-        "PAY-02",
         "PAY-09",
         "PAY-10",
         "SOL-12",
@@ -1421,6 +1420,7 @@
         "LEAD-01",
         "LEAD-06",
         "PAY-01",
+        "PAY-02",
         "PAY-04",
         "PAY-08",
         "SYS-04",
@@ -2225,9 +2225,9 @@
         "COR-27",
         "PAY-12"
       ],
-      "status": null,
-      "category": "unverified",
-      "resolved": "<urlopen error timed out>"
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://docs.adyen.com/point-of-sale/basic-tapi-integration/verify-transaction-status/"
     },
     {
       "url": "https://docs.adyen.com/point-of-sale/capturing-payments/",
