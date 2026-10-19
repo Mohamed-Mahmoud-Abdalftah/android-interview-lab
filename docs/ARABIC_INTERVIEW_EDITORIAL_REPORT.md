@@ -3,13 +3,13 @@
 **Checkpoint date:** 2026-10-19
 
 **Branch:** `codex/senior-interview-editorial` (draft PR #1)
-**Status:** In progress. Eight questions pass the scored second pass across seven topics; 477 IDs remain below the final gate.
+**Status:** In progress. Ten questions pass the scored second pass across nine topics; 475 IDs remain below the final gate.
 
 ## Initial audit
 
 The immutable source bank contains 485 IDs across 21 topics. The Arabic metadata has 18 fields per question, or 8,730 populated field cells. The existing structural `editorial_status: reviewed` flag covers all 485 pages but predates this spoken-answer review and is not evidence of it. The draft PR already has a 16-question checkpoint; those IDs remain classified as `legacy_spoken_pass` until all Arabic fields are reviewed under the current brief. The working branch was clean before this continuation.
 
-The automated inventory covers all 485 records. The current audit found 349 review signals; these are leads for manual review, not editorial verdicts. These are occurrences, not a count of bad questions. Some are quoted or negated and need human interpretation. The current audit has zero structural or stale-checkpoint errors. Question-specific semantic review has reached eight IDs on both a full first pass and the scored second pass; it has **not** reached all 485. It does not judge semantic equivalence or technical correctness automatically.
+The automated inventory covers all 485 records. The current audit found 339 review signals; these are leads for manual review, not editorial verdicts. These are occurrences, not a count of bad questions. Some are quoted or negated and need human interpretation. The current audit has zero structural or stale-checkpoint errors. Question-specific semantic review has reached ten IDs on both a full first pass and the scored second pass; it has **not** reached all 485. It does not judge semantic equivalence or technical correctness automatically.
 
 ## Editorial style and terminology
 
@@ -17,19 +17,19 @@ Use professional spoken Egyptian Arabic, preserve established English technical 
 
 ## Coverage
 
-`complete` now requires all 18 Arabic fields and the canonical technical source, a second pass with six passing rubric scores, and current verification. The previous KOT-01, KOT-14, COR-27, and PAY-12 rewrites received the new second pass after their prior full-field review. This continuation fully rewrote AND-01, FLO-01, COM-15, and SEC-02. In total, **8 questions × 18 fields = 144 fields** have had both the full first pass and scored second pass. No entry is labeled human reviewed. Topic names were normalized across all 485 metadata records as a shared UI wording change; that does not mean those question fields were individually reviewed. The previous 16 IDs have partial spoken-answer work and remain among the 477 outstanding IDs. All eight scored entries meet the six rubric thresholds in the checkpoint; no independent human review is claimed.
+`complete` now requires all 18 Arabic fields and the canonical technical source, a second pass with six passing rubric scores, and current verification. The previous KOT-01, KOT-14, COR-27, and PAY-12 rewrites received the new second pass after their prior full-field review. This continuation fully rewrote AND-01, FLO-01, COM-15, SEC-02, BG-01, and DI-01. In total, **10 questions × 18 fields = 180 fields** have had both the full first pass and scored second pass. No entry is labeled human reviewed. Topic names were normalized across all 485 metadata records as a shared UI wording change; that does not mean those question fields were individually reviewed. The previous 16 IDs have partial spoken-answer work and remain among the 475 outstanding IDs. All ten scored entries meet the six rubric thresholds in the checkpoint; no independent human review is claimed.
 
 | Topic | Total | Scored complete | Earlier spoken pass | Pending |
 | --- | ---: | ---: | ---: | ---: |
 | AND | 25 | 1 | 0 | 24 |
 | ARC | 26 | 0 | 1 | 25 |
-| BG | 18 | 0 | 1 | 17 |
+| BG | 18 | 1 | 1 | 16 |
 | BLD | 21 | 0 | 0 | 21 |
 | CIC | 20 | 0 | 0 | 20 |
 | COM | 28 | 1 | 1 | 26 |
 | COR | 32 | 1 | 8 | 23 |
 | DAT | 22 | 0 | 0 | 22 |
-| DI | 20 | 0 | 0 | 20 |
+| DI | 20 | 1 | 0 | 19 |
 | DSA | 16 | 0 | 0 | 16 |
 | FLO | 32 | 1 | 0 | 31 |
 | KOT | 30 | 2 | 0 | 28 |
@@ -42,13 +42,13 @@ Use professional spoken Egyptian Arabic, preserve established English technical 
 | SOL | 20 | 0 | 1 | 19 |
 | SYS | 24 | 0 | 1 | 23 |
 | TST | 24 | 0 | 0 | 24 |
-| **Total** | **485** | **8** | **16** | **461** |
+| **Total** | **485** | **10** | **16** | **459** |
 
 The exact remaining IDs are every ID with `status != complete` in [the checkpoint](../reports/arabic-editorial-checkpoint.json). Each ID now records its topic, ten granular review checks, validation outcome, remaining issues, and agent versus human review. Scored entries also record the six rubric values, evidence, and content hashes. The report generated by `python3 scripts/audit_arabic_editorial.py` gives per-topic counts and per-ID review signals.
 
 ## Before and after: representative changes
 
-The KOT, AND, FLO, COM, SEC, COR and PAY rows are question content. The other rows show topic navigation or guidance; they are not counted as completed question reviews.
+The KOT, AND, FLO, COM, SEC, BG, DI, COR and PAY rows are question content. The other rows show topic navigation or guidance; they are not counted as completed question reviews.
 
 | Topic | Before | After | Scope |
 | --- | --- | --- | --- |
@@ -57,6 +57,8 @@ The KOT, AND, FLO, COM, SEC, COR and PAY rows are question content. The other ro
 | FLO | “ما هو الـ Flow؟ وما الفرق بينه وبين دالة suspend عادية؟” | “إيه الفرق بين `suspend fun` و`Flow` في Kotlin؟ وإمتى تستخدم كل واحد؟” | FLO-01 question and all fields; scored second pass |
 | COM | “ماذا يعني مفهوم الاستقرار (Stability) للأنواع والباراميترات…” | “يعني إيه Stability في Jetpack Compose؟ وإزاي بتأثر على Skipping وقت Recomposition؟” | COM-15 question and all fields; scored second pass |
 | SEC | “ما هو نظام Android Keystore، وما هو تخزين المفاتيح المدعوم…” | “Android Keystore بيحمي الـ Keys إزاي؟ وإيه الفرق بين Software-backed وTEE وStrongBox؟” | SEC-02 question and all fields; scored second pass |
+| BG | “متى تختار Coroutines، أو WorkManager، أو Foreground Service…” | “عندك شغل محتاج يكمل بعد ما المستخدم يسيب الشاشة: تختار Coroutine ولا WorkManager…” | BG-01 question and all fields; scored second pass |
+| DI | “ما هو حقن التبعيات (Dependency Injection) وما هي المشاكل…” | “يعني إيه Dependency Injection؟ وإزاي بتسهّل Testing وتقلل Coupling في Android؟” | DI-01 question and all fields; scored second pass |
 | COR | “حدث Timeout في عملية دفع… كيف تتجنب الخصم المزدوج…” | “طلب الدفع وصل للسيرفر، لكن التطبيق عمل Timeout. هتعمل Retry إزاي…” | COR-27 question and all fields |
 | PAY | “وافقت جهة الإصدار… كيف تصمم مسار الاستعادة…” | “الـ Issuer وافق على عملية POS، وبعدها الجهاز فصل… هترجع حالة العملية إزاي…” | PAY-12 question and all fields |
 | AND | “أساسيات أندرويد ودورة الحياة والسياق (Context)” | “Android Components والـ Lifecycle والـ Context” | Topic title only |
@@ -81,9 +83,11 @@ KOT-14 also changed from an academic instruction to “يعني إيه Variance 
 - **FLO-01:** Corrected “every Flow is Cold,” one-to-many cardinality as an absolute rule, unconditional `emit` backpressure, and instant cancellation claims. Distinguished `flow {}` from hot `StateFlow`/`SharedFlow` and documented buffer boundaries. The English source and Arabic fields now agree.
 - **COM-15:** Removed claims that unstable parameters force full-screen recomposition every frame and that `@Immutable` guarantees performance. The page now states the versioned Strong Skipping rule, equality versus identity comparisons, and the stale-UI risk of false annotations.
 - **SEC-02:** Removed claims that all Keystore keys are hardware-backed or immune to a compromised app. The page now requires inspection of the generated key’s security level, makes StrongBox availability conditional, and describes backend authorization and key-loss recovery.
+- **BG-01:** Replaced unconditional WorkManager success and timing claims, the idea that every coroutine belongs to a screen, and an overly absolute alarm rule with task-lifetime and policy-based guidance.
+- **DI-01:** Removed claims that DI requires interfaces, guarantees testability or lifecycle safety, or automatically enforces Dependency Inversion; distinguished manual wiring from Hilt graph management and semantic binding checks. Its Kotlin/JVM example now compiles and runs in the suite.
 - **SEC-11 reference maintenance:** Replaced a confirmed 404 OWASP MASVS-STORAGE URL with the current primary control page. SEC-11 content is not marked as a completed editorial review.
 
-Primary references were checked for these corrections: [Android app components](https://developer.android.com/guide/components/fundamentals), [Android services](https://developer.android.com/develop/background-work/services), [Android process lifecycle](https://developer.android.com/guide/components/activities/process-lifecycle), [Kotlin Flow](https://kotlinlang.org/docs/flow.html), [Flow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-flow/), [Compose strong skipping](https://developer.android.com/develop/ui/compose/performance/stability/strongskipping), [Android Keystore](https://developer.android.com/privacy-and-security/keystore), [Kotlin Java interop](https://kotlinlang.org/docs/java-interop.html), [Kotlin generics](https://kotlinlang.org/docs/generics.html), [Stripe idempotency](https://docs.stripe.com/api/idempotent_requests), [Adyen POS status](https://docs.adyen.com/point-of-sale/basic-tapi-integration/verify-transaction-status/), and [Adyen capture](https://docs.adyen.com/point-of-sale/capturing-payments/). Provider documents are examples of specific contracts, not universal payment rules.
+Primary references were checked for these corrections: [Android app components](https://developer.android.com/guide/components/fundamentals), [Android services](https://developer.android.com/develop/background-work/services), [Android process lifecycle](https://developer.android.com/guide/components/activities/process-lifecycle), [Kotlin Flow](https://kotlinlang.org/docs/flow.html), [Flow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-flow/), [Compose strong skipping](https://developer.android.com/develop/ui/compose/performance/stability/strongskipping), [Android Keystore](https://developer.android.com/privacy-and-security/keystore), [Android background tasks](https://developer.android.com/develop/background-work/background-tasks), [Android dependency injection](https://developer.android.com/training/dependency-injection), [Kotlin Java interop](https://kotlinlang.org/docs/java-interop.html), [Kotlin generics](https://kotlinlang.org/docs/generics.html), [Stripe idempotency](https://docs.stripe.com/api/idempotent_requests), [Adyen POS status](https://docs.adyen.com/point-of-sale/basic-tapi-integration/verify-transaction-status/), and [Adyen capture](https://docs.adyen.com/point-of-sale/capturing-payments/). Provider documents are examples of specific contracts, not universal payment rules.
 
 ## Generation and quality gates
 
@@ -99,13 +103,13 @@ The canonical English question bank and IDs were not edited. Arabic content live
 | `python3 scripts/validate_interview_lab.py --require-complete` | 485 records, 0 structural errors; its historical “reviewed” count is not this editorial count |
 | `python3 scripts/validate_bilingual_parity.py` | 485 passed structural parity and answer-shape checks |
 | Python unit suite | 52 passed |
-| Kotlin/JVM `./gradlew clean test check run --no-daemon` | 137 JUnit tests passed after repairing KOT-01 compiled fence |
+| Kotlin/JVM `./gradlew clean test check run --no-daemon` | 138 JUnit tests passed, including the new DI-01 runnable example |
 | `pnpm build` | 2,779 pages built; 13 site unit tests passed |
 | `pnpm lint`, `pnpm typecheck`, `pnpm check:dist` | Passed; typecheck reported 0 errors and 0 warnings; static links passed |
 | `pnpm test:e2e` | 13 passed, including Arabic search, RTL mobile rendering, mock practice, review persistence, and accessibility |
-| Built Arabic question pages | AND-01, FLO-01, COM-15, and SEC-02 regenerated with new titles and answer levels; all 485 Arabic question pages and 21 topic pages checked |
-| `python3 scripts/audit_arabic_editorial.py` | 8 scored complete, 349 review signals, 0 structural errors |
-| `python3 scripts/check_interview_links.py` | 1,004 citations checked; 307 unique URLs reachable, 0 broken, 0 unverified |
+| Built Arabic question pages | AND-01, FLO-01, COM-15, SEC-02, BG-01, and DI-01 regenerated with new titles and answer levels; all 485 Arabic question pages and 21 topic pages checked |
+| `python3 scripts/audit_arabic_editorial.py` | 10 scored complete, 339 review signals, 0 structural errors |
+| `python3 scripts/check_interview_links.py` | 1,009 citations checked; 307 unique URLs reachable, 0 broken, 0 unverified |
 | `python3 scripts/check_built_arabic_lab.py` | 485 built Arabic questions, 21 topic pages, and 63 topic/group combinations checked; 0 errors |
 | `python3 scripts/validate.py` | 0 errors after source inventory regeneration |
 | `python3 scripts/package_source.py` and `unzip -t` | Source ZIP rebuilt; archive integrity passed |
@@ -114,4 +118,4 @@ The build emitted pre-existing `proguard` syntax-highlighting fallback warnings 
 
 ## Remaining work
 
-**477 IDs remain** below the scored second-pass gate: 16 have an older spoken-answer pass, and 461 have no full 18-field pass under this checklist. Their Arabic fields and English technical sources need question-specific review. The audit’s 349 signals give a useful queue but do not cover every problem. The acceptance requirement for 485 polished, spoken answers has not been met; the draft PR should remain draft. Before calling the overhaul complete, finish all IDs, perform semantic review across all topics and A/B/C groups, then repeat full site and source-package verification.
+**475 IDs remain** below the scored second-pass gate: 16 have an older spoken-answer pass, and 459 have no full 18-field pass under this checklist. Their Arabic fields and English technical sources need question-specific review. The audit’s 339 signals give a useful queue but do not cover every problem. The acceptance requirement for 485 polished, spoken answers has not been met; the draft PR should remain draft. Before calling the overhaul complete, finish all IDs, perform semantic review across all topics and A/B/C groups, then repeat full site and source-package verification.

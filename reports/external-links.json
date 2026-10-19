@@ -1,5 +1,5 @@
 {
-  "references": 1004,
+  "references": 1009,
   "uniqueUrls": 307,
   "counts": {
     "ok": 307,
@@ -89,6 +89,7 @@
     {
       "url": "https://dagger.dev/hilt/components",
       "questionIds": [
+        "DI-01",
         "DI-06",
         "DI-07",
         "DI-17"
@@ -187,6 +188,7 @@
     {
       "url": "https://developer.android.com/develop/background-work/background-tasks",
       "questionIds": [
+        "BG-01",
         "LEAD-15"
       ],
       "status": 200,
@@ -229,6 +231,7 @@
     {
       "url": "https://developer.android.com/develop/background-work/background-tasks/persistent/getting-started/define-work",
       "questionIds": [
+        "BG-01",
         "BG-03",
         "BG-04",
         "BG-05"
@@ -299,6 +302,7 @@
       "url": "https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start",
       "questionIds": [
         "AND-19",
+        "BG-01",
         "BG-12"
       ],
       "status": 200,
@@ -2127,6 +2131,7 @@
     {
       "url": "https://developer.android.com/training/dependency-injection/manual",
       "questionIds": [
+        "DI-01",
         "DI-02"
       ],
       "status": 200,

@@ -4633,25 +4633,77 @@
       "humanReviewed": false
     },
     "DI-01": {
-      "status": "pending",
+      "status": "complete",
       "topic": "DI",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "secondPassOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "7ce3e1d5ef210ea06fe8d9582cb6f3553c51087221c9a34038496b289e9bd59e",
+      "sourceSha256": "7648f55b0051f0c6ea6f0fc05d36e12356bc67b715235996d93eaf629a365de2",
+      "scores": {
+        "naturalEgyptianArabic": 4,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 4,
+        "interviewUsefulness": 4,
+        "answerDepthAndRelevance": 4
+      },
+      "scoreEvidence": "Second pass checked all Arabic fields, original question scope, official Android references, examples, distinct answer levels, and matched English technical source.",
+      "changedFiles": [
+        "Interview-Lab/questions/DI-01.md",
+        "scripts/elevations/data/arabic_lab_metadata.json",
+        "projects/kotlin-jvm-labs/build.gradle.kts",
+        "projects/kotlin-jvm-labs/src/test/kotlin/academy/DiSnippetTest.kt"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./gradlew clean test check run --no-daemon (including DiSnippetTest)",
+        "pnpm build",
+        "pnpm lint",
+        "pnpm typecheck",
+        "pnpm check:dist",
+        "pnpm test:e2e",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/check_interview_links.py"
+      ]
     },
     "DI-02": {
       "status": "pending",
@@ -6153,25 +6205,75 @@
       "humanReviewed": false
     },
     "BG-01": {
-      "status": "pending",
+      "status": "complete",
       "topic": "BG",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "secondPassOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "94452a3f82b52f2a43232d71b8a14491457130edb5be66903bfc8f66a0b9d53c",
+      "sourceSha256": "aa4caae8229025b5a639b499636b8a2d8b72f5fd3235efb7d6a240c152b82078",
+      "scores": {
+        "naturalEgyptianArabic": 4,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 4,
+        "interviewUsefulness": 4,
+        "answerDepthAndRelevance": 4
+      },
+      "scoreEvidence": "Second pass checked all Arabic fields, original question scope, official Android references, examples, distinct answer levels, and matched English technical source.",
+      "changedFiles": [
+        "Interview-Lab/questions/BG-01.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./gradlew clean test check run --no-daemon",
+        "pnpm build",
+        "pnpm lint",
+        "pnpm typecheck",
+        "pnpm check:dist",
+        "pnpm test:e2e",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/check_interview_links.py"
+      ]
     },
     "BG-02": {
       "status": "pending",

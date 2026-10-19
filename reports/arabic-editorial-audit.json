@@ -5,8 +5,8 @@
     "arabicFieldsPerQuestion": 18
   },
   "editorialStatus": {
-    "complete": 8,
-    "pending": 461,
+    "complete": 10,
+    "pending": 459,
     "legacy_spoken_pass": 16
   },
   "topicCoverage": {
@@ -22,7 +22,8 @@
     },
     "BG": {
       "total": 18,
-      "pending": 17,
+      "complete": 1,
+      "pending": 16,
       "legacy_spoken_pass": 1
     },
     "BLD": {
@@ -51,7 +52,8 @@
     },
     "DI": {
       "total": 20,
-      "pending": 20
+      "complete": 1,
+      "pending": 19
     },
     "DSA": {
       "total": 16,
@@ -112,8 +114,8 @@
     }
   },
   "signalCounts": {
-    "terminology": 156,
-    "absolute-claim": 164,
+    "terminology": 147,
+    "absolute-claim": 163,
     "formal-style": 29
   },
   "signals": {
@@ -755,58 +757,6 @@
         "field": "deep_answer_ar",
         "kind": "absolute-claim",
         "text": "100%"
-      }
-    ],
-    "DI-01": [
-      {
-        "field": "questionAr",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "concept_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "trade_offs_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "quick_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "best_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "deep_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "how_to_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "follow_ups_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "follow_ups_ar",
-        "kind": "absolute-claim",
-        "text": "بالضرورة"
-      },
-      {
-        "field": "references_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
       }
     ],
     "DI-02": [
