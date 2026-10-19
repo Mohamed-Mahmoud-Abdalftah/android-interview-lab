@@ -1,8 +1,8 @@
 {
-  "references": 1009,
-  "uniqueUrls": 309,
+  "references": 1012,
+  "uniqueUrls": 312,
   "counts": {
-    "ok": 309,
+    "ok": 312,
     "broken": 0,
     "unverified": 0
   },
@@ -543,6 +543,7 @@
       "url": "https://developer.android.com/develop/ui/compose/testing",
       "questionIds": [
         "COM-27",
+        "TST-01",
         "TST-03",
         "TST-14",
         "TST-15",
@@ -2220,6 +2221,24 @@
       "resolved": "https://docs.adyen.com/point-of-sale/capturing-payments/"
     },
     {
+      "url": "https://docs.github.com/en/actions/get-started/continuous-deployment",
+      "questionIds": [
+        "CIC-01"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://docs.github.com/en/actions/get-started/continuous-deployment"
+    },
+    {
+      "url": "https://docs.github.com/en/actions/get-started/continuous-integration",
+      "questionIds": [
+        "CIC-01"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://docs.github.com/en/actions/get-started/continuous-integration"
+    },
+    {
       "url": "https://docs.gradle.org/current/userguide/best_practices_security.html",
       "questionIds": [
         "BLD-16"
@@ -2240,8 +2259,7 @@
     {
       "url": "https://docs.gradle.org/current/userguide/build_lifecycle.html",
       "questionIds": [
-        "BLD-01",
-        "CIC-01"
+        "BLD-01"
       ],
       "status": 200,
       "category": "ok",
@@ -3428,6 +3446,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://support.google.com/googleplay/android-developer/answer/6346149"
+    },
+    {
+      "url": "https://support.google.com/googleplay/android-developer/answer/9859348",
+      "questionIds": [
+        "CIC-01"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://support.google.com/googleplay/android-developer/answer/9859348"
     },
     {
       "url": "https://www.cs.columbia.edu/~wing/publications/LiskovWing94.pdf",

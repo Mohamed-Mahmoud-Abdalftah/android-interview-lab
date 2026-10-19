@@ -18,181 +18,92 @@ Compare unit, integration, instrumentation, UI, and end-to-end tests.
 
 ## What the interviewer evaluates
 
-- Test boundary, speed and fidelity across five levels.
-- Choosing the cheapest level that detects a specific risk.
+- Separate test scope, execution environment, and subject; the five names are not mutually exclusive tiers.
+- Choose a test that observes the relevant failure with reasonable speed and determinism.
+- State what a fake, device test, UI test, and full journey can and cannot prove.
 
 ## Concept and technical explanation
 
-The Android testing spectrum spans five distinct tiers of speed, fidelity, and execution environments. Unit tests execute on the local host JVM in milliseconds, isolating individual classes like ViewModels, UseCases, or business mappers without booting the Android operating system. Integration tests verify the interoperation between two or more architectural layers, such as validating a repository communicating with a local SQLite database or an HTTP client against a mock server. Instrumentation tests run inside real or virtual Android devices via the Android Test Orchestrator, compiling against the real Android Runtime to verify framework integrations like SharedPreferences, hardware sensors, and native platform services. UI tests validate visual hierarchy, screen transitions, and accessibility semantics using Compose UI Test APIs or Espresso. End-to-end tests exercise complete user journeys from login to checkout against staging microservices, validating the entire compiled software stack under realistic device constraints.
+Unit, integration, and end-to-end describe roughly how much of the system a test includes. A unit test checks a small rule in isolation; an integration test checks cooperating components or a real boundary; an end-to-end test follows a broad user journey. Instrumentation says where an Android test runs: on a physical or emulated device with the Android framework. UI says what is under test: interaction and rendered or semantic behavior. These categories overlap. A Room DAO test can be both integration and instrumented; a Compose screen test can be UI and instrumented; a full checkout can be UI and end-to-end.
+
+Local tests run on the host, commonly in `src/test/`. Device tests commonly live in `src/androidTest/`. A JVM fake repository test can prove a ViewModel maps a timeout to an error state, but cannot prove Room migration or device permission behavior. A device test can exercise a real Android boundary, but a fake backend does not prove a production payment processor contract.
 
 ## Practical walkthrough (English)
 
-Contrasting lightweight JVM unit tests with on-device instrumented database integration tests:
-```kotlin
-// 1. JVM Unit Test in src/test/ (Executes in ~10ms without Android OS dependencies)
-class DiscountCalculatorTest {
-    @Test
-    fun calculateFinalPrice_appliesDiscountAndRoundsCorrectly() {
-        val calculator = DiscountCalculator()
-        val result = calculator.calculate(basePrice = 100.0, discountPercentage = 25)
-        assertEquals(75.0, result, 0.001)
-    }
-}
-
-// 2. Instrumented Integration Test in src/androidTest/ (Runs on real ART against SQLite)
-@RunWith(AndroidJUnit4::class)
-class UserDaoIntegrationTest {
-    private lateinit var database: AppDatabase
-    private lateinit var userDao: UserDao
-
-    @Before
-    fun createDb() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
-        userDao = database.userDao()
-    }
-
-    @After
-    fun closeDb() {
-        database.close()
-    }
-
-    @Test
-    fun insertUser_andReadByUid_matchesDatabaseEntity() = runBlocking {
-        val user = UserEntity(uid = 42, displayName = "Mahmoud")
-        userDao.insert(user)
-        val loaded = userDao.findByUid(42)
-        assertEquals("Mahmoud", loaded?.displayName)
-    }
-}
-```
+Take a checkout flow. Test a pure fee policy with a local unit test. Test repository mapping against a controlled HTTP server or a Room database with an integration test; use a device if the actual Android platform behavior matters. Test the confirmation screen's enabled state and accessibility semantics with a UI test. Keep a small end-to-end sandbox journey for the full request and response contract, including an unknown or timed-out result. State which backend is used and reset test data. Do not let a mocked success response stand in for a verified transaction.
 
 ## Explanation in Arabic
 
-قارن بين اختبارات الوحدة (Unit)، والتكامل (Integration)، والأجهزة (Instrumentation)، والواجهة (UI)، والنهاية للنهاية (End-to-End)؟
+التصنيفات دي مش خمس درجات منفصلة. `Unit` و`Integration` و`End-to-End` بتتكلم عن حجم الجزء اللي الاختبار بيغطيه. `Instrumentation` بتقول الاختبار شغال على جهاز Android حقيقي أو Emulator. `UI Test` بتقول أنت بتختبر تفاعل الشاشة وسلوكها. ممكن اختبار `Room DAO` يبقى Integration وInstrumented في نفس الوقت، واختبار شاشة Compose يبقى UI وInstrumented.
 
-1. طيف الاختبارات في أندرويد (The Android Testing Spectrum):
-   - **Unit Tests (Local JVM Tests)**: تُنفذ على الـ JVM المحلي داخل الحاسوب دون الحاجة لمشغل أو محاكي أندرويد (`src/test/`). سريعة جداً (بضعة أجزاء من الثانية لكل اختبار)، وتختبر دالة أو كلاس واحد بمعزل عن النظام (ViewModels, UseCases, Mappers).
-   - **Integration Tests**: تختبر تفاعل مكونين أو أكثر معاً للتأكد من صحة الاتصال (مثل اختبار Repository يتصل بـ Room Database محلية أو MockWebServer).
-   - **Instrumentation Tests (On-Device Tests)**: تتطلب تشغيل جهاز أندرويد حقيقي أو محاكي (`src/androidTest/`). تختبر كوداً يعتمد على Android Framework الحقيقي (SQLite، SharedPreferences، الخدمات، ومدير الحزم).
-   - **UI Tests (Compose / Espresso)**: تختبر الشاشات وتفاعل المستخدم (الضغط على الأزرار، التمرير، وظهور النصوص وقراءة Semantics شجرة الـ Compose).
-   - **End-to-End Tests (E2E)**: تختبر تدفق المستخدم الكامل من البداية للنهاية (تسجيل دخول -> إضافة للسلة -> إتمام الدفع عبر بيئة Staging حقيقية).
-
-2. المفاضلات الهندسية (Trade-offs):
-   - كلما صعدت لأعلى (من Unit إلى E2E): تزداد الموثوقية وواقعية الاختبار، ولكن **تزداد التكلفة والبطء واحتمالية الاختبارات المتقلبة (Flakiness)**.
+الـ Local Test غالبًا في `src/test/` وبتشتغل على Host JVM؛ الـ Device Test غالبًا في `src/androidTest/`. لو اختبرت ViewModel بـ Fake Repository، أثبتّ Mapping حالات الـ UI حسب الـ Fake، مش Migration قاعدة البيانات ولا Permission على جهاز. الاختبار الصح يعتمد على الـ Risk اللي عايز تكشفه، مش اسم طبقة محفوظ.
 
 ## Practical walkthrough
 
-المقارنة بين Unit Test سريع على JVM و Instrumented Test يتطلب جهازاً حقيقياً في Room:
-```kotlin
-// 1. Unit Test سريع في src/test/ (ينفذ في 10ms على JVM بدون أندرويد):
-class PriceCalculatorTest {
-    @Test
-    fun `calculateDiscount applies percentage correctly`() {
-        val calculator = PriceCalculator()
-        val finalPrice = calculator.applyDiscount(originalPrice = 100.0, discountPercent = 20)
-        assertEquals(80.0, finalPrice, 0.001)
-    }
-}
-
-// 2. Instrumented Integration Test في src/androidTest/ (يتطلب محاكي لفحص SQLite الحقيقي):
-@RunWith(AndroidJUnit4::class)
-class UserDaoTest {
-    private lateinit var db: AppDatabase
-    private lateinit var userDao: UserDao
-
-    @Before
-    fun createDb() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
-        userDao = db.userDao()
-    }
-
-    @Test
-    fun insertAndReadUser() = runTest {
-        val user = UserEntity(id = "1", name = "Ahmed")
-        userDao.insert(user)
-        val byId = userDao.getUserById("1")
-        assertEquals("Ahmed", byId?.name)
-    }
-}
-```
+في Checkout Flow أختبر حساب الرسوم كـ Unit Test محلي. أختبر Repository مع Mock HTTP Server أو Room فعلية كـ Integration؛ ولو سلوك Android نفسه مهم أستخدم Device Test. أختبر زر التأكيد وAccessibility Semantics كـ UI Test. وأخلي Journey صغيرة في Sandbox تغطي Request/Response الحقيقيين وحالة Timeout أو Unknown، مع Test Data معزولة. Mock Response ناجحة ما تثبتش إن Processor وافق أو إن الفلوس اتحركت.
 
 ## Why it matters and how it works
 
-The levels vary in environment, not just file location. A pure JVM test cannot prove platform permission behavior, while an end-to-end payment test may detect cross-system contract failures but runs slower and is less deterministic. Contract tests sit between isolated unit logic and full E2E.
+The useful axes are scope, environment, and subject. A narrow test gives fast diagnosis but cannot observe omitted boundaries. A broad test can catch contract mismatches but needs controlled data and failure handling. Device execution gives platform fidelity where needed, not automatic correctness. Test selection should follow the concrete risk: pure fee math, Room migration, Compose interaction, or a processor sandbox contract require different evidence.
 
 ## Worked example
 
-Test fee calculation as JVM unit; Room migration on an Android test device or suitable test database; Compose semantics with UI testing; a checkout sandbox flow end-to-end. Do not use a mocked repository to claim database durability was tested.
+For a fee rule, a local test asserts the result for zero, boundary, and invalid amounts. For a Room migration, a device integration test opens an old schema and verifies the new schema preserves rows. For a Compose screen, a UI test checks that an error state is visible and the retry control works. For checkout, a sandbox end-to-end run checks the app and backend agree on a transaction status. These are test designs, not executable snippets or claims of payment certification.
 
 ## Trade-offs and decision criteria
 
-Fast tests give tight feedback; high-fidelity tests cover platform and system integration. Put deterministic logic low in the pyramid, then add a small number of device and E2E tests for risks only they can observe.
+Use fast local tests for many deterministic rule cases. Add integration tests when data mapping, persistence, or network contracts are the risk. Use device tests for behavior that depends on the Android runtime or supported API levels. Use UI tests for visible interaction and semantics, and a limited number of end-to-end journeys for cross-system failures. A larger test is not inherently more reliable; uncontrolled clocks, state, networks, and animations can make it less diagnostic.
 
 ## Failure modes
 
-A ViewModel unit test passes while a manifest permission or Room migration breaks on device. Conversely, thousands of UI tests make every PR slow and flaky. Map each production incident to the lowest effective test layer.
+A fake DAO lets a ViewModel test pass while a Room migration loses data. A device test using a fake HTTP response passes while the real backend contract changes. An end-to-end test with shared accounts becomes order-dependent. A flaky UI test that waits a fixed time hides missing synchronization. Counting tests or prescribing a fixed percentage per layer says little about the risks actually covered.
 
 ## Production perspective
 
-CI runs JVM tests and static checks early, device tests on supported API/device matrix, and a limited critical-journey suite before release. Track failure detection value and runtime per layer.
+Run deterministic local tests early in CI, then integration and device tests on the supported configuration matrix. Reserve expensive end-to-end runs for critical journeys, keep accounts and data isolated, and report which external systems are real or simulated. Diagnose flaky tests rather than retrying them indefinitely. For payment journeys, use a documented sandbox contract and never equate a successful UI assertion with financial settlement.
 
 ## Interview answer — short
 
-We structure testing across five tiers based on speed and fidelity. Unit tests run on the host JVM in milliseconds, verifying isolated business logic. Integration tests check interactions between two components like repositories and databases. Instrumentation tests run on real Android devices or emulators, validating Android framework APIs. UI tests verify user interactions and Compose semantics trees. Finally, end-to-end tests validate complete user journeys across the entire system, trading execution speed for maximum production fidelity.
+I compare tests on three axes. Unit, integration, and end-to-end describe scope; instrumentation means the test runs on an Android device; UI means it checks user-visible behavior. So a Room test can be both integration and instrumented. I put fee rules in fast local tests, Android-specific persistence or permissions on a device, screen interaction in UI tests, and a few controlled full journeys for cross-system risks.
 
 ## Interview answer — structured
 
-A mature engineering strategy balances test execution speed against production fidelity across five distinct layers of the testing pyramid.
-At the base, unit tests execute purely on the host development machine within the local Java Virtual Machine.
-Because they bypass the Android OS and device boot cycles, thousands of unit tests execute in seconds, making them our primary tool for testing mathematical logic, ViewModels, UseCases, and domain algorithms.
-Moving upward, integration tests verify that architectural boundaries communicate without protocol mismatches, such as checking that an offline-first repository correctly caches API payloads into a local SQLite database.
-Instrumentation tests introduce the real Android execution environment by packaging code into an auxiliary test APK that runs on an emulator or physical device.
-These are essential when verifying platform-bound behaviors, such as hardware biometrics, Room database migrations, and native system services that cannot be simulated accurately on the desktop JVM.
-UI tests focus on the presentation layer, verifying Compose semantics trees, click dispatches, and navigation flows using ComposeTestRule or Espresso.
-At the summit, end-to-end tests exercise complete user journeys—such as onboarding, browsing catalog products, and submitting a test payment—against staging servers, giving teams ultimate confidence before releasing builds to production.
+Those five labels overlap. Unit tests check a small rule, integration tests check collaborating components or a real boundary, and end-to-end tests cover a larger journey. Instrumented means the test runs on an emulator or device, while UI describes the behavior under test. A Compose UI test can also be instrumented; a Room migration test can be both integration and instrumented.
+
+For checkout, I test fee calculation locally with many edge cases. I test repository mapping with a controlled HTTP server and Room migration against a real database when persistence matters. I use a UI test for button state and accessibility semantics. A small sandbox end-to-end test then checks the app and backend contract, including a timeout or unknown result.
+
+Each gives different evidence. A fake repository ViewModel test does not prove the real database or backend works. A full journey is useful for integration risk but slower and harder to diagnose. I choose the narrowest test that can actually observe the failure, and keep high-risk cross-system paths covered without relying on a fixed test pyramid ratio.
 
 ## Interview answer — deep senior
 
-Under the hood, the fundamental distinction across these testing layers lies in the compilation pipeline, runtime bytecode execution, and thread scheduling models.
-Local JVM unit tests reside in src/test and compile against mockable-android.jar provided by the Android Gradle Plugin.
-Because the standard Android library on host machines contains method stubs that throw RuntimeException('Stub!'), any invocation of an unmocked Android API immediately fails unless developers configure returnDefaultValues in build scripts or inject mock abstractions.
-In contrast, instrumentation tests in src/androidTest produce two distinct APKs: the application APK and the test runner APK.
-The Android operating system installs both APKs and launches the instrumentation runner via an am instrument command through the ActivityManagerService.
-The runner executes inside the target application's Linux process, sharing its ClassLoader and application Context, which enables native interaction with SQLite engines, hardware sensors, and native C++ graphics libraries.
-UI tests built with ComposeTestRule bypass physical view hierarchies entirely by querying the SemanticsNode tree.
-The Compose test runner integrates with the Choreographer and coroutine dispatchers, automatically idling until recomposition scopes and draw passes settle.
-End-to-end testing introduces network latency, server state volatility, and background process management.
-Senior engineers prevent test suite degradation by pushing 80% of assertion volume down to deterministic JVM unit tests, using instrumentation strictly for hardware and database boundaries, and reserving end-to-end device testing for critical monetization funnels in scheduled nocturnal CI pipelines.
+I frame the choice by scope, environment, and subject. Scope runs from a small pure rule through multiple cooperating components to a complete user journey. Environment is host or Android device. Subject might be business logic, persistence, UI semantics, or a network contract. These are orthogonal enough that calling them five mutually exclusive tiers is misleading. Android's testing guide explicitly gives examples of both a broad local test and a narrow instrumented test.
+
+I would map an incident to the first boundary where a test could have caught it. A wrong fee formula belongs in a deterministic unit test with boundary cases. A DTO mapper or Room migration needs the relevant real component, not just a fake. A permission result or framework lifecycle needs a device when host simulation would miss the behavior. A Compose UI test checks interaction and semantics; it does not by itself prove the backend processed a request. For checkout, a small sandbox end-to-end suite checks the documented contract and handles unknown outcomes without asserting settlement from a screen state.
+
+The trade-off is diagnostic speed versus coverage of real boundaries. Local tests generally give faster feedback, but I do not invent a universal millisecond time or mandate an 80/20 test split. Device and end-to-end tests require isolated accounts, controlled clocks where possible, synchronization with asynchronous UI, and explicit reset paths. When one flakes, I find the uncontrolled dependency before adding retries. CI can stage fast checks early and run a supported device matrix and critical journeys later. I report exactly which integrations were real and which were faked.
 
 ## How to answer in the interview
 
-- **Why:** one test layer cannot see every boundary.
-- **How:** map fee policy, Room, UI and sandbox checkout to the lowest layer that can observe each.
-- **Trade-off:** fast isolated coverage versus slower integrated confidence.
-- **Failure case:** a mocked DAO cannot prove migration or persistence.
-- **Production solution:** risk-based matrix with a few complete release journeys.
+Start by separating scope, environment, and subject. Give one example where labels overlap, then map a concrete feature risk to the cheapest test that can observe it. End with a limitation of the fake or sandbox.
 
 ## Deep-dive talking points
 
-Prompt for overlap of labels, fidelity limits, payment invariants and CI runtime.
+Local versus instrumented; small, medium, and big scope; Room migrations; Compose semantics; controlled HTTP servers; sandbox contracts; test data isolation; flake diagnosis.
 
 ## Follow-up questions
 
-- **Interviewer:** "What is Robolectric and when should you use it?"
-  **Answer:** "A framework that provides simulated Android bytecode on the local JVM, allowing Android framework-dependent tests to run in seconds without an emulator."
-
-- **Interviewer:** "Why are E2E tests often flaky in continuous integration pipelines?"
-  **Answer:** "Due to external dependencies: network timeouts, test database state contamination, asynchronous UI animation delays, and backend server restarts."
+- **Interviewer:** "Is every instrumented test end-to-end?" **Answer:** "No. A small SQLite or framework test on a device is instrumented but can have narrow scope."
+- **Interviewer:** "Does a ViewModel test with a fake DAO prove Room works?" **Answer:** "No. It proves behavior against the fake. I need a test of the real DAO or migration for persistence."
+- **Interviewer:** "Why can a UI test be flaky?" **Answer:** "Uncontrolled animation, clocks, network, or shared state. I use proper synchronization and isolate data before retrying."
 
 ## Self-check rubric
 
-Score one point each for choosing a JVM unit test for pure policy, an integration test for real boundaries, an Android instrumented test for platform behavior, a UI test for user interaction, and a small end-to-end test for the full checkout path. State what each test cannot prove.
+Can I classify one test on all three axes, explain what a fake cannot prove, and choose a real-boundary test for a concrete failure risk?
 
 ## References and reviewed-on date
 
-- [Android testing fundamentals](https://developer.android.com/training/testing/fundamentals) — test types and environment.
-- [Android test strategy](https://developer.android.com/training/testing) — official test guidance.
+- [Android testing fundamentals](https://developer.android.com/training/testing/fundamentals) — scope and local versus instrumented environments.
+- [Android testing guidance](https://developer.android.com/training/testing) — official test entry points.
+- [Compose UI testing](https://developer.android.com/develop/ui/compose/testing) — interactions and semantics.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against current primary Android documentation on 2026-10-19; agent editorial review, not human verification.

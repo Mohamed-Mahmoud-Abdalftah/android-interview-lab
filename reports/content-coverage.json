@@ -832,7 +832,7 @@
       "topic": "MEM",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": true
+      "hasKotlinCode": false
     },
     "MEM-02": {
       "topic": "MEM",
@@ -2746,7 +2746,7 @@
       "topic": "BLD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": true
+      "hasKotlinCode": false
     },
     "BLD-02": {
       "topic": "BLD",
@@ -2872,7 +2872,7 @@
       "topic": "TST",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": true
+      "hasKotlinCode": false
     },
     "TST-02": {
       "topic": "TST",
