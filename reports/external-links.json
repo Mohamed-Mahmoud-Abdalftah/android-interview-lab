@@ -1,8 +1,8 @@
 {
-  "references": 1028,
-  "uniqueUrls": 327,
+  "references": 1029,
+  "uniqueUrls": 328,
   "counts": {
-    "ok": 327,
+    "ok": 328,
     "broken": 0,
     "unverified": 0
   },
@@ -50,7 +50,6 @@
         "SOL-06",
         "SOL-07",
         "SOL-08",
-        "SOL-14",
         "SOL-15"
       ],
       "status": 200,
@@ -1427,6 +1426,7 @@
         "PAY-09",
         "PAY-10",
         "SOL-12",
+        "SOL-14",
         "SOL-18",
         "SYS-16"
       ],
@@ -2397,6 +2397,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://docs.gradle.org/current/userguide/java_library_plugin.html"
+    },
+    {
+      "url": "https://docs.gradle.org/current/userguide/java_plugin.html",
+      "questionIds": [
+        "SOL-14"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://docs.gradle.org/current/userguide/java_plugin.html"
     },
     {
       "url": "https://docs.gradle.org/current/userguide/java_testing.html",
