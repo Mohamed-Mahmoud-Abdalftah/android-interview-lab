@@ -5,8 +5,8 @@
     "arabicFieldsPerQuestion": 18
   },
   "editorialStatus": {
-    "complete": 41,
-    "pending": 444
+    "complete": 43,
+    "pending": 442
   },
   "topicCoverage": {
     "AND": {
@@ -86,8 +86,8 @@
     },
     "PAT": {
       "total": 18,
-      "complete": 1,
-      "pending": 17
+      "complete": 2,
+      "pending": 16
     },
     "PAY": {
       "total": 15,
@@ -101,8 +101,8 @@
     },
     "SOL": {
       "total": 20,
-      "complete": 1,
-      "pending": 19
+      "complete": 2,
+      "pending": 18
     },
     "SYS": {
       "total": 24,
@@ -116,8 +116,8 @@
     }
   },
   "signalCounts": {
-    "terminology": 109,
-    "absolute-claim": 154,
+    "terminology": 99,
+    "absolute-claim": 150,
     "formal-style": 18
   },
   "signals": {
@@ -1368,48 +1368,6 @@
         "text": "100%"
       }
     ],
-    "PAT-07": [
-      {
-        "field": "questionAr",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "concept_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "quick_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "quick_answer_ar",
-        "kind": "absolute-claim",
-        "text": "100%"
-      },
-      {
-        "field": "best_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "deep_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "follow_ups_ar",
-        "kind": "absolute-claim",
-        "text": "بالضرورة"
-      },
-      {
-        "field": "references_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      }
-    ],
     "PAT-08": [
       {
         "field": "deep_answer_ar",
@@ -1532,38 +1490,6 @@
         "field": "follow_ups_ar",
         "kind": "absolute-claim",
         "text": "بالضرورة"
-      }
-    ],
-    "SOL-07": [
-      {
-        "field": "questionAr",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "concept_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "walkthrough_ar",
-        "kind": "absolute-claim",
-        "text": "100%"
-      },
-      {
-        "field": "quick_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "best_answer_ar",
-        "kind": "absolute-claim",
-        "text": "100%"
-      },
-      {
-        "field": "references_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
       }
     ],
     "SOL-08": [

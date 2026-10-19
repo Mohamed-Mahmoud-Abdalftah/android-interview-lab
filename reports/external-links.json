@@ -1,8 +1,8 @@
 {
-  "references": 1018,
-  "uniqueUrls": 316,
+  "references": 1021,
+  "uniqueUrls": 317,
   "counts": {
-    "ok": 316,
+    "ok": 317,
     "broken": 0,
     "unverified": 0
   },
@@ -58,6 +58,15 @@
       "resolved": "https://blog.cleancoder.com/uncle-bob/2016/01/04/ALittleArchitecture.html"
     },
     {
+      "url": "https://dagger.dev/api/latest/dagger/Binds.html",
+      "questionIds": [
+        "SOL-07"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://dagger.dev/api/latest/dagger/Binds.html"
+    },
+    {
       "url": "https://dagger.dev/dev-guide/assisted-injection.html",
       "questionIds": [
         "DI-15"
@@ -97,6 +106,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://dagger.dev/hilt/components"
+    },
+    {
+      "url": "https://dagger.dev/hilt/components.html",
+      "questionIds": [
+        "PAT-07"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://dagger.dev/hilt/components.html"
     },
     {
       "url": "https://developer.android.com/build/android-build-structure",
@@ -1699,7 +1717,8 @@
         "MOD-08",
         "MOD-09",
         "MOD-10",
-        "MOD-14"
+        "MOD-14",
+        "SOL-07"
       ],
       "status": 200,
       "category": "ok",
@@ -2106,6 +2125,7 @@
         "DI-18",
         "DI-20",
         "MOD-11",
+        "PAT-07",
         "PAT-10",
         "SOL-14"
       ],
@@ -2904,15 +2924,6 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://kotlinlang.org/docs/cancellation-and-timeouts.html"
-    },
-    {
-      "url": "https://kotlinlang.org/docs/classes.html",
-      "questionIds": [
-        "PAT-07"
-      ],
-      "status": 200,
-      "category": "ok",
-      "resolved": "https://kotlinlang.org/docs/classes.html"
     },
     {
       "url": "https://kotlinlang.org/docs/coding-conventions.html",
