@@ -1,8 +1,8 @@
 {
-  "references": 1027,
-  "uniqueUrls": 324,
+  "references": 1028,
+  "uniqueUrls": 327,
   "counts": {
-    "ok": 324,
+    "ok": 327,
     "broken": 0,
     "unverified": 0
   },
@@ -828,7 +828,6 @@
         "ARC-18",
         "COR-02",
         "COR-09",
-        "COR-11",
         "COR-26",
         "MEM-09",
         "MEM-10",
@@ -2855,6 +2854,15 @@
       "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-main-coroutine-dispatcher/limited-parallelism.html"
     },
     {
+      "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/coroutine-scope.html",
+      "questionIds": [
+        "COR-11"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/coroutine-scope.html"
+    },
+    {
       "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/ensure-active.html",
       "questionIds": [
         "COR-10"
@@ -2862,6 +2870,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/ensure-active.html"
+    },
+    {
+      "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/supervisor-scope.html",
+      "questionIds": [
+        "COR-11"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/supervisor-scope.html"
     },
     {
       "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/suspend-cancellable-coroutine.html",
@@ -3113,7 +3130,6 @@
         "COR-04",
         "COR-05",
         "COR-10",
-        "COR-11",
         "COR-12",
         "COR-13",
         "COR-14",
@@ -3128,6 +3144,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://kotlinlang.org/docs/exception-handling.html"
+    },
+    {
+      "url": "https://kotlinlang.org/docs/exception-handling.html#supervision",
+      "questionIds": [
+        "COR-11"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/docs/exception-handling.html#supervision"
     },
     {
       "url": "https://kotlinlang.org/docs/extensions.html",

@@ -30,6 +30,10 @@ In a CPU loop, `currentCoroutineContext().ensureActive()` throws when the curren
 
 An in-memory search scans a large cached catalog after each query. When a new query supersedes the old one, the owner cancels the previous Job. A scan that performs only CPU work cannot observe that signal until it checks the current context. It checks every 256 items; the current item may still finish, and a long `inspect` call may delay cancellation further. This is a response-time policy, not a guarantee of instant termination.
 
+## Explanation in Arabic
+
+الإلغاء في الـ Coroutines تعاوني: `job.cancel()` يسجل الإشارة، لكن كود CPU الجاري مش بيتوقف بالقوة. عملية قابلة للإلغاء مثل `delay` تلاحظ الإشارة، أما Loop حسابية فتحتاج `currentCoroutineContext().ensureActive()` كل فترة مناسبة. كلمة `suspend` وحدها مش ضمان إن الدالة بتفحص الإلغاء. لو في Driver بيعمل Blocking، لازم تستخدم عقد Cancel أو Close الخاص به؛ الفحص خارج الاستدعاء مش هيقطعه من جوه.
+
 ## Why it matters and how it works
 
 Cancellation only becomes observable when the work reaches a cancellable operation or explicitly checks its current Job. A CPU scan must do that itself. The check interval bounds responsiveness only when each chunk is itself bounded. `ensureActive` throws and follows normal `finally` cleanup; `isActive` returns a Boolean when a deliberate alternative exit is needed. Use `join` or `await` for completion ordering rather than relying on `yield`.

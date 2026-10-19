@@ -5,8 +5,8 @@
     "arabicFieldsPerQuestion": 18
   },
   "editorialStatus": {
-    "complete": 49,
-    "pending": 436
+    "complete": 50,
+    "pending": 435
   },
   "topicCoverage": {
     "AND": {
@@ -41,8 +41,8 @@
     },
     "COR": {
       "total": 32,
-      "complete": 11,
-      "pending": 21
+      "complete": 12,
+      "pending": 20
     },
     "DAT": {
       "total": 22,
