@@ -1,12 +1,21 @@
 {
-  "references": 979,
-  "uniqueUrls": 291,
+  "references": 1033,
+  "uniqueUrls": 328,
   "counts": {
-    "ok": 291,
+    "ok": 328,
     "broken": 0,
     "unverified": 0
   },
   "results": [
+    {
+      "url": "https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html",
+      "questionIds": [
+        "ARC-01"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html"
+    },
     {
       "url": "https://blog.cleancoder.com/uncle-bob/2014/05/08/SingleReponsibilityPrinciple.html",
       "questionIds": [
@@ -41,12 +50,20 @@
         "SOL-06",
         "SOL-07",
         "SOL-08",
-        "SOL-14",
         "SOL-15"
       ],
       "status": 200,
       "category": "ok",
       "resolved": "https://blog.cleancoder.com/uncle-bob/2016/01/04/ALittleArchitecture.html"
+    },
+    {
+      "url": "https://dagger.dev/api/latest/dagger/Binds.html",
+      "questionIds": [
+        "SOL-07"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://dagger.dev/api/latest/dagger/Binds.html"
     },
     {
       "url": "https://dagger.dev/dev-guide/assisted-injection.html",
@@ -78,8 +95,18 @@
       "resolved": "https://dagger.dev/dev-guide/multibindings"
     },
     {
+      "url": "https://dagger.dev/dev-guide/multibindings.html",
+      "questionIds": [
+        "MOD-11"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://dagger.dev/dev-guide/multibindings.html"
+    },
+    {
       "url": "https://dagger.dev/hilt/components",
       "questionIds": [
+        "DI-01",
         "DI-06",
         "DI-07",
         "DI-17"
@@ -87,6 +114,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://dagger.dev/hilt/components"
+    },
+    {
+      "url": "https://dagger.dev/hilt/components.html",
+      "questionIds": [
+        "PAT-07"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://dagger.dev/hilt/components.html"
     },
     {
       "url": "https://developer.android.com/build/android-build-structure",
@@ -178,6 +214,7 @@
     {
       "url": "https://developer.android.com/develop/background-work/background-tasks",
       "questionIds": [
+        "BG-01",
         "LEAD-15"
       ],
       "status": 200,
@@ -187,7 +224,6 @@
     {
       "url": "https://developer.android.com/develop/background-work/background-tasks/persistent",
       "questionIds": [
-        "AND-01",
         "AND-21",
         "BG-01",
         "BG-02",
@@ -205,9 +241,11 @@
         "BG-16",
         "BG-17",
         "BG-18",
+        "COR-06",
         "COR-24",
         "COR-30",
         "DAT-15",
+        "PAY-12",
         "SYS-04",
         "SYS-20",
         "SYS-24"
@@ -219,6 +257,7 @@
     {
       "url": "https://developer.android.com/develop/background-work/background-tasks/persistent/getting-started/define-work",
       "questionIds": [
+        "BG-01",
         "BG-03",
         "BG-04",
         "BG-05"
@@ -237,6 +276,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://developer.android.com/develop/background-work/background-tasks/persistent/how-to/manage-work"
+    },
+    {
+      "url": "https://developer.android.com/develop/background-work/services",
+      "questionIds": [
+        "AND-01"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://developer.android.com/develop/background-work/services"
     },
     {
       "url": "https://developer.android.com/develop/background-work/services/aidl",
@@ -280,6 +328,7 @@
       "url": "https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start",
       "questionIds": [
         "AND-19",
+        "BG-01",
         "BG-12"
       ],
       "status": 200,
@@ -377,6 +426,15 @@
       "resolved": "https://developer.android.com/develop/ui/compose/migrate/interoperability-apis"
     },
     {
+      "url": "https://developer.android.com/develop/ui/compose/migrate/interoperability-apis/compose-in-views",
+      "questionIds": [
+        "SYS-23"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://developer.android.com/develop/ui/compose/migrate/interoperability-apis/compose-in-views"
+    },
+    {
       "url": "https://developer.android.com/develop/ui/compose/modifiers",
       "questionIds": [
         "COM-07"
@@ -393,7 +451,6 @@
         "COM-18",
         "COM-20",
         "COM-21",
-        "MOD-09",
         "MOD-10"
       ],
       "status": 200,
@@ -414,7 +471,8 @@
       "url": "https://developer.android.com/develop/ui/compose/performance/stability",
       "questionIds": [
         "COM-03",
-        "COM-15"
+        "COM-15",
+        "KOT-02"
       ],
       "status": 200,
       "category": "ok",
@@ -429,6 +487,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://developer.android.com/develop/ui/compose/performance/stability/diagnose"
+    },
+    {
+      "url": "https://developer.android.com/develop/ui/compose/performance/stability/fix",
+      "questionIds": [
+        "COM-15"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://developer.android.com/develop/ui/compose/performance/stability/fix"
     },
     {
       "url": "https://developer.android.com/develop/ui/compose/performance/stability/strongskipping",
@@ -502,6 +569,7 @@
       "url": "https://developer.android.com/develop/ui/compose/testing",
       "questionIds": [
         "COM-27",
+        "TST-01",
         "TST-03",
         "TST-14",
         "TST-15",
@@ -630,6 +698,7 @@
     {
       "url": "https://developer.android.com/guide/components/activities/process-lifecycle",
       "questionIds": [
+        "AND-01",
         "AND-22"
       ],
       "status": 200,
@@ -658,6 +727,7 @@
     {
       "url": "https://developer.android.com/guide/fragments/lifecycle",
       "questionIds": [
+        "AND-01",
         "AND-02",
         "AND-03",
         "MEM-09",
@@ -667,6 +737,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://developer.android.com/guide/fragments/lifecycle"
+    },
+    {
+      "url": "https://developer.android.com/guide/navigation",
+      "questionIds": [
+        "MOD-09"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://developer.android.com/guide/navigation"
     },
     {
       "url": "https://developer.android.com/guide/playcore/feature-delivery",
@@ -698,15 +777,6 @@
       "resolved": "https://developer.android.com/guide/topics/permissions/overview"
     },
     {
-      "url": "https://developer.android.com/guide/topics/providers/content-provider-basics",
-      "questionIds": [
-        "AND-01"
-      ],
-      "status": 200,
-      "category": "ok",
-      "resolved": "https://developer.android.com/guide/topics/providers/content-provider-basics"
-    },
-    {
       "url": "https://developer.android.com/identity/data/autobackup",
       "questionIds": [
         "SEC-13",
@@ -735,15 +805,6 @@
       "resolved": "https://developer.android.com/identity/sign-in/biometric-auth"
     },
     {
-      "url": "https://developer.android.com/kotlin",
-      "questionIds": [
-        "KOT-01"
-      ],
-      "status": 200,
-      "category": "ok",
-      "resolved": "https://developer.android.com/kotlin"
-    },
-    {
       "url": "https://developer.android.com/kotlin/coroutines",
       "questionIds": [
         "COR-01",
@@ -751,7 +812,6 @@
         "COR-06",
         "COR-07",
         "COR-08",
-        "COR-09",
         "COR-14",
         "COR-29",
         "COR-31",
@@ -765,6 +825,9 @@
       "url": "https://developer.android.com/kotlin/coroutines/coroutines-best-practices",
       "questionIds": [
         "ARC-18",
+        "COR-02",
+        "COR-09",
+        "COR-26",
         "MEM-09",
         "MEM-10",
         "MEM-22"
@@ -777,6 +840,7 @@
       "url": "https://developer.android.com/kotlin/coroutines/test",
       "questionIds": [
         "COR-32",
+        "TST-04",
         "TST-05",
         "TST-06",
         "TST-08"
@@ -786,9 +850,17 @@
       "resolved": "https://developer.android.com/kotlin/coroutines/test"
     },
     {
+      "url": "https://developer.android.com/kotlin/first",
+      "questionIds": [
+        "KOT-01"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://developer.android.com/kotlin/first"
+    },
+    {
       "url": "https://developer.android.com/kotlin/flow",
       "questionIds": [
-        "FLO-01",
         "FLO-17",
         "FLO-28"
       ],
@@ -801,6 +873,7 @@
       "questionIds": [
         "AND-17",
         "COM-08",
+        "FLO-01",
         "FLO-04",
         "FLO-05",
         "FLO-06",
@@ -933,7 +1006,6 @@
     {
       "url": "https://developer.android.com/privacy-and-security/security-config",
       "questionIds": [
-        "DAT-01",
         "DAT-09",
         "SEC-06",
         "SEC-08",
@@ -1010,12 +1082,29 @@
     {
       "url": "https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec",
       "questionIds": [
-        "SEC-02",
         "SEC-22"
       ],
       "status": 200,
       "category": "ok",
       "resolved": "https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec"
+    },
+    {
+      "url": "https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec.Builder",
+      "questionIds": [
+        "SEC-02"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec.Builder"
+    },
+    {
+      "url": "https://developer.android.com/reference/android/security/keystore/KeyInfo",
+      "questionIds": [
+        "SEC-02"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://developer.android.com/reference/android/security/keystore/KeyInfo"
     },
     {
       "url": "https://developer.android.com/reference/android/util/LruCache",
@@ -1081,6 +1170,15 @@
       "resolved": "https://developer.android.com/reference/androidx/webkit/WebViewAssetLoader"
     },
     {
+      "url": "https://developer.android.com/reference/androidx/work/WorkManager",
+      "questionIds": [
+        "PAY-06"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://developer.android.com/reference/androidx/work/WorkManager"
+    },
+    {
       "url": "https://developer.android.com/reference/kotlin/androidx/lifecycle/compose/collectAsStateWithLifecycle.composable",
       "questionIds": [
         "COM-09"
@@ -1104,7 +1202,6 @@
         "PAY-04",
         "PAY-06",
         "PAY-07",
-        "PAY-12",
         "TST-11"
       ],
       "status": 200,
@@ -1293,7 +1390,6 @@
         "SYS-03",
         "SYS-08",
         "SYS-09",
-        "SYS-10",
         "SYS-12",
         "SYS-13",
         "SYS-14",
@@ -1301,8 +1397,7 @@
         "SYS-16",
         "SYS-18",
         "SYS-22",
-        "SYS-23",
-        "TST-04"
+        "SYS-23"
       ],
       "status": 200,
       "category": "ok",
@@ -1328,13 +1423,12 @@
         "PAT-12",
         "PAT-15",
         "PAT-16",
-        "PAY-02",
         "PAY-09",
         "PAY-10",
         "SOL-12",
+        "SOL-14",
         "SOL-18",
-        "SYS-16",
-        "TST-07"
+        "SYS-16"
       ],
       "status": 200,
       "category": "ok",
@@ -1352,7 +1446,6 @@
         "BG-16",
         "BG-18",
         "COR-18",
-        "COR-27",
         "COR-28",
         "COR-30",
         "DAT-02",
@@ -1370,12 +1463,12 @@
         "LEAD-01",
         "LEAD-06",
         "PAY-01",
+        "PAY-02",
         "PAY-04",
         "PAY-08",
         "SYS-04",
         "SYS-05",
         "SYS-06",
-        "SYS-10",
         "SYS-11",
         "SYS-24",
         "TST-18",
@@ -1458,7 +1551,8 @@
         "ARC-09",
         "ARC-11",
         "PAT-09",
-        "PAT-14"
+        "PAT-14",
+        "SYS-10"
       ],
       "status": 200,
       "category": "ok",
@@ -1568,7 +1662,8 @@
       "url": "https://developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-savedstate",
       "questionIds": [
         "DI-15",
-        "FLO-26"
+        "FLO-26",
+        "SYS-10"
       ],
       "status": 200,
       "category": "ok",
@@ -1578,7 +1673,6 @@
       "url": "https://developer.android.com/topic/libraries/architecture/workmanager",
       "questionIds": [
         "COM-25",
-        "PAY-06",
         "PAY-07",
         "PAY-13",
         "PAY-15"
@@ -1595,6 +1689,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://developer.android.com/topic/libraries/view-binding"
+    },
+    {
+      "url": "https://developer.android.com/topic/libraries/view-binding#fragments",
+      "questionIds": [
+        "KOT-10"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://developer.android.com/topic/libraries/view-binding#fragments"
     },
     {
       "url": "https://developer.android.com/topic/modularization",
@@ -1638,7 +1741,8 @@
         "MOD-08",
         "MOD-09",
         "MOD-10",
-        "MOD-14"
+        "MOD-14",
+        "SOL-07"
       ],
       "status": 200,
       "category": "ok",
@@ -1647,7 +1751,6 @@
     {
       "url": "https://developer.android.com/topic/performance",
       "questionIds": [
-        "DSA-01",
         "DSA-02",
         "DSA-03",
         "DSA-04",
@@ -1665,6 +1768,8 @@
     {
       "url": "https://developer.android.com/topic/performance/anrs/diagnose-and-fix-anrs",
       "questionIds": [
+        "COR-01",
+        "COR-08",
         "MEM-05",
         "MEM-10",
         "MEM-22",
@@ -1689,7 +1794,8 @@
       "questionIds": [
         "BLD-06",
         "BLD-09",
-        "BLD-17"
+        "BLD-17",
+        "PAY-14"
       ],
       "status": 200,
       "category": "ok",
@@ -1779,6 +1885,15 @@
       "resolved": "https://developer.android.com/topic/performance/issues/launch-time"
     },
     {
+      "url": "https://developer.android.com/topic/performance/issues/render",
+      "questionIds": [
+        "DSA-01"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://developer.android.com/topic/performance/issues/render"
+    },
+    {
       "url": "https://developer.android.com/topic/performance/measuring-performance",
       "questionIds": [
         "MEM-17",
@@ -1804,6 +1919,7 @@
     {
       "url": "https://developer.android.com/topic/performance/memory-overview",
       "questionIds": [
+        "DSA-01",
         "MEM-01",
         "MEM-02",
         "MEM-03",
@@ -1920,7 +2036,8 @@
       "questionIds": [
         "DAT-05",
         "DAT-06",
-        "DI-09"
+        "DI-09",
+        "SYS-04"
       ],
       "status": 200,
       "category": "ok",
@@ -1981,6 +2098,15 @@
       "resolved": "https://developer.android.com/training/data-storage/shared/documents-files"
     },
     {
+      "url": "https://developer.android.com/training/data-storage/shared/photo-picker",
+      "questionIds": [
+        "COM-20"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://developer.android.com/training/data-storage/shared/photo-picker"
+    },
+    {
       "url": "https://developer.android.com/training/dependency-injection",
       "questionIds": [
         "DI-01",
@@ -2023,7 +2149,9 @@
         "DI-18",
         "DI-20",
         "MOD-11",
+        "PAT-07",
         "PAT-10",
+        "PAT-17",
         "SOL-14"
       ],
       "status": 200,
@@ -2033,7 +2161,9 @@
     {
       "url": "https://developer.android.com/training/dependency-injection/hilt-jetpack",
       "questionIds": [
+        "DI-02",
         "DI-05",
+        "DI-07",
         "DI-15"
       ],
       "status": 200,
@@ -2067,7 +2197,9 @@
     {
       "url": "https://developer.android.com/training/dependency-injection/manual",
       "questionIds": [
-        "DI-02"
+        "DI-01",
+        "DI-02",
+        "DI-20"
       ],
       "status": 200,
       "category": "ok",
@@ -2118,6 +2250,7 @@
       "url": "https://developer.android.com/training/testing/fundamentals",
       "questionIds": [
         "TST-01",
+        "TST-04",
         "TST-07",
         "TST-16"
       ],
@@ -2129,12 +2262,49 @@
       "url": "https://developer.android.com/training/testing/fundamentals/test-doubles",
       "questionIds": [
         "TST-02",
-        "TST-04",
         "TST-13"
       ],
       "status": 200,
       "category": "ok",
       "resolved": "https://developer.android.com/training/testing/fundamentals/test-doubles"
+    },
+    {
+      "url": "https://docs.adyen.com/point-of-sale/basic-tapi-integration/verify-transaction-status/",
+      "questionIds": [
+        "COR-27",
+        "PAY-06",
+        "PAY-12"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://docs.adyen.com/point-of-sale/basic-tapi-integration/verify-transaction-status/"
+    },
+    {
+      "url": "https://docs.adyen.com/point-of-sale/capturing-payments/",
+      "questionIds": [
+        "PAY-12"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://docs.adyen.com/point-of-sale/capturing-payments/"
+    },
+    {
+      "url": "https://docs.github.com/en/actions/get-started/continuous-deployment",
+      "questionIds": [
+        "CIC-01"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://docs.github.com/en/actions/get-started/continuous-deployment"
+    },
+    {
+      "url": "https://docs.github.com/en/actions/get-started/continuous-integration",
+      "questionIds": [
+        "CIC-01"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://docs.github.com/en/actions/get-started/continuous-integration"
     },
     {
       "url": "https://docs.gradle.org/current/userguide/best_practices_security.html",
@@ -2157,8 +2327,7 @@
     {
       "url": "https://docs.gradle.org/current/userguide/build_lifecycle.html",
       "questionIds": [
-        "BLD-01",
-        "CIC-01"
+        "BLD-01"
       ],
       "status": 200,
       "category": "ok",
@@ -2232,6 +2401,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://docs.gradle.org/current/userguide/java_library_plugin.html"
+    },
+    {
+      "url": "https://docs.gradle.org/current/userguide/java_plugin.html",
+      "questionIds": [
+        "SOL-14"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://docs.gradle.org/current/userguide/java_plugin.html"
     },
     {
       "url": "https://docs.gradle.org/current/userguide/java_testing.html",
@@ -2335,6 +2513,7 @@
       "questionIds": [
         "AND-21",
         "COM-25",
+        "COR-27",
         "DSA-15",
         "LEAD-07",
         "PAY-02",
@@ -2352,8 +2531,7 @@
       "url": "https://docs.stripe.com/payments/paymentintents/lifecycle",
       "questionIds": [
         "PAY-01",
-        "PAY-03",
-        "PAY-12"
+        "PAY-03"
       ],
       "status": 200,
       "category": "ok",
@@ -2426,6 +2604,15 @@
       "resolved": "https://github.com/lysine-dev/okhttp/blob/main/okhttp/src/commonJvmAndroid/kotlin/okhttp3/OkHttpClient.kt"
     },
     {
+      "url": "https://github.com/square/okhttp",
+      "questionIds": [
+        "DAT-01"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://github.com/lysine-dev/okhttp"
+    },
+    {
       "url": "https://github.com/square/okhttp/blob/master/README.md",
       "questionIds": [
         "TST-12"
@@ -2433,6 +2620,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://github.com/lysine-dev/okhttp/blob/main/README.md"
+    },
+    {
+      "url": "https://github.com/square/okhttp/tree/master/mockwebserver",
+      "questionIds": [
+        "TST-07"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://github.com/lysine-dev/okhttp/tree/main/mockwebserver"
     },
     {
       "url": "https://github.com/square/retrofit",
@@ -2505,6 +2701,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.collections/binary-search.html"
+    },
+    {
+      "url": "https://kotlinlang.org/api/core/kotlin-stdlib/kotlin/-lazy-thread-safety-mode/",
+      "questionIds": [
+        "KOT-10"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/api/core/kotlin-stdlib/kotlin/-lazy-thread-safety-mode/"
     },
     {
       "url": "https://kotlinlang.org/api/core/kotlin-stdlib/kotlin/-result/",
@@ -2634,6 +2839,61 @@
       "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.sync/-semaphore/"
     },
     {
+      "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-dispatchers/-i-o.html",
+      "questionIds": [
+        "COR-07",
+        "COR-08"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-dispatchers/-i-o.html"
+    },
+    {
+      "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-i-o.html",
+      "questionIds": [
+        "COR-01"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-i-o.html"
+    },
+    {
+      "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-main-coroutine-dispatcher/limited-parallelism.html",
+      "questionIds": [
+        "COR-07"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-main-coroutine-dispatcher/limited-parallelism.html"
+    },
+    {
+      "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/coroutine-scope.html",
+      "questionIds": [
+        "COR-11"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/coroutine-scope.html"
+    },
+    {
+      "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/ensure-active.html",
+      "questionIds": [
+        "COR-10"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/ensure-active.html"
+    },
+    {
+      "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/supervisor-scope.html",
+      "questionIds": [
+        "COR-11"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/supervisor-scope.html"
+    },
+    {
       "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/suspend-cancellable-coroutine.html",
       "questionIds": [
         "COR-23"
@@ -2641,6 +2901,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/suspend-cancellable-coroutine.html"
+    },
+    {
+      "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-context.html",
+      "questionIds": [
+        "COR-09"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-context.html"
     },
     {
       "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout-or-null.html",
@@ -2667,6 +2936,15 @@
       "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout.html"
     },
     {
+      "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/yield.html",
+      "questionIds": [
+        "COR-10"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/yield.html"
+    },
+    {
       "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/",
       "questionIds": [
         "COR-32",
@@ -2681,13 +2959,22 @@
       "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/"
     },
     {
-      "url": "https://kotlinlang.org/docs/android-overview.html",
+      "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-standard-test-dispatcher.html",
       "questionIds": [
-        "KOT-01"
+        "TST-04"
       ],
       "status": 200,
       "category": "ok",
-      "resolved": "https://kotlinlang.org/docs/android-overview.html"
+      "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-standard-test-dispatcher.html"
+    },
+    {
+      "url": "https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/run-catching.html",
+      "questionIds": [
+        "DAT-01"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/run-catching.html"
     },
     {
       "url": "https://kotlinlang.org/docs/arrays.html",
@@ -2710,7 +2997,9 @@
     {
       "url": "https://kotlinlang.org/docs/cancellation-and-timeouts.html",
       "questionIds": [
+        "COR-10",
         "COR-22",
+        "COR-26",
         "KOT-19",
         "PAY-09",
         "PAY-11",
@@ -2719,15 +3008,6 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://kotlinlang.org/docs/cancellation-and-timeouts.html"
-    },
-    {
-      "url": "https://kotlinlang.org/docs/classes.html",
-      "questionIds": [
-        "PAT-07"
-      ],
-      "status": 200,
-      "category": "ok",
-      "resolved": "https://kotlinlang.org/docs/classes.html"
     },
     {
       "url": "https://kotlinlang.org/docs/coding-conventions.html",
@@ -2792,9 +3072,6 @@
         "COR-05",
         "COR-07",
         "COR-08",
-        "COR-09",
-        "COR-10",
-        "COR-11",
         "COR-12",
         "COR-13",
         "COR-15",
@@ -2803,7 +3080,6 @@
         "COR-22",
         "COR-24",
         "COR-25",
-        "COR-26",
         "SYS-11"
       ],
       "status": 200,
@@ -2867,7 +3143,6 @@
         "COR-04",
         "COR-05",
         "COR-10",
-        "COR-11",
         "COR-12",
         "COR-13",
         "COR-14",
@@ -2884,6 +3159,15 @@
       "resolved": "https://kotlinlang.org/docs/exception-handling.html"
     },
     {
+      "url": "https://kotlinlang.org/docs/exception-handling.html#supervision",
+      "questionIds": [
+        "COR-11"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/docs/exception-handling.html#supervision"
+    },
+    {
       "url": "https://kotlinlang.org/docs/extensions.html",
       "questionIds": [
         "KOT-09"
@@ -2891,6 +3175,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://kotlinlang.org/docs/extensions.html"
+    },
+    {
+      "url": "https://kotlinlang.org/docs/flow.html",
+      "questionIds": [
+        "FLO-01"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/docs/flow.html"
     },
     {
       "url": "https://kotlinlang.org/docs/functions.html",
@@ -2947,6 +3240,7 @@
     {
       "url": "https://kotlinlang.org/docs/java-interop.html",
       "questionIds": [
+        "KOT-01",
         "KOT-03",
         "KOT-23",
         "MEM-06",
@@ -2978,6 +3272,7 @@
     {
       "url": "https://kotlinlang.org/docs/null-safety.html",
       "questionIds": [
+        "KOT-01",
         "KOT-03"
       ],
       "status": 200,
@@ -3010,6 +3305,7 @@
     {
       "url": "https://kotlinlang.org/docs/properties.html",
       "questionIds": [
+        "KOT-02",
         "KOT-10"
       ],
       "status": 200,
@@ -3041,7 +3337,8 @@
         "KOT-06",
         "KOT-26",
         "KOT-28",
-        "PAT-14"
+        "PAT-14",
+        "SYS-10"
       ],
       "status": 200,
       "category": "ok",
@@ -3093,7 +3390,6 @@
     {
       "url": "https://lysine.dev/okhttp/",
       "questionIds": [
-        "DAT-01",
         "DAT-04"
       ],
       "status": 200,
@@ -3110,6 +3406,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://lysine.dev/okhttp/features/calls/"
+    },
+    {
+      "url": "https://martinfowler.com/articles/practical-test-pyramid.html",
+      "questionIds": [
+        "TST-07"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://martinfowler.com/articles/practical-test-pyramid.html"
     },
     {
       "url": "https://mas.owasp.org/MASTG/",
@@ -3209,6 +3514,7 @@
       "questionIds": [
         "PAY-05",
         "PAY-10",
+        "SEC-11",
         "SEC-16",
         "SEC-17",
         "SEC-30"
@@ -3234,6 +3540,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://source.android.com/docs/security/app-sandbox"
+    },
+    {
+      "url": "https://source.android.com/docs/security/features/keystore/attestation",
+      "questionIds": [
+        "SEC-02"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://source.android.com/docs/security/features/keystore/attestation"
     },
     {
       "url": "https://square.github.io/leakcanary/fundamentals-how-leakcanary-works/",
@@ -3273,6 +3588,15 @@
       "resolved": "https://support.google.com/googleplay/android-developer/answer/6346149"
     },
     {
+      "url": "https://support.google.com/googleplay/android-developer/answer/9859348",
+      "questionIds": [
+        "CIC-01"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://support.google.com/googleplay/android-developer/answer/9859348"
+    },
+    {
       "url": "https://www.cs.columbia.edu/~wing/publications/LiskovWing94.pdf",
       "questionIds": [
         "SOL-04",
@@ -3286,12 +3610,29 @@
     {
       "url": "https://www.informit.com/articles/article.aspx?p=2832399",
       "questionIds": [
-        "ARC-01",
         "ARC-03"
       ],
       "status": 200,
       "category": "ok",
       "resolved": "https://www.informit.com/articles/article.aspx?p=2832399"
+    },
+    {
+      "url": "https://www.pcisecuritystandards.org/faqs/1071/",
+      "questionIds": [
+        "SEC-30"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://www.pcisecuritystandards.org/faqs/1071/"
+    },
+    {
+      "url": "https://www.pcisecuritystandards.org/faqs/1533/",
+      "questionIds": [
+        "PAY-10"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://www.pcisecuritystandards.org/faqs/1533/"
     },
     {
       "url": "https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698",
@@ -3313,6 +3654,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698"
+    },
+    {
+      "url": "https://www.sqlite.org/pragma.html#pragma_synchronous",
+      "questionIds": [
+        "PAY-06"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://www.sqlite.org/pragma.html#pragma_synchronous"
     }
   ]
 }

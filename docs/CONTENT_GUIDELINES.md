@@ -6,4 +6,6 @@ Write one distinct explanation in `Interview-Lab/questions/<ID>.md`. Keep its so
 
 Use Egyptian-friendly technical Arabic without translating well-known API names. Keep English short and structured answers speakable. Show imports and assumptions for code. Clearly label conceptual snippets; do not call them tested. Be specific about lifecycle, cancellation, process death, offline behavior, concurrency, and server trust where relevant. Never infer exactly-once network execution from idempotency or treat APK resources as secrets. Check version-sensitive APIs against current official documentation.
 
+For the Arabic Interview Lab overhaul, follow the repository file `docs/ARABIC_TECH_TERMINOLOGY.md`. The original `editorial_status: reviewed` frontmatter reports technical section coverage; the stricter question-by-question Arabic voice review is tracked separately in `reports/arabic-editorial-checkpoint.json`. Automated signals do not advance that checkpoint.
+
 Before marking a page reviewed, compare its content to the source question, check related IDs, open cited documents, and verify each citation supports its adjacent claim. Run `python3 scripts/validate_interview_lab.py`; investigate duplicate explanations rather than rewriting only to evade a similarity check. Then rebuild the site and check links.

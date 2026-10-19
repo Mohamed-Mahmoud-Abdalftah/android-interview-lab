@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Strict bilingual parity and conversational spoken quality validator.
+"""Bilingual parity and structural spoken-answer validator.
 
 Asserts:
 1. Complete bilingual coverage: 485 English pages and 485 Arabic pages.
@@ -7,7 +7,7 @@ Asserts:
 3. Zero silent fallback: Arabic pages must have distinct, independently authored Arabic translations for all explanatory sections.
 4. Zero untranslated English paragraphs in Arabic question pages.
 5. Zero Arabic characters in English question pages.
-6. Genuinely conversational spoken answers:
+6. Mechanical checks on spoken-answer shape:
    - Zero bullet points and zero numbered lists in spoken answers
    - Quick answers: 35-110 words
    - Best answers: 100-280 words
@@ -87,21 +87,21 @@ REQUIRED_SECTIONS_EN = [
 
 REQUIRED_SECTIONS_AR = [
     "السؤال الأصلي في المقابلة",
-    "ما يقيّمه المحاور",
-    "الشرح والمفهوم التقني",
-    "التطبيق العملي وسيناريو الفشل",
-    "آلية العمل والتحليل الهندسي",
-    "مثال تطبيقي واختبار",
-    "المفاضلات الهندسية ومعايير القرار",
-    "أنماط الفشل ومصائد الأخطاء",
-    "منظور بيئة العمل الفعلي (Production)",
-    "إجابة المقابلة — ملخصة وسريعة",
-    "إجابة المقابلة — نموذجية ومهيكلة",
-    "إجابة المقابلة — مناقشة Senior متعمقة",
-    "طريقة تقديم الإجابة في المقابلة",
-    "محاور النقاش المتقدم",
-    "أسئلة المتابعة واعتراضات المحاور",
-    "معايير التقييم الذاتي",
+    "المحاور عايز يعرف إيه؟",
+    "الفكرة ببساطة",
+    "خلينا نشوف سيناريو",
+    "إيه اللي بيحصل وليه؟",
+    "مثال عملي",
+    "إمتى تختار الحل ده؟",
+    "إيه اللي ممكن يغلط؟",
+    "قرارك في Production",
+    "إجابة سريعة للانترفيو",
+    "إجابة قوية للانترفيو",
+    "لو الـ Interviewer دخل معاك في التفاصيل",
+    "إزاي تقدم الإجابة",
+    "نقط تستاهل نقاش أعمق",
+    "أسئلة ممكن تتسأل بعدها",
+    "راجع فهمك",
     "المراجع وتاريخ المراجعة الفنية",
 ]
 
@@ -181,7 +181,7 @@ def validate():
                         errors.append(f"{qid}: Metadata key '{key}' contains no Arabic prose!")
 
     scope_desc = f"topic {topic_filter}" if topic_filter else (f"question {qid_filter}" if qid_filter else f"all {total_questions} questions")
-    print(f"Validating bilingual parity and spoken quality across {len(canonical_files)} questions ({scope_desc})...")
+    print(f"Validating bilingual parity and structural spoken-answer rules across {len(canonical_files)} questions ({scope_desc})...")
 
     seen_en_best = {}
     seen_ar_best = {}
@@ -273,9 +273,9 @@ def validate():
                 errors.append(f"{qid.upper()}: English {name} answer contains numbered list!")
 
         # 9. Spoken answers quality check (Arabic)
-        quick_ar = ar_secs.get("إجابة المقابلة — ملخصة وسريعة", "")
-        best_ar = ar_secs.get("إجابة المقابلة — نموذجية ومهيكلة", "")
-        deep_ar = ar_secs.get("إجابة المقابلة — مناقشة Senior متعمقة", "")
+        quick_ar = ar_secs.get("إجابة سريعة للانترفيو", "")
+        best_ar = ar_secs.get("إجابة قوية للانترفيو", "")
+        deep_ar = ar_secs.get("لو الـ Interviewer دخل معاك في التفاصيل", "")
 
         for name, ans, min_w, max_w in [
             ("quick_ar", quick_ar, 35, 110),
@@ -326,7 +326,7 @@ def validate():
             print(f"  ... and {len(errors) - 50} more errors", file=sys.stderr)
         return 1
 
-    print(f"SUCCESS: All {total_questions} questions verified for 100% bilingual parity, zero silent fallbacks, and senior spoken quality!")
+    print(f"SUCCESS: {total_questions} questions passed bilingual parity and structural spoken-answer checks. Natural interview quality still requires editorial review.")
     return 0
 
 

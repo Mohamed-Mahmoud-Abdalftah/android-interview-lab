@@ -384,6 +384,6 @@ However, if encrypting irreplaceable user documents, we must implement multi-lay
 
 - [Android Keystore system](https://developer.android.com/privacy-and-security/keystore) — hardware-backed cryptographic keys.
 - [Android cryptography guidance](https://developer.android.com/privacy-and-security/cryptography) — best practices for cipher suites and GCM.
-- [OWASP Mobile Application Security (MASVS-STORAGE)](https://mas.owasp.org/MASVS/04-MASVS-STORAGE/) — secure storage verification requirements.
+- [OWASP Mobile Application Security (MASVS-STORAGE)](https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-1/) — secure storage verification requirements.
 
 Technically reviewed against primary documentation on 2026-10-13.

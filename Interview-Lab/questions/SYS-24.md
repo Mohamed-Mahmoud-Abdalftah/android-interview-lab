@@ -22,13 +22,13 @@ Design for poor connectivity and intermittent power loss with durable state and 
 
 ## Concept and technical explanation
 
-Designing an enterprise mobile system for hostile deployment environments—characterized by intermittent cellular connectivity, severe bandwidth throttling, sudden airplane mode switches, and abrupt power loss—requires an offline-first architecture. In such environments, the local persistent database must serve as the single source of truth, and network operations must be modeled as asynchronous synchronization events rather than prerequisites for user interaction. SQLite persistence via Room must enable Write-Ahead Logging (WAL) mode to protect database files from physical corruption during abrupt battery depletion or unexpected process termination. User actions must follow the local outbox pattern: every mutation is written to a durable pending operations table within an atomic SQLite transaction before updating the user interface. Background synchronization is delegated to WorkManager with battery-aware constraints, utilizing delta sync payloads and compact binary formats to minimize cellular overhead.
+Poor connectivity calls for explicit local and remote state. For operations that can be accepted locally, save the visible change and an outbox row together, then show whether the server has confirmed it. Use stable operation IDs so the backend can deduplicate retries, and define a conflict rule for edits made on multiple devices. WorkManager can schedule persistent background sync under selected constraints, but it cannot make a disconnected server reachable or promise immediate execution. SQLite transactions protect local consistency; WAL mode is a journaling choice, not a universal guarantee that every commit survives sudden power loss. Durability depends on sync settings and storage behavior. Test process death, device restart, duplicate sends, and ambiguous server outcomes separately.
 
 ## Practical walkthrough (English)
 
 Implementing an atomic mutation outbox with battery-conscious background synchronization:
 ```kotlin
-// 1. Room database configured with Write-Ahead Logging for power-loss corruption resistance
+// 1. Room database journaling mode; verify durability settings for critical data
 @Database(entities = [OrderEntity::class, OutboxMutationEntity::class], version = 1)
 abstract class ResilientAppDatabase : RoomDatabase() {
     abstract fun outboxDao(): OutboxDao
@@ -37,7 +37,7 @@ abstract class ResilientAppDatabase : RoomDatabase() {
     companion object {
         fun buildDatabase(context: Context): ResilientAppDatabase {
             return Room.databaseBuilder(context, ResilientAppDatabase::class.java, "resilient.db")
-                .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING) // High durability against sudden battery shutoff
+                .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING) // journaling choice, not a power-loss guarantee
                 .build()
         }
     }
@@ -60,7 +60,7 @@ class ResilientSyncScheduler @Inject constructor(
     fun scheduleOutboxSync() {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
-            .setRequiresBatteryNotLow(true)
+            .setRequiresBatteryNotLow(true) // only if this work can wait for charge
             .build()
 
         val syncRequest = OneTimeWorkRequestBuilder<OutboxSyncWorker>()
@@ -75,33 +75,19 @@ class ResilientSyncScheduler @Inject constructor(
 
 ## Explanation in Arabic
 
-كيف تصمم تطبيقاً يعمل بكفاءة تحت ظروف الاتصال الضعيف جداً (Poor Connectivity) والانقطاع المفاجئ للطاقة والبطارية (Intermittent Power Loss)؟
-
-1. تحديات البيئات القاسية (Harsh Constraints / Emerging Markets):
-   - شبكات 2G/3G متقطعة، زمن استجابة عالي (Latency > 2000ms)، باقات بيانات مكلفة ومحدودة.
-   - بطاريات هواتف رديئة، وإمكانية إغلاق الهاتف فجأة في أي ثانية بسبب نفاد الشحن.
-
-2. تقليص استهلاك الشبكة (Data Thrift & Bandwidth Optimization):
-   - **ضغط البيانات بصيغ حديثة**: استخدام **Protocol Buffers (Protobuf)** أو GZIP JSON لتقليص حجم البايتات بنسبة 60-80% مقارنة بالنصوص العادية.
-   - **تحسين الصور**: استخدام صيغ WebP أو AVIF، وجلب صور مصغرة جداً (Thumbnails) تناسب أبعاد الشاشة فقط، ومنع تحميل الصور عالية الدقة إلا على شبكات Wi-Fi.
-   - **Delta Sync**: جلب البيانات المعدلة فقط منذ آخر فحص بدلاً من إعادة تنزيل القوائم كاملة.
-
-3. الحماية ضد انقطاع الطاقة المفاجئ (Power Loss & Crash Resilience):
-   - **المعاملات الذرية في SQLite (Atomic Transactions & WAL Mode)**: استخدام Room داخل `database.withTransaction { ... }` وتفعيل وضع Write-Ahead Logging (WAL). هذا يضمن أنه لو انطفأ الهاتف أثناء الكتابة، لن يتلف ملف قاعدة البيانات أبداً.
-   - **جدولة المهام الموفرة للطاقة عبر WorkManager**:
-     * وضع قيود صارمة على مهام الخلفية: `setRequiresBatteryNotLow(true)` و `setRequiresCharging(true)` لضمان عدم استنزاف طاقة المستخدم عند قرب نفاد البطارية.
+الاتصال الضعيف يحتاج تمييزاً واضحاً بين الحالة المحلية وما أكده السيرفر. للعمليات التي يمكن قبولها محلياً، أحفظ التغيير الظاهر وسجل Outbox في Transaction واحدة، ثم أعرض هل تم تأكيده من السيرفر أم لا. معرف عملية ثابت يساعد الـ Backend يمنع تكرار إعادة المحاولة، وRevision أو قاعدة تعارض تحمي تعديلات الأجهزة المختلفة. WorkManager يجدول المزامنة المستمرة تحت قيود مناسبة لكنه لا يجعل السيرفر غير المتاح متاحاً ولا يضمن وقت تنفيذ فوري. SQLite Transaction تحمي الاتساق المحلي؛ WAL طريقة Journaling وليست ضماناً عاماً لنجاة كل Commit من انقطاع الطاقة. المتانة تعتمد على إعدادات `synchronous` والتخزين. أختبر Process Death وإعادة تشغيل الجهاز وإعادة الإرسال والنتائج الملتبسة كل حالة لوحدها.
 
 ## Practical walkthrough
 
 تطبيق إعدادات توفير البيانات وحماية قاعدة البيانات من الانقطاع المفاجئ للطاقة:
 ```kotlin
-// 1. إعدادات Room Database محمية بـ WAL Mode لمنع تلف الملفات عند انطفاء الهاتف:
+// 1. مثال Journaling في Room؛ راجع إعدادات المتانة للبيانات الحرجة:
 @Database(entities = [TransactionEntity::class], version = 1)
 abstract class ResilientDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): ResilientDatabase {
             return Room.databaseBuilder(context, ResilientDatabase::class.java, "resilient.db")
-                .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING) // حماية فائقة ضد انقطاع الطاقة المفاجئ
+                .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING) // ليس ضماناً لكل انقطاع طاقة
                 .build()
         }
     }
@@ -111,7 +97,7 @@ abstract class ResilientDatabase : RoomDatabase() {
 fun scheduleBatteryAwareSync(workManager: WorkManager) {
     val constraints = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.UNMETERED) // مزامنة البيانات الضخمة فقط على Wi-Fi
-        .setRequiresBatteryNotLow(true)               // منع التشغيل إذا كانت البطارية منخفضة (< 15%)
+        .setRequiresBatteryNotLow(true) // only if this work can wait for charge               // منع التشغيل إذا كانت البطارية منخفضة (< 15%)
         .setRequiresCharging(false)
         .build()
 
@@ -156,25 +142,23 @@ A field inspection app saves forms/attachments locally, resumes uploads by ackno
 
 ## Interview answer — short
 
-We design for poor connectivity and power loss using an offline-first architecture with Room Write-Ahead Logging to prevent database corruption. We store mutations in a local outbox table before updating the UI, delegating background uploads to WorkManager with battery and network constraints, and streaming delta updates.
+I would save user actions locally before relying on the network, show which ones are still pending, and sync them later with stable operation IDs. Room transactions help keep the local record and outbox consistent; WorkManager can schedule deferred uploads across app restarts. Neither WAL nor WorkManager guarantees that data survives every power failure or reaches a server that stays offline. The backend needs idempotency and conflict rules, and the UI needs an honest unresolved state.
 
 ## Interview answer — structured
 
-Designing for extreme network volatility and sudden power loss requires treating local persistence as the primary source of truth.
-I configure Room with SQLite Write-Ahead Logging (WAL) mode. This guarantees atomic transaction durability and prevents physical database corruption if the device shuts down mid-write.
-Every user mutation follows the transactional outbox pattern. When an action occurs, the app saves the intent to an outbox table in an atomic database transaction before updating the UI optimistically.
-The UI never spins with blocking network loaders; actions feel instantaneous because they commit to disk locally.
-Background uploads are handed off to WorkManager configured with constraints like connected network and battery not low.
-WorkManager handles exponential backoff and retries safely across device reboots.
-To preserve cellular data on slow networks, synchronization requests exchange compressed delta payloads using server revision tokens rather than re-transmitting entire entities.
+I would design the feature so a weak connection does not decide whether the user can make progress. A local database can hold the screen state and an outbox of actions waiting to sync. When the user edits something, I save the new state and its pending operation in one local transaction, then show that it is saved locally but not yet confirmed by the server.
+
+For delivery I would schedule background sync with WorkManager and use stable operation IDs so a retry cannot create a duplicate server action. I would choose network and battery constraints based on urgency; for a payment or safety action, “battery not low” may delay work that should be escalated. When the app restarts, it reads the outbox and resumes. If the server changed the same record, the API needs a version or conflict response rather than silently overwriting one side.
+
+I would not promise that WAL alone protects every acknowledged write from a sudden power loss; durability depends on database and storage settings. Nor can the phone guarantee delivery while the network is unavailable indefinitely. I would test shutdown at each boundary, duplicate retries, stale server versions, and the user message when an action remains unresolved.
 
 ## Interview answer — deep senior
 
-From a staff mobile architecture perspective, designing for extreme environments requires managing data synchronization conflicts, radio power states, and honest user interface state indicators.
-The primary risk in offline-first systems is conflict resolution. When multiple offline mutations accumulate on the client while other edits occur on the server, blind last-write-wins policies cause silent data loss. We resolve this by associating records with server revision vectors or timestamps. When the client syncs, the backend detects version divergence and executes deterministic three-way merges or flags conflicts for manual user resolution.
-To survive intermittent cellular conditions, network serialization must minimize packet size. We replace verbose JSON payloads with Protocol Buffers or GZIP-compressed binary streams, significantly reducing transmission time over flaky 2G or 3G connections and lowering socket timeout rates.
-Radio management is critical for devices with degraded batteries. Firing frequent small network requests keeps the cellular baseband processor energized in high-power states. Our sync engine batches pending outbox mutations, flushing up to fifty operations in a single persistent HTTP connection to allow the cellular radio to return to low-power sleep immediately.
-Finally, the user experience must maintain transparent honesty. We provide visual pending indicators on un-synced items, reassuring users that their data is safely persisted on their phone and will synchronize automatically when power and signal restore.
+The first design choice is which data can be trusted locally. For a notes feature, local state may be the immediate source for the UI. For a bank balance, the server is authoritative and the local copy is explicitly stale until confirmed. I would define that per operation rather than declare the whole app “offline-first.” The outbox row should include an immutable operation ID, payload version, state, and last known server revision. Saving the visible local change and the outbox entry in one database transaction prevents the UI from showing a submitted action that the sync engine cannot find.
+
+On restart, a worker scans pending entries. It may run more than once, be stopped when constraints change, or receive a timeout after the server committed the action. That is why the server must deduplicate the operation ID and expose enough status to reconcile unknown outcomes. Retries need bounded backoff, and permanent validation errors need a visible path for correction. For conflicting edits, I would use a revision check and a domain-specific resolution rule; last-write-wins is acceptable only where losing an older edit is explicitly okay.
+
+Power loss needs careful language. SQLite transactions help preserve local consistency, but WAL mode is not a blanket guarantee of durable commits under every sync setting or storage failure. I would test process kill and device restart separately, then inspect the actual storage settings for the data's risk level. Compression and batching can help slow networks, but I would measure them rather than assume they improve every payload. The user should always see whether data is local, pending, confirmed, or needs action.
 
 ## How to answer in the interview
 
@@ -190,11 +174,14 @@ Trace power loss before/after local commit, remote commit and acknowledgement.
 
 ## Follow-up questions
 
-- **Interviewer:** "What is the benefit of using Android's AtomicFile helper class?"
-  **Answer:** "AtomicFile writes data to a temporary file and performs an atomic rename, ensuring that sudden process death or power loss never leaves a corrupted, half-written file on disk."
+- **Interviewer:** "Does WAL guarantee an action survives a sudden battery removal?"
+  **Answer:** "No blanket guarantee. Transactions protect consistency, but power-loss durability depends on the SQLite sync mode and storage behavior. I would verify the configuration and test the failure window for this data's risk level."
 
-- **Interviewer:** "Why is Write-Ahead Logging (WAL) mode safer during sudden power loss?"
-  **Answer:** "WAL appends modifications to a separate log file without modifying original database pages directly, making recovery trivial if power cuts before a checkpoint."
+- **Interviewer:** "What if the server applied the action but the response was lost?"
+  **Answer:** "I keep the same operation ID, query or retry under an idempotent server contract, and leave the UI pending until the outcome is known. I would not create a new action ID."
+
+- **Interviewer:** "Would you require battery-not-low for every sync?"
+  **Answer:** "No. I would choose constraints from urgency. A routine catalog update can wait; a critical pending operation may need a different policy and an escalation path."
 
 ## Self-check rubric
 
@@ -205,4 +192,4 @@ Can I preserve accepted intent, reconcile unknown outcome and test power-loss wi
 - [Android offline-first guidance](https://developer.android.com/topic/architecture/data-layer/offline-first) — local source and sync.
 - [Android task scheduling](https://developer.android.com/develop/background-work/background-tasks/persistent) — restartable work.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against the cited primary documentation on 2026-10-19; agent editorial review, not human verification.

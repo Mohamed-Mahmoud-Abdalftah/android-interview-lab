@@ -59,48 +59,11 @@ dependencies {
 
 ## Explanation in Arabic
 
-ما هي النمطية (Modularization) في Android، وما هي المقايضات (Trade-offs) والتكاليف الحقيقية التي تفرضها على الفريق والمشروع؟
-
-1. المفهوم الحقيقي للـ Modularization:
-   - الـ Module ليس مجرد مجلد (Folder) عادي؛ بل هو **حد مادي مستقل للبناء (Physical Build & Ownership Boundary)** في Gradle.
-   - كل موديول يمتلك ملف `build.gradle.kts` خاصاً به، وإعدادات اعتماديات مستقلة، ومخرجات تجميع خاصة به (AAR أو JAR).
-
-2. الفوائد الحقيقية في المشاريع الكبيرة:
-   - **تسريع وقت البناء (Faster Build Times)**: الاستفادة القصوى من الـ Parallel Execution والـ Gradle Build Cache. إذا عدلت في موديول `:feature:profile`، فلن يعيد Gradle تجميع موديول `:feature:checkout`.
-   - **فرض العزل المعماري ومنع التسريب (Strict Encapsulation)**: موديول الـ Feature لا يستطيع استيراد كلاسات خاصة أو قواعد بيانات داخلية إلا إذا تم تصديرها كـ Public API.
-   - **استقلالية الفرق ووضوح الملكية (Team Ownership & CODEOWNERS)**: يمكن لفريق المدفوعات العمل في `:feature:payment` دون أي تعارضات Git Merge مع فريق الشحن.
-   - **إمكانية إعادة الاستخدام واختبار الميزات المعزولة (Isolated Sample Apps)**: تشغيل تطبيق تجريبي خفيف للميزة فقط في 3 ثوانٍ دون تجميع التطبيق الضخم بالكامل.
-
-3. المقايضات والتكاليف الحقيقية (Trade-offs):
-   - **تضخم تكلفة إعداد الـ Gradle (Build Configuration Overhead)**: الحاجة لإدارة عشرات ملفات `build.gradle.kts`، وتوحيد إصدارات المكتبات عبر Version Catalogs و Convention Plugins.
-   - **صعوبة التنقل والتواصل بين الشاشات (Navigation & Inter-Module Communication)**: الانتقال بين موديولين لا يعرف أحدهما الآخر يتطلب عقوداً مجردة (Contracts) أو Deep Links بدلاً من مجرد `startActivity(Intent(this, DetailActivity::class.java))`.
-   - **خطر التبعيات الدائرية (Circular Dependencies)** وتضخم الموديولات العامة العشوائية (`:core:common`).
+`Modularization` في Android هو تقسيم الـ Codebase من تطبيق Monolith ضخم لـ Gradle Modules مستقلة، كل موديول له `build.gradle.kts` وحدود بناء وملكية مستقلة (Physical Build & Ownership Boundary). الموديول مش مجرد Folder؛ هو وحدة Compile مستقلة بتسرع الـ Incremental Build بفضل الـ Parallel Execution والـ Build Cache، وبتفرض Encapsulation حقيقي بـ `internal` visibility في Kotlin. لكنه بيفرض تكاليف واضحة: زيادة وقت الـ Configuration في Gradle، وصعوبة الـ Navigation والـ DI بين الموديولات.
 
 ## Practical walkthrough
 
-مقارنة بين تطبيق متجانس (Monolith) وتطبيق نمطي (Modularized) وتأثيره على وقت البناء:
-```kotlin
-// ❌ التطبيق المتجانس (Monolith - :app module only):
-// أي تعديل في سطر واحد في CheckoutActivity يعيد تجميع الـ 500 كلاس في المشروع بالكامل!
-// وقت التجميع: 45 ثانية مع كل تعديل بسيط.
-
-// ✅ التطبيق النمطي الموزع (Modularized Gradle Architecture):
-// rootProject/
-// ├── app/                      // يجمع التطبيق النهائي ويوفر شجرة الـ DI
-// ├── feature/
-// │   ├── checkout/             // يعتمد على payment-api فقط
-// │   └── payment/              // يطبق payment-api داخلياً
-// └── core/
-//     ├── designsystem/         // Composables, Colors, Typography
-//     └── database/             // Room entities & DAOs
-
-// في build.gradle.kts الخاص بـ :feature:checkout:
-dependencies {
-    implementation(projects.feature.paymentApi) // يعتمد على الواجهة فقط!
-    implementation(projects.core.designsystem)
-}
-// عند تعديل كود الدفع، يعيد Gradle تجميع :feature:payment فقط في 4 ثوانٍ من الـ Build Cache!
-```
+في مشروع Monolith، أي تعديل في سطر كود بيعيد عمل Compile للمشروع كله. لما بنقسم التطبيق لـ Feature Modules مع Core Modules مستقلة، المطور اللي بيعدل في `:feature:profile` بيتعمل له Build في ثوانٍ لأن Gradle بيستخدم Cache للموديولات التانية. عشان الموديولات متعتمدش على بعضها مباشرة، بنفصل `:feature:checkout:api` عن `:feature:checkout:impl` أو بنستخدم Deep Links للتنقل.
 
 ## Why it matters and how it works
 
@@ -180,4 +143,4 @@ State a concrete boundary, benefit, cost, cycle rule and build metric.
 - [Android modularization guide](https://developer.android.com/topic/modularization) — benefits and trade-offs.
 - [Common modularization patterns](https://developer.android.com/topic/modularization/patterns) — module structures.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against the cited primary documentation on 2026-10-19; agent editorial review, not human verification.

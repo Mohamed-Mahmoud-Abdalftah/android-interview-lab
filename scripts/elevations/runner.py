@@ -6,6 +6,7 @@ import argparse
 import json
 import re
 import sys
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -19,7 +20,7 @@ from validate import source_files
 def sync_inventory() -> None:
     files = sorted(source_files(ROOT))
     header = (
-        f"# Actual academy source inventory — 2026-10-13\n\n"
+        f"# Actual academy source inventory — {date.today().isoformat()}\n\n"
         f"These {len(files)} files exist in the source tree. Interview Lab canonical records have a separate "
         f"validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, "
         f"and ZIP archives are excluded.\n\n```text\n"

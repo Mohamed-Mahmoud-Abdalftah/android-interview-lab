@@ -18,166 +18,109 @@ How does Hilt support dependency wiring without automatically guaranteeing DIP?
 
 ## What the interviewer evaluates
 
-Separate Hilt construction from dependency inversion and inspect actual injected types.
+Can the candidate separate graph construction from source dependency direction, inspect a useful contract rather than an interface name, and state what Hilt or Gradle actually verifies?
 
 ## Concept and technical explanation
 
-Hilt acts as a dependency injection framework that automates object graph creation and lifecycle scoping, but using Hilt does not inherently guarantee compliance with the Dependency Inversion Principle (DIP). DIP is an architectural principle mandating that high-level modules must depend on abstract contracts rather than concrete details. If an engineer uses Hilt's @Inject constructor to inject a concrete Room database entity or Retrofit API class directly into a ViewModel, Dependency Injection is operational, but Dependency Inversion is completely broken because the high-level presentation layer remains tightly coupled to infrastructure details.
+Hilt generates and validates an object graph: it knows how to provide constructor-injected types, interface bindings, component lifetimes, and scoped instances. Dependency Inversion Principle (DIP) concerns the direction of source dependencies around high-level policy. Hilt can wire a ViewModel directly to a network adapter if both types are visible; the graph may compile while presentation policy is coupled to transport details. Conversely, a manual composition root can wire a policy to a stable port without Hilt.
+
+`@Binds` maps an implementation to an interface, but an interface named `UserRepository` is not automatically a good policy boundary. If it exposes Retrofit `Response`, Room entities, or network-specific error codes, the caller still knows about those details. Inspect the method signatures, imports, Gradle dependencies, and ownership of the contract. A useful port represents the operation and data the high-level policy needs; the data adapter implements it and maps transport types at the edge.
 
 ## Practical walkthrough (English)
 
-Contrasting Hilt wiring that violates DIP against Hilt wiring that fulfills DIP:
-```kotlin
-// SCENARIO 1: Hilt used, but Dependency Inversion Principle VIOLATED!
-// ViewModel depends directly on concrete Room implementation detail
-class BadUserViewModel @Inject constructor(
-    private val localRoomDao: UserDaoImpl // Direct concrete class coupling! Violates DIP!
-) : ViewModel()
-
-// SCENARIO 2: Hilt used, and Dependency Inversion Principle FULFILLED!
-// 1. High-level Domain module defines pure Kotlin contract
-interface UserRepository {
-    suspend fun fetchUserProfile(): Result<UserProfile>
-}
-
-// 2. Low-level Data module implements the contract
-class UserRepositoryImpl @Inject constructor(
-    private val localRoomDao: UserDaoImpl
-) : UserRepository {
-    override suspend fun fetchUserProfile() = runCatching { localRoomDao.getUser().toDomain() }
-}
-
-// 3. Hilt module binds the abstraction to implementation using @Binds
-@Module
-@InstallIn(SingletonComponent::class)
-abstract class UserDomainModule {
-    @Binds
-    abstract fun bindUserRepository(impl: UserRepositoryImpl): UserRepository
-}
-
-// 4. ViewModel depends strictly on the Domain abstraction! Fulfills DIP!
-class CleanUserViewModel @Inject constructor(
-    private val repository: UserRepository // Abstract interface dependency
-) : ViewModel()
-```
+A checkout eligibility rule needs a domain-facing status. If a ViewModel or use case imports `RetrofitEligibilityApi`, Hilt may inject it, but a change in the transport model can reach policy code. Define `EligibilitySource` in a policy-facing module and an adapter in the data module. A Hilt binding in an assembly-visible module maps adapter to port. For a small app, the same boundary can be wired manually. The design decision is the boundary; Hilt only creates its objects.
 
 ## Explanation in Arabic
 
-كيف يدعم Hilt ربط التبعيات (Dependency Wiring) دون أن يضمن تلقائياً تطبيق مبدأ عكس التبعية (DIP)؟
-
-1. ما الذي يفعله Hilt فعلياً؟
-   - Hilt هو مكتبة لإدارة وتوليد **حقن التبعيات (Dependency Injection Container)** في وقت التجميع (Compile-time).
-   - يحل مشكلة الـ Wiring: إنشاء الكائنات، إدارة دورات حياتها (Singleton, ActivityScoped, ViewModelScoped)، وتمريرها في الـ Constructors تلقائياً.
-
-2. كيف يمكن استخدام Hilt مع انتهاك صارخ لمبدأ DIP؟
-   - يمكنك استخدام Hilt لحقن كلاس ملموس مباشر منخفض المستوى في كلاس عالي المستوى:
-     `class ProfileViewModel @Inject constructor(val api: RetrofitUserApi, val dao: UserDao)`.
-   - في هذه الحالة: Hilt يعمل بنجاح 100% ويقوم بحقن الـ Api والـ Dao في الـ ViewModel.
-   - **ولكن مبدأ DIP منتهك بالكامل!** الـ ViewModel عالي المستوى مرتبط بشكل وثيق بـ Retrofit و Room دون أي Interface أو تجريد وسيط!
-
-3. كيف تستخدم Hilt لضمان DIP؟
-   - باستخدام وسم **`@Binds`** داخل Hilt Module لربط الـ Interface المجرد في الـ Domain بالتنفيذ الحقيقي في الـ Data، وحقن الـ Interface فقط في الـ ViewModel.
-
-## Practical walkthrough
-
-المقارنة بين Hilt يكسر DIP و Hilt يحقق DIP عبر @Binds:
-```kotlin
-// ❌ Hilt مستخدم بنجاح لكنه ينتهك DIP (حقن كلاسات ملموسة منخفضة المستوى مباشرة):
-@HiltViewModel
-class BadViewModel @Inject constructor(
-    private val remoteApi: RetrofitOrderApi, // 💥 كلاس شبكة ملموس!
-    private val roomDb: AppDatabase          // 💥 كلاس قاعدة بيانات ملموس!
-) : ViewModel() { ... }
-
-// ✅ Hilt يفرض DIP بنجاح عبر ربط الـ Abstractions:
-// 1. الـ ViewModel يعتمد فقط على Interface مجرد:
-@HiltViewModel
-class GoodViewModel @Inject constructor(
-    private val orderRepository: OrderRepository // Abstraction نقي
-) : ViewModel() { ... }
-
-// 2. Hilt Module يربط الـ Interface بالتنفيذ في طبقة Data عبر @Binds:
-@Module
-@InstallIn(SingletonComponent::class)
-abstract class OrderDataModule {
-    @Binds
-    abstract fun bindOrderRepository(
-        impl: OrderRepositoryImpl
-    ): OrderRepository // يضمن تطبيق DIP بشكل كامل!
-}
-```
+Hilt بتبني وتتحقق من Object Graph: تعرف تنشئ Dependencies وتربط Interface بتنفيذ وتدير Scopes. لكن DIP سؤال عن اتجاه اعتماد الكود ومعنى الـ Contract. لو UseCase بتستورد Retrofit `Response`، كتابة `@Binds` لواجهة بترجع نفس الـ `Response` ما عزلتش الـ policy. خلّي الـ Contract تعبر عن احتياج الـ policy، والـ Data Adapter تترجم تفاصيل الشبكة عند الحد. وبص على Imports وGradle Dependencies، مش اسم الـ Interface بس.
 
 ## Why it matters and how it works
 
-A DI container resolves constructors and lifetimes. Dependency inversion concerns direction and semantics of source dependencies. Hilt can implement a good graph or a tightly coupled graph equally well.
+Compile-time graph validation catches missing or cyclic bindings, not poor domain boundaries. If a feature only compiles against a policy-facing contract, accidental direct imports of data internals become harder. The app assembly still needs access to both the binding and implementation. Dependency boundaries may improve change isolation, but a source or public API change can still trigger compilation; do not promise a fixed build-time gain.
 
 ## Worked example
 
-Conceptual binding: `@Binds abstract fun bindStatus(impl: NetworkStatusSource): TransferStatusSource`. The useful part is that `TransferStatusSource` exposes domain status, not Retrofit `Response`. A manual composition root could bind the same types.
+Runnable Kotlin/JVM boundary independent of Android. In an Android app, a Hilt `@Binds` method in an assembly-visible module could map `NetworkEligibilitySource` to `EligibilitySource`:
+
+```kotlin
+interface EligibilitySource {
+    suspend fun status(customerId: String): Eligibility
+}
+
+data class Eligibility(val allowed: Boolean, val reason: String?)
+
+class CheckEligibility(private val source: EligibilitySource) {
+    suspend fun forCustomer(customerId: String): Eligibility =
+        source.status(customerId)
+}
+
+class NetworkEligibilitySource(
+    private val fetch: suspend (String) -> Pair<Boolean, String?>
+) : EligibilitySource {
+    override suspend fun status(customerId: String): Eligibility {
+        val (allowed, reason) = fetch(customerId)
+        return Eligibility(allowed, reason)
+    }
+}
+```
+
+The policy type imports no transport or Hilt annotation. Hilt wiring would live outside this code; this JVM example does not claim an Android Hilt component was built or tested.
 
 ## Trade-offs and decision criteria
 
-Hilt reduces wiring cost and supports test replacement but adds annotation processing and lifecycle scopes. Manual DI may be enough for a small project. DIP may justify an interface even if Hilt can inject concrete classes.
+Hilt reduces repeated construction and provides scopes, at the cost of generated graph configuration and build tooling. A policy-facing interface adds an adapter and mapping work. Use one where it protects a meaningful change boundary; avoid creating an interface for every class by reflex. `@Binds` is appropriate for a constructor-injected implementation of an interface; `@Provides` supplies a value when construction needs code or comes from a third-party API. Neither annotation judges architectural quality.
 
 ## Failure modes
 
-Use case is annotated with `@Inject` yet imports `RetrofitService`, parses HTTP status and handles JSON fields. Moving construction to Hilt changed wiring only. Extract a data adapter and domain contract, then test policy without Retrofit.
+A `Repository` interface returns Retrofit `Response<Dto>`, so the use case still branches on HTTP status. An `@Binds` method compiles while this coupling survives. Another failure is installing the binding in a component that cannot satisfy its dependencies or lacks the needed lifetime; Hilt can catch graph errors, while scope suitability still needs design review. Do not claim all concrete dependencies violate DIP: a stable value or policy type can be concrete.
 
 ## Production perspective
 
-A lending app uses Hilt to wire an eligibility rule to a repository abstraction. Production adapter fetches and caches status; JVM tests provide a fake contract. Server enforces final approval.
+For eligibility, keep approval authority on the server. The client-side rule reads a domain status from `EligibilitySource`, while an adapter maps network responses. A JVM test can inject a fake port to test local policy; adapter integration tests still need real serialization and failure handling. Review module imports in code review and use dependency rules where the repository benefits from them.
 
 ## Interview answer — short
 
-Hilt provides the plumbing for dependency injection by instantiating and passing dependencies via constructors, but it does not dictate architectural rules. If you use Hilt to inject concrete classes like RoomUserDao or OkHttpClient directly into a ViewModel, you are practicing dependency injection while completely violating the Dependency Inversion Principle. Fulfilling DIP requires defining abstract domain interfaces and using Hilt's @Binds or @Provides to deliver concrete implementations behind those abstractions.
+Hilt builds and validates the dependency graph; DIP concerns which way high-level policy depends on implementation details. Hilt can inject a concrete network class into a ViewModel and compile successfully. `@Binds` helps connect an interface to an adapter, but the interface must expose a policy-facing contract rather than transport DTOs. I check the actual imports and method signatures, not the annotation alone.
 
 ## Interview answer — structured
 
-Distinguishing Hilt's operational mechanics from the architectural goals of Dependency Inversion is a fundamental senior engineering skill.
-Hilt is an automated tool implementing Inversion of Control. It eliminates manual object instantiation by generating factory boilerplate, managing component lifecycles, and injecting dependencies via @Inject constructors. However, Hilt is completely agnostic about whether the injected dependency is an interface or a concrete class.
-When an engineer uses Hilt to inject a concrete Room database or Retrofit service directly into a ViewModel or UseCase, the system practices Dependency Injection, but it flatly violates the Dependency Inversion Principle.
-In this flawed setup, high-level business logic is directly coupled to low-level SQLite annotations and HTTP networking drivers. Upgrading or swapping the database forces rewrites across the UI and presentation layer.
-To achieve true DIP with Hilt, the dependency direction must be inverted.
-The high-level Domain layer declares pure Kotlin repository interfaces.
-The low-level Data layer implements those interfaces.
-Finally, a Hilt @Module uses @Binds to map the interface to the concrete implementation. Hilt delivers the object, but the architecture satisfies DIP.
+I separate two questions. Hilt answers, “How do I construct and scope these objects?” DIP asks, “Does high-level policy know about a low-level detail?” A Hilt graph can be valid while a use case directly imports Retrofit types. An `@Binds` interface is not enough if its methods still return `Response<Dto>`; that just moves the coupling behind a name.
+
+For an eligibility flow I would define a small policy-facing `EligibilitySource` whose result uses domain terms. A data adapter maps network responses into that result, and Hilt binds the adapter to the port in a module visible to the app assembly. A manual composition root could do the same. I inspect imports and module dependencies and test the policy with a fake, then test the adapter separately. I do not promise that this arrangement automatically makes builds faster or eliminates all integration tests.
 
 ## Interview answer — deep senior
 
-Under the hood, failing to enforce DIP while using Hilt dismantles the compilation firewalls of multi-module Android architectures.
-In a multi-module enterprise project, Gradle modules should enforce architectural layers: :feature depends on :domain, and :data depends on :domain. The :domain module remains pure Kotlin with zero Android framework or database dependencies.
-When engineers bypass DIP and inject concrete classes via Hilt, the :feature module must declare a direct Gradle dependency on the :data module (implementation(project(":data"))). This exposes Room database DAOs, SQLite drivers, and Retrofit network response DTOs directly to the UI presentation layer.
-Any internal change to a database column or an OkHttp interceptor invalidates Gradle's build cache for the :data module, triggering an unnecessary recompilation cascade across all dependent :feature modules and inflating build times.
-When DIP is enforced, Hilt bindings are declared in the root :app assembly module or dedicated binding submodules. The :feature module compiles solely against the abstract interfaces in :domain, allowing Gradle's Compilation Avoidance to completely skip feature recompilation during data layer changes.
-Furthermore, testing harnesses benefit enormously. Testing a ViewModel that injects a DIP-compliant interface requires zero reflection, zero Hilt test runners, and zero Mockk agents; a 5-line pure Kotlin fake repository provides deterministic, millisecond-fast JVM test execution.
+Hilt provides generated component graphs, binding resolution, and lifecycle scopes. It can tell us a constructor dependency is missing or a binding graph is invalid. It cannot decide whether a dependency points from high-level business policy toward a transport implementation. A ViewModel can inject a concrete API type and still produce a valid Hilt graph. Equally, manual DI can respect DIP if the policy depends on a stable contract and the composition root supplies its implementation.
+
+I review the contract's ownership and vocabulary. If `EligibilitySource` lives with the policy and returns a domain `Eligibility`, an adapter can translate network data at the edge. If the interface returns Retrofit `Response` or Room entities, the policy remains coupled even when Hilt uses `@Binds`. I also avoid the opposite overcorrection: injecting a concrete immutable value or stable policy class does not automatically violate DIP. The key issue is whether volatile details dictate policy and source dependencies.
+
+In a multi-module Android project, a feature can compile against the contract while a data module implements it and an assembly module sees the binding. That gives the compiler a useful boundary against accidental imports. It does not guarantee that every data change skips feature compilation; public API changes, annotation processing, and Gradle configuration still matter. Hilt scopes also need separate lifecycle review. I test local policy through a fake port and test the network adapter's mapping and errors independently. For a small application where the boundary has little value, manual construction and fewer interfaces may be clearer.
 
 ## How to answer in the interview
 
-- **Why:** Separate wiring from dependency direction.
-- **How:** show Hilt binding.
-- **Trade-offs:** mention binding/scope cost.
-- **Failure cases:** flag DTO leakage or stale singleton.
-- **Production solutions:** close with fake policy and adapter integration tests..
+- Say what Hilt validates and what DIP asks.
+- Show a graph that compiles but exposes transport details to policy.
+- Repair the contract's ownership and data types, then bind the adapter.
+- Mention module visibility, test seams, and the absence of automatic build guarantees.
 
 ## Deep-dive talking points
 
-Review a Hilt graph for injected concrete SDKs, leaked DTOs, binding direction and scope errors.
+`@Binds` versus `@Provides`; graph validity versus contract semantics; module assembly visibility; transport DTO leakage; lifecycle scope review; fake-based policy tests and adapter integration tests.
 
 ## Follow-up questions
 
-- **Interviewer:** "What is the difference between `@Provides` and `@Binds` in Hilt regarding DIP?"
-  **Answer:** "`@Binds` is used specifically to bind an abstract interface to a concrete implementation, promoting DIP and generating zero bytecode boilerplate. `@Provides` is used for creating instances requiring builder or manual setup logic (like configuring Retrofit or Room)."
-
-- **Interviewer:** "How can Gradle modularization prevent Hilt from violating DIP?"
-  **Answer:** "By removing dependencies between the feature module and the data/network modules. If the feature module cannot see `RetrofitService`, Hilt cannot inject it into the feature's ViewModel."
+- **Interviewer:** “Does `@Binds` guarantee DIP?” **Answer:** “No. It maps an implementation to an interface; the interface can still expose transport details or be owned by the wrong layer.”
+- **Interviewer:** “Must every dependency be an interface?” **Answer:** “No. I introduce a port where it protects a meaningful policy boundary, not for every stable value or class.”
+- **Interviewer:** “Will this always speed up Gradle builds?” **Answer:** “No. Module boundaries can help isolate some changes, but compilation depends on public APIs, processors, and build configuration.”
 
 ## Self-check rubric
 
-Show one Hilt-injected DIP violation and repair it with a domain-facing contract.
+Can I identify a valid Hilt graph with a bad policy dependency, repair the contract, and avoid universal testing or build claims?
 
 ## References and reviewed-on date
 
-- [Android Hilt guide](https://developer.android.com/training/dependency-injection/hilt-android) — graph and bindings.
-- [Robert C. Martin, A Little Architecture](https://blog.cleancoder.com/uncle-bob/2016/01/04/ALittleArchitecture.html) — dependency inversion.
+- [Android Hilt guide](https://developer.android.com/training/dependency-injection/hilt-android) — graph construction, `@Binds`, `@Provides`, and module visibility.
+- [Android data layer](https://developer.android.com/topic/architecture/data-layer) — repository and data-source responsibilities.
+- [Gradle Java plugin](https://docs.gradle.org/current/userguide/java_plugin.html) — compilation and module boundaries.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against primary documentation on 2026-10-19.

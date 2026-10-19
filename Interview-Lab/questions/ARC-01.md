@@ -18,329 +18,136 @@ What is Clean Architecture, and what problem does it solve?
 
 ## What the interviewer evaluates
 
-- Core intent of Clean Architecture: separation of concerns, controlling the direction of source code dependencies, and protecting core business policy from framework churn.
-- Practical Android layer division: UI Layer (Presentation), Domain Layer (optional Use Cases and pure business entities), and Data Layer (Repositories, DataSources, Network DTOs, and Room entities).
-- Inversion of Control via Dependency Inversion Principle (DIP): domain defines repository interfaces; data implements them.
-- Clear distinction between architectural boundaries and superficial package renaming or dogmatic boilerplate.
-- Testability: ability to execute deterministic business rule tests as sub-second JVM tests without Android mock frameworks.
+- Explain separation of business policy from UI, persistence, and network details.
+- Explain the dependency rule rather than reciting a fixed number of layers.
+- Show where an interface belongs when an inner policy must use an outer mechanism.
+- Distinguish Clean Architecture from Android's recommended UI, data, and optional domain layers.
+- Judge the cost of interfaces, mappings, and modules against the actual change and test risks.
 
 ## Concept and technical explanation
 
-Clean Architecture, popularized by Robert C. Martin, organizes software into concentric layers where high-level business rules reside at the core, completely decoupled from delivery mechanisms, operating system frameworks, databases, and third-party libraries. In Android, the fundamental problem it solves is the tight coupling between Android lifecycle components and enterprise business logic. Without Clean Architecture, Activities, Fragments, and ViewModels become God objects where network DTOs are directly bound to UI widgets, database schemas leak into presentation controllers, and business calculations cannot be tested without heavy Robolectric harnesses or slow emulator instrumentation. By enforcing the inward Dependency Rule through polymorphism and repository contracts, Clean Architecture turns the Android operating system, Jetpack UI toolkits, and persistence drivers into swappable plugins around an immutable, pure Kotlin domain core.
+Clean Architecture protects important policies from changes in delivery mechanisms. Its dependency rule says source code dependencies point toward the inner policy. An inner rule can define the interface it needs, while an outer adapter implements it. A package name alone does not enforce this direction.
+
+Android's official architecture guide recommends at least UI and data layers, with an optional domain layer for complex or reused logic. Its diagram allows a domain use case to depend on data layer classes. That is a pragmatic Android layering recommendation, not the same strict dependency direction as the original Clean Architecture model. Explain which boundary your project actually uses instead of claiming the two diagrams are identical.
+
+The problem is coupling: a business decision tied to a ViewModel, Retrofit DTO, or Room entity becomes harder to change or test independently. A separate use case and domain owned interface help when that decision has its own policy. A simple read screen may work well with UI and a repository; a pass through use case would add little value.
 
 ## Practical walkthrough (English)
 
-Demonstrating Clean Architecture layer isolation with pure Kotlin domain rules:
-```kotlin
-// 1. Domain Layer: Pure Kotlin, zero Android SDK dependencies
-data class UserProfile(val id: String, val username: String, val isPremium: Boolean)
-
-interface UserRepository {
-    suspend fun getProfile(userId: String): Result<UserProfile>
-}
-
-class GetUserProfileUseCase(private val repository: UserRepository) {
-    suspend operator fun invoke(userId: String): Result<UserProfile> {
-        if (userId.isBlank()) return Result.failure(IllegalArgumentException("Invalid user ID"))
-        return repository.getProfile(userId)
-    }
-}
-
-// 2. Data Layer: Implements domain contract, maps network DTOs
-class UserRepositoryImpl(
-    private val api: UserApi,
-    private val dao: UserDao
-) : UserRepository {
-    override suspend fun getProfile(userId: String): Result<UserProfile> = runCatching {
-        val cached = dao.getUser(userId)
-        if (cached != null) return@runCatching cached.toDomain()
-        val networkDto = api.fetchUser(userId)
-        dao.insertUser(networkDto.toEntity())
-        networkDto.toDomain()
-    }
-}
-
-// 3. Presentation Layer: StateHolder exposes state to Composables
-class ProfileViewModel(private val getUserProfile: GetUserProfileUseCase) : ViewModel() {
-    private val _uiState = MutableStateFlow<ProfileUiState>(ProfileUiState.Loading)
-    val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
-
-    fun loadUser(id: String) {
-        viewModelScope.launch {
-            getUserProfile(id)
-                .onSuccess { _uiState.value = ProfileUiState.Success(it.username) }
-                .onFailure { _uiState.value = ProfileUiState.Error(it.message ?: "Failed") }
-        }
-    }
-}
-```
+Consider a product quote. A `QuoteProduct` use case applies a stable discount rule to product data returned through `ProductRepository`. The domain owns the repository contract; an outer data adapter can fetch and map the network DTO. The ViewModel turns the quoted amount or an unavailable result into UI state. The unit test below uses an in memory fake, so it tests the rule without an Android runtime. The adapter still needs its own integration tests for mapping and errors.
 
 ## Explanation in Arabic
 
-فكرة Clean Architecture الأساسية هي تنظيم كود التطبيق بحيث إن قواعد المنتج والبيزنس (Business Rules) تكون مستقلة تمامًا عن تفاصيل أطر العمل الخارجية زي Android SDK، أو Retrofit، أو Room، أو Jetpack Compose. المبدأ الحاكم هو "The Dependency Rule": الاعتمادية دائمًا بتشير للداخل (Inward Dependencies). يعني الـDomain Layer في القلب، لا يعرف أي شيء عن Context أو JSON أو SQL؛ بيحتوي فقط على Entities نقية، Use Cases بتنفذ سيناريوهات العمل، وInterfaces بتحدد العقود اللي محتاجها. الطبقات الخارجية (UI وData) هي اللي بتعتمد على الـDomain وتنفذ عقوده عبر Dependency Inversion. ده بيحل مشكلة تشابك الكود، وبيخليك تقدر تغير شكل الـAPI أو تستبدل قاعدة البيانات أو تعيد بناء الـUI من غير ما تمس سطر واحد في حسابات وقواعد التطبيق الحساسة.
+فكرة `Clean Architecture` إني أفصل قرار المنتج المهم عن تفاصيل الشاشة والشبكة والتخزين. في النموذج الأصلي، `Dependency Rule` معناها إن اعتماد الكود يبص ناحية القاعدة الداخلية. لو القاعدة محتاجة بيانات، هي تعرّف `Repository Interface` مناسب لها، والـ `Data Adapter` الخارجي ينفذه. اسم `domain` على Package مش كفاية لو جوّاها `Retrofit DTO` أو `Context`.
+
+دليل Android الرسمي بيقترح `UI` و`Data` كحد أدنى، و`Domain Layer` اختيارية للمنطق المعقد أو المتكرر. الرسم بتاعه يسمح للـ `Domain` تعتمد على كلاسات من `Data`؛ ده تنظيم عملي ومش نفس قاعدة الاعتماد الصارمة في `Clean Architecture` الأصلية. في Interview أوضح أنا بتكلم عن أي تصميم وليه اخترته.
 
 ## Practical walkthrough
 
-تخيل شاشة تحويل أموال في تطبيق بنكي. لو الـViewModel أو الشاشة بتنادي Retrofit مباشرة وبتحسب شروط التحويل (زي فحص الحد اليومي أو توثيق الـKYC) في وسط كود الـparsing والـUI state، أي تغيير في الـbackend schema هيكسر الشاشة واختباراتها فورًا. في Clean Architecture، بنفصل المنطق ده: بنعمل `CheckTransferEligibilityUseCase` بياخد `TransferRepository` interface. الـUseCase ده بيفحص الشروط كـpure Kotlin كود بدون أي كلاس أندرويد. في طبقة الـData، كلاس `TransferRepositoryImpl` بينادي Retrofit، ويترجم الـDTO لـDomain model، وبيرجع النتيجة. والـViewModel فقط بينادي الـUseCase ويحول النتيجة لـ `TransferUiState` تعرضها Compose. لو الـbackend قرر يغير أسماء الحقول في الـJSON، التعديل هيفضل محصور تمامًا في طبقة الـData، والـDomain والـUI مش هيحسوا بأي فرق.
+تخيل شاشة بتعرض سعر منتج بعد خصم له قاعدة مستقرة. `QuoteProduct` يطلب المنتج من `ProductRepository` Interface ويطبق القاعدة؛ `Data Adapter` تجيب `DTO` وتحولها، والـ `ViewModel` تعرض السعر أو حالة عدم التوفر. أختبر حساب الخصم بـ Fake Repository على JVM، وأختبر الـ Mapping وأخطاء الشبكة عند حد البيانات. لو الشاشة بتعرض قيمة جاية من Endpoint من غير قرار مستقل، ممكن `Use Case` زيادة ما تفيدنيش.
 
 ## Why it matters and how it works
 
-Clean Architecture addresses structural fragility in growing codebases by establishing three distinct layers:
-1. **Domain Layer (Innermost & Stable):** Contains business entities and Use Cases (`Interactors`). It possesses zero dependencies on the Android framework, database libraries, or networking clients. It defines repository interfaces that specify *what* data operations the business logic requires, not *how* they are fetched.
-2. **Data Layer (Outermost Adapter):** Contains Retrofit DTOs, Room DAOs, DataSources, and concrete Repository implementations. It implements the domain interfaces and maps external payloads (JSON, SQLite rows) into clean domain entities.
-3. **UI / Presentation Layer (Outermost Adapter):** Contains ViewModels and Compose/View layouts. The ViewModel consumes domain Use Cases and projects results into reactive, observable `UiState` streams (`StateFlow`).
-
-Dependency direction is strictly enforced: `UI -> Domain` and `Data -> Domain`. At the application root (e.g. Hilt or Koin module), Dependency Injection binds the data layer's implementations to the domain layer's interfaces.
+The key is a dependency boundary around a meaningful policy. A domain interface lets a rule use data without importing the transport implementation. A pure Kotlin module can make some forbidden imports visible at compile time, but the actual module graph and API exposure still need review. Mapping at the boundary can isolate a stable product model from a changing wire format. These choices make unit tests simpler and contain some changes; they do not make every UI or backend change invisible.
 
 ## Worked example
 
-Here is a concrete, complete Kotlin implementation illustrating the Clean Architecture boundaries for a financial transfer eligibility check:
+This self contained JVM example shows the domain contract and an in memory test adapter. A real data adapter would implement the same contract and map its transport model.
 
 ```kotlin
-// ==========================================
-// 1. DOMAIN LAYER (Pure Kotlin, No Android/Retrofit/Room)
-// ==========================================
+data class Product(val id: String, val priceCents: Long)
 
-data class Account(
-    val id: String,
-    val balanceCents: Long,
-    val isKycVerified: Boolean
-)
-
-data class TransferEligibility(
-    val isEligible: Boolean,
-    val remainingDailyLimitCents: Long,
-    val rejectionReason: String? = null
-)
-
-interface TransferRepository {
-    suspend fun getAccount(accountId: String): Result<Account>
-    suspend fun getTodayTransferredTotalCents(accountId: String): Long
+interface ProductRepository {
+    fun find(id: String): Product?
 }
 
-class CheckTransferEligibilityUseCase(
-    private val repository: TransferRepository
-) {
-    private companion object {
-        const val MAX_DAILY_LIMIT_CENTS = 500_000L // 5,000 EGP
+class QuoteProduct(private val products: ProductRepository) {
+    fun quoteCents(id: String): Long? {
+        val product = products.find(id) ?: return null
+        require(product.priceCents >= 0)
+        return product.priceCents * 90 / 100
     }
+}
 
-    suspend operator fun invoke(accountId: String, transferAmountCents: Long): Result<TransferEligibility> {
-        if (transferAmountCents <= 0) {
-            return Result.success(
-                TransferEligibility(false, 0, "Transfer amount must be greater than zero")
-            )
-        }
-
-        val account = repository.getAccount(accountId).getOrElse { error ->
-            return Result.failure(error)
-        }
-
-        if (!account.isKycVerified) {
-            return Result.success(
-                TransferEligibility(false, 0, "Account KYC verification is incomplete")
-            )
-        }
-
-        if (account.balanceCents < transferAmountCents) {
-            return Result.success(
-                TransferEligibility(false, 0, "Insufficient account balance")
-            )
-        }
-
-        val spentToday = repository.getTodayTransferredTotalCents(accountId)
-        val remainingDaily = (MAX_DAILY_LIMIT_CENTS - spentToday).coerceAtLeast(0)
-
-        if (transferAmountCents > remainingDaily) {
-            return Result.success(
-                TransferEligibility(false, remainingDaily, "Amount exceeds remaining daily limit")
-            )
-        }
-
-        return Result.success(TransferEligibility(true, remainingDaily))
+fun main() {
+    val fake = object : ProductRepository {
+        override fun find(id: String) =
+            if (id == "p1") Product(id, 10_000) else null
     }
+    val quote = QuoteProduct(fake)
+    check(quote.quoteCents("p1") == 9_000L)
+    check(quote.quoteCents("missing") == null)
 }
 ```
 
-```kotlin
-// ==========================================
-// 2. DATA LAYER (Implements Domain Interfaces, Maps DTOs)
-// ==========================================
-
-data class AccountResponseDto(
-    val account_id: String,
-    val balance_amount: Long,
-    val kyc_status_string: String
-)
-
-interface AccountRemoteApi {
-    suspend fun fetchAccount(id: String): AccountResponseDto
-}
-
-class TransferRepositoryImpl(
-    private val api: AccountRemoteApi,
-    private val localLedgerTotalCalculator: suspend (String) -> Long
-) : TransferRepository {
-
-    override suspend fun getAccount(accountId: String): Result<Account> = runCatching {
-        val dto = api.fetchAccount(accountId)
-        Account(
-            id = dto.account_id,
-            balanceCents = dto.balance_amount,
-            isKycVerified = dto.kyc_status_string.equals("VERIFIED", ignoreCase = true)
-        )
-    }
-
-    override suspend fun getTodayTransferredTotalCents(accountId: String): Long {
-        return localLedgerTotalCalculator(accountId)
-    }
-}
-```
-
-```kotlin
-// ==========================================
-// 3. PRESENTATION LAYER (ViewModel & UI State Mapping)
-// ==========================================
-
-sealed interface TransferUiState {
-    object Idle : TransferUiState
-    object Loading : TransferUiState
-    data class Ready(val canSend: Boolean, val remainingLimitFormatted: String, val message: String?) : TransferUiState
-    data class Failure(val errorMsg: String) : TransferUiState
-}
-
-class TransferViewModel(
-    private val checkEligibilityUseCase: CheckTransferEligibilityUseCase
-) {
-    // In Android: extends ViewModel() with MutableStateFlow
-    suspend fun evaluate(accountId: String, amountCents: Long): TransferUiState {
-        val result = checkEligibilityUseCase(accountId, amountCents)
-        return result.fold(
-            onSuccess = { eligibility ->
-                TransferUiState.Ready(
-                    canSend = eligibility.isEligible,
-                    remainingLimitFormatted = "${eligibility.remainingDailyLimitCents / 100} EGP",
-                    message = eligibility.rejectionReason
-                )
-            },
-            onFailure = { error ->
-                TransferUiState.Failure(error.message ?: "Failed to evaluate transfer")
-            }
-        )
-    }
-}
-```
-
-```kotlin
-// ==========================================
-// 4. JVM UNIT TEST (Fast, Deterministic, 0 Framework Mocks)
-// ==========================================
-
-class CheckTransferEligibilityUseCaseTest {
-    fun `test when balance is insufficient then return ineligible`() {
-        val fakeRepo = object : TransferRepository {
-            override suspend fun getAccount(accountId: String) = Result.success(
-                Account("acc_1", balanceCents = 1000, isKycVerified = true)
-            )
-            override suspend fun getTodayTransferredTotalCents(accountId: String) = 0L
-        }
-
-        val useCase = CheckTransferEligibilityUseCase(fakeRepo)
-        val result = kotlinx.coroutines.runBlocking { useCase("acc_1", transferAmountCents = 5000) }
-
-        val outcome = result.getOrThrow()
-        check(!outcome.isEligible)
-        check(outcome.rejectionReason == "Insufficient account balance")
-    }
-}
-```
+The integer calculation is deliberately small; production money rules need a specified currency, rounding policy, overflow handling, and an authoritative backend price.
 
 ## Trade-offs and decision criteria
 
-1. **When to Apply Full Clean Architecture:**
-   - **Recommended For:** Long-lived applications with complex business rules, multiple data sources (Room + Remote + Cache), large engineering teams, or strict regulatory requirements (Fintech, Healthcare).
-   - **Overkill For:** Simple CRUD apps, marketing landing pages, or small utility tools with no independent business policy. If a Use Case only does `return repository.getItems()`, it adds pure boilerplate without architectural value.
-
-2. **Domain Layer Optionality:**
-   - Official Android Architecture guidelines classify the Domain layer as **optional**. When a feature consists of a direct passthrough from UI to Repository, omitting the Use Case keeps code maintainable while retaining clean UI/Data separation.
-
-3. **Maintenance Overhead:**
-   - Clean Architecture introduces model duplication (Network DTO, Room Entity, Domain Entity, UI Model) and mapper functions. The trade-off is higher initial development velocity vs long-term defect isolation and test execution speed.
+- Add a domain use case when it owns a decision, coordinates repositories, or serves more than one ViewModel.
+- A separate model and mapper help when transport and product contracts change independently; they also increase maintenance work.
+- A Gradle module can enforce a boundary but adds build and ownership overhead. Start with clear dependencies, then modularize when enforcement is worth that cost.
+- A use case that only forwards a repository call can obscure a straightforward data path.
 
 ## Failure modes
 
-- **Leaking Framework Types into Domain:** Importing `android.content.Context`, `android.os.Bundle`, or Retrofit/Room annotations inside Domain classes violates the dependency rule. The domain layer becomes coupled to Android platform updates and cannot run in pure JVM unit test runners.
-- **Anemic Use Cases / Pass-Through Fatigue:** Creating a Use Case class for every single repository method (e.g. `GetNotesUseCase` that solely forwards a call to `repository.getNotes()`) clutters the codebase with empty indirection.
-- **Returning DTOs from Use Cases:** Having a domain Use Case return Retrofit response objects or Room entities destroys the boundary. If the backend changes a response attribute, the presentation layer breaks despite having a supposed domain layer.
-- **Ignoring Dependency Inversion:** Defining repository interfaces inside the data layer rather than the domain layer forces the domain to depend on data, reversing the intended architectural flow.
+- Declaring a `domain` package while its classes import `Context`, Retrofit DTOs, or Room entities and claiming the boundary is strict.
+- Assuming Android's recommended optional domain layer requires domain owned repository interfaces in every app.
+- Creating one interface and mapper per class without a policy or change boundary to protect.
+- Testing only the domain fake while leaving data mapping, error semantics, and UI state untested.
+- Treating a client side financial check as final approval; the server must decide against current authoritative state.
 
 ## Production perspective
 
-In a production banking or enterprise Android app:
-- Enforce boundary isolation using Gradle multi-module architecture: `:core:domain` (pure Kotlin library module), `:core:data` (Android library module depending on `:core:domain`), and `:feature:checkout` (Android library module depending on `:core:domain`).
-- Use Gradle API dependency constraints to prevent `:feature:checkout` from directly accessing `:core:data` implementation classes.
-- Ensure all business rule tests in `:core:domain` run as pure JVM unit tests in CI within milliseconds without launching Robolectric or Android emulators.
-- The backend remains the final authority on financial validations; client-side clean architecture prevents bad user requests and renders responsive feedback, but the server independently verifies limits and balances.
+First draw the source dependency graph and identify the rules that change for different reasons from UI or persistence. Put a strict rule in a pure Kotlin module when compile time separation helps. Keep transport conversion and error translation in a data adapter, and test that adapter separately. Decide the source of truth and behavior after process death for offline features. In regulated workflows, client checks improve feedback but do not authorize server side effects.
 
 ## Interview answer — short
 
-Clean Architecture isolates core business rules from frameworks, databases, and UI implementations through concentric abstraction layers. In Android, it prevents UI components from coupling directly to data sources or framework APIs, ensuring business logic remains framework-agnostic, modular, and purely testable on local JVMs without Android runtime dependencies.
+Clean Architecture keeps important business decisions from depending on UI and data mechanisms. Its dependency rule points code inward: the rule defines the contract it needs, and an outer adapter implements it. On Android I use that boundary when a rule deserves independent tests or must survive framework changes. A simple screen may only need UI and data layers; extra use cases are not automatically useful.
 
 ## Interview answer — structured
 
-Clean Architecture addresses the fundamental vulnerability of Android development where framework volatility and UI lifecycles corrupt enterprise business logic.
+I start with the problem: if a ViewModel mixes a pricing rule with Retrofit responses and UI state, a wire format change or screen redesign can disturb the rule. In strict Clean Architecture, the rule and its required interface sit inside; a data adapter depends on and implements that interface. The ViewModel asks the rule for a result and maps it to UI state.
 
-The system is separated into concentric layers governed by the Dependency Rule, dictating that dependencies must point inward toward pure domain entities and use cases. The domain layer contains zero Android dependencies, operating entirely on pure Kotlin data classes and interfaces.
+For a product quote, I can test discount logic using a fake repository in a JVM test. Then I test the real adapter's DTO mapping and failure handling separately. That gives useful isolation without pretending the fake test covers networking.
 
-In production, presentation and data layers act as swappable plugins. The UI consumes view states through ViewModels, while data repositories implement domain contracts via Retrofit, Room, or DataStore.
-As for operational advantages, this boundary isolation enables lightning-fast local JVM unit tests, prevents network DTO schema changes from cascading into UI widgets, and allows engineering teams to parallelize development across isolated modules without merge conflicts or architectural degradation.
-
+I also distinguish this from Android's official guide. It recommends UI and data layers, with an optional domain layer, and its diagram has a different dependency direction. I choose a strict inner boundary when policy complexity or independent change makes it worthwhile. For a direct read screen, a pass through use case may just add files.
 
 ## Interview answer — deep senior
 
-Under the hood, Clean Architecture solves coupling and testability bottlenecks by inverting source code dependencies across layer boundaries using polymorphism. In typical legacy Android codebases, an Activity or ViewModel directly imports network clients or database DAOs, binding domain validation directly to JSON schemas or SQLite tables. When backend APIs change or libraries update, the entire presentation layer shatters.
-Clean Architecture resolves this by declaring repository interfaces inside the inner domain layer. The outer data layer implements these interfaces and handles DTO-to-domain mapping, meaning the domain layer dictates the contractual data requirements of the enterprise rather than subserviently reacting to external transport protocols.
-In production environments, this architectural purity demands pragmatic trade-offs. Introducing use cases, duplicate domain models, and bi-directional mappers for simple CRUD operations introduces boilerplate and navigation indirection that can slow delivery if applied dogmatically.
-Staff engineers assess team size, domain complexity, and multi-platform ambitions before committing to full three-layer isolation. While complex domains like fintech checkout flows, offline transaction reconciliation, and risk validation mandate use cases and strict module boundaries, simpler feature verticals often expose repository streams directly to ViewModels to avoid unnecessary layer overhead while maintaining complete testability. By strictly enforcing layer boundaries at compile time through Gradle modules, large engineering teams prevent accidental coupling and maintain pristine architectural hygiene.
+I would inspect actual imports and module dependencies before calling a design Clean Architecture. In the original model, source dependencies point toward high level policy. If the policy imports `Context`, Retrofit DTOs, or Room entities, that boundary has leaked. A domain owned repository interface plus an outer implementation can invert the compile time dependency; dependency injection wires the implementation at the app root. A pure Kotlin Gradle module can help enforce the boundary, but naming folders does not.
+
+For a quote flow, the use case owns a price rule, the repository contract describes what product data it needs, and the data implementation maps HTTP or local records into that contract. The ViewModel maps the result to `UiState`. I would test the rule with a fake, the adapter with integration tests, and the screen state separately. I would define whether missing data, timeout, stale cache, and invalid input are distinct outcomes, because a generic failure type can hide a product decision.
+
+Android's architecture guidance makes the domain layer optional and allows a domain use case to depend on data classes. That guidance is useful, but it is not the original strict dependency rule. I would be precise about which pattern the app follows. Interfaces, mappers, and modules cost review and build time, so I add them where they protect a meaningful policy or a likely change boundary. An offline feature additionally needs a clear source of truth and process death behavior. A client side eligibility check in a payment flow remains advisory; only the backend can authorize against current state.
 
 ## How to answer in the interview
 
-- **Why:** Protect product rules from changing UI, network, and database mechanisms.
-- **How:** Inward dependency rule (`UI -> Domain` and `Data -> Domain`); Repository interfaces in Domain, implementations in Data; pure JVM Use Cases.
-- **Trade-off:** Additional mapping boilerplate and classes versus change isolation and fast unit testing.
-- **Failure case:** Anemic pass-through Use Cases; leaking `Context` or Retrofit DTOs into Domain.
-- **Production solution:** Multi-module Gradle boundaries (`:core:domain`), mapper functions at boundaries, and pragmatic optional Use Cases.
+Define the coupling problem, explain the dependency direction in the original model, show one useful rule and adapter, then give a case where another layer would be unnecessary. Name the difference from Android's optional domain recommendation if the interviewer asks about its diagram.
 
 ## Deep-dive talking points
 
-- **The Dependency Rule:** Why dependencies must only point inward toward higher-level policy.
-- **DTO vs Domain Entity:** Why separating wire format models from business models prevents backend schema changes from leaking into UI.
-- **Gradle Module Enforcement:** Using `:domain` as a `java-library` plugin to make it impossible to import Android SDK classes.
-- **UseCase Invocation Conventions:** Using Kotlin `operator fun invoke()` for clean, single-purpose function call syntax.
+- Source dependency direction versus runtime call direction.
+- Domain owned interface and outer adapter wiring.
+- Android optional domain guidance versus the original Clean Architecture rule.
+- Module enforcement, mapping cost, and tests at each boundary.
+- Source of truth and authoritative decisions in offline or financial flows.
 
 ## Follow-up questions
 
-- [ARC-03](../arc-03/): **Interviewer:** "Which direction do source code dependencies point in Clean Architecture, and how is that enforced?"
-  **Answer:** "Dependencies strictly point inward toward the domain layer. The UI layer depends on Domain Use Cases, and the Data layer depends on Domain repository interfaces by implementing them via Dependency Inversion. In our Gradle setup, we enforce this at compile time: the `:core:domain` module is a pure Kotlin library with no Android plugin, so it's physically impossible for someone to accidentally import `Context` or Retrofit annotations inside domain logic."
-
-- [ARC-13](../arc-13/): **Interviewer:** "When is the Domain layer strictly necessary versus when is it unnecessary overhead?"
-  **Answer:** "The Domain layer is justified when there is real business logic to protect—such as complex client-side validations, financial eligibility rules, or coordination between multiple repositories like local database plus remote sync. If a screen is just reading a list of items and displaying them without any business logic, creating a pass-through Use Case is wasteful boilerplate. In that case, having the ViewModel talk directly to the Repository is cleaner and faster."
-
-- **Interviewer:** "What happens if a backend team decides to redesign their entire API schema? How does Clean Architecture protect you?"
-  **Answer:** "It confines the blast radius entirely to the Data layer. Because the Domain and UI layers only know about immutable Domain entities, only the Retrofit DTOs and the mapper functions inside the Data layer need to be updated. Not a single line of business policy or Jetpack Compose code has to change, and all our domain unit tests continue to pass."
+- **Interviewer:** "Does every button need a use case?" **Answer:** "No. I add one when it owns a decision or useful orchestration; forwarding a single repository call may add no value."
+- **Interviewer:** "Can Android's domain layer depend on data?" **Answer:** "The official Android guide's diagram allows that. Strict Clean Architecture uses a different source dependency direction, so I name the pattern I am applying."
+- **Interviewer:** "Where does a Retrofit response model go?" **Answer:** "In the data adapter. I map it before a strict domain rule if the wire format should not shape that rule."
+- **Interviewer:** "Does a client side transfer check approve the transfer?" **Answer:** "No. The backend must validate current state and commit the decision atomically."
 
 ## Self-check rubric
 
-- Can I explain the Dependency Rule and Dependency Inversion Principle clearly?
-- Can I implement a pure Kotlin Use Case with a repository interface?
-- Can I demonstrate data mapping between external DTOs and internal domain entities?
-- Can I justify when a Domain Use Case is valuable versus when it is unnecessary boilerplate?
-- Can I write a pure JVM unit test for a Use Case without mocking Android SDK classes?
+Can I draw the compile time dependency arrows, name a rule worth isolating, explain Android's optional domain diagram, and say what the fake domain test does not cover?
 
 ## References and reviewed-on date
 
-- [Android Guide to App Architecture](https://developer.android.com/topic/architecture) — recommended layers and separation of concerns.
-- [Robert C. Martin: The Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html) — foundational dependency rule.
-- [Android Domain Layer Guidance](https://developer.android.com/topic/architecture/domain-layer) — official use cases and best practices.
+- [Android Guide to App Architecture](https://developer.android.com/topic/architecture) — recommended UI/data layers and optional domain.
+- [Android Domain Layer](https://developer.android.com/topic/architecture/domain-layer) — use case guidance.
+- [Robert C. Martin: The Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html) — original dependency rule.
 
-Technically reviewed against the cited primary documentation on 2026-10-13; this is an automated editorial and technical review, not a human review.
+Technically reviewed against the cited primary documentation on 2026-10-19; this is an agent editorial review, not a human review.

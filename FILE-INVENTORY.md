@@ -1,6 +1,6 @@
-# Actual academy source inventory — 2026-10-13
+# Actual academy source inventory — 2026-10-19
 
-These 1222 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
+These 1250 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
 
 ```text
 .github/workflows/ci.yml
@@ -879,11 +879,14 @@ Speaking-Shadowing/DAY-46.md
 Speaking-Shadowing/DAY-47.md
 Speaking-Shadowing/DAY-48.md
 TECHNICAL-REVIEW-KOT-001.md
+docs/ARABIC_INTERVIEW_EDITORIAL_REPORT.md
+docs/ARABIC_TECH_TERMINOLOGY.md
 docs/ARCHITECTURE.md
 docs/CONTENT_GUIDELINES.md
 docs/DEPLOYMENT.md
 docs/EXECUTION_PROGRESS.md
 docs/IMPLEMENTATION_AUDIT.md
+docs/INTERVIEW_EDITORIAL_CHECKPOINT.md
 docs/VERIFICATION_REPORT.md
 fixtures/RTL-MIXED-LANGUAGE.md
 projects/CAPSTONE-ARCHITECTURE.md
@@ -914,32 +917,56 @@ projects/kotlin-jvm-labs/src/main/kotlin/academy/ShortestPath.kt
 projects/kotlin-jvm-labs/src/main/kotlin/academy/TerminalAttempt.kt
 projects/kotlin-jvm-labs/src/main/kotlin/academy/TrustedReturnLink.kt
 projects/kotlin-jvm-labs/src/main/kotlin/academy/ViewSession.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/ArcSnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/CompletionModelsTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/ConstructionTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/CooperativeCancellationSnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/DeferredRequestTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/DiSnippetTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/DipDiSnippetTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/DsaSnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/DuplicateScanTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/EditorReducerTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/FeatureRouteSnippetTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/HiltDipBoundarySnippetTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/InjectionStylesSnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/LabChecksTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/LazyLateinitSnippetTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/ManualToHiltBridgeSnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/MigrationCoveragePlannerTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/MultiModuleDiSnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/NoteRowTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/NullSafetySnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/OfflineNotesRepositoryTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/PairSearchTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/PatternDiSnippetTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/PaymentIdempotencySnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/ProfileCardTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/ProfileSemanticsTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/RuntimeTypeRegistryTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/SaveNoteTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/SessionOwnershipSnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/ShortestPathTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/StateMachineSnippetTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/SupervisionSnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/TerminalAttemptTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/TestabilitySnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/TrustedReturnLinkTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/ValVarSnapshotTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/ViewSessionTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/WithContextSnippetTest.kt
 projects/optional-payment-simulator/README.md
+reports/arabic-editorial-audit.json
+reports/arabic-editorial-checkpoint.json
 reports/content-coverage.json
 reports/content-inventory.md
 reports/external-links.json
 reports/source-crosswalk.json
 reports/source-manifest.json
+scripts/audit_arabic_editorial.py
 scripts/author_android_batch.py
 scripts/author_coroutines_batch.py
+scripts/check_built_arabic_lab.py
 scripts/check_interview_links.py
 scripts/complete_core_path.py
 scripts/complete_specialists_and_mocks.py
@@ -1176,6 +1203,7 @@ scripts/rebuild_spoken_learning.py
 scripts/test_interview_lab.py
 scripts/test_interview_quality.py
 scripts/test_package_source.py
+scripts/test_payment_outbox_transaction.py
 scripts/test_validate.py
 scripts/validate.py
 scripts/validate_bilingual_parity.py

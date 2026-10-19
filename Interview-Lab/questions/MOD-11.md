@@ -18,174 +18,109 @@ How do you manage dependency injection across modules?
 
 ## What the interviewer evaluates
 
-- Place binding ownership and contracts correctly.
-- Explain Hilt aggregation, scopes and variant visibility.
-- Note dynamic-feature exception and test graph assembly.
+Explain Hilt binding visibility across regular Gradle modules, contract and implementation ownership, scope and qualifier choices, variant verification, and the Dagger component dependency bridge required for Play dynamic feature modules.
 
 ## Concept and technical explanation
 
-Managing Dependency Injection (DI) across a multi-module Android project requires establishing clean component lifecycles and decoupling interface contracts from concrete implementations:
-- Interface Contracts in API/Core: Public contracts and repository interfaces are declared in leaf-level API or core domain modules, completely decoupled from injection frameworks.
-- Module Bindings: Feature implementation modules provide Hilt/Dagger modules (annotated with @Module @InstallIn(SingletonComponent::class) or ActivityRetainedComponent) that bind the concrete class to the interface via @Binds.
-- Dynamic Features & EntryPoints: Because dynamic feature modules invert dependencies and cannot be processed by the standard monolithic Hilt component at compile time, they access dependencies on-demand via @EntryPoint interfaces resolved through EntryPoints.get(applicationContext, MyEntryPoint::class).
-- Multibindings for Pluggable Architecture: Sets (@IntoSet) and maps (@IntoMap) allow independent modules to register navigation destinations, network interceptors, or background workers into the root application container without central coupling.
+For regular Gradle modules, the module compiling the `Application` class must see Hilt modules and constructor-injected classes through transitive dependencies. A contract can live in an API/domain module; its implementation and `@Binds` declaration live near their owner or in app composition where variant selection belongs. `@InstallIn` selects a Hilt component; a scoping annotation controls instance reuse within that component. Qualifiers distinguish bindings of the same type. A Play dynamic feature reverses the dependency direction, so base Hilt processing cannot simply aggregate its annotations. Android's documented bridge declares an `@EntryPoint` in an app-visible module and a Dagger component in the dynamic feature depending on that entry point.
 
 ## Practical walkthrough (English)
 
-Multi-module Hilt setup with interface binding and dynamic feature EntryPoints:
-```kotlin
-// 1. In :core:network (Interface contract)
-interface TokenProvider {
-    fun getAuthToken(): String?
-}
-
-// 2. In :feature:auth:impl (Implements and binds the contract)
-class TokenProviderImpl @Inject constructor(private val sessionManager: SessionManager) : TokenProvider {
-    override fun getAuthToken(): String? = sessionManager.token
-}
-
-@Module
-@InstallIn(SingletonComponent::class)
-abstract class AuthBindingModule {
-    @Binds abstract fun bindTokenProvider(impl: TokenProviderImpl): TokenProvider
-}
-
-// 3. In :dynamic:feature (Consumes dependency via EntryPoint)
-@EntryPoint
-@InstallIn(SingletonComponent::class)
-interface DynamicFeatureDependencies {
-    fun tokenProvider(): TokenProvider
-}
-
-fun injectDynamicFeature(context: Context) {
-    val deps = EntryPoints.get(context.applicationContext, DynamicFeatureDependencies::class.java)
-    val token = deps.tokenProvider().getAuthToken()
-}
-```
+`:core:session:api` declares `SessionSource`; `:data:session` implements it and provides a Hilt binding. Checkout requests the contract. The app includes the implementation module for the relevant variant and checks the qualifier and scope. A dynamic scanner feature obtains base dependencies through an app-visible `@EntryPoint`, then injects its own objects using a Dagger component with that entry point as a component dependency. Merely calling `EntryPoints.get` does not assemble the feature's full injection graph.
 
 ## Explanation in Arabic
 
-كيف تدير حقن التبعيات (Dependency Injection) عبر موديولات Gradle المتعددة؟
+في Regular Gradle Modules، Hilt تقدر تجمع الـ bindings لو module اللي بتبني `Application` شايفة Hilt modules والـ `@Inject` classes عبر Transitive Dependencies. حط Contract مثل `SessionSource` في API/Domain Module مناسبة، والتنفيذ والـ `@Binds` قريبين من Data Module أو Composition Module حسب Ownership. `@InstallIn` تختار Component Lifetime؛ `@Singleton` مش اختيار افتراضي لكل شيء. لو فيه Implementations متعددة استخدم Qualifier واضح وافحص Binding كل Variant.
 
-1. القاعدة المعمارية للـ DI في الـ Multi-Module:
-   - **فصل العقد عن التنفيذ (Contract vs. Implementation Separation)**:
-     * موديول الـ API أو الـ Domain يعرف الواجهة (`interface CartRepository`).
-     * موديول الـ Data أو الـ Feature Impl يحتوي على الكلاس الملموس (`class CartRepositoryImpl @Inject constructor(...)`).
-     * يوفر موديول الـ Data موديول Hilt معلّم بـ `@InstallIn(SingletonComponent::class)` يحتوي على `@Binds` يربط الواجهة بالتنفيذ.
-
-2. التجميع المركزي في Hilt (Decentralized Aggregation in `:app`):
-   - موديول `:app` يعتمد على جميع موديولات التطبيق.
-   - يقوم Hilt في وقت التجميع بجمع (Aggregate) جميع الـ Modules المعلمة بـ `@InstallIn` عبر جميع موديولات Gradle ودمجها في شجرة Dagger Graph واحدة متكاملة ومتحقق منها.
-
-3. إدارة الـ Scopes عبر الموديولات:
-   - تجنب وضع `@Singleton` عشوائياً في موديولات الـ Features.
-   - استخدم `@ViewModelScoped` لمنطق الشاشات في موديولات الـ Feature Impl، واحتفظ بـ `@Singleton` فقط للموارد المشتركة في موديولات الـ Core والـ Data.
+Play Dynamic Feature مختلفة لأن اتجاه اعتماد Gradle معكوس: الـ base app ما بتشوفش annotations الموجودة داخلها بنفس الطريقة. التوثيق الرسمي يقترح `@EntryPoint` في app أو module تعالجها Hilt، وDagger Component في Dynamic Feature يعتمد على الـ EntryPoint، ثم تُحقن كائنات الميزة عبر الـ component ده. مجرد `EntryPoints.get` يجيب Dependencies من الـ base graph؛ مش بيعمل حقن لكل Graph الميزة تلقائيًا.
 
 ## Practical walkthrough
 
-هيكل تنظيم الـ Hilt Modules عبر الموديولات المختلفة:
-```kotlin
-// 📁 في موديول ':domain:payment' (موديول Kotlin نقي):
-interface PaymentGateway {
-    suspend fun pay(orderId: String, amount: Double): Result<TransactionReceipt>
-}
-
-// 📁 في موديول ':data:payment' (يحتوي على التنفيذ الفعلي وموديول Hilt):
-class StripePaymentGateway @Inject constructor(
-    private val stripeClient: StripeClient
-) : PaymentGateway { /* ... */ }
-
-@Module
-@InstallIn(SingletonComponent::class)
-abstract class PaymentDataModule {
-    @Binds @Singleton
-    abstract fun bindPaymentGateway(impl: StripePaymentGateway): PaymentGateway
-}
-
-// 📁 في موديول ':feature:checkout':
-@HiltViewModel
-class CheckoutViewModel @Inject constructor(
-    private val paymentGateway: PaymentGateway // يعتمد على الواجهة فقط من :domain:payment!
-) : ViewModel()
-// موديول :app يقوم بتجميع PaymentDataModule وحقنه تلقائياً في CheckoutViewModel!
-```
+مثال Session: `:core:session:api` تعرّف `SessionSource`، و`:data:session` توفر `RealSessionSource` وHilt `@Binds`. `:feature:checkout` تطلب العقد في constructor، و`:app` تعتمد على modules اللازمة للـ variant. لو Release تستخدم SessionSource مختلفة عن Debug، افحص Qualifiers والـ bindings في كل Variant. في Dynamic Scanner Feature، حدد Base Dependencies المطلوبة في `@EntryPoint` داخل module مرئية لـ Hilt، ثم ابنِ Dagger Component تعتمد عليها داخل الميزة. اختبر Assembly الفعلي ومسار فتح الميزة، مش Unit Test للـ constructor فقط.
 
 ## Why it matters and how it works
 
-Generated DI components collect reachable binding declarations for an app variant. Gradle compile visibility therefore shapes graph completeness. Scopes cache objects for component lifetimes, so a binding declared in one module can still be wrong if it owns a shorter-lived Android object. A contract module permits features to compile independently of the implementation chosen by the app.
+Hilt does not infer bindings from module names. Gradle classpath visibility determines the graph available at compilation. A binding can exist but select the wrong business implementation or live for the wrong component lifetime. Tests should distinguish consumer behavior with a fake from assembling each important app variant and dynamic-feature path.
 
 ## Worked example
 
-Catalog feature depends on `CatalogRepository` API; `:data:catalog` binds `RealCatalogRepository` and app includes both. The binding is installed in a component matching its stateful lifetime, and tests replace it with an in-memory fake. A debug variant with a fake API client and release with real client each assemble successfully. An on-demand scanner uses a documented bridge instead of assuming base Hilt knows its classes.
+This Kotlin/JVM contract shows direct fake construction for a consumer test. It does not compile or verify an Android Hilt graph.
+
+```kotlin
+interface SessionSource { fun currentUserId(): String? }
+class CheckoutAccess(private val sessions: SessionSource) {
+    fun canCheckout(): Boolean = sessions.currentUserId() != null
+}
+class FixedSession(private val userId: String?) : SessionSource {
+    override fun currentUserId() = userId
+}
+fun main() {
+    check(CheckoutAccess(FixedSession("u-1")).canCheckout())
+    check(!CheckoutAccess(FixedSession(null)).canCheckout())
+}
+```
 
 ## Trade-offs and decision criteria
 
-Bindings near implementations make ownership clear; app-level selection supports multiple implementations but can grow a composition file. Too many broad modules/qualifiers make graph diagnostics hard. Hilt gives compile-time errors for many missing/duplicate bindings but cannot catch every semantic lifecycle leak.
+Bindings near implementations make ownership visible; app-level selection can clarify variants but enlarge composition code. Hilt catches many missing or duplicate known bindings, not semantically wrong release selection. Multibindings are useful for independent contributions to a set or map, not a mandatory multi-module technique. Avoid broad scopes for shorter-lived state.
 
 ## Failure modes
 
-Implementation module absent from app variant produces a missing binding. Two unqualified bindings collide. A Singleton provider captures an Activity. Dynamic feature declares a Hilt binding that base compilation cannot aggregate. Tests use a fake binding that differs in qualifier from production.
+An implementation module absent from the app variant yields a missing binding. Two unqualified bindings of the same type conflict. An app-scoped instance retains Activity or stale session data. A Play dynamic feature declares Hilt modules internally and assumes base aggregation can see them. Check transitive classpath, qualifier, scope, and the documented component-dependency bridge.
 
 ## Production perspective
 
-Maintain an injection graph inventory of contract, binding module, qualifier, scope and variants. Run app assembly, graph smoke tests and test binding replacement in CI; review module edge changes with DI owners.
+Maintain a map from contract to implementation, binding module, qualifier, scope, and variant. Assemble important variants and test their real graph. Unit-test consumers with fakes separately. Exercise a dynamic feature's Dagger component and entry-point path in an Android integration environment; a JVM fake test cannot prove that path.
 
 ## Interview answer — short
 
-Managing multi-module dependency injection requires declaring interfaces in api modules and providing bindings in implementation modules. Hilt aggregates these modules into the root app component during compilation. Dynamic feature modules retrieve dependencies at runtime using EntryPoints, while multibindings allow features to contribute navigation entries or interceptors into root collections without tight coupling.
+For regular modules, put a contract where consumers can see it, place implementation and binding with their owner, and ensure the app's transitive dependencies expose Hilt modules and injected classes. Choose scope and qualifier by actual lifetime and variant, then assemble the graph. A Play dynamic feature is different: expose base dependencies through an app-visible `@EntryPoint` and use a Dagger component dependency inside the feature.
 
 ## Interview answer — structured
 
-Managing dependency injection in a multi-module Android architecture demands clean decoupling between interface contracts and concrete implementations.
-We declare interfaces and repository contracts inside leaf-level api or domain modules, keeping them free of Android-specific implementation logic.
-Inside the private implementation module, we write the concrete classes annotated with Inject constructor, alongside Hilt modules that bind the interface to the implementation using Binds.
-During compilation, Hilt aggregates these distributed modules into the root application component in the app module.
-For dynamic feature modules that invert Gradle dependencies, standard compile-time component injection is impossible.
-Instead, dynamic modules define EntryPoint interfaces and retrieve dependencies on-demand at runtime using EntryPoints.get from the application context.
-Furthermore, multibindings allow feature modules to contribute elements into shared sets, such as interceptors or navigation graphs, enabling a pluggable architecture.
+Start with Gradle visibility. In regular modules, the module compiling `Application` needs Hilt modules and constructor-injected classes in its transitive dependencies. I might put `SessionSource` in a contract module and its implementation plus `@Binds` in a data module; checkout requests only the contract and the app includes the right implementation per variant.
+
+Scope and qualifier are separate decisions. A graph can compile and still bind release to a sandbox implementation or keep session state too long. I assemble important variants and test the real graph, while focused JVM tests construct the consumer with a fake.
+
+A Play dynamic feature has inverted module dependencies. Base Hilt processing does not handle its annotations like a regular library module. The Android-documented solution declares an `@EntryPoint` in an app-visible module, then creates a Dagger component in the feature that depends on it. Reading one dependency with `EntryPoints.get` alone does not inject the feature graph.
 
 ## Interview answer — deep senior
 
-In enterprise Android engineering, our dependency injection architecture mirrors the Directed Acyclic Graph of our Gradle subprojects.
-When using Hilt and Dagger across dozens of modules, the greatest threat is leaky abstraction and circular dependency generation.
-We prevent this by strictly separating where contracts are defined from where they are bound.
-Interface contracts reside in leaf-level :api modules.
-Concrete implementations live in :impl modules, utilizing constructor injection.
-The Hilt binding module resides directly inside the :impl module, declaring an abstract Binds method installed in SingletonComponent.
-Because Hilt uses bytecode manipulation and annotation processing to aggregate all installed modules into the root ApplicationComponent inside the :app module, :feature:cart never needs to know that TokenProvider is implemented by :feature:auth:impl; it simply injects the interface.
-Dynamic delivery introduces a unique constraint: dynamic feature modules depend on :app rather than the reverse, preventing Hilt from compiling them into the root component.
-To resolve this, dynamic features declare an EntryPoint interface specifying the required dependencies.
-At runtime, the dynamic feature resolves the interface using EntryPoints.get passing the application context.
-To extend capabilities further, we leverage Dagger Multibindings with IntoSet to construct pluggable architectures.
-Feature modules contribute navigation routes or OkHttp interceptors into injected collections, allowing the core network or navigation coordinator to discover feature contributions without hardcoded dependencies in the root module.
+Multi-module DI begins with compile-time visibility. Hilt code generation requires the module compiling `Application` to have all Hilt modules and constructor-injected classes in its transitive dependencies. Then decide ownership: checkout imports a `SessionSource` contract; a data module provides `RealSessionSource` and the binding, or app composition owns the binding when variant selection is best expressed there. The source dependency direction should remain explicit.
+
+`@InstallIn(SingletonComponent::class)` places a binding in the component; `@Singleton` scopes instance reuse to that component. Neither is an automatic choice for every repository. An app-scoped instance holding Activity Context or per-user session state may outlive its owner. Qualifiers distinguish same-type bindings, yet a correctly typed release binding can still point to a sandbox implementation. Compile and smoke-test important variants.
+
+A Play dynamic feature differs from a regular Gradle library. It depends on the base app, so the base cannot aggregate annotations from the feature through its normal transitive graph. Android's documented pattern declares an `@EntryPoint` in app or another Hilt-processable module, creates a Dagger component in the dynamic feature that depends on it, and uses that component for injection. `EntryPointAccessors.fromApplication` can obtain base dependencies for an application component; it is not by itself the feature's injector.
+
+Construct a consumer such as `CheckoutAccess` with a fake `SessionSource` in JVM unit tests to verify its decisions. Separately assemble the app graph for each significant variant and exercise the dynamic-feature injection path in Android integration tests. Use set or map multibindings only when independent modules genuinely contribute extensions. Hilt's compile checks prove graph completeness for visible bindings, not lifetime or business correctness.
 
 ## How to answer in the interview
 
-- **Why:** DI graph must match module graph.
-- **How:** expose bindings through correct dependency direction.
-- **Trade-off:** convenience versus scope complexity.
-- **Failure case:** dynamic feature missing Hilt binding.
-- **Production solution:** compile graph and runtime feature test.
+- **Regular modules:** transitive Hilt visibility, contract, implementation and binding ownership.
+- **Correctness:** scope, qualifier and variant tests.
+- **Dynamic feature:** app-visible `@EntryPoint` plus a Dagger component dependency in the feature.
+- **Testing:** consumer fake test does not prove Android graph assembly.
 
 ## Deep-dive talking points
 
-Discuss contracts, aggregation, variant graph, qualifiers, scope, dynamic feature bridge and smoke tests.
+Transitive Gradle dependencies, Hilt aggregation, `@Binds`, `@InstallIn`, scopes, qualifiers, variants, dynamic-feature entry points and Dagger component dependencies, optional multibindings.
 
 ## Follow-up questions
 
-- **Interviewer:** "Can a Hilt module in a library module be installed in `ActivityComponent`?"
-  **Answer:** "Yes. `@InstallIn(ActivityComponent::class)` works in any library module, scoping those dependencies to Activities in the consuming application."
+- **Interviewer:** "Is `@EntryPoint` alone enough to inject a Play dynamic feature?"
+  **Answer:** "It exposes dependencies from base Hilt. The documented approach also builds a Dagger component in the dynamic feature depending on that entry point and uses it to inject feature objects."
 
-- **Interviewer:** "How do you test a feature module's ViewModel in isolation without compiling the whole Hilt graph?"
-  **Answer:** "In JVM unit tests, bypass Hilt completely. Instantiate the ViewModel directly using its constructor and pass a Fake implementation of the interface."
+- **Interviewer:** "How can a graph compile yet be wrong?"
+  **Answer:** "A valid qualifier may select a sandbox implementation in release, or an app-scoped object may retain a shorter-lived session. Test variants and lifetimes."
 
 ## Self-check rubric
 
-Draw binding visibility, choose scope and qualifier, and test one normal and one dynamic feature path.
+Explain Hilt's transitive visibility, locate binding and contract owners, choose scope and qualifier, and describe both parts of the dynamic-feature bridge.
 
 ## References and reviewed-on date
 
-- [Hilt in multi-module apps](https://developer.android.com/training/dependency-injection/hilt-multi-module) — visibility and dynamic features.
-- [Hilt on Android](https://developer.android.com/training/dependency-injection/hilt-android) — scopes and modules.
+- [Hilt in multi-module apps](https://developer.android.com/training/dependency-injection/hilt-multi-module) — classpath and feature-module bridge.
+- [Hilt on Android](https://developer.android.com/training/dependency-injection/hilt-android) — component bindings.
+- [Dagger multibindings](https://dagger.dev/dev-guide/multibindings.html) — optional contributions.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against primary documentation on 2026-10-19.
