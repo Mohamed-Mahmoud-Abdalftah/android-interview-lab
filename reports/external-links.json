@@ -1,5 +1,5 @@
 {
-  "references": 1030,
+  "references": 1031,
   "uniqueUrls": 328,
   "counts": {
     "ok": 328,
@@ -2196,7 +2196,8 @@
       "url": "https://developer.android.com/training/dependency-injection/manual",
       "questionIds": [
         "DI-01",
-        "DI-02"
+        "DI-02",
+        "DI-20"
       ],
       "status": 200,
       "category": "ok",
