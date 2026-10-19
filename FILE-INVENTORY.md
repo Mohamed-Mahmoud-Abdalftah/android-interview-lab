@@ -1,6 +1,6 @@
 # Actual academy source inventory — 2026-10-19
 
-These 1249 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
+These 1250 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
 
 ```text
 .github/workflows/ci.yml
@@ -929,6 +929,7 @@ projects/kotlin-jvm-labs/src/test/kotlin/academy/DuplicateScanTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/EditorReducerTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/FeatureRouteSnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/HiltDipBoundarySnippetTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/InjectionStylesSnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/LabChecksTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/LazyLateinitSnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/ManualToHiltBridgeSnippetTest.kt

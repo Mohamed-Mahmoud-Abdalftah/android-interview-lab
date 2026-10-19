@@ -1,5 +1,5 @@
 {
-  "references": 1031,
+  "references": 1032,
   "uniqueUrls": 328,
   "counts": {
     "ok": 328,
@@ -2161,6 +2161,7 @@
     {
       "url": "https://developer.android.com/training/dependency-injection/hilt-jetpack",
       "questionIds": [
+        "DI-02",
         "DI-05",
         "DI-15"
       ],
