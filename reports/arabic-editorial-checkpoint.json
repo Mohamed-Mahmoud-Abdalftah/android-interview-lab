@@ -9971,25 +9971,76 @@
       "humanReviewed": false
     },
     "DSA-01": {
-      "status": "pending",
+      "status": "complete",
       "topic": "DSA",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "a8d14b0e07e656cf2499227b68ee38858226d05427f6b34dbc2f790489882ec6",
+      "sourceSha256": "bd2d8c855ae0e357f7f1657a92ea90eeb1f7f33d1e6e0dded8b57cf653aba7dd",
+      "scores": {
+        "naturalEgyptianArabic": 4,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 4,
+        "interviewUsefulness": 4,
+        "answerDepthAndRelevance": 4
+      },
+      "scoreEvidence": "Second pass read all 18 Arabic fields, compared the canonical prompt with the bilingual source, checked distinct spoken levels, example behavior, technical claims, references and follow-ups.",
+      "changedFiles": [
+        "Interview-Lab/questions/DSA-01.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./gradlew clean test check run --no-daemon",
+        "pnpm build",
+        "pnpm lint",
+        "pnpm typecheck",
+        "pnpm check:dist",
+        "pnpm test:e2e",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/check_interview_links.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "DSA-02": {
       "status": "pending",
@@ -10307,25 +10358,76 @@
       "humanReviewed": false
     },
     "LEAD-01": {
-      "status": "pending",
+      "status": "complete",
       "topic": "LEAD",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "a264c8509fb50befd99743c03799c7a6a322244bbea307b6906fba72da239795",
+      "sourceSha256": "3a3ec084ec9d73579bda134ed7161269025a8023112e3931bd9863b2847b450d",
+      "scores": {
+        "naturalEgyptianArabic": 4,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 4,
+        "interviewUsefulness": 4,
+        "answerDepthAndRelevance": 4
+      },
+      "scoreEvidence": "Second pass read all 18 Arabic fields, compared the canonical prompt with the bilingual source, checked distinct spoken levels, example behavior, technical claims, references and follow-ups.",
+      "changedFiles": [
+        "Interview-Lab/questions/LEAD-01.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./gradlew clean test check run --no-daemon",
+        "pnpm build",
+        "pnpm lint",
+        "pnpm typecheck",
+        "pnpm check:dist",
+        "pnpm test:e2e",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/check_interview_links.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "LEAD-02": {
       "status": "pending",

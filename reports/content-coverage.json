@@ -3232,7 +3232,7 @@
       "topic": "LEAD",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": true
+      "hasKotlinCode": false
     },
     "LEAD-02": {
       "topic": "LEAD",

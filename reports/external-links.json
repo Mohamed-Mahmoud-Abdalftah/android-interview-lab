@@ -1,8 +1,8 @@
 {
-  "references": 1012,
-  "uniqueUrls": 312,
+  "references": 1013,
+  "uniqueUrls": 313,
   "counts": {
-    "ok": 312,
+    "ok": 313,
     "broken": 0,
     "unverified": 0
   },
@@ -1698,7 +1698,6 @@
     {
       "url": "https://developer.android.com/topic/performance",
       "questionIds": [
-        "DSA-01",
         "DSA-02",
         "DSA-03",
         "DSA-04",
@@ -1833,6 +1832,15 @@
       "resolved": "https://developer.android.com/topic/performance/issues/launch-time"
     },
     {
+      "url": "https://developer.android.com/topic/performance/issues/render",
+      "questionIds": [
+        "DSA-01"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://developer.android.com/topic/performance/issues/render"
+    },
+    {
       "url": "https://developer.android.com/topic/performance/measuring-performance",
       "questionIds": [
         "MEM-17",
@@ -1858,6 +1866,7 @@
     {
       "url": "https://developer.android.com/topic/performance/memory-overview",
       "questionIds": [
+        "DSA-01",
         "MEM-01",
         "MEM-02",
         "MEM-03",
