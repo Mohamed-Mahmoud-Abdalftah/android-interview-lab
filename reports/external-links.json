@@ -1,8 +1,8 @@
 {
-  "references": 1025,
-  "uniqueUrls": 322,
+  "references": 1027,
+  "uniqueUrls": 324,
   "counts": {
-    "ok": 322,
+    "ok": 324,
     "broken": 0,
     "unverified": 0
   },
@@ -2855,6 +2855,15 @@
       "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-main-coroutine-dispatcher/limited-parallelism.html"
     },
     {
+      "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/ensure-active.html",
+      "questionIds": [
+        "COR-10"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/ensure-active.html"
+    },
+    {
       "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/suspend-cancellable-coroutine.html",
       "questionIds": [
         "COR-23"
@@ -2895,6 +2904,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout.html"
+    },
+    {
+      "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/yield.html",
+      "questionIds": [
+        "COR-10"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/yield.html"
     },
     {
       "url": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/",
@@ -2949,6 +2967,7 @@
     {
       "url": "https://kotlinlang.org/docs/cancellation-and-timeouts.html",
       "questionIds": [
+        "COR-10",
         "COR-22",
         "COR-26",
         "KOT-19",
@@ -3023,7 +3042,6 @@
         "COR-05",
         "COR-07",
         "COR-08",
-        "COR-10",
         "COR-12",
         "COR-13",
         "COR-15",
