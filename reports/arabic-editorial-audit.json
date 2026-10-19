@@ -5,8 +5,8 @@
     "arabicFieldsPerQuestion": 18
   },
   "editorialStatus": {
-    "complete": 58,
-    "pending": 427
+    "complete": 60,
+    "pending": 425
   },
   "topicCoverage": {
     "AND": {
@@ -51,8 +51,8 @@
     },
     "DI": {
       "total": 20,
-      "complete": 7,
-      "pending": 13
+      "complete": 9,
+      "pending": 11
     },
     "DSA": {
       "total": 16,

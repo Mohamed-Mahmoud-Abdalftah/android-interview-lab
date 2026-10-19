@@ -1786,7 +1786,7 @@
       "topic": "DI",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": true
+      "hasKotlinCode": false
     },
     "DI-07": {
       "topic": "DI",
