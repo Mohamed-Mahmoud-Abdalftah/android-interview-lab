@@ -1528,7 +1528,7 @@
       "topic": "SOL",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": true
+      "hasKotlinCode": false
     },
     "SOL-02": {
       "topic": "SOL",

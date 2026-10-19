@@ -184,4 +184,4 @@ Compare two examples, identify tracking cost, and choose a measured alternative.
 
 - [Side-effects in Compose](https://developer.android.com/develop/ui/compose/side-effects) — `derivedStateOf` cost and examples.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against the cited primary documentation on 2026-10-19; agent editorial review, not human verification.

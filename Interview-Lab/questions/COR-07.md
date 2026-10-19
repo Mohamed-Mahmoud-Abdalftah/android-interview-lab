@@ -54,7 +54,7 @@ By segmenting the pipeline, heavy mathematical computations do not block UI fram
 
 ## Explanation in Arabic
 
-الـ Dispatcher بتحدد فين كود الـ Coroutine يتنفذ ويرجع يكمل بعد التعليق. على Android، `Dispatchers.Main` للـ UI thread؛ ما أحطش عليها شغل حظري أو حسابات طويلة. `Dispatchers.Default` مناسبة لشغل CPU التقيل زي معالجة بيانات كبيرة. `Dispatchers.IO` مناسبة لعمليات I/O الحظرية، وبتستخدم موارد Workers مشتركة ومرنة. إعداد parallelism الافتراضي للـ IO مش حد أقصى لكل Threads التطبيق؛ Views من `limitedParallelism` ممكن تضيف سعة، فلازم أحدد عدد الطلبات والاتصالات بشكل مستقل.
+الـ Dispatcher بتحدد فين كود الـ Coroutine يتنفذ ويرجع يكمل بعد التعليق. على Android، `Dispatchers.Main` للـ UI thread؛ ما أحطش عليها شغل Blocking أو حسابات طويلة. `Dispatchers.Default` مناسبة لشغل CPU التقيل زي معالجة بيانات كبيرة. `Dispatchers.IO` مناسبة لعمليات I/O الBlockingة، وبتستخدم موارد Workers مشتركة ومرنة. إعداد parallelism الافتراضي للـ IO مش حد أقصى لكل Threads التطبيق؛ Views من `limitedParallelism` ممكن تضيف سعة، فلازم أحدد عدد الطلبات والاتصالات بشكل مستقل.
 
 `Dispatchers.Unconfined` مش بتربط التنفيذ بـ Thread واحد، وممكن تكمل على Thread اللي استأنفها. عادة ما أستخدمهاش في كود UI عادي لأن الكود محتاج سياق تنفيذ واضح. ووجود `suspend` أو Dispatcher معينة ما يغنيش عن فهم عقد المكتبة أو التعامل مع الإلغاء.
 
@@ -168,4 +168,4 @@ Can I map each dispatcher, reject `Unconfined` for UI confinement, identify a bl
 
 - [Kotlin IO dispatcher](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-dispatchers/-i-o.html) — default parallelism and elastic views.
 - [Limited parallelism](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-main-coroutine-dispatcher/limited-parallelism.html) — execution segments versus concurrent requests.
-Technically reviewed against primary documentation on 2026-10-17.
+Technically reviewed against the cited primary documentation on 2026-10-19; agent editorial review, not human verification.

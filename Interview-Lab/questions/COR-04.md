@@ -42,7 +42,7 @@ The caller does not get an `AccountView` until both children complete. If one fa
 
 `Structured concurrency` بتربط الـ Coroutines الفرعية بعملية أم لها عمر واضح. الأب بيستنى الأبناء قبل الاكتمال، وإلغاؤه بيبعت الإلغاء لهم. في الـ Job hierarchy العادية، فشل ابن من غير معالجة بيلغي الأب وإخواته. `supervisorScope` بتغيّر انتشار فشل الأبناء لما الشغل مستقل.
 
-البنية دي بتسهل فهم الاكتمال والأخطاء، لكنها مش ضمان لصفر Memory Leaks أو توقف SDK حظري في نفس اللحظة. والأهم: إلغاء Coroutine ما بيرجعش عملية خارجية تمت بالفعل، زي دفع أو حجز مخزون. العمليات دي تحتاج حالة وتعويض أو تسوية منفصلة.
+البنية دي بتسهل فهم الاكتمال والأخطاء، لكنها مش ضمان لصفر Memory Leaks أو توقف SDK Blocking في نفس اللحظة. والأهم: إلغاء Coroutine ما بيرجعش عملية خارجية تمت بالفعل، زي دفع أو حجز مخزون. العمليات دي تحتاج حالة وتعويض أو تسوية منفصلة.
 
 ## Practical walkthrough
 
@@ -136,4 +136,4 @@ Can I draw the Job tree, predict completion and cancellation, choose all-or-noth
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — parent-child structure.
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — failure propagation.
 
-Technically reviewed against primary documentation on 2026-10-17.
+Technically reviewed against the cited primary documentation on 2026-10-19; agent editorial review, not human verification.

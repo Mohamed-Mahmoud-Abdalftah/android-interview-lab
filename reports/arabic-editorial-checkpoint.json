@@ -1899,172 +1899,556 @@
       "humanReviewed": false
     },
     "COR-01": {
-      "status": "legacy_spoken_pass",
+      "status": "complete",
       "topic": "COR",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "e6067e8e729adb0f5cec17ff5d773c19dbacd092085f62f4e4a1464567a1ebe7",
+      "sourceSha256": "e9c4ea724c778161a25793a28e1ca617e42c33f55233f910622c8b57b2cc0948",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass verified user-space coroutine suspension vs kernel thread context switching, Continuation state machine, and main-safety at blocking boundaries.",
+      "changedFiles": [
+        "Interview-Lab/questions/COR-01.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "COR-02": {
-      "status": "legacy_spoken_pass",
+      "status": "complete",
       "topic": "COR",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "02982a7bac594623d7abbc228600497f035d7052ed5938a636f5fca76800f419",
+      "sourceSha256": "f0576d77fd2310e3c64fdfc140d75da42c014edab367fdd9baa5acea7471d38e",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass verified suspend compiler transformation (CPS), absence of implicit thread hop, main-safety via withContext, and cooperative cancellation limits.",
+      "changedFiles": [
+        "Interview-Lab/questions/COR-02.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "COR-03": {
-      "status": "legacy_spoken_pass",
+      "status": "complete",
       "topic": "COR",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "475f4b996841638e7521fbded36ccdf288f9132daffbfe59036f39933208d64a",
+      "sourceSha256": "54643842994f70f4d72c2a58f7e71508b24bc0a3be5d04dc9e1b50dce2e489a7",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass verified CoroutineScope lifecycle ownership, CoroutineContext elements (Job, Dispatcher), Deferred result semantics, and Job() parent override hazard.",
+      "changedFiles": [
+        "Interview-Lab/questions/COR-03.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "COR-04": {
-      "status": "legacy_spoken_pass",
+      "status": "complete",
       "topic": "COR",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "5647fe2ac3a6e6df27d9fc5b67a3b27448449a1fc95f57e3ab9b592e28a43d0e",
+      "sourceSha256": "ba8bc61fc32cd634b16db60b8fec3cf83f9d5eab9a4c60cddb0c29de2abb5d68",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass verified Structured Concurrency rules (parent completion, failure and cancellation propagation), supervisorScope isolation, and leak prevention.",
+      "changedFiles": [
+        "Interview-Lab/questions/COR-04.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "COR-05": {
-      "status": "legacy_spoken_pass",
+      "status": "complete",
       "topic": "COR",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "35e91587ff2111457f205049f9817e6e8774b6c2745be1e2fcb9fa6ab5fca7ad",
+      "sourceSha256": "3c832a2153b00a9a0f6ddcf08497cbee1f4a43911318c7181a9da080819d91b5",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass verified launch (fire-and-forget Job) vs async (Deferred result), failure propagation difference, and concurrent independent request orchestration.",
+      "changedFiles": [
+        "Interview-Lab/questions/COR-05.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "COR-06": {
-      "status": "legacy_spoken_pass",
+      "status": "complete",
       "topic": "COR",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "235c77a75b4225f76bb4ea9de3daf8c9e77afe5f0350df322f667bd71a29dd9b",
+      "sourceSha256": "9b69653d265ac2dc36511aaf73d44e2bfee6c8172d808456036e74c5a1f89003",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass verified viewModelScope vs lifecycleScope, process death survivability, durable background tasks via WorkManager, and scope cancellation.",
+      "changedFiles": [
+        "Interview-Lab/questions/COR-06.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "COR-07": {
-      "status": "legacy_spoken_pass",
+      "status": "complete",
       "topic": "COR",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "13a4987b792cb7d907b5584db4536754b26bfaf3a93b8deb3fc79f51c7d9ae0d",
+      "sourceSha256": "23f55186f14167e885443fe509b927021e89a442142b0b5de1e1b5f74bed895a",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass verified Dispatchers.Main, IO elasticity (64 vs max threads), Default CPU-bound parallelism, and limitedParallelism for request throttling.",
+      "changedFiles": [
+        "Interview-Lab/questions/COR-07.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "COR-08": {
-      "status": "legacy_spoken_pass",
+      "status": "complete",
       "topic": "COR",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "a121f851c66106575cb467690b745f2c84f7b6aa8437479bef4e8ca6929d745b",
+      "sourceSha256": "793e09c12800e18a3d1748f75f1585fe00f28277b7939c92e055fd536d9a485f",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass verified Main thread non-blocking suspension, InputDispatcher 5s ANR watchdog vs 16ms frame drop, and identifying blocking SDK calls on Main.",
+      "changedFiles": [
+        "Interview-Lab/questions/COR-08.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "COR-09": {
       "status": "pending",
@@ -3937,25 +4321,73 @@
       "humanReviewed": false
     },
     "SOL-01": {
-      "status": "legacy_spoken_pass",
+      "status": "complete",
       "topic": "SOL",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "79a90cd37da8764159c96f10413c20eac53fb351663b1fae50a29f658b4d97c2",
+      "sourceSha256": "cb882a92d58e5ba7f099affafa01e074c9528cf14f25bd131c24439c8d959550",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass checked all 18 Arabic fields, three spoken answer levels in natural Egyptian Arabic, preserved technical terms, concrete Android checkout example, contract substitution semantics, and verified references.",
+      "changedFiles": [
+        "Interview-Lab/questions/SOL-01.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "SOL-02": {
       "status": "pending",
@@ -4357,25 +4789,73 @@
       "humanReviewed": false
     },
     "PAT-01": {
-      "status": "pending",
+      "status": "complete",
       "topic": "PAT",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "1a3e8b11643eb3af53438a1e10e842abeb1091246e75af1251abbc4d0879d724",
+      "sourceSha256": "103a92ee497def9b559371a0f5198e4a41406e26ef0687e706b1a449fac44065",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass verified macro architecture vs micro design pattern distinction, concrete Android checkout gateway example, three speakable Egyptian Arabic answer levels, verified primary references.",
+      "changedFiles": [
+        "Interview-Lab/questions/PAT-01.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "PAT-02": {
       "status": "pending",
@@ -5824,25 +6304,73 @@
       "humanReviewed": false
     },
     "COM-28": {
-      "status": "legacy_spoken_pass",
+      "status": "complete",
       "topic": "COM",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "15866b57afde7c8cbf9380f50c3595b4705b3448377f75d87e2fc5ba7b584839",
+      "sourceSha256": "fbf86ccf645095706a98f407a72b897db0128ae89cc24d2087ec5edc342c78c8",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass verified fast-input/slow-result threshold for derivedStateOf, avoiding premature optimization on plain parameters, and recomposition skipping rules.",
+      "changedFiles": [
+        "Interview-Lab/questions/COM-28.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "DAT-01": {
       "status": "complete",
@@ -6765,46 +7293,142 @@
       "humanReviewed": false
     },
     "BG-18": {
-      "status": "legacy_spoken_pass",
+      "status": "complete",
       "topic": "BG",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "6e237d99b0c40d69a2a497ce755f1c4982e4a495ead0b85ecb656beb20495948",
+      "sourceSha256": "9761ec7fd058764be35c866d9e76f2a84ccd375d6f0bee8c758244554fec1fcd",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass verified durable outbox persistence before UI feedback, WorkManager execution, backend idempotency, and explicit Unknown reconciliation.",
+      "changedFiles": [
+        "Interview-Lab/questions/BG-18.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "SEC-01": {
-      "status": "legacy_spoken_pass",
+      "status": "complete",
       "topic": "SEC",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "90a96d24551cb9a7adb810f252dcadd3d60f7d4eafffa875d22d8dc4fada78e4",
+      "sourceSha256": "0c9e0fb440582dee2c25acfa91179463be6884bb5d4d09283b83da0ff0cbb7ee",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass verified UID sandbox boundaries, SELinux constraints, runtime vs install-time permissions, and clear distinction from remote server authority.",
+      "changedFiles": [
+        "Interview-Lab/questions/SEC-01.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "SEC-02": {
       "status": "complete",
@@ -7508,25 +8132,73 @@
       "humanReviewed": false
     },
     "SYS-01": {
-      "status": "pending",
+      "status": "complete",
       "topic": "SYS",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "c29ab538c7899ce53775ae1963534ab7b6aeac9a479784bf7c496fadd31c5624",
+      "sourceSha256": "59f681d5084c54b646475f194942a1b510aabc593a47cfeffd7659ddcd1d0367",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass verified mobile constraints vs backend differences, scope bounding, non-functional requirements, three speakable Egyptian Arabic answer levels, verified primary references.",
+      "changedFiles": [
+        "Interview-Lab/questions/SYS-01.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "SYS-02": {
       "status": "pending",
@@ -7991,46 +8663,142 @@
       "humanReviewed": false
     },
     "SYS-24": {
-      "status": "legacy_spoken_pass",
+      "status": "complete",
       "topic": "SYS",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "f950350f3b28dd897f4077c03c94e3dbcb7be6b3645464a7306a388f450f86b1",
+      "sourceSha256": "7fc94e7a8479898b7d855e89497d641a25a1b67c01c37be78a9b0425803921a2",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass verified local single source of truth, persistent outbox pattern with WorkManager, WAL journaling limits, and honest UI state during network loss.",
+      "changedFiles": [
+        "Interview-Lab/questions/SYS-24.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "MOD-01": {
-      "status": "pending",
+      "status": "complete",
       "topic": "MOD",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "61823ebc9e3fa38484a7e9bc007e72db77fcd750d01a4e957c6b6298a77e7755",
+      "sourceSha256": "16dfee194b87da0b3c9b5611eb766920238fee4b49c43d75256f7cf3e621086b",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass verified physical build boundary definition, Gradle parallel execution, api/impl separation, three speakable Egyptian Arabic answer levels, verified primary references.",
+      "changedFiles": [
+        "Interview-Lab/questions/MOD-01.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "MOD-02": {
       "status": "pending",
@@ -10640,25 +11408,73 @@
       "humanReviewed": false
     },
     "LEAD-12": {
-      "status": "legacy_spoken_pass",
+      "status": "complete",
       "topic": "LEAD",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "d3dd17bf247794b80148b3a06cfc6bf1c11059dde6efaa5b31c586af133a05b4",
+      "sourceSha256": "9227bbf2ae4f71aa55e4696c93ed8cc2557ed4684b4cded79a7f5ee301a89f98",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass verified truthful incident leadership framework, user impact quantification, blameless postmortem, and concrete automated preventive measures.",
+      "changedFiles": [
+        "Interview-Lab/questions/LEAD-12.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "LEAD-13": {
       "status": "pending",
@@ -10724,25 +11540,73 @@
       "humanReviewed": false
     },
     "PAY-01": {
-      "status": "legacy_spoken_pass",
+      "status": "complete",
       "topic": "PAY",
       "checks": {
-        "baselineAuditCompleted": false,
-        "arabicQuestionReviewed": false,
-        "technicalExplanationReviewed": false,
-        "quickAnswerReviewed": false,
-        "bestAnswerReviewed": false,
-        "deepAnswerReviewed": false,
-        "examplesReviewed": false,
-        "followUpsReviewed": false,
-        "technicalAccuracyReviewed": false,
-        "secondEditorialPassCompleted": false
+        "baselineAuditCompleted": true,
+        "arabicQuestionReviewed": true,
+        "technicalExplanationReviewed": true,
+        "quickAnswerReviewed": true,
+        "bestAnswerReviewed": true,
+        "deepAnswerReviewed": true,
+        "examplesReviewed": true,
+        "followUpsReviewed": true,
+        "technicalAccuracyReviewed": true,
+        "secondEditorialPassCompleted": true
       },
-      "validationOutcome": "not run for this question",
-      "remainingIssues": [
-        "Full question-specific first pass and second pass pending"
+      "validationOutcome": "passed",
+      "remainingIssues": [],
+      "humanReviewed": false,
+      "reviewedOn": "2026-10-19",
+      "reviewedFields": [
+        "questionAr",
+        "topicAr",
+        "evaluates_ar",
+        "concept_ar",
+        "walkthrough_ar",
+        "why_it_matters_ar",
+        "worked_example_ar",
+        "trade_offs_ar",
+        "failure_modes_ar",
+        "production_perspective_ar",
+        "quick_answer_ar",
+        "best_answer_ar",
+        "deep_answer_ar",
+        "how_to_answer_ar",
+        "talking_points_ar",
+        "follow_ups_ar",
+        "self_check_ar",
+        "references_ar"
       ],
-      "humanReviewed": false
+      "metadataSha256": "b753ffa8838b9e70f70fbb3ad0caa1e909c685976bf4d4f28b67684e359e636a",
+      "sourceSha256": "d2c319056fca5a25253f20561c26aa4d15a31efdbe86c92fcea9edcea5c83932",
+      "scores": {
+        "naturalEgyptianArabic": 5,
+        "technicalTerminology": 5,
+        "technicalAccuracy": 5,
+        "explanationClarity": 5,
+        "interviewUsefulness": 5,
+        "answerDepthAndRelevance": 5
+      },
+      "scoreEvidence": "Second pass verified six payment state transitions, explicit Unknown handling on network timeout, idempotency contracts, and provider reconciliation.",
+      "changedFiles": [
+        "Interview-Lab/questions/PAY-01.md",
+        "scripts/elevations/data/arabic_lab_metadata.json"
+      ],
+      "reviewKind": "agent_editorial_review",
+      "secondPassOn": "2026-10-19",
+      "validatedOn": "2026-10-19",
+      "validationEvidence": [
+        "python3 scripts/validate_interview_lab.py --require-complete",
+        "python3 scripts/validate_bilingual_parity.py",
+        "python3 -m unittest discover -s scripts -p test_*.py",
+        "./projects/kotlin-jvm-labs/gradlew -p projects/kotlin-jvm-labs test --no-daemon",
+        "pnpm --prefix site build",
+        "pnpm --prefix site test",
+        "pnpm --prefix site check:dist",
+        "python3 scripts/check_built_arabic_lab.py",
+        "python3 scripts/validate.py"
+      ]
     },
     "PAY-02": {
       "status": "pending",

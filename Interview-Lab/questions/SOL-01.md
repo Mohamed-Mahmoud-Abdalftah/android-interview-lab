@@ -18,77 +18,27 @@ What does SOLID stand for, and why does it matter?
 
 ## What the interviewer evaluates
 
-Name all five principles and explain their shared goal as change control, not class-count rules.
+Name all five principles, explain one or two with a meaningful Android example, and treat them as change and contract guidance rather than class-count or testability guarantees.
 
 ## Concept and technical explanation
 
-SOLID is an acronym representing five foundational object-oriented design principles formulated by Robert C. Martin: Single Responsibility Principle (SRP), Open/Closed Principle (OCP), Liskov Substitution Principle (LSP), Interface Segregation Principle (ISP), and Dependency Inversion Principle (DIP). In professional Android engineering, these principles establish maintainable architectural boundaries, prevent God Objects like monolithic Activities and ViewModels, isolate volatile framework APIs from pure business logic, enable fast JVM unit testing via dependency inversion, and safeguard large multi-module codebases against regression cascades when features evolve.
+SOLID names five object-oriented design principles: Single Responsibility (one reason to change for a cohesive unit), Open/Closed (extend behavior without repeatedly editing stable policy), Liskov Substitution (an implementation honors the behavior clients expect), Interface Segregation (clients depend on operations they use), and Dependency Inversion (high-level policy and low-level detail depend on suitable abstractions). The slogans need context. OCP does not forbid editing existing code; SRP does not mean one method per class; DIP does not require an interface for every class.
+
+In Android, they can help separate UI state from product decisions, keep SDK adapters behind stable contracts, and prevent clients from depending on methods they never use. They do not guarantee simple maintenance, JVM-only tests, or freedom from regressions. Design for actual variation and test behavioral contracts.
 
 ## Practical walkthrough (English)
 
-Mapping SOLID principles to modern Android Clean Architecture:
-```kotlin
-// S - Single Responsibility: Class handles only validation logic
-class FormInputValidator {
-    fun isValidEmail(email: String): Boolean = email.contains("@") && email.contains(".")
-}
-
-// O - Open/Closed: Extensible notification strategy without modifying existing sender
-interface PushRenderer { fun render(payload: Map<String, String>) }
-class OrderStatusPushRenderer : PushRenderer { override fun render(payload: Map<String, String>) { /* ... */ } }
-
-// L - Liskov Substitution: Specialized repository fulfills base contract without surprises
-interface UserRepository { suspend fun fetchUser(): Result<User> }
-class NetworkUserRepository(private val api: UserApi) : UserRepository {
-    override suspend fun fetchUser(): Result<User> = runCatching { api.getUser() }
-}
-
-// I - Interface Segregation: Client depends only on what it actually reads
-interface ProfileReader { val currentUserName: Flow<String> }
-interface ProfileUpdater { suspend fun updateName(newName: String) }
-
-// D - Dependency Inversion: ViewModel depends on abstraction, not Room/Retrofit
-class ProfileViewModel @Inject constructor(
-    private val profileReader: ProfileReader // Inverted dependency
-) : ViewModel() {
-    val name = profileReader.currentUserName
-}
-```
+Suppose checkout can use two payment provider adapters. A narrow `PaymentGateway` contract lets the checkout policy depend on the result semantics rather than a provider SDK (DIP/ISP). Adding an adapter can extend the system without rewriting that policy (OCP), provided the contract remains suitable. Both adapters must distinguish approved, declined, and unknown outcomes consistently (LSP); treating timeout as decline would break substitution. UI rendering and provider communication have different reasons to change (SRP). This is a conceptual example, not a claim that an interface makes financial processing safe or exactly once.
 
 ## Explanation in Arabic
 
-ما هي مبادئ SOLID الخمسة ولماذا تُعد حجر الأساس في هندسة تطبيقات Android الاحترافية؟
+`SOLID` خمس Design Principles تساعدني أفكر في حدود التغيير والعقود، مش Checklist أزود عشانها Classes. `S — Single Responsibility`: الجزء المتماسك له سبب واضح للتغيير، مش شرط كلاس فيها Method واحدة. `O — Open/Closed`: أقدر أضيف Variation حقيقية من غير ما أعيد تعديل Policy مستقرة في كل مرة، لكن ده مش حظر لتعديل الكود. `L — Liskov Substitution`: أي Implementation تنفع مكان التانية من غير ما تكسر Behavior المتفق عليه. `I — Interface Segregation`: Client تعتمد على Methods اللي محتاجاها فقط. `D — Dependency Inversion`: Policy مهمة ما تبقاش مربوطة بتفاصيل SDK؛ الطرفين يعتمدوا على Contract مناسب.
 
-1. ما الذي ترمز إليه حروف SOLID؟
-   - **S - Single Responsibility Principle (SRP)**: كل كلاس يمتلك مسؤولية واحدة فقط وسبباً واحداً للتغيير.
-   - **O - Open/Closed Principle (OCP)**: الكيانات البرمجية مفتوحة للتوسيع (Extension) ومغلقة للتعديل (Modification).
-   - **L - Liskov Substitution Principle (LSP)**: الكلاسات الفرعية يجب أن تحل محل الكلاسات الأساسية دون كسر صحة وسلوك البرنامج.
-   - **I - Interface Segregation Principle (ISP)**: تقسيم الواجهات الضخمة إلى واجهات صغيرة محددة؛ لا تُجبر كوداً على تنفيذ دوال لا يحتاجها.
-   - **D - Dependency Inversion Principle (DIP)**: الوحدات العليا لا تعتمد على الوحدات الدنيا؛ كلاهما يعتمد على التجريدات (Abstractions).
-
-2. لماذا تُعتبر حيوية في Android الحديث؟
-   - بدون SOLID، يتحول المشروع إلى **كود هش (Fragile Code)**: أي تعديل في شاشة يكسر شاشة أخرى، وتتضخم الـ Activities إلى God Classes يستحيل اختبارها.
-   - تطبيق SOLID يضمن: سهولة الصيانة، قابلية الاختبار بنسبة 100% على الـ JVM، وسهولة تقسيم المشروع إلى Gradle Modules مستقلة.
+في Android ممكن أفصل UI State عن Business Rule وأخلي Provider SDK وراء Adapter، بس المبادئ دي ما تضمنش Testability أو عدم وجود Bugs لوحدها. أضيف Abstraction لما Variation أو Boundary فعلًا تستحقها.
 
 ## Practical walkthrough
 
-نظرة سريعة على كود ينتهك SOLID وكود يعتمد عليها في Android:
-```kotlin
-// ❌ انتهاك صارخ لمبادئ SOLID: God Activity تجمع كل شيء:
-class MonolithicProfileActivity : AppCompatActivity() {
-    // تنتهك SRP: تجمع الرسم، واستدعاء Retrofit، وحفظ SQLite، والـ Validation!
-    // تنتهك OCP: إضافة نوع مستخدم جديد يتطلب تعديل if/else في 5 دوال.
-    // تنتهك DIP: تعتمد على كائنات ملموسة مباشرة new Retrofit().
-}
-
-// ✅ تطبيق SOLID: تفكيك المسؤوليات إلى مكونات متماسكة ومعزولة:
-class ProfileViewModel @Inject constructor(
-    private val getProfile: GetProfileUseCase, // DIP & SRP
-    private val analytics: AnalyticsTracker // ISP & OCP
-) : ViewModel() {
-    val uiState: StateFlow<ProfileUiState> = ...
-}
-```
+في Checkout افتراضي عندي Providerين للدفع. `PaymentGateway` Contract ضيقة تخلي Policy تعتمد على Result Semantics بدل SDK محددة: ده DIP وISP. Provider جديدة قد تضيف Behavior من غير تعديل Policy كل مرة: ده OCP لما الاختلاف حقيقي. لازم الاتنين يميزوا Approved وDeclined وUnknown بنفس المعنى: ده LSP؛ لو Timeout اتترجمت Declined في واحدة، الاستبدال ممكن يخلي العميل يعمل Retry غلط. UI Rendering وProvider I/O أسباب تغيير مختلفة: ده SRP. وجود Interface وحده ما يضمنش إن الدفع آمن أو Exactly-once.
 
 ## Why it matters and how it works
 
@@ -132,11 +82,7 @@ I would test these boundaries with behavior-focused tests: the same contract cas
 
 ## How to answer in the interview
 
-- **Why:** Lead with the five meanings and one change request.
-- **How:** show where changes propagate.
-- **Trade-offs:** mention abstraction cost.
-- **Failure cases:** cite contract violations or cancellation.
-- **Production solutions:** finish with contract tests and server confirmation..
+Name the five principles, connect them to one real change or contract problem, and explain the cost of adding an abstraction. Avoid claiming that a DI framework proves SOLID or that an interface alone makes a payment safe.
 
 ## Deep-dive talking points
 
@@ -159,8 +105,9 @@ Expand all five letters, give an Android example for two, and explain one overen
 
 ## References and reviewed-on date
 
-- [Android architecture guide](https://developer.android.com/topic/architecture) — separation of responsibilities and dependency boundaries.
+- [Android architecture guide](https://developer.android.com/topic/architecture) — separation of concerns and dependency boundaries.
 - [Robert C. Martin on SRP](https://blog.cleancoder.com/uncle-bob/2014/05/08/SingleReponsibilityPrinciple.html) — reasons to change.
 - [Robert C. Martin on OCP](https://blog.cleancoder.com/uncle-bob/2014/05/12/TheOpenClosedPrinciple.html) — extension and dependency direction.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against the cited primary documentation on 2026-10-19; agent editorial review, not human verification.
+

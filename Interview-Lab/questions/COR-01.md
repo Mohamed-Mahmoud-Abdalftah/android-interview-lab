@@ -47,11 +47,11 @@ The repository owns whether the call suspends without blocking and how the reque
 
 ## Explanation in Arabic
 
-الـ Thread مورد تنفيذ بيديره نظام التشغيل وله Stack خاص. لو التطبيق أنشأ Threads كتير من غير حدود، ممكن يستهلك موارد Native ويفشل إنشاء Thread جديد. الـ Coroutine مهمة بتتنفذ على Thread حقيقي، لكن لما تستدعي عملية معلّقة فعلاً تقدر تحفظ حالتها وتسيب الـ Thread لشغل تاني لحد ما النتيجة تجهز. مش كل `suspend` عملية غير حظرية؛ استدعاء SDK متزامن أو `Thread.sleep` هيحجز الـ Thread عادي. والكوروتينات نفسها بتستهلك Heap وموارد أخرى، فلازم نحدد عدد الطلبات ونختار Scope وDispatcher مناسبين.
+الـ Thread مورد تنفيذ بيديره نظام التشغيل وله Stack خاص. لو التطبيق أنشأ Threads كتير من غير حدود، ممكن يستهلك موارد Native ويفشل إنشاء Thread جديد. الـ Coroutine مهمة بتتنفذ على Thread حقيقي، لكن لما تستدعي عملية معلّقة فعلاً تقدر تحفظ حالتها وتسيب الـ Thread لشغل تاني لحد ما النتيجة تجهز. مش كل `suspend` عملية غير Blockingة؛ استدعاء SDK متزامن أو `Thread.sleep` هيحجز الـ Thread عادي. والكوروتينات نفسها بتستهلك Heap وموارد أخرى، فلازم نحدد عدد الطلبات ونختار Scope وDispatcher مناسبين.
 
 ## Practical walkthrough
 
-في شاشة قائمة منتجات كبيرة، إنشاء Thread لكل سعر مش حل مناسب؛ عدد الـ Threads ومواردها ممكن يخرج عن السيطرة. استخدام Coroutine لكل سعر أوفر أثناء الانتظار لو الـ API معلّق فعلاً، لكنه برضه ممكن يطلق عدد طلبات أكبر من قدرة الشبكة أو السيرفر. الأفضل أشوف هل فيه Bulk API، أو أحدد عدد الطلبات المتزامنة، وأربط الشغل بعمر الشاشة. لو الـ SDK نفسه حظري، أنقل الجزء الحظري لسياق مناسب بدل ما أفترض إن `suspend` أو `launch` حلّ المشكلة.
+في شاشة قائمة منتجات كبيرة، إنشاء Thread لكل سعر مش حل مناسب؛ عدد الـ Threads ومواردها ممكن يخرج عن السيطرة. استخدام Coroutine لكل سعر أوفر أثناء الانتظار لو الـ API معلّق فعلاً، لكنه برضه ممكن يطلق عدد طلبات أكبر من قدرة الشبكة أو السيرفر. الأفضل أشوف هل فيه Bulk API، أو أحدد عدد الطلبات المتزامنة، وأربط الشغل بعمر الشاشة. لو الـ SDK نفسه Blocking، أنقل الجزء الBlocking لسياق مناسب بدل ما أفترض إن `suspend` أو `launch` حلّ المشكلة.
 
 ## Why it matters and how it works
 
@@ -144,4 +144,4 @@ Score one point each (0–5): define coroutine and thread separately; explain su
 - [Coroutine IO dispatcher](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-i-o.html) — default parallelism and elastic views.
 - [Android ANR diagnosis](https://developer.android.com/topic/performance/anrs/diagnose-and-fix-anrs) — input dispatch timeout.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against the cited primary documentation on 2026-10-19; agent editorial review, not human verification.

@@ -61,46 +61,11 @@ sealed interface FeedUserAction {
 
 ## Explanation in Arabic
 
-كيف تبدأ مقابلة Mobile System Design (المتطلبات، المقاييس، القيود، والمفاضلات) باحترافية كمهندس Senior/Staff؟
-
-1. الهيكل الزمني والتكتيكي لمقابلة الـ Mobile System Design (45 دقيقة):
-   - **أول 5-7 دقائق (Clarify Scope & Functional Requirements)**: لا تبدأ برسم مربعات أو كتابة كود! اطرح أسئلة توضيحية لتحديد نطاق المشكلة بدقة. ما هي الميزات الأساسية (Core Use Cases) وما الذي يقع خارج النطاق (Out of Scope)؟
-   - **الدقائق 7-12 (Non-Functional Requirements & Constraints)**: حدد قيود الموبايل الفريدة: هل التطبيق Offline-First؟ ما هو حجم استهلاك البطارية والشبكة المسموح به؟ ما هو الـ Latency المستهدف؟ ما هي طبيعة الأجهزة المستهدفة (Low-end vs Flagship)؟
-   - **الدقائق 12-25 (High-Level Architecture & End-to-End Flow)**: ارسم المعمارية الكلية (Data Flow): UI (Compose) -> ViewModel -> Domain (UseCases) -> Repository -> Data Sources (Local DB + Remote API) -> Backend Gateway.
-   - **الدقائق 25-40 (Deep Dive into Complex Subsystems)**: التعمق في التحدي الأكبر (Sync Engine, Concurrency, Cache Eviction, Conflict Resolution).
-   - **آخر 5 دقائق (Failure Modes & Trade-offs)**: استعراض سيناريوهات الفشل ونقاط الضعف والقرارات البديلة.
-
-2. الفروق الجوهرية بين Mobile System Design و Backend System Design:
-   - في الـ Backend: التركيز على QPS, Sharding, Load Balancers, Distributed Consensus.
-   - في الـ Mobile: التركيز على **Resource Scarcity** (محدودية الرام والبطارية)، **Network Flakiness** (انقطاع الاتصال وتبديل الشبكات)، **Process Death**، **State Restoration**، و**Local Source of Truth**.
+في مقابلة `Mobile System Design`، البداية الصح بتبدأ بتوضيح الـ Scope في أول 5 دقائق والاتفاق على الـ Core Features وما هو خارج النطاق. بعدها بتحدد الـ Non-Functional Requirements الخاصة بالموبايل: قيود الـ Client من ناحية الرام والبطارية (Resource Scarcity)، تذبذب الشبكة (Network Flakiness)، ودعم الـ Offline Mode. بعد كده بترسم المعمارية الكلية بتدفق أحادي (Unidirectional Data Flow) ومصدر حقيقة محلي في الـ Database قبل الدخول في تفاصيل الـ Libraries.
 
 ## Practical walkthrough
 
-هيكلة إطار عمل مقابلة الـ System Design في كود معماري يوضح فصل المسؤوليات والـ High-Level Contracts:
-```kotlin
-// 1. تحديد الـ Domain Models والـ Contracts الصريحة قبل الخوض في التفاصيل:
-interface FeedRepository {
-    // Local Source of Truth يعيد Flow للـ UI وتحديثات فورية من قاعدة البيانات
-    fun getFeedStream(): Flow<PagingData<FeedItem>>
-    
-    // المزامنة تتم في الخلفية بشكل منفصل
-    suspend fun syncFeed(fetchStrategy: SyncStrategy): Result<Unit>
-}
-
-sealed interface SyncStrategy {
-    object CacheFirst : SyncStrategy
-    object NetworkFirst : SyncStrategy
-    data class DeltaSync(val lastSyncTimestamp: Long) : SyncStrategy
-}
-
-// 2. نمذجة حالات الواجهة الصريحة (Unidirectional Data Flow) لمعالجة الأخطاء الجزئية:
-data class FeedUiState(
-    val isLoading: Boolean = false,
-    val isOfflineMode: Boolean = false,
-    val pendingUploadsCount: Int = 0,
-    val bannerMessage: String? = null
-)
-```
+في تصميم Feed لتطبيق صور، بنحدد في الأول إن الـ Scope هو التصفح والعرض دون إنترنت. الـ Non-Functional Requirements: تشغيل التطبيق في أقل من ثانية، كاش لا يتجاوز 150MB على القرص، والعمل على أجهزة بـ 2GB RAM. بعدها بنرسم الـ High-Level Architecture: الـ UI (Compose) بيراقب StateFlow من Room عبر الـ Repository، بينما WorkManager في الخلفية بينفذ مزامنة البيانات من الشبكة بسياسة محددة.
 
 ## Why it matters and how it works
 
@@ -185,4 +150,4 @@ Can I state assumptions, identify source of truth, defend tradeoffs and name ver
 
 - [Android architecture guide](https://developer.android.com/topic/architecture) — layers, SSOT and constraints.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against the cited primary documentation on 2026-10-19; agent editorial review, not human verification.

@@ -134,4 +134,4 @@ Can I name cancellation point for each scope, explain view lifecycle collection,
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — main-safe architecture.
 
 - [WorkManager scheduling](https://developer.android.com/develop/background-work/background-tasks/persistent) — persistent scheduling, constraints, and retries.
-Technically reviewed against primary documentation on 2026-10-17.
+Technically reviewed against the cited primary documentation on 2026-10-19; agent editorial review, not human verification.

@@ -45,11 +45,11 @@ A ViewModel may call `readStatus()` from Main without holding the UI thread duri
 
 `Dispatchers.Main` على Android مرتبطة بـ UI thread؛ الكود عليها بيشارك الـ Looper مع الرسم والتفاعل. استدعاء متزامن بطيء ممكن يعمل تقطيع، لكن مش كل تأخير يعمل ANR. الـ ANR مرتبط بشروط مهلة محددة حسب نوع الحدث والخدمة، لذلك ما أقولش إن أي Blocking call تعني ANR بعد خمس ثوانٍ بالضبط.
 
-`Dispatchers.IO` مناسبة لـ I/O حظرية وبتستخدم Workers مشتركة ومرنة. إعداد parallelism الافتراضي غالباً 64 أو عدد الأنوية أيهما أكبر، وقابل للتغيير. Views من `limitedParallelism` ممكن تضيف سعة خارج إعداد الـ IO الافتراضي؛ الرقم مش سقف شامل لكل Threads التطبيق. نقل الاستدعاء لـ IO يحمي Main من حجزه، لكن لا يلغي الحاجة لتحديد عدد الطلبات أو اختبار إيقاف SDK حظري.
+`Dispatchers.IO` مناسبة لـ I/O Blockingة وبتستخدم Workers مشتركة ومرنة. إعداد parallelism الافتراضي غالباً 64 أو عدد الأنوية أيهما أكبر، وقابل للتغيير. Views من `limitedParallelism` ممكن تضيف سعة خارج إعداد الـ IO الافتراضي؛ الرقم مش سقف شامل لكل Threads التطبيق. نقل الاستدعاء لـ IO يحمي Main من حجزه، لكن لا يلغي الحاجة لتحديد عدد الطلبات أو اختبار إيقاف SDK Blocking.
 
 ## Practical walkthrough
 
-لو Repository بتستخدم SDK قراءتها متزامنة، أغلف الاستدعاء الحظري داخل `withContext(Dispatchers.IO)` وأخلي واجهة الـ Repository معلّقة وآمنة على Main. الـ ViewModel تناديها من `viewModelScope` وتعرض حالة Loading لحد النتيجة. أختبر سيناريو خروج المستخدم قبل رجوع الـ SDK: هل المكتبة بتستجيب للإلغاء؟ ولو لا، أحدد عدد الاستدعاءات وأمنع نتيجة متأخرة من تحديث شاشة انتهى عمرها. ما أطلقش 50 قراءة متزامنة لمجرد إن IO تقدر تستوعب Workers أكثر.
+لو Repository بتستخدم SDK قراءتها متزامنة، أغلف الاستدعاء الBlocking داخل `withContext(Dispatchers.IO)` وأخلي واجهة الـ Repository معلّقة وآمنة على Main. الـ ViewModel تناديها من `viewModelScope` وتعرض حالة Loading لحد النتيجة. أختبر سيناريو خروج المستخدم قبل رجوع الـ SDK: هل المكتبة بتستجيب للإلغاء؟ ولو لا، أحدد عدد الاستدعاءات وأمنع نتيجة متأخرة من تحديث شاشة انتهى عمرها. ما أطلقش 50 قراءة متزامنة لمجرد إن IO تقدر تستوعب Workers أكثر.
 
 ## Why it matters and how it works
 
@@ -136,4 +136,4 @@ Can I name the actual Android thread, explain IO sharing, diagnose a blocking Ma
 
 - [Kotlin IO dispatcher](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-dispatchers/-i-o.html) — default parallelism and elastic views.
 - [Android ANR diagnosis](https://developer.android.com/topic/performance/anrs/diagnose-and-fix-anrs) — timeout types and blocking Main.
-Technically reviewed against primary documentation on 2026-10-17.
+Technically reviewed against the cited primary documentation on 2026-10-19; agent editorial review, not human verification.

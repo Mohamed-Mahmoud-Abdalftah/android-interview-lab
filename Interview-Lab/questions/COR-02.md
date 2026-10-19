@@ -53,11 +53,11 @@ The function now guarantees main-safety; callers on Dispatchers.Main can safely 
 
 `suspend` بتسمح للدالة إنها تعلّق الـ Coroutine وترجع تكمل بعدين؛ مش معناها إن التنفيذ انتقل تلقائياً لـ Background Thread. الكود العادي بيبدأ في سياق المستدعي. لو `viewModelScope` نادى دالة بتقرأ ملف بشكل متزامن، القراءة ممكن تحجز Main حتى لو اسم الدالة `suspend`.
 
-القرار بيتاخد عند الجزء اللي يعرف طبيعة الشغل: Repository بتستخدم SDK حظري تنقل الاستدعاء بـ `withContext` لـ Dispatcher مناسب، بينما API معلّقة فعلاً ممكن تكون آمنة على Main من غير نقلة إضافية. ولو ألغينا الـ Coroutine، لازم نعرف هل الـ SDK نفسه بيوقف ولا هيرجع بنتيجة متأخرة.
+القرار بيتاخد عند الجزء اللي يعرف طبيعة الشغل: Repository بتستخدم SDK Blocking تنقل الاستدعاء بـ `withContext` لـ Dispatcher مناسب، بينما API معلّقة فعلاً ممكن تكون آمنة على Main من غير نقلة إضافية. ولو ألغينا الـ Coroutine، لازم نعرف هل الـ SDK نفسه بيوقف ولا هيرجع بنتيجة متأخرة.
 
 ## Practical walkthrough
 
-في Repository بتقرأ ملف وتعمل عليه تشفير، قراءة الملف عملية I/O حظرية، والتشفير ممكن يكون شغل CPU تقيل. لو الدالة اتنادت من `viewModelScope`، مجرد إضافة `suspend` مش هتحمي Main. أفصل الجزء الحظري في `withContext(Dispatchers.IO)`، وأنقل المعالجة الثقيلة لـ `Dispatchers.Default` لو قياسها بيبين إنها مؤثرة. أختبر الدالة من Main وأحقن الـ Dispatchers علشان الاختبار يبقى قابل للتحكم. برضه أراجع هل العملية الحظرية تستجيب للإلغاء ولا لازم أمنع نشر نتيجتها بعد مغادرة الشاشة.
+في Repository بتقرأ ملف وتعمل عليه تشفير، قراءة الملف عملية I/O Blockingة، والتشفير ممكن يكون شغل CPU تقيل. لو الدالة اتنادت من `viewModelScope`، مجرد إضافة `suspend` مش هتحمي Main. أفصل الجزء الBlocking في `withContext(Dispatchers.IO)`، وأنقل المعالجة الثقيلة لـ `Dispatchers.Default` لو قياسها بيبين إنها مؤثرة. أختبر الدالة من Main وأحقن الـ Dispatchers علشان الاختبار يبقى قابل للتحكم. برضه أراجع هل العملية الBlockingة تستجيب للإلغاء ولا لازم أمنع نشر نتيجتها بعد مغادرة الشاشة.
 
 ## Why it matters and how it works
 
@@ -153,4 +153,4 @@ Score 0–5, one point each: define `suspend`; state that it does not select a t
 - [Android coroutines guidance](https://developer.android.com/kotlin/coroutines) — main safety and Android scope use.
 - [Android coroutine best practices](https://developer.android.com/kotlin/coroutines/coroutines-best-practices) — main-safe suspend functions and responsibility for blocking work.
 
-Technically reviewed against primary documentation on 2026-10-17.
+Technically reviewed against the cited primary documentation on 2026-10-19; agent editorial review, not human verification.

@@ -59,41 +59,11 @@ class PaymentRepositoryImpl @Inject constructor(
 
 ## Explanation in Arabic
 
-ما هو نمط التصميم (Design Pattern) وكيف يختلف جوهرياً عن المعمارية (Architecture)؟
-
-1. ما هي المعمارية (Architecture - النظرة الشاملة من أعلى Macro)؟
-   - المعمارية هي **المخطط الهيكلي العام للبرنامج (System Blueprint)**.
-   - تحدد: كيفية تقسيم النظام ككل إلى طبقات (Presentation, Domain, Data)، اتجاه تدفق البيانات والتبعيات (Clean Architecture / MVI)، وكيف تتواصل الموديولات الكبيرة مع بعضها.
-   - قرارات المعمارية صعبة ومكلفة التغيير بعد اتخاذها؛ تغيير المعمارية يشبه تغيير أساسات المبنى بالكامل.
-
-2. ما هو نمط التصميم (Design Pattern - النظرة الدقيقة الموضعية Micro)؟
-   - نمط التصميم هو **حل نموذجي قابل لإعادة الاستخدام لمشكلة برمجية شائعة ومحددة تظهر داخل كود كلاس أو كلاسين**.
-   - أمثلة: كيفية إنشاء كائن معقد (Builder / Factory)، كيفية مطابقة واجهة غير متوافقة (Adapter)، أو كيفية إشعار عدة كائنات بحدث ما (Observer).
-   - أنماط التصميم تقع *داخل* المعمارية ويمكن استبدالها أو تعديلها موضعياً بسهولة.
-
-3. الخلاصة:
-   - المعمارية تجيب على: *"كيف يتدفق النظام ككل وتتوزع الطبقات؟"*
-   - نمط التصميم يجيب على: *"كيف تحل كلاسات هذه الميزة مشكلة محددة في الكود؟"*
+`Architecture` هي المخطط العام والنظرة الكلية للنظام (Macro-level): بتحدد تقسيم الـ Layers (UI، Domain، Data)، واتجاه الـ Dependencies، وتدفق البيانات زي Clean Architecture وUDF. قرارات المعمارية صعبة ومكلفة التغيير بعد اتخاذها. أما الـ `Design Pattern` فهو حل موضعي متكرر (Micro-level) لمشكلة محددة بين شوية Classes جوه نفس الطبقة، زي Adapter لتحويل Interface غير متوافقة أو Strategy لعزل خوارزمية. الأنماط بتعيش جوه المعمارية وتغييرها أسهل ومحصور محليًا.
 
 ## Practical walkthrough
 
-المقارنة العملية بين القرار المعماري ونمط التصميم في تطبيق Android:
-```kotlin
-// 1. قرار معماري (Architecture): اختيار Clean Architecture و UDF:
-// الطبقات مقسمة إلى Presentation و Domain و Data مع تدفق أحادي الاتجاه:
-class CheckoutViewModel(private val checkoutUseCase: CheckoutUseCase) : ViewModel() {
-    val uiState: StateFlow<CheckoutUiState> = ...
-}
-
-// 2. نمط تصميم موضعي (Design Pattern - Strategy Pattern):
-// داخل طبقة Data، يتم استخدام نمط Strategy لاختيار وسيلة الدفع المناسبة:
-interface PaymentStrategy {
-    suspend fun pay(amount: Long): PaymentResult
-}
-class StripeStrategy : PaymentStrategy { ... }
-class PayPalStrategy : PaymentStrategy { ... }
-// هذا النمط يعيش داخل تفاصيل طبقة Data ولا يؤثر على هيكل المعمارية العام للنظام!
-```
+في تطبيق دفع، القرار المعماري يحدد إن الـ UI يعتمد على Domain Contract اسمه `CheckoutRepository` معزول عن أي SDK خارجي. جوه الـ Data Layer، بنستخدم Strategy Pattern للتبديل بين Gateways مختلفة (Stripe وPayPal) من غير ما نغير الـ Domain أو الـ UI. الـ Pattern حل مشكلة موضعية جوه الـ Data Layer، بينما الـ Architecture حافظت على استقلالية الطبقات.
 
 ## Why it matters and how it works
 
@@ -163,4 +133,4 @@ Define pattern and architecture at different scales and give one Android example
 - [GoF Design Patterns, publisher](https://www.pearson.com/en-us/subject-catalog/p/design-patterns-elements-of-reusable-object-oriented-software/P200000009480/9780321700698) — original pattern catalog and categories.
 - [Android architecture guide](https://developer.android.com/topic/architecture) — app-level boundaries.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against the cited primary documentation on 2026-10-19; agent editorial review, not human verification.

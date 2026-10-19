@@ -199,4 +199,4 @@ Can I explain UID isolation, runtime permission denial, a cross-app entry point,
 - [Android app sandbox](https://source.android.com/docs/security/app-sandbox) — UID-based isolation.
 - [Android permissions overview](https://developer.android.com/guide/topics/permissions/overview) — declarations and runtime access.
 
-Technically reviewed against primary documentation on 2026-10-14.
+Technically reviewed against the cited primary documentation on 2026-10-19; agent editorial review, not human verification.

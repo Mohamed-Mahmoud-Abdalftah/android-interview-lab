@@ -51,7 +51,7 @@ This assumes both API methods are main-safe suspending calls. The two `Deferred`
 
 ## Explanation in Arabic
 
-`CoroutineScope` بتوفر سياق لإنشاء Coroutines جديدة، ولازم يكون ليها مالك وعمر واضحين. `CoroutineContext` مجموعة عناصر بمفاتيح؛ منها Dispatcher و`Job` واسم للمتابعة ومعالج أخطاء عند الحاجة. الـ builder عادة بتعمل Job فرعية تحت Job الـ Scope. إلغاء الأب بيبعت الإلغاء لأبنائه، لكنه مش ضمان إن SDK حظري هيتوقف فوراً.
+`CoroutineScope` بتوفر سياق لإنشاء Coroutines جديدة، ولازم يكون ليها مالك وعمر واضحين. `CoroutineContext` مجموعة عناصر بمفاتيح؛ منها Dispatcher و`Job` واسم للمتابعة ومعالج أخطاء عند الحاجة. الـ builder عادة بتعمل Job فرعية تحت Job الـ Scope. إلغاء الأب بيبعت الإلغاء لأبنائه، لكنه مش ضمان إن SDK Blocking هيتوقف فوراً.
 
 `launch` بترجع `Job` للانتظار أو الإلغاء. `async` بترجع `Deferred<T>`، وهي Job شايلة نتيجة أقدر أستناها بـ `await()`. ولو مررت `Job()` مستقلة عند إنشاء Coroutine من `viewModelScope`، هغيّر علاقة الأبوة وأخسر الإلغاء المرتبط بالـ ViewModel.
 
@@ -153,4 +153,4 @@ Can I identify each type, trace parent cancellation, explain `join` versus `awai
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — scope, context, Job and builders.
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — child failure behavior.
 
-Technically reviewed against primary documentation on 2026-10-17.
+Technically reviewed against the cited primary documentation on 2026-10-19; agent editorial review, not human verification.

@@ -113,4 +113,4 @@ Tell a real incident as timeline, impact, your decision, mitigation and preventi
 - [Google SRE postmortem culture](https://sre.google/workbook/postmortem-culture/) — incident learning.
 - [Android app quality](https://developer.android.com/quality) — impact metrics.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against the cited primary documentation on 2026-10-19; agent editorial review, not human verification.

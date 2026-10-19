@@ -5,9 +5,8 @@
     "arabicFieldsPerQuestion": 18
   },
   "editorialStatus": {
-    "complete": 18,
-    "pending": 452,
-    "legacy_spoken_pass": 15
+    "complete": 36,
+    "pending": 449
   },
   "topicCoverage": {
     "AND": {
@@ -22,9 +21,8 @@
     },
     "BG": {
       "total": 18,
-      "complete": 1,
-      "pending": 16,
-      "legacy_spoken_pass": 1
+      "complete": 2,
+      "pending": 16
     },
     "BLD": {
       "total": 21,
@@ -39,14 +37,12 @@
     "COM": {
       "total": 28,
       "pending": 26,
-      "complete": 1,
-      "legacy_spoken_pass": 1
+      "complete": 2
     },
     "COR": {
       "total": 32,
-      "legacy_spoken_pass": 8,
-      "pending": 23,
-      "complete": 1
+      "complete": 9,
+      "pending": 23
     },
     "DAT": {
       "total": 22,
@@ -75,9 +71,8 @@
     },
     "LEAD": {
       "total": 15,
-      "complete": 1,
-      "pending": 13,
-      "legacy_spoken_pass": 1
+      "complete": 2,
+      "pending": 13
     },
     "MEM": {
       "total": 26,
@@ -86,33 +81,33 @@
     },
     "MOD": {
       "total": 21,
-      "pending": 21
+      "complete": 1,
+      "pending": 20
     },
     "PAT": {
       "total": 18,
-      "pending": 18
+      "complete": 1,
+      "pending": 17
     },
     "PAY": {
       "total": 15,
-      "legacy_spoken_pass": 1,
-      "pending": 13,
-      "complete": 1
+      "complete": 2,
+      "pending": 13
     },
     "SEC": {
       "total": 32,
-      "legacy_spoken_pass": 1,
-      "complete": 1,
+      "complete": 2,
       "pending": 30
     },
     "SOL": {
       "total": 20,
-      "legacy_spoken_pass": 1,
+      "complete": 1,
       "pending": 19
     },
     "SYS": {
       "total": 24,
-      "pending": 23,
-      "legacy_spoken_pass": 1
+      "complete": 2,
+      "pending": 22
     },
     "TST": {
       "total": 24,
@@ -121,9 +116,9 @@
     }
   },
   "signalCounts": {
-    "terminology": 144,
-    "absolute-claim": 161,
-    "formal-style": 29
+    "terminology": 124,
+    "absolute-claim": 159,
+    "formal-style": 28
   },
   "signals": {
     "AND-06": [
@@ -332,13 +327,6 @@
         "text": "100%"
       }
     ],
-    "BG-18": [
-      {
-        "field": "deep_answer_ar",
-        "kind": "terminology",
-        "text": "آلة الحالات"
-      }
-    ],
     "BLD-10": [
       {
         "field": "concept_ar",
@@ -544,104 +532,11 @@
         "text": "100%"
       }
     ],
-    "COR-01": [
-      {
-        "field": "self_check_ar",
-        "kind": "terminology",
-        "text": "الموزعات"
-      },
-      {
-        "field": "references_ar",
-        "kind": "terminology",
-        "text": "الموزعات"
-      }
-    ],
-    "COR-02": [
-      {
-        "field": "questionAr",
-        "kind": "absolute-claim",
-        "text": "بالضرورة"
-      },
-      {
-        "field": "self_check_ar",
-        "kind": "terminology",
-        "text": "الموزعات"
-      }
-    ],
-    "COR-03": [
-      {
-        "field": "evaluates_ar",
-        "kind": "terminology",
-        "text": "التزامن المهيكل"
-      },
-      {
-        "field": "references_ar",
-        "kind": "terminology",
-        "text": "الموزعات"
-      }
-    ],
-    "COR-04": [
-      {
-        "field": "questionAr",
-        "kind": "terminology",
-        "text": "التزامن المهيكل"
-      },
-      {
-        "field": "questionAr",
-        "kind": "formal-style",
-        "text": "يُعد جوهري"
-      },
-      {
-        "field": "evaluates_ar",
-        "kind": "terminology",
-        "text": "التزامن المهيكل"
-      },
-      {
-        "field": "why_it_matters_ar",
-        "kind": "terminology",
-        "text": "التزامن المهيكل"
-      },
-      {
-        "field": "failure_modes_ar",
-        "kind": "terminology",
-        "text": "التزامن المهيكل"
-      },
-      {
-        "field": "talking_points_ar",
-        "kind": "terminology",
-        "text": "التزامن المهيكل"
-      },
-      {
-        "field": "self_check_ar",
-        "kind": "terminology",
-        "text": "التزامن المهيكل"
-      },
-      {
-        "field": "references_ar",
-        "kind": "terminology",
-        "text": "التزامن المهيكل"
-      }
-    ],
     "COR-07": [
-      {
-        "field": "questionAr",
-        "kind": "terminology",
-        "text": "الموزعات"
-      },
       {
         "field": "trade_offs_ar",
         "kind": "absolute-claim",
         "text": "بالضرورة"
-      },
-      {
-        "field": "self_check_ar",
-        "kind": "terminology",
-        "text": "الموزعات"
-      },
-      {
-        "field": "references_ar",
-        "kind": "terminology",
-        "text": "الموزعات"
       }
     ],
     "COR-09": [
@@ -1380,13 +1275,6 @@
         "text": "100%"
       }
     ],
-    "MOD-01": [
-      {
-        "field": "best_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      }
-    ],
     "MOD-02": [
       {
         "field": "deep_answer_ar",
@@ -1750,13 +1638,6 @@
         "text": "100%"
       }
     ],
-    "SOL-01": [
-      {
-        "field": "concept_ar",
-        "kind": "absolute-claim",
-        "text": "100%"
-      }
-    ],
     "SOL-04": [
       {
         "field": "worked_example_ar",
@@ -1892,23 +1773,6 @@
         "field": "trade_offs_ar",
         "kind": "absolute-claim",
         "text": "100%"
-      }
-    ],
-    "SYS-01": [
-      {
-        "field": "evaluates_ar",
-        "kind": "terminology",
-        "text": "المفاضلات الهندسية"
-      },
-      {
-        "field": "best_answer_ar",
-        "kind": "terminology",
-        "text": "المفاضلات الهندسية"
-      },
-      {
-        "field": "deep_answer_ar",
-        "kind": "terminology",
-        "text": "المفاضلات الهندسية"
       }
     ],
     "SYS-02": [

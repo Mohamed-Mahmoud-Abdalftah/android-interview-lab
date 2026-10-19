@@ -57,7 +57,7 @@ The outer `launch` is owned by the ViewModel. The two `async` children overlap w
 
 ## Practical walkthrough
 
-في Dashboard محتاجة رصيد وتنبيهات معاً، أبدأ `viewModelScope.launch`، وداخلها `async` لكل API معلّقة وآمنة على Main، ثم أستنى القيمتين وأبني الـ UI state. `async` لا تعني Background Thread؛ لو API حظرية أنقلها عند الحد اللي يملكها. لو واحد من الطلبين فشل، أعرض خطأ وأترك `CancellationException` تمر من غير تحويلها لفشل عادي. لو كل كارت مستقل، أمثل نجاح وخطأ كل كارت تحت supervision بدل ما ألغي الكل.
+في Dashboard محتاجة رصيد وتنبيهات معاً، أبدأ `viewModelScope.launch`، وداخلها `async` لكل API معلّقة وآمنة على Main، ثم أستنى القيمتين وأبني الـ UI state. `async` لا تعني Background Thread؛ لو API Blockingة أنقلها عند الحد اللي يملكها. لو واحد من الطلبين فشل، أعرض خطأ وأترك `CancellationException` تمر من غير تحويلها لفشل عادي. لو كل كارت مستقل، أمثل نجاح وخطأ كل كارت تحت supervision بدل ما ألغي الكل.
 
 ## Why it matters and how it works
 
@@ -147,4 +147,4 @@ Can I choose the right builder, predict result and exception behavior, justify c
 - [Kotlin coroutines basics](https://kotlinlang.org/docs/coroutines-basics.html) — `launch`, `async`, Job and Deferred.
 - [Coroutine exceptions](https://kotlinlang.org/docs/exception-handling.html) — failure observation and propagation.
 
-Technically reviewed against primary documentation on 2026-10-17.
+Technically reviewed against the cited primary documentation on 2026-10-19; agent editorial review, not human verification.
