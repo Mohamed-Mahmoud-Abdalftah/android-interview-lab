@@ -1,6 +1,6 @@
 # Actual academy source inventory — 2026-10-19
 
-These 1239 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
+These 1241 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
 
 ```text
 .github/workflows/ci.yml
@@ -926,9 +926,11 @@ projects/kotlin-jvm-labs/src/test/kotlin/academy/DipDiSnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/DsaSnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/DuplicateScanTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/EditorReducerTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/FeatureRouteSnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/LabChecksTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/LazyLateinitSnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/MigrationCoveragePlannerTest.kt
+projects/kotlin-jvm-labs/src/test/kotlin/academy/MultiModuleDiSnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/NoteRowTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/NullSafetySnippetTest.kt
 projects/kotlin-jvm-labs/src/test/kotlin/academy/OfflineNotesRepositoryTest.kt

@@ -1,8 +1,8 @@
 {
-  "references": 1021,
-  "uniqueUrls": 317,
+  "references": 1022,
+  "uniqueUrls": 319,
   "counts": {
-    "ok": 317,
+    "ok": 319,
     "broken": 0,
     "unverified": 0
   },
@@ -94,6 +94,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://dagger.dev/dev-guide/multibindings"
+    },
+    {
+      "url": "https://dagger.dev/dev-guide/multibindings.html",
+      "questionIds": [
+        "MOD-11"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://dagger.dev/dev-guide/multibindings.html"
     },
     {
       "url": "https://dagger.dev/hilt/components",
@@ -443,7 +452,6 @@
         "COM-18",
         "COM-20",
         "COM-21",
-        "MOD-09",
         "MOD-10"
       ],
       "status": 200,
@@ -730,6 +738,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://developer.android.com/guide/fragments/lifecycle"
+    },
+    {
+      "url": "https://developer.android.com/guide/navigation",
+      "questionIds": [
+        "MOD-09"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://developer.android.com/guide/navigation"
     },
     {
       "url": "https://developer.android.com/guide/playcore/feature-delivery",

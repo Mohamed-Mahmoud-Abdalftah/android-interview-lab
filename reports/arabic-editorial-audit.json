@@ -5,8 +5,8 @@
     "arabicFieldsPerQuestion": 18
   },
   "editorialStatus": {
-    "complete": 43,
-    "pending": 442
+    "complete": 45,
+    "pending": 440
   },
   "topicCoverage": {
     "AND": {
@@ -81,8 +81,8 @@
     },
     "MOD": {
       "total": 21,
-      "complete": 1,
-      "pending": 20
+      "complete": 3,
+      "pending": 18
     },
     "PAT": {
       "total": 18,
@@ -116,7 +116,7 @@
     }
   },
   "signalCounts": {
-    "terminology": 99,
+    "terminology": 87,
     "absolute-claim": 150,
     "formal-style": 18
   },
@@ -1248,70 +1248,6 @@
     "MOD-08": [
       {
         "field": "trade_offs_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      }
-    ],
-    "MOD-09": [
-      {
-        "field": "evaluates_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "concept_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "walkthrough_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "best_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "self_check_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "references_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      }
-    ],
-    "MOD-11": [
-      {
-        "field": "questionAr",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "concept_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "best_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "deep_answer_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "follow_ups_ar",
-        "kind": "terminology",
-        "text": "حقن التبعيات"
-      },
-      {
-        "field": "references_ar",
         "kind": "terminology",
         "text": "حقن التبعيات"
       }
