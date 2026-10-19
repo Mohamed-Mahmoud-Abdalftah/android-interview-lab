@@ -5,14 +5,15 @@
     "arabicFieldsPerQuestion": 18
   },
   "editorialStatus": {
-    "complete": 4,
-    "pending": 465,
+    "complete": 8,
+    "pending": 461,
     "legacy_spoken_pass": 16
   },
   "topicCoverage": {
     "AND": {
       "total": 25,
-      "pending": 25
+      "complete": 1,
+      "pending": 24
     },
     "ARC": {
       "total": 26,
@@ -34,7 +35,8 @@
     },
     "COM": {
       "total": 28,
-      "pending": 27,
+      "pending": 26,
+      "complete": 1,
       "legacy_spoken_pass": 1
     },
     "COR": {
@@ -57,7 +59,8 @@
     },
     "FLO": {
       "total": 32,
-      "pending": 32
+      "complete": 1,
+      "pending": 31
     },
     "KOT": {
       "total": 30,
@@ -90,7 +93,8 @@
     "SEC": {
       "total": 32,
       "legacy_spoken_pass": 1,
-      "pending": 31
+      "complete": 1,
+      "pending": 30
     },
     "SOL": {
       "total": 20,
@@ -108,18 +112,11 @@
     }
   },
   "signalCounts": {
-    "terminology": 157,
-    "absolute-claim": 166,
+    "terminology": 156,
+    "absolute-claim": 164,
     "formal-style": 29
   },
   "signals": {
-    "AND-01": [
-      {
-        "field": "how_to_answer_ar",
-        "kind": "terminology",
-        "text": "المفاضلات الهندسية"
-      }
-    ],
     "AND-06": [
       {
         "field": "how_to_answer_ar",
@@ -470,18 +467,6 @@
     "COM-14": [
       {
         "field": "follow_ups_ar",
-        "kind": "absolute-claim",
-        "text": "100%"
-      }
-    ],
-    "COM-15": [
-      {
-        "field": "walkthrough_ar",
-        "kind": "absolute-claim",
-        "text": "100%"
-      },
-      {
-        "field": "worked_example_ar",
         "kind": "absolute-claim",
         "text": "100%"
       }

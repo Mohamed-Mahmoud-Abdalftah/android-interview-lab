@@ -20,6 +20,20 @@ ARABIC_FIELDS = (
     "production_perspective_ar", "quick_answer_ar", "best_answer_ar", "deep_answer_ar",
     "how_to_answer_ar", "talking_points_ar", "follow_ups_ar", "self_check_ar", "references_ar",
 )
+REVIEW_CHECKS = (
+    "baselineAuditCompleted", "arabicQuestionReviewed", "technicalExplanationReviewed",
+    "quickAnswerReviewed", "bestAnswerReviewed", "deepAnswerReviewed",
+    "examplesReviewed", "followUpsReviewed", "technicalAccuracyReviewed",
+    "secondEditorialPassCompleted",
+)
+RUBRIC_MINIMUMS = {
+    "naturalEgyptianArabic": 4,
+    "technicalTerminology": 5,
+    "technicalAccuracy": 5,
+    "explanationClarity": 4,
+    "interviewUsefulness": 4,
+    "answerDepthAndRelevance": 4,
+}
 TERM_SIGNALS = {
     "التزامن المهيكل": "Structured Concurrency",
     "الموزعات": "Dispatchers",
@@ -78,6 +92,23 @@ def main() -> int:
         status_counts[status] += 1
         topic_coverage[topic]["total"] += 1
         topic_coverage[topic][status] += 1
+        if row.get("topic") != topic:
+            structural.append(f"{qid}: checkpoint topic differs from canonical source")
+        if set(row.get("checks", {})) != set(REVIEW_CHECKS):
+            structural.append(f"{qid}: incomplete checkpoint review checklist")
+        if status in {"verification_pending", "complete"}:
+            if not all(row["checks"].values()):
+                structural.append(f"{qid}: scored review has unchecked steps")
+            if set(row.get("reviewedFields", [])) != set(ARABIC_FIELDS):
+                structural.append(f"{qid}: scored review does not cover all Arabic fields")
+            for name, minimum in RUBRIC_MINIMUMS.items():
+                score = row.get("scores", {}).get(name)
+                if not isinstance(score, int) or not minimum <= score <= 5:
+                    structural.append(f"{qid}: {name} score does not meet the minimum")
+            if row.get("remainingIssues"):
+                structural.append(f"{qid}: scored review still has unresolved issues")
+        if status == "complete" and row.get("validationOutcome") != "passed":
+            structural.append(f"{qid}: complete review lacks current validation evidence")
         for field in ARABIC_FIELDS:
             value = record.get(field, "")
             if not isinstance(value, str) or not value.strip():
@@ -109,7 +140,7 @@ def main() -> int:
                                      "text": seen_answers[answer_key]})
             else:
                 seen_answers[answer_key] = qid
-        if status == "complete":
+        if status in {"first_pass_complete", "verification_pending", "complete"}:
             source = (ROOT / "Interview-Lab/questions" / f"{qid}.md").read_text(encoding="utf-8")
             if row.get("metadataSha256") != metadata_digest(record):
                 structural.append(f"{qid}: completed metadata changed since manual review")

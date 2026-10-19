@@ -1,8 +1,8 @@
 {
-  "references": 1000,
-  "uniqueUrls": 303,
+  "references": 1004,
+  "uniqueUrls": 307,
   "counts": {
-    "ok": 303,
+    "ok": 307,
     "broken": 0,
     "unverified": 0
   },
@@ -196,7 +196,6 @@
     {
       "url": "https://developer.android.com/develop/background-work/background-tasks/persistent",
       "questionIds": [
-        "AND-01",
         "AND-21",
         "BG-01",
         "BG-02",
@@ -248,6 +247,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://developer.android.com/develop/background-work/background-tasks/persistent/how-to/manage-work"
+    },
+    {
+      "url": "https://developer.android.com/develop/background-work/services",
+      "questionIds": [
+        "AND-01"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://developer.android.com/develop/background-work/services"
     },
     {
       "url": "https://developer.android.com/develop/background-work/services/aidl",
@@ -451,6 +459,15 @@
       "resolved": "https://developer.android.com/develop/ui/compose/performance/stability/diagnose"
     },
     {
+      "url": "https://developer.android.com/develop/ui/compose/performance/stability/fix",
+      "questionIds": [
+        "COM-15"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://developer.android.com/develop/ui/compose/performance/stability/fix"
+    },
+    {
       "url": "https://developer.android.com/develop/ui/compose/performance/stability/strongskipping",
       "questionIds": [
         "COM-15"
@@ -650,6 +667,7 @@
     {
       "url": "https://developer.android.com/guide/components/activities/process-lifecycle",
       "questionIds": [
+        "AND-01",
         "AND-22"
       ],
       "status": 200,
@@ -678,6 +696,7 @@
     {
       "url": "https://developer.android.com/guide/fragments/lifecycle",
       "questionIds": [
+        "AND-01",
         "AND-02",
         "AND-03",
         "MEM-09",
@@ -716,15 +735,6 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://developer.android.com/guide/topics/permissions/overview"
-    },
-    {
-      "url": "https://developer.android.com/guide/topics/providers/content-provider-basics",
-      "questionIds": [
-        "AND-01"
-      ],
-      "status": 200,
-      "category": "ok",
-      "resolved": "https://developer.android.com/guide/topics/providers/content-provider-basics"
     },
     {
       "url": "https://developer.android.com/identity/data/autobackup",
@@ -811,7 +821,6 @@
     {
       "url": "https://developer.android.com/kotlin/flow",
       "questionIds": [
-        "FLO-01",
         "FLO-17",
         "FLO-28"
       ],
@@ -824,6 +833,7 @@
       "questionIds": [
         "AND-17",
         "COM-08",
+        "FLO-01",
         "FLO-04",
         "FLO-05",
         "FLO-06",
@@ -1033,12 +1043,20 @@
     {
       "url": "https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec",
       "questionIds": [
-        "SEC-02",
         "SEC-22"
       ],
       "status": 200,
       "category": "ok",
       "resolved": "https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec"
+    },
+    {
+      "url": "https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec.Builder",
+      "questionIds": [
+        "SEC-02"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec.Builder"
     },
     {
       "url": "https://developer.android.com/reference/android/security/keystore/KeyInfo",
@@ -2981,6 +2999,15 @@
       "resolved": "https://kotlinlang.org/docs/extensions.html"
     },
     {
+      "url": "https://kotlinlang.org/docs/flow.html",
+      "questionIds": [
+        "FLO-01"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://kotlinlang.org/docs/flow.html"
+    },
+    {
       "url": "https://kotlinlang.org/docs/functions.html",
       "questionIds": [
         "KOT-11",
@@ -3334,6 +3361,15 @@
       "status": 200,
       "category": "ok",
       "resolved": "https://source.android.com/docs/security/app-sandbox"
+    },
+    {
+      "url": "https://source.android.com/docs/security/features/keystore/attestation",
+      "questionIds": [
+        "SEC-02"
+      ],
+      "status": 200,
+      "category": "ok",
+      "resolved": "https://source.android.com/docs/security/features/keystore/attestation"
     },
     {
       "url": "https://square.github.io/leakcanary/fundamentals-how-leakcanary-works/",

@@ -1,4 +1,4 @@
-# Actual academy source inventory — 2026-10-18
+# Actual academy source inventory — 2026-10-19
 
 These 1229 files exist in the source tree. Interview Lab canonical records have a separate validated inventory in `reports/content-inventory.md`; derived pages, caches, build output, and ZIP archives are excluded.
 
