@@ -25,9 +25,9 @@ Explain static resolution of extensions, member precedence, and their limits as 
 Extension functions in Kotlin allow developers to extend the capabilities of an existing class by appending new methods without modifying its source code, inheriting from it, or employing structural design patterns like Decorator.
 
 Crucially, extension functions are resolved statically at compile time rather than dynamically via polymorphic dispatch at runtime. Under the hood, kotlinc translates an extension function into a standard static method on the JVM, where the receiver type is passed as the first parameter. Consequently:
-1. Extension functions CANNOT override member functions. If an extension function defines the exact same method signature and parameter types as an existing member function, the compiler always invokes the member function.
+1. Extension functions CANNOT override member functions. If an extension function defines the exact same method signature and parameter types as an existing member function, an applicable member with the same arguments takes precedence.
 2. Polymorphic dispatch does not apply to extensions. When invoking an extension function through a base class reference, the base class extension is dispatched even if the underlying instance at runtime is a derived class.
-3. Extensions cannot access private or protected members of the receiver class; they observe strictly the public API contract.
+3. Extensions cannot access private or protected members of the receiver class; they follow ordinary visibility rules and can access only members visible from the extension's declaration site.
 
 ## Practical walkthrough (English)
 
@@ -70,18 +70,18 @@ fun UserEntity.toDomainModel(): User = User(
 ```
 
 Bytecode Decompilation Verification:
-Decompiling `fun View.visible()` reveals a standard public static Java method:
+A representative Kotlin/JVM compilation of `fun View.visible()` yields a standard public static Java method:
 ```java
 public static final void visible(@NotNull View $this$visible) {
     Intrinsics.checkNotNullParameter($this$visible, "<this>");
     $this$visible.setVisibility(0); // View.VISIBLE = 0
 }
 ```
-Invoking `view.visible()` in Kotlin compiles to a direct static call:
+This call can compile to a direct static call:
 ```java
 ViewExtensionsKt.visible(view); // invokestatic instruction
 ```
-This proves extensions do not modify the receiver class and do not utilize JVM virtual method tables (vtable).
+This illustrates a common Kotlin/JVM lowering; source-level static extension selection is the relevant guarantee.
 
 ## Explanation in Arabic
 
@@ -99,10 +99,9 @@ This proves extensions do not modify the receiver class and do not utilize JVM v
 
 ## Practical walkthrough
 
-في شاشات أندرويد:
-- بنعمل Extensions لتسهيل التعامل مع الـ Views: `fun View.visible() { visibility = View.VISIBLE }`.
-- الـ Nullable Receiver Extension: تقدر تعمل دالة بتشتغل حتى لو الكائن `null` زي `fun CharSequence?.isNotNullOrBlank(): Boolean`؛ ده بيخلي الاستدعاء في الـ UI نظيف جداً بدون safe-call `str.isNotNullOrBlank()`.
-- **الخطأ الشائع:** استخدام Extension Functions في طبقة الـ Domain بتلمس Android Framework Classes؛ ده بيكسر نقاء الـ Clean Architecture وبيمنع تشغيل اختبارات الـ JVM السريعة.
+في واجهة أندرويد، ممكن تكتب `fun View.visible() { visibility = View.VISIBLE }` كدالة مساعدة، وفي طبقة البيانات `fun UserEntity.toDomain(): User` كمحوّل واضح. لو عندك `fun ViewItem.renderBadge()` و`fun PremiumCardItem.renderBadge()`، واستدعيت الدالة على متغير معلن `ViewItem` ويحمل `PremiumCardItem`، هيُختار امتداد `ViewItem` وقت البناء. لو عايز سلوك يتغير حسب النوع الفعلي، استخدم member `open/override` أو نمذجة صريحة.
+
+الـ nullable receiver زي `fun CharSequence?.isNotNullOrBlank()` يقدر يستقبل `null` من غير `?.` لو جسم الدالة نفسه بيتعامل معاه. خلي أسماء الامتدادات واضحة وبعيدة عن تصادم أسماء أعضاء المكتبات، خصوصاً في سلوك حساس.
 
 ## Why it matters and how it works
 
@@ -136,13 +135,13 @@ A mapper extension converts a Room entity into a domain model within the data mo
 
 ## Interview answer — short
 
-Extension functions add new functionality to existing classes without subclassing. They are resolved statically at compile time, compiling down to standard Java static methods with the receiver as the first parameter. Therefore, extension functions cannot override member functions; if signatures collide, the member always wins. Furthermore, extensions do not support polymorphic runtime dispatch, executing based on the declared reference type rather than the runtime object.
+Extension functions add new functionality to existing classes without subclassing. They are resolved statically at compile time, compiling down to standard Java static methods with the receiver as the first parameter. Therefore, extension functions cannot override member functions; when both are applicable with the same arguments, the member wins. Furthermore, extensions do not support polymorphic runtime dispatch, executing based on the declared reference type rather than the runtime object.
 
 ## Interview answer — structured
 
 Extension functions provide an elegant mechanism for extending existing classes without requiring inheritance or wrapper objects. By declaring a function prefixed with a receiver type, engineers can invoke the function using standard dot notation as if it were a native member.
 
-The defining characteristic of extension functions is static dispatch. Under the hood, the Kotlin compiler transforms the extension into a regular static method where the receiver instance is passed as the first argument. Because resolution occurs strictly at compile time based on the declared reference type, extension functions cannot exhibit dynamic polymorphism and can never override existing member functions with identical signatures.
+The defining characteristic of extension functions is static dispatch. Under the hood, the Kotlin compiler transforms the extension into a regular static method where the receiver instance is passed as the first argument. Because resolution occurs strictly at compile time based on the declared reference type, extension functions cannot exhibit dynamic polymorphism and cannot override member functions.
 
 In production, extensions are exceptionally valuable for writing readable utility functions, presentation mappers, and fluent domain DSLs.
 
@@ -151,23 +150,18 @@ Senior engineers avoid placing business logic or security-sensitive authorizatio
 
 ## Interview answer — deep senior
 
-At the bytecode level, kotlinc compiles top-level extension functions into public static final methods inside a synthetic Java class named FileNameKt. The receiver type becomes the first formal parameter of the generated method, marked with @NotNull unless declared as a nullable receiver. When an extension is called, the compiler emits a standard invokestatic bytecode instruction targeting the static utility class, entirely bypassing the JVM's dynamic vtable lookup mechanism (invokevirtual).
+An extension adds call-site syntax without modifying the receiver's class. Top-level extensions on Kotlin/JVM commonly compile to static methods on a generated file facade, with the receiver passed as an argument. The facade name can be changed by @file:JvmName, so FileNameKt is a default pattern rather than a universal guarantee.
 
-This static architecture governs two fundamental language behaviors:
-First, member shadowing: If a class defines a member function fun display() and an extension fun Target.display() is introduced in the same scope, the member function unconditionally takes precedence. The Kotlin compiler emits a warning, and every call resolves to the member bytecode. The extension becomes dead code unless it overloads the member with distinct parameter types.
+Extension selection is static with respect to the compile-time receiver type. A ViewItem reference to a PremiumCardItem therefore selects an applicable ViewItem extension, not the PremiumCardItem extension. If an applicable member and extension have the same receiver and arguments, the member wins. This is an overload-resolution rule; members with different applicable signatures and import scope can change which candidates are considered, so avoid the claim that every similarly named extension is dead code.
 
-Second, the absence of dynamic dispatch: In standard object-oriented polymorphism, calling an overridden member on a base class reference dynamically resolves to the derived runtime implementation via vtable dispatch. With extension functions, because resolution relies entirely on the compile-time type of the reference variable, calling a base class extension executes the base static method regardless of whether the actual instance on the heap is a derived class.
-
-An advanced architectural capability is nullable receiver extensions, such as fun Any?.toStringOrEmpty(). The compiler emits a static method capable of accepting null without throwing a NullPointerException, allowing callers to invoke value.toStringOrEmpty() without safe-call operators.
-
-In large-scale Android codebases, senior engineers leverage extensions as boundary adapters in data modules to convert Room database entities or Retrofit DTOs into domain models. However, they strictly prohibit placing security-critical policy enforcement in extensions, because extensions cannot access private encapsulated state and can be silently shadowed by internal members added in future library upgrades.
+Extensions have normal visibility rules and do not gain private access to the receiver. A nullable receiver such as CharSequence?.isNotNullOrBlank() can be called on null and must handle that value internally. Use extensions for local, discoverable adapters such as DTO-to-domain mappers, and prefer virtual members or explicit dispatch for genuinely polymorphic behavior. Avoid relying on an extension as the only enforcement point for a critical invariant, since other callers can bypass it and future member additions may change resolution.
 
 ## How to answer in the interview
 
 - **Why:** Extend existing classes with domain-specific utility functions without inheriting or modifying source code.
 - **How:** Define extension functions resolved statically at compile time based on the declared receiver type.
 - **Trade-offs:** Extensions cannot access private/protected members and do not participate in virtual polymorphic dispatch.
-- **Failure cases:** Defining an extension that shares a signature with a member function; the compiler always prioritizes the member function, silently ignoring the extension.
+- **Failure cases:** Defining an extension that shares a signature with a member function; an applicable member with the same arguments takes precedence, silently ignoring the extension.
 - **Production solution:** Use extensions for pure, stateless helper methods on Android framework or third-party classes, keeping them scoped to relevant modules.
 
 ## Deep-dive talking points
@@ -193,4 +187,4 @@ Predict the output for a base-typed subtype, explain member priority, and name o
 
 - [Kotlin extensions](https://kotlinlang.org/docs/extensions.html) — static resolution and member precedence.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against primary documentation on 2026-10-19.

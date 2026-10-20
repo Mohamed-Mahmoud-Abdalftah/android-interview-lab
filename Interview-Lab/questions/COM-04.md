@@ -24,16 +24,16 @@ What are state, snapshot state, and state hoisting?
 
 ## Concept and technical explanation
 
-State in Jetpack Compose represents any data value that can change over time and drive UI visual presentation. Snapshot State, implemented via MutableState<T> and mutableStateOf(), is Compose's observable reactive state primitive integrated into the multiversion concurrency control (MVCC) Snapshot system. When a composable reads a snapshot state during composition, Compose automatically registers a subscriber dependency on that state. State Hoisting is the foundational architectural pattern of moving state upward to a composable's caller to transform a tightly coupled stateful widget into an idempotent, highly reusable, and easily testable stateless component driven by values and events.
+UI state is data needed to describe the current screen. `mutableStateOf` creates Compose snapshot state, whose reads and writes the runtime can observe. A changed value can invalidate the composition scope that read it; reads in layout and draw have their own invalidation paths. State hoisting moves ownership to the lowest suitable common owner and passes the current value down with a callback for proposed changes. A component may remain stateful when no other consumer needs that state. Hoisting helps share and test behavior, but neither snapshot state nor hoisting provides durable persistence by itself.
 
 ## Practical walkthrough (English)
 
 Refactoring a stateful composable into a clean, hoisted stateless composable:
 ```kotlin
-// ❌ ANTI-PATTERN: Stateful component owns its state, making it hard to test, preview, or reuse
+// Local state is appropriate when no caller needs to coordinate this query.
 @Composable
 fun StatefulSearchInput() {
-    var query by remember { mutableStateOf("") } // Tightly coupled internal state
+    var query by remember { mutableStateOf("") }
     TextField(
         value = query,
         onValueChange = { query = it },
@@ -41,7 +41,7 @@ fun StatefulSearchInput() {
     )
 }
 
-// ✅ ARCHITECTURAL BEST PRACTICE: State Hoisting (Stateless & decoupled)
+// Hoist when the caller or another child needs the same query.
 // Separates state value (flows down) from event callbacks (flow up)
 @Composable
 fun StatelessSearchInput(
@@ -67,51 +67,32 @@ fun SearchScreen(viewModel: SearchViewModel) {
 
 ## Explanation in Arabic
 
-مفاهيم الـ State والـ Snapshot State ورفع الحالة (State Hoisting) في Jetpack Compose:
+الـ State هي البيانات اللي الواجهة بتعرضها حالياً. لو القيمة بتتغير، لازم التغيير يوصل لـ Compose بطريقة observable، زي `mutableStateOf` أو `StateFlow` بعد جمعه كـ Compose State. متغير Kotlin عادي ممكن يتغير في الذاكرة، لكن Compose مش هتعرف منه وحده إن الواجهة لازم تتحدث.
 
-1. ما هو الـ State في Compose؟
-   - الـ State هو أي قيمة متغيرة تؤثر على ما يراه المستخدم على الشاشة (مثل نص في حقل إدخال، حالة لودينج، قائمة رسائل).
-   - في Compose، لا نستخدم متغيرات عادية `var count = 0`، لأن محرك Compose لا يمكنه تتبع قراءتها أو تعديلها.
-   - نستخدم **`SnapshotState`** عبر `mutableStateOf(value)`؛ وهو غلاف تفاعلي يُشعر نظام Compose بلحظات القراءة والكتابة.
+الـ Snapshot system بيتابع قراءات حالة Compose. لو نطاق قرأ قيمة أثناء الـ Composition واتغيرت فعلاً حسب mutation policy، النطاق ده ممكن يتعمله invalidation. القراءة في Layout أو Draw ممكن تعيد المرحلة دي بدل إعادة Composition. مش كل كتابة تعني Recomposition، ومش كل Recomposition تعني Draw. تفاصيل إدارة الـ snapshots الداخلية قابلة للتغير، فاشرح السلوك المرصود بدل الادعاء إن كل تعديل بيخلق نسخة كاملة أو بيعمل قفل على كل thread.
 
-2. كيف يعمل الـ Snapshot State داخلياً؟
-   - مستوحى من نظام قواعد البيانات متعددة النسخ (MVCC - Multi-Version Concurrency Control).
-   - عندما يُقرأ الـ State، يُسجل الـ Snapshot System أن الـ Composable الفلاني يراقب هذه القيمة.
-   - عند تعديل القيمة، يُنشئ الـ Snapshot نسخة جديدة ويطلق إشعار Invalidation للنطاقات المراقبة فقط.
-
-3. ما هو رفع الحالة (State Hoisting)؟
-   - هو نمط معماري لنقل الـ State للأعلى إلى الدالة المستدعية (Caller) لجعل الـ Composable **عديم الحالة (Stateless)**.
-   - النمط القياسي: استبدال المتغير الداخلي ببارامترين:
-     * `value: T` (القيمة الحالية للعرض).
-     * `onValueChange: (T) -> Unit` (حدث يُطلق عندما يطلب المستخدم التغيير).
-   - الفوائد: سهولة إعادة استخدام المكون، قابلية الاختبار بنسبة 100% دون حاجة لمحاكاة Compose Runtime، و Single Source of Truth.
+State hoisting يعني تنقل ملكية الحالة للـ caller اللي محتاج ينسق بين المستهلكين. المكون بياخد `value` و`onValueChange`؛ القيمة تنزل والحدث يطلع. مثلاً نص البحث لو الـ field والنتائج محتاجينه، خليه عند أقرب مالك مشترك. أما tooltip محدش غيره محتاج حالته، ممكن تسيبه محلي. الـ ViewModel مناسب لو الحالة مرتبطة بمنطق الشاشة أو repository، لكنه مش شرط لكل toggle. الـ Snapshot State تعالج الملاحظة؛ الحفظ بعد إعادة إنشاء الشاشة مسألة تانية.
 
 ## Practical walkthrough
 
-تطبيق نمط State Hoisting لتحويل مكون Stateful إلى Stateless قابل لإعادة الاستخدام والاختبار:
+مثال فيه مصدر حقيقة واحد للنص ونتائج البحث:
 ```kotlin
-// ❌ مكون يحتفظ بحالته داخلياً (Stateful): يصعب اختباره وإعادة استخدامه في شاشات أخرى:
 @Composable
-fun StatefulSearchField() {
-    var query by remember { mutableStateOf("") }
-    TextField(value = query, onValueChange = { query = it })
+fun SearchRoute() {
+    var query by rememberSaveable { mutableStateOf("") }
+    Column {
+        SearchInput(value = query, onValueChange = { query = it })
+        Text("Searching for: $query")
+    }
 }
 
-// ✅ تطبيق State Hoisting: فصل القيمة عن الأحداث (Stateless Composable):
 @Composable
-fun StatelessSearchField(
-    query: String,
-    onQueryChanged: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    TextField(
-        value = query,
-        onValueChange = onQueryChanged,
-        placeholder = { Text("Search products...") },
-        modifier = modifier
-    )
+fun SearchInput(value: String, onValueChange: (String) -> Unit) {
+    OutlinedTextField(value = value, onValueChange = onValueChange)
 }
 ```
+
+لو البحث بيستدعي repository، خليه في state holder مناسب بدل عمل طلب شبكة من جسم الـ Composable. السطر اللي بيغير `query` شغال داخل event callback، مش أثناء وصف الواجهة.
 
 ## Why it matters and how it works
 
@@ -150,32 +131,19 @@ Document owner, update event, and restoration need for each significant state. T
 
 ## Interview answer — short
 
-State is any value that drives the UI over time. Snapshot state, created via mutableStateOf(), is Compose's reactive state system that automatically tracks reads and schedules recomposition whenever written to. State Hoisting is the pattern of lifting state up to the caller, replacing internal state variables with a parameter for the current value and an event lambda for updates. Hoisting makes components stateless, highly reusable, previewable, and trivially testable in isolation.
+State is data needed to describe UI. Compose snapshot state makes reads and writes observable, so a changed value can invalidate readers in the relevant phase. State hoisting moves ownership to a suitable common caller and exposes a value plus a change event. Hoist when consumers must share or coordinate the value; keep isolated UI state local.
 
 ## Interview answer — structured
 
-State management and state hoisting are the foundational pillars of building robust Jetpack Compose architectures.
-In declarative UI, the screen cannot be mutated directly; instead, the UI reacts to state mutations.
-Snapshot state is Compose's custom reactive observation mechanism.
-When you create state using mutableStateOf(), Compose wraps the value inside a State object integrated into the Snapshot system.
-Whenever a composable reads that value during its execution, Compose transparently records that function scope as a subscriber.
-When the state is subsequently written to on any thread, the Snapshot system notifies the runtime, scheduling recomposition specifically for the subscribing functions.
-State Hoisting is the architectural design pattern used to decouple presentation from state ownership.
-Instead of allowing a UI component like a text field or toggle button to maintain its own internal state, developers hoist the state up to the caller.
-A hoisted component exposes two parameters: a value parameter representing the current state (flowing downward), and a callback lambda representing user-initiated events (flowing upward).
-This pattern transforms components into stateless widgets that can be previewed seamlessly, reused in different screens, and tested purely using JVM unit tests without mock view hierarchies.
+Start with the user-visible value: for a search screen, the text and results depend on a query. `mutableStateOf` is one observable holder for that query. When composition reads it, Compose can track the read and invalidate the relevant scope after an effective change. A normal Kotlin property does not notify Compose by itself, while an external `StateFlow` needs lifecycle-aware collection into Compose state. Reads in later phases can lead to layout or draw invalidation rather than composition. State hoisting addresses ownership, not observability alone. The search input receives `value` and reports `onValueChange`; the caller applies the change and sends the new value back down. If the results also need the query, use their lowest suitable common owner. If a disclosure flag affects only one component, local remembered state can be simpler. For business rules or repository interaction, a screen state holder such as a ViewModel can own the state. Test that an event updates the owner and returns as UI state; decide separately what must survive recreation.
 
 ## Interview answer — deep senior
 
-Under the hood, Compose's Snapshot system is inspired by Multiversion Concurrency Control (MVCC), identical to transaction isolation models used in high-performance SQL databases.
-When Compose begins a frame, it captures a global Snapshot. Every thread or coroutine reads an isolated, consistent snapshot of state variables without requiring synchronized mutex locks.
-During the composition phase, Compose registers a ThreadLocal read observer. Every time StateObject.value is accessed, the observer records the StateRecord reference into the SlotTable for that specific RecomposeScope.
-When a write operation occurs via StateObject.value = newValue, Compose records the mutation into the current snapshot and dispatches a global write notification to the SnapshotManager.
-The SnapshotManager identifies all invalidated RecomposeScopes and marks their layout nodes dirty.
-State Hoisting directly influences memory locality and recomposition scope granularity within this MVCC architecture.
-If state is hoisted too high into a root screen composable, modifying a minor text counter can invalidate the entire screen hierarchy unless wrapped in isolated sub-composables.
-Conversely, if state is not hoisted at all, state is lost during configuration changes and cannot be synchronized with domain repositories.
-Staff engineers apply the Single Source of Truth rule: hoist transient UI state (like scroll offsets) to local state holders, and hoist business state (like shopping cart contents) into architecture ViewModels exposed as StateFlow.
+The Compose snapshot system supplies observable state with a consistency model for reads and writes. A composable reading `State.value` in composition establishes a dependency for invalidation. The behavior also depends on the mutation policy: assigning a value considered equivalent may produce no effective change. The reader's phase matters. If a state value is only read during layout or draw, Compose can perform less work than a composition restart. The implementation uses snapshots and records internally, but claiming a full copy on every write or a fixed thread model would overstate the public contract.
+
+Hoisting is about choosing a source of truth. A stateless input exposes the current value and an event requesting a new one; it does not own a duplicate mutable copy. The state owner validates or transforms the event, then exposes a new value. For two consumers, the owner must be at least their lowest common parent and high enough to handle writes. If a child also keeps its own hidden text, a parent update can conflict with what the user typed. On the other hand, moving every local visual flag to a screen-wide ViewModel increases coupling and makes small interactions harder to understand.
+
+In production, I trace who reads and who writes each value, what happens on screen recreation, and whether data must be reloaded from persistence. I test the UI behavior at the appropriate level: a pure state transition can be a JVM unit test, while actual Compose rendering and callbacks need Compose test infrastructure. Snapshot state does not turn memory into durable storage. Performance changes should be based on a trace and user-visible frame cost, not on an assumption that hoisting always narrows recomposition.
 
 ## How to answer in the interview
 
@@ -191,11 +159,10 @@ Explain snapshot observability, read invalidation, controlled components, lowest
 
 ## Follow-up questions
 
-- **Interviewer:** "What happens if you update a normal Kotlin `var` inside a Composable without `mutableStateOf`?"
-  **Answer:** "The variable value changes in memory, but Compose runtime has no observation mechanism on standard JVM properties. No recomposition is scheduled, and the screen remains frozen showing the old value."
-
-- **Interviewer:** "What is the difference between a Stateful and Stateless composable in design systems?"
-  **Answer:** "A Stateless composable exposes pure inputs and outputs via parameters and callbacks, ideal for reusable UI design systems. A Stateful composable acts as an orchestration container that owns or manages state for a specific feature screen."
+- **Interviewer:** "What if I change a plain Kotlin `var`?"
+  **Answer:** "The value changes, but Compose does not observe that property by itself. I expose observable state or collect a flow, then verify the UI reads that state."
+- **Interviewer:** "Should every local state move into a ViewModel?"
+  **Answer:** "No. I place state at the lowest owner that can serve every reader and writer. A local tooltip flag can stay in a composable; screen business logic belongs in an appropriate state holder."
 
 ## Self-check rubric
 
@@ -206,4 +173,4 @@ Choose an owner for two consumers, trace an edit event, distinguish observabilit
 - [State and Jetpack Compose](https://developer.android.com/develop/ui/compose/state) — observable state and hoisting.
 - [Where to hoist state](https://developer.android.com/develop/ui/compose/state-hoisting) — ownership guidance.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against primary documentation on 2026-10-19.

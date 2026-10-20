@@ -24,7 +24,7 @@ What is Unidirectional Data Flow in Compose?
 
 ## Concept and technical explanation
 
-Unidirectional Data Flow (UDF) is an architectural UI design pattern where state flows strictly downward through the composable hierarchy, while user-initiated events flow strictly upward to state holders. In Jetpack Compose, UDF transforms UI trees into pure, predictable display layers. A parent composable or ViewModel acts as the single source of truth, emitting immutable state data classes to child composables. In turn, child composables capture user gestures (clicks, text input, swipes) and notify the parent via lambda callbacks without directly mutating any state variables, establishing a deterministic, circular state lifecycle.
+Unidirectional Data Flow (UDF) gives a UI feature a clear owner: current state flows from that owner to consumers, and user actions flow back as events. The owner applies business rules or starts work, then emits updated state. A child may still own isolated visual state when appropriate; UDF does not require one global ViewModel or a sealed event for every click. It makes transitions easier to trace but does not guarantee zero races, no duplicate requests or automatic skip performance. One-time effects such as navigation require an explicit delivery or acknowledgment policy.
 
 ## Practical walkthrough (English)
 
@@ -75,51 +75,30 @@ fun TaskScreenContent(
 
 ## Explanation in Arabic
 
-مفهوم تدفق البيانات أحادي الاتجاه (Unidirectional Data Flow - UDF) في Jetpack Compose:
+UDF معناها إنك تقدر تتبع رحلة التغيير: المالك يبعث **State** للمكوّنات، والمكوّن يبعت **Event** لما المستخدم يعمل حاجة، والمالك يقرر التغيير ويرجع State جديدة. مثلاً زرار الدفع يبعت `PayClicked`، الـ ViewModel يمنع الطلب المكرر ويتعامل مع الـ repository، وبعدها يبعت `Submitting` أو `Success` أو `Error`.
 
-1. ما هو تدفق البيانات أحادي الاتجاه (UDF)؟
-   - هو نمط تصميم هيكلي يدور فيه تدفق البيانات والتفاعل في **حلقة مغلقة ذات اتجاه واحد لا ينعكس أبداً**:
-     * **State Flows Down**: الحالة والبيانات تتدفق دائماً من الأعلى إلى الأسفل (من ViewModel إلى الشاشات ومنها للمكونات الفرعية كـ Parameters).
-     * **Events Flow Up**: الأحداث وتفاعلات المستخدم (Taps, Text Input) تتدفق دائماً من الأسفل إلى الأعلى (من المكونات الفرعية إلى الـ ViewModel كـ Lambdas).
+النمط ده يساعدك تعرف مين صاحب القرار ومين بيعرض النتيجة، بس مش سحر: ممكن يبقى عندك race في طلبين شبكة، أو Snackbar تضيع لو مفيش collector، أو Navigation تتكرر لو event اتبعتت تاني بعد التدوير. لازم تحدد سياسة التسليم، والأفعال المهمة زي الدفع تحتاج idempotency على السيرفر كمان. الـ UDF لا يضمن إن كل composable تتخطى ولا إن كل Bug يختفي.
 
-2. لماذا يعتبر UDF حجر الأساس في Compose؟
-   - **فصل المسؤوليات (Separation of Concerns)**: مكونات الواجهة تقتصر مهمتها على رسم ما يُعطى لها فقط دون التفكير في كيفية جلب البيانات أو تعديلها.
-   - **مصدر وحيد للحقيقة (Single Source of Truth)**: لا يمكن لشاشتين أن تختلفا في البيانات المعروضة، لأن كلاهما يراقبان نفس الحالة المركزية في الـ ViewModel.
-   - **سهولة الاختبار الخارق (Testability)**: يمكنك اختبار الـ Composable بمجرد تمرير State وهمية والتأكد من إطلاق الـ Event المناسب عند النقر.
-
-3. الفرق بينه وبين التدفق ثنائي الاتجاه (Bi-directional Binding):
-   - في الأنظمة القديمة (مثل DataBinding بالاتجاهين)، كانت الواجهة تستطيع تغيير المتغير مباشرة، مما كان يسبب سباقات بيانات (Race Conditions) وتناقضات يصعب تصحيحها.
+مش لازم كل click يبقى `sealed interface`؛ callback واضح ممكن يبقى أبسط لشاشة صغيرة. وممكن عنصر يحتفظ بحالة UI محلية، زي فتح tooltip، طالما مفيش مصدر تاني بيملك نفس القيمة. اختبر انتقال `Event → state` باختبار وحدة للـ state holder، واختبر تفاعل Compose نفسه باستخدام Compose UI tests لما يكون السلوك البصري هو محل الاختبار.
 
 ## Practical walkthrough
 
-تطبيق نمط UDF بشكل قياسي في شاشة Compose:
+مثال على حدث الدفع مع منع ضغطتين متتاليتين في طبقة المالك:
 ```kotlin
-// 1. تمثيل الـ State كبيانات تتدفق للأسفل:
-data class CounterUiState(val count: Int = 0, val isMaxReached: Boolean = false)
+data class PayUiState(val submitting: Boolean = false, val error: String? = null)
 
-// 2. تمثيل الأحداث التي تتدفق للأعلى:
-sealed interface CounterEvent {
-    data object Increment : CounterEvent
-    data object Decrement : CounterEvent
-}
-
-// 3. المكون البصري: State Flows Down, Events Flow Up:
 @Composable
-fun CounterWidget(
-    state: CounterUiState,
-    onEvent: (CounterEvent) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        Button(onClick = { onEvent(CounterEvent.Decrement) }) { Text("-") }
-        Text(text = "Count: ${state.count}", modifier = Modifier.padding(horizontal = 16.dp))
-        Button(
-            onClick = { onEvent(CounterEvent.Increment) },
-            enabled = !state.isMaxReached
-        ) { Text("+") }
+fun PayContent(state: PayUiState, onPay: () -> Unit) {
+    Column {
+        Button(onClick = onPay, enabled = !state.submitting) { Text("Pay") }
+        state.error?.let { Text(it) }
     }
 }
+// ViewModel.onPay(): لو فيه طلب جارٍ ارفض الحدث المكرر، ثم حدّث State.
+// الطلب نفسه يحتاج idempotency key على السيرفر لو الدفع حساس.
 ```
+
+اختبر انتقالات `Ready → Submitting → Success/Error`، وحدد إزاي هتتعامل مع Navigation وSnackbar عند توقف الشاشة أو إعادة إنشائها.
 
 ## Why it matters and how it works
 
@@ -161,25 +140,19 @@ Define a typed action contract, model loading/error/success explicitly, and test
 
 ## Interview answer — short
 
-Unidirectional Data Flow is an architectural pattern where state flows down through parameters and events flow up through callbacks. In Compose, a ViewModel or parent component holds the single source of truth and passes immutable state snapshots down to child composables. Child composables never mutate state directly; when users tap or type, they emit event lambdas up to the state holder, which processes business rules and emits a new state snapshot, guaranteeing predictability and zero synchronization bugs.
+UDF sends state from an owner down to UI and sends user actions back as events. The owner processes an action and emits new state. This makes ownership and transitions easier to test, but delivery of navigation or Snackbar effects and duplicate requests still need explicit handling.
 
 ## Interview answer — structured
 
-Unidirectional Data Flow is the foundational design pattern that makes Jetpack Compose predictable, modular, and resilient against state bugs.
-In legacy Android architectures, bidirectional data flow caused widespread bugs: a custom View modified its own internal state, fired a callback, and simultaneously listened for external updates. This two-way binding frequently created infinite loop feedback cycles and desynchronized views.
-UDF resolves this by enforcing a single, non-negotiable direction of data propagation.
-First, state flows exclusively downwards. A parent state holder (such as an Android ViewModel) encapsulates the business state and exposes an immutable state model, typically as a StateFlow collected as state. Child composables receive this state as immutable parameters and project it visually.
-Second, events flow exclusively upwards. Child composables are completely decoupled from state mutation logic. When a user interacts with a widget—tapping a button, typing in a field, or swiping a card—the composable invokes an event callback lambda.
-The state holder receives the event, executes business validation, interacts with repositories, and generates a new immutable state instance.
-This new state flows down, triggering a controlled recomposition pass.
+In a Compose feature, UDF means the UI consumes a state value and reports user intent through callbacks. A screen state holder owns decisions and exposes a new value after handling an event. For a payment button, the UI renders `Ready`, sends `Pay`, shows `Submitting`, then renders the result. The callback is an event boundary; a repository call does not belong in the composable body. A small local visual state can remain local if no other consumer needs it. A single screen model can simplify coherence, but a large model can widen the work needed per update. UDF is an ownership pattern, not a guarantee of no races, no loops or automatic skipping. Navigation and Snackbar delivery require a policy for stopped collectors and recreation; a payment request additionally needs duplicate protection and server idempotency. Test the state holder's event-to-state transition separately from the actual UI click behavior.
 
 ## Interview answer — deep senior
 
-Under the hood, Unidirectional Data Flow harmonizes perfectly with the Compose Compiler's smart recomposition algorithms and reactive Snapshot system.
-When state flows downwards as immutable data classes, the Compose runtime can exploit referential equality and structural equality checks across RecomposeScopes. If a child composable observes that its incoming state instance is equal to its previous composition state, the Compose runtime invokes its early-return optimization, skipping execution of that entire UI subtree.
-If child composables were allowed to mutate state directly or read ambient mutable variables, the Snapshot system would detect inconsistent state writes during active read phases. This produces state race conditions, breaks the determinism of the SlotTable, and triggers recomposition loops where modifying state during composition causes continuous invalidations on every frame.
-Furthermore, UDF dramatically simplifies unit and screenshot testing.
-Because UI content composables are stateless consumers of state that emit events via lambdas, engineers test complex screens on the standard JVM without spinning up Android Activities or mock ViewModels. A unit test simply passes an arbitrary state instance into the composable and verifies that clicking a button triggers the expected event lambda callback with the correct payload. Additionally, this architectural decoupling allows production teams to record, serialize, and replay UI event streams deterministically, accelerating defect reproduction and telemetry auditing across complex enterprise applications.
+The useful invariant in UDF is that each piece of meaningful state has an owner. Children display an immutable view of it and emit intents. The owner validates an intent, coordinates asynchronous work and publishes a coherent state update. For a checkout flow, `PayClicked` should first move the screen into a submitting state, reject duplicate UI actions and use a server idempotency key because disabling a button cannot protect against retries or network races. On success, the owner can represent a receipt destination in durable screen state or deliver a navigation effect with explicit acknowledgment semantics.
+
+One-time effects are where simplistic UDF examples fail. A hot event stream with no active collector can drop a Snackbar while the screen is stopped; a replaying stream can navigate twice after rotation. The delivery choice depends on whether the event must survive recreation and whether it can safely repeat. Treat navigation to a completed purchase differently from a decorative toast. Similarly, UDF does not imply that every child is stateless. A local expansion flag can be private to a component, while a cart total used by several consumers belongs at their common owner.
+
+Compose can use observable state and compiler skipping to avoid some work, but UDF itself does not guarantee a skip: stability, current compiler configuration and where state is read still matter. A large `UiState` passed everywhere may increase invalidated work. Profile the actual interaction before splitting the state. Unit tests can verify a plain state holder or ViewModel reducer on the JVM; verifying Compose rendering and click callbacks generally needs Compose UI test infrastructure. The architecture improves traceability when the contracts are explicit, while concurrency and lifecycle correctness still require separate tests.
 
 ## How to answer in the interview
 
@@ -195,11 +168,10 @@ Discuss state ownership, typed actions, reducer-like transitions, effects, lifec
 
 ## Follow-up questions
 
-- **Interviewer:** "How does UDF prevent infinite update loops in Jetpack Compose?"
-  **Answer:** "Because child composables cannot mutate state directly, they cannot trigger recursive invalidations. State is mutated only in response to discrete events processed by the state holder, ensuring deterministic state transitions."
-
-- **Interviewer:** "Can a screen have multiple state holders while maintaining UDF?"
-  **Answer:** "Yes. A screen typically has a business-logic ViewModel state holder for domain data, and one or more plain Kotlin class UI state holders (like `ScrollState` or `DrawerState`) for purely visual coordination."
+- **Interviewer:** "Does UDF prevent every recomposition loop?"
+  **Answer:** "No. Clear ownership reduces accidental feedback, but an owner can still emit a new state in response to every render-triggered effect. I keep events tied to user actions or correctly keyed effects and test transitions."
+- **Interviewer:** "Can a screen have local state too?"
+  **Answer:** "Yes. Isolated visual state may stay in a composable. Shared business state goes to a suitable common owner, with explicit event and restoration contracts."
 
 ## Self-check rubric
 
@@ -210,4 +182,4 @@ Trace one event to a state transition, name the owner, and explain one-shot deli
 - [Compose UI architecture](https://developer.android.com/develop/ui/compose/architecture) — UDF and state/events.
 - [UI layer guidance](https://developer.android.com/topic/architecture/ui-layer) — state holders and UI events.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against primary documentation on 2026-10-19.

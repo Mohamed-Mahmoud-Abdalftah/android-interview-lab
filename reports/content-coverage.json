@@ -718,7 +718,7 @@
       "topic": "AND",
       "status": "reviewed",
       "automatedQuality": "passes-checks",
-      "hasKotlinCode": true
+      "hasKotlinCode": false
     },
     "AND-08": {
       "topic": "AND",

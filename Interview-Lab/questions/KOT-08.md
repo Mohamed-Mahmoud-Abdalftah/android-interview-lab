@@ -39,14 +39,14 @@ Failure Scenario — Nested Scope Anti-Pattern with Ambiguous Receivers:
 fun sendPayload(client: HttpClient, config: RequestConfig?) {
     config?.let { // 'it' is RequestConfig
         client.run { // 'this' is HttpClient
-            apply { // Ambiguity: is 'this' HttpClient or RequestConfig?
+            apply { // Redundant nested receiver: 'this' is still HttpClient
                 setTimeout(it.timeout) // Hard to read and maintain
             }
         }
     }
 }
 ```
-Nesting multiple scope functions using `this` obscures lexical ownership, increases cognitive complexity, and easily leads to invoking methods on the wrong receiver.
+Nesting multiple scope functions obscures lexical ownership. The example repeatedly rebinds `this` to `HttpClient`, which is redundant; with different nested receiver types, unqualified shared member names can target the inner receiver unexpectedly.
 
 Production Architecture — Intentional, Clear Scope Selection:
 ```kotlin
@@ -54,7 +54,7 @@ Production Architecture — Intentional, Clear Scope Selection:
 val request = NetworkRequest.Builder().apply {
     setUrl("https://api.example.com/v1/orders")
     setTimeoutMs(5000)
-    addHeader("Authorization", "Bearer token_xyz")
+    addHeader("Accept", "application/json")
 }.build()
 
 // 2. also: Perform an isolated side-effect (logging) without mutating the request
@@ -71,7 +71,7 @@ fun handleResponse(rawPayload: String?): OrderUiModel? {
 ```
 
 Bytecode Decompilation Verification:
-Decompiling any of the five scope functions reveals that all five are declared as `inline`:
+Decompiling any of the five scope functions reveals that the standard-library versions are declared as `inline`:
 ```java
 // Kotlin: val result = obj.let { it.compute() }
 // Decompiled bytecode:
@@ -79,7 +79,7 @@ Object var1 = obj;
 // inlined body executes directly without method call:
 Object result = compute(var1);
 ```
-Because they are fully inlined at the call site, scope functions introduce zero object allocation overhead, zero interface calls, and compile directly to linear Java bytecodes.
+Inlining commonly removes a separate scope-function call and eligible lambda allocation; operations inside the block can still allocate or call other methods.
 
 ## Explanation in Arabic
 
@@ -97,12 +97,9 @@ Because they are fully inlined at the call site, scope functions introduce zero 
 
 ## Practical walkthrough
 
-في شاشة أندرويد:
-- apply: لتهيئة كائن View أو Intent: Intent(context, DetailActivity::class.java).apply { putExtra("id", 123); flags = FLAG_ACTIVITY_NEW_TASK }.
-- let: لفحص null وتحويل القيمة بأمان: user?.let { sendNotification(it.email) }.
-- also: لعمل Side-effect جانبي زي تسجيل Log دون تغيير الكائن: createOrder().also { Log.d("Order", "Created ${it.id}") }.
-- run: لتهيئة كائن وحساب نتيجة نهائية: val label = TextView(context).run { text = "Hello"; width }.
-- with: لما يكون عندك كائن مش null وعايز تنادي عليه دوال كتير: with(binding) { nameText.text = "..."; emailText.text = "..." }.
+في شاشة أندرويد، استخدم `apply` عشان تضبط كائن `Intent` وترجعه، و`also` لو عايز تسجل حدث أو تمرر الكائن لدالة جانبية وترجع نفس الكائن، و`let` لو هتحوّل قيمة قابلة للفراغ لنتيجة تانية. `run` و`with` يخلّوك تستخدم أعضاء الكائن عبر `this` ويرجعوا آخر تعبير؛ الفرق إن `with` بياخد الكائن كأول argument.
+
+لو كتبت `response?.let { parseOrNull(it) } ?: showError()`، فرع الخطأ هيتنفذ كمان لو `parseOrNull` رجعت `null` رغم وجود `response`. لو قصدك تفرّق بين غياب `response` وفشل التحويل، اكتب الشرطين صراحة. قلل التداخل عشان `this` ما يشاورش بالخطأ على receiver داخلي.
 
 ## Why it matters and how it works
 
@@ -149,13 +146,11 @@ Senior engineers forbid deeply nested scope functions to prevent receiver shadow
 
 ## Interview answer — deep senior
 
-From a compiler and bytecode perspective, all five standard library scope functions—let, run, with, apply, and also—are declared with the inline modifier and contract definitions. This means they do not exist as method calls in compiled JVM bytecode. Instead, kotlinc inlines the lambda instructions directly at the call site, eliminating all functional interface allocations, function call frames, and indirection overhead.
+The five standard scope functions differ by two source-level choices: let and also bind the object as an argument, while run, with, and apply use it as a receiver; apply and also return the context object, while let, run, and with return the lambda result. with takes its context as an ordinary argument, whereas the others are commonly called with extension syntax. They do not start a thread or create an asynchronous scope.
 
-When examining decompiled bytecode for apply, such as obj.apply { doSomething() }, the compiler assigns obj to a local stack variable, inlines doSomething() directly against that variable, and leaves the original reference at the top of the stack frame to satisfy the return contract. For let, the compiler stores the receiver in a temporary register, passes it into the inlined transformation block, and leaves the evaluated expression on the operand stack. Consequently, performance differences among scope functions are completely non-existent at runtime; the choice between them is purely semantic and architectural.
+These standard-library functions are inline, so eligible lambda code is normally expanded at the call site. That often avoids a separate Function object and call. It does not make operations inside the block free: allocating a builder, parsing JSON, logging, exception handling, and captured values can still have runtime cost. Compiler details also vary by target and optimization. Choose a scope function for readability, not an assertion of zero runtime overhead.
 
-However, improper nesting of receiver-based scope functions (apply, run, with) introduces severe scoping bugs. Because these functions bring the context object into lexical scope as an implicit this, nesting them creates multiple implicit receivers. If an inner call invokes a method shared by both receivers, the inner receiver silently shadows the outer one, causing unexpected state mutations.
-
-Another critical pitfall involves pairing safe-call let with the Elvis operator: target?.let { it.transform() } ?: fallback(). If the transform() method evaluates to null, the entire let expression evaluates to null, triggering the Elvis fallback even though target was completely non-null. In high-stakes Android production code, senior engineers establish strict linting rules: limit scope functions to single-level expressions, use also strictly for observational side-effects, and replace ambiguous let-Elvis cascades with clear if-else branching.
+Nested receiver lambdas can make an unqualified member call target the innermost implicit receiver. Name the receiver explicitly or use ordinary local variables when ownership is unclear. The expression target?.let { transform(it) } ?: fallback() executes fallback whenever the lambda result is null, including when target was non-null. An explicit if/else distinguishes null input from null result. Do not log authorization headers while demonstrating also in a network path.
 
 ## How to answer in the interview
 
@@ -178,7 +173,7 @@ Describe receiver/argument and result/receiver matrix, `with` call form, null-sa
   **Answer:** "`with` was designed before Kotlin standard library conventions favored extension syntax. It takes the receiver as its first parameter: `with(receiver) { ... }`. Functionally, it is identical to `receiver.run { ... }`, and most modern codebases prefer `run` for consistency."
 
 - **Interviewer:** "What is the danger of using `?.let { ... }` as an `if-else` replacement with `?: run { ... }`?"
-  **Answer:** "If the code inside the `let` block evaluates to `null` (for instance, the last expression returns null), the Elvis operator `?: run` will unexpectedly trigger even though the original object was NOT null! It creates subtle logic bugs. When an explicit else branch is required, standard `if (x != null) ... else ...` is always safer."
+  **Answer:** "If the code inside the `let` block evaluates to `null` (for instance, the last expression returns null), the Elvis operator `?: run` will unexpectedly trigger even though the original object was NOT null! It creates subtle logic bugs. When an explicit else branch is required, standard `if (x != null) ... else ...` is often clearer."
 
 ## Self-check rubric
 
@@ -188,4 +183,4 @@ Classify all five by receiver and return value; explain a legitimate use of thre
 
 - [Kotlin scope functions](https://kotlinlang.org/docs/scope-functions.html) — receiver and return distinctions.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against primary documentation on 2026-10-19.

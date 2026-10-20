@@ -22,11 +22,12 @@ Explain closed hierarchies, payload support, enum limitations, and open extensio
 
 ## Concept and technical explanation
 
-Kotlin provides four distinct constructs for modeling hierarchies and state spaces:
-1. enum class: Models a closed, finite set of constant values known at compile time. Each enum constant is a singleton instance of the enum class, sharing identical properties and functions. They cannot carry varying instance payloads across different cases.
-2. sealed class: Represents a restricted, closed class hierarchy where all direct subclasses are known at compile time and defined within the same package and module. Unlike enums, subclasses of a sealed class can be instantiated multiple times, maintain independent state shapes, and carry heterogeneous constructor payloads.
-3. sealed interface: Extends sealed hierarchy semantics to interfaces, allowing a class to implement multiple sealed hierarchies simultaneously. This circumvents single-inheritance limitations and enables composable algebraic data types without JVM class inheritance coupling.
-4. abstract class: An open, extensible base class intended for traditional object-oriented polymorphism across arbitrary packages and external modules. The compiler does not enforce exhaustive checking on abstract classes in when expressions.
+Choose a hierarchy by the kinds of variants it must represent and who may extend it:
+1. An enum class defines a fixed set of singleton entries. Entries may have different constructor values and may override behavior, but all share one enum type and constructor contract; they are awkward for distinct payload shapes such as Success(receipt) versus Failure(error).
+2. A sealed class restricts direct subclasses to the same package and module, and can hold constructor state or implementation. Direct subclasses must have a proper name and cannot be local or anonymous. Indirect subclasses of a non-sealed direct subclass may be open.
+3. A sealed interface gives the same restricted direct-subtype model without consuming a class-inheritance slot. A type may implement several interfaces.
+4. An abstract class may be extended wherever access rules permit, so the compiler cannot enumerate every subclass for exhaustive when checking. It is useful when external extension is part of the API.
+Exhaustiveness is a source-level compiler check; do not infer a universal JVM switch layout or the absence of a runtime fallback from it.
 
 ## Practical walkthrough (English)
 
@@ -68,7 +69,7 @@ fun renderCheckoutState(state: CheckoutUiState): String = when (state) {
 ```
 
 Bytecode Decompilation Verification:
-Decompiling a sealed class reveals that kotlinc generates a private synthetic constructor:
+A particular Kotlin/JVM compiler version may lower a sealed class with a private constructor and a synthetic bridge, for example:
 ```java
 public abstract class CheckoutUiState {
     private CheckoutUiState() {}
@@ -77,29 +78,22 @@ public abstract class CheckoutUiState {
     }
 }
 ```
-This bytecode structure prevents external packages from subclassing. Furthermore, when compiling a `when` expression over a sealed type, kotlinc synthesizes a lookupswitch or tableswitch mapping known subclass tokens, proving compile-time exhaustiveness.
+The source restriction is enforced by the Kotlin compiler. A `when` over sealed variants is checked for exhaustiveness at compile time; its JVM bytecode shape is version- and target-dependent.
 
 ## Explanation in Arabic
 
-المقارنة بين sealed class و sealed interface و enum class و abstract class بتحدد كيفية نمذجة البيانات والـ State في معمارية التطبيق:
-
-1. enum class: بيمثل مجموعة ثابتة ومحدودة من القيم الثابتة (Constants)؛ كل عنصر فيه بيملك نفس الخصائص والدوال بالضبط (زي OrderStatus.PENDING, SHIPPED, DELIVERED). مينفعش عنصر يشيل بيانات مختلفة عن الباقيين.
-2. sealed class: بيمثل تسلسل هرمي مقيد ومعروف مسبقاً للمترجم. كل Subclass يقدر يكون data class مستقل ببيانات وحقول مختلفة كلياً، وميزة المترجم إنه بيضمن الـ Exhaustiveness في when بدون الحاجة لـ else!
-3. sealed interface: ظهرت في Kotlin 1.5، وهي أفضل من sealed class لأنها بتسمح بالـ Multiple Inheritance؛ الكائن يقدر يورث من كذا sealed interface، وده مثالي لتنظيم حالات الـ UI المعقدة.
-4. abstract class: كلاس مفتوح للوراثة في أي مكان أو موديول، والمترجم ميعرفش كل فروعه، وبالتالي when عليه لازم تطلب else دايماً.
+السؤال الأساسي هنا: الحالات معروفة ومقفولة، ولا المكتبة سامحة لناس تانية تزود حالات؟
+- `enum class` مناسب لعدد ثابت من القيم، وكل entry نسخة وحيدة. ينفع كل entry تاخد قيمة مختلفة في نفس حقول الـ constructor أو تنفّذ سلوك مختلف؛ اللي ما ينفعش بسهولة هو إن كل حالة يكون لها شكل بيانات مستقل زي `Success(receipt)` و`Failure(error)`.
+- `sealed class` بيحصر الورثة المباشرين في نفس الـ package والـ module، وممكن يحمل بيانات أو كود مشترك. القيد على الورثة **المباشرين**؛ لو واحد منهم `open`، ممكن تظهر وراثة غير مباشرة حسب قواعده.
+- `sealed interface` نفس فكرة حصر الورثة المباشرين، لكن الكلاس يقدر ينفّذ أكتر من interface.
+- `abstract class` يسمح بالامتداد حسب الرؤية والـ API، فالمترجم ما يقدرش يحصر كل الحالات في `when`.
+اكتب `when` من غير `else` لما عايز المترجم ينبهك عند إضافة حالة مباشرة جديدة. ده فحص وقت البناء، مش وعد بشكل bytecode معين.
 
 ## Practical walkthrough
 
-في شاشة تفاصيل الدفع:
-- استخدام enum class خطأ لأن حالة الفشل محتاجة كود الخطأ ورسالة وزرار إعادة المحاولة (PaymentState.Error(val code: Int, val canRetry: Boolean)) بينما حالة النجاح محتاجة رقم الإيصال.
-- الحل الأفضل: استخدام sealed interface لتحديد حالات الشاشة:
-  sealed interface PaymentUiState {
-      object Idle : PaymentUiState
-      object Loading : PaymentUiState
-      data class Success(val receiptId: String) : PaymentUiState
-      data class Error(val message: String, val canRetry: Boolean) : PaymentUiState
-  }
-- في Compose: دالة when بتكون Exhaustive؛ لو ضفت حالة جديدة زي PendingBiometric مستقبلاً، المترجم هيكسر الـ build وينبهك لكل شاشة محتاجة تتعامل مع الحالة دي.
+في شاشة الدفع، لو كتبت `PaymentStatus.SUCCESS` جنب `receiptId: String?` ممكن الحالة تقول نجاح وفي نفس الوقت رقم الإيصال `null`. الحل إنك تمثّل كل نتيجة بشكلها: `data object Idle` و`data class Success(val receiptId: String)` و`data class Error(val reason: String)` تحت `sealed interface CheckoutUiState`.
+
+خلّي `when (state)` يعالج الفروع صراحة. لما تضيف `RequiresVerification`، البناء هينبهك للمواضع اللي تحتاج تعديل. لو عندك API محتاج أطراف خارجية تضيف حالات جديدة، اختار `abstract class` أو interface مفتوح وتعامل مع فرع افتراضي بوضوح. `enum` يظل اختيار بسيط لو كل الحالات نفس شكل البيانات.
 
 ## Why it matters and how it works
 
@@ -135,13 +129,13 @@ A checkout ViewModel exposes `CheckoutState` as sealed cases. Rendering handles 
 
 ## Interview answer — short
 
-An enum class models a fixed set of constant singleton values sharing uniform structure. A sealed class or sealed interface defines a closed hierarchy where subclasses are known at compile time, enabling heterogeneous payloads and exhaustive when expressions without an else branch. A sealed interface permits multiple inheritance across hierarchies. In contrast, an abstract class is open for external extension but lacks compiler exhaustiveness guarantees.
+An enum class models a fixed set of constant singleton values sharing uniform structure. A sealed class or sealed interface defines a closed hierarchy where subclasses are known at compile time, enabling heterogeneous payloads and compiler-checked exhaustive when expressions without an else branch. A sealed interface permits multiple inheritance across hierarchies. In contrast, an abstract class is open for external extension but lacks compiler exhaustiveness guarantees.
 
 ## Interview answer — structured
 
-Selecting the appropriate hierarchy construct in Kotlin depends on whether the domain demands compile-time exhaustiveness or open polymorphism. An enum class is tailored for uniform constants where each entry is a static singleton sharing identical attributes, such as HTTP methods or card networks.
+Selecting the appropriate hierarchy construct in Kotlin depends on whether the domain demands compile-time exhaustiveness or open polymorphism. An enum class is tailored for a fixed set of singleton constants that can hold different values for shared fields, such as HTTP methods or card networks.
 
-Sealed classes and sealed interfaces represent algebraic data types. They restrict inheritance to the current compilation unit, enabling the compiler to verify that every subtype is handled in when expressions without an else branch. Unlike enums, each sealed case can carry distinct typed payloads and maintain independent state lifecycles. Sealed interfaces further enhance modularity by allowing a domain model to belong to multiple sealed hierarchies simultaneously.
+Sealed classes and sealed interfaces represent restricted hierarchies. They restrict direct inheritance to the same package and module, enabling the compiler to verify that every subtype is handled in when expressions without an else branch. Unlike enums, each sealed case can carry distinct typed payloads and maintain independent state lifecycles. Sealed interfaces further enhance modularity by allowing a domain model to belong to multiple sealed hierarchies simultaneously.
 
 In production, an abstract class is suited only when building open frameworks where consumers outside the module must extend base behavior.
 
@@ -150,13 +144,11 @@ Senior engineers model MVI and Jetpack Compose screen states using sealed interf
 
 ## Interview answer — deep senior
 
-At the bytecode and JVM level, the mechanisms enforcing these hierarchy constructs diverge significantly. An enum class compiles to a subclass of java.lang.Enum, with each constant emitted as a public static final field initialized in the class initializer <clinit>. Because each constant is a JVM singleton, enums cannot carry dynamic constructor state across instances, and every constant incurs class-loading overhead upon first access.
+At the source level, sealed classes and sealed interfaces restrict direct subclasses to the same package and module. That closed direct set lets the compiler check exhaustive when expressions and supported when statements. An else branch can hide newly added variants, although an else can be intentional at interoperability boundaries. Indirect subclasses may still be open if a direct subclass is not itself sealed.
 
-In contrast, a sealed class compiles to an abstract Java class whose constructor is marked private or synthetic with a DefaultConstructorMarker. This bytecode convention guarantees that external bytecode cannot extend the class, while permitting nested or same-file subclasses to invoke the synthetic constructor. When evaluating a when expression over a sealed class, kotlinc evaluates the runtime instance using instanceof instructions or synthesizes an integer-mapped switch table. If all sealed subtypes are covered, the compiler omits the default switch label, ensuring that adding a new subclass immediately breaks compilation across all unhandled sites.
+An enum defines fixed singleton entries of one type. Entries can receive different values through shared constructor parameters and can override abstract or open behavior, so claiming that enum entries cannot carry different data is inaccurate. A sealed hierarchy is more expressive when variants need different fields or multiple instances. A sealed class can carry shared constructor state and implementation; a sealed interface supports multiple interface inheritance. Abstract classes leave extension open wherever access rules allow.
 
-Sealed interfaces compile directly to JVM interface class files accompanied by PermittedSubclasses compiler metadata (or kotlin.Metadata attributes). This enables classes to participate in multiple sealed domains without consuming the single class inheritance slot on the JVM. From a memory allocation perspective, sealed hierarchies can combine data object singletons for stateless cases (like Loading or Idle) with data class instances for payload-bearing cases (like Success or Error), eliminating heap allocations for static states while preserving rich payload modeling.
-
-In enterprise Android architecture, senior engineers strictly prefer sealed interfaces over abstract classes for UI and navigation state. Abstract classes permit external subclasses to leak into domain boundaries without compiler validation, whereas sealed interfaces ensure strict architectural containment, deterministic state transitions, and seamless integration with Compose recomposition pruning.
+On Kotlin/JVM, enums use the JVM enum model, but compiler lowering for sealed hierarchies and when varies with Kotlin and JVM target versions. Exhaustiveness is not evidence of a particular tableswitch, lookupswitch, synthetic constructor, or runtime branch shape. A runtime fallback can remain for binary compatibility when a library evolves without recompiling consumers. In an Android UI, model Idle as a data object and Success(receiptId) or Error(reason) as data classes, then handle each branch. Choose the hierarchy based on API extensibility and shared state rather than declaring one sealed form universally superior.
 
 ## How to answer in the interview
 
@@ -176,10 +168,10 @@ Discuss direct-subclass restrictions, exhaustive `when`, `data object`, state-sp
   **Answer:** "Because it destroys compiler exhaustiveness checking. If you include an `else` branch, and another developer adds a new state like `PaymentState.RequiresVerification` next month, the compiler will not warn you. The new state will silently fall into the `else` branch, causing subtle production bugs. Omitting `else` forces the compiler to break the build until the new state is explicitly handled."
 
 - **Interviewer:** "Can a sealed class have subclasses in a different Gradle module?"
-  **Answer:** "No. Subclasses of a sealed class or interface must be defined in the same compilation module and package. This rule allows the compiler to guarantee that it knows every possible subtype at compile time."
+  **Answer:** "Direct subclasses must be in the same compilation module and package; an indirect subclass of an open direct subclass follows that subclass's normal inheritance rules. This rule allows the compiler to guarantee that it knows every possible subtype at compile time."
 
 - **Interviewer:** "When would you prefer a sealed class over a sealed interface?"
-  **Answer:** "The only time I prefer a sealed class is when I need to store shared non-abstract state or constructor parameters across all subclasses, or enforce a common non-public constructor. If there is no shared constructor state, sealed interface is always the cleaner, more flexible choice."
+  **Answer:** "I prefer a sealed class when shared constructor state or implementation is useful. A sealed interface is convenient when variants already inherit from another class or participate in more than one hierarchy. Neither is universally better."
 
 ## Self-check rubric
 
@@ -190,4 +182,4 @@ Give one enum use case and one sealed use case; explain payload advantage, exhau
 - [Kotlin sealed classes and interfaces](https://kotlinlang.org/docs/sealed-classes.html) — restricted hierarchies and exhaustive `when`.
 - [Kotlin enum classes](https://kotlinlang.org/docs/enum-classes.html) — enum constants and behavior.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against primary documentation on 2026-10-19.

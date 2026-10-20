@@ -22,11 +22,7 @@ Define function values and higher-order functions, including capture and cost im
 
 ## Concept and technical explanation
 
-In Kotlin, functions are first-class citizens, enabling functional programming patterns via higher-order functions and lambda expressions:
-1. Higher-Order Function: Any function that accepts one or more functions as parameters, returns a function as its result, or both. Examples include standard library operations such as filter, map, fold, and custom domain orchestrators.
-2. Lambda Expression: An anonymous, concise function literal that can be passed as an expression or stored in a variable, denoted by curly braces { params -> body }. When a lambda accepts a single argument, it can be implicitly referenced using the it keyword.
-3. Function Types: Declared using parentheses and an arrow notation, such as (Int, String) -> Boolean, representing the signature contract of acceptable function values.
-4. Closures and Variable Capture: Lambdas can capture variables from their outer lexical scope. When capturing mutable references, the compiler transparently wraps the primitive or object reference in synthetic Ref containers (such as IntRef or ObjectRef) residing on the heap.
+A higher-order function accepts or returns a function value; a lambda is one syntax for creating such a value. A function type such as (Int) -> Boolean describes its parameter and result contract. A lambda can capture variables from the surrounding scope. On Kotlin/JVM, implementation details depend on the compiler backend, target, whether the lambda is inlined, and whether it captures state. Mutable captured locals may require a reference wrapper in generated code. Neither every capture nor every call guarantees a new heap allocation. An inline function can inline eligible lambda bodies at the call site, often removing function-object and call overhead, but code size can grow and crossinline/noinline or escaping values change the result.
 
 ## Practical walkthrough (English)
 
@@ -76,13 +72,13 @@ class TransactionViewModel(private val repository: TransactionRepository) : View
 ```
 
 Bytecode Decompilation Verification:
-Decompiling a standard non-inlined higher-order function reveals that kotlinc transforms the lambda parameter into an instance of a functional interface:
+A representative non-inlined Kotlin/JVM higher-order function accepts a function interface parameter:
 ```java
 public static final Object firstMatching(List items, Function1 accept) {
     // accept.invoke(item) is executed via interface dispatch
 }
 ```
-Furthermore, capturing a mutable local variable compiles to:
+One possible JVM lowering of a captured mutable local is:
 ```java
 final IntRef counter = new IntRef();
 counter.element = 0;
@@ -91,22 +87,17 @@ counter.element = 0;
 
 ## Explanation in Arabic
 
-الـ Higher-Order Functions والـ Lambdas هي قلب البرمجة الوظيفية (Functional Programming) في Kotlin:
+الـ higher-order function هي دالة بتاخد دالة كـ parameter أو بترجع دالة؛ والـ lambda طريقة مختصرة تكتب بيها الدالة دي. نوع زي `(Int) -> Boolean` يوضح المدخل والنتيجة.
 
-1. الـ Higher-Order Function: هي أي دالة بتقبل دالة تانية كـ Parameter أو بترجع دالة كـ Return value (زي filter و map و forEach).
-2. الـ Lambda: هي دالة مجهولة الاسم (Anonymous Function) بتكتبها بشكل مقتضب بين أقواس معقوفة { a, b -> a + b }.
-3. تحت الغطاء في الـ JVM:
-   المترجم بيترجم الـ Lambdas لـ Anonymous Inner Classes بتنفذ Interfaces اسمها Function0 أو Function1 أو Function2 حسب عدد الـ Parameters.
-4. فخ الـ Closure و الـ Memory Allocation:
-   لو الـ Lambda مبتلمسش أي متغير خارجي، المترجم بيعمل منها Singleton كائن واحد في الذاكرة. لكن لو عملت Capture لمتغير محلي من الدالة الخارجية (Closure)،    الـ JVM هتضطر تعمل New Object Allocation في الـ Heap مع كل استدعاء! علشان كده الدوال القياسية زي filter و map بتتعمل inline لتفادي هذا الـ Overhead تماماً.
+الـ lambda ممكن تمسك قيمة من النطاق اللي حواليها. لو مسكت `Activity` واتخزنت كـ callback عمره أطول من الشاشة، الشاشة هتفضل موجودة في الذاكرة. أما من ناحية الأداء، ما ينفعش نقول إن كل lambda بتتحول لكلاس جديد أو إن كل capture بيعمل allocation في كل مرة؛ ده بيعتمد على نسخة المترجم، الـ target، والـ inlining وطريقة استخدام القيمة. `var` محلي متاخد داخل lambda ممكن يحتاج wrapper زي `Ref.IntRef` في بعض تمثيلات JVM.
+
+دوال المكتبة `map` و`filter` inline في حالات شائعة، لكن ده مش معناه إن شغل التحويل نفسه مجاني. قِس الأداء الحقيقي قبل ما تغيّر API واضح لمجرد توقع تكلفة lambda.
 
 ## Practical walkthrough
 
-في شاشة قائمة منتجات RecyclerView:
-- النهج الخاطئ: تمرير Lambda بتعمل Capture لمتغيرات متغيرة داخل loop سريعة بدون inlining، مما يرفع معدل استهلاك الـ Heap ويشغل الـ Garbage Collector باستمرار (GC Pauses).
-- النهج الصحيح: استخدام inline functions للعمليات الحسابية السريعة، أو تمرير SAM Interface واضحة ومستقرة للأزرار:
-  class ProductAdapter(private val onItemClick: (ProductId) -> Unit)
-- التحقق: استخدم Android Studio Profiler (Memory Allocation Tracker) وتأكد إن الضغط على العناصر مش بيولد ملايين كائنات Function1 في الـ Heap.
+افترض إن `Activity` سجّلت callback في `Repository` طويل العمر، والـ callback بينادي `updateUi()` على الشاشة. بعد دوران الشاشة، الـ Repository ممكن يفضل ماسك النسخة القديمة. الحل إنك تلغي التسجيل في الوقت المناسب، أو تعرض البيانات كـ `Flow` وتجمعها داخل نطاق lifecycle مناسب، وتخلي الـ `ViewModel` يحتفظ بحالة الشاشة من غير مرجع مباشر للـ `Activity`.
+
+لو بتستخدم `filter` و`map` لمعالجة قائمة، ابدأ بالحل الواضح. لو profiler أظهر تكلفة فعلية في مسار ساخن، قارن التنفيذ مع حلقة مباشرة، وراجع حجم القوائم وتكرار الاستدعاء. ما تحوّلش كل دالة higher-order إلى `inline` بلا قياس؛ نسخ جسم الدالة في كل موضع ممكن يكبر الكود.
 
 ## Why it matters and how it works
 
@@ -139,7 +130,7 @@ A validation pipeline accepts small predicates and applies them synchronously. F
 
 ## Interview answer — short
 
-A higher-order function is a function that takes other functions as parameters or returns a function. A lambda expression is an anonymous function literal that can be stored and passed as a value. Under the hood on the JVM, lambdas compile to instances of FunctionN interfaces or are inlined at the call site. When a lambda captures mutable variables from its outer scope, the compiler allocates heap-based Ref wrapper objects.
+A higher-order function is a function that takes other functions as parameters or returns a function. A lambda expression is an anonymous function literal that can be stored and passed as a value. Under the hood on the JVM, lambdas compile to instances of FunctionN interfaces or are inlined at the call site. A mutable captured local may use a shared Ref wrapper in Kotlin/JVM, depending on lowering and whether the lambda escapes.
 
 ## Interview answer — structured
 
@@ -149,24 +140,22 @@ Passing functions enables composable, declarative code architectures. In Android
 
 In production, the critical danger lies in lambda closures capturing surrounding state. When a lambda captures an Activity, Fragment, or ViewModel reference and is passed to an asynchronous long-lived source, it leads to severe memory leaks.
 
-Senior engineers avoid capturing mutable state across thread boundaries, leverage lifecycle-aware coroutine scopes for asynchronous observation, and utilize inline functions to eliminate heap object allocation overhead.
+Senior engineers avoid capturing mutable state across thread boundaries, leverage lifecycle-aware coroutine scopes for asynchronous observation, and use inline functions selectively when their semantics and measured costs justify them.
 
 
 ## Interview answer — deep senior
 
-Analyzing higher-order functions at the bytecode level reveals substantial performance nuances regarding object allocation and execution overhead. In standard Kotlin bytecode, every non-inlined lambda compiles to an anonymous inner class implementing a JVM functional interface from the kotlin.jvm.functions package, specifically Function0 through Function22 depending on arity. Invoking the lambda translates to an invokeinterface or invokevirtual instruction on the synthetic invoke() method.
+Function values on Kotlin/JVM commonly use function interfaces, but exact lowering is an implementation detail that varies by compiler version and target. Non-capturing lambdas may be reused; capturing lambdas may require objects when they escape, while inline call sites can avoid creating a function object for eligible parameters. Capturing a mutable local can require a shared reference wrapper in generated JVM code so both scopes observe mutations. These are possibilities to inspect with bytecode or a profiler, not universal allocation rules.
 
-If a lambda is stateless, meaning it does not capture any variables from its enclosing scope, the Kotlin compiler optimizes it into a singleton instance stored in a static final field, avoiding repeated heap allocations. However, if the lambda captures variables from its surrounding scope, a new Function instance must be instantiated on the JVM heap every single time the execution flow passes through that call site. In high-frequency rendering loops or large collection iterations, this rapid allocation churn generates significant heap fragmentation and triggers ART garbage collector pauses.
+A more important Android correctness issue is lifetime. A callback retained by a process-long repository can keep an Activity alive if it captures the Activity. Remove the listener, bind collection to the UI lifecycle, or expose a cold Flow with lifecycle-aware collection. A ViewModel can own screen state, but should not retain the Activity.
 
-Variable capture introduces another critical memory indirection. If a lambda captures a mutable local primitive, such as var count = 0, the JVM cannot store a mutable stack variable across multiple stack frames. The compiler circumvents this by allocating an ObjectRef or IntRef wrapper on the heap, replacing the local variable with a reference to the wrapper and mutating its element field inside the lambda.
-
-To mitigate both interface dispatch overhead and object instantiation penalties, Kotlin introduces inline functions. Marking a higher-order function as inline instructs kotlinc to copy the function body and the lambda bytecode directly into the call site. This flattens the execution flow, eliminates Function object allocation entirely, enables non-local returns, and restores primitive performance parity with hand-written sequential loops.
+Inline functions copy eligible function bodies and lambdas into call sites, which can remove function-object and invoke overhead and enable certain non-local returns. The body still performs its real work, may allocate inside it, and inlining can increase generated code size. noinline retains a function value, while crossinline restricts non-local control flow. Use inlining for small higher-order APIs where its semantics and measured benefits justify it; avoid a blanket claim about ART garbage collection or guaranteed zero allocations.
 
 ## How to answer in the interview
 
 - **Why:** Enable clean functional composition, event handling, and customizable algorithms.
-- **How:** Pass lambdas and function references (`(T) -> R`) as parameters, inlining execution where appropriate to eliminate allocation overhead.
-- **Trade-offs:** Non-inlined higher-order functions allocate `Function` object instances and closure capture contexts on the heap.
+- **How:** Pass lambdas and function references (`(T) -> R`) as parameters, inlining eligible lambda bodies where appropriate.
+- **Trade-offs:** Function values that escape may need objects and captured state; the exact allocations depend on compiler lowering and call site.
 - **Failure cases:** Storing a lambda that captures an `Activity` reference inside a long-lived singleton, leaking the entire UI context.
 - **Production solution:** Inline short utility functions, clear stored callbacks in lifecycle teardown (`onDestroy`), or prefer lifecycle-aware listeners and Flow streams.
 
@@ -180,10 +169,10 @@ Explain function types, closure capture, stored callbacks, invocation contracts,
   **Answer:** "SAM (Single Abstract Method) conversion allows a lambda to be passed wherever an interface with a single abstract method is expected. For Java interfaces like Runnable or View.OnClickListener, Kotlin automatically performs SAM conversion. For Kotlin interfaces, you must explicitly declare the interface as a `fun interface` to enable SAM conversion from a lambda."
 
 - [KOT-12](../kot-12/): **Interviewer:** "If higher-order functions cause allocations, why shouldn't we mark every function as `inline`?"
-  **Answer:** "Inlining copies the entire bytecode of the function and its lambdas to every call site. If the inlined function is large or called hundreds of times, it significantly inflates the DEX method count and APK size. Inlining should only be used for small functions that take lambdas as parameters."
+  **Answer:** "Inlining copies the entire bytecode of the function and its lambdas to every call site. Inlining large functions at many call sites can increase generated code size; inspect the output and measure before generalizing. Inlining should only be used for small functions that take lambdas as parameters."
 
 - **Interviewer:** "How does capturing a mutable `var` inside a lambda work under the hood?"
-  **Answer:** "Java and JVM bytecode require captured variables in anonymous classes to be final. To bypass this, the Kotlin compiler wraps the mutable variable in a heap-allocated wrapper object, such as `Ref.IntRef` or `Ref.ObjectRef`. The lambda captures a final reference to this wrapper, mutating the field inside it."
+  **Answer:** "One common Kotlin/JVM lowering captures a shared Ref wrapper for a mutable local, such as `Ref.IntRef` or `Ref.ObjectRef`. The lambda captures a final reference to this wrapper, mutating the field inside it."
 
 ## Self-check rubric
 
@@ -194,4 +183,4 @@ Write a higher-order predicate function, explain capture, and identify a lifecyc
 - [Kotlin lambdas](https://kotlinlang.org/docs/lambdas.html) — function types, higher-order functions, and closures.
 - [Kotlin inline functions](https://kotlinlang.org/docs/inline-functions.html) — inline behavior.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against primary documentation on 2026-10-19.

@@ -103,3 +103,10 @@ export function yamlScalar(frontmatter, key) {
 export function cleanTitle(title) {
   return title.replace(/^#+\s*/, '').replaceAll('"', '\\"').trim();
 }
+
+export function sidebarLabel(id, title) {
+  const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^${escapedId}(?:\\s*[—:-]\\s*|$)`, 'i').test(title)
+    ? title
+    : `${id} — ${title}`;
+}

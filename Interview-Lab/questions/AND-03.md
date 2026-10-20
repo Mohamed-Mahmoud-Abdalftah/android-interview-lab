@@ -24,97 +24,66 @@ Compare Fragment lifecycle and Fragment view lifecycle.
 
 ## Concept and technical explanation
 
-The structural difference between a Fragment instance lifecycle and its view hierarchy lifecycle (`viewLifecycleOwner`) accounts for the vast majority of memory leaks in Fragment-based Android architectures.
-
-1. Fundamental Distinction:
-   - **Fragment Instance Lifecycle:** Extends from instantiation and `onAttach()` through `onCreate()` until final destruction in `onDestroy()` and `onDetach()`. It represents the Java/Kotlin object residing on the heap.
-   - **Fragment View Lifecycle (`viewLifecycleOwner`):** Exists strictly between `onCreateView()` / `onViewCreated()` and `onDestroyView()`. It represents the rendered Android View hierarchy inflated onto the screen.
-
-2. Backstack Asymmetry:
-   - When Fragment A is replaced by Fragment B with `addToBackStack()`, FragmentManager keeps the Fragment A object alive in memory so its arguments, scroll position, and state holders are preserved.
-   - However, the framework destroys Fragment A's rendered View hierarchy by calling `onDestroyView()` to reclaim graphics memory.
-   - When the user presses the back button, Fragment A is not re-instantiated; instead, it executes `onCreateView()` and `onViewCreated()` to build a brand new View hierarchy.
-
-3. The Classic ViewBinding and Coroutine Leaks:
-   - If an engineer stores a `ViewBinding` in a non-null property without setting it to null in `onDestroyView()`, the retained Fragment holds the destroyed View hierarchy in memory, leaking root layouts and context references.
-   - If an engineer collects a `Flow` or observes LiveData using `this` (the Fragment instance) inside `onViewCreated()`, every navigation back and forth attaches another observer, producing duplicated collectors and potential crashes.
+A Fragment has its own lifecycle, and a non-null Fragment view gets a separate `viewLifecycleOwner` lifecycle. The Fragment may remain managed while its current view is destroyed, as can happen with a back-stack transaction. A later view is a new tree with a new view lifecycle owner. ViewBinding, adapters, listeners and UI collectors therefore belong to that view lifetime. Clear a Fragment field holding the binding in `onDestroyView`; collect UI `Flow` with `viewLifecycleOwner.lifecycleScope` and `repeatOnLifecycle(STARTED)`. A Fragment-scoped ViewModel may retain logical screen state while the view is recreated. A binding leak is possible when a retained Fragment holds an old root view, but no fixed percentage, memory size or duplicate-collector count follows from this pattern. A `ComposeView` hosted in a Fragment is still an Android View and needs composition disposal tied to the view lifecycle.
 
 ## Practical walkthrough (English)
 
-The standard architecture to avoid Fragment memory leaks:
+Use the view owner for rendering, and release the binding when that view is destroyed:
 ```kotlin
 class ProfileFragment : Fragment(R.layout.fragment_profile) {
-    // 1. Backing property nullable for onDestroyView clearance:
     private var _binding: FragmentProfileBinding? = null
-    private val binding get() = _binding!!
+    private val binding get() = requireNotNull(_binding)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         _binding = FragmentProfileBinding.bind(view)
-
-        // 2. Bind coroutine collection to viewLifecycleOwner:
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.uiState.collect { render(it) }
+                viewModel.uiState.collect { state -> binding.title.text = state.title }
             }
         }
     }
 
     override fun onDestroyView() {
-        super.onDestroyView()
-        // 3. Mandatory nullification to release view hierarchy:
         _binding = null
+        super.onDestroyView()
     }
 }
 ```
+`FragmentProfileBinding` and `viewModel` are app-provided. Navigation away and back should leave one view-bound collector for the current view; count it in a test rather than assuming an exact duplication rate.
 
 ## Explanation in Arabic
 
-المقارنة بين دورة حياة كائن الـ Fragment ودورة حياة الـ View المعروضة (`viewLifecycleOwner`) هي سبب وقوع 80% من أخطاء الـ Memory Leaks في الـ Fragments:
+الـ Fragment نفسه له Lifecycle، ولو رجّع View غير `null` فالـ View دي ليها Lifecycle تانية عبر `viewLifecycleOwner`. في عملية Back Stack شائعة، FragmentManager ممكن يفضل محتفظ بكائن الـ Fragment بعد `onDestroyView`؛ ولما ترجع الشاشة، تتبني View جديدة و`viewLifecycleOwner` جديد. مش لازم كل تنقل يحصل بنفس التسلسل، فراقب حالة الـ transaction اللي عندك.
 
-1. ما هو الفرق الجوهري؟
-   - **كائن الـ Fragment (Instance Lifecycle):** يعيش من لحظة إنشاء الكلاس في الذاكرة حتى تدميره نهائياً (`onDestroy()`).
-   - **كائن الـ View (`viewLifecycleOwner`):** يعيش **فقط** بين `onCreateView()` / `onViewCreated()` وبين `onDestroyView()`.
+أي مرجع مربوط بالـ View، زي `ViewBinding` أو adapter أو listener، عمره ينتهي مع الـ View. لو binding مخزنة في property داخل Fragment وما اتصفرتش في `onDestroyView`، الكائن المحتفَظ به ممكن يمسك شجرة View قديمة وContext. مفيش رقم موثّق يقول إن النمط ده سبب 80% من التسريبات أو إنه يحجز كمية RAM ثابتة.
 
-2. متى يتم تدمير الـ View مع بقاء الـ Fragment حياً في الذاكرة؟
-   - عندما تستخدم **Fragment Backstack** (مثل: استبدال Fragment A بـ Fragment B مع مناداة `addToBackStack()`):
-   - كائن Fragment A يظل حياً في الذاكرة بالكامل حتى يتمكن المستخدم من الرجوع إليه.
-   - ولكن نظام أندرويد يقوم بـ **تدمير الـ Views الخاصة بـ Fragment A (`onDestroyView`)** لتوفير الذاكرة!
-
-3. الكارثة البرمجية الشائعة (The Classic Memory Leak):
-   - لو احتفظت بـ View Binding في متغير عادي ولم تصفره في `onDestroyView()`:
-     `private var binding: FragmentProfileBinding? = null`
-     فإن كائن الـ Fragment سيظل ممسكاً بالـ Views المدمرة، مما يسرب شجرة الـ Views بالكامل في الذاكرة!
-   - ولو استمعت لـ Flow باستخدام `viewLifecycleOwner.lifecycleScope`، ستتوقف المراقبة عند تدمير الـ View بنظافة تامة.
+لجمع `StateFlow` اللي بيحدّث الواجهة، استخدم `viewLifecycleOwner.lifecycleScope` مع `repeatOnLifecycle(STARTED)`. الجمع يقف لما الـ View owner ينزل عن STARTED، وينتهي مع DESTROYED. حالة العمل المنطقية ممكن تفضل في ViewModel مرتبط بالـ Fragment. ولو حاطط `ComposeView` داخل Fragment، لسه عندك View حقيقية؛ استخدم `ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed` عشان تخلص الـ Composition مع دورة حياة الـ View.
 
 ## Practical walkthrough
 
-النمط الصحيح لتجنب تسريب الذاكرة في الـ Fragments:
+في شاشة ملف شخصي، اربط كل render بالـ View الحالية:
 ```kotlin
-class ProfileFragment : Fragment(R.layout.fragment_profile) {
-    // 1. المتغير nullable لتصفيره:
-    private var _binding: FragmentProfileBinding? = null
-    private val binding get() = _binding!!
+class AccountFragment : Fragment(R.layout.fragment_account) {
+    private var _binding: FragmentAccountBinding? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        _binding = FragmentProfileBinding.bind(view)
-
-        // 2. استخدام viewLifecycleOwner للاستماع للـ Flow لمنع التسريب:
+        _binding = FragmentAccountBinding.bind(view)
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.uiState.collect { render(it) }
+                viewModel.name.collect { name -> _binding?.name?.text = name }
             }
         }
     }
 
     override fun onDestroyView() {
-        super.onDestroyView()
-        // 3. تصفير الـ binding إلزامي لتحرير الـ Views من الذاكرة:
         _binding = null
+        super.onDestroyView()
     }
 }
 ```
+المثال يفترض وجود `FragmentAccountBinding` و`viewModel` من التطبيق؛ اختبار AndroidX Fragment والتنقل هو اللي يثبت إن الـ collector القديم انتهى وإن الـ View القديمة اتحررت.
 
 ## Why it matters and how it works
 
@@ -167,26 +136,19 @@ In a product-detail Fragment, a ViewModel holds the product ID and UI state; eac
 
 ## Interview answer — short
 
-A Fragment instance lifecycle extends from creation through onDestroy and detachment, whereas its view lifecycle exists strictly between onCreateView and onDestroyView. When a Fragment is placed on the backstack, its view tree is destroyed to release graphics memory while the Fragment instance remains retained in memory. Consequently, view bindings and UI coroutine collections must strictly bind to viewLifecycleOwner to avoid memory leaks.
+A Fragment instance can outlive one of its view trees. A non-null view has its own `viewLifecycleOwner`, which reaches destruction around `onDestroyView`; a later view gets a new owner. Scope UI collectors to the view owner and clear Fragment-held binding references in `onDestroyView`. A Fragment-scoped ViewModel may preserve logical state across view recreation.
 
 ## Interview answer — structured
 
-The fundamental distinction between a Fragment and its view lifecycle lies in their asynchronous lifetimes during backstack navigation. When a Fragment is pushed onto the backstack, the operating system destroys its entire layout to reclaim RAM, yet retains the Fragment object instance in memory so that navigation arguments and scroll positions remain intact.
-
-This asymmetry means that a single Fragment instance can generate multiple sequential view hierarchies across its lifetime. The Fragment instance lifecycle spans from initialization to final destruction, whereas the view lifecycle, exposed via viewLifecycleOwner, begins in onCreateView and terminates in onDestroyView.
-
-Tying view-bound observers or coroutine collectors to the Fragment instance lifecycle rather than its view lifecycle causes severe memory leaks and duplicate execution. Every time the user returns from the backstack, a new observer is registered while the previous one continues referencing a detached view.
-
-In production, we safeguard against this by strictly binding all UI flows, adapters, and ViewBinding references to viewLifecycleOwner, while ensuring that ViewBinding backing fields are explicitly reset to null inside onDestroyView.
-
+A Fragment and its view have different lifetimes. The Fragment object may stay managed on a back stack while `onDestroyView` ends the current view lifecycle. Returning to it creates a fresh view tree and a new `viewLifecycleOwner`. That distinction tells me where to put dependencies: the ViewModel or arguments can hold screen logic, while ViewBinding, adapters and UI listeners belong to the current view. I use `viewLifecycleOwner.lifecycleScope` with `repeatOnLifecycle(STARTED)` to collect a state stream only while the view can render it. I clear a Fragment property holding ViewBinding in `onDestroyView` so an old root view is not retained. This prevents a plausible leak path; it does not imply a universal leak percentage or a fixed number of duplicate collectors. If I embed Compose in a Fragment, its `ComposeView` still needs a disposal strategy tied to the view tree. I test navigate away/back and inspect active collectors and retained views rather than assuming every transaction follows an identical path.
 
 ## Interview answer — deep senior
 
-Under the hood in the AndroidX FragmentManager, when a FragmentTransaction executes a replace operation with addToBackStack, the Fragment state machine drives the outgoing Fragment down from RESUMED to CREATED. During this transition, FragmentManager dispatches onDestroyView, which disposes of the underlying View hierarchy and transitions viewLifecycleOwner to the DESTROYED state, while keeping the Fragment instance in the CREATED state on the backstack record.
+AndroidX Fragment exposes two lifecycle owners because a Fragment object and one rendered View tree are not the same resource. When the Fragment provides a non-null View, `viewLifecycleOwner` becomes available around `onViewCreated`. On a downward transition that destroys that view, its lifecycle reaches `DESTROYED` and `onDestroyView` is called; the Fragment instance may still be managed. A subsequent view is a new tree with a new owner. Back-stack `replace` is a common example, but the exact state path depends on the transaction and parent lifecycle.
 
-From an ART garbage collection and memory profiling standpoint, failure to null out the generated ViewBinding backing property inside onDestroyView constitutes a catastrophic memory leak. The retained Fragment instance holds a strong reference to the binding object, which directly references the root ViewGroup. This retains the entire child view tree, custom drawables, hardware acceleration rendering pipelines, and the host Activity context through the View.mContext field. In a production application with high-resolution image assets or complex layout hierarchies, keeping two or three such dead view trees on the backstack can easily consume over one hundred megabytes of native graphics and Java heap memory, triggering an OutOfMemoryError.
+The risk is ownership mismatch. A Fragment field holding a generated binding holds its root View, which can in turn retain descendants and a Context. If the Fragment remains reachable after its view is destroyed, that old tree can be retained until the field is cleared. The impact depends on the actual tree and reachability; an invented 80% statistic or a fixed RAM cost is not defensible. UI observers registered against the Fragment lifecycle from each `onViewCreated` can also outlive their associated view. Depending on collection structure and cancellation, this may cause stale updates or duplicate work, so I verify with a navigation test and a memory inspection rather than promise an exact count.
 
-From a reactive coroutine architecture perspective, invoking lifecycleScope instead of viewLifecycleOwner.lifecycleScope inside onViewCreated registers a Job attached to the Fragment instance. When the user navigates forward and returns five times, five concurrent coroutine collectors remain active simultaneously, dispatching redundant state updates and potentially crashing the app with NullPointerExceptions when attempting to mutate views that have already been detached from the window. In staff-level codebases, we enforce this boundary via custom Lint rules or auto-clearing property delegates, or eliminate View hierarchies entirely by adopting Jetpack Compose with proper disposable effect boundaries.
+For state rendering, I launch in `viewLifecycleOwner.lifecycleScope` and use `repeatOnLifecycle(STARTED)`. The block restarts while that owner is active, then is canceled when it stops and ends when the view is destroyed. A Fragment-scoped ViewModel can hold the logical state and re-emit it to the new view. For one-shot navigation events, I define a separate delivery policy so replay does not trigger duplicate navigation. Compose interop does not remove the view lifetime: a `ComposeView` is a View, and the documented strategy in a Fragment is `DisposeOnViewTreeLifecycleDestroyed`. I also clear adapters or listeners that retain the root view. The proof is one live collector for the current view and no retained old root after repeated back-stack transitions.
 
 ## How to answer in the interview
 
@@ -202,14 +164,10 @@ Explain view owner availability, back-stack view destruction, ViewBinding cleanu
 
 ## Follow-up questions
 
-- **Interviewer:** "What happens if you observe a Flow with `this.lifecycleScope` inside `onViewCreated`?"
-  **Answer:** "Every time the user navigates back to this Fragment from the backstack, `onViewCreated` runs again and attaches another active observer. If the user navigates back and forth 5 times, there will be 5 duplicate concurrent collectors executing UI updates!"
-
-- **Interviewer:** "Can you avoid nulling out ViewBinding in `onDestroyView()` with auto-clearing delegates?"
-  **Answer:** "Yes. Libraries often provide an `AutoClearedValue` delegate or lifecycle-observer delegate that automatically listens to `viewLifecycleOwner`'s `onDestroyView` event and sets the binding property to null automatically."
-
-- **Interviewer:** "How does Jetpack Compose change this pattern?"
-  **Answer:** "Jetpack Compose eliminates Fragment ViewBinding leaks entirely because Composables do not use persistent view hierarchy references. Compose state automatically cleans up when leaving composition."
+- **Interviewer:** "What if I collect a Flow in `fragment.lifecycleScope` from every `onViewCreated`?"
+  **Answer:** "Those jobs may outlive the view and accumulate or try to render into stale references. I scope UI collection to `viewLifecycleOwner` and verify the actual collector count after back-stack navigation."
+- **Interviewer:** "Does switching to Compose eliminate Fragment view leaks?"
+  **Answer:** "No. `ComposeView` is still a View in the Fragment hierarchy. I tie its composition disposal to the view-tree lifecycle and avoid retaining old view references."
 
 ## Self-check rubric
 
@@ -217,7 +175,8 @@ Describe one case where Fragment outlives its view; choose the right LifecycleOw
 
 ## References and reviewed-on date
 
-- [Fragment lifecycle](https://developer.android.com/guide/fragments/lifecycle) — Fragment and view owner transitions.
-- [Lifecycle-aware coroutine collection](https://developer.android.com/topic/libraries/architecture/coroutines) — restartable collection guidance.
+- [Fragment lifecycle](https://developer.android.com/guide/fragments/lifecycle) — separate Fragment and view owners.
+- [Lifecycle-aware coroutine collection](https://developer.android.com/topic/libraries/architecture/coroutines) — `repeatOnLifecycle` for UI collection.
+- [Using Compose in Views](https://developer.android.com/develop/ui/compose/migrate/interoperability-apis/compose-in-views) — `ComposeView` disposal in a Fragment.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against primary documentation on 2026-10-19.
