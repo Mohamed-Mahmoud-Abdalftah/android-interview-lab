@@ -24,7 +24,7 @@ Compare remember, rememberSaveable, and ViewModel state.
 
 ## Concept and technical explanation
 
-In Jetpack Compose, state lifecycle management is divided across three distinct retention scopes: remember, rememberSaveable, and ViewModel state. remember retains state exclusively across recompositions within a single composition lifecycle, resetting whenever the composable leaves the tree or during configuration changes (such as screen rotation). rememberSaveable extends this by automatically persisting state into the Android SavedInstanceState bundle, surviving configuration changes and system-initiated process death for Parcelable or primitive data. ViewModel state provides the longest lifecycle, living across configuration changes and process death (via SavedStateHandle) while retaining business logic and surviving navigation backstack transitions.
+`remember` retains a value while its call remains in the composition. `rememberSaveable` adds saving through the local saveable-state registry, commonly backed by Android saved instance state, so a small supported value can be restored after eligible activity or system process recreation. It does not provide durable persistence after user dismissal or every app termination. A ViewModel is scoped to its owner and survives configuration recreation while that owner remains; the instance does not survive process death. `SavedStateHandle` can restore small UI element state used to reconstruct ViewModel state, while large or authoritative data should be reloaded from persistent storage.
 
 ## Practical walkthrough (English)
 
@@ -32,16 +32,16 @@ Contrasting the three state survival mechanisms in an Android screen:
 ```kotlin
 @Composable
 fun RegistrationScreen(viewModel: RegistrationViewModel = hiltViewModel()) {
-    // 1. remember: Survives recomposition ONLY. Resets on screen rotation!
-    // Best for: Ephemeral animation flags, scroll states, local UI toggles
+    // 1. remember: retained while this call remains in the composition.
+    // This ephemeral visibility flag may reset after activity recreation.
     var isPasswordVisible by remember { mutableStateOf(false) }
 
-    // 2. rememberSaveable: Survives recomposition AND configuration changes AND process death!
-    // Best for: User draft inputs, expanded card states, temporary form values
+    // 2. rememberSaveable: saves a small supported value for eligible recreation.
+    // It is not durable storage after every kind of process termination.
     var enteredUsername by rememberSaveable { mutableStateOf("") }
 
-    // 3. ViewModel State: Survives recomposition, configuration changes, and navigation graph transitions!
-    // Best for: Business domain data, async network states, multi-repository orchestration
+    // 3. ViewModel: scoped to its owner; survives configuration recreation.
+    // A new ViewModel must rebuild state after system process death.
     val registrationState by viewModel.uiState.collectAsStateWithLifecycle()
 
     RegistrationContent(
@@ -56,47 +56,35 @@ fun RegistrationScreen(viewModel: RegistrationViewModel = hiltViewModel()) {
 
 ## Explanation in Arabic
 
-المقارنة الشاملة بين `remember` و `rememberSaveable` وحالة الـ `ViewModel` ومتى تستخدم كلاً منها:
+اختيار المكان اللي الحالة تعيش فيه يبدأ بالسؤال: مين مالكها، وإيه اللي لازم يحصل لو الشاشة اتخلقت من جديد؟
 
-1. دالة `remember { ... }`:
-   - **نطاق البقاء (Lifetime)**: تعيش فقط طالما أن الـ Composable موجود داخل شجرة الـ Composition.
-   - **ما تحميه**: تحمي القيمة من الضياع أثناء **Recomposition** العادي.
-   - **ما تفقده**: تُفقد وتُعاد تهيئتها بالكامل عند **تغيير اتجاه الشاشة (Configuration Change)** أو موت العملية (Process Death) أو مغادرة الشاشة في الـ Navigation.
-   - **الاستخدام المثالي**: العمليات الحسابية المؤقتة للـ UI، كائنات التنسيق `remember { SimpleDateFormat(...) }`، وحالات الرسوم المتحركة المؤقتة.
+- `remember` بيحفظ القيمة طول ما موضع الاستدعاء موجود في الـ Composition. ينفع لحالة مؤقتة زي ظهور عنصر، وبيضيع عادةً لو الـ Activity اتعملت من جديد أو العنصر خرج من الشجرة.
+- `rememberSaveable` بيضيف مسار حفظ عبر `SaveableStateRegistry`؛ على Android ده عادةً مرتبط بـ saved instance state. يقدر يرجع قيمة صغيرة مدعومة أو قيمة ليها `Saver` بعد تدوير الشاشة أو **system-initiated process death** لما النظام يرجع نفس المهمة بحالتها. مش قاعدة بيانات، ومش ضمان بعد ما المستخدم يقفل المهمة بنفسه.
+- الـ `ViewModel` عمره مرتبط بالـ `ViewModelStoreOwner`، زي destination أو Activity حسب طريقة إنشائه. نفس الـ instance بيكمل عبر configuration change، لكن بيتخلق من جديد بعد process death. `SavedStateHandle` بيرجع مفاتيح صغيرة زي `productId` أو نص فلتر؛ بعدها الـ ViewModel يعيد تحميل البيانات من الـ repository. لا تخزن response كبير في الـ Bundle.
 
-2. دالة `rememberSaveable { ... }`:
-   - **نطاق البقاء**: تعيش عبر الـ Recomposition **وتنجو أيضاً من Configuration Change وموت العملية (Process Death)**!
-   - **كيف تعمل**: تخزن البيانات في `SavedStateHandle` / `Bundle` الخاص بالنظام، وتشترط أن تكون البيانات قابلة للـ Serialization (مثل Primitives أو Parcelable أو عبر Custom Saver).
-   - **الاستخدام المثالي**: مدخلات المستخدم غير المحفوظة في السيرفر (نص مسودة في حقل بحث، موضع التمرير المحدد، رقم التبويب النشط).
-
-3. حالة الـ `ViewModel` (`StateFlow` / `SavedStateHandle`):
-   - **نطاق البقاء**: تعيش طوال فترة بقاء الشاشة في الـ BackStack، وتنجو من Configuration Change بالكامل، وتنجو من Process Death عبر `SavedStateHandle`.
-   - **الاستخدام المثالي**: حالة العمل الحقيقية للتطبيق (Business State)، استجابات الشبكة، بيانات المستخدم، وقواعد التحقق.
+التدوير، الخروج من الـ back stack، والقتل بواسطة النظام حالات مختلفة. اختبر اللي يهم المنتج على جهاز أو emulator، وحدد مسار إعادة التحميل بدل القول إن أي واحدة من الأدوات "بتحفظ كل البيانات".
 
 ## Practical walkthrough
 
-أمثلة توضح متى نستخدم كل آلية في شاشة تطبيق حقيقية:
+في شاشة منتج، خزّن معرّف المنتج القابل للاسترجاع وأعد تحميل البيانات بعد إنشاء الـ ViewModel:
 ```kotlin
 @Composable
-fun CheckoutScreen(viewModel: CheckoutViewModel = viewModel()) {
-    // 1. ViewModel State: بيانات الـ Business والـ Backend تنجو من التدوير والـ Navigation:
+fun ProductRoute(viewModel: ProductViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
-    // 2. rememberSaveable: حالة واجهة مستخدم خاصة بالشاشة تنجو من تدوير الهاتف وموت العملية:
-    var promoCodeInput by rememberSaveable { mutableStateOf("") }
-
-    // 3. remember: كائن مؤقت خاص بالرسم أو الحسابات يضيع عند التدوير ويعاد إنشاؤه بسهولة:
-    val currencyFormatter = remember(Locale.getDefault()) {
-        NumberFormat.getCurrencyInstance(Locale.getDefault())
-    }
-
-    CheckoutContent(
-        total = currencyFormatter.format(uiState.totalAmount),
-        promoCode = promoCodeInput,
-        onPromoChange = { promoCodeInput = it }
+    var detailsExpanded by rememberSaveable { mutableStateOf(false) }
+    var pressed by remember { mutableStateOf(false) }
+    ProductContent(
+        state = uiState,
+        expanded = detailsExpanded,
+        onExpand = { detailsExpanded = !detailsExpanded },
+        pressed = pressed,
+        onPress = { pressed = true }
     )
 }
+// ViewModel: اقرأ productId من SavedStateHandle ثم حمّل المنتج من repository.
 ```
+
+`remember` هنا لحركة مؤقتة؛ `rememberSaveable` لتفضيل صغير؛ ومصدر بيانات المنتج يفضل الـ repository. المثال توضيحي وبيعتمد على وجود `ProductContent` و`ProductViewModel` في التطبيق.
 
 ## Why it matters and how it works
 
@@ -136,24 +124,19 @@ Classify each field as ephemeral UI, restorable UI, or business state; document 
 
 ## Interview answer — short
 
-remember retains state across recompositions, but completely resets on screen rotation or when leaving the composition. rememberSaveable survives recompositions, configuration changes, and process death by saving state into the Android SavedStateRegistry bundle using Parcelize or custom Savers. ViewModel state lives completely outside the composition lifecycle, surviving screen rotations and maintaining business data across screen transitions, backed by SavedStateHandle for process death restoration.
+`remember` survives recomposition while its call remains in composition. `rememberSaveable` also saves small supported values for eligible activity or system process recreation. A ViewModel survives configuration changes within its owner's scope, but its instance dies with the process; use `SavedStateHandle` for small restoration inputs and reload authoritative data.
 
 ## Interview answer — structured
 
-Choosing the correct state persistence mechanism in Jetpack Compose requires understanding their lifecycles, storage mediums, and architectural scopes.
-remember is the most localized and ephemeral mechanism. It stores a value in the Compose SlotTable at the call site. The value persists across recompositions as long as the composable remains in the composition tree. However, because it resides purely in memory tied to the Activity window, it is wiped out during configuration changes like screen rotations. It is ideal for transient UI effects, like animation toggles or temporary dropdown expansions.
-rememberSaveable builds upon remember by registering the value with the Android Activity's SavedStateRegistry. Upon configuration change or system process death, Compose bundles the value into the saved instance state, restoring it when the screen recreates. Values must be primitives, Bundle-compatible, or implement Parcelable. It is ideal for user form inputs and draft text.
-ViewModel state represents the highest tier of architecture. ViewModels survive configuration changes natively through Android Architecture Components, living until the backstack entry is popped. They are decoupled from Android UI classes, can be tested purely on the JVM, and interact with Domain UseCases. Backed by SavedStateHandle, ViewModel state survives process death, making it the required home for all business-critical domain data.
+I choose by owner and restoration need. `remember` caches a value at a composition call site. It is appropriate for ephemeral UI state that can reset after recreation. `rememberSaveable` uses a saveable-state registry and a `Saver` or supported Bundle-compatible value to restore small UI state when Android recreates an eligible activity or process. It should hold text, selection or an ID, not a large network result. A `ViewModel` belongs to a `ViewModelStoreOwner`, often a navigation destination. Its instance survives configuration change while that owner remains, and is cleared when the owner is removed. It does not survive system process death. `SavedStateHandle` can restore small inputs into a new ViewModel, which can then rebuild screen state from a repository. User dismissal or force-stop is not the same restoration path. For a product screen, keep the product ID in saved state and fetch the product again. Test rotation and system recreation separately; avoid maintaining two writable copies of the same query.
 
 ## Interview answer — deep senior
 
-Under the hood, these three mechanisms map to fundamentally distinct memory structures and lifecycle registries within the Android operating system.
-remember allocates a slot directly within the current Composer's SlotTable array. During recomposition, Compose reads the slot at the matching code offset. When the Activity recreates due to an orientation change, the entire ComposeView and its associated SlotTable are garbage collected, explaining why remember immediately loses state.
-rememberSaveable bridges Compose to the platform SavedStateRegistryOwner (typically the ComponentActivity or NavBackStackEntry). It utilizes a Saver implementation (auto-inferred or explicitly provided via listSaver or mapSaver) to serialize the value into a platform Bundle before Android's onSaveInstanceState() fires.
-Because Bundles are marshaled across the Binder IPC boundary to the OS system_server process during process death, rememberSaveable enforces strict size limits: storing massive lists or Bitmaps here triggers TransactionTooLargeException crashes.
-ViewModel state resides in the ViewModelStoreOwner, maintained by the non-configuration instance mechanism in the platform. The ViewModel instance itself remains intact in heap memory across Activity destruction and recreation, eliminating serialization overhead for domain models.
-For process death resilience, ViewModels inject SavedStateHandle, which internally hooks into the exact same SavedStateRegistry as rememberSaveable.
-Senior architects maintain strict separation of concerns: remember handles transient UI mechanics, rememberSaveable handles screen-level form inputs, and ViewModel state drives core business domain workflows.
+The three APIs solve different lifetime problems. `remember` associates a calculated value with a composition call position and optional keys. Recomposition can reuse it, but removing that call from composition generally removes its remembered value. It is not a process persistence mechanism. `rememberSaveable` layers a saver and saveable-state registry over composition memory. In Android hosts this can participate in saved instance state, which is meant for small transient UI state. Supported types and custom `Saver` contracts determine what can be stored. The saved-state path is conditional on lifecycle and task restoration, so saying it always survives process death is too broad.
+
+A `ViewModel` has a different owner: an Activity, Fragment or navigation back-stack entry depending on creation. Its instance survives a configuration recreation while the owner retains its store. When the process is killed, that instance and in-memory `StateFlow` are gone. A new instance can read small values from `SavedStateHandle`, which also uses saved-state infrastructure; it should use a stable ID to reload large or authoritative screen data from a repository or database. Do not serialize a full product catalog into a Bundle. There is no universal fixed safe number of bytes per value because saved state shares transaction limits with other app state.
+
+For a draft checkout screen, I might keep a local expanded panel in `rememberSaveable`, move a business-relevant promo code into a ViewModel if it affects validation, save only the code or cart ID in `SavedStateHandle`, and reload totals. I verify configuration recreation, system-initiated process recreation and leaving the destination as separate scenarios. I also check whether the state holder's owner scope is correct so that one navigation entry does not leak data into another.
 
 ## How to answer in the interview
 
@@ -169,11 +152,10 @@ Compare composition lifetime, saved-state registry, ViewModel ownership, process
 
 ## Follow-up questions
 
-- **Interviewer:** "What happens if you put a non-Parcelable object into `rememberSaveable`?"
-  **Answer:** "It will work during normal recomposition, but as soon as a configuration change or process death triggers state saving into the Android Bundle, the app crashes with an `IllegalArgumentException: ... cannot be saved using the current SaveableStateRegistry`."
-
-- **Interviewer:** "How do you create a custom Saver for a non-Parcelable class?"
-  **Answer:** "Using `listSaver(save = { listOf(it.id, it.name) }, restore = { MyClass(it[0], it[1]) })` or `mapSaver`, defining explicit serialization and deserialization steps into supported primitive types."
+- **Interviewer:** "Does a ViewModel object survive process death?"
+  **Answer:** "No. A new instance is created. `SavedStateHandle` can restore small values if saved-state restoration is available, and the ViewModel must rebuild the rest from durable data."
+- **Interviewer:** "What can I store in `rememberSaveable`?"
+  **Answer:** "Small values supported by the local registry, or values with a suitable `Saver`. I avoid large graphs and test the actual save/restore path rather than assuming every object is supported."
 
 ## Self-check rubric
 
@@ -184,4 +166,4 @@ Assign three example values to owners, explain rotation and process death, and a
 - [Save UI state in Compose](https://developer.android.com/develop/ui/compose/state-saving) — lifetime and small saved values.
 - [Where to hoist state](https://developer.android.com/develop/ui/compose/state-hoisting) — owner choice.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against primary documentation on 2026-10-19.

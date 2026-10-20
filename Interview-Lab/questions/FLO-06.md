@@ -24,84 +24,49 @@ What is conflation, and how does StateFlow use equality to suppress repeated sta
 
 ## Concept and technical explanation
 
-Conflation and equality-based suppression are StateFlow's primary performance optimizations designed to eliminate redundant processing and UI frame drops. Conflation is a backpressure mitigation strategy where intermediate emissions are automatically discarded if a collector is slower than the emitter; the collector skips older unconsumed states and receives only the most recent update. Equality suppression operates at the mutation boundary: whenever a new value is assigned to MutableStateFlow.value, StateFlow performs a structural equality check using Any.equals. If the incoming value is structurally equal to the currently stored state, the assignment is discarded immediately: the state does not change, collector slots are not notified, and no downstream emissions occur. In modern Android applications utilizing Jetpack Compose, this prevents unnecessary recomposition cycles and ensures that the UI renders only when observable data has genuinely mutated.
+StateFlow has two related but distinct behaviors. Equality suppression happens when a newly assigned value compares equal to the current value via `Any.equals`: no new state is emitted. Conflation happens when a slow collector cannot process every distinct state update and resumes with the latest snapshot, potentially skipping intermediate values. These contracts suit current UI state, not an event log. The state type's equality must be stable; mutating an object or nested collection in place can hide changes, while arrays in data classes may compare by reference. Publish a new immutable snapshot and use `update { ... }` for atomic read-modify-write. Fewer emissions can help performance but do not guarantee any frame rate or prevent every Compose recomposition.
 
 ## Practical walkthrough (English)
 
-Demonstrating equality suppression and rapid conflation in action:
+Use distinct examples for equal assignment and a new immutable snapshot. Avoid clock-based promises about exactly which rapid values a slow collector sees.
+
 ```kotlin
-data class FeedState(val count: Int, val title: String)
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 
-suspend fun demonstrateConflationAndEquality() = coroutineScope {
-    val state = MutableStateFlow(FeedState(1, "News"))
+data class FilterUiState(val selectedCategory: String = "All")
 
-    val job = launch {
-        state.collect { item ->
-            println("Collected: $item")
-            delay(100) // Simulates slow UI processing
-        }
-    }
-
-    delay(20)
-    // 1. Equality suppression: Identical value is completely ignored
-    state.value = FeedState(1, "News") // EQUALS current -> Discarded, prints nothing!
-
-    // 2. Conflation: Rapid emissions while collector is suspended at delay(100)
-    state.value = FeedState(2, "News") // Discarded!
-    state.value = FeedState(3, "News") // Discarded!
-    state.value = FeedState(4, "News") // Retained as the latest head
-
-    delay(200)
-    job.cancel()
-    // Output:
-    // Collected: FeedState(count=1, title=News)
-    // Collected: FeedState(count=4, title=News) (States 2 and 3 were conflated!)
-}
+val filter = MutableStateFlow(FilterUiState())
+filter.value = FilterUiState() // equal: no new emission
+filter.update { old -> old.copy(selectedCategory = "Shoes") }
 ```
+
+If rapid distinct states arrive while a collector is suspended, it may skip intermediate states and observe the latest value when resumed.
 
 ## Explanation in Arabic
 
-الـ Conflation وقمع الحالات المكررة (Equality Suppression) في `StateFlow` هو أحد أذكى تصاميم الأداء في Kotlin:
+في `StateFlow` فيه فرق بين حاجتين بيتلخبطوا في المقابلات:
 
-1. ما هو الـ Conflation؟
-   - الـ Conflation يعني **الدمج وتخطي القيم القديمة لصالح القيمة الأحدث**.
-   - لو الـ Producer أنتج 10 قيم سريعة في الثانية، والـ Collector بطيء ولا يستطيع استيعاب إلا قيمتين، الـ StateFlow سيتخطى القيم المتوسطة ويعطي الـ Collector القيمة الأحدث فوراً.
+1. **كتم المتساوي:** لما تسند قيمة `new` مساوية للقيمة الحالية حسب `Any.equals`، ما فيش emission جديد. ده مش معناه إن أي data class آمنة؛ لو جوّاها قائمة mutable وعدلتها في مكانها، المقارنة ممكن ما تكتشفش التغيير.
+2. **Conflation:** لو قيم مختلفة وصلت بسرعة والـ collector بطيء، مش لازم يشوف كل قيمة وسيطة؛ لما يرجع يقرأ، يرى أحدث snapshot.
 
-2. كيف يستخدم StateFlow الـ Equality لقمع التكرار؟
-   - في دالة `_stateFlow.value = newState`، الـ StateFlow يقوم داخلياً بعمل فحص:
-     `if (oldState == newState) return` (باستخدام `Any.equals()`).
-   - لو كانت القيمة الجديدة مطابقة للقيمة القديمة (Equal)، الـ StateFlow **لن يرسل أي إشعار للمستمعين إطلاقاً (Suppressed)**!
-
-3. الفائدة الضخمة في Android و Jetpack Compose:
-   - يمنع إعادة الرسم غير الضرورية (Recomposition loops).
-   - لو ضغط المستخدم على زر الفرز وكان الفرز الحالي هو 'الأحدث' بالفعل، لن يتم إعادة رسم القائمة أو استهلاك الـ CPU في الـ UI.
+ده مناسب لشاشة يهمها «الوضع دلوقتي». لو كل occurrence أو خطوة دفع لازم تُعالج، `StateFlow` مش سجل أحداث. انشر state مستقرة بنسخة جديدة، واستعمل `update` لتغييرات read-modify-write المتنافسة.
 
 ## Practical walkthrough
 
-مثال عملي يوضح الفخ الذي يقع فيه المطورون مع الـ Mutable Objects:
+مثال يبعدك عن فخ تعديل نفس المرجع:
 ```kotlin
-// ❌ فخ كارثي: استخدام Mutable Object داخل StateFlow:
-class FilterState {
-    var selectedCategory = "All"
-}
-val state = MutableStateFlow(FilterState())
+data class FilterUiState(val selectedCategory: String = "All")
+private val filter = MutableStateFlow(FilterUiState())
 
-// لو عدلت الحقل في نفس الكائن وحاولت تبعته:
-state.value.selectedCategory = "Shoes"
-state.value = state.value // لن يحدث أي شيء! الـ UI لن يتحدث إطلاقاً!
-// السبب: الكائن هو نفسه في الذاكرة، و equals() ترجع true، فـ StateFlow يقمع التحديث!
-
-// ✅ الحل الصحيح: استخدام Immutable Data Classes مع دالة copy():
-data class FilterState(val selectedCategory: String = "All")
-val state = MutableStateFlow(FilterState())
-
-state.update { current -> current.copy(selectedCategory = "Shoes") }
-// الآن تم إنشاء New Instance بقيم مختلفة، equals() ترجع false، والـ UI يتحدث فوراً!
+filter.value = FilterUiState() // نفس البيانات: مفيش تحديث جديد
+filter.update { old -> old.copy(selectedCategory = "Shoes") }
 ```
+لو `FilterUiState` حملت `MutableList` وعدّلت القائمة نفسها، `val` على الخاصية مش كفاية؛ كوّن قائمة جديدة مع state جديدة. ولو تغييرات «All» و«Shoes» و«Bags» حصلت أسرع من collector، قد يشوف «All» ثم «Bags» مباشرة. ما تستخدمش ده لتتبع كل ضغطة شراء؛ خزّن النتيجة المهمة أو اختار قناة تسليم بعقد واضح.
 
 ## Why it matters and how it works
 
-`MutableStateFlow.value` keeps one current value. A new collector receives that value. Updates are conflated by equality, and a slow collector may skip rapid intermediate states while seeing the latest one. The equality contract of the state type matters; an object whose `equals` is unstable gives unspecified behavior. StateFlow is thread-safe for its own operations, but a read-modify-write sequence can still race; use `update` for atomic transformations.
+`MutableStateFlow.value` keeps one current value. A new collector receives that value. Equal updates are suppressed at assignment; separately, a slow collector may skip distinct intermediate states and see the latest one. The equality contract of the state type matters; an object whose `equals` is unstable gives unspecified behavior. StateFlow is thread-safe for its own operations, but a read-modify-write sequence can still race; use `update` for atomic transformations.
 
 ## Worked example
 
@@ -138,25 +103,21 @@ An offline-first inbox exposes an immutable `InboxUiState` from a ViewModel. Rap
 
 ## Interview answer — short
 
-Conflation and equality suppression prevent redundant UI rendering in StateFlow. Equality suppression uses Any.equals to discard incoming values identical to the current state, preventing unnecessary emissions. Conflation drops intermediate states when a collector is slow, guaranteeing that the collector always receives the freshest available state without buffer overflow.
+Equality suppression means assigning a value equal to StateFlow's current value produces no new emission. Conflation means a slow collector can skip distinct intermediate states and observe the latest snapshot. Use stable immutable state and `update { copy(...) }`; do not use StateFlow as an audit log for every event.
 
 ## Interview answer — structured
 
-Conflation and equality suppression represent StateFlow's core performance optimizations for state rendering.
+There are two separate mechanisms. When `MutableStateFlow.value` receives a value equal to the current one according to `Any.equals`, it suppresses that update. When a collector is slower than a series of distinct updates, StateFlow retains the latest value instead of requiring the collector to process each intermediate snapshot. This is conflation.
 
-Equality suppression prevents redundant work at the mutation boundary. When a new value is assigned to MutableStateFlow, it evaluates structural equality via Any.equals against the current state. If the values are identical, the assignment is dropped immediately; collector continuations are not woken up, and downstream streams remain idle.
-
-In production, conflation handles consumer-producer speed mismatches. When an upstream data source emits state updates faster than the UI can process or render them, StateFlow does not buffer intermediate values. Instead, it conflates the stream, dropping older pending states so the collector always receives the freshest state snapshot.
-
-These mechanisms are essential for Jetpack Compose stability. They prevent recomposition loops and frame drops when ViewModels compute state updates that resolve to identical data classes, guaranteeing smooth sixty or one-hundred-twenty hertz UI rendering.
-
+For a UI filter or inbox snapshot, that is usually desirable. It can fail if the state object or a nested collection is mutated in place: reassigning the same reference may compare equal and produce no useful update. Publish a new immutable snapshot, preferably with `update { old -> old.copy(...) }` for concurrent read-modify-write. For every-occurrence events or durable business actions, choose a delivery and persistence contract instead of relying on StateFlow. None of these mechanisms alone guarantees a particular frame rate.
 
 ## Interview answer — deep senior
 
-Under the hood in StateFlow.kt, the assignment of a new value executes inside a synchronized block operating on the StateFlow instance. The implementation first checks: if (curValue == newState) return. This structural comparison relies on the implementation of equals() provided by data classes. If the comparison returns true, the method terminates early without incrementing the internal sequence version counter or notifying attached StateFlowSlots.
-This optimization introduces a critical architectural pitfall: mutable reference modification. If a developer mutates a property inside a mutable object or collection held by StateFlow (such as modifying an existing ArrayList or changing a var inside a class) and reassigns that same instance to StateFlow.value, curValue == newState evaluates to true because both reference handles point to the identical heap object. Consequently, StateFlow suppresses the emission, and the UI completely fails to update. StateFlow mandates strictly immutable data structures (data classes with val properties and immutable collections).
-Conflation operates via StateFlowSlot's sequence number tracking. Each slot tracks the sequence of the last processed value. When the collector resumes, it fetches the value associated with the current sequence number. If five updates occurred while the collector was suspended, the collector simply reads the latest value, inherently conflating the intermediate four.
-Staff engineers leverage this to protect UI performance: pairing immutable state models with StateFlow ensures zero redundant Compose passes and guarantees lag-free state tracking under high-frequency background event bursts.
+I separate the timing of two mechanisms. At assignment, StateFlow compares the incoming value with its stored current value using `Any.equals`; equal values produce no new state emission. At collection, a slow subscriber may be processing an earlier value while distinct updates arrive; when it resumes, it can observe the latest state without receiving every intermediate transition. That conflation makes StateFlow a current snapshot, not a sequence log.
+
+The equality contract is a source of correctness risk. A data class with `val` properties is not deeply immutable if one property points at a mutable list. Mutating that list in place and reassigning the same holder can appear equal to itself, leaving the UI without the update it expected. Arrays in ordinary data-class equality are also reference-compared unless equality is customized. I publish stable snapshots and make nested collections immutable in use. `MutableStateFlow.update { ... }` supports atomic transformations, but its lambda may be retried under contention, so side effects should remain outside it.
+
+I use StateFlow for UI state that cares about the latest truth, not for payments or commands where every occurrence must be recorded. A SharedFlow or Channel can encode a transient delivery policy, but neither automatically survives process death; important outcomes belong in durable storage with explicit acknowledgement. I test equality suppression and slow collection deterministically, and I measure UI performance separately. Eliminating redundant emissions is useful, but it does not guarantee zero recompositions or a specific frame rate.
 
 ## How to answer in the interview
 
@@ -172,14 +133,14 @@ Compare `stateIn` and `shareIn`; explain lifecycle-aware collection, replay sema
 
 ## Follow-up questions
 
-- **Interviewer:** "How does `StateFlow.update { }` work with equality suppression?"
-  **Answer:** "`StateFlow.update` evaluates the transform lambda inside an atomic CAS loop. If the lambda returns an object equal to the current state, StateFlow recognizes equality and avoids notifying collectors."
-
-- **Interviewer:** "Can you disable equality suppression in StateFlow?"
-  **Answer:** "No. Equality suppression is hardcoded into `StateFlowImpl`. If you require every emission to be delivered regardless of equality, you should use `MutableSharedFlow` with `replay = 1` instead."
-
-- **Interviewer:** "What happens if a data class contains an Array property?"
-  **Answer:** "Standard Kotlin data classes use referential `equals()` for raw Arrays, not content equality. Two arrays with identical elements will not be considered equal unless you override `equals()` using `contentEquals()`, which can lead to unexpected recompositions."
+- **Interviewer:** "Does `val items: MutableList<Item>` make a data class safe?"
+  **Answer:** "No. The list is still mutable; changing it in place may leave the stored reference equal to itself. Publish a new list and state object."
+- **Interviewer:** "Can StateFlow equality suppression be disabled?"
+  **Answer:** "No. If every occurrence matters, use a different contract and specify delivery guarantees."
+- **Interviewer:** "What should go inside `update { }`?"
+  **Answer:** "A side-effect-free transformation. The lambda may be evaluated more than once under contention."
+- **Interviewer:** "Does StateFlow guarantee smooth 60 fps?"
+  **Answer:** "No. It reduces some emissions, but rendering and the rest of the pipeline determine frame performance."
 
 ## Self-check rubric
 
@@ -188,6 +149,7 @@ Score 0–5, one point each: define conflation; state that StateFlow is hot and 
 ## References and reviewed-on date
 
 - [Kotlin StateFlow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-state-flow/) — hot state, current value, and equality-based conflation.
+- [Kotlin update API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/update.html) — atomic update and lambda reevaluation under contention.
 - [Android StateFlow and SharedFlow guide](https://developer.android.com/kotlin/flow/stateflow-and-sharedflow) — Android collection and UI use.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against primary documentation on 2026-10-19.

@@ -22,66 +22,46 @@ Explain hot StateFlow/SharedFlow lifetime, current state versus configurable bro
 
 ## Concept and technical explanation
 
-StateFlow and SharedFlow are specialized "hot" stream primitives in Kotlin coroutines whose execution and lifecycle exist independently of the presence or number of active collectors. Unlike cold flows, a hot stream begins executing and holds values in memory as soon as it is allocated in a CoroutineScope, broadcasting emissions to multiple concurrent subscribers simultaneously (multicast). StateFlow is a state-holder hot stream that always stores and exposes a current value, requires an initial value upon instantiation, conflates sequential updates, and replays exactly its latest state to newly arriving subscribers. SharedFlow is a highly configurable, general-purpose hot event bus that supports custom replay cache sizes, extra buffer capacities, and configurable BufferOverflow drop strategies. They are classified as "hot" because their upstream producers emit regardless of whether downstream collectors are actively listening, and emissions not captured within configured buffers are dropped.
+`StateFlow` and `SharedFlow` are hot `Flow` implementations: their objects and stored values are independent of any individual collection. Collecting either does not start a fresh producer per collector. Hot does not mean a producer begins running merely because a `MutableSharedFlow` was allocated; code must assign or emit values, and an upstream shared through `shareIn` or `stateIn` follows its `SharingStarted` policy. `StateFlow` always exposes a current value, requires an initial value, replays the latest state, and conflates equal updates. `SharedFlow` has configurable replay and buffer/overflow behavior but no `.value` property. With replay zero, a late subscriber misses past emissions, while simultaneous subscribers can each receive one broadcast.
 
 ## Practical walkthrough (English)
 
-Contrasting StateFlow state retention with SharedFlow event broadcasting:
+A ViewModel can expose current UI state and a best-effort broadcast separately. The producer is the code that assigns or emits; construction alone does not start a periodic job.
+
 ```kotlin
 class NewsFeedViewModel : ViewModel() {
-    // 1. StateFlow: Holds current state, requires initial value, always replays 1 to new collectors
     private val _uiState = MutableStateFlow<NewsUiState>(NewsUiState.Loading)
     val uiState: StateFlow<NewsUiState> = _uiState.asStateFlow()
 
-    // 2. SharedFlow: Broadcasts transient events, zero replay by default, drops if uncollected
-    private val _userEvents = MutableSharedFlow<UserMessage>(
-        replay = 0,
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
-    val userEvents: SharedFlow<UserMessage> = _userEvents.asSharedFlow()
+    private val _refreshTicks = MutableSharedFlow<Unit>(replay = 0)
+    val refreshTicks: SharedFlow<Unit> = _refreshTicks.asSharedFlow()
 
-    fun onRefresh() {
-        viewModelScope.launch {
-            _uiState.value = NewsUiState.Success(fetchNews())
-            _userEvents.emit(UserMessage.ShowToast("Feed updated successfully!"))
-        }
+    fun refresh() = viewModelScope.launch {
+        _uiState.value = NewsUiState.Success(fetchNews())
+        _refreshTicks.emit(Unit) // late collectors will miss this tick
     }
 }
 ```
 
 ## Explanation in Arabic
 
-الـ `StateFlow` والـ `SharedFlow` هما الـ Hot Streams الأساسيان في Kotlin Coroutines، وفهم سبب كونهما 'Hot' هو جوهر إدارة الحالة والأحداث:
+نسمي `StateFlow` و`SharedFlow` hot لأن **الكائن نفسه قائم مستقل عن الجمع**؛ الـ collector الجديد ما بيشغّلش نسخة جديدة من producer. لكن hot مش معناها إن فيه شغل أو إرسال مستمر من لحظة الإنشاء: `MutableSharedFlow()` وحده ساكت لحد ما حد ينادي `emit`، و`shareIn` ممكن يوقف upstream حسب `SharingStarted`.
 
-1. ما معنى أنهما 'Hot Streams'؟
-   - الـ Hot Stream **موجود ونشط وينتج بيانات باستمرار في الذاكرة (Memory-resident)** بغض النظر عما إذا كان هناك مستمعين (Collectors) أم لا!
-   - يشبه البث المباشر في الراديو أو التلفزيون: المذيع يتكلم حتى لو لا يوجد أحد يستمع؛ ومن يفتح الراديو يسمع ما يُبث في اللحظة الحالية فقط.
+`StateFlow` مناسب لقيمة حالية: يبدأ بـ initial value، تقدر تقرأ `.value` فورًا، والداخل الجديد يستلم آخر حالة. هو بيكتم القيم المتساوية وقد يتخطى حالات وسطية لو المستهلك بطيء.
 
-2. ما هو الـ `StateFlow`؟
-   - مخصص لـ **إدارة الحالة (State Management)**.
-   - يحمل دائماً **قيمة حالية في الذاكرة** يمكن قراءتها في أي وقت عبر `stateFlow.value` (Synchronous read).
-   - يتطلب قيمة ابتدائية إلزامية (Initial Value).
-   - لديه **Conflation مدمج:** لو الحالة لم تتغير (وفقاً للـ `equals()`)، فلن يرسل أي تحديث للمستمعين.
-
-3. ما هو الـ `SharedFlow`؟
-   - مخصص لـ **بث الأحداث والإشارات (Events & Multicasting)**.
-   - لا يشترط وجود قيمة ابتدائية.
-   - يمكن ضبطه بـ `replay = N` لتحديد عدد الأحداث السابقة التي يستلمها أي مستمع جديد.
-   - مناسب جداً للأحداث العابرة (Navigation, Show Snackbar, Analytics).
+`SharedFlow` بث لمشتركين متعددين. مافيش `.value` ولا قيمة ابتدائية لازمة؛ فيه `replay` وbuffer قابلين للضبط. مع `replay = 0`، اللي يدخل بعد event مش هيستلمه، واللي موجودين وقتها كلهم ممكن يستلموه. ده مش ضمان «مرة واحدة» ولا ضمان وصول عبر توقف الشاشة.
 
 ## Practical walkthrough
 
-في شاشة تسجيل الدخول (Login Screen):
-- **إدارة الـ State باستخدام `StateFlow`:**
-  `private val _uiState = MutableStateFlow<LoginUiState>(LoginUiState.Idle)`
-  `val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()`
-  الشاشة تعرض `uiState.value`؛ ولو دور المستخدم الشاشة، الشاشة الجديدة تقرأ القيمة الحالية فوراً بدون إعادة تحميل.
-- **إدارة الـ Navigation Event باستخدام `SharedFlow`:**
-  `private val _events = MutableSharedFlow<LoginEvent>()`
-  `val events: SharedFlow<LoginEvent> = _events.asSharedFlow()`
-  عند نجاح تسجيل الدخول، نرسل: `_events.emit(LoginEvent.NavigateToHome)`.
-  الحدث يتم استهلاكه لمرة واحدة فقط؛ ولا يعاد تشغيله عند تدوير الشاشة.
+في ViewModel ممكن تميّز الحالة عن الإشارة:
+```kotlin
+private val _uiState = MutableStateFlow<LoginUiState>(LoginUiState.Idle)
+val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
+
+private val _refreshTicks = MutableSharedFlow<Unit>(replay = 0)
+val refreshTicks: SharedFlow<Unit> = _refreshTicks.asSharedFlow()
+```
+لو الشاشة رجعت بعد rotation، `uiState` يديها الحالة الحالية. لو `_refreshTicks.emit(Unit)` حصل وهي متوقفة، المشترك الجديد مش هياخد النبضة القديمة. ولو فيه مشتركين وقت الإرسال، الاتنين ممكن يستلموها. لو الإشارة مهمة لنتيجة عمل المستخدم، خزّن نتيجتها كحالة قابلة للاسترجاع بدل ما تعتمد على نبضة عابرة.
 
 ## Why it matters and how it works
 
@@ -118,25 +98,21 @@ A ViewModel exposes immutable screen state through StateFlow. Toast-like best-ef
 
 ## Interview answer — short
 
-StateFlow and SharedFlow are hot streams because they exist and emit independently of collectors, multicasting values to multiple subscribers. StateFlow is a state holder that always retains a current value, requires an initial state, and conflates updates. SharedFlow is a configurable event stream with customizable replay cache, buffer capacity, and overflow policies.
+StateFlow and SharedFlow are hot because collecting them does not restart a producer for each subscriber. StateFlow holds a current value, requires an initial value, and conflates equal updates. SharedFlow broadcasts to active subscribers with configurable replay and buffering, but exposes no `.value`. A hot object need not emit continuously; its owner controls production.
 
 ## Interview answer — structured
 
-StateFlow and SharedFlow represent hot streams whose lifecycles operate independently of downstream collectors.
+Hot describes the relationship between a stream and its collectors: a new collector attaches to an existing StateFlow or SharedFlow rather than executing a new builder. It does not promise continuous production. A `MutableSharedFlow` without calls to `emit` remains quiet, and a flow shared with `shareIn` obeys `SharingStarted`.
 
-The definition of a "hot" stream is that it produces and retains values in memory regardless of whether any subscriber is actively listening. When values are emitted, they are broadcast simultaneously to all active collectors using a multicast distribution model.
-
-In production, we choose between them based on state persistence versus event transmission. StateFlow is designed specifically for UI state management. It requires an initial value, exposes a synchronous value getter, replays exactly its current state to new subscribers, and automatically conflates identical consecutive values.
-
-SharedFlow serves as an event stream. It does not require an initial value and allows engineers to customize replay capacity, buffer size, and overflow behavior, making it the preferred primitive for broadcasting one-off events, system notifications, or shared domain messages across multiple application components.
-
+Use StateFlow for a current UI snapshot. It has an initial value, synchronous `.value`, latest-value replay, equality suppression, and conflation for slow collectors. Use SharedFlow when a multicast contract needs explicit replay and buffering. At `replay = 0`, no-subscriber emissions are unavailable to later collectors; multiple active collectors can receive the same broadcast. Neither primitive alone provides durable, exactly-once business delivery across process death.
 
 ## Interview answer — deep senior
 
-At the lower plumbing layer of kotlinx.coroutines, StateFlow and SharedFlow are built on top of AbstractSharedFlow, a thread-safe allocation-free synchronization structure. Unlike cold flows that execute via sequential continuation passes, hot flows maintain an internal array of active subscriber slots (StateFlowSlot and SharedFlowSlot). When emit is invoked, the hot stream acquires an internal mutex, iterates over its active slot table, and wakes up suspended collector continuations directly.
-StateFlow is mathematically equivalent to a specialized SharedFlow configured with replay = 1 and onBufferOverflow = BufferOverflow.DROP_OLDEST, coupled with strict Any.equals conflation. When MutableStateFlow.value is updated, it performs an equality check: if the new value equals the existing value, the emission is discarded immediately without waking collector slots, preventing redundant recompositions in Jetpack Compose and frame drops.
-SharedFlow provides fine-grained backpressure tuning through three constructor parameters: replay determines how many previous emissions are cached for new subscribers; extraBufferCapacity provides headroom for emissions when collectors are slow; and onBufferOverflow dictates whether emit suspends (SUSPEND), drops the oldest buffered value (DROP_OLDEST), or drops the newly emitted value (DROP_LATEST).
-Staff engineers enforce strict guidelines: UI screens must observe state via StateFlow to guarantee that rotated screens instantly render the current state; transient one-off events must either use SharedFlow with replay = 0 or be modeled directly as consumed fields within the single immutable StateFlow to prevent event loss or double execution.
+I first separate the hot stream object from its producer. A `MutableStateFlow` retains current state while referenced, and a `MutableSharedFlow` retains only its configured replay cache. Collecting these flows does not create one producer run per subscriber. But allocating a shared flow does not launch work: some owner must assign a state or emit an event. If a cold upstream was converted using `shareIn` or `stateIn`, `SharingStarted` controls when its sharing coroutine runs. `WhileSubscribed` may stop upstream during a subscriber gap and restart it later.
+
+StateFlow is the state-holder contract: an initial value, synchronous `value`, latest snapshot for newcomers, equality-based suppression, and slow-collector conflation. SharedFlow instead offers replay count, extra buffer capacity, and overflow policy. It has `replayCache`, not `.value`. An extra buffer is headroom for existing slow subscribers, not a durable no-subscriber queue. With zero replay, an emission while no one collects is lost to future subscribers; with two active subscribers, both can observe the same emission.
+
+The production decision depends on loss and replay tolerance. A periodic refresh tick can be best effort. A payment outcome or navigation consequence that must survive a lifecycle gap needs state or persistence with acknowledgement. I test a late collector, two concurrent collectors, a STOP/START gap, and process recreation instead of calling SharedFlow an exactly-once event channel.
 
 ## How to answer in the interview
 
@@ -152,14 +128,14 @@ Contrast hot producer lifetime, current value, replay cache, slow collector and 
 
 ## Follow-up questions
 
-- **Interviewer:** "Can a subscriber to a StateFlow miss intermediate values?"
-  **Answer:** "Yes! Because StateFlow is conflated, if the producer emits values 1, 2, and 3 faster than a slow collector can process them, the collector may jump directly from 1 to 3, missing 2. StateFlow guarantees delivery of the most recent state, not historical delivery of every transition."
-
-- **Interviewer:** "Why does StateFlow require an initial value while SharedFlow does not?"
-  **Answer:** "Because StateFlow represents continuous state and exposes a synchronous `.value` property that must never return undefined or null unless explicitly typed as nullable (e.g., `StateFlow<User?>`)."
-
-- **Interviewer:** "What happens when you emit to a `SharedFlow` with `replay = 0` when there are no collectors?"
-  **Answer:** "The emission is dropped immediately and permanently lost. Any subscriber that connects a millisecond later will not receive that event."
+- **Interviewer:** "Can a StateFlow collector miss intermediate states?"
+  **Answer:** "Yes. A slow collector may move directly to the latest state; it is a snapshot, not a history log."
+- **Interviewer:** "Does hot mean production starts at allocation?"
+  **Answer:** "No. A mutable shared flow emits only when its owner calls `emit` or `tryEmit`; sharing operators obey their start policy."
+- **Interviewer:** "What happens to a zero-replay SharedFlow emission with no subscribers?"
+  **Answer:** "A later subscriber cannot receive it. It is not an exactly-once delivery mechanism."
+- **Interviewer:** "Do two active collectors compete for one event?"
+  **Answer:** "No. SharedFlow broadcasts to each active collector according to its buffering contract."
 
 ## Self-check rubric
 
@@ -170,4 +146,6 @@ Can I define hot, compare value/replay, select a UI use and describe loss after 
 - [Kotlin StateFlow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-state-flow/) — current value and conflation.
 - [Kotlin SharedFlow API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-shared-flow/) — replay/buffer semantics.
 
-Technically reviewed against primary documentation on 2026-10-13.
+- [Android StateFlow and SharedFlow guide](https://developer.android.com/kotlin/flow/stateflow-and-sharedflow) — owner and lifecycle examples.
+
+Technically reviewed against primary documentation on 2026-10-19.

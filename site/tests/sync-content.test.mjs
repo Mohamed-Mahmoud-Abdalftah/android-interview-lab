@@ -6,6 +6,7 @@ import {
   extractInterviewQuestion,
   routeForCanonicalPath,
   rewriteCanonicalLinks,
+  sidebarLabel,
   stripFrontmatter,
 } from '../scripts/content-core.mjs';
 
@@ -16,6 +17,11 @@ test('maps canonical academy files to stable learner routes', () => {
   assert.equal(routeForCanonicalPath('Coding-Challenges/LAB-001-profile-name.md'), '/labs/lab-001/');
   assert.equal(routeForCanonicalPath('Mock-Interviews/mock-001-kotlin-and-coroutines.md'), '/mocks/mock-001-kotlin-and-coroutines/');
   assert.equal(routeForCanonicalPath('Mock-Interviews/README.md'), '/mocks/');
+});
+
+test('sidebar label includes a canonical ID only once', () => {
+  assert.equal(sidebarLabel('SCN-001', 'SCN-001 — Profile crash'), 'SCN-001 — Profile crash');
+  assert.equal(sidebarLabel('LAB-001', 'Profile parser'), 'LAB-001 — Profile parser');
 });
 
 test('maps support material to dedicated reference routes', () => {
@@ -100,6 +106,31 @@ test('does not treat the letter z as the end of an interview question', () => {
     extractInterviewQuestion(body),
     'Build the validation, authentication, authorization, and navigation flow. Explain LazyColumn virtualization and serialize state safely.',
   );
+});
+
+test('puts spoken answers directly after the question in both lab languages', () => {
+  const cases = [
+    ['../src/content/docs/ar/lab/questions/com-02.md', [
+      '## السؤال الأصلي في المقابلة',
+      '## إجابة سريعة للانترفيو',
+      '## إجابة قوية للانترفيو',
+      '## لو الـ Interviewer دخل معاك في التفاصيل',
+      '## الفكرة ببساطة',
+    ]],
+    ['../src/content/docs/lab/questions/com-02.md', [
+      '## Original interview question',
+      '## Interview answer — short',
+      '## Interview answer — structured',
+      '## Interview answer — deep senior',
+      '## Concept and technical explanation',
+    ]],
+  ];
+  for (const [file, headings] of cases) {
+    const content = readFileSync(new URL(file, import.meta.url), 'utf8');
+    const positions = headings.map((heading) => content.indexOf(heading));
+    assert.ok(positions.every((position) => position >= 0), `Missing heading in ${file}`);
+    assert.deepEqual(positions, [...positions].sort((a, b) => a - b), file);
+  }
 });
 
 test('keeps the curated Must Know path complete and explainable', () => {

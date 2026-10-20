@@ -155,6 +155,9 @@ for (const [index, q] of questions.entries()) {
   }
 
   const requiredEnSections = [
+    ['Interview answer — short', 'Interview answer — short'],
+    ['Interview answer — structured', 'Interview answer — structured'],
+    ['Interview answer — deep senior', 'Interview answer — deep senior'],
     ['What the interviewer evaluates', 'What the interviewer evaluates'],
     ['Concept and technical explanation', 'Concept and technical explanation'],
     ['Practical walkthrough', enWalkthrough],
@@ -163,9 +166,6 @@ for (const [index, q] of questions.entries()) {
     ['Trade-offs and decision criteria', 'Trade-offs and decision criteria'],
     ['Failure modes', 'Failure modes'],
     ['Production perspective', 'Production perspective'],
-    ['Interview answer — short', 'Interview answer — short'],
-    ['Interview answer — structured', 'Interview answer — structured'],
-    ['Interview answer — deep senior', 'Interview answer — deep senior'],
     ['How to answer in the interview', 'How to answer in the interview'],
     ['Deep-dive talking points', 'Deep-dive talking points'],
     ['Follow-up questions', 'Follow-up questions'],
@@ -197,6 +197,9 @@ for (const [index, q] of questions.entries()) {
   const navAr = `<nav class="lab-adjacent" aria-label="التنقل بين الأسئلة">${previous ? `<a href="${routeAr(previous)}">← ${previous.id}</a>` : '<span></span>'}${next ? `<a href="${routeAr(next)}">${next.id} →</a>` : ''}</nav>`;
 
   const requiredArFields = [
+    ['quick_answer_ar', 'إجابة سريعة للانترفيو'],
+    ['best_answer_ar', 'إجابة قوية للانترفيو'],
+    ['deep_answer_ar', 'لو الـ Interviewer دخل معاك في التفاصيل'],
     ['evaluates_ar', 'المحاور عايز يعرف إيه؟'],
     ['concept_ar', 'الفكرة ببساطة'],
     ['walkthrough_ar', 'خلينا نشوف سيناريو'],
@@ -205,9 +208,6 @@ for (const [index, q] of questions.entries()) {
     ['trade_offs_ar', 'إمتى تختار الحل ده؟'],
     ['failure_modes_ar', 'إيه اللي ممكن يغلط؟'],
     ['production_perspective_ar', 'قرارك في Production'],
-    ['quick_answer_ar', 'إجابة سريعة للانترفيو'],
-    ['best_answer_ar', 'إجابة قوية للانترفيو'],
-    ['deep_answer_ar', 'لو الـ Interviewer دخل معاك في التفاصيل'],
     ['how_to_answer_ar', 'إزاي تقدم الإجابة'],
     ['talking_points_ar', 'نقط تستاهل نقاش أعمق'],
     ['follow_ups_ar', 'أسئلة ممكن تتسأل بعدها'],

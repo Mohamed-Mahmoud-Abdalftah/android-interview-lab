@@ -24,64 +24,33 @@ What is Context? Compare Activity Context and Application Context.
 
 ## Concept and technical explanation
 
-Context is the central handle and abstract interface connecting application code to the Android operating system runtime. It provides access to application-specific resources, system services, local file sandboxes, and component launchers.
-
-1. Role of Context:
-   - Resource access: strings, drawables, assets, and display metrics.
-   - System services: `LayoutInflater`, `WindowManager`, `LocationManager`, `NotificationManager`.
-   - Inter-component communication: `startActivity()`, `startService()`, `sendBroadcast()`.
-
-2. Application Context:
-   - Tied directly to the lifecycle of the Linux application process via `getApplicationContext()`.
-   - Outlives any individual screen and is destroyed only when the process is killed.
-   - Safe to store in process-wide Singletons, Room database instances, and network repositories.
-   - Limitations: Has no associated Window Token and does not carry Activity-specific theme styling; cannot host Dialogs or Window attachments.
-
-3. Activity Context:
-   - Tied directly to a single Activity screen's lifespan, destroyed upon screen finish or configuration recreation.
-   - Subclasses `ContextThemeWrapper`, carrying explicit theme attributes, window tokens, and display configurations.
-   - Mandatory for UI operations: displaying `AlertDialog`s, inflating themed layouts, and attaching window popups.
-   - Leak hazard: Retaining an Activity Context in a singleton or background thread leaks the entire Activity and view hierarchy.
+`Context` is an Android API handle for resources, app files, system services and component operations. Which Context to pass depends on the API's visual configuration and the lifetime of the consumer. An Activity Context reflects a particular screen and can provide the current theme/window environment; retaining it in a process-lived singleton can leak a finished Activity. Application Context has process lifetime and suits application-scoped storage or services, but it is not a substitute for a current visual/window Context. Android also offers other Context types, including window Contexts, so “every UI API needs an Activity” is too broad. Starting an Activity from outside an Activity Context generally requires `FLAG_ACTIVITY_NEW_TASK`; that flag does not by itself promise a separate task.
 
 ## Practical walkthrough (English)
 
-Appropriate usage rules across layers:
-1. Initialize Room Database or DataStore within a Singleton Repository:
-   - Supply `context.applicationContext` to guarantee no transient Activity reference is leaked.
-2. Display AlertDialog, Toast, or Inflate Themed Views:
-   - Supply the Activity Context (`this` in Activity) to apply custom theme attributes and attach the dialog to the active Window Token.
-3. Call `startActivity()`:
-   - From an Activity Context: Seamlessly opens within the current task backstack.
-   - From an Application Context: Requires `Intent.FLAG_ACTIVITY_NEW_TASK` because the Application lacks its own task stack.
+Choose the narrowest owner for each operation:
+1. A process-scoped disk cache can use `context.applicationContext.cacheDir` without retaining a transient Activity.
+2. A screen dialog should use the active Activity or a lifecycle-owned `DialogFragment`, with the appropriate theme and window owner.
+3. A view inflater should use the visual Context for the target window; a window Context is another documented option for window-scoped APIs.
+4. If launching an Activity from a non-Activity Context, follow the `startActivity` contract and set `FLAG_ACTIVITY_NEW_TASK`; task behavior still depends on launch flags and existing tasks.
+Do not store the Activity in a long-lived repository just because an SDK method briefly needs it.
 
 ## Explanation in Arabic
 
-الـ `Context` هو أهم كائن في بيئة Android، وفهم الفرق بين `Activity Context` و `Application Context` يمنع حدوث أكبر كوارث الـ Memory Leaks والـ UI Glitches:
+الـ `Context` هو الطريق اللي كود Android بيوصل منه للـ resources والملفات الخاصة بالتطبيق وخدمات النظام وعمليات زي `startActivity`. السؤال مش "مين الآمن دايماً؟"؛ السؤال: الـ API محتاجة إيه، والكائن اللي هيمسك الـ Context هيعيش قد إيه؟
 
-1. ما هو الـ Context بصفة عامة؟
-   - هو الواجهة التي تربط كود تطبيقك **بنظام التشغيل Android (Handle to the System)**.
-   - يسمح لك بالوصول للموارد (Resources, Strings, Drawables)، قواعد البيانات، خدمات النظام (LayoutInflater, WindowManager, LocationManager)، وتشغيل المكونات (startActivity).
+`Activity Context` بيعكس شاشة معينة وثيمها وإعدادات نافذتها. استخدمه لما عملية مرتبطة بالواجهة الحالية أو تحتاج Activity فعلياً، زي dialog عادي تابع للشاشة. لو singleton احتفظ بالـ Activity بعد ما الشاشة اتقفلت أو اتعادت بسبب configuration change، ممكن يحتفظ بمرجع للشاشة القديمة. `Application Context` مناسب لشغل عمره عمر العملية، زي cache على ملفات التطبيق، لكن مش بديل عام عن سياق الشاشة في الموارد البصرية. وفي Android فيه أنواع تانية من Context، منها `createWindowContext` لبعض عمليات النوافذ؛ فمش صحيح إن كل UI API لازم Activity حرفياً.
 
-2. الـ `Application Context` (مربوط بـ Process التطبيق):
-   - يعيش طوال فترة حياة **التطبيق ككل (Singleton Lifecycle)** حتى يتم إنهاء الـ Linux Process.
-   - **مستحيل تسريبه:** آمن تماماً للاحتفاظ به داخل Singletons، Repositories، أو كلاسات الـ Data Layer.
-   - **حدوده:** ليس لديه Theme محدد، ولا يمكنه فتح Dialogs أو إنشاء نوافذ، واستخدامه مع `LayoutInflater` يؤدي لتجاهل ثيم الشاشة.
-
-3. الـ `Activity Context` (مربوط بالشاشة الحالية):
-   - يعيش فقط طالما الـ **Activity الحالية حية**، ويموت معها عند تدميرها أو تدوير الشاشة.
-   - **مربوط بالـ Theme والـ Window:** قادر على رسم الـ UI، عرض الـ Dialogs، وتطبيق ثيمات التطبيق والألوان بدقة.
-   - **خطر التسريب (Memory Leak Risk):** لو قمت بتمرير Activity Context لكائن Singleton أو Background Thread وظل ممسكاً به، فإنه سيسرب الـ Activity وشجرة الـ Views بالكامل في الـ Heap!
+لو بتستدعي `startActivity` من Context مش Activity، عقد الـ API يطلب غالباً `FLAG_ACTIVITY_NEW_TASK`. ده مش معناه بالضرورة إن النظام هيعمل task منفصلة كل مرة؛ راجع flags وسلوك المهمة. وابعد الـ Context عن منطق العمل الخالص لو تقدر تمرر اعتماد أضيق زي مسار ملف أو واجهة خدمة.
 
 ## Practical walkthrough
 
-متى تستخدم أياً منهما؟
-1. **تهيئة مكتبة Room أو DataStore داخل Singleton Repository:**
-   - نستخدم **`context.applicationContext`** حتى نضمن عدم تسريب أي Activity.
-2. **عرض AlertDialog أو Toast أو Inflating Layout:**
-   - نستخدم **Activity Context** (`this` في Activity) لتطبيق الـ Theme وإرفاق النافذة بالـ Window Token الشرعي.
-3. **استدعاء `startActivity`:**
-   - لو استدعيتها من Activity Context: تفتح بسلاسة.
-   - لو استدعيتها من Application Context: النظام يجبرك على إضافة `Intent.FLAG_ACTIVITY_NEW_TASK` لأن Application ليس لديه Task Stack خاص به!
+ثلاث قرارات في feature واحدة:
+- `ImageCache` طويل العمر يحتاج `cacheDir`: خليه يأخذ `applicationContext` أو مسار الكاش فقط.
+- شاشة تعرض تأكيد: استخدم الـ Activity الحالية أو `DialogFragment`، وأوقف العرض لو الشاشة انتهت قبل callback متأخر.
+- خدمة تبدأ شاشة: تستخدم `startActivity` وفق عقد الـ Context غير الـ Activity، مع `FLAG_ACTIVITY_NEW_TASK` عند الحاجة؛ لا تفترض مسار Back Stack واحد في كل الإعدادات.
+
+في multi-window أو foldable، خُد موارد الواجهة من visual Context الخاص بالنافذة الفعلية، واختبر المقاسات والثيم بدلاً من الاعتماد على Resources عامة.
 
 ## Why it matters and how it works
 
@@ -97,7 +66,7 @@ Application Context reduces accidental Activity retention in process-level objec
 
 ## Failure modes
 
-A process singleton stores `Activity` in a field and leaks every rotated screen. A Dialog constructed from Application Context can fail to attach to the expected window or render with an unsuitable theme. Using Application resources for a window-specific layout can be wrong on a foldable or multi-window display. Conversely, caching an Activity-specific resource object indefinitely can leave stale locale/night-mode values. Inspect retention paths and verify configuration-sensitive UI after changes.
+A process singleton stores an `Activity` field and may retain a finished screen after rotation. A Dialog constructed from Application Context can fail to attach to the expected window or render with an unsuitable theme. Using Application resources for a window-specific layout can be wrong on a foldable or multi-window display. Conversely, caching an Activity-specific resource object indefinitely can leave stale locale/night-mode values. Inspect retention paths and verify configuration-sensitive UI after changes.
 
 ## Production perspective
 
@@ -105,28 +74,19 @@ In a multi-window app, create visual resources from the current Activity/window 
 
 ## Interview answer — short
 
-Context is an application's handle to the Android system environment, mediating access to resources, system services, and component launching. Activity Context is scoped to a single screen's lifecycle, contains window and theme metadata, and is mandatory for rendering UI and dialogs. Conversely, Application Context is a process-level singleton, safe for persistent storage and background repositories, but incapable of anchoring visual windows.
+`Context` provides access to Android resources, files, services and component operations. Choose one that matches the consumer's lifetime and visual needs: Application Context for process-scoped nonvisual work, current Activity or another appropriate visual Context for window-specific UI. Never retain an Activity in a process singleton. Non-Activity `startActivity` calls generally need `FLAG_ACTIVITY_NEW_TASK`.
 
 ## Interview answer — structured
 
-Context acts as the primary gateway between an Android application's code and the underlying operating system, providing unified access to resource resolution, sandboxed file storage, system services, and inter-component communication.
-
-The choice between Activity Context and Application Context hinges entirely on lifecycle duration and visual capabilities. An Activity Context is tied directly to a single screen. Because it inherits from ContextThemeWrapper and maintains an active Window Token, it is strictly required whenever we inflate UI layouts, display dialogs, or resolve custom theme attributes. However, retaining an Activity Context beyond the screen's lifecycle creates a classic memory leak by pinning the entire Activity and view tree in heap memory.
-
-Application Context is a process-wide singleton whose lifetime mirrors the entire application process. It is completely safe to inject into long-lived components such as Room databases, HTTP clients, and background repositories.
-
-In production, we establish clear architectural guardrails by injecting Application Context into our data layer singletons while passing Activity Context exclusively to short-lived UI components, preventing both memory leaks and runtime window crashes.
-
+I treat Context as a capability and lifetime decision. It exposes app resources, private files, system services and component operations. An Activity Context describes a particular screen and carries its visual environment; it should only be held while that screen owns the work. An Application Context lasts with the process and can be appropriate for an app-scoped cache or database initialization. It is not automatically right for a themed dialog or a window whose bounds differ from the application configuration. The platform also has window Contexts, so saying every UI operation mandates an Activity is inaccurate. If I launch an Activity from outside an Activity Context, I follow the documented `FLAG_ACTIVITY_NEW_TASK` rule; the flag does not guarantee a brand-new task in every case. In production, a repository should receive a path or narrow service where possible, while an SDK that truly requires an Activity gets the current instance only for that call. I test rotation and multi-window to catch retained Activities and stale resource assumptions.
 
 ## Interview answer — deep senior
 
-At the Android platform architecture level, both Activity and Application inherit from ContextWrapper, which delegates all operations to an internal ContextImpl instance. However, their internal wiring to Android system services differs fundamentally. An Activity holds a WindowManagerImpl instance that is configured with an active IBinder Window Token assigned by the WindowManagerService during window creation.
+`Context` is an abstract Android interface whose implementations and wrappers expose resources, system services, file paths and operations on app components. The important distinction is not a simple “UI versus background” label. Each consumer has a lifetime and possibly a visual configuration. An Activity Context belongs to a screen and reflects its current theme and window environment. Holding it in a singleton can keep a destroyed Activity and its reachable view graph alive after rotation or finish. Application Context has process lifetime and is suitable when an app-scoped object needs app files or a process-level service. But its resources may not represent a particular window's current bounds or overrides.
 
-When an application invokes AlertDialog.Builder(context).show() with an Application Context, the system delegates to WindowManagerGlobal.addView(). Because Application Context has no Window Token registered with WindowManagerService, the IPC call fails validation in the system server, immediately terminating the application with a fatal BadTokenException. Furthermore, starting an Activity from Application Context fails unless Intent.FLAG_ACTIVITY_NEW_TASK is explicitly supplied, because an Application Context has no affinity with any task backstack in ActivityTaskManagerService.
+The Context API documents that window and inflater services should come from a visual Context, such as an Activity or a Context created with `createWindowContext`. That is more precise than claiming Activity is mandatory for every layout inflation or pixel rendering operation. A dialog attached to the current screen needs an appropriate active visual owner and theme; an arbitrary Application Context is not a safe replacement. A `BadTokenException` is a plausible failure with an invalid window token, not a universal immediate outcome for every construction call. Check the API contract and the moment the window is shown.
 
-From a configuration and theming perspective, modern Android versions introduce localized configuration overrides, per-app language settings, and dynamic Material You color palettes. An Activity Context resolves these attributes accurately through its local Configuration and ResourcesImpl hierarchy. In contrast, Application Context evaluates resources against global device defaults, meaning layout inflation using Application Context silently produces broken dark mode styling, incorrect font scaling, and mismatched dimension metrics.
-
-In enterprise codebases, we enforce clean boundary hygiene using dependency injection qualifiers such as Hilt's ApplicationContext and ActivityContext. Furthermore, we decouple pure business logic and repositories from Android framework dependencies altogether by injecting narrow, domain-specific primitives like filesystem paths or custom state interfaces rather than broad Context references.
+For navigation, `Context.startActivity` from outside an Activity Context requires `FLAG_ACTIVITY_NEW_TASK` under the documented contract. That flag affects task selection and may bring an existing task forward; it does not necessarily create a disconnected task. I pass Activity only across short UI calls, avoid storing it in long-lived SDK clients, and use lifecycle-aware result APIs where appropriate. If domain code needs only a cache directory, I inject that directory or a small file-store interface instead of broad Context. Finally, I test configuration changes and multi-window rather than assuming Application resources always match the visible display.
 
 ## How to answer in the interview
 
@@ -142,14 +102,10 @@ Explain Context capabilities, lifecycle and visual configuration, Activity reten
 
 ## Follow-up questions
 
-- **Interviewer:** "Why does calling `startActivity()` with an Application Context require `FLAG_ACTIVITY_NEW_TASK`?"
-  **Answer:** "Because an Application Context is not part of an existing Activity task stack. Without `FLAG_ACTIVITY_NEW_TASK`, Android doesn't know which task to place the new Activity in, throwing an `AndroidRuntimeException` on older API levels."
-
-- **Interviewer:** "Can a BroadcastReceiver receive an Activity Context?"
-  **Answer:** "No. The Context passed to `BroadcastReceiver.onReceive()` is a receiver-restricted context that cannot be used to bind services or register nested receivers."
-
-- **Interviewer:** "How do you safely extract an Application Context from any given Context?"
-  **Answer:** "By calling `context.applicationContext`. This extracts the root application singleton regardless of whether the incoming reference was an Activity, Service, or Wrapper."
+- **Interviewer:** "Does Application Context always leak or never leak?"
+  **Answer:** "Neither absolute is useful. Its lifetime fits process-scoped work, but objects reachable from it can still be held unnecessarily; the key leak is a long-lived object retaining a short-lived Activity."
+- **Interviewer:** "Does `FLAG_ACTIVITY_NEW_TASK` always create a separate task?"
+  **Answer:** "No. It is required when starting from a non-Activity Context under the API contract, but task selection also depends on existing tasks and other launch settings."
 
 ## Self-check rubric
 
@@ -157,7 +113,7 @@ Define Context without calling it a global variable; compare lifetimes; choose a
 
 ## References and reviewed-on date
 
-- [Context API reference](https://developer.android.com/reference/android/content/Context) — capabilities and visual Context distinctions.
-- [Activity lifecycle](https://developer.android.com/guide/components/activities/activity-lifecycle) — recreation and lifetime.
+- [Context API reference](https://developer.android.com/reference/android/content/Context) — visual Context, inflater/window services and activity launch contract.
+- [Activity lifecycle](https://developer.android.com/guide/components/activities/activity-lifecycle) — screen recreation and lifetime.
 
-Technically reviewed against primary documentation on 2026-10-13.
+Technically reviewed against primary documentation on 2026-10-19.

@@ -7,6 +7,7 @@ import {
   extractInterviewQuestion,
   rewriteCanonicalLinks,
   routeForCanonicalPath,
+  sidebarLabel,
   stripFrontmatter,
   yamlScalar,
 } from './content-core.mjs';
@@ -99,10 +100,10 @@ for (const canonicalPath of [...canonicalFiles].sort()) {
   if (canonicalPath.startsWith('Interview-Question-Bank/Model-Answers/')) {
     enBody = enBody.replace(/<p dir="rtl" lang="ar">[\s\S]*?<\/p>/g, '').trim();
   }
-  const generatedEn = `---\ntitle: "${title}"\ndescription: "Android Interview Mastery Academy — ${id}"\nsidebar:\n  label: "${id} — ${title}"\n  order: ${day || 999}\n---\n\n<div class="canonical-source"><bdi>${id}</bdi> · Canonical source: <code dir="ltr">${origin}</code></div>\n${lessonControl}\n${enBody.trim()}\n`;
+  const generatedEn = `---\ntitle: "${title}"\ndescription: "Android Interview Mastery Academy — ${id}"\nsidebar:\n  label: "${sidebarLabel(id, title)}"\n  order: ${day || 999}\n---\n\n<div class="canonical-source"><bdi>${id}</bdi> · Canonical source: <code dir="ltr">${origin}</code></div>\n${lessonControl}\n${enBody.trim()}\n`;
 
   // Arabic generated page (preserves full authentic Egyptian Arabic)
-  const generatedAr = `---\ntitle: "${title}"\ndescription: "محتوى أكاديمية Android Interview Mastery — ${id}"\nsidebar:\n  label: "${id} — ${title}"\n  order: ${day || 999}\n---\n\n<div class="canonical-source"><bdi>${id}</bdi> · المصدر الأساسي: <code dir="ltr">${origin}</code></div>\n${lessonControl}\n${body.trim()}\n`;
+  const generatedAr = `---\ntitle: "${title}"\ndescription: "محتوى أكاديمية Android Interview Mastery — ${id}"\nsidebar:\n  label: "${sidebarLabel(id, title)}"\n  order: ${day || 999}\n---\n\n<div class="canonical-source"><bdi>${id}</bdi> · المصدر الأساسي: <code dir="ltr">${origin}</code></div>\n${lessonControl}\n${body.trim()}\n`;
 
   await mkdir(path.dirname(output), { recursive: true });
   await mkdir(path.dirname(outputAr), { recursive: true });
